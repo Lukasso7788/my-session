@@ -55,6 +55,13 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
         throw new Error(errorData.error || 'Failed to create session');
       }
 
+      const data = await response.json();
+
+      // 👉 теперь сразу редиректим пользователя в созданную комнату
+      if (data.daily_room_url) {
+        window.location.href = data.daily_room_url;
+      }
+
       setTitle('');
       setHost('');
       setSelectedOption('');
@@ -62,7 +69,7 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
       onClose();
     } catch (error) {
       console.error('Error creating session:', error);
-      // You might want to show an error message to the user here
+      alert('Failed to create session. Check console for details.');
     } finally {
       setIsCreating(false);
     }
