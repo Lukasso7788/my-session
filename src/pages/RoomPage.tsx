@@ -17,7 +17,7 @@ export function RoomPage() {
   const [isCameraOff, setIsCameraOff] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [sessionStartTime] = useState(new Date());
+  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
 
   useEffect(() => {
     const fetchSession = async () => {
@@ -36,6 +36,7 @@ export function RoomPage() {
 
         const data = await response.json();
         setSession(data);
+        setSessionStartTime(new Date(data.scheduled_at));
       } catch (error) {
         console.error('Error fetching session:', error);
       } finally {
@@ -148,11 +149,13 @@ export function RoomPage() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-900">
-      <SessionTimer
-        focusBlocks={session.focus_blocks}
-        durationMinutes={session.duration_minutes}
-        startTime={sessionStartTime}
-      />
+      {sessionStartTime && (
+        <SessionTimer
+          focusBlocks={session.focus_blocks}
+          durationMinutes={session.duration_minutes}
+          startTime={sessionStartTime}
+        />
+      )}
 
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 flex flex-col">

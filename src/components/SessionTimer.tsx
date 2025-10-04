@@ -11,26 +11,40 @@ export function SessionTimer({ focusBlocks, durationMinutes, startTime }: Sessio
   const [timeLeft, setTimeLeft] = useState(0);
   const [currentBlock, setCurrentBlock] = useState<FocusBlock | null>(null);
   const [currentBlockIndex, setCurrentBlockIndex] = useState(0);
+  const [sessionStarted, setSessionStarted] = useState(false);
 
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
-      const elapsed = Math.floor((now - startTime.getTime()) / 1000);
+      const sessionStart = startTime.getTime();
+      const elapsed = Math.floor((now - sessionStart) / 1000);
       const totalSeconds = durationMinutes * 60;
       const remaining = Math.max(0, totalSeconds - elapsed);
 
       setTimeLeft(remaining);
+      setSessionStarted(elapsed >= 0);
 
-      const elapsedMinutes = Math.floor(elapsed / 60);
-      const activeBlockIndex = focusBlocks.findIndex((block, idx) => {
-        const blockStart = block.start_offset_minutes;
-        const blockEnd = blockStart + block.duration_minutes;
-        return elapsedMinutes >= blockStart && elapsedMinutes < blockEnd;
-      });
+      // Only calculate current block if session has started
+      if (elapsed >= 0) {
+        const elapsedMinutes = Math.floor(elapsed / 60);
+        const activeBlockIndex = focusBlocks.findIndex((block, idx) => {
+          const blockStart = block.start_offset_minutes;
+          const blockEnd = blockStart + block.duration_minutes;
+          return elapsedMinutes >= blockStart && elapsedMinutes < blockEnd;
+        });
 
-      if (activeBlockIndex !== -1) {
-        setCurrentBlock(focusBlocks[activeBlockIndex]);
-        setCurrentBlockIndex(activeBlockIndex);
+        if (activeBlockIndex !== -1) {
+          setCurrentBlock(focusBlocks[activeBlockIndex]);
+          setCurrentBlockIndex(activeBlockIndex);
+        } else {
+          // Session hasn't started yet or has ended
+          setCurrentBlock(null);
+          setCurrentBlockIndex(0);
+        }
+      } else {
+        // Session hasn't started yet
+        setCurrentBlock(null);
+        setCurrentBlockIndex(0);
       }
     }, 1000);
 
@@ -51,8 +65,12 @@ export function SessionTimer({ focusBlocks, durationMinutes, startTime }: Sessio
         <div className="flex items-center justify-between gap-6 mb-2 w-full">
           <div className="flex items-center gap-8 flex-shrink-0">
             <div>
-              <div className="text-sm text-gray-600 mb-1">Time Remaining</div>
-              <div className="text-2xl font-bold text-gray-900">{formatTime(timeLeft)}</div>
+              <div className="text-sm text-gray-600 mb-1">
+                {sessionStarted ? 'Time Remaining' : 'Session Starts In'}
+              </div>
+              <div className={`text-2xl font-bold ${sessionStarted ? 'text-gray-900' : 'text-blue-600'}`}>
+                {formatTime(timeLeft)}
+              </div>
             </div>
             {currentBlock && (
               <div>
