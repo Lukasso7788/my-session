@@ -1,4 +1,11 @@
+let sessions = []; // временное хранилище на сервере
+
 export default async function handler(req, res) {
+  if (req.method === 'GET') {
+    // вернуть все сессии
+    return res.status(200).json(sessions);
+  }
+
   if (req.method === 'POST') {
     try {
       const { title, host, duration_minutes, format } = req.body;
@@ -10,29 +17,31 @@ export default async function handler(req, res) {
           Authorization: `Bearer ${process.env.DAILY_API_KEY}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          name: roomName,
-          privacy: "public",
-        }),
+        body: JSON.stringify({ name: roomName, privacy: "public" }),
       });
 
       if (!resp.ok) {
-        const text = await resp.text();
-        throw new Error(text);
+        const txt = await resp.text();
+        throw new Error(txt);
       }
 
       const room = await resp.json();
 
-      return res.status(200).json({
+      const newSession = {
+        id: Date.now().toString(),
         title,
         host,
         duration_minutes,
         format,
         daily_room_url: room.url,
-      });
+        created_at: new Date().toISOString(),
+      };
+
+      sessions.push(newSession);
+
+      res.status(200).json(newSession);
     } catch (err) {
-      console.error("Error in /api/sessions:", err);
-      return res.status(500).json({ error: err.message });
+      res.status(500).json({ error: err.message });
     }
   } else {
     res.status(405).json({ error: "Method not allowed" });
