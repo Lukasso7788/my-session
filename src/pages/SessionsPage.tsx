@@ -1,25 +1,20 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Users, Clock, Plus } from 'lucide-react';
-import { Session } from '../lib/supabase';
 import { CreateSessionModal } from '../components/CreateSessionModal';
 import { formatSessionFormat } from '../utils/sessionHelpers';
 
 export function SessionsPage() {
   const navigate = useNavigate();
-  const [sessions, setSessions] = useState<Session[]>([]);
+  const [sessions, setSessions] = useState<any[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchSessions = async () => {
     try {
-      const response = await fetch('/api/sessions');
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch sessions: ${response.status}`);
-      }
-
-      const data = await response.json();
+      const res = await fetch('/api/sessions');
+      if (!res.ok) throw new Error('Failed to fetch sessions');
+      const data = await res.json();
       setSessions(data || []);
     } catch (error) {
       console.error('Error fetching sessions:', error);
@@ -37,8 +32,9 @@ export function SessionsPage() {
     return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   };
 
-  const handleJoinSession = (sessionId: string) => {
-    navigate(`/room/${sessionId}`);
+  const handleJoinSession = (url: string) => {
+    // просто открываем Daily комнату в новой вкладке
+    window.open(url, '_blank');
   };
 
   return (
@@ -75,15 +71,10 @@ export function SessionsPage() {
         ) : (
           <div className="grid gap-6">
             {sessions.map((session) => (
-              <div
-                key={session.id}
-                className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow p-6"
-              >
+              <div key={session.id} className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
-                    <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                      {session.title}
-                    </h3>
+                    <h3 className="text-xl font-semibold text-gray-900 mb-2">{session.title}</h3>
                     <div className="flex flex-wrap gap-4 text-sm text-gray-600 mb-4">
                       <div className="flex items-center gap-1">
                         <Users size={16} />
@@ -97,17 +88,13 @@ export function SessionsPage() {
                         <Clock size={16} />
                         <span>{session.duration_minutes} min</span>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <Users size={16} />
-                        <span>{session.participant_count} participants</span>
-                      </div>
                     </div>
                     <div className="inline-block bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-sm font-medium">
                       {formatSessionFormat(session.format)}
                     </div>
                   </div>
                   <button
-                    onClick={() => handleJoinSession(session.id)}
+                    onClick={() => handleJoinSession(session.daily_room_url)}
                     className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium ml-4"
                   >
                     Join Session

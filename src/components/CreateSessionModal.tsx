@@ -37,9 +37,7 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
 
       const response = await fetch('/api/sessions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title,
           host,
@@ -50,17 +48,7 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
         }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create session');
-      }
-
-      const data = await response.json();
-
-      // 👉 теперь сразу редиректим пользователя в созданную комнату
-      if (data.daily_room_url) {
-        window.location.href = data.daily_room_url;
-      }
+      if (!response.ok) throw new Error('Failed to create session');
 
       setTitle('');
       setHost('');
@@ -69,7 +57,6 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
       onClose();
     } catch (error) {
       console.error('Error creating session:', error);
-      alert('Failed to create session. Check console for details.');
     } finally {
       setIsCreating(false);
     }
@@ -89,35 +76,29 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Session Title
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Session Title</label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
               placeholder="e.g., Deep Work Session"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Your Name
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Your Name</label>
             <input
               type="text"
               value={host}
               onChange={(e) => setHost(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
               placeholder="Host name"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Session Format
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Session Format</label>
             <div className="space-y-2">
               {sessionOptions.map((option) => (
                 <label key={option.value} className="flex items-center space-x-3 cursor-pointer">
@@ -138,7 +119,7 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
           <button
             onClick={handleCreate}
             disabled={!title || !host || !selectedOption || isCreating}
-            className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+            className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-300 transition-colors"
           >
             {isCreating ? 'Creating...' : 'Create Session'}
           </button>
