@@ -32,9 +32,8 @@ export function SessionsPage() {
     return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   };
 
-  const handleJoinSession = (url: string) => {
-    // просто открываем Daily комнату в новой вкладке
-    window.open(url, '_blank');
+  const handleJoinSession = (sessionId: string) => {
+    navigate(`/room/${sessionId}`);
   };
 
   return (
@@ -82,10 +81,6 @@ export function SessionsPage() {
                       </div>
                       <div className="flex items-center gap-1">
                         <Clock size={16} />
-                        <span>{formatTime(session.scheduled_at)}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Clock size={16} />
                         <span>{session.duration_minutes} min</span>
                       </div>
                     </div>
@@ -94,7 +89,7 @@ export function SessionsPage() {
                     </div>
                   </div>
                   <button
-                    onClick={() => handleJoinSession(session.daily_room_url)}
+                    onClick={() => handleJoinSession(session.id)}
                     className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium ml-4"
                   >
                     Join Session
