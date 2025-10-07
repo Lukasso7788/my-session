@@ -1,0 +1,15 @@
+[33mbc87871[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m rollback to working 4324552 version
+[33m4324552[m[33m ([m[1;31morigin/stable-version[m[33m, [m[1;31morigin/rollback-4324552[m[33m, [m[1;32mstable-version[m[33m, [m[1;32mrollback-4324552[m[33m, [m[1;32mrestore-working-version[m[33m)[m fix routing for session room and list
+[33m1f41928[m Fix import for RoomPage (default export)
+[33m6ee6a70[m Embed Daily call in-app instead of redirect
+[33ma3b7652[m Add temporary in-memory sessions list
+[33m8054161[m Fix: auto return to sessions after leaving room
+[33m591a78f[m fix: restore old UI and show created sessions
+[33mc2edfe5[m Fix API function for Vercel
+[33m17a0ecf[m fix: daily API integration
+[33m8aeca06[m added Daily API backend route
+[33m23b6e55[m Test API route
+[33mc358ff0[m Fix API sessions handler
+[33mf4a14a5[m Update sessions API and CreateSessionModal to use Daily
+[33mc83640d[m fix: sessions now use unique Daily rooms
+[33mff762ae[m first commit
