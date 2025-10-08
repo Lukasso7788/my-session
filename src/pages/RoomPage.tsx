@@ -1,23 +1,34 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import DailyIframe from '@daily-co/daily-js';
+import DailyIframe, { DailyCall } from '@daily-co/daily-js';
+import { VideoControls } from '../components/VideoControls';
+import { IntentionsPanel } from '../components/IntentionsPanel';
+import { SessionTimer } from '../components/SessionTimer';
 
 export function RoomPage() {
-  const { id } = useParams();
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const callRef = useRef<DailyCall | null>(null);
+
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [isMicMuted, setIsMicMuted] = useState(false);
+  const [isCameraOff, setIsCameraOff] = useState(false);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [sessionStartTime] = useState(new Date());
+
+  // Загружаем данные о сессии
   useEffect(() => {
     const fetchSession = async () => {
       try {
-        const res = await fetch('/api/sessions');
-        const all = await res.json();
-        const found = all.find((s: any) => s.id === id);
-        if (!found) throw new Error('Session not found');
-        setSession(found);
+        const res = await fetch(`/api/sessions/${id}`);
+        if (!res.ok) throw new Error('Failed to load session');
+        const data = await res.json();
+        if (!data.daily_room_url) throw new Error('No room URL found');
+        setSession(data);
       } catch (e: any) {
         setError(e.message);
       } finally {
@@ -27,50 +38,112 @@ export function RoomPage() {
     fetchSession();
   }, [id]);
 
+  // Подключаем Daily call и UI
   useEffect(() => {
-    if (!session || !containerRef.current) return;
+    if (!containerRef.current || !session) return;
 
-    const frame = DailyIframe.createFrame(containerRef.current, {
-      showLeaveButton: true,
+    const callFrame = DailyIframe.createFrame(containerRef.current, {
+      showLeaveButton: false,
+      showFullscreenButton: true,
       iframeStyle: {
         width: '100%',
         height: '100%',
         border: '0',
+        borderRadius: '8px',
       },
     });
 
-    frame.join({ url: session.daily_room_url });
+    callRef.current = callFrame;
 
-    frame.on('left-meeting', () => {
-      navigate('/sessions');
-    });
+    callFrame.on('left-meeting', () => handleLeave());
+    callFrame.join({ url: session.daily_room_url });
 
-    return () => frame.destroy();
-  }, [session, navigate]);
+    return () => {
+      callFrame.destroy();
+    };
+  }, [session]);
+
+  // ----- Контролы -----
+  const handleToggleMic = async () => {
+    if (!callRef.current) return;
+    await callRef.current.setLocalAudio(isMicMuted);
+    setIsMicMuted(!isMicMuted);
+  };
+
+  const handleToggleCamera = async () => {
+    if (!callRef.current) return;
+    await callRef.current.setLocalVideo(isCameraOff);
+    setIsCameraOff(!isCameraOff);
+  };
+
+  const handleToggleScreenShare = async () => {
+    if (!callRef.current) return;
+    try {
+      if (isScreenSharing) {
+        await callRef.current.stopScreenShare();
+      } else {
+        await callRef.current.startScreenShare();
+      }
+      setIsScreenSharing(!isScreenSharing);
+    } catch (err) {
+      console.error('Error toggling screen share:', err);
+    }
+  };
+
+  const handleLeave = async () => {
+    if (callRef.current) {
+      await callRef.current.leave();
+      callRef.current.destroy();
+    }
+    navigate('/');
+  };
 
   if (loading)
     return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="animate-spin h-8 w-8 border-b-2 border-blue-600 rounded-full" />
+      <div className="flex h-screen items-center justify-center bg-gray-900 text-white">
+        Loading session...
       </div>
     );
 
   if (error)
     return (
-      <div className="p-8 text-center">
-        <p className="text-red-600 font-medium mb-4">{error}</p>
-        <button
-          onClick={() => navigate('/sessions')}
-          className="px-4 py-2 bg-blue-600 text-white rounded"
-        >
-          Back to sessions
-        </button>
+      <div className="flex h-screen items-center justify-center bg-gray-900 text-red-500">
+        {error}
       </div>
     );
 
   return (
-    <div className="h-screen w-screen bg-gray-50">
-      <div className="h-full w-full" ref={containerRef}></div>
+    <div className="h-screen flex flex-col bg-gray-900 text-white">
+      {/* Верхняя панель с таймером */}
+      <div className="p-4 border-b border-gray-800">
+        <SessionTimer
+          focusBlocks={session?.focus_blocks || []}
+          durationMinutes={session?.duration_minutes || 50}
+          startTime={sessionStartTime}
+        />
+      </div>
+
+      {/* Основная часть */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Левая часть — видео + контролы */}
+        <div className="flex-1 flex flex-col items-center justify-between bg-black">
+          <div ref={containerRef} className="flex-1 w-full" />
+          <VideoControls
+            isMicMuted={isMicMuted}
+            isCameraOff={isCameraOff}
+            isScreenSharing={isScreenSharing}
+            onToggleMic={handleToggleMic}
+            onToggleCamera={handleToggleCamera}
+            onToggleScreenShare={handleToggleScreenShare}
+            onLeave={handleLeave}
+          />
+        </div>
+
+        {/* Правая панель — намерения и фокус */}
+        <div className="w-80 border-l border-gray-800 bg-gray-950">
+          <IntentionsPanel />
+        </div>
+      </div>
     </div>
   );
 }
