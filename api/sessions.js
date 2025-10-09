@@ -1,5 +1,6 @@
-import { sessions } from './data.js';
-let sessions = []; // временное хранилище сессий
+// Глобальное хранилище, чтобы данные не терялись между запросами
+global.sessions = global.sessions || [];
+const sessions = global.sessions;
 
 export default async function handler(req, res) {
   if (req.method === 'GET') {
@@ -48,9 +49,11 @@ export default async function handler(req, res) {
       };
 
       sessions.push(newSession);
+
+      console.log("✅ Created session:", newSession);
       res.status(200).json(newSession);
     } catch (err) {
-      console.error("POST /api/sessions error:", err);
+      console.error("❌ POST /api/sessions error:", err);
       res.status(500).json({ error: err.message });
     }
   } else {
