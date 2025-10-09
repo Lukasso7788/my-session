@@ -27,11 +27,6 @@ export function SessionsPage() {
     fetchSessions();
   }, []);
 
-  const formatTime = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  };
-
   const handleJoinSession = (sessionId: string) => {
     navigate(`/room/${sessionId}`);
   };
@@ -70,10 +65,15 @@ export function SessionsPage() {
         ) : (
           <div className="grid gap-6">
             {sessions.map((session) => (
-              <div key={session.id} className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
+              <div
+                key={session.id}
+                className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow"
+              >
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
-                    <h3 className="text-xl font-semibold text-gray-900 mb-2">{session.title}</h3>
+                    <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                      {session.title}
+                    </h3>
                     <div className="flex flex-wrap gap-4 text-sm text-gray-600 mb-4">
                       <div className="flex items-center gap-1">
                         <Users size={16} />

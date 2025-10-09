@@ -20,16 +20,17 @@ export function RoomPage() {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [sessionStartTime] = useState(new Date());
 
-  // Загружаем данные о сессии
   useEffect(() => {
     const fetchSession = async () => {
       try {
         const res = await fetch(`/api/sessions/${id}`);
-        if (!res.ok) throw new Error('Failed to load session');
-        const data = await res.json();
+        const text = await res.text();
+        if (!res.ok) throw new Error(text || 'Failed to load session');
+        const data = JSON.parse(text);
         if (!data.daily_room_url) throw new Error('No room URL found');
         setSession(data);
       } catch (e: any) {
+        console.error('Error loading session:', e);
         setError(e.message);
       } finally {
         setLoading(false);
@@ -38,7 +39,6 @@ export function RoomPage() {
     fetchSession();
   }, [id]);
 
-  // Подключаем Daily call и UI
   useEffect(() => {
     if (!containerRef.current || !session) return;
 
@@ -58,21 +58,18 @@ export function RoomPage() {
     callFrame.on('left-meeting', () => handleLeave());
     callFrame.join({ url: session.daily_room_url });
 
-    return () => {
-      callFrame.destroy();
-    };
+    return () => callFrame.destroy();
   }, [session]);
 
-  // ----- Контролы -----
   const handleToggleMic = async () => {
     if (!callRef.current) return;
-    await callRef.current.setLocalAudio(isMicMuted);
+    await callRef.current.setLocalAudio(!isMicMuted);
     setIsMicMuted(!isMicMuted);
   };
 
   const handleToggleCamera = async () => {
     if (!callRef.current) return;
-    await callRef.current.setLocalVideo(isCameraOff);
+    await callRef.current.setLocalVideo(!isCameraOff);
     setIsCameraOff(!isCameraOff);
   };
 
@@ -114,7 +111,6 @@ export function RoomPage() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-900 text-white">
-      {/* Верхняя панель с таймером */}
       <div className="p-4 border-b border-gray-800">
         <SessionTimer
           focusBlocks={session?.focus_blocks || []}
@@ -123,9 +119,7 @@ export function RoomPage() {
         />
       </div>
 
-      {/* Основная часть */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Левая часть — видео + контролы */}
         <div className="flex-1 flex flex-col items-center justify-between bg-black">
           <div ref={containerRef} className="flex-1 w-full" />
           <VideoControls
@@ -139,7 +133,6 @@ export function RoomPage() {
           />
         </div>
 
-        {/* Правая панель — намерения и фокус */}
         <div className="w-80 border-l border-gray-800 bg-gray-950">
           <IntentionsPanel />
         </div>
