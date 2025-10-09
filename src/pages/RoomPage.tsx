@@ -54,7 +54,10 @@ export function RoomPage() {
 
     const callFrame = DailyIframe.createFrame(containerRef.current, {
       showLeaveButton: false,
-      showFullscreenButton: true,
+      showFullscreenButton: false,
+      showParticipantsBar: false,
+      showLocalVideo: true,
+      showTray: false, // ❗ отключает встроенные кнопки
       iframeStyle: {
         width: '100%',
         height: '100%',
