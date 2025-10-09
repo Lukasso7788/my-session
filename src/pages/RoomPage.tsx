@@ -20,9 +20,10 @@ export function RoomPage() {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [sessionStartTime] = useState(new Date());
 
+  // Загружаем данные сессии
   useEffect(() => {
     const fetchSession = async () => {
-      // 💾 Сначала ищем в localStorage
+      // Попытка взять данные из localStorage
       const saved = localStorage.getItem('sessions');
       if (saved) {
         const found = JSON.parse(saved).find((s: any) => s.id === id);
@@ -33,7 +34,7 @@ export function RoomPage() {
         }
       }
 
-      // если нет — идём на сервер
+      // Если нет — грузим с сервера
       try {
         const res = await fetch(`/api/sessions/${id}`);
         if (!res.ok) throw new Error('Failed to load session');
@@ -49,20 +50,22 @@ export function RoomPage() {
     fetchSession();
   }, [id]);
 
+  // Создаём и подключаем Daily call
   useEffect(() => {
     if (!containerRef.current || !session) return;
 
     const callFrame = DailyIframe.createFrame(containerRef.current, {
-      showLeaveButton: false,
-      showFullscreenButton: false,
-      showParticipantsBar: false,
-      showLocalVideo: true,
-      showTray: false, // ❗ отключает встроенные кнопки
       iframeStyle: {
         width: '100%',
         height: '100%',
         border: '0',
         borderRadius: '8px',
+      },
+      layoutConfig: {
+        displayMode: 'custom', // 💥 полностью убирает встроенный UI
+      },
+      theme: {
+        displayName: false,
       },
     });
 
@@ -75,6 +78,7 @@ export function RoomPage() {
     };
   }, [session]);
 
+  // --- Контролы ---
   const handleToggleMic = async () => {
     if (!callRef.current) return;
     await callRef.current.setLocalAudio(isMicMuted);
@@ -107,13 +111,22 @@ export function RoomPage() {
   };
 
   if (loading)
-    return <div className="flex h-screen items-center justify-center bg-gray-900 text-white">Loading session...</div>;
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-900 text-white">
+        Loading session...
+      </div>
+    );
 
   if (error)
-    return <div className="flex h-screen items-center justify-center bg-gray-900 text-red-500">{error}</div>;
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-900 text-red-500">
+        {error}
+      </div>
+    );
 
   return (
     <div className="h-screen flex flex-col bg-gray-900 text-white">
+      {/* Верхняя панель — таймер */}
       <div className="p-4 border-b border-gray-800">
         <SessionTimer
           focusBlocks={session?.focus_blocks || []}
@@ -122,7 +135,9 @@ export function RoomPage() {
         />
       </div>
 
+      {/* Основная часть */}
       <div className="flex flex-1 overflow-hidden">
+        {/* Видео + кастомные контролы */}
         <div className="flex-1 flex flex-col items-center justify-between bg-black">
           <div ref={containerRef} className="flex-1 w-full" />
           <VideoControls
@@ -135,6 +150,8 @@ export function RoomPage() {
             onLeave={handleLeave}
           />
         </div>
+
+        {/* Правая панель — намерения */}
         <div className="w-80 border-l border-gray-800 bg-gray-950">
           <IntentionsPanel />
         </div>
