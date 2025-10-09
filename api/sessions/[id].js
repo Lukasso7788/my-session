@@ -1,6 +1,4 @@
-// Используем то же глобальное хранилище
-global.sessions = global.sessions || [];
-const sessions = global.sessions;
+import { sessions } from './data.js';
 
 export default function handler(req, res) {
   const { id } = req.query;
@@ -8,10 +6,8 @@ export default function handler(req, res) {
   if (req.method === 'GET') {
     const session = sessions.find((s) => s.id === id);
     if (!session) {
-      console.warn("⚠️ Session not found:", id);
       return res.status(404).json({ error: 'Session not found' });
     }
-
     return res.status(200).json(session);
   }
 

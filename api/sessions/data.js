@@ -1,1 +1,2 @@
-export const sessions = [];
+// Общее временное хранилище
+export let sessions = [];
