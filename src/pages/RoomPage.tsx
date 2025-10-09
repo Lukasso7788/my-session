@@ -139,3 +139,5 @@ export function RoomPage() {
     </div>
   );
 }
+
+export default RoomPage;
