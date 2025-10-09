@@ -16,8 +16,13 @@ export function SessionsPage() {
       if (!res.ok) throw new Error('Failed to fetch sessions');
       const data = await res.json();
       setSessions(data || []);
+      localStorage.setItem('sessions', JSON.stringify(data || [])); // 💾 сохраняем в браузере
     } catch (error) {
       console.error('Error fetching sessions:', error);
+
+      // 🔁 если сервер недоступен — берём из localStorage
+      const saved = localStorage.getItem('sessions');
+      if (saved) setSessions(JSON.parse(saved));
     } finally {
       setIsLoading(false);
     }
@@ -29,6 +34,11 @@ export function SessionsPage() {
 
   const handleJoinSession = (sessionId: string) => {
     navigate(`/room/${sessionId}`);
+  };
+
+  const formatTime = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   };
 
   return (

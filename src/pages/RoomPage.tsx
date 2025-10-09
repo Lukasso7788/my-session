@@ -22,15 +22,25 @@ export function RoomPage() {
 
   useEffect(() => {
     const fetchSession = async () => {
+      // 💾 Сначала ищем в localStorage
+      const saved = localStorage.getItem('sessions');
+      if (saved) {
+        const found = JSON.parse(saved).find((s: any) => s.id === id);
+        if (found) {
+          setSession(found);
+          setLoading(false);
+          return;
+        }
+      }
+
+      // если нет — идём на сервер
       try {
         const res = await fetch(`/api/sessions/${id}`);
-        const text = await res.text();
-        if (!res.ok) throw new Error(text || 'Failed to load session');
-        const data = JSON.parse(text);
+        if (!res.ok) throw new Error('Failed to load session');
+        const data = await res.json();
         if (!data.daily_room_url) throw new Error('No room URL found');
         setSession(data);
       } catch (e: any) {
-        console.error('Error loading session:', e);
         setError(e.message);
       } finally {
         setLoading(false);
@@ -54,33 +64,31 @@ export function RoomPage() {
     });
 
     callRef.current = callFrame;
-
-    callFrame.on('left-meeting', () => handleLeave());
+    callFrame.on('left-meeting', handleLeave);
     callFrame.join({ url: session.daily_room_url });
 
-    return () => callFrame.destroy();
+    return () => {
+      callFrame.destroy();
+    };
   }, [session]);
 
   const handleToggleMic = async () => {
     if (!callRef.current) return;
-    await callRef.current.setLocalAudio(!isMicMuted);
+    await callRef.current.setLocalAudio(isMicMuted);
     setIsMicMuted(!isMicMuted);
   };
 
   const handleToggleCamera = async () => {
     if (!callRef.current) return;
-    await callRef.current.setLocalVideo(!isCameraOff);
+    await callRef.current.setLocalVideo(isCameraOff);
     setIsCameraOff(!isCameraOff);
   };
 
   const handleToggleScreenShare = async () => {
     if (!callRef.current) return;
     try {
-      if (isScreenSharing) {
-        await callRef.current.stopScreenShare();
-      } else {
-        await callRef.current.startScreenShare();
-      }
+      if (isScreenSharing) await callRef.current.stopScreenShare();
+      else await callRef.current.startScreenShare();
       setIsScreenSharing(!isScreenSharing);
     } catch (err) {
       console.error('Error toggling screen share:', err);
@@ -96,18 +104,10 @@ export function RoomPage() {
   };
 
   if (loading)
-    return (
-      <div className="flex h-screen items-center justify-center bg-gray-900 text-white">
-        Loading session...
-      </div>
-    );
+    return <div className="flex h-screen items-center justify-center bg-gray-900 text-white">Loading session...</div>;
 
   if (error)
-    return (
-      <div className="flex h-screen items-center justify-center bg-gray-900 text-red-500">
-        {error}
-      </div>
-    );
+    return <div className="flex h-screen items-center justify-center bg-gray-900 text-red-500">{error}</div>;
 
   return (
     <div className="h-screen flex flex-col bg-gray-900 text-white">
@@ -132,7 +132,6 @@ export function RoomPage() {
             onLeave={handleLeave}
           />
         </div>
-
         <div className="w-80 border-l border-gray-800 bg-gray-950">
           <IntentionsPanel />
         </div>
@@ -140,5 +139,3 @@ export function RoomPage() {
     </div>
   );
 }
-
-export default RoomPage;
