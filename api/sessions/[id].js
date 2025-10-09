@@ -1,17 +1,19 @@
-import { createClient } from '@supabase/supabase-js';
+// api/sessions/[id].js
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+// ⚠️ ничего не импортируем из data.js или Supabase!
+import { sessions } from './index.js';
 
-export default async function handler(req, res) {
+export default function handler(req, res) {
   const { id } = req.query;
 
   if (req.method === 'GET') {
-    const { data, error } = await supabase.from('sessions').select('*').eq('id', id).maybeSingle();
-
-    if (error) return res.status(500).json({ error: error.message });
-    if (!data) return res.status(404).json({ error: 'Session not found' });
-
-    return res.status(200).json(data);
+    const session = sessions.find((s) => s.id === id);
+    if (!session) {
+      console.log('❌ Session not found in local memory:', id);
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    console.log('✅ Found session:', session);
+    return res.status(200).json(session);
   }
 
   return res.status(405).json({ error: 'Method not allowed' });
