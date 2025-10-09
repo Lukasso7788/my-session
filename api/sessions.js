@@ -1,3 +1,4 @@
+import { sessions } from './data.js';
 let sessions = []; // временное хранилище сессий
 
 export default async function handler(req, res) {
