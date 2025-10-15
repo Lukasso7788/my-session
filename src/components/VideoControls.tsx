@@ -1,4 +1,4 @@
-import { Button } from "@/components/ui/button";
+import { Button } from "./ui/button";
 import { Mic, MicOff, Video, VideoOff, Monitor, LogOut, Smile } from "lucide-react";
 
 interface VideoControlsProps {
@@ -9,7 +9,7 @@ interface VideoControlsProps {
   onToggleCamera: () => void;
   onToggleScreenShare: () => void;
   onLeave: () => void;
-  onSendReaction?: (emoji?: string) => void; // ← добавляем сюда
+  onSendReaction?: (emoji?: string) => void; // добавляем новый проп
 }
 
 export function VideoControls({
@@ -20,7 +20,7 @@ export function VideoControls({
   onToggleCamera,
   onToggleScreenShare,
   onLeave,
-  onSendReaction, // ← и сюда
+  onSendReaction,
 }: VideoControlsProps) {
   return (
     <div className="flex justify-center gap-4 p-4 bg-gray-900 border-t border-gray-800">
@@ -48,7 +48,7 @@ export function VideoControls({
         <Monitor className={isScreenSharing ? "text-blue-400" : ""} />
       </Button>
 
-      {/* 🎉 Новая кнопка реакций */}
+      {/* 🎉 Кнопка реакций */}
       <Button
         variant="ghost"
         onClick={() => onSendReaction && onSendReaction("🎉")}
