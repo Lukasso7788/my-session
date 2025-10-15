@@ -20,20 +20,22 @@ export function RoomPage() {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [sessionStartTime] = useState(new Date());
 
-  // Загружаем данные сессии
+  // === 1. Загружаем данные сессии ===
   useEffect(() => {
     const fetchSession = async () => {
-      const saved = localStorage.getItem('sessions');
-      if (saved) {
-        const found = JSON.parse(saved).find((s: any) => s.id === id);
-        if (found) {
-          setSession(found);
-          setLoading(false);
-          return;
-        }
-      }
-
       try {
+        // Проверяем локальное хранилище
+        const saved = localStorage.getItem('sessions');
+        if (saved) {
+          const found = JSON.parse(saved).find((s: any) => s.id === id);
+          if (found) {
+            setSession(found);
+            setLoading(false);
+            return;
+          }
+        }
+
+        // Иначе — запрос к серверу
         const res = await fetch(`/api/sessions/${id}`);
         if (!res.ok) throw new Error('Failed to load session');
         const data = await res.json();
@@ -45,10 +47,11 @@ export function RoomPage() {
         setLoading(false);
       }
     };
+
     fetchSession();
   }, [id]);
 
-  // Инициализация Daily call
+  // === 2. Инициализируем Daily Call ===
   useEffect(() => {
     if (!containerRef.current || !session) return;
 
@@ -60,7 +63,7 @@ export function RoomPage() {
         borderRadius: '8px',
       },
       layoutConfig: {
-        displayMode: 'custom', // 🔥 отключает весь стандартный UI
+        displayMode: 'custom', // 💥 отключает встроенный интерфейс
       },
       theme: {
         displayName: false,
@@ -68,21 +71,26 @@ export function RoomPage() {
     });
 
     callRef.current = callFrame;
-    callFrame.on('left-meeting', handleLeave);
 
+    // Обработчики событий
+    callFrame.on('left-meeting', handleLeave);
     callFrame.on('app-message', (ev) => {
-      console.log('📨 Received reaction:', ev.data);
-      // Можно позже сделать визуальное отображение реакции
+      if (ev?.data?.type === 'reaction') {
+        console.log(`🎉 Reaction received: ${ev.data.emoji}`);
+      }
     });
 
+    // Присоединяемся
     callFrame.join({ url: session.daily_room_url });
 
+    // Очистка
     return () => {
       callFrame.destroy();
+      callRef.current = null;
     };
   }, [session]);
 
-  // --- Контролы ---
+  // === 3. Контролы ===
   const handleToggleMic = async () => {
     if (!callRef.current) return;
     await callRef.current.setLocalAudio(isMicMuted);
@@ -106,20 +114,24 @@ export function RoomPage() {
     }
   };
 
-  const handleSendReaction = () => {
+  // === 4. Отправка реакции ===
+  const handleSendReaction = (emoji: string = '🎉') => {
     if (!callRef.current) return;
-    callRef.current.sendAppMessage({ type: 'reaction', emoji: '🎉' }, '*');
-    console.log('🎉 Reaction sent!');
+    callRef.current.sendAppMessage({ type: 'reaction', emoji }, '*');
+    console.log(`✅ Reaction sent: ${emoji}`);
   };
 
+  // === 5. Выход ===
   const handleLeave = async () => {
     if (callRef.current) {
       await callRef.current.leave();
       callRef.current.destroy();
+      callRef.current = null;
     }
     navigate('/');
   };
 
+  // === 6. UI ===
   if (loading)
     return (
       <div className="flex h-screen items-center justify-center bg-gray-900 text-white">
@@ -147,6 +159,7 @@ export function RoomPage() {
 
       {/* Основная часть */}
       <div className="flex flex-1 overflow-hidden">
+        {/* Видео + контролы */}
         <div className="flex-1 flex flex-col items-center justify-between bg-black">
           <div ref={containerRef} className="flex-1 w-full" />
           <VideoControls
@@ -161,6 +174,7 @@ export function RoomPage() {
           />
         </div>
 
+        {/* Правая панель */}
         <div className="w-80 border-l border-gray-800 bg-gray-950">
           <IntentionsPanel />
         </div>
