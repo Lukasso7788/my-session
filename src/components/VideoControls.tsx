@@ -1,4 +1,4 @@
-import { Button } from "@/components/ui/button";
+import { Button } from "./ui/button";
 
 import { Mic, MicOff, Video, VideoOff, Monitor, LogOut } from 'lucide-react';
 
