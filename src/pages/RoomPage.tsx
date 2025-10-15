@@ -20,7 +20,7 @@ export function RoomPage() {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [sessionStartTime] = useState(new Date());
 
-  // --- Load session ---
+  // === Load session ===
   useEffect(() => {
     const fetchSession = async () => {
       try {
@@ -49,11 +49,10 @@ export function RoomPage() {
     fetchSession();
   }, [id]);
 
-  // --- Setup Daily call ---
+  // === Setup Daily Call ===
   useEffect(() => {
     if (!containerRef.current || !session) return;
 
-    // 🔥 Ключевое — displayMode: 'custom' и customLayout: true
     const callFrame = DailyIframe.createFrame(containerRef.current, {
       iframeStyle: {
         width: '100%',
@@ -61,26 +60,20 @@ export function RoomPage() {
         border: '0',
         borderRadius: '8px',
       },
-      layoutConfig: {
-        displayMode: 'custom',
-        customLayout: true,
-      },
       showLeaveButton: false,
       showFullscreenButton: false,
+      showParticipantsBar: false,
+      showLocalVideo: true,
+      showTray: false, // 💀 полностью отключает дефолтные кнопки
+      layoutConfig: {
+        displayMode: 'custom',
+      },
+      theme: {
+        displayName: false,
+      },
     });
 
     callRef.current = callFrame;
-
-    // Подключаемся
-    callFrame.join({ url: session.daily_room_url }).then(() => {
-      // Удаляем встроенные кнопки окончательно
-      try {
-        callFrame.updateCustomTrayButtons({});
-        callFrame.setShowNamesMode('off');
-      } catch (e) {
-        console.warn('Tray removal failed, likely not using custom layout yet:', e);
-      }
-    });
 
     callFrame.on('left-meeting', handleLeave);
     callFrame.on('app-message', (ev) => {
@@ -89,13 +82,25 @@ export function RoomPage() {
       }
     });
 
+    callFrame
+      .join({ url: session.daily_room_url })
+      .then(() => {
+        // 💥 принудительно удаляем кнопки если Daily упрямится
+        try {
+          callFrame.updateCustomTrayButtons({});
+        } catch (e) {
+          console.warn('Could not clear tray buttons:', e);
+        }
+      })
+      .catch((err) => console.error('Join error:', err));
+
     return () => {
       callFrame.destroy();
       callRef.current = null;
     };
   }, [session]);
 
-  // --- Controls ---
+  // === Controls ===
   const handleToggleMic = async () => {
     if (!callRef.current) return;
     await callRef.current.setLocalAudio(isMicMuted);
@@ -122,6 +127,7 @@ export function RoomPage() {
   const handleSendReaction = (emoji: string) => {
     if (!callRef.current) return;
     callRef.current.sendAppMessage({ type: 'reaction', emoji }, '*');
+    console.log(`✅ Reaction sent: ${emoji}`);
   };
 
   const handleLeave = async () => {
@@ -133,7 +139,7 @@ export function RoomPage() {
     navigate('/');
   };
 
-  // --- UI ---
+  // === UI ===
   if (loading)
     return (
       <div className="flex h-screen items-center justify-center bg-gray-900 text-white">
