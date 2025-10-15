@@ -60,16 +60,8 @@ export function RoomPage() {
         border: '0',
         borderRadius: '8px',
       },
-      showLeaveButton: false,
-      showFullscreenButton: false,
-      showParticipantsBar: false,
-      showLocalVideo: true,
-      showTray: false, // 💀 полностью отключает дефолтные кнопки
       layoutConfig: {
-        displayMode: 'custom',
-      },
-      theme: {
-        displayName: false,
+        displayMode: 'custom', // отключаем встроенный UI
       },
     });
 
@@ -82,15 +74,25 @@ export function RoomPage() {
       }
     });
 
+    // Подключаемся
     callFrame
       .join({ url: session.daily_room_url })
       .then(() => {
-        // 💥 принудительно удаляем кнопки если Daily упрямится
+        // 💀 Жёстко убиваем панель кнопок из встроенного UI
+        const iframe = containerRef.current?.querySelector('iframe');
+        if (iframe) {
+          const removeTray = () => {
+            const tray = iframe.contentDocument?.querySelector('[class*="tray"], [data-testid="tray"], [aria-label="tray"]');
+            if (tray) tray.remove();
+            else setTimeout(removeTray, 500);
+          };
+          removeTray();
+        }
+
+        // Дополнительно — удалить кастомные кнопки, если Daily их создаёт
         try {
           callFrame.updateCustomTrayButtons({});
-        } catch (e) {
-          console.warn('Could not clear tray buttons:', e);
-        }
+        } catch {}
       })
       .catch((err) => console.error('Join error:', err));
 
