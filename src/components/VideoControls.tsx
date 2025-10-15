@@ -53,6 +53,13 @@ export function VideoControls({
         )}
       </button>
 
+      <Button
+        onClick={onSendReaction}
+        className="bg-yellow-600 hover:bg-yellow-700"
+      >
+        🎉 React
+      </Button>
+
       <button
         onClick={onToggleScreenShare}
         className={`p-4 rounded-full transition-colors ${

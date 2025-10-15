@@ -23,7 +23,6 @@ export function RoomPage() {
   // Загружаем данные сессии
   useEffect(() => {
     const fetchSession = async () => {
-      // Попытка взять данные из localStorage
       const saved = localStorage.getItem('sessions');
       if (saved) {
         const found = JSON.parse(saved).find((s: any) => s.id === id);
@@ -34,7 +33,6 @@ export function RoomPage() {
         }
       }
 
-      // Если нет — грузим с сервера
       try {
         const res = await fetch(`/api/sessions/${id}`);
         if (!res.ok) throw new Error('Failed to load session');
@@ -50,7 +48,7 @@ export function RoomPage() {
     fetchSession();
   }, [id]);
 
-  // Создаём и подключаем Daily call
+  // Инициализация Daily call
   useEffect(() => {
     if (!containerRef.current || !session) return;
 
@@ -62,7 +60,7 @@ export function RoomPage() {
         borderRadius: '8px',
       },
       layoutConfig: {
-        displayMode: 'custom', // 💥 полностью убирает встроенный UI
+        displayMode: 'custom', // 🔥 отключает весь стандартный UI
       },
       theme: {
         displayName: false,
@@ -71,6 +69,12 @@ export function RoomPage() {
 
     callRef.current = callFrame;
     callFrame.on('left-meeting', handleLeave);
+
+    callFrame.on('app-message', (ev) => {
+      console.log('📨 Received reaction:', ev.data);
+      // Можно позже сделать визуальное отображение реакции
+    });
+
     callFrame.join({ url: session.daily_room_url });
 
     return () => {
@@ -100,6 +104,12 @@ export function RoomPage() {
     } catch (err) {
       console.error('Error toggling screen share:', err);
     }
+  };
+
+  const handleSendReaction = () => {
+    if (!callRef.current) return;
+    callRef.current.sendAppMessage({ type: 'reaction', emoji: '🎉' }, '*');
+    console.log('🎉 Reaction sent!');
   };
 
   const handleLeave = async () => {
@@ -137,7 +147,6 @@ export function RoomPage() {
 
       {/* Основная часть */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Видео + кастомные контролы */}
         <div className="flex-1 flex flex-col items-center justify-between bg-black">
           <div ref={containerRef} className="flex-1 w-full" />
           <VideoControls
@@ -147,11 +156,11 @@ export function RoomPage() {
             onToggleMic={handleToggleMic}
             onToggleCamera={handleToggleCamera}
             onToggleScreenShare={handleToggleScreenShare}
+            onSendReaction={handleSendReaction}
             onLeave={handleLeave}
           />
         </div>
 
-        {/* Правая панель — намерения */}
         <div className="w-80 border-l border-gray-800 bg-gray-950">
           <IntentionsPanel />
         </div>
