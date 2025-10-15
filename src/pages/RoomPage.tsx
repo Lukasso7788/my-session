@@ -24,7 +24,7 @@ export function RoomPage() {
   useEffect(() => {
     const fetchSession = async () => {
       try {
-        // Проверяем локальное хранилище
+        // Проверяем localStorage
         const saved = localStorage.getItem('sessions');
         if (saved) {
           const found = JSON.parse(saved).find((s: any) => s.id === id);
@@ -35,7 +35,7 @@ export function RoomPage() {
           }
         }
 
-        // Иначе — запрос к серверу
+        // Иначе — запрашиваем с API
         const res = await fetch(`/api/sessions/${id}`);
         if (!res.ok) throw new Error('Failed to load session');
         const data = await res.json();
@@ -51,10 +51,11 @@ export function RoomPage() {
     fetchSession();
   }, [id]);
 
-  // === 2. Инициализируем Daily Call ===
+  // === 2. Инициализация Daily Call ===
   useEffect(() => {
     if (!containerRef.current || !session) return;
 
+    // Убираем theme — Daily его не принимает
     const callFrame = DailyIframe.createFrame(containerRef.current, {
       iframeStyle: {
         width: '100%',
@@ -63,16 +64,13 @@ export function RoomPage() {
         borderRadius: '8px',
       },
       layoutConfig: {
-        displayMode: 'custom', // 💥 отключает встроенный интерфейс
-      },
-      theme: {
-        displayName: false,
+        displayMode: 'custom', // 🔥 отключает стандартный UI
       },
     });
 
     callRef.current = callFrame;
 
-    // Обработчики событий
+    // Слушаем события
     callFrame.on('left-meeting', handleLeave);
     callFrame.on('app-message', (ev) => {
       if (ev?.data?.type === 'reaction') {
@@ -80,10 +78,9 @@ export function RoomPage() {
       }
     });
 
-    // Присоединяемся
+    // Присоединяемся к комнате
     callFrame.join({ url: session.daily_room_url });
 
-    // Очистка
     return () => {
       callFrame.destroy();
       callRef.current = null;
@@ -114,7 +111,7 @@ export function RoomPage() {
     }
   };
 
-  // === 4. Отправка реакции ===
+  // === 4. Реакции ===
   const handleSendReaction = (emoji: string = '🎉') => {
     if (!callRef.current) return;
     callRef.current.sendAppMessage({ type: 'reaction', emoji }, '*');
@@ -161,7 +158,14 @@ export function RoomPage() {
       <div className="flex flex-1 overflow-hidden">
         {/* Видео + контролы */}
         <div className="flex-1 flex flex-col items-center justify-between bg-black">
-          <div ref={containerRef} className="flex-1 w-full" />
+          <div
+            ref={containerRef}
+            className="flex-1 w-full flex items-center justify-center text-gray-500"
+          >
+            {/* Показываем плейсхолдер, если Daily ещё не отрисовался */}
+            <span className="text-gray-600">Connecting to room...</span>
+          </div>
+
           <VideoControls
             isMicMuted={isMicMuted}
             isCameraOff={isCameraOff}
