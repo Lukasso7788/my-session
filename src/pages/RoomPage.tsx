@@ -24,7 +24,6 @@ export function RoomPage() {
   useEffect(() => {
     const fetchSession = async () => {
       try {
-        // Проверяем localStorage
         const saved = localStorage.getItem('sessions');
         if (saved) {
           const found = JSON.parse(saved).find((s: any) => s.id === id);
@@ -35,7 +34,6 @@ export function RoomPage() {
           }
         }
 
-        // Иначе — запрашиваем с API
         const res = await fetch(`/api/sessions/${id}`);
         if (!res.ok) throw new Error('Failed to load session');
         const data = await res.json();
@@ -55,7 +53,6 @@ export function RoomPage() {
   useEffect(() => {
     if (!containerRef.current || !session) return;
 
-    // Убираем theme — Daily его не принимает
     const callFrame = DailyIframe.createFrame(containerRef.current, {
       iframeStyle: {
         width: '100%',
@@ -64,13 +61,12 @@ export function RoomPage() {
         borderRadius: '8px',
       },
       layoutConfig: {
-        displayMode: 'custom', // 🔥 отключает стандартный UI
+        displayMode: 'custom', // 💥 убираем стандартный UI
       },
     });
 
     callRef.current = callFrame;
 
-    // Слушаем события
     callFrame.on('left-meeting', handleLeave);
     callFrame.on('app-message', (ev) => {
       if (ev?.data?.type === 'reaction') {
@@ -78,8 +74,10 @@ export function RoomPage() {
       }
     });
 
-    // Присоединяемся к комнате
-    callFrame.join({ url: session.daily_room_url });
+    // ✅ подключаемся и убираем все встроенные кнопки
+    callFrame.join({ url: session.daily_room_url }).then(() => {
+      callFrame.updateCustomTrayButtons({});
+    });
 
     return () => {
       callFrame.destroy();
@@ -111,14 +109,12 @@ export function RoomPage() {
     }
   };
 
-  // === 4. Реакции ===
-  const handleSendReaction = (emoji: string = '🎉') => {
+  const handleSendReaction = (emoji: string) => {
     if (!callRef.current) return;
     callRef.current.sendAppMessage({ type: 'reaction', emoji }, '*');
-    console.log(`✅ Reaction sent: ${emoji}`);
+    console.log(`✅ Sent reaction: ${emoji}`);
   };
 
-  // === 5. Выход ===
   const handleLeave = async () => {
     if (callRef.current) {
       await callRef.current.leave();
@@ -128,7 +124,7 @@ export function RoomPage() {
     navigate('/');
   };
 
-  // === 6. UI ===
+  // === 4. UI ===
   if (loading)
     return (
       <div className="flex h-screen items-center justify-center bg-gray-900 text-white">
@@ -158,14 +154,7 @@ export function RoomPage() {
       <div className="flex flex-1 overflow-hidden">
         {/* Видео + контролы */}
         <div className="flex-1 flex flex-col items-center justify-between bg-black">
-          <div
-            ref={containerRef}
-            className="flex-1 w-full flex items-center justify-center text-gray-500"
-          >
-            {/* Показываем плейсхолдер, если Daily ещё не отрисовался */}
-            <span className="text-gray-600">Connecting to room...</span>
-          </div>
-
+          <div ref={containerRef} className="flex-1 w-full" />
           <VideoControls
             isMicMuted={isMicMuted}
             isCameraOff={isCameraOff}
