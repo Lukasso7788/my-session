@@ -20,7 +20,7 @@ export function RoomPage() {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [sessionStartTime] = useState(new Date());
 
-  // === 1. Загружаем данные сессии ===
+  // --- Load session ---
   useEffect(() => {
     const fetchSession = async () => {
       try {
@@ -49,10 +49,11 @@ export function RoomPage() {
     fetchSession();
   }, [id]);
 
-  // === 2. Инициализация Daily Call ===
+  // --- Setup Daily call ---
   useEffect(() => {
     if (!containerRef.current || !session) return;
 
+    // 🔥 Ключевое — displayMode: 'custom' и customLayout: true
     const callFrame = DailyIframe.createFrame(containerRef.current, {
       iframeStyle: {
         width: '100%',
@@ -61,11 +62,25 @@ export function RoomPage() {
         borderRadius: '8px',
       },
       layoutConfig: {
-        displayMode: 'custom', // 💥 убираем стандартный UI
+        displayMode: 'custom',
+        customLayout: true,
       },
+      showLeaveButton: false,
+      showFullscreenButton: false,
     });
 
     callRef.current = callFrame;
+
+    // Подключаемся
+    callFrame.join({ url: session.daily_room_url }).then(() => {
+      // Удаляем встроенные кнопки окончательно
+      try {
+        callFrame.updateCustomTrayButtons({});
+        callFrame.setShowNamesMode('off');
+      } catch (e) {
+        console.warn('Tray removal failed, likely not using custom layout yet:', e);
+      }
+    });
 
     callFrame.on('left-meeting', handleLeave);
     callFrame.on('app-message', (ev) => {
@@ -74,18 +89,13 @@ export function RoomPage() {
       }
     });
 
-    // ✅ подключаемся и убираем все встроенные кнопки
-    callFrame.join({ url: session.daily_room_url }).then(() => {
-      callFrame.updateCustomTrayButtons({});
-    });
-
     return () => {
       callFrame.destroy();
       callRef.current = null;
     };
   }, [session]);
 
-  // === 3. Контролы ===
+  // --- Controls ---
   const handleToggleMic = async () => {
     if (!callRef.current) return;
     await callRef.current.setLocalAudio(isMicMuted);
@@ -112,7 +122,6 @@ export function RoomPage() {
   const handleSendReaction = (emoji: string) => {
     if (!callRef.current) return;
     callRef.current.sendAppMessage({ type: 'reaction', emoji }, '*');
-    console.log(`✅ Sent reaction: ${emoji}`);
   };
 
   const handleLeave = async () => {
@@ -124,7 +133,7 @@ export function RoomPage() {
     navigate('/');
   };
 
-  // === 4. UI ===
+  // --- UI ---
   if (loading)
     return (
       <div className="flex h-screen items-center justify-center bg-gray-900 text-white">
@@ -141,7 +150,6 @@ export function RoomPage() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-900 text-white">
-      {/* Верхняя панель — таймер */}
       <div className="p-4 border-b border-gray-800">
         <SessionTimer
           focusBlocks={session?.focus_blocks || []}
@@ -150,9 +158,7 @@ export function RoomPage() {
         />
       </div>
 
-      {/* Основная часть */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Видео + контролы */}
         <div className="flex-1 flex flex-col items-center justify-between bg-black">
           <div ref={containerRef} className="flex-1 w-full" />
           <VideoControls
@@ -167,7 +173,6 @@ export function RoomPage() {
           />
         </div>
 
-        {/* Правая панель */}
         <div className="w-80 border-l border-gray-800 bg-gray-950">
           <IntentionsPanel />
         </div>
