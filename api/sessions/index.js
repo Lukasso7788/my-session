@@ -1,4 +1,3 @@
-// api/sessions/index.js
 let sessions = [];
 
 export default async function handler(req, res) {
@@ -28,13 +27,7 @@ export default async function handler(req, res) {
         }),
       });
 
-      if (!resp.ok) {
-        const txt = await resp.text();
-        throw new Error(txt);
-      }
-
       const room = await resp.json();
-
       const newSession = {
         id: Date.now().toString(),
         title,
@@ -46,13 +39,11 @@ export default async function handler(req, res) {
       };
 
       sessions.push(newSession);
-      res.status(200).json(newSession);
+      return res.status(200).json(newSession);
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: err.message });
     }
-  } else {
-    res.status(405).json({ error: 'Method not allowed' });
   }
-}
 
-export { sessions };
+  return res.status(405).json({ error: "Method not allowed" });
+}

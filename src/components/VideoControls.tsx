@@ -1,3 +1,5 @@
+import { Button } from "@/components/ui/button";
+
 import { Mic, MicOff, Video, VideoOff, Monitor, LogOut } from 'lucide-react';
 
 interface VideoControlsProps {

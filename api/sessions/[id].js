@@ -1,7 +1,4 @@
-// api/sessions/[id].js
-
-// ⚠️ ничего не импортируем из data.js или Supabase!
-import { sessions } from './index.js';
+let sessions = [];
 
 export default function handler(req, res) {
   const { id } = req.query;
@@ -9,10 +6,8 @@ export default function handler(req, res) {
   if (req.method === 'GET') {
     const session = sessions.find((s) => s.id === id);
     if (!session) {
-      console.log('❌ Session not found in local memory:', id);
       return res.status(404).json({ error: 'Session not found' });
     }
-    console.log('✅ Found session:', session);
     return res.status(200).json(session);
   }
 
