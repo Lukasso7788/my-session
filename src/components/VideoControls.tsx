@@ -1,6 +1,5 @@
-import { Button } from "./ui/button";
-
-import { Mic, MicOff, Video, VideoOff, Monitor, LogOut } from 'lucide-react';
+import { Button } from "@/components/ui/button";
+import { Mic, MicOff, Video, VideoOff, Monitor, LogOut, Smile } from "lucide-react";
 
 interface VideoControlsProps {
   isMicMuted: boolean;
@@ -10,6 +9,7 @@ interface VideoControlsProps {
   onToggleCamera: () => void;
   onToggleScreenShare: () => void;
   onLeave: () => void;
+  onSendReaction?: (emoji?: string) => void; // ← добавляем сюда
 }
 
 export function VideoControls({
@@ -20,69 +20,50 @@ export function VideoControls({
   onToggleCamera,
   onToggleScreenShare,
   onLeave,
+  onSendReaction, // ← и сюда
 }: VideoControlsProps) {
   return (
-    <div className="flex items-center justify-center gap-3 p-4 bg-gray-900">
-      <button
-        onClick={onToggleMic}
-        className={`p-4 rounded-full transition-colors ${
-          isMicMuted
-            ? 'bg-red-600 hover:bg-red-700'
-            : 'bg-gray-700 hover:bg-gray-600'
-        }`}
-        title={isMicMuted ? 'Unmute' : 'Mute'}
-      >
-        {isMicMuted ? (
-          <MicOff size={20} className="text-white" />
-        ) : (
-          <Mic size={20} className="text-white" />
-        )}
-      </button>
-
-      <button
-        onClick={onToggleCamera}
-        className={`p-4 rounded-full transition-colors ${
-          isCameraOff
-            ? 'bg-red-600 hover:bg-red-700'
-            : 'bg-gray-700 hover:bg-gray-600'
-        }`}
-        title={isCameraOff ? 'Enable Camera' : 'Disable Camera'}
-      >
-        {isCameraOff ? (
-          <VideoOff size={20} className="text-white" />
-        ) : (
-          <Video size={20} className="text-white" />
-        )}
-      </button>
-
+    <div className="flex justify-center gap-4 p-4 bg-gray-900 border-t border-gray-800">
       <Button
-        onClick={onSendReaction}
-        className="bg-yellow-600 hover:bg-yellow-700"
+        variant="ghost"
+        onClick={onToggleMic}
+        className="text-white hover:bg-gray-700"
       >
-        🎉 React
+        {isMicMuted ? <MicOff /> : <Mic />}
       </Button>
 
-      <button
+      <Button
+        variant="ghost"
+        onClick={onToggleCamera}
+        className="text-white hover:bg-gray-700"
+      >
+        {isCameraOff ? <VideoOff /> : <Video />}
+      </Button>
+
+      <Button
+        variant="ghost"
         onClick={onToggleScreenShare}
-        className={`p-4 rounded-full transition-colors ${
-          isScreenSharing
-            ? 'bg-blue-600 hover:bg-blue-700'
-            : 'bg-gray-700 hover:bg-gray-600'
-        }`}
-        title={isScreenSharing ? 'Stop Sharing' : 'Share Screen'}
+        className="text-white hover:bg-gray-700"
       >
-        <Monitor size={20} className="text-white" />
-      </button>
+        <Monitor className={isScreenSharing ? "text-blue-400" : ""} />
+      </Button>
 
-      <div className="w-px h-8 bg-gray-600 mx-2" />
+      {/* 🎉 Новая кнопка реакций */}
+      <Button
+        variant="ghost"
+        onClick={() => onSendReaction && onSendReaction("🎉")}
+        className="text-white hover:bg-gray-700"
+      >
+        <Smile />
+      </Button>
 
-      <button
+      <Button
+        variant="destructive"
         onClick={onLeave}
-        className="p-4 rounded-full bg-red-600 hover:bg-red-700 transition-colors"
-        title="Exit Room"
+        className="text-white hover:bg-red-700"
       >
-        <LogOut size={20} className="text-white" />
-      </button>
+        <LogOut />
+      </Button>
     </div>
   );
 }
