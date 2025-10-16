@@ -49,38 +49,45 @@ export function RoomPage() {
     fetchSession();
   }, [id]);
 
-  // === Setup Daily Frame (встроенный UI, но с кастомной темой и без кнопок) ===
+  // === Setup Daily call ===
   useEffect(() => {
     if (!containerRef.current || !session) return;
 
     const callFrame = DailyIframe.createFrame(containerRef.current, {
+      theme: "dark", // ✅ Supported since v0.85.0
       iframeStyle: {
         width: "100%",
         height: "100%",
         border: "0",
-        borderRadius: "12px",
+        borderRadius: "8px",
       },
-      showLeaveButton: false,
       showFullscreenButton: false,
-      showParticipantsBar: false,
-      theme: {
-        light: {
-          colors: {
-            accent: "#3B82F6",
-            background: "#0F172A",
-            baseText: "#FFFFFF",
-            border: "#1E293B",
-          },
-          fontFamily: "Inter, sans-serif",
-        },
-      },
+      showLeaveButton: false,
     });
 
     callRef.current = callFrame;
 
-    callFrame.join({ url: session.daily_room_url });
-
     callFrame.on("left-meeting", handleLeave);
+    callFrame.on("app-message", (ev) => {
+      if (ev?.data?.type === "reaction") {
+        console.log(`🎉 Reaction received: ${ev.data.emoji}`);
+      }
+    });
+
+    // Join the room
+    callFrame
+      .join({ url: session.daily_room_url })
+      .then(() => {
+        console.log("✅ Joined Daily room");
+
+        // Try to remove default tray buttons
+        try {
+          callFrame.updateCustomTrayButtons({});
+        } catch (err) {
+          console.warn("updateCustomTrayButtons not supported yet");
+        }
+      })
+      .catch((err) => console.error("Join error:", err));
 
     return () => {
       callFrame.destroy();
@@ -115,6 +122,7 @@ export function RoomPage() {
   const handleSendReaction = (emoji: string) => {
     if (!callRef.current) return;
     callRef.current.sendAppMessage({ type: "reaction", emoji }, "*");
+    console.log(`✅ Reaction sent: ${emoji}`);
   };
 
   const handleLeave = async () => {
@@ -152,22 +160,18 @@ export function RoomPage() {
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        <div className="relative flex-1 bg-black">
-          <div ref={containerRef} className="w-full h-full" />
-
-          {/* === Custom Controls поверх встроенного UI === */}
-          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-10">
-            <VideoControls
-              isMicMuted={isMicMuted}
-              isCameraOff={isCameraOff}
-              isScreenSharing={isScreenSharing}
-              onToggleMic={handleToggleMic}
-              onToggleCamera={handleToggleCamera}
-              onToggleScreenShare={handleToggleScreenShare}
-              onSendReaction={handleSendReaction}
-              onLeave={handleLeave}
-            />
-          </div>
+        <div className="flex-1 flex flex-col items-center justify-between bg-black">
+          <div ref={containerRef} className="flex-1 w-full" />
+          <VideoControls
+            isMicMuted={isMicMuted}
+            isCameraOff={isCameraOff}
+            isScreenSharing={isScreenSharing}
+            onToggleMic={handleToggleMic}
+            onToggleCamera={handleToggleCamera}
+            onToggleScreenShare={handleToggleScreenShare}
+            onSendReaction={handleSendReaction}
+            onLeave={handleLeave}
+          />
         </div>
 
         <div className="w-80 border-l border-gray-800 bg-gray-950">
