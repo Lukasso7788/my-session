@@ -7,7 +7,15 @@ export default async function handler(req, res) {
 
   if (req.method === 'POST') {
     try {
-      const { title, host, duration_minutes, format, focus_blocks, scheduled_at } = req.body;
+      const {
+        title,
+        host,
+        duration_minutes,
+        format,
+        focus_blocks,
+        scheduled_at, // ✅ добавлено
+      } = req.body;
+
       const roomName = `session-${Date.now()}`;
 
       const resp = await fetch("https://api.daily.co/v1/rooms", {
@@ -36,7 +44,7 @@ export default async function handler(req, res) {
         duration_minutes,
         format,
         focus_blocks,
-        scheduled_at, // 👈 добавлено
+        scheduled_at, // ✅ сохраняем
         daily_room_url: room.url,
         created_at: new Date().toISOString(),
       };
@@ -44,6 +52,7 @@ export default async function handler(req, res) {
       sessions.push(newSession);
       return res.status(200).json(newSession);
     } catch (err) {
+      console.error("Session creation error:", err);
       return res.status(500).json({ error: err.message });
     }
   }
