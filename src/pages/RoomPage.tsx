@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import DailyIframe, { DailyCall } from "@daily-co/daily-js";
 import { VideoControls } from "../components/VideoControls";
@@ -8,17 +8,17 @@ import { SessionTimer } from "../components/SessionTimer";
 export function RoomPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const callRef = useRef<DailyCall | null>(null);
 
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sessionStartTime] = useState(new Date());
 
-  const [callObject, setCallObject] = useState<DailyCall | null>(null);
-  const [participants, setParticipants] = useState<Record<string, any>>({});
   const [isMicMuted, setIsMicMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const [sessionStartTime] = useState(new Date());
 
   // === Load session ===
   useEffect(() => {
@@ -49,53 +49,63 @@ export function RoomPage() {
     fetchSession();
   }, [id]);
 
-  // === Setup CallObject ===
+  // === Setup Daily Frame (встроенный UI, но с кастомной темой и без кнопок) ===
   useEffect(() => {
-    if (!session) return;
+    if (!containerRef.current || !session) return;
 
-    const co = DailyIframe.createCallObject({
-      subscribeToTracksAutomatically: true, // ✅ важно!
+    const callFrame = DailyIframe.createFrame(containerRef.current, {
+      iframeStyle: {
+        width: "100%",
+        height: "100%",
+        border: "0",
+        borderRadius: "12px",
+      },
+      showLeaveButton: false,
+      showFullscreenButton: false,
+      showParticipantsBar: false,
+      theme: {
+        light: {
+          colors: {
+            accent: "#3B82F6",
+            background: "#0F172A",
+            baseText: "#FFFFFF",
+            border: "#1E293B",
+          },
+          fontFamily: "Inter, sans-serif",
+        },
+      },
     });
-    setCallObject(co);
 
-    const updateParticipants = () => setParticipants(co.participants());
+    callRef.current = callFrame;
 
-    co.on("joined-meeting", () => {
-      console.log("✅ Joined meeting");
-      updateParticipants();
-    });
-    co.on("participant-joined", updateParticipants);
-    co.on("participant-updated", updateParticipants);
-    co.on("participant-left", updateParticipants);
-    co.on("track-started", updateParticipants);
-    co.on("track-stopped", updateParticipants);
+    callFrame.join({ url: session.daily_room_url });
 
-    co.join({ url: session.daily_room_url });
+    callFrame.on("left-meeting", handleLeave);
 
     return () => {
-      co.destroy();
-      setCallObject(null);
+      callFrame.destroy();
+      callRef.current = null;
     };
   }, [session]);
 
   // === Controls ===
   const handleToggleMic = async () => {
-    if (!callObject) return;
-    await callObject.setLocalAudio(isMicMuted);
+    if (!callRef.current) return;
+    await callRef.current.setLocalAudio(isMicMuted);
     setIsMicMuted(!isMicMuted);
   };
 
   const handleToggleCamera = async () => {
-    if (!callObject) return;
-    await callObject.setLocalVideo(isCameraOff);
+    if (!callRef.current) return;
+    await callRef.current.setLocalVideo(isCameraOff);
     setIsCameraOff(!isCameraOff);
   };
 
   const handleToggleScreenShare = async () => {
-    if (!callObject) return;
+    if (!callRef.current) return;
     try {
-      if (isScreenSharing) await callObject.stopScreenShare();
-      else await callObject.startScreenShare();
+      if (isScreenSharing) await callRef.current.stopScreenShare();
+      else await callRef.current.startScreenShare();
       setIsScreenSharing(!isScreenSharing);
     } catch (err) {
       console.error("Error toggling screen share:", err);
@@ -103,15 +113,15 @@ export function RoomPage() {
   };
 
   const handleSendReaction = (emoji: string) => {
-    if (!callObject) return;
-    callObject.sendAppMessage({ type: "reaction", emoji }, "*");
+    if (!callRef.current) return;
+    callRef.current.sendAppMessage({ type: "reaction", emoji }, "*");
   };
 
   const handleLeave = async () => {
-    if (callObject) {
-      await callObject.leave();
-      callObject.destroy();
-      setCallObject(null);
+    if (callRef.current) {
+      await callRef.current.leave();
+      callRef.current.destroy();
+      callRef.current = null;
     }
     navigate("/");
   };
@@ -142,42 +152,22 @@ export function RoomPage() {
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 flex flex-col items-center justify-between bg-black">
-          <div className="flex flex-wrap justify-center items-center w-full h-full bg-black">
-            {Object.values(participants).map((p: any) => {
-              const videoTrack = p.tracks?.video?.track;
-              if (!videoTrack) return null;
-              return (
-                <div key={p.session_id} className="relative m-2">
-                  <video
-                    ref={(el) => {
-                      if (el && videoTrack) {
-                        el.srcObject = new MediaStream([videoTrack]);
-                        el.play().catch(() => {});
-                      }
-                    }}
-                    className="w-1/2 max-w-[400px] rounded-xl"
-                    autoPlay
-                    muted={p.local}
-                  />
-                  <div className="absolute bottom-2 left-2 text-sm text-gray-300 bg-black/40 px-2 py-1 rounded">
-                    {p.user_name || (p.local ? "You" : "Guest")}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+        <div className="relative flex-1 bg-black">
+          <div ref={containerRef} className="w-full h-full" />
 
-          <VideoControls
-            isMicMuted={isMicMuted}
-            isCameraOff={isCameraOff}
-            isScreenSharing={isScreenSharing}
-            onToggleMic={handleToggleMic}
-            onToggleCamera={handleToggleCamera}
-            onToggleScreenShare={handleToggleScreenShare}
-            onSendReaction={handleSendReaction}
-            onLeave={handleLeave}
-          />
+          {/* === Custom Controls поверх встроенного UI === */}
+          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-10">
+            <VideoControls
+              isMicMuted={isMicMuted}
+              isCameraOff={isCameraOff}
+              isScreenSharing={isScreenSharing}
+              onToggleMic={handleToggleMic}
+              onToggleCamera={handleToggleCamera}
+              onToggleScreenShare={handleToggleScreenShare}
+              onSendReaction={handleSendReaction}
+              onLeave={handleLeave}
+            />
+          </div>
         </div>
 
         <div className="w-80 border-l border-gray-800 bg-gray-950">
