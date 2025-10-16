@@ -12,6 +12,7 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
   const [title, setTitle] = useState('');
   const [host, setHost] = useState('');
   const [selectedOption, setSelectedOption] = useState<string>('');
+  const [startTime, setStartTime] = useState('');
   const [isCreating, setIsCreating] = useState(false);
 
   const sessionOptions = [
@@ -33,7 +34,11 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
 
     try {
       const focusBlocks = generateFocusBlocks(option.format, option.duration);
-      const scheduledAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+
+      // если юзер не указал — старт через 5 минут
+      const start_time = startTime
+        ? new Date(startTime).toISOString()
+        : new Date(Date.now() + 5 * 60 * 1000).toISOString();
 
       const response = await fetch('/api/sessions', {
         method: 'POST',
@@ -44,7 +49,7 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
           duration_minutes: option.duration,
           format: option.format,
           focus_blocks: focusBlocks,
-          scheduled_at: scheduledAt,
+          start_time, // ⏰ теперь время старта
         }),
       });
 
@@ -53,6 +58,7 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
       setTitle('');
       setHost('');
       setSelectedOption('');
+      setStartTime('');
       onSessionCreated();
       onClose();
     } catch (error) {
@@ -94,6 +100,16 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
               onChange={(e) => setHost(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
               placeholder="Host name"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
+            <input
+              type="datetime-local"
+              value={startTime}
+              onChange={(e) => setStartTime(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
             />
           </div>
 

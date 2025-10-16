@@ -13,7 +13,7 @@ export function RoomPage() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sessionStartTime] = useState(new Date());
+  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
 
   // === Load session ===
   useEffect(() => {
@@ -24,6 +24,7 @@ export function RoomPage() {
           const found = JSON.parse(saved).find((s: any) => s.id === id);
           if (found) {
             setSession(found);
+            setSessionStartTime(new Date(found.start_time)); // ⏰ берём время начала из сессии
             setLoading(false);
             return;
           }
@@ -34,6 +35,7 @@ export function RoomPage() {
         const data = await res.json();
         if (!data.daily_room_url) throw new Error("No room URL found");
         setSession(data);
+        setSessionStartTime(new Date(data.start_time));
       } catch (e: any) {
         setError(e.message);
       } finally {
@@ -55,7 +57,6 @@ export function RoomPage() {
         border: "0",
         borderRadius: "8px",
       },
-      // 👇 только дефолтный интерфейс, без кастомов
       showFullscreenButton: true,
       showLeaveButton: true,
     });
@@ -100,7 +101,7 @@ export function RoomPage() {
         <SessionTimer
           focusBlocks={session?.focus_blocks || []}
           durationMinutes={session?.duration_minutes || 50}
-          startTime={sessionStartTime}
+          startTime={sessionStartTime || new Date()} // теперь считает от назначенного времени
         />
       </div>
 
