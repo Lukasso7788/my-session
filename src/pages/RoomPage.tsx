@@ -60,12 +60,45 @@ export function RoomPage() {
         border: '0',
         borderRadius: '8px',
       },
-      layoutConfig: {
-        displayMode: 'custom', // отключаем встроенный UI
-      },
+      showLeaveButton: false,
+      showFullscreenButton: false,
     });
 
     callRef.current = callFrame;
+
+    // Connect
+    callFrame
+      .join({ url: session.daily_room_url })
+      .then(() => {
+        console.log('✅ Joined Daily room');
+
+        // 1️⃣ Try the official API
+        try {
+          callFrame.updateCustomTrayButtons({});
+          callFrame.setShowNamesMode('off');
+          console.log('🧹 Cleared Daily tray via API');
+        } catch (err) {
+          console.warn('⚠️ updateCustomTrayButtons failed:', err);
+        }
+
+        // 2️⃣ Fallback: Remove tray DOM manually if visible
+        const iframe = containerRef.current?.querySelector('iframe');
+        if (iframe) {
+          const observer = new MutationObserver(() => {
+            try {
+              const tray = iframe.contentDocument?.querySelector(
+                '[class*="tray"], [data-testid="tray"], [aria-label="tray"]'
+              );
+              if (tray) {
+                tray.remove();
+                console.log('🔥 Removed Daily tray via DOM');
+              }
+            } catch {}
+          });
+          observer.observe(iframe, { childList: true, subtree: true });
+        }
+      })
+      .catch((err) => console.error('Join error:', err));
 
     callFrame.on('left-meeting', handleLeave);
     callFrame.on('app-message', (ev) => {
@@ -73,28 +106,6 @@ export function RoomPage() {
         console.log(`🎉 Reaction received: ${ev.data.emoji}`);
       }
     });
-
-    // Подключаемся
-    callFrame
-      .join({ url: session.daily_room_url })
-      .then(() => {
-        // 💀 Жёстко убиваем панель кнопок из встроенного UI
-        const iframe = containerRef.current?.querySelector('iframe');
-        if (iframe) {
-          const removeTray = () => {
-            const tray = iframe.contentDocument?.querySelector('[class*="tray"], [data-testid="tray"], [aria-label="tray"]');
-            if (tray) tray.remove();
-            else setTimeout(removeTray, 500);
-          };
-          removeTray();
-        }
-
-        // Дополнительно — удалить кастомные кнопки, если Daily их создаёт
-        try {
-          callFrame.updateCustomTrayButtons({});
-        } catch {}
-      })
-      .catch((err) => console.error('Join error:', err));
 
     return () => {
       callFrame.destroy();
