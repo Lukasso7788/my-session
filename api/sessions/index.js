@@ -7,7 +7,7 @@ export default async function handler(req, res) {
 
   if (req.method === 'POST') {
     try {
-      const { title, host, duration_minutes, format, start_time } = req.body;
+      const { title, host, duration_minutes, format, focus_blocks, scheduled_at } = req.body;
       const roomName = `session-${Date.now()}`;
 
       const resp = await fetch("https://api.daily.co/v1/rooms", {
@@ -22,7 +22,7 @@ export default async function handler(req, res) {
           properties: {
             enable_screenshare: true,
             enable_chat: true,
-            exp: Math.floor(Date.now() / 1000) + 86400,
+            exp: Math.floor(Date.now() / 1000) + 86400, // expires in 24h
           },
         }),
       });
@@ -35,8 +35,9 @@ export default async function handler(req, res) {
         host,
         duration_minutes,
         format,
+        focus_blocks,
+        scheduled_at, // 👈 теперь время старта сохраняется
         daily_room_url: room.url,
-        start_time: start_time || new Date().toISOString(), // ⏰ можно задать вручную
         created_at: new Date().toISOString(),
       };
 
