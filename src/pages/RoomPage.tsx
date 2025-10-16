@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import DailyIframe, { DailyCall } from "@daily-co/daily-js";
 import { VideoControls } from "../components/VideoControls";
@@ -20,7 +20,7 @@ export function RoomPage() {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [sessionStartTime] = useState(new Date());
 
-  // === 1. Load session ===
+  // === Load session ===
   useEffect(() => {
     const fetchSession = async () => {
       try {
@@ -49,28 +49,26 @@ export function RoomPage() {
     fetchSession();
   }, [id]);
 
-  // === 2. Initialize CallObject (custom mode, no iframe) ===
+  // === Setup CallObject ===
   useEffect(() => {
     if (!session) return;
 
     const co = DailyIframe.createCallObject();
     setCallObject(co);
 
-    co.on("joined-meeting", () => console.log("✅ Joined room"));
+    const updateParticipants = () => setParticipants(co.participants());
+
+    co.on("joined-meeting", () => {
+      console.log("✅ Joined meeting");
+      updateParticipants();
+    });
     co.on("participant-joined", updateParticipants);
     co.on("participant-updated", updateParticipants);
     co.on("participant-left", updateParticipants);
-    co.on("app-message", (e) => {
-      if (e?.data?.type === "reaction") {
-        console.log(`🎉 Reaction received: ${e.data.emoji}`);
-      }
-    });
+    co.on("track-started", updateParticipants);
+    co.on("track-stopped", updateParticipants);
 
     co.join({ url: session.daily_room_url });
-
-    function updateParticipants() {
-      setParticipants(co.participants());
-    }
 
     return () => {
       co.destroy();
@@ -78,7 +76,7 @@ export function RoomPage() {
     };
   }, [session]);
 
-  // === 3. Controls ===
+  // === Controls ===
   const handleToggleMic = async () => {
     if (!callObject) return;
     await callObject.setLocalAudio(isMicMuted);
@@ -105,7 +103,6 @@ export function RoomPage() {
   const handleSendReaction = (emoji: string) => {
     if (!callObject) return;
     callObject.sendAppMessage({ type: "reaction", emoji }, "*");
-    console.log(`✅ Reaction sent: ${emoji}`);
   };
 
   const handleLeave = async () => {
@@ -117,7 +114,7 @@ export function RoomPage() {
     navigate("/");
   };
 
-  // === 4. UI ===
+  // === UI ===
   if (loading)
     return (
       <div className="flex h-screen items-center justify-center bg-gray-900 text-white">
@@ -134,7 +131,6 @@ export function RoomPage() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-900 text-white">
-      {/* Header Timer */}
       <div className="p-4 border-b border-gray-800">
         <SessionTimer
           focusBlocks={session?.focus_blocks || []}
@@ -143,25 +139,29 @@ export function RoomPage() {
         />
       </div>
 
-      {/* Main Area */}
       <div className="flex flex-1 overflow-hidden">
         <div className="flex-1 flex flex-col items-center justify-between bg-black">
-          <div className="flex flex-wrap justify-center items-center w-full h-full">
+          <div className="flex flex-wrap justify-center items-center w-full h-full bg-black">
             {Object.values(participants).map((p: any) => {
-              if (!p.videoTrack) return null;
+              const videoTrack = p.tracks?.video?.track;
+              if (!videoTrack) return null;
               return (
-                <video
-                  key={p.session_id}
-                  ref={(el) => {
-                    if (el && p.videoTrack) {
-                      el.srcObject = new MediaStream([p.videoTrack]);
-                      el.play().catch(() => {});
-                    }
-                  }}
-                  className="w-1/2 max-w-[400px] rounded-xl m-2"
-                  autoPlay
-                  muted={p.local}
-                />
+                <div key={p.session_id} className="relative m-2">
+                  <video
+                    ref={(el) => {
+                      if (el && videoTrack) {
+                        el.srcObject = new MediaStream([videoTrack]);
+                        el.play().catch(() => {});
+                      }
+                    }}
+                    className="w-1/2 max-w-[400px] rounded-xl"
+                    autoPlay
+                    muted={p.local}
+                  />
+                  <div className="absolute bottom-2 left-2 text-sm text-gray-300 bg-black/40 px-2 py-1 rounded">
+                    {p.user_name || (p.local ? "You" : "Guest")}
+                  </div>
+                </div>
               );
             })}
           </div>
