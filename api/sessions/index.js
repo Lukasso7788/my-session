@@ -22,7 +22,7 @@ export default async function handler(req, res) {
           properties: {
             enable_screenshare: true,
             enable_chat: true,
-            exp: Math.floor(Date.now() / 1000) + 86400, // expires in 24h
+            exp: Math.floor(Date.now() / 1000) + 86400,
           },
         }),
       });
@@ -36,7 +36,7 @@ export default async function handler(req, res) {
         duration_minutes,
         format,
         focus_blocks,
-        scheduled_at, // 👈 теперь время старта сохраняется
+        scheduled_at, // 👈 добавлено
         daily_room_url: room.url,
         created_at: new Date().toISOString(),
       };

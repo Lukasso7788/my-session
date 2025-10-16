@@ -24,7 +24,9 @@ export function RoomPage() {
           const found = JSON.parse(saved).find((s: any) => s.id === id);
           if (found) {
             setSession(found);
-            setSessionStartTime(new Date(found.start_time)); // ⏰ берём время начала из сессии
+            if (found.scheduled_at) {
+              setSessionStartTime(new Date(found.scheduled_at)); // ✅ корректное поле
+            }
             setLoading(false);
             return;
           }
@@ -35,7 +37,9 @@ export function RoomPage() {
         const data = await res.json();
         if (!data.daily_room_url) throw new Error("No room URL found");
         setSession(data);
-        setSessionStartTime(new Date(data.start_time));
+        if (data.scheduled_at) {
+          setSessionStartTime(new Date(data.scheduled_at)); // ✅ корректное поле
+        }
       } catch (e: any) {
         setError(e.message);
       } finally {
@@ -101,7 +105,7 @@ export function RoomPage() {
         <SessionTimer
           focusBlocks={session?.focus_blocks || []}
           durationMinutes={session?.duration_minutes || 50}
-          startTime={sessionStartTime || new Date()} // теперь считает от назначенного времени
+          startTime={sessionStartTime || new Date()} // ✅ теперь считает от назначенного времени
         />
       </div>
 
