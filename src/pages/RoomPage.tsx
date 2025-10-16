@@ -20,9 +20,9 @@ export function RoomPage() {
   const [isCameraOff, setIsCameraOff] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
 
-  // === Load session ===
+  // 1) Загружаем сессию
   useEffect(() => {
-    const fetchSession = async () => {
+    const run = async () => {
       try {
         const saved = localStorage.getItem("sessions");
         if (saved) {
@@ -33,7 +33,6 @@ export function RoomPage() {
             return;
           }
         }
-
         const res = await fetch(`/api/sessions/${id}`);
         if (!res.ok) throw new Error("Failed to load session");
         const data = await res.json();
@@ -45,16 +44,14 @@ export function RoomPage() {
         setLoading(false);
       }
     };
-
-    fetchSession();
+    run();
   }, [id]);
 
-  // === Setup Daily call ===
+  // 2) Встраиваем Daily iframe (без theme!)
   useEffect(() => {
     if (!containerRef.current || !session) return;
 
     const callFrame = DailyIframe.createFrame(containerRef.current, {
-      theme: "dark", // ✅ Supported since v0.85.0
       iframeStyle: {
         width: "100%",
         height: "100%",
@@ -63,6 +60,7 @@ export function RoomPage() {
       },
       showFullscreenButton: false,
       showLeaveButton: false,
+      // НИКАКИХ theme / layoutConfig тут
     });
 
     callRef.current = callFrame;
@@ -70,24 +68,14 @@ export function RoomPage() {
     callFrame.on("left-meeting", handleLeave);
     callFrame.on("app-message", (ev) => {
       if (ev?.data?.type === "reaction") {
-        console.log(`🎉 Reaction received: ${ev.data.emoji}`);
+        console.log("🎉 Reaction:", ev.data.emoji);
       }
     });
 
-    // Join the room
     callFrame
       .join({ url: session.daily_room_url })
-      .then(() => {
-        console.log("✅ Joined Daily room");
-
-        // Try to remove default tray buttons
-        try {
-          callFrame.updateCustomTrayButtons({});
-        } catch (err) {
-          console.warn("updateCustomTrayButtons not supported yet");
-        }
-      })
-      .catch((err) => console.error("Join error:", err));
+      .then(() => console.log("✅ joined"))
+      .catch((err) => console.error("join error:", err));
 
     return () => {
       callFrame.destroy();
@@ -95,7 +83,7 @@ export function RoomPage() {
     };
   }, [session]);
 
-  // === Controls ===
+  // 3) Кастом-контролы
   const handleToggleMic = async () => {
     if (!callRef.current) return;
     await callRef.current.setLocalAudio(isMicMuted);
@@ -114,15 +102,13 @@ export function RoomPage() {
       if (isScreenSharing) await callRef.current.stopScreenShare();
       else await callRef.current.startScreenShare();
       setIsScreenSharing(!isScreenSharing);
-    } catch (err) {
-      console.error("Error toggling screen share:", err);
+    } catch (e) {
+      console.error("screenshare error:", e);
     }
   };
 
   const handleSendReaction = (emoji: string) => {
-    if (!callRef.current) return;
-    callRef.current.sendAppMessage({ type: "reaction", emoji }, "*");
-    console.log(`✅ Reaction sent: ${emoji}`);
+    callRef.current?.sendAppMessage({ type: "reaction", emoji }, "*");
   };
 
   const handleLeave = async () => {
@@ -134,20 +120,11 @@ export function RoomPage() {
     navigate("/");
   };
 
-  // === UI ===
   if (loading)
-    return (
-      <div className="flex h-screen items-center justify-center bg-gray-900 text-white">
-        Loading session...
-      </div>
-    );
+    return <div className="flex h-screen items-center justify-center bg-gray-900 text-white">Loading session...</div>;
 
   if (error)
-    return (
-      <div className="flex h-screen items-center justify-center bg-gray-900 text-red-500">
-        {error}
-      </div>
-    );
+    return <div className="flex h-screen items-center justify-center bg-gray-900 text-red-500">{error}</div>;
 
   return (
     <div className="h-screen flex flex-col bg-gray-900 text-white">
