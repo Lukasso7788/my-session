@@ -1,30 +1,30 @@
-import { useEffect, useRef, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import DailyIframe, { DailyCall } from '@daily-co/daily-js';
-import { VideoControls } from '../components/VideoControls';
-import { IntentionsPanel } from '../components/IntentionsPanel';
-import { SessionTimer } from '../components/SessionTimer';
+import { useEffect, useRef, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import DailyIframe, { DailyCall } from "@daily-co/daily-js";
+import { VideoControls } from "../components/VideoControls";
+import { IntentionsPanel } from "../components/IntentionsPanel";
+import { SessionTimer } from "../components/SessionTimer";
 
 export function RoomPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const containerRef = useRef<HTMLDivElement>(null);
-  const callRef = useRef<DailyCall | null>(null);
 
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [callObject, setCallObject] = useState<DailyCall | null>(null);
+  const [participants, setParticipants] = useState<Record<string, any>>({});
   const [isMicMuted, setIsMicMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [sessionStartTime] = useState(new Date());
 
-  // === Load session ===
+  // === 1. Load session ===
   useEffect(() => {
     const fetchSession = async () => {
       try {
-        const saved = localStorage.getItem('sessions');
+        const saved = localStorage.getItem("sessions");
         if (saved) {
           const found = JSON.parse(saved).find((s: any) => s.id === id);
           if (found) {
@@ -35,9 +35,9 @@ export function RoomPage() {
         }
 
         const res = await fetch(`/api/sessions/${id}`);
-        if (!res.ok) throw new Error('Failed to load session');
+        if (!res.ok) throw new Error("Failed to load session");
         const data = await res.json();
-        if (!data.daily_room_url) throw new Error('No room URL found');
+        if (!data.daily_room_url) throw new Error("No room URL found");
         setSession(data);
       } catch (e: any) {
         setError(e.message);
@@ -49,110 +49,75 @@ export function RoomPage() {
     fetchSession();
   }, [id]);
 
-  // === Setup Daily Call ===
+  // === 2. Initialize CallObject (custom mode, no iframe) ===
   useEffect(() => {
-    if (!containerRef.current || !session) return;
+    if (!session) return;
 
-    const callFrame = DailyIframe.createFrame(containerRef.current, {
-      iframeStyle: {
-        width: '100%',
-        height: '100%',
-        border: '0',
-        borderRadius: '8px',
-      },
-      showLeaveButton: false,
-      showFullscreenButton: false,
-    });
+    const co = DailyIframe.createCallObject();
+    setCallObject(co);
 
-    callRef.current = callFrame;
-
-    // Connect
-    callFrame
-      .join({ url: session.daily_room_url })
-      .then(() => {
-        console.log('✅ Joined Daily room');
-
-        // 1️⃣ Try the official API
-        try {
-          callFrame.updateCustomTrayButtons({});
-          callFrame.setShowNamesMode('off');
-          console.log('🧹 Cleared Daily tray via API');
-        } catch (err) {
-          console.warn('⚠️ updateCustomTrayButtons failed:', err);
-        }
-
-        // 2️⃣ Fallback: Remove tray DOM manually if visible
-        const iframe = containerRef.current?.querySelector('iframe');
-        if (iframe) {
-          const observer = new MutationObserver(() => {
-            try {
-              const tray = iframe.contentDocument?.querySelector(
-                '[class*="tray"], [data-testid="tray"], [aria-label="tray"]'
-              );
-              if (tray) {
-                tray.remove();
-                console.log('🔥 Removed Daily tray via DOM');
-              }
-            } catch {}
-          });
-          observer.observe(iframe, { childList: true, subtree: true });
-        }
-      })
-      .catch((err) => console.error('Join error:', err));
-
-    callFrame.on('left-meeting', handleLeave);
-    callFrame.on('app-message', (ev) => {
-      if (ev?.data?.type === 'reaction') {
-        console.log(`🎉 Reaction received: ${ev.data.emoji}`);
+    co.on("joined-meeting", () => console.log("✅ Joined room"));
+    co.on("participant-joined", updateParticipants);
+    co.on("participant-updated", updateParticipants);
+    co.on("participant-left", updateParticipants);
+    co.on("app-message", (e) => {
+      if (e?.data?.type === "reaction") {
+        console.log(`🎉 Reaction received: ${e.data.emoji}`);
       }
     });
 
+    co.join({ url: session.daily_room_url });
+
+    function updateParticipants() {
+      setParticipants(co.participants());
+    }
+
     return () => {
-      callFrame.destroy();
-      callRef.current = null;
+      co.destroy();
+      setCallObject(null);
     };
   }, [session]);
 
-  // === Controls ===
+  // === 3. Controls ===
   const handleToggleMic = async () => {
-    if (!callRef.current) return;
-    await callRef.current.setLocalAudio(isMicMuted);
+    if (!callObject) return;
+    await callObject.setLocalAudio(isMicMuted);
     setIsMicMuted(!isMicMuted);
   };
 
   const handleToggleCamera = async () => {
-    if (!callRef.current) return;
-    await callRef.current.setLocalVideo(isCameraOff);
+    if (!callObject) return;
+    await callObject.setLocalVideo(isCameraOff);
     setIsCameraOff(!isCameraOff);
   };
 
   const handleToggleScreenShare = async () => {
-    if (!callRef.current) return;
+    if (!callObject) return;
     try {
-      if (isScreenSharing) await callRef.current.stopScreenShare();
-      else await callRef.current.startScreenShare();
+      if (isScreenSharing) await callObject.stopScreenShare();
+      else await callObject.startScreenShare();
       setIsScreenSharing(!isScreenSharing);
     } catch (err) {
-      console.error('Error toggling screen share:', err);
+      console.error("Error toggling screen share:", err);
     }
   };
 
   const handleSendReaction = (emoji: string) => {
-    if (!callRef.current) return;
-    callRef.current.sendAppMessage({ type: 'reaction', emoji }, '*');
+    if (!callObject) return;
+    callObject.sendAppMessage({ type: "reaction", emoji }, "*");
     console.log(`✅ Reaction sent: ${emoji}`);
   };
 
   const handleLeave = async () => {
-    if (callRef.current) {
-      await callRef.current.leave();
-      callRef.current.destroy();
-      callRef.current = null;
+    if (callObject) {
+      await callObject.leave();
+      callObject.destroy();
+      setCallObject(null);
     }
-    navigate('/');
+    navigate("/");
   };
 
-  // === UI ===
+  // === 4. UI ===
   if (loading)
     return (
       <div className="flex h-screen items-center justify-center bg-gray-900 text-white">
@@ -169,6 +134,7 @@ export function RoomPage() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-900 text-white">
+      {/* Header Timer */}
       <div className="p-4 border-b border-gray-800">
         <SessionTimer
           focusBlocks={session?.focus_blocks || []}
@@ -177,9 +143,29 @@ export function RoomPage() {
         />
       </div>
 
+      {/* Main Area */}
       <div className="flex flex-1 overflow-hidden">
         <div className="flex-1 flex flex-col items-center justify-between bg-black">
-          <div ref={containerRef} className="flex-1 w-full" />
+          <div className="flex flex-wrap justify-center items-center w-full h-full">
+            {Object.values(participants).map((p: any) => {
+              if (!p.videoTrack) return null;
+              return (
+                <video
+                  key={p.session_id}
+                  ref={(el) => {
+                    if (el && p.videoTrack) {
+                      el.srcObject = new MediaStream([p.videoTrack]);
+                      el.play().catch(() => {});
+                    }
+                  }}
+                  className="w-1/2 max-w-[400px] rounded-xl m-2"
+                  autoPlay
+                  muted={p.local}
+                />
+              );
+            })}
+          </div>
+
           <VideoControls
             isMicMuted={isMicMuted}
             isCameraOff={isCameraOff}
