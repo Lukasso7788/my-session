@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, Clock, Plus } from 'lucide-react';
+import { Users, Clock, Plus, Calendar } from 'lucide-react';
 import { CreateSessionModal } from '../components/CreateSessionModal';
 import { formatSessionFormat } from '../utils/sessionHelpers';
 
@@ -36,9 +36,18 @@ export function SessionsPage() {
     navigate(`/room/${sessionId}`);
   };
 
-  const formatTime = (dateString: string) => {
+  const formatDateTime = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  };
+
+  const isFutureSession = (dateString: string) => {
+    return new Date(dateString) > new Date();
   };
 
   return (
@@ -84,6 +93,7 @@ export function SessionsPage() {
                     <h3 className="text-xl font-semibold text-gray-900 mb-2">
                       {session.title}
                     </h3>
+
                     <div className="flex flex-wrap gap-4 text-sm text-gray-600 mb-4">
                       <div className="flex items-center gap-1">
                         <Users size={16} />
@@ -93,11 +103,31 @@ export function SessionsPage() {
                         <Clock size={16} />
                         <span>{session.duration_minutes} min</span>
                       </div>
+
+                      {/* 🕒 Время начала */}
+                      {session.scheduled_at && (
+                        <div
+                          className={`flex items-center gap-1 font-medium ${
+                            isFutureSession(session.scheduled_at)
+                              ? 'text-green-600'
+                              : 'text-red-600'
+                          }`}
+                        >
+                          <Calendar size={16} />
+                          <span>
+                            {isFutureSession(session.scheduled_at)
+                              ? `Starts at ${formatDateTime(session.scheduled_at)}`
+                              : `Started at ${formatDateTime(session.scheduled_at)}`}
+                          </span>
+                        </div>
+                      )}
                     </div>
+
                     <div className="inline-block bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-sm font-medium">
                       {formatSessionFormat(session.format)}
                     </div>
                   </div>
+
                   <button
                     onClick={() => handleJoinSession(session.id)}
                     className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium ml-4"
