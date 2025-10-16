@@ -53,7 +53,9 @@ export function RoomPage() {
   useEffect(() => {
     if (!session) return;
 
-    const co = DailyIframe.createCallObject();
+    const co = DailyIframe.createCallObject({
+      subscribeToTracksAutomatically: true, // ✅ важно!
+    });
     setCallObject(co);
 
     const updateParticipants = () => setParticipants(co.participants());
