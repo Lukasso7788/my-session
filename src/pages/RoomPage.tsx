@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import DailyIframe, { DailyCall } from "@daily-co/daily-js";
-import { VideoControls } from "../components/VideoControls";
 import { IntentionsPanel } from "../components/IntentionsPanel";
 import { SessionTimer } from "../components/SessionTimer";
 
@@ -16,13 +15,9 @@ export function RoomPage() {
   const [error, setError] = useState<string | null>(null);
   const [sessionStartTime] = useState(new Date());
 
-  const [isMicMuted, setIsMicMuted] = useState(false);
-  const [isCameraOff, setIsCameraOff] = useState(false);
-  const [isScreenSharing, setIsScreenSharing] = useState(false);
-
-  // 1) Загружаем сессию
+  // === Load session ===
   useEffect(() => {
-    const run = async () => {
+    const fetchSession = async () => {
       try {
         const saved = localStorage.getItem("sessions");
         if (saved) {
@@ -33,6 +28,7 @@ export function RoomPage() {
             return;
           }
         }
+
         const res = await fetch(`/api/sessions/${id}`);
         if (!res.ok) throw new Error("Failed to load session");
         const data = await res.json();
@@ -44,10 +40,11 @@ export function RoomPage() {
         setLoading(false);
       }
     };
-    run();
+
+    fetchSession();
   }, [id]);
 
-  // 2) Встраиваем Daily iframe (без theme!)
+  // === Initialize Daily Call ===
   useEffect(() => {
     if (!containerRef.current || !session) return;
 
@@ -58,24 +55,23 @@ export function RoomPage() {
         border: "0",
         borderRadius: "8px",
       },
-      showFullscreenButton: false,
-      showLeaveButton: false,
-      // НИКАКИХ theme / layoutConfig тут
+      // 👇 только дефолтный интерфейс, без кастомов
+      showFullscreenButton: true,
+      showLeaveButton: true,
     });
 
     callRef.current = callFrame;
 
-    callFrame.on("left-meeting", handleLeave);
-    callFrame.on("app-message", (ev) => {
-      if (ev?.data?.type === "reaction") {
-        console.log("🎉 Reaction:", ev.data.emoji);
-      }
+    callFrame.on("left-meeting", async () => {
+      await callFrame.destroy();
+      callRef.current = null;
+      navigate("/");
     });
 
     callFrame
       .join({ url: session.daily_room_url })
-      .then(() => console.log("✅ joined"))
-      .catch((err) => console.error("join error:", err));
+      .then(() => console.log("✅ Joined room"))
+      .catch((err) => console.error("Join error:", err));
 
     return () => {
       callFrame.destroy();
@@ -83,48 +79,20 @@ export function RoomPage() {
     };
   }, [session]);
 
-  // 3) Кастом-контролы
-  const handleToggleMic = async () => {
-    if (!callRef.current) return;
-    await callRef.current.setLocalAudio(isMicMuted);
-    setIsMicMuted(!isMicMuted);
-  };
-
-  const handleToggleCamera = async () => {
-    if (!callRef.current) return;
-    await callRef.current.setLocalVideo(isCameraOff);
-    setIsCameraOff(!isCameraOff);
-  };
-
-  const handleToggleScreenShare = async () => {
-    if (!callRef.current) return;
-    try {
-      if (isScreenSharing) await callRef.current.stopScreenShare();
-      else await callRef.current.startScreenShare();
-      setIsScreenSharing(!isScreenSharing);
-    } catch (e) {
-      console.error("screenshare error:", e);
-    }
-  };
-
-  const handleSendReaction = (emoji: string) => {
-    callRef.current?.sendAppMessage({ type: "reaction", emoji }, "*");
-  };
-
-  const handleLeave = async () => {
-    if (callRef.current) {
-      await callRef.current.leave();
-      callRef.current.destroy();
-      callRef.current = null;
-    }
-    navigate("/");
-  };
-
+  // === UI ===
   if (loading)
-    return <div className="flex h-screen items-center justify-center bg-gray-900 text-white">Loading session...</div>;
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-900 text-white">
+        Loading session...
+      </div>
+    );
 
   if (error)
-    return <div className="flex h-screen items-center justify-center bg-gray-900 text-red-500">{error}</div>;
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-900 text-red-500">
+        {error}
+      </div>
+    );
 
   return (
     <div className="h-screen flex flex-col bg-gray-900 text-white">
@@ -137,18 +105,8 @@ export function RoomPage() {
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 flex flex-col items-center justify-between bg-black">
-          <div ref={containerRef} className="flex-1 w-full" />
-          <VideoControls
-            isMicMuted={isMicMuted}
-            isCameraOff={isCameraOff}
-            isScreenSharing={isScreenSharing}
-            onToggleMic={handleToggleMic}
-            onToggleCamera={handleToggleCamera}
-            onToggleScreenShare={handleToggleScreenShare}
-            onSendReaction={handleSendReaction}
-            onLeave={handleLeave}
-          />
+        <div className="flex-1 bg-black">
+          <div ref={containerRef} className="w-full h-full" />
         </div>
 
         <div className="w-80 border-l border-gray-800 bg-gray-950">
