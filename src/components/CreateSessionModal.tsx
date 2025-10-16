@@ -12,7 +12,7 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
   const [title, setTitle] = useState('');
   const [host, setHost] = useState('');
   const [selectedOption, setSelectedOption] = useState<string>('');
-  const [startTime, setStartTime] = useState('');
+  const [scheduledAt, setScheduledAt] = useState('');
   const [isCreating, setIsCreating] = useState(false);
 
   const sessionOptions = [
@@ -25,7 +25,7 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
   ];
 
   const handleCreate = async () => {
-    if (!title || !host || !selectedOption) return;
+    if (!title || !host || !selectedOption || !scheduledAt) return;
 
     const option = sessionOptions.find(o => o.value === selectedOption);
     if (!option) return;
@@ -35,10 +35,8 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
     try {
       const focusBlocks = generateFocusBlocks(option.format, option.duration);
 
-      // если юзер не указал — старт через 5 минут
-      const start_time = startTime
-        ? new Date(startTime).toISOString()
-        : new Date(Date.now() + 5 * 60 * 1000).toISOString();
+      // 💡 Важно: конвертируем локальное время в ISO (UTC)
+      const scheduledISO = new Date(scheduledAt).toISOString();
 
       const response = await fetch('/api/sessions', {
         method: 'POST',
@@ -49,7 +47,7 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
           duration_minutes: option.duration,
           format: option.format,
           focus_blocks: focusBlocks,
-          start_time, // ⏰ теперь время старта
+          scheduled_at: scheduledISO,
         }),
       });
 
@@ -58,7 +56,7 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
       setTitle('');
       setHost('');
       setSelectedOption('');
-      setStartTime('');
+      setScheduledAt('');
       onSessionCreated();
       onClose();
     } catch (error) {
@@ -81,6 +79,7 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
         </div>
 
         <div className="space-y-4">
+          {/* Session title */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Session Title</label>
             <input
@@ -92,6 +91,7 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
             />
           </div>
 
+          {/* Host name */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Your Name</label>
             <input
@@ -103,19 +103,21 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
             />
           </div>
 
+          {/* Start time */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
             <input
               type="datetime-local"
-              value={startTime}
-              onChange={(e) => setStartTime(e.target.value)}
+              value={scheduledAt}
+              onChange={(e) => setScheduledAt(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
+          {/* Session format */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Session Format</label>
-            <div className="space-y-2">
+            <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
               {sessionOptions.map((option) => (
                 <label key={option.value} className="flex items-center space-x-3 cursor-pointer">
                   <input
@@ -134,7 +136,7 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
 
           <button
             onClick={handleCreate}
-            disabled={!title || !host || !selectedOption || isCreating}
+            disabled={!title || !host || !selectedOption || !scheduledAt || isCreating}
             className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-300 transition-colors"
           >
             {isCreating ? 'Creating...' : 'Create Session'}
