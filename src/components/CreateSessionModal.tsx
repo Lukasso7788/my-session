@@ -8,12 +8,17 @@ interface CreateSessionModalProps {
   onSessionCreated: () => void;
 }
 
-export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: CreateSessionModalProps) {
+export function CreateSessionModal({
+  isOpen,
+  onClose,
+  onSessionCreated,
+}: CreateSessionModalProps) {
   const [title, setTitle] = useState('');
   const [host, setHost] = useState('');
   const [selectedOption, setSelectedOption] = useState<string>('');
   const [scheduledAt, setScheduledAt] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const sessionOptions = [
     { value: '60-uninterrupted', label: '1 Hour - Uninterrupted Focus', duration: 60, format: 'uninterrupted' as const },
@@ -25,20 +30,24 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
   ];
 
   const handleCreate = async () => {
-    if (!title || !host || !selectedOption || !scheduledAt) return;
+    if (!title || !host || !selectedOption || !scheduledAt) {
+      setError('Please fill out all fields.');
+      return;
+    }
 
     const option = sessionOptions.find(o => o.value === selectedOption);
     if (!option) return;
 
     setIsCreating(true);
+    setError(null);
 
     try {
       const focusBlocks = generateFocusBlocks(option.format, option.duration);
 
-      // 💡 Важно: конвертируем локальное время в ISO (UTC)
+      // 💡 Конвертируем локальное время в ISO
       const scheduledISO = new Date(scheduledAt).toISOString();
 
-      const response = await fetch('/api/sessions', {
+      const res = await fetch('/api/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -51,16 +60,21 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
         }),
       });
 
-      if (!response.ok) throw new Error('Failed to create session');
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to create session');
+      }
 
+      // reset
       setTitle('');
       setHost('');
       setSelectedOption('');
       setScheduledAt('');
       onSessionCreated();
       onClose();
-    } catch (error) {
-      console.error('Error creating session:', error);
+    } catch (err: any) {
+      console.error('Error creating session:', err);
+      setError(err.message);
     } finally {
       setIsCreating(false);
     }
@@ -111,6 +125,7 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
               value={scheduledAt}
               onChange={(e) => setScheduledAt(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+              min={new Date().toISOString().slice(0, 16)} // 🚫 нельзя выбрать прошлое время
             />
           </div>
 
@@ -133,6 +148,8 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
               ))}
             </div>
           </div>
+
+          {error && <p className="text-red-600 text-sm">{error}</p>}
 
           <button
             onClick={handleCreate}
