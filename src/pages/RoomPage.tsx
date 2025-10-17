@@ -40,7 +40,9 @@ export function RoomPage() {
     callObjectRef.current = call;
 
     const updateParticipants = () => {
-      setParticipants(call.participants());
+      const parts = call.participants();
+      console.log("[Daily] Participants updated:", parts);
+      setParticipants(parts);
     };
 
     call.on("joined-meeting", updateParticipants);
@@ -48,12 +50,26 @@ export function RoomPage() {
     call.on("participant-updated", updateParticipants);
     call.on("participant-left", updateParticipants);
 
+    call.on("camera-error", (e) => console.error("[Daily] Camera error:", e));
+    call.on("error", (e) => console.error("[Daily] General error:", e));
+
     call.on("left-meeting", async () => {
+      console.log("[Daily] Left meeting");
       await call.destroy();
       navigate("/sessions");
     });
 
-    call.join({ url: session.daily_room_url });
+    (async () => {
+      try {
+        console.log("[Daily] Starting camera...");
+        await call.startCamera(); // ✅ включаем локальную камеру и микрофон
+        console.log("[Daily] Camera started, joining room...");
+        await call.join({ url: session.daily_room_url });
+        console.log("[Daily] Joined room:", session.daily_room_url);
+      } catch (err) {
+        console.error("[Daily] Failed to start camera or join room:", err);
+      }
+    })();
 
     return () => {
       call.leave();
@@ -62,7 +78,7 @@ export function RoomPage() {
     };
   }, [session, navigate]);
 
-  // === Render participants ===
+  // === Render participants video ===
   useEffect(() => {
     if (!videoContainerRef.current) return;
     const container = videoContainerRef.current;
@@ -72,23 +88,20 @@ export function RoomPage() {
       const videoTrack = p.tracks?.video?.track;
       const audioTrack = p.tracks?.audio?.track;
 
-      // пропускаем если видео нет
       if (!videoTrack) return;
 
       const videoEl = document.createElement("video");
       videoEl.autoplay = true;
       videoEl.playsInline = true;
-      videoEl.muted = p.local; // не фоним сами себе
+      videoEl.muted = p.local;
       videoEl.srcObject = new MediaStream([videoTrack]);
       videoEl.className =
         "rounded-xl object-cover w-full h-full max-h-[360px] sm:max-h-[480px] bg-black";
 
-      // Добавляем элемент
       const wrapper = document.createElement("div");
       wrapper.className = "relative rounded-lg overflow-hidden";
       wrapper.appendChild(videoEl);
 
-      // Имя участника
       const nameTag = document.createElement("div");
       nameTag.className =
         "absolute bottom-2 left-2 bg-black bg-opacity-60 text-xs text-white px-2 py-1 rounded";
@@ -97,7 +110,6 @@ export function RoomPage() {
 
       container.appendChild(wrapper);
 
-      // если есть аудио — проигрываем
       if (audioTrack && !p.local) {
         const audioEl = document.createElement("audio");
         audioEl.srcObject = new MediaStream([audioTrack]);
