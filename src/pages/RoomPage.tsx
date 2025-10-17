@@ -41,7 +41,7 @@ export function RoomPage() {
 
     const updateParticipants = () => {
       const parts = call.participants();
-      console.log("[Daily] Participants updated:", parts);
+      console.log("[Daily] participants:", parts);
       setParticipants(parts);
     };
 
@@ -51,7 +51,7 @@ export function RoomPage() {
     call.on("participant-left", updateParticipants);
 
     call.on("camera-error", (e) => console.error("[Daily] Camera error:", e));
-    call.on("error", (e) => console.error("[Daily] General error:", e));
+    call.on("error", (e) => console.error("[Daily] Error:", e));
 
     call.on("left-meeting", async () => {
       console.log("[Daily] Left meeting");
@@ -61,13 +61,34 @@ export function RoomPage() {
 
     (async () => {
       try {
-        console.log("[Daily] Starting camera...");
-        await call.startCamera(); // ✅ включаем локальную камеру и микрофон
-        console.log("[Daily] Camera started, joining room...");
+        console.log("[Daily] Requesting camera access...");
+
+        // 🚀 Явно запрашиваем доступ
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: true,
+        });
+
+        console.log(
+          "[Daily] Devices:",
+          stream.getVideoTracks().map((t) => t.label)
+        );
+
+        // Включаем камеру через Daily
+        await call.startCamera();
         await call.join({ url: session.daily_room_url });
+
+        // Если у Daily нет видео, вставляем трек вручную
+        const local = call.participants().local;
+        if (!local.tracks.video.track && stream.getVideoTracks().length > 0) {
+          const track = stream.getVideoTracks()[0];
+          console.log("[Daily] Manually attaching video track:", track.label);
+          call.setLocalVideo(true);
+        }
+
         console.log("[Daily] Joined room:", session.daily_room_url);
       } catch (err) {
-        console.error("[Daily] Failed to start camera or join room:", err);
+        console.error("[Daily] Failed to start camera/join:", err);
       }
     })();
 
@@ -88,7 +109,10 @@ export function RoomPage() {
       const videoTrack = p.tracks?.video?.track;
       const audioTrack = p.tracks?.audio?.track;
 
-      if (!videoTrack) return;
+      if (!videoTrack) {
+        console.warn("[Daily] Missing videoTrack for participant:", p.session_id);
+        return;
+      }
 
       const videoEl = document.createElement("video");
       videoEl.autoplay = true;
@@ -137,11 +161,8 @@ export function RoomPage() {
   const toggleScreenShare = async () => {
     if (!callObjectRef.current) return;
     const newSharing = !isSharing;
-    if (newSharing) {
-      await callObjectRef.current.startScreenShare();
-    } else {
-      await callObjectRef.current.stopScreenShare();
-    }
+    if (newSharing) await callObjectRef.current.startScreenShare();
+    else await callObjectRef.current.stopScreenShare();
     setIsSharing(newSharing);
   };
 
@@ -188,7 +209,6 @@ export function RoomPage() {
                 className={`p-3 rounded-full ${
                   isMuted ? "bg-red-600" : "bg-gray-700"
                 } hover:bg-red-700`}
-                title={isMuted ? "Unmute" : "Mute"}
               >
                 {isMuted ? <MicOff size={22} /> : <Mic size={22} />}
               </button>
@@ -198,7 +218,6 @@ export function RoomPage() {
                 className={`p-3 rounded-full ${
                   isCameraOff ? "bg-red-600" : "bg-gray-700"
                 } hover:bg-red-700`}
-                title={isCameraOff ? "Turn camera on" : "Turn camera off"}
               >
                 {isCameraOff ? <VideoOff size={22} /> : <Video size={22} />}
               </button>
@@ -208,9 +227,6 @@ export function RoomPage() {
                 className={`p-3 rounded-full ${
                   isSharing ? "bg-blue-600" : "bg-gray-700"
                 } hover:bg-blue-700`}
-                title={
-                  isSharing ? "Stop screen sharing" : "Share your screen"
-                }
               >
                 <MonitorUp size={22} />
               </button>
@@ -218,7 +234,6 @@ export function RoomPage() {
               <button
                 onClick={leaveMeeting}
                 className="p-3 rounded-full bg-red-600 hover:bg-red-700"
-                title="Leave meeting"
               >
                 <PhoneOff size={22} />
               </button>
