@@ -3,7 +3,15 @@ import { useParams, useNavigate } from "react-router-dom";
 import DailyIframe, { DailyCall, DailyParticipant } from "@daily-co/daily-js";
 import { SessionTimer } from "../components/SessionTimer";
 import { IntentionsPanel } from "../components/IntentionsPanel";
-import { Mic, MicOff, Video, VideoOff, MonitorUp, PhoneOff } from "lucide-react";
+import {
+  Mic,
+  MicOff,
+  Video,
+  VideoOff,
+  MonitorUp,
+  PhoneOff,
+  Smile,
+} from "lucide-react";
 
 export function RoomPage() {
   const { id } = useParams<{ id: string }>();
@@ -18,6 +26,12 @@ export function RoomPage() {
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
+  const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedCamera, setSelectedCamera] = useState<string>("");
+  const [showEmojis, setShowEmojis] = useState(false);
+  const [floatingEmojis, setFloatingEmojis] = useState<{ id: number; emoji: string }[]>([]);
+
+  const emojis = ["👍", "👏", "😂", "❤️", "😮"];
 
   // === Load session ===
   useEffect(() => {
@@ -32,63 +46,51 @@ export function RoomPage() {
     setLoading(false);
   }, [id]);
 
-  // === Initialize Daily call ===
+  // === Initialize Daily ===
   useEffect(() => {
     if (!session?.daily_room_url) return;
 
     const call = DailyIframe.createCallObject();
     callObjectRef.current = call;
 
-    const updateParticipants = () => {
-      const parts = call.participants();
-      console.log("[Daily] participants:", parts);
-      setParticipants(parts);
-    };
-
+    const updateParticipants = () => setParticipants(call.participants());
     call.on("joined-meeting", updateParticipants);
     call.on("participant-joined", updateParticipants);
     call.on("participant-updated", updateParticipants);
     call.on("participant-left", updateParticipants);
 
-    call.on("camera-error", (e) => console.error("[Daily] Camera error:", e));
-    call.on("error", (e) => console.error("[Daily] Error:", e));
+    // 💬 Catch emoji messages
+    call.on("app-message", (event) => {
+      const emoji = event.data?.emoji;
+      if (emoji) {
+        const id = Date.now() + Math.random();
+        setFloatingEmojis((prev) => [...prev, { id, emoji }]);
+        setTimeout(
+          () => setFloatingEmojis((prev) => prev.filter((e) => e.id !== id)),
+          2500
+        );
+      }
+    });
 
     call.on("left-meeting", async () => {
-      console.log("[Daily] Left meeting");
       await call.destroy();
       navigate("/sessions");
     });
 
     (async () => {
       try {
-        console.log("[Daily] Requesting camera access...");
-
-        // 🚀 Явно запрашиваем доступ
         const stream = await navigator.mediaDevices.getUserMedia({
           video: true,
           audio: true,
         });
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        setVideoDevices(devices.filter((d) => d.kind === "videoinput"));
+        setSelectedCamera(stream.getVideoTracks()[0].getSettings().deviceId || "");
 
-        console.log(
-          "[Daily] Devices:",
-          stream.getVideoTracks().map((t) => t.label)
-        );
-
-        // Включаем камеру через Daily
         await call.startCamera();
         await call.join({ url: session.daily_room_url });
-
-        // Если у Daily нет видео, вставляем трек вручную
-        const local = call.participants().local;
-        if (!local.tracks.video.track && stream.getVideoTracks().length > 0) {
-          const track = stream.getVideoTracks()[0];
-          console.log("[Daily] Manually attaching video track:", track.label);
-          call.setLocalVideo(true);
-        }
-
-        console.log("[Daily] Joined room:", session.daily_room_url);
       } catch (err) {
-        console.error("[Daily] Failed to start camera/join:", err);
+        console.error("[Daily] join error:", err);
       }
     })();
 
@@ -108,11 +110,7 @@ export function RoomPage() {
     Object.values(participants).forEach((p) => {
       const videoTrack = p.tracks?.video?.track;
       const audioTrack = p.tracks?.audio?.track;
-
-      if (!videoTrack) {
-        console.warn("[Daily] Missing videoTrack for participant:", p.session_id);
-        return;
-      }
+      if (!videoTrack) return;
 
       const videoEl = document.createElement("video");
       videoEl.autoplay = true;
@@ -120,7 +118,7 @@ export function RoomPage() {
       videoEl.muted = p.local;
       videoEl.srcObject = new MediaStream([videoTrack]);
       videoEl.className =
-        "rounded-xl object-cover w-full h-full max-h-[360px] sm:max-h-[480px] bg-black";
+        "rounded-xl object-cover w-full aspect-video max-h-[480px] bg-black";
 
       const wrapper = document.createElement("div");
       wrapper.className = "relative rounded-lg overflow-hidden";
@@ -166,6 +164,32 @@ export function RoomPage() {
     setIsSharing(newSharing);
   };
 
+  const changeCamera = async (deviceId: string) => {
+    if (!callObjectRef.current) return;
+    try {
+      await callObjectRef.current.updateInputSettings({
+        video: { deviceId },
+      });
+      setSelectedCamera(deviceId);
+      console.log("[Daily] Switched camera:", deviceId);
+    } catch (err) {
+      console.error("[Daily] Failed to switch camera:", err);
+    }
+  };
+
+  const sendEmoji = (emoji: string) => {
+    if (!callObjectRef.current) return;
+    callObjectRef.current.sendAppMessage({ emoji }, "*");
+
+    const id = Date.now() + Math.random();
+    setFloatingEmojis((prev) => [...prev, { id, emoji }]);
+    setTimeout(
+      () => setFloatingEmojis((prev) => prev.filter((e) => e.id !== id)),
+      2500
+    );
+    setShowEmojis(false);
+  };
+
   const leaveMeeting = async () => {
     if (!callObjectRef.current) return;
     await callObjectRef.current.leave();
@@ -196,13 +220,46 @@ export function RoomPage() {
       {/* === Main area === */}
       <div className="flex flex-1 overflow-hidden">
         <div className="flex-1 flex flex-col items-center justify-center bg-black relative">
+          {/* === Video Grid === */}
           <div
             ref={videoContainerRef}
             className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4 w-full h-full overflow-auto"
           ></div>
 
+          {/* === Floating Emojis === */}
+          <div className="absolute inset-0 pointer-events-none overflow-hidden">
+            {floatingEmojis.map((e) => (
+              <span
+                key={e.id}
+                className="absolute text-4xl animate-float"
+                style={{
+                  left: `${Math.random() * 80 + 10}%`,
+                  bottom: "0%",
+                  animation: `floatUp 2.5s ease-out`,
+                }}
+              >
+                {e.emoji}
+              </span>
+            ))}
+          </div>
+
           {/* === Control bar === */}
-          <div className="absolute bottom-6 inset-x-0 flex justify-center">
+          <div className="absolute bottom-6 inset-x-0 flex flex-col items-center gap-3">
+            {/* === Camera selector === */}
+            <div className="flex gap-2 items-center">
+              <select
+                value={selectedCamera}
+                onChange={(e) => changeCamera(e.target.value)}
+                className="bg-gray-800 text-white text-sm px-2 py-1 rounded-md border border-gray-700"
+              >
+                {videoDevices.map((dev) => (
+                  <option key={dev.deviceId} value={dev.deviceId}>
+                    {dev.label || "Camera"}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div className="flex gap-4 bg-gray-800 bg-opacity-80 px-6 py-3 rounded-2xl shadow-lg">
               <button
                 onClick={toggleMute}
@@ -232,12 +289,33 @@ export function RoomPage() {
               </button>
 
               <button
+                onClick={() => setShowEmojis(!showEmojis)}
+                className="p-3 rounded-full bg-gray-700 hover:bg-gray-600"
+              >
+                <Smile size={22} />
+              </button>
+
+              <button
                 onClick={leaveMeeting}
                 className="p-3 rounded-full bg-red-600 hover:bg-red-700"
               >
                 <PhoneOff size={22} />
               </button>
             </div>
+
+            {showEmojis && (
+              <div className="flex gap-2 bg-gray-800 px-4 py-2 rounded-xl">
+                {emojis.map((e) => (
+                  <button
+                    key={e}
+                    onClick={() => sendEmoji(e)}
+                    className="text-2xl hover:scale-125 transition-transform"
+                  >
+                    {e}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -246,6 +324,16 @@ export function RoomPage() {
           <IntentionsPanel />
         </div>
       </div>
+
+      {/* === Floating emoji animation === */}
+      <style>
+        {`
+          @keyframes floatUp {
+            0% { transform: translateY(0) scale(1); opacity: 1; }
+            100% { transform: translateY(-250px) scale(1.5); opacity: 0; }
+          }
+        `}
+      </style>
     </div>
   );
 }
