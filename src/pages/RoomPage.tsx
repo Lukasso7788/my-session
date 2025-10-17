@@ -32,14 +32,17 @@ export function RoomPage() {
     setLoading(false);
   }, [id]);
 
-  // === Initialize call ===
+  // === Initialize Daily call ===
   useEffect(() => {
     if (!session?.daily_room_url) return;
 
     const call = DailyIframe.createCallObject();
     callObjectRef.current = call;
 
-    const updateParticipants = () => setParticipants(call.participants());
+    const updateParticipants = () => {
+      setParticipants(call.participants());
+    };
+
     call.on("joined-meeting", updateParticipants);
     call.on("participant-joined", updateParticipants);
     call.on("participant-updated", updateParticipants);
@@ -57,46 +60,76 @@ export function RoomPage() {
       call.destroy();
       callObjectRef.current = null;
     };
-  }, [session]);
+  }, [session, navigate]);
 
-  // === Render participants video ===
+  // === Render participants ===
   useEffect(() => {
     if (!videoContainerRef.current) return;
     const container = videoContainerRef.current;
     container.innerHTML = "";
 
     Object.values(participants).forEach((p) => {
-      if (!p.videoTrack) return;
+      const videoTrack = p.tracks?.video?.track;
+      const audioTrack = p.tracks?.audio?.track;
+
+      // пропускаем если видео нет
+      if (!videoTrack) return;
+
       const videoEl = document.createElement("video");
       videoEl.autoplay = true;
       videoEl.playsInline = true;
-      videoEl.muted = p.local;
-      videoEl.srcObject = new MediaStream([p.videoTrack]);
-      videoEl.className = "rounded-xl object-cover w-full h-full";
-      container.appendChild(videoEl);
+      videoEl.muted = p.local; // не фоним сами себе
+      videoEl.srcObject = new MediaStream([videoTrack]);
+      videoEl.className =
+        "rounded-xl object-cover w-full h-full max-h-[360px] sm:max-h-[480px] bg-black";
+
+      // Добавляем элемент
+      const wrapper = document.createElement("div");
+      wrapper.className = "relative rounded-lg overflow-hidden";
+      wrapper.appendChild(videoEl);
+
+      // Имя участника
+      const nameTag = document.createElement("div");
+      nameTag.className =
+        "absolute bottom-2 left-2 bg-black bg-opacity-60 text-xs text-white px-2 py-1 rounded";
+      nameTag.textContent = p.user_name || (p.local ? "You" : "Guest");
+      wrapper.appendChild(nameTag);
+
+      container.appendChild(wrapper);
+
+      // если есть аудио — проигрываем
+      if (audioTrack && !p.local) {
+        const audioEl = document.createElement("audio");
+        audioEl.srcObject = new MediaStream([audioTrack]);
+        audioEl.autoplay = true;
+        container.appendChild(audioEl);
+      }
     });
   }, [participants]);
 
   // === Controls ===
   const toggleMute = () => {
     if (!callObjectRef.current) return;
-    const newMute = !isMuted;
-    callObjectRef.current.setLocalAudio(!newMute);
-    setIsMuted(newMute);
+    const newMuted = !isMuted;
+    callObjectRef.current.setLocalAudio(!newMuted);
+    setIsMuted(newMuted);
   };
 
   const toggleCamera = () => {
     if (!callObjectRef.current) return;
-    const newState = !isCameraOff;
-    callObjectRef.current.setLocalVideo(!newState);
-    setIsCameraOff(newState);
+    const newOff = !isCameraOff;
+    callObjectRef.current.setLocalVideo(!newOff);
+    setIsCameraOff(newOff);
   };
 
   const toggleScreenShare = async () => {
     if (!callObjectRef.current) return;
     const newSharing = !isSharing;
-    if (newSharing) await callObjectRef.current.startScreenShare();
-    else await callObjectRef.current.stopScreenShare();
+    if (newSharing) {
+      await callObjectRef.current.startScreenShare();
+    } else {
+      await callObjectRef.current.stopScreenShare();
+    }
     setIsSharing(newSharing);
   };
 
@@ -115,7 +148,7 @@ export function RoomPage() {
 
   return (
     <div className="flex flex-col h-screen bg-gray-900 text-white">
-      {/* Top bar */}
+      {/* === Top bar === */}
       <div className="p-4 border-b border-gray-800 flex items-center justify-between">
         <SessionTimer
           focusBlocks={session?.focus_blocks || []}
@@ -127,17 +160,22 @@ export function RoomPage() {
         </span>
       </div>
 
-      {/* Main area */}
+      {/* === Main area === */}
       <div className="flex flex-1 overflow-hidden">
         <div className="flex-1 flex flex-col items-center justify-center bg-black relative">
-          <div ref={videoContainerRef} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4 w-full h-full overflow-auto"></div>
+          <div
+            ref={videoContainerRef}
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4 w-full h-full overflow-auto"
+          ></div>
 
-          {/* Control bar */}
+          {/* === Control bar === */}
           <div className="absolute bottom-6 inset-x-0 flex justify-center">
             <div className="flex gap-4 bg-gray-800 bg-opacity-80 px-6 py-3 rounded-2xl shadow-lg">
               <button
                 onClick={toggleMute}
-                className={`p-3 rounded-full ${isMuted ? "bg-red-600" : "bg-gray-700"} hover:bg-red-700`}
+                className={`p-3 rounded-full ${
+                  isMuted ? "bg-red-600" : "bg-gray-700"
+                } hover:bg-red-700`}
                 title={isMuted ? "Unmute" : "Mute"}
               >
                 {isMuted ? <MicOff size={22} /> : <Mic size={22} />}
@@ -145,7 +183,9 @@ export function RoomPage() {
 
               <button
                 onClick={toggleCamera}
-                className={`p-3 rounded-full ${isCameraOff ? "bg-red-600" : "bg-gray-700"} hover:bg-red-700`}
+                className={`p-3 rounded-full ${
+                  isCameraOff ? "bg-red-600" : "bg-gray-700"
+                } hover:bg-red-700`}
                 title={isCameraOff ? "Turn camera on" : "Turn camera off"}
               >
                 {isCameraOff ? <VideoOff size={22} /> : <Video size={22} />}
@@ -153,8 +193,12 @@ export function RoomPage() {
 
               <button
                 onClick={toggleScreenShare}
-                className={`p-3 rounded-full ${isSharing ? "bg-blue-600" : "bg-gray-700"} hover:bg-blue-700`}
-                title={isSharing ? "Stop sharing" : "Share screen"}
+                className={`p-3 rounded-full ${
+                  isSharing ? "bg-blue-600" : "bg-gray-700"
+                } hover:bg-blue-700`}
+                title={
+                  isSharing ? "Stop screen sharing" : "Share your screen"
+                }
               >
                 <MonitorUp size={22} />
               </button>
@@ -162,7 +206,7 @@ export function RoomPage() {
               <button
                 onClick={leaveMeeting}
                 className="p-3 rounded-full bg-red-600 hover:bg-red-700"
-                title="Leave"
+                title="Leave meeting"
               >
                 <PhoneOff size={22} />
               </button>
@@ -170,7 +214,7 @@ export function RoomPage() {
           </div>
         </div>
 
-        {/* Sidebar */}
+        {/* === Sidebar === */}
         <div className="w-80 border-l border-gray-800 bg-gray-950">
           <IntentionsPanel />
         </div>
