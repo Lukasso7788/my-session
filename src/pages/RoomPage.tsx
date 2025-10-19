@@ -27,14 +27,9 @@ export function RoomPage() {
     setLoading(false);
   }, [id]);
 
-  // === Daily prebuilt (iframe) ===
+  // === Daily Prebuilt (iframe) ===
   useEffect(() => {
     if (!containerRef.current || !session?.daily_room_url) return;
-
-    // добавляем ?view=grid чтобы по умолчанию открывался Grid View
-    const urlWithView = session.daily_room_url.includes("?")
-      ? `${session.daily_room_url}&view=grid`
-      : `${session.daily_room_url}?view=grid`;
 
     const callFrame = DailyIframe.createFrame(containerRef.current, {
       iframeStyle: {
@@ -49,13 +44,33 @@ export function RoomPage() {
 
     callRef.current = callFrame;
 
+    // === Принудительно включаем Grid View ===
+    callFrame.on("loaded", () => {
+      try {
+        // Программно задаём grid layout для prebuilt
+        callFrame.setShowNamesMode("always");
+        callFrame.setSortParticipantsBy("grid"); // важно
+      } catch (err) {
+        console.warn("Grid view setup failed:", err);
+      }
+    });
+
+    callFrame.on("joined-meeting", () => {
+      // Иногда prebuilt нужно переключить после join
+      try {
+        callFrame.updateParticipants({ layout: "grid" });
+      } catch (err) {
+        console.warn("Grid view fallback:", err);
+      }
+    });
+
     callFrame.on("left-meeting", async () => {
       await callFrame.destroy();
       callRef.current = null;
       navigate("/sessions");
     });
 
-    callFrame.join({ url: urlWithView });
+    callFrame.join({ url: session.daily_room_url });
 
     return () => {
       callFrame.destroy();
@@ -72,7 +87,6 @@ export function RoomPage() {
 
   return (
     <div className="min-h-screen bg-slate-900 text-white flex justify-center">
-      {/* уменьшили отступы примерно на 35% */}
       <div className="w-full max-w-[1720px] px-5 py-5 space-y-5">
         {/* === Header === */}
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 shadow-lg p-4">
