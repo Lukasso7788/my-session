@@ -12,35 +12,19 @@ export function RoomPage() {
 
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
 
   // === Load session ===
   useEffect(() => {
-    const run = async () => {
-      try {
-        const saved = localStorage.getItem("sessions");
-        if (saved) {
-          const found = JSON.parse(saved).find((s: any) => s.id === id);
-          if (found) {
-            setSession(found);
-            setSessionStartTime(new Date(found.scheduled_at || found.created_at));
-            setLoading(false);
-            return;
-          }
-        }
-        const res = await fetch(`/api/sessions/${id}`);
-        if (!res.ok) throw new Error("Failed to load session");
-        const data = await res.json();
-        setSession(data);
-        setSessionStartTime(new Date(data.scheduled_at || data.created_at));
-      } catch (e: any) {
-        setError(e.message);
-      } finally {
-        setLoading(false);
+    const saved = localStorage.getItem("sessions");
+    if (saved) {
+      const found = JSON.parse(saved).find((s: any) => s.id === id);
+      if (found) {
+        setSession(found);
+        setSessionStartTime(new Date(found.scheduled_at || found.created_at));
       }
-    };
-    run();
+    }
+    setLoading(false);
   }, [id]);
 
   // === Daily prebuilt (iframe) ===
@@ -52,8 +36,8 @@ export function RoomPage() {
         width: "100%",
         height: "100%",
         border: "0",
+        borderRadius: "1rem", // скругление внутри iframe
       },
-      // используем предустановленный UI
       showFullscreenButton: true,
       showLeaveButton: true,
     });
@@ -66,9 +50,7 @@ export function RoomPage() {
       navigate("/sessions");
     });
 
-    callFrame
-      .join({ url: session.daily_room_url })
-      .catch((err) => console.error("Join error:", err));
+    callFrame.join({ url: session.daily_room_url });
 
     return () => {
       callFrame.destroy();
@@ -76,55 +58,41 @@ export function RoomPage() {
     };
   }, [session, navigate]);
 
-  // === UI states ===
-  if (loading) {
+  if (loading)
     return (
       <div className="flex h-screen items-center justify-center bg-slate-900 text-white">
-        Loading session…
+        Loading session...
       </div>
     );
-  }
-  if (error) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-slate-900 text-red-400">
-        {error}
-      </div>
-    );
-  }
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white">
-      <div className="mx-auto w-full max-w-[1400px] px-5 md:px-6 py-5 space-y-5">
-        {/* Header: title (small, right) + timer card with same radius */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 shadow-lg backdrop-blur-sm">
-          <div className="flex items-center justify-between px-4 pt-3">
+    <div className="min-h-screen bg-slate-900 text-white flex justify-center">
+      <div className="w-full max-w-[1600px] px-8 py-6 space-y-6">
+        {/* === Header === */}
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 shadow-lg p-4">
+          <div className="flex justify-between items-end mb-2">
             <div />
-            <div className="text-xs tracking-wide text-slate-400">
-              {session?.title ?? ""}
-            </div>
+            <div className="text-xs text-slate-400">{session?.title ?? ""}</div>
           </div>
-          <div className="px-4 pb-4">
-            <div className="rounded-2xl overflow-hidden bg-white/95">
-              <SessionTimer
-                focusBlocks={session?.focus_blocks || []}
-                durationMinutes={session?.duration_minutes || 50}
-                startTime={sessionStartTime || new Date()}
-              />
-            </div>
+
+          <div className="bg-white rounded-2xl overflow-hidden shadow-sm">
+            <SessionTimer
+              focusBlocks={session?.focus_blocks || []}
+              durationMinutes={session?.duration_minutes || 50}
+              startTime={sessionStartTime || new Date()}
+            />
           </div>
         </div>
 
-        {/* Main grid: left = video (iframe), right = intentions; радиусы совпадают */}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr,360px] gap-5 items-start">
-          {/* Video card */}
+        {/* === Main content === */}
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr,380px] gap-6">
+          {/* === Video (iframe) === */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden">
-            <div className="relative h-[72vh] min-h-[520px]">
-              <div ref={containerRef} className="absolute inset-0" />
-            </div>
+            <div ref={containerRef} className="w-full h-[75vh] min-h-[520px]" />
           </div>
 
-          {/* Intentions card with same radius */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden">
+          {/* === Intentions === */}
+          <div className="rounded-2xl border border-slate-800 bg-white text-black shadow-lg overflow-hidden">
             <div className="p-4">
               <IntentionsPanel />
             </div>
