@@ -31,12 +31,17 @@ export function RoomPage() {
   useEffect(() => {
     if (!containerRef.current || !session?.daily_room_url) return;
 
+    // добавляем ?view=grid чтобы по умолчанию открывался Grid View
+    const urlWithView = session.daily_room_url.includes("?")
+      ? `${session.daily_room_url}&view=grid`
+      : `${session.daily_room_url}?view=grid`;
+
     const callFrame = DailyIframe.createFrame(containerRef.current, {
       iframeStyle: {
         width: "100%",
         height: "100%",
         border: "0",
-        borderRadius: "1rem", // скругление внутри iframe
+        borderRadius: "1rem",
       },
       showFullscreenButton: true,
       showLeaveButton: true,
@@ -50,7 +55,7 @@ export function RoomPage() {
       navigate("/sessions");
     });
 
-    callFrame.join({ url: session.daily_room_url });
+    callFrame.join({ url: urlWithView });
 
     return () => {
       callFrame.destroy();
@@ -67,7 +72,8 @@ export function RoomPage() {
 
   return (
     <div className="min-h-screen bg-slate-900 text-white flex justify-center">
-      <div className="w-full max-w-[1600px] px-8 py-6 space-y-6">
+      {/* уменьшили отступы примерно на 35% */}
+      <div className="w-full max-w-[1720px] px-5 py-5 space-y-5">
         {/* === Header === */}
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 shadow-lg p-4">
           <div className="flex justify-between items-end mb-2">
@@ -85,7 +91,7 @@ export function RoomPage() {
         </div>
 
         {/* === Main content === */}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr,380px] gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr,370px] gap-5">
           {/* === Video (iframe) === */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden">
             <div ref={containerRef} className="w-full h-[75vh] min-h-[520px]" />
