@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { SessionTimer } from "../components/SessionTimer";
 import { IntentionsPanel } from "../components/IntentionsPanel";
 
 export function RoomPage() {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const [session, setSession] = useState<any>(null);
@@ -25,7 +24,7 @@ export function RoomPage() {
     setLoading(false);
   }, [id]);
 
-  // === Load prebuilt Daily room into iframe ===
+  // === Load prebuilt Daily room ===
   useEffect(() => {
     if (!session?.daily_room_url || !iframeRef.current) return;
     iframeRef.current.src = session.daily_room_url;
@@ -39,35 +38,33 @@ export function RoomPage() {
     );
 
   return (
-    <div className="flex flex-col h-screen bg-gray-900 text-white">
+    <div className="flex flex-col h-screen bg-gray-900 text-white px-6 py-4 gap-4">
       {/* === Top bar === */}
-      <div className="p-4 border-b border-gray-800 flex items-center justify-between">
+      <div className="border border-gray-800 bg-gray-950 rounded-2xl p-4 flex items-center justify-between shadow-lg">
         <SessionTimer
           focusBlocks={session?.focus_blocks || []}
           durationMinutes={session?.duration_minutes || 50}
           startTime={sessionStartTime || new Date()}
         />
-        <span className="text-sm text-gray-400">
+        <span className="text-sm text-gray-400 pr-2">
           {session?.title || "Focus Session"}
         </span>
       </div>
 
       {/* === Main area === */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* === Video area (with embedded Daily prebuilt UI) === */}
-        <div className="flex-1 flex flex-col items-center justify-center bg-black relative">
-          <div className="w-full h-full max-w-7xl aspect-video relative rounded-xl overflow-hidden border border-gray-800 shadow-lg">
-            <iframe
-              ref={iframeRef}
-              allow="camera; microphone; display-capture; autoplay"
-              className="absolute top-0 left-0 w-full h-full border-0"
-              title="Focus Room"
-            />
-          </div>
+      <div className="flex flex-1 overflow-hidden gap-4">
+        {/* === Video area === */}
+        <div className="flex-1 flex justify-center items-center rounded-2xl overflow-hidden border border-gray-800 bg-black shadow-lg">
+          <iframe
+            ref={iframeRef}
+            allow="camera; microphone; display-capture; autoplay"
+            className="w-full h-full border-0 rounded-2xl"
+            title="Focus Room"
+          />
         </div>
 
         {/* === Sidebar === */}
-        <div className="w-80 border-l border-gray-800 bg-gray-950">
+        <div className="w-80 border border-gray-800 bg-gray-950 rounded-2xl shadow-lg">
           <IntentionsPanel />
         </div>
       </div>
