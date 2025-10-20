@@ -43,8 +43,6 @@ export function CreateSessionModal({
 
     try {
       const focusBlocks = generateFocusBlocks(option.format, option.duration);
-
-      // 💡 Конвертируем локальное время в ISO
       const scheduledISO = new Date(scheduledAt).toISOString();
 
       const res = await fetch('/api/sessions', {
@@ -62,10 +60,13 @@ export function CreateSessionModal({
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || 'Failed to create session');
+        throw new Error(errData.error || 'Failed to create a session');
       }
 
-      // reset
+      const data = await res.json();
+      console.log('Session created successfully:', data);
+
+      // Reset form after success
       setTitle('');
       setHost('');
       setSelectedOption('');
@@ -74,7 +75,7 @@ export function CreateSessionModal({
       onClose();
     } catch (err: any) {
       console.error('Error creating session:', err);
-      setError(err.message);
+      setError(err.message || 'Failed to create a session');
     } finally {
       setIsCreating(false);
     }
@@ -125,7 +126,7 @@ export function CreateSessionModal({
               value={scheduledAt}
               onChange={(e) => setScheduledAt(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-              min={new Date().toISOString().slice(0, 16)} // 🚫 нельзя выбрать прошлое время
+              min={new Date().toISOString().slice(0, 16)}
             />
           </div>
 
