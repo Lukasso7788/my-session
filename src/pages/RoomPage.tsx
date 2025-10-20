@@ -16,9 +16,12 @@ export function RoomPage() {
 
   const [currentStage, setCurrentStage] = useState(0);
   const [progress, setProgress] = useState(0);
+  const [hoveredStage, setHoveredStage] = useState<any>(null);
+  const [remainingTime, setRemainingTime] = useState<string>("");
+
   const stages = defaultSession;
 
-  // === Load session from localStorage ===
+  // Load session
   useEffect(() => {
     const saved = localStorage.getItem("sessions");
     if (saved) {
@@ -28,7 +31,7 @@ export function RoomPage() {
     setLoading(false);
   }, [id]);
 
-  // === Join Daily iframe ===
+  // Join Daily iframe
   useEffect(() => {
     if (!containerRef.current || !session?.daily_room_url) return;
 
@@ -63,7 +66,7 @@ export function RoomPage() {
     };
   }, [session, navigate]);
 
-  // === Stage logic ===
+  // Stage logic + remaining time
   useEffect(() => {
     const current = stages[currentStage];
     const durationMs = current.duration * 60 * 1000;
@@ -73,6 +76,11 @@ export function RoomPage() {
       const elapsed = Date.now() - startTime;
       const ratio = Math.min(elapsed / durationMs, 1);
       setProgress(ratio);
+
+      const remaining = Math.max(0, durationMs - elapsed);
+      const minutes = Math.floor(remaining / 60000);
+      const seconds = Math.floor((remaining % 60000) / 1000);
+      setRemainingTime(`${minutes}:${seconds.toString().padStart(2, "0")}`);
 
       if (ratio >= 1) {
         setCurrentStage((prev) => (prev + 1 < stages.length ? prev + 1 : prev));
@@ -100,20 +108,32 @@ export function RoomPage() {
               {session?.title ?? ""}
             </div>
             <div className="text-xs text-slate-500">
-              Stage {currentStage + 1} of {stages.length}
+              Stage {currentStage + 1} / {stages.length}
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl overflow-hidden shadow-sm p-4">
+          <div className="bg-white rounded-2xl overflow-hidden shadow-sm p-4 space-y-3">
             <SessionStageBar
               stages={stages}
               currentStageIndex={currentStage}
               currentStageProgress={progress}
+              onHoverStage={setHoveredStage}
             />
+
+            <div className="flex justify-between items-center text-sm font-medium text-slate-700 mt-1">
+              <span>
+                {hoveredStage
+                  ? hoveredStage.name
+                  : stages[currentStage]?.name ?? ""}
+              </span>
+              <span className="text-slate-500">
+                ⏱ {remainingTime}
+              </span>
+            </div>
           </div>
         </div>
 
-        {/* Main Area */}
+        {/* Main */}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr,370px] gap-5">
           <div className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden">
             <div ref={containerRef} className="w-full h-[75vh] min-h-[520px]" />
