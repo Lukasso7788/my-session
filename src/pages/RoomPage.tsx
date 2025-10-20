@@ -3,6 +3,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import DailyIframe, { DailyCall } from "@daily-co/daily-js";
 import { IntentionsPanel } from "../components/IntentionsPanel";
 import { SessionTimer } from "../components/SessionTimer";
+import { SessionStageBar } from "../components/SessionStageBar";
+import { defaultSession } from "../SessionConfig";
 
 export function RoomPage() {
   const { id } = useParams<{ id: string }>();
@@ -14,7 +16,12 @@ export function RoomPage() {
   const [loading, setLoading] = useState(true);
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
 
-  // === Load session ===
+  // состояние стадий сессии
+  const [currentStage, setCurrentStage] = useState(0);
+  const [progress, setProgress] = useState(0);
+  const stages = defaultSession;
+
+  // загружаем данные сессии
   useEffect(() => {
     const saved = localStorage.getItem("sessions");
     if (saved) {
@@ -27,7 +34,20 @@ export function RoomPage() {
     setLoading(false);
   }, [id]);
 
-  // === Daily Prebuilt (iframe) ===
+  // вспомогательная функция для включения grid layout
+  function withGridLayout(url: string): string {
+    try {
+      const u = new URL(url);
+      u.searchParams.set("layout", "grid");
+      u.searchParams.set("view", "grid");
+      return u.toString();
+    } catch {
+      const sep = url.includes("?") ? "&" : "?";
+      return `${url}${sep}layout=grid&view=grid`;
+    }
+  }
+
+  // инициализация Daily iframe
   useEffect(() => {
     if (!containerRef.current || !session?.daily_room_url) return;
 
@@ -44,39 +64,41 @@ export function RoomPage() {
 
     callRef.current = callFrame;
 
-    // === Принудительно включаем Grid View ===
-    callFrame.on("loaded", () => {
-      try {
-        // Программно задаём grid layout для prebuilt
-        callFrame.setShowNamesMode("always");
-        callFrame.setSortParticipantsBy("grid"); // важно
-      } catch (err) {
-        console.warn("Grid view setup failed:", err);
-      }
-    });
-
-    callFrame.on("joined-meeting", () => {
-      // Иногда prebuilt нужно переключить после join
-      try {
-        callFrame.updateParticipants({ layout: "grid" });
-      } catch (err) {
-        console.warn("Grid view fallback:", err);
-      }
-    });
-
     callFrame.on("left-meeting", async () => {
       await callFrame.destroy();
       callRef.current = null;
       navigate("/sessions");
     });
 
-    callFrame.join({ url: session.daily_room_url });
+    const urlWithGrid = withGridLayout(session.daily_room_url);
+    callFrame.join({ url: urlWithGrid }).catch((err) => {
+      console.error("Daily join error:", err);
+    });
 
     return () => {
       callFrame.destroy();
       callRef.current = null;
     };
   }, [session, navigate]);
+
+  // управление стадиями (как в Flown)
+  useEffect(() => {
+    const current = stages[currentStage];
+    const durationMs = current.duration * 60 * 1000;
+    const startTime = Date.now();
+
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const ratio = Math.min(elapsed / durationMs, 1);
+      setProgress(ratio);
+      if (ratio >= 1) {
+        setCurrentStage((prev) => (prev + 1 < stages.length ? prev + 1 : prev));
+        setProgress(0);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [currentStage]);
 
   if (loading)
     return (
@@ -88,14 +110,22 @@ export function RoomPage() {
   return (
     <div className="min-h-screen bg-slate-900 text-white flex justify-center">
       <div className="w-full max-w-[1720px] px-5 py-5 space-y-5">
-        {/* === Header === */}
+        {/* Header */}
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 shadow-lg p-4">
           <div className="flex justify-between items-end mb-2">
             <div />
             <div className="text-xs text-slate-400">{session?.title ?? ""}</div>
           </div>
 
-          <div className="bg-white rounded-2xl overflow-hidden shadow-sm">
+          {/* Progress bar */}
+          <div className="bg-white rounded-2xl overflow-hidden shadow-sm p-4">
+            <div className="mb-4">
+              <SessionStageBar
+                stages={stages}
+                currentStageIndex={currentStage}
+                currentStageProgress={progress}
+              />
+            </div>
             <SessionTimer
               focusBlocks={session?.focus_blocks || []}
               durationMinutes={session?.duration_minutes || 50}
@@ -104,14 +134,14 @@ export function RoomPage() {
           </div>
         </div>
 
-        {/* === Main content === */}
+        {/* Main content */}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr,370px] gap-5">
-          {/* === Video (iframe) === */}
+          {/* Video */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden">
             <div ref={containerRef} className="w-full h-[75vh] min-h-[520px]" />
           </div>
 
-          {/* === Intentions === */}
+          {/* Intentions panel */}
           <div className="rounded-2xl border border-slate-800 bg-white text-black shadow-lg overflow-hidden">
             <div className="p-4">
               <IntentionsPanel />
