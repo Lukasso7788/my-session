@@ -1,6 +1,4 @@
-import type { NextApiRequest, NextApiResponse } from "next";
-
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(req: any, res: any) {
   if (req.method === "POST") {
     try {
       const response = await fetch("https://api.daily.co/v1/rooms", {
