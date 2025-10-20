@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import DailyIframe, { DailyCall } from "@daily-co/daily-js";
 import { IntentionsPanel } from "../components/IntentionsPanel";
 import { SessionStageBar } from "../components/SessionStageBar";
-import { defaultSession } from "../SessionConfig";
+import { getSessionFormatById, sessionFormats } from "../SessionConfig";
 
 export function RoomPage() {
   const { id } = useParams<{ id: string }>();
@@ -14,19 +14,25 @@ export function RoomPage() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
+  const [stages, setStages] = useState<any[]>([]);
   const [currentStage, setCurrentStage] = useState(0);
   const [progress, setProgress] = useState(0);
   const [hoveredStage, setHoveredStage] = useState<any>(null);
   const [remainingTime, setRemainingTime] = useState<string>("");
-
-  const stages = defaultSession;
 
   // Load session
   useEffect(() => {
     const saved = localStorage.getItem("sessions");
     if (saved) {
       const found = JSON.parse(saved).find((s: any) => s.id === id);
-      if (found) setSession(found);
+      if (found) {
+        setSession(found);
+
+        // Определяем формат сессии
+        const format = getSessionFormatById(found.format_id || "1h-pomodoro") 
+          || sessionFormats[0];
+        setStages(format.stages);
+      }
     }
     setLoading(false);
   }, [id]);
@@ -68,6 +74,7 @@ export function RoomPage() {
 
   // Stage logic + remaining time
   useEffect(() => {
+    if (!stages.length) return;
     const current = stages[currentStage];
     const durationMs = current.duration * 60 * 1000;
     const startTime = Date.now();
@@ -123,7 +130,7 @@ export function RoomPage() {
             <div className="flex justify-between items-center text-sm font-medium text-slate-700 mt-1">
               <span>
                 {hoveredStage
-                  ? hoveredStage.name
+                  ? `${hoveredStage.name} • ${hoveredStage.duration} min`
                   : stages[currentStage]?.name ?? ""}
               </span>
               <span className="text-slate-500">
