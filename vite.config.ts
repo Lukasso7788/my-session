@@ -3,13 +3,14 @@ import react from '@vitejs/plugin-react'
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  base: './', // <<< ВАЖНО: делает пути относительными
+  base: './', // делает пути к JS/CSS относительными (иначе MIME ошибка)
   plugins: [react()],
   optimizeDeps: {
     exclude: ['lucide-react'],
   },
   build: {
-    outDir: 'dist',
+    outDir: 'dist',          // куда билдить
+    assetsDir: './assets',   // фикс путей к ассетам
     sourcemap: false,
   },
   server: {
