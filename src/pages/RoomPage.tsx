@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import DailyIframe, { DailyCall } from "@daily-co/daily-js";
 import { IntentionsPanel } from "../components/IntentionsPanel";
-import { SessionTimer } from "../components/SessionTimer";
 import { SessionStageBar } from "../components/SessionStageBar";
 import { defaultSession } from "../SessionConfig";
 
@@ -14,40 +13,22 @@ export function RoomPage() {
 
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
 
-  // состояние стадий сессии
   const [currentStage, setCurrentStage] = useState(0);
   const [progress, setProgress] = useState(0);
   const stages = defaultSession;
 
-  // загружаем данные сессии
+  // === Load session from localStorage ===
   useEffect(() => {
     const saved = localStorage.getItem("sessions");
     if (saved) {
       const found = JSON.parse(saved).find((s: any) => s.id === id);
-      if (found) {
-        setSession(found);
-        setSessionStartTime(new Date(found.scheduled_at || found.created_at));
-      }
+      if (found) setSession(found);
     }
     setLoading(false);
   }, [id]);
 
-  // вспомогательная функция для включения grid layout
-  function withGridLayout(url: string): string {
-    try {
-      const u = new URL(url);
-      u.searchParams.set("layout", "grid");
-      u.searchParams.set("view", "grid");
-      return u.toString();
-    } catch {
-      const sep = url.includes("?") ? "&" : "?";
-      return `${url}${sep}layout=grid&view=grid`;
-    }
-  }
-
-  // инициализация Daily iframe
+  // === Join Daily iframe ===
   useEffect(() => {
     if (!containerRef.current || !session?.daily_room_url) return;
 
@@ -70,10 +51,11 @@ export function RoomPage() {
       navigate("/sessions");
     });
 
-    const urlWithGrid = withGridLayout(session.daily_room_url);
-    callFrame.join({ url: urlWithGrid }).catch((err) => {
-      console.error("Daily join error:", err);
-    });
+    const urlWithGrid = session.daily_room_url.includes("?")
+      ? `${session.daily_room_url}&layout=grid`
+      : `${session.daily_room_url}?layout=grid`;
+
+    callFrame.join({ url: urlWithGrid }).catch(console.error);
 
     return () => {
       callFrame.destroy();
@@ -81,7 +63,7 @@ export function RoomPage() {
     };
   }, [session, navigate]);
 
-  // управление стадиями (как в Flown)
+  // === Stage logic ===
   useEffect(() => {
     const current = stages[currentStage];
     const durationMs = current.duration * 60 * 1000;
@@ -91,6 +73,7 @@ export function RoomPage() {
       const elapsed = Date.now() - startTime;
       const ratio = Math.min(elapsed / durationMs, 1);
       setProgress(ratio);
+
       if (ratio >= 1) {
         setCurrentStage((prev) => (prev + 1 < stages.length ? prev + 1 : prev));
         setProgress(0);
@@ -98,7 +81,7 @@ export function RoomPage() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [currentStage]);
+  }, [currentStage, stages]);
 
   if (loading)
     return (
@@ -112,36 +95,30 @@ export function RoomPage() {
       <div className="w-full max-w-[1720px] px-5 py-5 space-y-5">
         {/* Header */}
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 shadow-lg p-4">
-          <div className="flex justify-between items-end mb-2">
-            <div />
-            <div className="text-xs text-slate-400">{session?.title ?? ""}</div>
+          <div className="flex justify-between items-end mb-3">
+            <div className="text-sm font-medium text-slate-400">
+              {session?.title ?? ""}
+            </div>
+            <div className="text-xs text-slate-500">
+              Stage {currentStage + 1} of {stages.length}
+            </div>
           </div>
 
-          {/* Progress bar */}
           <div className="bg-white rounded-2xl overflow-hidden shadow-sm p-4">
-            <div className="mb-4">
-              <SessionStageBar
-                stages={stages}
-                currentStageIndex={currentStage}
-                currentStageProgress={progress}
-              />
-            </div>
-            <SessionTimer
-              focusBlocks={session?.focus_blocks || []}
-              durationMinutes={session?.duration_minutes || 50}
-              startTime={sessionStartTime || new Date()}
+            <SessionStageBar
+              stages={stages}
+              currentStageIndex={currentStage}
+              currentStageProgress={progress}
             />
           </div>
         </div>
 
-        {/* Main content */}
+        {/* Main Area */}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr,370px] gap-5">
-          {/* Video */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden">
             <div ref={containerRef} className="w-full h-[75vh] min-h-[520px]" />
           </div>
 
-          {/* Intentions panel */}
           <div className="rounded-2xl border border-slate-800 bg-white text-black shadow-lg overflow-hidden">
             <div className="p-4">
               <IntentionsPanel />
