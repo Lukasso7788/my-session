@@ -3,7 +3,12 @@ import { useParams, useNavigate } from "react-router-dom";
 import DailyIframe, { DailyCall } from "@daily-co/daily-js";
 import { IntentionsPanel } from "../components/IntentionsPanel";
 import { SessionStageBar } from "../components/SessionStageBar";
-import { getSessionFormatById, sessionFormats } from "../SessionConfig";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  import.meta.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 export function RoomPage() {
   const { id } = useParams<{ id: string }>();
@@ -21,29 +26,44 @@ export function RoomPage() {
   const [hoveredStage, setHoveredStage] = useState<any>(null);
   const [remainingTime, setRemainingTime] = useState<string>("");
 
-  // ---- Load session from localStorage ----
+  // ---- Load session from Supabase ----
   useEffect(() => {
-    const saved = localStorage.getItem("sessions");
-    if (saved) {
-      const found = JSON.parse(saved).find((s: any) => s.id === id);
-      if (found) {
-        setSession(found);
+    async function loadSession() {
+      if (!id) return;
+      const { data, error } = await supabase
+        .from("sessions")
+        .select("*, session_templates(*)")
+        .eq("id", id)
+        .single();
 
-        const format =
-          getSessionFormatById(found.format_id || found.format) ||
-          sessionFormats[0];
-
-        setStages(format.stages || []);
+      if (error) {
+        console.error("Error loading session:", error.message);
+      } else if (data) {
+        setSession(data);
+        // schedule — это JSON с блоками
+        if (data.schedule) {
+          const parsed =
+            typeof data.schedule === "string"
+              ? JSON.parse(data.schedule)
+              : data.schedule;
+          const formatted = parsed.map((b: any) => ({
+            name: b.name,
+            duration: b.minutes,
+            color: "#60a5fa",
+          }));
+          setStages(formatted);
+        }
       }
+      setLoading(false);
     }
-    setLoading(false);
+
+    loadSession();
   }, [id]);
 
-  // ---- Initialize Daily iframe safely ----
+  // ---- Initialize Daily iframe ----
   useEffect(() => {
     if (!containerRef.current || !session?.daily_room_url) return;
 
-    // Destroy previous instance if exists
     if (callRef.current) {
       callRef.current.destroy().catch(() => {});
       callRef.current = null;
@@ -86,7 +106,7 @@ export function RoomPage() {
     };
   }, [session?.daily_room_url, navigate]);
 
-  // ---- Stage progression and timer ----
+  // ---- Stage progression ----
   useEffect(() => {
     if (!stages.length) return;
 
@@ -105,10 +125,9 @@ export function RoomPage() {
       setRemainingTime(`${minutes}:${seconds.toString().padStart(2, "0")}`);
 
       if (ratio >= 1) {
-        setCurrentStage((prev) => {
-          if (prev + 1 < stages.length) return prev + 1;
-          return prev;
-        });
+        setCurrentStage((prev) =>
+          prev + 1 < stages.length ? prev + 1 : prev
+        );
         setProgress(0);
       }
     }, 1000);
@@ -181,7 +200,7 @@ export function RoomPage() {
             <div ref={containerRef} className="w-full h-[75vh] min-h-[520px]" />
           </div>
 
-          {/* Intentions sidebar */}
+          {/* Sidebar */}
           <div className="rounded-2xl border border-slate-800 bg-white text-black shadow-lg overflow-hidden">
             <div className="p-4">
               <IntentionsPanel />
