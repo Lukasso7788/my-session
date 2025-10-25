@@ -1,18 +1,49 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { createClient } from "@supabase/supabase-js";
+import type { NextApiRequest, NextApiResponse } from "next";
 
-let sessions: any[] = [];
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method === "GET") {
-    return res.status(200).json(sessions);
+    try {
+      const { data, error } = await supabase
+        .from("sessions")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      return res.status(200).json(data);
+    } catch (err: any) {
+      console.error("GET error:", err);
+      return res.status(500).json({ error: err.message });
+    }
   }
 
   if (req.method === "POST") {
     try {
-      const { title, host, duration_minutes, format, scheduled_at } = req.body;
-      const roomName = `session-${Date.now()}`;
+      const { title, host, template_id, scheduled_at } = req.body;
+      if (!title || !host || !template_id) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
 
-      const response = await fetch("https://api.daily.co/v1/rooms", {
+      // 1️⃣ Получаем шаблон сессии из Supabase
+      const { data: template, error: templateError } = await supabase
+        .from("session_templates")
+        .select("*")
+        .eq("id", template_id)
+        .single();
+
+      if (templateError || !template) {
+        console.error("Template not found:", templateError);
+        return res.status(400).json({ error: "Template not found" });
+      }
+
+      // 2️⃣ Создаём комнату в Daily.co
+      const roomName = `session-${Date.now()}`;
+      const dailyRes = await fetch("https://api.daily.co/v1/rooms", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${process.env.DAILY_API_KEY}`,
@@ -24,34 +55,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           properties: {
             enable_screenshare: true,
             enable_chat: true,
-            exp: Math.floor(Date.now() / 1000) + 3600, // 1 час
+            exp: Math.floor(Date.now() / 1000) + 7200, // срок жизни 2 часа
           },
         }),
       });
 
-      if (!response.ok) {
-        const err = await response.text();
-        console.error("Daily API error:", err);
-        return res.status(response.status).json({ error: err });
+      if (!dailyRes.ok) {
+        const text = await dailyRes.text();
+        console.error("Daily API error:", text);
+        return res.status(500).json({ error: "Daily.co API failed" });
       }
 
-      const room = await response.json();
+      const room = await dailyRes.json();
 
-      const newSession = {
-        id: Date.now().toString(),
-        title,
-        host,
-        duration_minutes,
-        format,
-        daily_room_url: room.url,
-        created_at: new Date().toISOString(),
-        scheduled_at,
-      };
+      // 3️⃣ Записываем сессию в Supabase
+      const { data, error } = await supabase
+        .from("sessions")
+        .insert([
+          {
+            title,
+            host,
+            duration_minutes: template.total_duration,
+            format: template.name,
+            template_id,
+            schedule: template.blocks,
+            daily_room_url: room.url,
+            start_time: scheduled_at,
+            status: "planned",
+          },
+        ])
+        .select()
+        .single();
 
-      sessions.push(newSession);
-      return res.status(200).json(newSession);
+      if (error) throw error;
+
+      return res.status(200).json(data);
     } catch (err: any) {
-      console.error("Error creating session:", err);
+      console.error("POST error:", err);
       return res.status(500).json({ error: err.message });
     }
   }
