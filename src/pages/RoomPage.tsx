@@ -3,12 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import DailyIframe, { DailyCall } from "@daily-co/daily-js";
 import { IntentionsPanel } from "../components/IntentionsPanel";
 import { SessionStageBar } from "../components/SessionStageBar";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  import.meta.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { supabase } from "../lib/supabase"; // ✅ единый клиент, не дублируем createClient
 
 export function RoomPage() {
   const { id } = useParams<{ id: string }>();
@@ -19,17 +14,19 @@ export function RoomPage() {
 
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-
   const [stages, setStages] = useState<any[]>([]);
   const [currentStage, setCurrentStage] = useState(0);
   const [progress, setProgress] = useState(0);
   const [hoveredStage, setHoveredStage] = useState<any>(null);
   const [remainingTime, setRemainingTime] = useState<string>("");
 
-  // ---- Load session from Supabase ----
+  // ===============================
+  // 1️⃣ Load session data from Supabase
+  // ===============================
   useEffect(() => {
     async function loadSession() {
       if (!id) return;
+
       const { data, error } = await supabase
         .from("sessions")
         .select("*, session_templates(*)")
@@ -37,33 +34,44 @@ export function RoomPage() {
         .single();
 
       if (error) {
-        console.error("Error loading session:", error.message);
+        console.error("❌ Error loading session:", error.message);
       } else if (data) {
         setSession(data);
-        // schedule — это JSON с блоками
+
+        // schedule — JSON с блоками сессии
         if (data.schedule) {
-          const parsed =
-            typeof data.schedule === "string"
-              ? JSON.parse(data.schedule)
-              : data.schedule;
-          const formatted = parsed.map((b: any) => ({
-            name: b.name,
-            duration: b.minutes,
-            color: "#60a5fa",
-          }));
-          setStages(formatted);
+          try {
+            const parsed =
+              typeof data.schedule === "string"
+                ? JSON.parse(data.schedule)
+                : data.schedule;
+
+            const formatted = parsed.map((b: any) => ({
+              name: b.name,
+              duration: b.minutes,
+              color: "#60a5fa",
+            }));
+
+            setStages(formatted);
+          } catch (e) {
+            console.error("❌ Error parsing schedule:", e);
+          }
         }
       }
+
       setLoading(false);
     }
 
     loadSession();
   }, [id]);
 
-  // ---- Initialize Daily iframe ----
+  // ===============================
+  // 2️⃣ Initialize Daily.co video room
+  // ===============================
   useEffect(() => {
     if (!containerRef.current || !session?.daily_room_url) return;
 
+    // Если уже создан предыдущий фрейм — уничтожаем
     if (callRef.current) {
       callRef.current.destroy().catch(() => {});
       callRef.current = null;
@@ -82,6 +90,7 @@ export function RoomPage() {
 
     callRef.current = callFrame;
 
+    // Обработка выхода
     callFrame.on("left-meeting", async () => {
       try {
         await callFrame.destroy();
@@ -90,13 +99,14 @@ export function RoomPage() {
       navigate("/sessions");
     });
 
+    // Добавляем layout параметр в URL
     const urlWithGrid = session.daily_room_url.includes("?")
       ? `${session.daily_room_url}&layout=grid`
       : `${session.daily_room_url}?layout=grid`;
 
-    callFrame
-      .join({ url: urlWithGrid })
-      .catch((err) => console.error("Daily join error:", err));
+    callFrame.join({ url: urlWithGrid }).catch((err) => {
+      console.error("❌ Daily join error:", err);
+    });
 
     return () => {
       if (callRef.current) {
@@ -106,7 +116,9 @@ export function RoomPage() {
     };
   }, [session?.daily_room_url, navigate]);
 
-  // ---- Stage progression ----
+  // ===============================
+  // 3️⃣ Stage progression + timer
+  // ===============================
   useEffect(() => {
     if (!stages.length) return;
 
@@ -135,6 +147,9 @@ export function RoomPage() {
     return () => clearInterval(interval);
   }, [currentStage, stages]);
 
+  // ===============================
+  // 4️⃣ UI rendering
+  // ===============================
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-900 text-white">
@@ -159,7 +174,9 @@ export function RoomPage() {
     );
   }
 
-  // ---- UI ----
+  // ===============================
+  // 5️⃣ UI layout
+  // ===============================
   return (
     <div className="min-h-screen bg-slate-900 text-white flex justify-center">
       <div className="w-full max-w-[1720px] px-5 py-5 space-y-5">
@@ -193,9 +210,9 @@ export function RoomPage() {
           </div>
         </div>
 
-        {/* Main */}
+        {/* Main area */}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr,370px] gap-5">
-          {/* Video area */}
+          {/* Video */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden">
             <div ref={containerRef} className="w-full h-[75vh] min-h-[520px]" />
           </div>

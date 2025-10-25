@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { X } from "lucide-react";
+import { supabase } from "../lib/supabase";
 import type { SessionTemplate } from "../types/session";
 
 interface CreateSessionModalProps {
@@ -21,13 +22,25 @@ export function CreateSessionModal({
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Загружаем шаблоны сессий
+  // ✅ Загружаем шаблоны напрямую из Supabase
   useEffect(() => {
     if (!isOpen) return;
-    fetch("/api/templates")
-      .then((res) => res.json())
-      .then((data) => setTemplates(data))
-      .catch((err) => console.error("Error loading templates:", err));
+
+    async function loadTemplates() {
+      const { data, error } = await supabase
+        .from("session_templates")
+        .select("*")
+        .order("total_duration", { ascending: true });
+
+      if (error) {
+        console.error("Error loading templates:", error);
+        setError("Failed to load templates.");
+      } else {
+        setTemplates(data || []);
+      }
+    }
+
+    loadTemplates();
   }, [isOpen]);
 
   const handleCreate = async () => {
@@ -42,25 +55,19 @@ export function CreateSessionModal({
     try {
       const scheduledISO = new Date(scheduledAt).toISOString();
 
-      const res = await fetch("/api/sessions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const { data, error } = await supabase.from("sessions").insert([
+        {
           title,
           host,
-          templateId: selectedTemplate,
-          scheduled_at: scheduledISO,
-        }),
-      });
+          template_id: selectedTemplate,
+          start_time: scheduledISO,
+          status: "planned",
+        },
+      ]);
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || "Failed to create session");
-      }
+      if (error) throw error;
 
-      const session = await res.json();
-      console.log("✅ Session created:", session);
-
+      console.log("✅ Session created:", data);
       setTitle("");
       setHost("");
       setScheduledAt("");
@@ -159,7 +166,7 @@ export function CreateSessionModal({
                       className="w-4 h-4 text-blue-600"
                     />
                     <span className="text-sm text-gray-800">
-                      {t.name} ({t.totalDuration} min)
+                      {t.name} ({t.total_duration} min)
                     </span>
                   </label>
                 ))
