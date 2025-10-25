@@ -1,23 +1,18 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 let sessions: any[] = [];
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method === 'GET') {
+  if (req.method === "GET") {
     return res.status(200).json(sessions);
   }
 
-  if (req.method === 'POST') {
+  if (req.method === "POST") {
     try {
-      const { title, host, duration_minutes, format, scheduled_at, focus_blocks } = req.body;
-
-      if (!process.env.DAILY_API_KEY) {
-        return res.status(500).json({ error: "Missing DAILY_API_KEY in environment" });
-      }
-
+      const { title, host, duration_minutes, format, scheduled_at } = req.body;
       const roomName = `session-${Date.now()}`;
 
-      const resp = await fetch("https://api.daily.co/v1/rooms", {
+      const response = await fetch("https://api.daily.co/v1/rooms", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${process.env.DAILY_API_KEY}`,
@@ -29,19 +24,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           properties: {
             enable_screenshare: true,
             enable_chat: true,
-            enable_recording: "cloud",
-            exp: Math.floor(Date.now() / 1000) + 86400, // expires in 24h
+            exp: Math.floor(Date.now() / 1000) + 3600, // 1 час
           },
         }),
       });
 
-      if (!resp.ok) {
-        const errText = await resp.text();
-        console.error("Daily API error:", errText);
-        return res.status(resp.status).json({ error: `Daily API error: ${errText}` });
+      if (!response.ok) {
+        const err = await response.text();
+        console.error("Daily API error:", err);
+        return res.status(response.status).json({ error: err });
       }
 
-      const room = await resp.json();
+      const room = await response.json();
 
       const newSession = {
         id: Date.now().toString(),
@@ -49,7 +43,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         host,
         duration_minutes,
         format,
-        focus_blocks,
         daily_room_url: room.url,
         created_at: new Date().toISOString(),
         scheduled_at,
@@ -58,8 +51,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       sessions.push(newSession);
       return res.status(200).json(newSession);
     } catch (err: any) {
-      console.error("Server error creating session:", err);
-      return res.status(500).json({ error: err.message || "Server error creating session" });
+      console.error("Error creating session:", err);
+      return res.status(500).json({ error: err.message });
     }
   }
 

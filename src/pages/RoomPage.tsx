@@ -8,6 +8,7 @@ import { getSessionFormatById, sessionFormats } from "../SessionConfig";
 export function RoomPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+
   const containerRef = useRef<HTMLDivElement>(null);
   const callRef = useRef<DailyCall | null>(null);
 
@@ -20,7 +21,7 @@ export function RoomPage() {
   const [hoveredStage, setHoveredStage] = useState<any>(null);
   const [remainingTime, setRemainingTime] = useState<string>("");
 
-  // Load session
+  // ---- Load session from localStorage ----
   useEffect(() => {
     const saved = localStorage.getItem("sessions");
     if (saved) {
@@ -28,18 +29,25 @@ export function RoomPage() {
       if (found) {
         setSession(found);
 
-        // Определяем формат сессии
-        const format = getSessionFormatById(found.format_id || "1h-pomodoro") 
-          || sessionFormats[0];
-        setStages(format.stages);
+        const format =
+          getSessionFormatById(found.format_id || found.format) ||
+          sessionFormats[0];
+
+        setStages(format.stages || []);
       }
     }
     setLoading(false);
   }, [id]);
 
-  // Join Daily iframe
+  // ---- Initialize Daily iframe safely ----
   useEffect(() => {
     if (!containerRef.current || !session?.daily_room_url) return;
+
+    // Destroy previous instance if exists
+    if (callRef.current) {
+      callRef.current.destroy().catch(() => {});
+      callRef.current = null;
+    }
 
     const callFrame = DailyIframe.createFrame(containerRef.current, {
       iframeStyle: {
@@ -55,7 +63,9 @@ export function RoomPage() {
     callRef.current = callFrame;
 
     callFrame.on("left-meeting", async () => {
-      await callFrame.destroy();
+      try {
+        await callFrame.destroy();
+      } catch {}
       callRef.current = null;
       navigate("/sessions");
     });
@@ -64,17 +74,22 @@ export function RoomPage() {
       ? `${session.daily_room_url}&layout=grid`
       : `${session.daily_room_url}?layout=grid`;
 
-    callFrame.join({ url: urlWithGrid }).catch(console.error);
+    callFrame
+      .join({ url: urlWithGrid })
+      .catch((err) => console.error("Daily join error:", err));
 
     return () => {
-      callFrame.destroy();
-      callRef.current = null;
+      if (callRef.current) {
+        callRef.current.destroy().catch(() => {});
+        callRef.current = null;
+      }
     };
-  }, [session, navigate]);
+  }, [session?.daily_room_url, navigate]);
 
-  // Stage logic + remaining time
+  // ---- Stage progression and timer ----
   useEffect(() => {
     if (!stages.length) return;
+
     const current = stages[currentStage];
     const durationMs = current.duration * 60 * 1000;
     const startTime = Date.now();
@@ -90,7 +105,10 @@ export function RoomPage() {
       setRemainingTime(`${minutes}:${seconds.toString().padStart(2, "0")}`);
 
       if (ratio >= 1) {
-        setCurrentStage((prev) => (prev + 1 < stages.length ? prev + 1 : prev));
+        setCurrentStage((prev) => {
+          if (prev + 1 < stages.length) return prev + 1;
+          return prev;
+        });
         setProgress(0);
       }
     }, 1000);
@@ -98,13 +116,31 @@ export function RoomPage() {
     return () => clearInterval(interval);
   }, [currentStage, stages]);
 
-  if (loading)
+  if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-900 text-white">
         Loading session...
       </div>
     );
+  }
 
+  if (!session) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-slate-900 text-white">
+        <div className="text-center space-y-3">
+          <p className="text-lg font-medium">Session not found</p>
+          <button
+            onClick={() => navigate("/sessions")}
+            className="text-blue-400 hover:text-blue-300 underline"
+          >
+            Back to sessions
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- UI ----
   return (
     <div className="min-h-screen bg-slate-900 text-white flex justify-center">
       <div className="w-full max-w-[1720px] px-5 py-5 space-y-5">
@@ -133,19 +169,19 @@ export function RoomPage() {
                   ? `${hoveredStage.name} • ${hoveredStage.duration} min`
                   : stages[currentStage]?.name ?? ""}
               </span>
-              <span className="text-slate-500">
-                ⏱ {remainingTime}
-              </span>
+              <span className="text-slate-500">⏱ {remainingTime}</span>
             </div>
           </div>
         </div>
 
         {/* Main */}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr,370px] gap-5">
+          {/* Video area */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden">
             <div ref={containerRef} className="w-full h-[75vh] min-h-[520px]" />
           </div>
 
+          {/* Intentions sidebar */}
           <div className="rounded-2xl border border-slate-800 bg-white text-black shadow-lg overflow-hidden">
             <div className="p-4">
               <IntentionsPanel />

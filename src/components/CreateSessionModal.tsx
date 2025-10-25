@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { X } from 'lucide-react';
-import { generateFocusBlocks } from '../utils/sessionHelpers';
+import { useState, useEffect } from "react";
+import { X } from "lucide-react";
+import type { SessionTemplate } from "../types/session";
 
 interface CreateSessionModalProps {
   isOpen: boolean;
@@ -13,69 +13,64 @@ export function CreateSessionModal({
   onClose,
   onSessionCreated,
 }: CreateSessionModalProps) {
-  const [title, setTitle] = useState('');
-  const [host, setHost] = useState('');
-  const [selectedOption, setSelectedOption] = useState<string>('');
-  const [scheduledAt, setScheduledAt] = useState('');
+  const [title, setTitle] = useState("");
+  const [host, setHost] = useState("");
+  const [scheduledAt, setScheduledAt] = useState("");
+  const [selectedTemplate, setSelectedTemplate] = useState<string>("");
+  const [templates, setTemplates] = useState<SessionTemplate[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const sessionOptions = [
-    { value: '60-uninterrupted', label: '1 Hour - Uninterrupted Focus', duration: 60, format: 'uninterrupted' as const },
-    { value: '120-uninterrupted', label: '2 Hours - 2x 50min Focus Blocks', duration: 120, format: 'uninterrupted' as const },
-    { value: '60-pomodoro-25-5', label: '1 Hour - Pomodoro 25/5', duration: 60, format: 'pomodoro_25_5' as const },
-    { value: '120-pomodoro-25-5', label: '2 Hours - Pomodoro 25/5', duration: 120, format: 'pomodoro_25_5' as const },
-    { value: '60-pomodoro-15-3', label: '1 Hour - Pomodoro 15/3', duration: 60, format: 'pomodoro_15_3' as const },
-    { value: '120-pomodoro-15-3', label: '2 Hours - Pomodoro 15/3', duration: 120, format: 'pomodoro_15_3' as const },
-  ];
+  // Загружаем шаблоны сессий
+  useEffect(() => {
+    if (!isOpen) return;
+    fetch("/api/templates")
+      .then((res) => res.json())
+      .then((data) => setTemplates(data))
+      .catch((err) => console.error("Error loading templates:", err));
+  }, [isOpen]);
 
   const handleCreate = async () => {
-    if (!title || !host || !selectedOption || !scheduledAt) {
-      setError('Please fill out all fields.');
+    if (!title || !host || !selectedTemplate || !scheduledAt) {
+      setError("Please fill out all fields.");
       return;
     }
-
-    const option = sessionOptions.find(o => o.value === selectedOption);
-    if (!option) return;
 
     setIsCreating(true);
     setError(null);
 
     try {
-      const focusBlocks = generateFocusBlocks(option.format, option.duration);
       const scheduledISO = new Date(scheduledAt).toISOString();
 
-      const res = await fetch('/api/sessions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title,
           host,
-          duration_minutes: option.duration,
-          format: option.format,
-          focus_blocks: focusBlocks,
+          templateId: selectedTemplate,
           scheduled_at: scheduledISO,
         }),
       });
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || 'Failed to create a session');
+        throw new Error(errData.error || "Failed to create session");
       }
 
-      const data = await res.json();
-      console.log('Session created successfully:', data);
+      const session = await res.json();
+      console.log("✅ Session created:", session);
 
-      // Reset form after success
-      setTitle('');
-      setHost('');
-      setSelectedOption('');
-      setScheduledAt('');
+      setTitle("");
+      setHost("");
+      setScheduledAt("");
+      setSelectedTemplate("");
+
       onSessionCreated();
       onClose();
     } catch (err: any) {
-      console.error('Error creating session:', err);
-      setError(err.message || 'Failed to create a session');
+      console.error("Error creating session:", err);
+      setError(err.message);
     } finally {
       setIsCreating(false);
     }
@@ -85,79 +80,106 @@ export function CreateSessionModal({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md">
+      <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-xl">
+        {/* Header */}
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold">Create Focus Session</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+          <h2 className="text-xl font-semibold text-gray-800">
+            Create Focus Session
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700 transition"
+          >
             <X size={20} />
           </button>
         </div>
 
+        {/* Form */}
         <div className="space-y-4">
-          {/* Session title */}
+          {/* Title */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Session Title</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Session Title
+            </label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
               placeholder="e.g., Deep Work Session"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
-          {/* Host name */}
+          {/* Host */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Your Name</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Your Name
+            </label>
             <input
               type="text"
               value={host}
               onChange={(e) => setHost(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
               placeholder="Host name"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
           {/* Start time */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Start Time
+            </label>
             <input
               type="datetime-local"
               value={scheduledAt}
               onChange={(e) => setScheduledAt(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
               min={new Date().toISOString().slice(0, 16)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
-          {/* Session format */}
+          {/* Template selection */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Session Format</label>
-            <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
-              {sessionOptions.map((option) => (
-                <label key={option.value} className="flex items-center space-x-3 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="session-option"
-                    value={option.value}
-                    checked={selectedOption === option.value}
-                    onChange={(e) => setSelectedOption(e.target.value)}
-                    className="w-4 h-4 text-blue-600"
-                  />
-                  <span className="text-sm text-gray-700">{option.label}</span>
-                </label>
-              ))}
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Session Format
+            </label>
+            <div className="max-h-40 overflow-y-auto pr-2 space-y-2">
+              {templates.length > 0 ? (
+                templates.map((t) => (
+                  <label
+                    key={t.id}
+                    className="flex items-center space-x-3 cursor-pointer"
+                  >
+                    <input
+                      type="radio"
+                      name="session-template"
+                      value={t.id}
+                      checked={selectedTemplate === t.id}
+                      onChange={(e) => setSelectedTemplate(e.target.value)}
+                      className="w-4 h-4 text-blue-600"
+                    />
+                    <span className="text-sm text-gray-800">
+                      {t.name} ({t.totalDuration} min)
+                    </span>
+                  </label>
+                ))
+              ) : (
+                <p className="text-sm text-gray-500">Loading templates...</p>
+              )}
             </div>
           </div>
 
           {error && <p className="text-red-600 text-sm">{error}</p>}
 
+          {/* Button */}
           <button
             onClick={handleCreate}
-            disabled={!title || !host || !selectedOption || !scheduledAt || isCreating}
-            className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-300 transition-colors"
+            disabled={
+              !title || !host || !selectedTemplate || !scheduledAt || isCreating
+            }
+            className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-300 transition"
           >
-            {isCreating ? 'Creating...' : 'Create Session'}
+            {isCreating ? "Creating..." : "Create Session"}
           </button>
         </div>
       </div>

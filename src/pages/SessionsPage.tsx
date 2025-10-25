@@ -16,11 +16,9 @@ export function SessionsPage() {
       if (!res.ok) throw new Error('Failed to fetch sessions');
       const data = await res.json();
       setSessions(data || []);
-      localStorage.setItem('sessions', JSON.stringify(data || [])); // 💾 сохраняем в браузере
+      localStorage.setItem('sessions', JSON.stringify(data || []));
     } catch (error) {
       console.error('Error fetching sessions:', error);
-
-      // 🔁 если сервер недоступен — берём из localStorage
       const saved = localStorage.getItem('sessions');
       if (saved) setSessions(JSON.parse(saved));
     } finally {
@@ -104,7 +102,7 @@ export function SessionsPage() {
                         <span>{session.duration_minutes} min</span>
                       </div>
 
-                      {/* 🕒 Время начала */}
+                      {/* 🕒 Start time */}
                       {session.scheduled_at && (
                         <div
                           className={`flex items-center gap-1 font-medium ${
@@ -149,3 +147,4 @@ export function SessionsPage() {
     </div>
   );
 }
+
