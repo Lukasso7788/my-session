@@ -22,7 +22,7 @@ export function CreateSessionModal({
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ✅ Загружаем шаблоны напрямую из Supabase
+  // ✅ Load session templates directly from Supabase
   useEffect(() => {
     if (!isOpen) return;
 
@@ -43,6 +43,7 @@ export function CreateSessionModal({
     loadTemplates();
   }, [isOpen]);
 
+  // ✅ Create new session in Supabase
   const handleCreate = async () => {
     if (!title || !host || !selectedTemplate || !scheduledAt) {
       setError("Please fill out all fields.");
@@ -54,6 +55,7 @@ export function CreateSessionModal({
 
     try {
       const scheduledISO = new Date(scheduledAt).toISOString();
+      const template = templates.find((t) => t.id === selectedTemplate);
 
       const { data, error } = await supabase.from("sessions").insert([
         {
@@ -61,6 +63,7 @@ export function CreateSessionModal({
           host,
           template_id: selectedTemplate,
           start_time: scheduledISO,
+          duration_minutes: template?.total_duration ?? 60, // ✅ FIXED: added this line
           status: "planned",
         },
       ]);
@@ -85,6 +88,9 @@ export function CreateSessionModal({
 
   if (!isOpen) return null;
 
+  // ================================
+  // UI
+  // ================================
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-xl">
