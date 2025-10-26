@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import DailyIframe, { DailyCall } from "@daily-co/daily-js";
 import { IntentionsPanel } from "../components/IntentionsPanel";
 import { SessionStageBar } from "../components/SessionStageBar";
-import { supabase } from "../lib/supabase"; // ✅ единый клиент, не дублируем createClient
+import { supabase } from "../lib/supabase";
 
 export function RoomPage() {
   const { id } = useParams<{ id: string }>();
@@ -20,9 +20,7 @@ export function RoomPage() {
   const [hoveredStage, setHoveredStage] = useState<any>(null);
   const [remainingTime, setRemainingTime] = useState<string>("");
 
-  // ===============================
-  // 1️⃣ Load session data from Supabase
-  // ===============================
+  // ✅ Load session from Supabase
   useEffect(() => {
     async function loadSession() {
       if (!id) return;
@@ -38,7 +36,7 @@ export function RoomPage() {
       } else if (data) {
         setSession(data);
 
-        // schedule — JSON с блоками сессии
+        // ✅ Schedule parsing
         if (data.schedule) {
           try {
             const parsed =
@@ -49,7 +47,12 @@ export function RoomPage() {
             const formatted = parsed.map((b: any) => ({
               name: b.name,
               duration: b.minutes,
-              color: "#60a5fa",
+              color:
+                b.type === "focus"
+                  ? "#3b82f6" // blue
+                  : b.type === "break"
+                  ? "#22c55e" // green
+                  : "#a855f7", // fallback
             }));
 
             setStages(formatted);
@@ -65,13 +68,10 @@ export function RoomPage() {
     loadSession();
   }, [id]);
 
-  // ===============================
-  // 2️⃣ Initialize Daily.co video room
-  // ===============================
+  // ✅ Initialize Daily iframe
   useEffect(() => {
     if (!containerRef.current || !session?.daily_room_url) return;
 
-    // Если уже создан предыдущий фрейм — уничтожаем
     if (callRef.current) {
       callRef.current.destroy().catch(() => {});
       callRef.current = null;
@@ -90,7 +90,6 @@ export function RoomPage() {
 
     callRef.current = callFrame;
 
-    // Обработка выхода
     callFrame.on("left-meeting", async () => {
       try {
         await callFrame.destroy();
@@ -99,14 +98,13 @@ export function RoomPage() {
       navigate("/sessions");
     });
 
-    // Добавляем layout параметр в URL
     const urlWithGrid = session.daily_room_url.includes("?")
       ? `${session.daily_room_url}&layout=grid`
       : `${session.daily_room_url}?layout=grid`;
 
-    callFrame.join({ url: urlWithGrid }).catch((err) => {
-      console.error("❌ Daily join error:", err);
-    });
+    callFrame.join({ url: urlWithGrid }).catch((err) =>
+      console.error("❌ Daily join error:", err)
+    );
 
     return () => {
       if (callRef.current) {
@@ -116,9 +114,7 @@ export function RoomPage() {
     };
   }, [session?.daily_room_url, navigate]);
 
-  // ===============================
-  // 3️⃣ Stage progression + timer
-  // ===============================
+  // ✅ Stage progression logic
   useEffect(() => {
     if (!stages.length) return;
 
@@ -147,18 +143,14 @@ export function RoomPage() {
     return () => clearInterval(interval);
   }, [currentStage, stages]);
 
-  // ===============================
-  // 4️⃣ UI rendering
-  // ===============================
-  if (loading) {
+  if (loading)
     return (
       <div className="flex h-screen items-center justify-center bg-slate-900 text-white">
         Loading session...
       </div>
     );
-  }
 
-  if (!session) {
+  if (!session)
     return (
       <div className="flex h-screen items-center justify-center bg-slate-900 text-white">
         <div className="text-center space-y-3">
@@ -172,11 +164,7 @@ export function RoomPage() {
         </div>
       </div>
     );
-  }
 
-  // ===============================
-  // 5️⃣ UI layout
-  // ===============================
   return (
     <div className="min-h-screen bg-slate-900 text-white flex justify-center">
       <div className="w-full max-w-[1720px] px-5 py-5 space-y-5">
@@ -210,9 +198,9 @@ export function RoomPage() {
           </div>
         </div>
 
-        {/* Main area */}
+        {/* Main content */}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr,370px] gap-5">
-          {/* Video */}
+          {/* Video area */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden">
             <div ref={containerRef} className="w-full h-[75vh] min-h-[520px]" />
           </div>

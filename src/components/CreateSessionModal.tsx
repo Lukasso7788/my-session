@@ -43,7 +43,7 @@ export function CreateSessionModal({
     loadTemplates();
   }, [isOpen]);
 
-  // ✅ Create new session
+  // ✅ Create new session (with Daily room)
   const handleCreate = async () => {
     if (!title || !host || !selectedTemplate || !scheduledAt) {
       setError("Please fill out all fields.");
@@ -57,7 +57,27 @@ export function CreateSessionModal({
       const scheduledISO = new Date(scheduledAt).toISOString();
       const template = templates.find((t) => t.id === selectedTemplate);
 
-      // 🔥 Full payload for sessions insert
+      // 🔥 Create Daily.co room
+      const dailyRes = await fetch("https://api.daily.co/v1/rooms", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${import.meta.env.VITE_DAILY_API_KEY}`,
+        },
+        body: JSON.stringify({
+          properties: {
+            enable_chat: true,
+            enable_screenshare: true,
+            enable_network_ui: false,
+          },
+        }),
+      });
+
+      if (!dailyRes.ok) throw new Error("Failed to create Daily room");
+      const dailyData = await dailyRes.json();
+      const dailyUrl = dailyData.url;
+
+      // ✅ Create session in Supabase
       const { data, error } = await supabase.from("sessions").insert([
         {
           title,
@@ -65,8 +85,9 @@ export function CreateSessionModal({
           template_id: selectedTemplate,
           start_time: scheduledISO,
           duration_minutes: template?.total_duration ?? 60,
-          format: template?.name || "Unspecified", // ✅ Required by NOT NULL
-          schedule: template?.blocks || [], // optional but consistent
+          format: template?.name || "Unspecified",
+          schedule: template?.blocks || [],
+          daily_room_url: dailyUrl,
           status: "planned",
           created_at: new Date().toISOString(),
         },
@@ -92,13 +113,9 @@ export function CreateSessionModal({
 
   if (!isOpen) return null;
 
-  // ================================
-  // UI
-  // ================================
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-xl">
-        {/* Header */}
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold text-gray-800">
             Create Focus Session
@@ -113,7 +130,6 @@ export function CreateSessionModal({
 
         {/* Form */}
         <div className="space-y-4">
-          {/* Title */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Session Title
@@ -127,7 +143,6 @@ export function CreateSessionModal({
             />
           </div>
 
-          {/* Host */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Your Name
@@ -141,7 +156,6 @@ export function CreateSessionModal({
             />
           </div>
 
-          {/* Start time */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Start Time
@@ -155,7 +169,6 @@ export function CreateSessionModal({
             />
           </div>
 
-          {/* Template selection */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Session Format
@@ -188,7 +201,6 @@ export function CreateSessionModal({
 
           {error && <p className="text-red-600 text-sm">{error}</p>}
 
-          {/* Button */}
           <button
             onClick={handleCreate}
             disabled={
