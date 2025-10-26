@@ -22,7 +22,7 @@ export function CreateSessionModal({
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ✅ Load session templates directly from Supabase
+  // ✅ Load templates from Supabase
   useEffect(() => {
     if (!isOpen) return;
 
@@ -43,7 +43,7 @@ export function CreateSessionModal({
     loadTemplates();
   }, [isOpen]);
 
-  // ✅ Create new session in Supabase
+  // ✅ Create new session
   const handleCreate = async () => {
     if (!title || !host || !selectedTemplate || !scheduledAt) {
       setError("Please fill out all fields.");
@@ -57,14 +57,18 @@ export function CreateSessionModal({
       const scheduledISO = new Date(scheduledAt).toISOString();
       const template = templates.find((t) => t.id === selectedTemplate);
 
+      // 🔥 Full payload for sessions insert
       const { data, error } = await supabase.from("sessions").insert([
         {
           title,
           host,
           template_id: selectedTemplate,
           start_time: scheduledISO,
-          duration_minutes: template?.total_duration ?? 60, // ✅ FIXED: added this line
+          duration_minutes: template?.total_duration ?? 60,
+          format: template?.name || "Unspecified", // ✅ Required by NOT NULL
+          schedule: template?.blocks || [], // optional but consistent
           status: "planned",
+          created_at: new Date().toISOString(),
         },
       ]);
 
