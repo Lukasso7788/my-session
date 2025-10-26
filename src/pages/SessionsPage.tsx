@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Users, Clock, Plus, Calendar } from 'lucide-react';
-import { CreateSessionModal } from '../components/CreateSessionModal';
-import { formatSessionFormat } from '../utils/sessionHelpers';
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { Users, Clock, Plus, Calendar } from "lucide-react";
+import { CreateSessionModal } from "../components/CreateSessionModal";
+import { formatSessionFormat } from "../utils/sessionHelpers";
+import { supabase } from "../lib/supabase";
 
 export function SessionsPage() {
   const navigate = useNavigate();
@@ -10,16 +11,29 @@ export function SessionsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
+  // ✅ Fetch sessions directly from Supabase
   const fetchSessions = async () => {
     try {
-      const res = await fetch('/api/sessions');
-      if (!res.ok) throw new Error('Failed to fetch sessions');
-      const data = await res.json();
+      setIsLoading(true);
+      const { data, error } = await supabase
+        .from("sessions")
+        .select(`
+          id,
+          title,
+          host,
+          duration_minutes,
+          format,
+          start_time,
+          status
+        `)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
       setSessions(data || []);
-      localStorage.setItem('sessions', JSON.stringify(data || []));
+      localStorage.setItem("sessions", JSON.stringify(data || []));
     } catch (error) {
-      console.error('Error fetching sessions:', error);
-      const saved = localStorage.getItem('sessions');
+      console.error("Error fetching sessions:", error);
+      const saved = localStorage.getItem("sessions");
       if (saved) setSessions(JSON.parse(saved));
     } finally {
       setIsLoading(false);
@@ -36,11 +50,11 @@ export function SessionsPage() {
 
   const formatDateTime = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
+    return date.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
     });
   };
 
@@ -53,8 +67,12 @@ export function SessionsPage() {
       <div className="max-w-6xl mx-auto px-4 py-12">
         <div className="flex justify-between items-center mb-8">
           <div>
-            <h1 className="text-4xl font-bold text-gray-900 mb-2">Focus Sessions</h1>
-            <p className="text-gray-600">Join a group focus session and stay accountable</p>
+            <h1 className="text-4xl font-bold text-gray-900 mb-2">
+              Focus Sessions
+            </h1>
+            <p className="text-gray-600">
+              Join a group focus session and stay accountable
+            </p>
           </div>
           <button
             onClick={() => setIsModalOpen(true)}
@@ -103,19 +121,21 @@ export function SessionsPage() {
                       </div>
 
                       {/* 🕒 Start time */}
-                      {session.scheduled_at && (
+                      {session.start_time && (
                         <div
                           className={`flex items-center gap-1 font-medium ${
-                            isFutureSession(session.scheduled_at)
-                              ? 'text-green-600'
-                              : 'text-red-600'
+                            isFutureSession(session.start_time)
+                              ? "text-green-600"
+                              : "text-red-600"
                           }`}
                         >
                           <Calendar size={16} />
                           <span>
-                            {isFutureSession(session.scheduled_at)
-                              ? `Starts at ${formatDateTime(session.scheduled_at)}`
-                              : `Started at ${formatDateTime(session.scheduled_at)}`}
+                            {isFutureSession(session.start_time)
+                              ? `Starts at ${formatDateTime(session.start_time)}`
+                              : `Started at ${formatDateTime(
+                                  session.start_time
+                                )}`}
                           </span>
                         </div>
                       )}
@@ -142,9 +162,8 @@ export function SessionsPage() {
       <CreateSessionModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        onSessionCreated={fetchSessions}
+        onSessionCreated={fetchSessions} // ✅ refreshes after creating new session
       />
     </div>
   );
 }
-
