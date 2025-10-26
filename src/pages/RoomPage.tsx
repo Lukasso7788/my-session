@@ -20,7 +20,7 @@ export function RoomPage() {
   const [hoveredStage, setHoveredStage] = useState<any>(null);
   const [remainingTime, setRemainingTime] = useState<string>("");
 
-  // ✅ Load session from Supabase
+  // ✅ Load session data
   useEffect(() => {
     async function loadSession() {
       if (!id) return;
@@ -36,7 +36,6 @@ export function RoomPage() {
       } else if (data) {
         setSession(data);
 
-        // ✅ Schedule parsing
         if (data.schedule) {
           try {
             const parsed =
@@ -52,7 +51,7 @@ export function RoomPage() {
                   ? "#3b82f6" // blue
                   : b.type === "break"
                   ? "#22c55e" // green
-                  : "#a855f7", // fallback
+                  : "#a855f7", // purple fallback
             }));
 
             setStages(formatted);
@@ -68,43 +67,63 @@ export function RoomPage() {
     loadSession();
   }, [id]);
 
-  // ✅ Initialize Daily iframe
+  // ✅ Create and embed Daily room dynamically
   useEffect(() => {
-    if (!containerRef.current || !session?.daily_room_url) return;
+    if (!containerRef.current || !session) return;
 
-    if (callRef.current) {
-      callRef.current.destroy().catch(() => {});
-      callRef.current = null;
+    async function createRoom() {
+      try {
+        const res = await fetch("https://api.daily.co/v1/rooms", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${import.meta.env.VITE_DAILY_API_KEY}`,
+          },
+          body: JSON.stringify({
+            properties: {
+              enable_chat: true,
+              enable_screenshare: true,
+              enable_network_ui: false,
+            },
+            privacy: "public",
+          }),
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.url) throw new Error("Failed to create Daily room");
+
+        const urlWithGrid = data.url.includes("?")
+          ? `${data.url}&layout=grid`
+          : `${data.url}?layout=grid`;
+
+        const callFrame = DailyIframe.createFrame(containerRef.current, {
+          iframeStyle: {
+            width: "100%",
+            height: "100%",
+            border: "0",
+            borderRadius: "1rem",
+          },
+          showFullscreenButton: true,
+          showLeaveButton: true,
+        });
+
+        callRef.current = callFrame;
+
+        callFrame.on("left-meeting", async () => {
+          try {
+            await callFrame.destroy();
+          } catch {}
+          callRef.current = null;
+          navigate("/sessions");
+        });
+
+        await callFrame.join({ url: urlWithGrid });
+      } catch (err) {
+        console.error("❌ Daily room creation error:", err);
+      }
     }
 
-    const callFrame = DailyIframe.createFrame(containerRef.current, {
-      iframeStyle: {
-        width: "100%",
-        height: "100%",
-        border: "0",
-        borderRadius: "1rem",
-      },
-      showFullscreenButton: true,
-      showLeaveButton: true,
-    });
-
-    callRef.current = callFrame;
-
-    callFrame.on("left-meeting", async () => {
-      try {
-        await callFrame.destroy();
-      } catch {}
-      callRef.current = null;
-      navigate("/sessions");
-    });
-
-    const urlWithGrid = session.daily_room_url.includes("?")
-      ? `${session.daily_room_url}&layout=grid`
-      : `${session.daily_room_url}?layout=grid`;
-
-    callFrame.join({ url: urlWithGrid }).catch((err) =>
-      console.error("❌ Daily join error:", err)
-    );
+    createRoom();
 
     return () => {
       if (callRef.current) {
@@ -112,9 +131,9 @@ export function RoomPage() {
         callRef.current = null;
       }
     };
-  }, [session?.daily_room_url, navigate]);
+  }, [session, navigate]);
 
-  // ✅ Stage progression logic
+  // ✅ Stage logic
   useEffect(() => {
     if (!stages.length) return;
 

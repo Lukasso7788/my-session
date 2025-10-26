@@ -43,7 +43,7 @@ export function CreateSessionModal({
     loadTemplates();
   }, [isOpen]);
 
-  // ✅ Create new session (with Daily room)
+  // ✅ Create new session (no Daily integration)
   const handleCreate = async () => {
     if (!title || !host || !selectedTemplate || !scheduledAt) {
       setError("Please fill out all fields.");
@@ -57,28 +57,7 @@ export function CreateSessionModal({
       const scheduledISO = new Date(scheduledAt).toISOString();
       const template = templates.find((t) => t.id === selectedTemplate);
 
-      // 🔥 Create Daily.co room
-      const dailyRes = await fetch("https://api.daily.co/v1/rooms", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${import.meta.env.VITE_DAILY_API_KEY}`,
-        },
-        body: JSON.stringify({
-          properties: {
-            enable_chat: true,
-            enable_screenshare: true,
-            enable_network_ui: false,
-          },
-        }),
-      });
-
-      if (!dailyRes.ok) throw new Error("Failed to create Daily room");
-      const dailyData = await dailyRes.json();
-      const dailyUrl = dailyData.url;
-
-      // ✅ Create session in Supabase
-      const { data, error } = await supabase.from("sessions").insert([
+      const { error } = await supabase.from("sessions").insert([
         {
           title,
           host,
@@ -87,7 +66,6 @@ export function CreateSessionModal({
           duration_minutes: template?.total_duration ?? 60,
           format: template?.name || "Unspecified",
           schedule: template?.blocks || [],
-          daily_room_url: dailyUrl,
           status: "planned",
           created_at: new Date().toISOString(),
         },
@@ -95,7 +73,6 @@ export function CreateSessionModal({
 
       if (error) throw error;
 
-      console.log("✅ Session created:", data);
       setTitle("");
       setHost("");
       setScheduledAt("");
@@ -128,7 +105,6 @@ export function CreateSessionModal({
           </button>
         </div>
 
-        {/* Form */}
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
