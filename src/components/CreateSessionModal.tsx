@@ -60,7 +60,13 @@ export function CreateSessionModal({
       // 🟦 1. Create a Daily.co room via Supabase Edge Function
       const roomRes = await fetch(
         "https://cxqgzcjsjyszcbcbdusp.supabase.co/functions/v1/create-daily-room",
-        { method: "POST" }
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+        }
       );
 
       const roomData = await roomRes.json();
