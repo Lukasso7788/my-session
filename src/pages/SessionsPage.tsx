@@ -15,13 +15,21 @@ export function SessionsPage() {
   const [user, setUser] = useState<any>(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
 
-  // ✅ Получаем юзера из Supabase
+  // ✅ Правильное восстановление сессии (фикс OAuth)
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUser(data.user));
+    const getCurrentSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      setUser(data?.session?.user ?? null);
+    };
+    getCurrentSession();
+
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
     });
-    return () => listener.subscription.unsubscribe();
+
+    return () => {
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
   // ✅ Загружаем сессии
@@ -69,7 +77,7 @@ export function SessionsPage() {
     [sessions]
   );
 
-  // ⏰ Вспомогательные функции
+  // ⏰ Форматирование
   const formatDateTime = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleString("en-US", {
