@@ -121,6 +121,7 @@ export function IntentionsPanel() {
         <h2 className="text-lg font-semibold text-gray-900">Intentions</h2>
       </div>
 
+      {/* ✅ добавлен класс custom-scrollbar */}
       <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
         {/* 🧠 Мои intentions */}
         <div className="mb-6">
