@@ -19,12 +19,12 @@ export function IntentionsPanel() {
   const [newIntention, setNewIntention] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // ✅ получаем текущего юзера
+  // ✅ Получаем текущего юзера
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
   }, []);
 
-  // ✅ загружаем intentions из Supabase
+  // ✅ Загружаем intentions из Supabase
   const loadIntentions = async () => {
     if (!sessionId) return;
     const { data, error } = await supabase
@@ -38,23 +38,27 @@ export function IntentionsPanel() {
     setLoading(false);
   };
 
-  // ✅ Realtime обновления
+  // ✅ Realtime подписка + fallback-обновление
   useEffect(() => {
     loadIntentions();
 
-    // подписка на все изменения по таблице intentions
+    // 🔁 fallback-интервал (если Realtime временно не работает)
+    const interval = setInterval(loadIntentions, 10000);
+
+    // 🔥 подписка на все изменения таблицы intentions
     const channel = supabase
       .channel("intentions_realtime")
       .on(
         "postgres_changes",
         {
-          event: "*", // можно "INSERT", "UPDATE", "DELETE"
+          event: "*", // INSERT | UPDATE | DELETE
           schema: "public",
           table: "intentions",
           filter: `session_id=eq.${sessionId}`,
         },
         (payload) => {
           console.log("Realtime update:", payload);
+
           if (payload.eventType === "INSERT") {
             setIntentions((prev) => [payload.new as Intention, ...prev]);
           } else if (payload.eventType === "UPDATE") {
@@ -75,11 +79,12 @@ export function IntentionsPanel() {
       .subscribe();
 
     return () => {
+      clearInterval(interval);
       supabase.removeChannel(channel);
     };
   }, [sessionId]);
 
-  // ✅ добавление intention
+  // ✅ Добавление intention
   const handleAddIntention = async () => {
     if (!newIntention.trim() || !user || !sessionId) return;
 
@@ -96,7 +101,7 @@ export function IntentionsPanel() {
     setNewIntention("");
   };
 
-  // ✅ отметить выполненной / невыполненной
+  // ✅ Отметить выполненной / невыполненной
   const toggleCompleted = async (intention: Intention) => {
     const { error } = await supabase
       .from("intentions")
