@@ -20,13 +20,13 @@ export function RoomPage() {
   const [hoveredStage, setHoveredStage] = useState<any>(null);
   const [remainingTime, setRemainingTime] = useState<string>("");
 
-  // 🎨 Flown color palette
+  // 🎨 Flown color palette — final version
   const STAGE_COLOR_MAP: Record<string, string> = {
-    intro: "#2EAFA2", // Flown teal-strong
-    intentions: "#FFF9F2", // Flown cream
-    focus: "#9ADEDC", // Flown teal-light
-    break: "#FF9F8E", // Flown coral
-    outro: "#111111", // Flown charcoal
+    intro: "#8FD8C6",        // 🌿 Light Green — Welcome & Intros
+    intentions: "#FFF9F2",   // 🕯️ Cream — Intentions
+    focus: "#9ADEDC",        // 💧 Teal — Focus
+    break: "#FF9F8E",        // 🍑 Coral — Break
+    outro: "#8FD8C6",        // 🌿 Light Green — Celebrate & Farewell
   };
 
   // ✅ Load session data
