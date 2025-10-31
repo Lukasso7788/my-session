@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Check, Circle } from "lucide-react";
+import { Plus, CheckCircle, Circle } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useParams } from "react-router-dom";
 
@@ -7,6 +7,7 @@ interface Intention {
   id: string;
   text: string;
   user_id: string;
+  session_id: string;
   created_at?: string;
   completed?: boolean;
 }
@@ -20,51 +21,89 @@ export function IntentionsPanel() {
 
   // ✅ получаем текущего юзера
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setUser(data.user);
-    });
+    supabase.auth.getUser().then(({ data }) => setUser(data.user));
   }, []);
 
-  // ✅ загружаем intentions для этой сессии
+  // ✅ загружаем intentions из Supabase
+  const loadIntentions = async () => {
+    if (!sessionId) return;
+    const { data, error } = await supabase
+      .from("intentions")
+      .select("id, text, user_id, session_id, created_at, completed")
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: false });
+
+    if (error) console.error("Error loading intentions:", error);
+    else setIntentions(data || []);
+    setLoading(false);
+  };
+
+  // ✅ Realtime обновления
   useEffect(() => {
-    async function loadIntentions() {
-      if (!sessionId) return;
-      const { data, error } = await supabase
-        .from("intentions")
-        .select("id, text, user_id, created_at")
-        .eq("session_id", sessionId)
-        .order("created_at", { ascending: false });
-
-      if (!error) setIntentions(data || []);
-      setLoading(false);
-    }
-
     loadIntentions();
 
-    // автообновление каждые 10 сек
-    const interval = setInterval(loadIntentions, 10000);
-    return () => clearInterval(interval);
+    // подписка на все изменения по таблице intentions
+    const channel = supabase
+      .channel("intentions_realtime")
+      .on(
+        "postgres_changes",
+        {
+          event: "*", // можно "INSERT", "UPDATE", "DELETE"
+          schema: "public",
+          table: "intentions",
+          filter: `session_id=eq.${sessionId}`,
+        },
+        (payload) => {
+          console.log("Realtime update:", payload);
+          if (payload.eventType === "INSERT") {
+            setIntentions((prev) => [payload.new as Intention, ...prev]);
+          } else if (payload.eventType === "UPDATE") {
+            setIntentions((prev) =>
+              prev.map((i) =>
+                i.id === payload.new.id
+                  ? { ...(payload.new as Intention) }
+                  : i
+              )
+            );
+          } else if (payload.eventType === "DELETE") {
+            setIntentions((prev) =>
+              prev.filter((i) => i.id !== payload.old.id)
+            );
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [sessionId]);
 
   // ✅ добавление intention
   const handleAddIntention = async () => {
-    if (!newIntention.trim() || !user) return;
+    if (!newIntention.trim() || !user || !sessionId) return;
 
-    const { data, error } = await supabase.from("intentions").insert([
+    const { error } = await supabase.from("intentions").insert([
       {
         user_id: user.id,
         session_id: sessionId,
         text: newIntention,
+        completed: false,
       },
     ]);
 
-    if (!error) {
-      setIntentions([
-        { id: crypto.randomUUID(), user_id: user.id, text: newIntention },
-        ...intentions,
-      ]);
-      setNewIntention("");
-    }
+    if (error) console.error("Error adding intention:", error);
+    setNewIntention("");
+  };
+
+  // ✅ отметить выполненной / невыполненной
+  const toggleCompleted = async (intention: Intention) => {
+    const { error } = await supabase
+      .from("intentions")
+      .update({ completed: !intention.completed })
+      .eq("id", intention.id);
+
+    if (error) console.error("Error toggling completed:", error);
   };
 
   return (
@@ -75,8 +114,8 @@ export function IntentionsPanel() {
 
       <div className="flex-1 overflow-y-auto">
         <div className="p-4">
-          {/* My intentions */}
-          <div className="mb-4">
+          {/* 🧠 Мои intentions */}
+          <div className="mb-6">
             <h3 className="text-sm font-medium text-gray-700 mb-2">
               My Intentions
             </h3>
@@ -92,7 +131,9 @@ export function IntentionsPanel() {
                     type="text"
                     value={newIntention}
                     onChange={(e) => setNewIntention(e.target.value)}
-                    onKeyPress={(e) => e.key === "Enter" && handleAddIntention()}
+                    onKeyDown={(e) =>
+                      e.key === "Enter" && handleAddIntention()
+                    }
                     placeholder="Add an intention..."
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
@@ -106,7 +147,8 @@ export function IntentionsPanel() {
 
                 {loading ? (
                   <p className="text-sm text-gray-500 italic">Loading...</p>
-                ) : intentions.length === 0 ? (
+                ) : intentions.filter((i) => i.user_id === user.id).length ===
+                  0 ? (
                   <p className="text-sm text-gray-500 italic">
                     No intentions yet
                   </p>
@@ -116,13 +158,27 @@ export function IntentionsPanel() {
                     .map((intention) => (
                       <div
                         key={intention.id}
+                        onClick={() => toggleCompleted(intention)}
                         className="flex items-start gap-2 p-2 rounded hover:bg-gray-50 cursor-pointer"
                       >
-                        <Circle
-                          size={18}
-                          className="text-gray-400 mt-0.5 flex-shrink-0"
-                        />
-                        <span className="text-sm text-gray-900">
+                        {intention.completed ? (
+                          <CheckCircle
+                            size={18}
+                            className="text-green-500 mt-0.5 flex-shrink-0"
+                          />
+                        ) : (
+                          <Circle
+                            size={18}
+                            className="text-gray-400 mt-0.5 flex-shrink-0"
+                          />
+                        )}
+                        <span
+                          className={`text-sm ${
+                            intention.completed
+                              ? "text-gray-400 line-through"
+                              : "text-gray-900"
+                          }`}
+                        >
                           {intention.text}
                         </span>
                       </div>
@@ -132,7 +188,7 @@ export function IntentionsPanel() {
             )}
           </div>
 
-          {/* Team intentions */}
+          {/* 👥 intentions команды */}
           <div className="border-t pt-4">
             <h3 className="text-sm font-medium text-gray-700 mb-3">
               Team Intentions
@@ -142,13 +198,26 @@ export function IntentionsPanel() {
             ) : (
               <div className="space-y-3">
                 {intentions.map((item) => (
-                  <div key={item.id} className="p-3 bg-gray-50 rounded-lg">
+                  <div
+                    key={item.id}
+                    className={`p-3 rounded-lg ${
+                      item.completed ? "bg-green-50" : "bg-gray-50"
+                    }`}
+                  >
                     <div className="flex justify-between items-start mb-1">
                       <span className="text-sm font-medium text-gray-900">
                         {item.user_id === user?.id ? "You" : item.user_id}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-600">{item.text}</p>
+                    <p
+                      className={`text-sm ${
+                        item.completed
+                          ? "text-gray-400 line-through"
+                          : "text-gray-600"
+                      }`}
+                    >
+                      {item.text}
+                    </p>
                   </div>
                 ))}
               </div>
