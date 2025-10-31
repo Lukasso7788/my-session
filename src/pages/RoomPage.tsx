@@ -20,7 +20,16 @@ export function RoomPage() {
   const [hoveredStage, setHoveredStage] = useState<any>(null);
   const [remainingTime, setRemainingTime] = useState<string>("");
 
-  // ✅ Загрузка данных сессии
+  // 🎨 Flown color palette
+  const STAGE_COLOR_MAP: Record<string, string> = {
+    intro: "#2EAFA2", // Flown teal-strong
+    intentions: "#FFF9F2", // Flown cream
+    focus: "#9ADEDC", // Flown teal-light
+    break: "#FF9F8E", // Flown coral
+    outro: "#111111", // Flown charcoal
+  };
+
+  // ✅ Load session data
   useEffect(() => {
     async function loadSession() {
       if (!id) return;
@@ -46,12 +55,7 @@ export function RoomPage() {
             const formatted = parsed.map((b: any) => ({
               name: b.name,
               duration: b.minutes,
-              color:
-                b.type === "focus"
-                  ? "#3b82f6" // blue
-                  : b.type === "break"
-                  ? "#22c55e" // green
-                  : "#a855f7", // purple fallback
+              color: STAGE_COLOR_MAP[b.type] || "#9ADEDC",
             }));
 
             setStages(formatted);
@@ -67,13 +71,13 @@ export function RoomPage() {
     loadSession();
   }, [id]);
 
-  // ✅ Надёжная инициализация Daily iframe (устойчиво к refresh)
+  // ✅ Initialize Daily iframe safely
   useEffect(() => {
     if (!session?.daily_room_url || !containerRef.current) return;
 
     let destroyed = false;
 
-    // уничтожаем прошлый инстанс (если был)
+    // Destroy previous instance if it exists
     if (callRef.current) {
       callRef.current.destroy().catch(() => {});
       callRef.current = null;
@@ -103,7 +107,7 @@ export function RoomPage() {
       })
       .catch((err) => console.error("❌ Daily join error:", err));
 
-    // Обработка выхода
+    // Handle leaving the meeting
     callFrame.on("left-meeting", async () => {
       try {
         await callFrame.destroy();
@@ -112,7 +116,7 @@ export function RoomPage() {
       navigate("/sessions");
     });
 
-    // 💣 Чистый cleanup при размонтировании или refresh
+    // Cleanup
     return () => {
       destroyed = true;
       if (callRef.current) {
@@ -122,7 +126,7 @@ export function RoomPage() {
     };
   }, [session?.daily_room_url, navigate]);
 
-  // ✅ Логика смены стадий (progress bar)
+  // ✅ Stage progress logic
   useEffect(() => {
     if (!stages.length) return;
 

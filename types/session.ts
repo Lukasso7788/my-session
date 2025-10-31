@@ -14,6 +14,7 @@ export type SessionTemplate = {
   isDefault: boolean;
 };
 
+// Основной тип сессии (актуальный)
 export type Session = {
   id: string;
   title: string;
@@ -26,4 +27,7 @@ export type Session = {
   status: 'planned' | 'active' | 'ended';
   start_time: string | null;
   created_at: string;
+  // 👇 добавлены для удобства фронта
+  is_dropin?: boolean;
+  end_time?: string | null;
 };

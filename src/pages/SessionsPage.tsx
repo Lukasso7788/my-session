@@ -1,17 +1,18 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Users, Clock, Plus, Calendar } from "lucide-react";
 import { CreateSessionModal } from "../components/CreateSessionModal";
 import { formatSessionFormat } from "../utils/sessionHelpers";
 import { supabase } from "../lib/supabase";
+import type { Session } from "../types/session";
 
 export function SessionsPage() {
   const navigate = useNavigate();
-  const [sessions, setSessions] = useState<any[]>([]);
+  const [sessions, setSessions] = useState<Session[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // ✅ Fetch sessions directly from Supabase
+  // ✅ Fetch sessions from Supabase
   const fetchSessions = async () => {
     try {
       setIsLoading(true);
@@ -29,7 +30,7 @@ export function SessionsPage() {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setSessions(data || []);
+      setSessions((data || []) as Session[]);
       localStorage.setItem("sessions", JSON.stringify(data || []));
     } catch (error) {
       console.error("Error fetching sessions:", error);
@@ -48,6 +49,7 @@ export function SessionsPage() {
     navigate(`/room/${sessionId}`);
   };
 
+  // 🧮 Вспомогательные функции
   const formatDateTime = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleString("en-US", {
@@ -62,9 +64,23 @@ export function SessionsPage() {
     return new Date(dateString) > new Date();
   };
 
+  // ⏳ Проверка на истёкшие сессии
+  const isExpired = (s: Session) => {
+    if (!s.start_time) return false;
+    const end = new Date(s.start_time).getTime() + s.duration_minutes * 60_000;
+    return Date.now() > end;
+  };
+
+  // 💡 Фильтруем активные сессии (не истёкшие)
+  const activeSessions = useMemo(
+    () => sessions.filter((s) => !isExpired(s)),
+    [sessions]
+  );
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       <div className="max-w-6xl mx-auto px-4 py-12">
+        {/* ===== Header ===== */}
         <div className="flex justify-between items-center mb-8">
           <div>
             <h1 className="text-4xl font-bold text-gray-900 mb-2">
@@ -83,13 +99,16 @@ export function SessionsPage() {
           </button>
         </div>
 
+        {/* ===== Main content ===== */}
         {isLoading ? (
           <div className="text-center py-12">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
           </div>
-        ) : sessions.length === 0 ? (
+        ) : activeSessions.length === 0 ? (
           <div className="bg-white rounded-lg shadow-md p-12 text-center">
-            <p className="text-gray-600 mb-4">No sessions available yet</p>
+            <p className="text-gray-600 mb-4">
+              No active sessions available
+            </p>
             <button
               onClick={() => setIsModalOpen(true)}
               className="text-blue-600 hover:text-blue-700 font-medium"
@@ -99,7 +118,7 @@ export function SessionsPage() {
           </div>
         ) : (
           <div className="grid gap-6">
-            {sessions.map((session) => (
+            {activeSessions.map((session) => (
               <div
                 key={session.id}
                 className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow"
@@ -110,6 +129,7 @@ export function SessionsPage() {
                       {session.title}
                     </h3>
 
+                    {/* Info line */}
                     <div className="flex flex-wrap gap-4 text-sm text-gray-600 mb-4">
                       <div className="flex items-center gap-1">
                         <Users size={16} />
@@ -120,7 +140,6 @@ export function SessionsPage() {
                         <span>{session.duration_minutes} min</span>
                       </div>
 
-                      {/* 🕒 Start time */}
                       {session.start_time && (
                         <div
                           className={`flex items-center gap-1 font-medium ${
@@ -141,6 +160,7 @@ export function SessionsPage() {
                       )}
                     </div>
 
+                    {/* Format pill */}
                     <div className="inline-block bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-sm font-medium">
                       {formatSessionFormat(session.format)}
                     </div>
@@ -159,10 +179,11 @@ export function SessionsPage() {
         )}
       </div>
 
+      {/* ===== Modal ===== */}
       <CreateSessionModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        onSessionCreated={fetchSessions} // ✅ refreshes after creating new session
+        onSessionCreated={fetchSessions}
       />
     </div>
   );
