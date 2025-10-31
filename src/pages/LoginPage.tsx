@@ -5,7 +5,8 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
-        redirectTo: `${window.location.origin}/sessions`, // ✅ сразу вернёт на sessions
+        // 🔗 сразу редиректит обратно на прод-домен после входа
+        redirectTo: "https://my-session.vercel.app/sessions",
       },
     });
     if (error) alert(error.message);
