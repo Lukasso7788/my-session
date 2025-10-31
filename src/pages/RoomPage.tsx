@@ -52,11 +52,31 @@ export function RoomPage() {
                 ? JSON.parse(data.schedule)
                 : data.schedule;
 
-            const formatted = parsed.map((b: any) => ({
-              name: b.name,
-              duration: b.minutes,
-              color: STAGE_COLOR_MAP[b.type] || "#9ADEDC",
-            }));
+            // ✅ Определяем тип по названию, если нет b.type
+            const formatted = parsed.map((b: any) => {
+              const lowerName = (b.name || "").toLowerCase();
+
+              const type =
+                b.type ||
+                (lowerName.includes("welcome") || lowerName.includes("intro")
+                  ? "intro"
+                  : lowerName.includes("intention")
+                  ? "intentions"
+                  : lowerName.includes("focus")
+                  ? "focus"
+                  : lowerName.includes("break") || lowerName.includes("pause")
+                  ? "break"
+                  : lowerName.includes("farewell") ||
+                    lowerName.includes("celebrat")
+                  ? "outro"
+                  : "focus"); // fallback
+
+              return {
+                name: b.name,
+                duration: b.minutes,
+                color: STAGE_COLOR_MAP[type] || "#9ADEDC",
+              };
+            });
 
             setStages(formatted);
           } catch (e) {
