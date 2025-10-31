@@ -1,6 +1,6 @@
 import { supabase } from "../lib/supabase";
 
-export function LoginPage() {
+export default function LoginPage() {
   const handleLogin = async (provider: "google" | "facebook") => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
