@@ -19,12 +19,10 @@ export function IntentionsPanel() {
   const [newIntention, setNewIntention] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // ✅ Получаем текущего пользователя
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
   }, []);
 
-  // ✅ Загрузка intentions
   const loadIntentions = async () => {
     if (!sessionId) return;
     const { data, error } = await supabase
@@ -38,7 +36,6 @@ export function IntentionsPanel() {
     setLoading(false);
   };
 
-  // ✅ Realtime подписка
   useEffect(() => {
     loadIntentions();
 
@@ -78,7 +75,6 @@ export function IntentionsPanel() {
     };
   }, [sessionId]);
 
-  // ✅ Добавить intention
   const handleAddIntention = async () => {
     if (!newIntention.trim() || !user || !sessionId) return;
 
@@ -95,7 +91,6 @@ export function IntentionsPanel() {
     setNewIntention("");
   };
 
-  // ✅ Переключить статус
   const toggleCompleted = async (intention: Intention) => {
     const { error } = await supabase
       .from("intentions")
@@ -105,7 +100,6 @@ export function IntentionsPanel() {
     if (error) console.error("Error toggling completed:", error);
   };
 
-  // 🗑️ Удалить intention (моментально в UI + Supabase)
   const handleDelete = async (id: string) => {
     setIntentions((prev) => prev.filter((i) => i.id !== id));
     const { error } = await supabase.from("intentions").delete().eq("id", id);
@@ -115,7 +109,6 @@ export function IntentionsPanel() {
     }
   };
 
-  // 📸 Получить аватар или fallback
   const getAvatar = () => {
     return (
       user?.user_metadata?.avatar_url ||
@@ -124,26 +117,23 @@ export function IntentionsPanel() {
   };
 
   return (
-    <div className="flex w-full gap-4 max-h-[85vh]">
+    <div className="flex w-full h-[85vh] max-h-[85vh] gap-4">
       {/* 🎥 Daily iframe */}
-      <div className="flex-1 bg-black rounded-xl overflow-hidden">
+      <div className="flex-1 h-[85vh] max-h-[85vh] bg-black rounded-xl overflow-hidden">
         <iframe
           src="https://your-daily-room.daily.co"
-          className="w-full h-full border-0 rounded-xl"
+          className="w-full h-[85vh] max-h-[85vh] border-0 rounded-xl"
           allow="camera; microphone; display-capture; fullscreen"
         />
       </div>
 
-      {/* 🧭 Панель intentions */}
-      <div className="w-96 flex flex-col bg-white rounded-xl shadow-sm">
-        {/* 🔹 фиксируем шапку */}
+      {/* 🧭 Intentions Panel */}
+      <div className="w-96 h-[85vh] max-h-[85vh] flex flex-col bg-white rounded-xl shadow-sm">
         <div className="p-4 border-b flex-shrink-0">
           <h2 className="text-lg font-semibold text-gray-900">Intentions</h2>
         </div>
 
-        {/* 🔹 внутренний контейнер со скроллом */}
-        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4">
-          {/* 🧠 Мои intentions */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
           <div className="mb-6">
             <h3 className="text-sm font-medium text-gray-700 mb-2">
               My Intentions
@@ -174,7 +164,8 @@ export function IntentionsPanel() {
 
                 {loading ? (
                   <p className="text-sm text-gray-500 italic">Loading...</p>
-                ) : intentions.filter((i) => i.user_id === user.id).length === 0 ? (
+                ) : intentions.filter((i) => i.user_id === user.id).length ===
+                  0 ? (
                   <p className="text-sm text-gray-500 italic">
                     No intentions yet
                   </p>
@@ -229,7 +220,6 @@ export function IntentionsPanel() {
             )}
           </div>
 
-          {/* 👥 Командные intentions */}
           <div className="border-t pt-4">
             <h3 className="text-sm font-medium text-gray-700 mb-3">
               Team Intentions
