@@ -20,7 +20,6 @@ export function RoomPage() {
   const [hoveredStage, setHoveredStage] = useState<any>(null);
   const [remainingTime, setRemainingTime] = useState<string>("");
 
-  // 🎨 Flown color palette
   const STAGE_COLOR_MAP: Record<string, string> = {
     intro: "#8FD8C6",
     intentions: "#FFF9F2",
@@ -29,58 +28,53 @@ export function RoomPage() {
     outro: "#8FD8C6",
   };
 
-  // ✅ Load session data
+  // ✅ Load session
   useEffect(() => {
     async function loadSession() {
       if (!id) return;
-
       const { data, error } = await supabase
         .from("sessions")
         .select("*, session_templates(*)")
         .eq("id", id)
         .single();
 
-      if (error) {
-        console.error("❌ Error loading session:", error.message);
-      } else {
-        setSession(data);
+      if (error) console.error("❌ Error loading session:", error.message);
+      else setSession(data);
 
-        if (data?.schedule) {
-          try {
-            const parsed =
-              typeof data.schedule === "string"
-                ? JSON.parse(data.schedule)
-                : data.schedule;
+      if (data?.schedule) {
+        try {
+          const parsed =
+            typeof data.schedule === "string"
+              ? JSON.parse(data.schedule)
+              : data.schedule;
 
-            const formatted = parsed.map((b: any) => {
-              const lowerName = (b.name || "").toLowerCase();
+          const formatted = parsed.map((b: any) => {
+            const lowerName = (b.name || "").toLowerCase();
+            const type =
+              b.type ||
+              (lowerName.includes("welcome") || lowerName.includes("intro")
+                ? "intro"
+                : lowerName.includes("intention")
+                ? "intentions"
+                : lowerName.includes("focus")
+                ? "focus"
+                : lowerName.includes("break") || lowerName.includes("pause")
+                ? "break"
+                : lowerName.includes("farewell") ||
+                  lowerName.includes("celebrat")
+                ? "outro"
+                : "focus");
 
-              const type =
-                b.type ||
-                (lowerName.includes("welcome") || lowerName.includes("intro")
-                  ? "intro"
-                  : lowerName.includes("intention")
-                  ? "intentions"
-                  : lowerName.includes("focus")
-                  ? "focus"
-                  : lowerName.includes("break") || lowerName.includes("pause")
-                  ? "break"
-                  : lowerName.includes("farewell") ||
-                    lowerName.includes("celebrat")
-                  ? "outro"
-                  : "focus");
+            return {
+              name: b.name,
+              duration: b.minutes,
+              color: STAGE_COLOR_MAP[type] || "#9ADEDC",
+            };
+          });
 
-              return {
-                name: b.name,
-                duration: b.minutes,
-                color: STAGE_COLOR_MAP[type] || "#9ADEDC",
-              };
-            });
-
-            setStages(formatted);
-          } catch (e) {
-            console.error("❌ Error parsing schedule:", e);
-          }
+          setStages(formatted);
+        } catch (e) {
+          console.error("❌ Error parsing schedule:", e);
         }
       }
 
@@ -90,12 +84,11 @@ export function RoomPage() {
     loadSession();
   }, [id]);
 
-  // ✅ Initialize Daily iframe safely
+  // ✅ Initialize Daily
   useEffect(() => {
     if (!session?.daily_room_url || !containerRef.current) return;
 
     let destroyed = false;
-
     if (callRef.current) {
       callRef.current.destroy().catch(() => {});
       callRef.current = null;
@@ -118,12 +111,7 @@ export function RoomPage() {
       ? `${session.daily_room_url}&layout=grid`
       : `${session.daily_room_url}?layout=grid`;
 
-    callFrame
-      .join({ url: urlWithGrid })
-      .then(() => {
-        if (!destroyed) console.log("✅ Joined Daily room");
-      })
-      .catch((err) => console.error("❌ Daily join error:", err));
+    callFrame.join({ url: urlWithGrid }).catch(console.error);
 
     callFrame.on("left-meeting", async () => {
       try {
@@ -142,7 +130,7 @@ export function RoomPage() {
     };
   }, [session?.daily_room_url, navigate]);
 
-  // ✅ Stage progress logic
+  // ✅ Stage progress
   useEffect(() => {
     if (!stages.length) return;
 
@@ -214,7 +202,6 @@ export function RoomPage() {
               currentStageProgress={progress}
               onHoverStage={setHoveredStage}
             />
-
             <div className="flex justify-between items-center text-sm font-medium text-slate-700 mt-1">
               <span>
                 {hoveredStage
@@ -227,17 +214,14 @@ export function RoomPage() {
         </div>
 
         {/* Video + Sidebar */}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr,370px] gap-5 h-[85vh] max-h-[85vh]">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr,370px] gap-5">
           {/* 🎥 Daily iframe */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden h-[85vh] max-h-[85vh]">
-            <div
-              ref={containerRef}
-              className="w-full h-[85vh] max-h-[85vh]"
-            />
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden h-[80vh]">
+            <div ref={containerRef} className="w-full h-[80vh]" />
           </div>
 
-          {/* 🧭 Intentions panel */}
-          <div className="rounded-2xl border border-slate-800 bg-white text-black shadow-lg overflow-hidden h-[85vh] max-h-[85vh]">
+          {/* 🧠 Intentions panel */}
+          <div className="rounded-2xl border border-slate-800 bg-white text-black shadow-lg overflow-hidden h-[80vh]">
             <div className="p-4 h-full">
               <IntentionsPanel />
             </div>
