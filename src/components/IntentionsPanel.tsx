@@ -105,10 +105,18 @@ export function IntentionsPanel() {
     if (error) console.error("Error toggling completed:", error);
   };
 
-  // 🗑️ Удалить intention
+  // 🗑️ Удалить intention (моментально в UI + Supabase)
   const handleDelete = async (id: string) => {
+    // моментально убираем из стейта
+    setIntentions((prev) => prev.filter((i) => i.id !== id));
+
+    // удаляем из базы
     const { error } = await supabase.from("intentions").delete().eq("id", id);
-    if (error) console.error("Error deleting intention:", error);
+    if (error) {
+      console.error("Error deleting intention:", error);
+      // если ошибка — восстановим список
+      loadIntentions();
+    }
   };
 
   // 📸 Получить аватар или fallback
@@ -197,7 +205,10 @@ export function IntentionsPanel() {
 
                       {/* 🗑️ delete button */}
                       <button
-                        onClick={() => handleDelete(intention.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(intention.id);
+                        }}
                         className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-gray-400 hover:text-red-600"
                         title="Delete intention"
                       >
