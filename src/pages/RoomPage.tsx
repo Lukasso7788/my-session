@@ -38,43 +38,46 @@ export function RoomPage() {
         .eq("id", id)
         .single();
 
-      if (error) console.error("❌ Error loading session:", error.message);
-      else setSession(data);
+      if (error) {
+        console.error("❌ Error loading session:", error.message);
+      } else {
+        setSession(data);
 
-      if (data?.schedule) {
-        try {
-          const parsed =
-            typeof data.schedule === "string"
-              ? JSON.parse(data.schedule)
-              : data.schedule;
+        if (data?.schedule) {
+          try {
+            const parsed =
+              typeof data.schedule === "string"
+                ? JSON.parse(data.schedule)
+                : data.schedule;
 
-          const formatted = parsed.map((b: any) => {
-            const lowerName = (b.name || "").toLowerCase();
-            const type =
-              b.type ||
-              (lowerName.includes("welcome") || lowerName.includes("intro")
-                ? "intro"
-                : lowerName.includes("intention")
-                ? "intentions"
-                : lowerName.includes("focus")
-                ? "focus"
-                : lowerName.includes("break") || lowerName.includes("pause")
-                ? "break"
-                : lowerName.includes("farewell") ||
-                  lowerName.includes("celebrat")
-                ? "outro"
-                : "focus");
+            const formatted = parsed.map((b: any) => {
+              const lowerName = (b.name || "").toLowerCase();
+              const type =
+                b.type ||
+                (lowerName.includes("welcome") || lowerName.includes("intro")
+                  ? "intro"
+                  : lowerName.includes("intention")
+                  ? "intentions"
+                  : lowerName.includes("focus")
+                  ? "focus"
+                  : lowerName.includes("break") || lowerName.includes("pause")
+                  ? "break"
+                  : lowerName.includes("farewell") ||
+                    lowerName.includes("celebrat")
+                  ? "outro"
+                  : "focus");
 
-            return {
-              name: b.name,
-              duration: b.minutes,
-              color: STAGE_COLOR_MAP[type] || "#9ADEDC",
-            };
-          });
+              return {
+                name: b.name,
+                duration: b.minutes,
+                color: STAGE_COLOR_MAP[type] || "#9ADEDC",
+              };
+            });
 
-          setStages(formatted);
-        } catch (e) {
-          console.error("❌ Error parsing schedule:", e);
+            setStages(formatted);
+          } catch (e) {
+            console.error("❌ Error parsing schedule:", e);
+          }
         }
       }
 
@@ -84,16 +87,17 @@ export function RoomPage() {
     loadSession();
   }, [id]);
 
-  // ✅ Initialize Daily
+  // ✅ Initialize Daily iframe safely
   useEffect(() => {
     if (!session?.daily_room_url || !containerRef.current) return;
 
-    let destroyed = false;
+    // Уничтожаем предыдущий iframe, если есть
     if (callRef.current) {
       callRef.current.destroy().catch(() => {});
       callRef.current = null;
     }
 
+    // Создаём новый iframe
     const callFrame = DailyIframe.createFrame(containerRef.current, {
       iframeStyle: {
         width: "100%",
@@ -111,8 +115,19 @@ export function RoomPage() {
       ? `${session.daily_room_url}&layout=grid`
       : `${session.daily_room_url}?layout=grid`;
 
-    callFrame.join({ url: urlWithGrid }).catch(console.error);
+    // Защита от race-condition при уходе
+    let cancelled = false;
+    callFrame
+      .join({ url: urlWithGrid })
+      .catch((err) => console.error("❌ Daily join error:", err))
+      .finally(() => {
+        if (cancelled && callRef.current) {
+          callRef.current.destroy().catch(() => {});
+          callRef.current = null;
+        }
+      });
 
+    // Обработка выхода
     callFrame.on("left-meeting", async () => {
       try {
         await callFrame.destroy();
@@ -122,7 +137,7 @@ export function RoomPage() {
     });
 
     return () => {
-      destroyed = true;
+      cancelled = true;
       if (callRef.current) {
         callRef.current.destroy().catch(() => {});
         callRef.current = null;
@@ -130,7 +145,7 @@ export function RoomPage() {
     };
   }, [session?.daily_room_url, navigate]);
 
-  // ✅ Stage progress
+  // ✅ Stage progress tracking
   useEffect(() => {
     if (!stages.length) return;
 
@@ -159,6 +174,7 @@ export function RoomPage() {
     return () => clearInterval(interval);
   }, [currentStage, stages]);
 
+  // 🌀 Loading state
   if (loading)
     return (
       <div className="flex h-screen items-center justify-center bg-slate-900 text-white">
@@ -181,6 +197,7 @@ export function RoomPage() {
       </div>
     );
 
+  // ✅ Main render
   return (
     <div className="min-h-screen bg-slate-900 text-white flex justify-center">
       <div className="w-full max-w-[1720px] px-5 py-5 space-y-5">

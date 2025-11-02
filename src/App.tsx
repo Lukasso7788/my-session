@@ -3,6 +3,7 @@ import { SessionsPage } from "./pages/SessionsPage";
 import RoomPage from "./pages/RoomPage";
 import LoginPage from "./pages/LoginPage";
 import ProfilePage from "./pages/ProfilePage";
+import PublicProfilePage from "./pages/PublicProfilePage"; // 👈 новый импорт
 
 function App() {
   return (
@@ -20,8 +21,11 @@ function App() {
         {/* 🔐 страница входа / регистрации */}
         <Route path="/login" element={<LoginPage />} />
 
-        {/* 👤 профиль пользователя */}
+        {/* 👤 профиль текущего пользователя */}
         <Route path="/profile" element={<ProfilePage />} />
+
+        {/* 🌍 публичная страница профиля по user_id */}
+        <Route path="/profile/:id" element={<PublicProfilePage />} />
 
         {/* fallback — если маршрут не найден */}
         <Route path="*" element={<Navigate to="/sessions" replace />} />
