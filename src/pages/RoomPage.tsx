@@ -216,12 +216,12 @@ export function RoomPage() {
         {/* Video + Sidebar */}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr,370px] gap-5">
           {/* 🎥 Daily iframe */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden h-[78vh]">
-            <div ref={containerRef} className="w-full h-[78vh]" />
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden h-[77vh]">
+            <div ref={containerRef} className="w-full h-[77vh]" />
           </div>
 
           {/* 🧠 Intentions panel */}
-          <div className="rounded-2xl border border-slate-800 bg-white text-black shadow-lg overflow-hidden h-[78vh]">
+          <div className="rounded-2xl border border-slate-800 bg-white text-black shadow-lg overflow-hidden h-[77vh]">
             <div className="p-4 h-full">
               <IntentionsPanel />
             </div>
