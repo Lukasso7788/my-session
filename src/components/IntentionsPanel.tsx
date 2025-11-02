@@ -241,18 +241,9 @@ export function IntentionsPanel() {
                   />
                   <div className="flex-1">
                     <p className="text-sm font-medium text-gray-900">
-                      {item.user_id === user?.id ? (
-                        "You"
-                      ) : (
-                        <a
-                          href={`/profile/${item.user_id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:underline"
-                        >
-                          {item.profiles?.full_name || "Participant"}
-                        </a>
-                      )}
+                      {item.user_id === user?.id
+                        ? "You"
+                        : item.profiles?.full_name || "Participant"}
                     </p>
                     <p
                       className={`text-sm ${
