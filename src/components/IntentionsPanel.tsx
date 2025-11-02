@@ -10,6 +10,10 @@ interface Intention {
   session_id: string;
   created_at?: string;
   completed?: boolean;
+  profiles?: {
+    full_name?: string;
+    avatar_url?: string;
+  };
 }
 
 export function IntentionsPanel() {
@@ -25,9 +29,13 @@ export function IntentionsPanel() {
 
   const loadIntentions = async () => {
     if (!sessionId) return;
+
     const { data, error } = await supabase
       .from("intentions")
-      .select("id, text, user_id, session_id, created_at, completed")
+      .select(`
+        id, text, user_id, session_id, created_at, completed,
+        profiles ( full_name, avatar_url )
+      `)
       .eq("session_id", sessionId)
       .order("created_at", { ascending: false });
 
@@ -109,156 +117,142 @@ export function IntentionsPanel() {
     }
   };
 
-  const getAvatar = () => {
-    return (
-      user?.user_metadata?.avatar_url ||
-      `https://ui-avatars.com/api/?name=${user?.email || "User"}`
-    );
-  };
+  const getAvatar = (profile?: any) =>
+    profile?.avatar_url ||
+    `https://ui-avatars.com/api/?name=${encodeURIComponent(
+      profile?.full_name || "User"
+    )}`;
 
   return (
-    <div className="flex w-full h-[85vh] max-h-[85vh] gap-4">
-      {/* 🎥 Daily iframe */}
-      <div className="flex-1 h-[85vh] max-h-[85vh] bg-black rounded-xl overflow-hidden">
-        <iframe
-          src="https://your-daily-room.daily.co"
-          className="w-full h-[85vh] max-h-[85vh] border-0 rounded-xl"
-          allow="camera; microphone; display-capture; fullscreen"
-        />
+    <div className="flex flex-col w-full h-full">
+      <div className="p-4 border-b flex-shrink-0">
+        <h2 className="text-lg font-semibold text-gray-900">Intentions</h2>
       </div>
 
-      {/* 🧭 Intentions Panel */}
-      <div className="w-96 h-[85vh] max-h-[85vh] flex flex-col bg-white rounded-xl shadow-sm">
-        <div className="p-4 border-b flex-shrink-0">
-          <h2 className="text-lg font-semibold text-gray-900">Intentions</h2>
+      <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+        <div className="mb-6">
+          <h3 className="text-sm font-medium text-gray-700 mb-2">
+            My Intentions
+          </h3>
+
+          {!user ? (
+            <p className="text-sm text-gray-500 italic">
+              Please log in to add intentions
+            </p>
+          ) : (
+            <>
+              <div className="flex gap-2 mb-3">
+                <input
+                  type="text"
+                  value={newIntention}
+                  onChange={(e) => setNewIntention(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleAddIntention()}
+                  placeholder="Add an intention..."
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  onClick={handleAddIntention}
+                  className="p-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                >
+                  <Plus size={18} />
+                </button>
+              </div>
+
+              {loading ? (
+                <p className="text-sm text-gray-500 italic">Loading...</p>
+              ) : intentions.filter((i) => i.user_id === user.id).length === 0 ? (
+                <p className="text-sm text-gray-500 italic">No intentions yet</p>
+              ) : (
+                intentions
+                  .filter((i) => i.user_id === user.id)
+                  .map((intention) => (
+                    <div
+                      key={intention.id}
+                      className="flex items-center justify-between p-2 rounded hover:bg-gray-50 group"
+                    >
+                      <div
+                        onClick={() => toggleCompleted(intention)}
+                        className="flex items-start gap-2 cursor-pointer"
+                      >
+                        {intention.completed ? (
+                          <CheckCircle
+                            size={18}
+                            className="text-green-500 mt-0.5 flex-shrink-0"
+                          />
+                        ) : (
+                          <Circle
+                            size={18}
+                            className="text-gray-400 mt-0.5 flex-shrink-0"
+                          />
+                        )}
+                        <span
+                          className={`text-sm ${
+                            intention.completed
+                              ? "text-gray-400 line-through"
+                              : "text-gray-900"
+                          }`}
+                        >
+                          {intention.text}
+                        </span>
+                      </div>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(intention.id);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-gray-400 hover:text-red-600"
+                        title="Delete intention"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))
+              )}
+            </>
+          )}
         </div>
 
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
-          <div className="mb-6">
-            <h3 className="text-sm font-medium text-gray-700 mb-2">
-              My Intentions
-            </h3>
-
-            {!user ? (
-              <p className="text-sm text-gray-500 italic">
-                Please log in to add intentions
-              </p>
-            ) : (
-              <>
-                <div className="flex gap-2 mb-3">
-                  <input
-                    type="text"
-                    value={newIntention}
-                    onChange={(e) => setNewIntention(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleAddIntention()}
-                    placeholder="Add an intention..."
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        <div className="border-t pt-4">
+          <h3 className="text-sm font-medium text-gray-700 mb-3">
+            Team Intentions
+          </h3>
+          {loading ? (
+            <p className="text-sm text-gray-500 italic">Loading...</p>
+          ) : (
+            <div className="space-y-3">
+              {intentions.map((item) => (
+                <div
+                  key={item.id}
+                  className={`flex items-start gap-3 p-3 rounded-lg ${
+                    item.completed ? "bg-green-50" : "bg-gray-50"
+                  }`}
+                >
+                  <img
+                    src={getAvatar(item.profiles)}
+                    alt="avatar"
+                    className="w-8 h-8 rounded-full border border-gray-300 object-cover"
                   />
-                  <button
-                    onClick={handleAddIntention}
-                    className="p-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-                  >
-                    <Plus size={18} />
-                  </button>
-                </div>
-
-                {loading ? (
-                  <p className="text-sm text-gray-500 italic">Loading...</p>
-                ) : intentions.filter((i) => i.user_id === user.id).length ===
-                  0 ? (
-                  <p className="text-sm text-gray-500 italic">
-                    No intentions yet
-                  </p>
-                ) : (
-                  intentions
-                    .filter((i) => i.user_id === user.id)
-                    .map((intention) => (
-                      <div
-                        key={intention.id}
-                        className="flex items-center justify-between p-2 rounded hover:bg-gray-50 group"
-                      >
-                        <div
-                          onClick={() => toggleCompleted(intention)}
-                          className="flex items-start gap-2 cursor-pointer"
-                        >
-                          {intention.completed ? (
-                            <CheckCircle
-                              size={18}
-                              className="text-green-500 mt-0.5 flex-shrink-0"
-                            />
-                          ) : (
-                            <Circle
-                              size={18}
-                              className="text-gray-400 mt-0.5 flex-shrink-0"
-                            />
-                          )}
-                          <span
-                            className={`text-sm ${
-                              intention.completed
-                                ? "text-gray-400 line-through"
-                                : "text-gray-900"
-                            }`}
-                          >
-                            {intention.text}
-                          </span>
-                        </div>
-
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDelete(intention.id);
-                          }}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-gray-400 hover:text-red-600"
-                          title="Delete intention"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    ))
-                )}
-              </>
-            )}
-          </div>
-
-          <div className="border-t pt-4">
-            <h3 className="text-sm font-medium text-gray-700 mb-3">
-              Team Intentions
-            </h3>
-            {loading ? (
-              <p className="text-sm text-gray-500 italic">Loading...</p>
-            ) : (
-              <div className="space-y-3">
-                {intentions.map((item) => (
-                  <div
-                    key={item.id}
-                    className={`flex items-start gap-3 p-3 rounded-lg ${
-                      item.completed ? "bg-green-50" : "bg-gray-50"
-                    }`}
-                  >
-                    <img
-                      src={getAvatar()}
-                      alt="avatar"
-                      className="w-8 h-8 rounded-full border border-gray-300 object-cover"
-                    />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-gray-900">
-                        {item.user_id === user?.id ? "You" : item.user_id}
-                      </p>
-                      <p
-                        className={`text-sm ${
-                          item.completed
-                            ? "text-gray-400 line-through"
-                            : "text-gray-600"
-                        }`}
-                      >
-                        {item.text}
-                      </p>
-                    </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-gray-900">
+                      {item.user_id === user?.id
+                        ? "You"
+                        : item.profiles?.full_name || "Participant"}
+                    </p>
+                    <p
+                      className={`text-sm ${
+                        item.completed
+                          ? "text-gray-400 line-through"
+                          : "text-gray-600"
+                      }`}
+                    >
+                      {item.text}
+                    </p>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

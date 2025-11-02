@@ -10,39 +10,51 @@ export default function ProfilePage() {
   const [bio, setBio] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // 🔐 Проверяем авторизацию и подгружаем юзера
   useEffect(() => {
-    async function loadUser() {
+    async function loadProfile() {
       const { data } = await supabase.auth.getUser();
-      if (data.user) {
-        setUser(data.user);
-        setFullName(data.user.user_metadata?.full_name || "");
-        setBio(data.user.user_metadata?.bio || "");
-      } else {
+      if (!data.user) {
         navigate("/login");
+        return;
+      }
+      setUser(data.user);
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", data.user.id)
+        .single();
+
+      if (profile) {
+        setFullName(profile.full_name || "");
+        setBio(profile.bio || "");
       }
       setLoading(false);
     }
-    loadUser();
+
+    loadProfile();
   }, [navigate]);
 
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
 
-    const { error } = await supabase.auth.updateUser({
-      data: { full_name: fullName, bio },
-    });
+    const updates = {
+      id: user.id,
+      full_name: fullName,
+      bio,
+      updated_at: new Date(),
+    };
+
+    const { error } = await supabase
+      .from("profiles")
+      .upsert(updates, { onConflict: "id" });
 
     setSaving(false);
-    if (error) {
-      alert(error.message);
-    } else {
-      alert("Profile updated!");
-    }
+    if (error) alert(error.message);
+    else alert("Profile updated!");
   };
 
-  // 💫 загрузка
   if (loading)
     return (
       <div className="flex items-center justify-center h-screen text-white bg-slate-900">
@@ -50,7 +62,6 @@ export default function ProfilePage() {
       </div>
     );
 
-  // 👤 профиль
   return (
     <div className="min-h-screen bg-slate-900 text-white flex justify-center py-20">
       <div className="bg-slate-800 rounded-2xl p-10 shadow-lg w-[480px] text-center space-y-6">
