@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, CheckCircle, Circle } from "lucide-react";
+import { Plus, CheckCircle, Circle, Trash2 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useParams } from "react-router-dom";
 
@@ -61,9 +61,7 @@ export function IntentionsPanel() {
           } else if (payload.eventType === "UPDATE") {
             setIntentions((prev) =>
               prev.map((i) =>
-                i.id === payload.new.id
-                  ? { ...(payload.new as Intention) }
-                  : i
+                i.id === payload.new.id ? (payload.new as Intention) : i
               )
             );
           } else if (payload.eventType === "DELETE") {
@@ -107,6 +105,12 @@ export function IntentionsPanel() {
     if (error) console.error("Error toggling completed:", error);
   };
 
+  // 🗑️ Удалить intention
+  const handleDelete = async (id: string) => {
+    const { error } = await supabase.from("intentions").delete().eq("id", id);
+    if (error) console.error("Error deleting intention:", error);
+  };
+
   // 📸 Получить аватар или fallback
   const getAvatar = () => {
     return (
@@ -121,7 +125,6 @@ export function IntentionsPanel() {
         <h2 className="text-lg font-semibold text-gray-900">Intentions</h2>
       </div>
 
-      {/* ✅ добавлен класс custom-scrollbar */}
       <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
         {/* 🧠 Мои intentions */}
         <div className="mb-6">
@@ -154,8 +157,7 @@ export function IntentionsPanel() {
 
               {loading ? (
                 <p className="text-sm text-gray-500 italic">Loading...</p>
-              ) : intentions.filter((i) => i.user_id === user.id).length ===
-                0 ? (
+              ) : intentions.filter((i) => i.user_id === user.id).length === 0 ? (
                 <p className="text-sm text-gray-500 italic">
                   No intentions yet
                 </p>
@@ -165,29 +167,42 @@ export function IntentionsPanel() {
                   .map((intention) => (
                     <div
                       key={intention.id}
-                      onClick={() => toggleCompleted(intention)}
-                      className="flex items-start gap-2 p-2 rounded hover:bg-gray-50 cursor-pointer"
+                      className="flex items-center justify-between p-2 rounded hover:bg-gray-50 group"
                     >
-                      {intention.completed ? (
-                        <CheckCircle
-                          size={18}
-                          className="text-green-500 mt-0.5 flex-shrink-0"
-                        />
-                      ) : (
-                        <Circle
-                          size={18}
-                          className="text-gray-400 mt-0.5 flex-shrink-0"
-                        />
-                      )}
-                      <span
-                        className={`text-sm ${
-                          intention.completed
-                            ? "text-gray-400 line-through"
-                            : "text-gray-900"
-                        }`}
+                      <div
+                        onClick={() => toggleCompleted(intention)}
+                        className="flex items-start gap-2 cursor-pointer"
                       >
-                        {intention.text}
-                      </span>
+                        {intention.completed ? (
+                          <CheckCircle
+                            size={18}
+                            className="text-green-500 mt-0.5 flex-shrink-0"
+                          />
+                        ) : (
+                          <Circle
+                            size={18}
+                            className="text-gray-400 mt-0.5 flex-shrink-0"
+                          />
+                        )}
+                        <span
+                          className={`text-sm ${
+                            intention.completed
+                              ? "text-gray-400 line-through"
+                              : "text-gray-900"
+                          }`}
+                        >
+                          {intention.text}
+                        </span>
+                      </div>
+
+                      {/* 🗑️ delete button */}
+                      <button
+                        onClick={() => handleDelete(intention.id)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-gray-400 hover:text-red-600"
+                        title="Delete intention"
+                      >
+                        <Trash2 size={16} />
+                      </button>
                     </div>
                   ))
               )}
