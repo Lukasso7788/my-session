@@ -20,13 +20,13 @@ export function RoomPage() {
   const [hoveredStage, setHoveredStage] = useState<any>(null);
   const [remainingTime, setRemainingTime] = useState<string>("");
 
-  // 🎨 Flown color palette — final version
+  // 🎨 Flown color palette
   const STAGE_COLOR_MAP: Record<string, string> = {
-    intro: "#8FD8C6",        // 🌿 Light Green — Welcome & Intros
-    intentions: "#FFF9F2",   // 🕯️ Cream — Intentions
-    focus: "#9ADEDC",        // 💧 Teal — Focus
-    break: "#FF9F8E",        // 🍑 Coral — Break
-    outro: "#8FD8C6",        // 🌿 Light Green — Celebrate & Farewell
+    intro: "#8FD8C6",
+    intentions: "#FFF9F2",
+    focus: "#9ADEDC",
+    break: "#FF9F8E",
+    outro: "#8FD8C6",
   };
 
   // ✅ Load session data
@@ -52,7 +52,6 @@ export function RoomPage() {
                 ? JSON.parse(data.schedule)
                 : data.schedule;
 
-            // ✅ Определяем тип по названию, если нет b.type
             const formatted = parsed.map((b: any) => {
               const lowerName = (b.name || "").toLowerCase();
 
@@ -69,7 +68,7 @@ export function RoomPage() {
                   : lowerName.includes("farewell") ||
                     lowerName.includes("celebrat")
                   ? "outro"
-                  : "focus"); // fallback
+                  : "focus");
 
               return {
                 name: b.name,
@@ -97,7 +96,6 @@ export function RoomPage() {
 
     let destroyed = false;
 
-    // Destroy previous instance if it exists
     if (callRef.current) {
       callRef.current.destroy().catch(() => {});
       callRef.current = null;
@@ -127,7 +125,6 @@ export function RoomPage() {
       })
       .catch((err) => console.error("❌ Daily join error:", err));
 
-    // Handle leaving the meeting
     callFrame.on("left-meeting", async () => {
       try {
         await callFrame.destroy();
@@ -136,7 +133,6 @@ export function RoomPage() {
       navigate("/sessions");
     });
 
-    // Cleanup
     return () => {
       destroyed = true;
       if (callRef.current) {
@@ -231,16 +227,18 @@ export function RoomPage() {
         </div>
 
         {/* Video + Sidebar */}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr,370px] gap-5">
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr,370px] gap-5 h-[85vh] max-h-[85vh]">
+          {/* 🎥 Daily iframe */}
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden h-[85vh] max-h-[85vh]">
             <div
               ref={containerRef}
-              className="w-full h-[75vh] min-h-[520px]"
+              className="w-full h-[85vh] max-h-[85vh]"
             />
           </div>
 
-          <div className="rounded-2xl border border-slate-800 bg-white text-black shadow-lg overflow-hidden">
-            <div className="p-4">
+          {/* 🧭 Intentions panel */}
+          <div className="rounded-2xl border border-slate-800 bg-white text-black shadow-lg overflow-hidden h-[85vh] max-h-[85vh]">
+            <div className="p-4 h-full">
               <IntentionsPanel />
             </div>
           </div>
