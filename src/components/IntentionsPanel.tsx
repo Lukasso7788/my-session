@@ -107,14 +107,10 @@ export function IntentionsPanel() {
 
   // 🗑️ Удалить intention (моментально в UI + Supabase)
   const handleDelete = async (id: string) => {
-    // моментально убираем из стейта
     setIntentions((prev) => prev.filter((i) => i.id !== id));
-
-    // удаляем из базы
     const { error } = await supabase.from("intentions").delete().eq("id", id);
     if (error) {
       console.error("Error deleting intention:", error);
-      // если ошибка — восстановим список
       loadIntentions();
     }
   };
@@ -129,11 +125,13 @@ export function IntentionsPanel() {
 
   return (
     <div className="h-full flex flex-col bg-white">
-      <div className="p-4 border-b">
+      {/* 🔹 фиксируем шапку */}
+      <div className="p-4 border-b flex-shrink-0">
         <h2 className="text-lg font-semibold text-gray-900">Intentions</h2>
       </div>
 
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+      {/* 🔹 внутренний контейнер с ограничением и скроллом */}
+      <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4">
         {/* 🧠 Мои intentions */}
         <div className="mb-6">
           <h3 className="text-sm font-medium text-gray-700 mb-2">
@@ -203,7 +201,6 @@ export function IntentionsPanel() {
                         </span>
                       </div>
 
-                      {/* 🗑️ delete button */}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
