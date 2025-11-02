@@ -124,13 +124,13 @@ export function IntentionsPanel() {
   };
 
   return (
-    <div className="h-full flex flex-col bg-white">
+    <div className="flex flex-col bg-white max-h-[80vh] rounded-xl shadow-sm">
       {/* 🔹 фиксируем шапку */}
       <div className="p-4 border-b flex-shrink-0">
         <h2 className="text-lg font-semibold text-gray-900">Intentions</h2>
       </div>
 
-      {/* 🔹 внутренний контейнер с ограничением и скроллом */}
+      {/* 🔹 внутренний контейнер с ограничением высоты и скроллом */}
       <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4">
         {/* 🧠 Мои intentions */}
         <div className="mb-6">
