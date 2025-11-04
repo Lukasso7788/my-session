@@ -1,5 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { ArrowLeft } from "lucide-react";
 import { supabase } from "../lib/supabase";
 
 export default function PublicProfilePage() {
@@ -65,55 +66,69 @@ export default function PublicProfilePage() {
     )}`;
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white flex justify-center py-20">
-      <div className="bg-slate-800 rounded-2xl p-10 shadow-lg w-full max-w-[720px] space-y-10">
-        {/* ==== Header / Avatar ==== */}
-        <div className="text-center space-y-5">
-          <img
-            src={avatar}
-            alt="avatar"
-            className="w-28 h-28 rounded-full mx-auto border border-slate-600 object-cover"
-          />
-          <h1 className="text-3xl font-bold">{profile.full_name}</h1>
-          <p className="text-slate-400 text-sm max-w-md mx-auto">
-            {profile.bio || "This user has not added a bio yet."}
-          </p>
-          <p className="text-xs text-slate-500">
-            Last updated:{" "}
-            {new Date(profile.updated_at).toLocaleDateString(undefined, {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-            })}
-          </p>
+    <div className="min-h-screen bg-slate-900 text-white flex justify-center py-16 px-4">
+      <div className="w-full max-w-[720px] space-y-10">
+        {/* 🔙 Back button */}
+        <div>
+          <button
+            onClick={() => navigate(-1)}
+            className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors mb-6"
+          >
+            <ArrowLeft size={18} />
+            <span className="text-sm font-medium">Back</span>
+          </button>
         </div>
 
-        {/* ==== Hosted Sessions ==== */}
-        <div>
-          <h2 className="text-lg font-semibold text-slate-300 mb-4">
-            Hosted Sessions
-          </h2>
-
-          {sessions.length === 0 ? (
-            <p className="text-slate-500 text-sm text-center">
-              No sessions hosted yet.
+        {/* ==== Profile Card ==== */}
+        <div className="bg-slate-800 rounded-2xl p-10 shadow-lg space-y-10">
+          {/* Header */}
+          <div className="text-center space-y-5">
+            <img
+              src={avatar}
+              alt="avatar"
+              className="w-28 h-28 rounded-full mx-auto border border-slate-600 object-cover"
+            />
+            <h1 className="text-3xl font-bold">{profile.full_name}</h1>
+            <p className="text-slate-400 text-sm max-w-md mx-auto">
+              {profile.bio || "This user has not added a bio yet."}
             </p>
-          ) : (
-            <div className="space-y-2">
-              {sessions.map((s) => (
-                <div
-                  key={s.id}
-                  onClick={() => navigate(`/room/${s.id}`)}
-                  className="flex justify-between items-center bg-slate-700/50 hover:bg-slate-700 transition p-3 rounded-xl cursor-pointer"
-                >
-                  <span>{s.title}</span>
-                  <span className="text-xs text-slate-400">
-                    {new Date(s.created_at).toLocaleDateString()}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+            <p className="text-xs text-slate-500">
+              Last updated:{" "}
+              {new Date(profile.updated_at).toLocaleDateString(undefined, {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </p>
+          </div>
+
+          {/* ==== Hosted Sessions ==== */}
+          <div>
+            <h2 className="text-lg font-semibold text-slate-300 mb-4">
+              Hosted Sessions
+            </h2>
+
+            {sessions.length === 0 ? (
+              <p className="text-slate-500 text-sm text-center">
+                No sessions hosted yet.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {sessions.map((s) => (
+                  <div
+                    key={s.id}
+                    onClick={() => navigate(`/room/${s.id}`)}
+                    className="flex justify-between items-center bg-slate-700/50 hover:bg-slate-700 transition p-3 rounded-xl cursor-pointer"
+                  >
+                    <span>{s.title}</span>
+                    <span className="text-xs text-slate-400">
+                      {new Date(s.created_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
