@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus, CheckCircle, Circle, Trash2 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useParams } from "react-router-dom";
@@ -23,21 +23,12 @@ export function IntentionsPanel() {
   const [newIntention, setNewIntention] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // набор уже добавленных id, чтобы избегать дублей при realtime
-  const seenIds = useRef<Set<string>>(new Set());
-
-  // текущий фильтр по сессии, мемо чтобы не трогать подписку зря
-  const sessionFilter = useMemo(
-    () => (sessionId ? `session_id=eq.${sessionId}` : undefined),
-    [sessionId]
-  );
-
-  // 🔐 текущий пользователь
+  // 🔐 Получаем текущего пользователя
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
   }, []);
 
-  // 🔎 базовая загрузка (с join профилей)
+  // 📦 Загрузка intentions с профилями
   const loadIntentions = async () => {
     if (!sessionId) return;
     const { data, error } = await supabase
@@ -55,92 +46,41 @@ export function IntentionsPanel() {
       return;
     }
 
-    const list = data || [];
-    list.forEach((row) => seenIds.current.add(row.id));
-    setIntentions(list);
+    setIntentions(data || []);
     setLoading(false);
   };
 
-  // helper: подтянуть одну запись с join-профилем
-  const fetchOneWithProfile = async (id: string): Promise<Intention | null> => {
-    const { data, error } = await supabase
-      .from("intentions")
-      .select(
-        `id, text, user_id, session_id, created_at, completed,
-         profiles ( full_name, avatar_url )`
-      )
-      .eq("id", id)
-      .single();
-
-    if (error) {
-      console.error("❌ Error fetching inserted intention:", error);
-      return null;
-    }
-    return data as Intention;
-  };
-
-  // 🔁 первичная загрузка + точечные realtime-обновления
+  // 🔁 Первичная загрузка + realtime подписка
   useEffect(() => {
     if (!sessionId) return;
     loadIntentions();
 
-    // если фильтра нет (на всякий случай), не подписываемся
-    if (!sessionFilter) return;
+    console.log("✅ Subscribing to realtime for session:", sessionId);
 
-    const channel = supabase.channel("intentions_realtime");
-
-    // INSERT: дотягиваем строку с join профилем и добавляем в начало
-    channel.on(
-      "postgres_changes",
-      { event: "INSERT", schema: "public", table: "intentions", filter: sessionFilter },
-      async (payload: any) => {
-        const id = payload?.new?.id as string | undefined;
-        if (!id || seenIds.current.has(id)) return;
-
-        const row = await fetchOneWithProfile(id);
-        if (!row) return;
-
-        seenIds.current.add(row.id);
-        setIntentions((prev) => [row, ...prev]);
-      }
-    );
-
-    // UPDATE: аккуратно обновляем нужный элемент
-    channel.on(
-      "postgres_changes",
-      { event: "UPDATE", schema: "public", table: "intentions", filter: sessionFilter },
-      async (payload: any) => {
-        const id = payload?.new?.id as string | undefined;
-        if (!id) return;
-
-        // обновление может приходить без join-профиля → дотянем
-        const row = await fetchOneWithProfile(id);
-        if (!row) return;
-
-        setIntentions((prev) => prev.map((i) => (i.id === id ? row : i)));
-      }
-    );
-
-    // DELETE: просто фильтруем по id
-    channel.on(
-      "postgres_changes",
-      { event: "DELETE", schema: "public", table: "intentions", filter: sessionFilter },
-      (payload: any) => {
-        const id = payload?.old?.id as string | undefined;
-        if (!id) return;
-        seenIds.current.delete(id);
-        setIntentions((prev) => prev.filter((i) => i.id !== id));
-      }
-    );
-
-    channel.subscribe();
+    const channel = supabase
+      .channel("intentions_realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "intentions" },
+        (payload) => {
+          console.log("📡 Realtime event:", payload);
+          // обновляем только если это наша сессия
+          if (
+            payload.new?.session_id === sessionId ||
+            payload.old?.session_id === sessionId
+          ) {
+            loadIntentions();
+          }
+        }
+      )
+      .subscribe((status) => console.log("Realtime status:", status));
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [sessionFilter, sessionId]);
+  }, [sessionId]);
 
-  // ➕ добавить intention
+  // ➕ Добавление intention
   const handleAddIntention = async () => {
     if (!newIntention.trim() || !user || !sessionId) return;
 
@@ -153,12 +93,17 @@ export function IntentionsPanel() {
       },
     ]);
 
-    if (error) console.error("❌ Error adding intention:", error);
+    if (error) {
+      console.error("❌ Error adding intention:", error);
+      return;
+    }
+
     setNewIntention("");
-    // не вызываем reload — INSERT обработается realtime-ом
+    // fallback: сразу подгружаем список, не ждём realtime
+    await loadIntentions();
   };
 
-  // ✅ переключить completed
+  // ✅ Переключение completed
   const toggleCompleted = async (intention: Intention) => {
     const { error } = await supabase
       .from("intentions")
@@ -166,17 +111,15 @@ export function IntentionsPanel() {
       .eq("id", intention.id);
 
     if (error) console.error("❌ Error toggling completed:", error);
-    // обновление подтянется через UPDATE-подписку
   };
 
-  // 🗑 удалить
+  // 🗑 Удаление
   const handleDelete = async (id: string) => {
     const { error } = await supabase.from("intentions").delete().eq("id", id);
     if (error) console.error("❌ Error deleting intention:", error);
-    // удаление придёт через DELETE-подписку
   };
 
-  // 🧑‍🎨 аватар
+  // 🧑‍🎨 Аватар
   const getAvatar = (profile?: any) =>
     profile?.avatar_url ||
     `https://ui-avatars.com/api/?name=${encodeURIComponent(
@@ -190,9 +133,11 @@ export function IntentionsPanel() {
       </div>
 
       <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
-        {/* My intentions */}
+        {/* === My Intentions === */}
         <div className="mb-6">
-          <h3 className="text-sm font-medium text-gray-700 mb-2">My Intentions</h3>
+          <h3 className="text-sm font-medium text-gray-700 mb-2">
+            My Intentions
+          </h3>
 
           {!user ? (
             <p className="text-sm text-gray-500 italic">
@@ -270,48 +215,50 @@ export function IntentionsPanel() {
           )}
         </div>
 
-        {/* Team intentions */}
+        {/* === Team Intentions === */}
         <div className="border-t pt-4">
           <h3 className="text-sm font-medium text-gray-700 mb-3">
             Team Intentions
           </h3>
 
-        {loading ? (
-          <p className="text-sm text-gray-500 italic">Loading...</p>
-        ) : intentions.length === 0 ? (
-          <p className="text-sm text-gray-500 italic">No team intentions</p>
-        ) : (
-          <div className="space-y-3">
-            {intentions.map((item) => (
-              <div
-                key={item.id}
-                className={`flex items-start gap-3 p-3 rounded-lg ${
-                  item.completed ? "bg-green-50" : "bg-gray-50"
-                }`}
-              >
-                <img
-                  src={getAvatar(item.profiles)}
-                  alt="avatar"
-                  className="w-8 h-8 rounded-full border border-gray-300 object-cover"
-                />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-900">
-                    {item.user_id === user?.id
-                      ? "You"
-                      : item.profiles?.full_name || "Participant"}
-                  </p>
-                  <p
-                    className={`text-sm ${
-                      item.completed ? "text-gray-400 line-through" : "text-gray-600"
-                    }`}
-                  >
-                    {item.text}
-                  </p>
+          {loading ? (
+            <p className="text-sm text-gray-500 italic">Loading...</p>
+          ) : intentions.length === 0 ? (
+            <p className="text-sm text-gray-500 italic">No team intentions</p>
+          ) : (
+            <div className="space-y-3">
+              {intentions.map((item) => (
+                <div
+                  key={item.id}
+                  className={`flex items-start gap-3 p-3 rounded-lg ${
+                    item.completed ? "bg-green-50" : "bg-gray-50"
+                  }`}
+                >
+                  <img
+                    src={getAvatar(item.profiles)}
+                    alt="avatar"
+                    className="w-8 h-8 rounded-full border border-gray-300 object-cover"
+                  />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-gray-900">
+                      {item.user_id === user?.id
+                        ? "You"
+                        : item.profiles?.full_name || "Participant"}
+                    </p>
+                    <p
+                      className={`text-sm ${
+                        item.completed
+                          ? "text-gray-400 line-through"
+                          : "text-gray-600"
+                      }`}
+                    >
+                      {item.text}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
