@@ -4,6 +4,7 @@ import DailyIframe, { DailyCall } from "@daily-co/daily-js";
 import { IntentionsPanel } from "../components/IntentionsPanel";
 import { SessionStageBar } from "../components/SessionStageBar";
 import { supabase } from "../lib/supabase";
+import { UserProfileModal } from "../components/UserProfileModal";
 
 export function RoomPage() {
   const { id } = useParams<{ id: string }>();
@@ -18,6 +19,7 @@ export function RoomPage() {
   const [hoveredStage, setHoveredStage] = useState<any>(null);
   const [currentStage, setCurrentStage] = useState(0);
   const [remainingTime, setRemainingTime] = useState<string>("");
+  const [selectedUser, setSelectedUser] = useState<any>(null);
 
   const STAGE_COLOR_MAP: Record<string, string> = {
     intro: "#8FD8C6",
@@ -27,13 +29,13 @@ export function RoomPage() {
     outro: "#8FD8C6",
   };
 
-  // ✅ Загружаем сессию
+  // ✅ Загружаем сессию с данными хоста
   useEffect(() => {
     async function loadSession() {
       if (!id) return;
       const { data, error } = await supabase
         .from("sessions")
-        .select("*, session_templates(*)")
+        .select("*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)")
         .eq("id", id)
         .single();
 
@@ -213,6 +215,16 @@ export function RoomPage() {
               <span className="text-slate-500">⏱ {remainingTime}</span>
             </div>
           </div>
+
+          {/* 👤 Host info */}
+          {session.host_profile && (
+            <p
+              onClick={() => setSelectedUser(session.host_profile)}
+              className="text-sm text-slate-400 hover:text-blue-400 cursor-pointer mt-3"
+            >
+              👤 Hosted by {session.host_profile.full_name ?? "Unknown"}
+            </p>
+          )}
         </div>
 
         {/* Video + Sidebar */}
@@ -228,6 +240,14 @@ export function RoomPage() {
           </div>
         </div>
       </div>
+
+      {/* Модалка профиля */}
+      {selectedUser && (
+        <UserProfileModal
+          user={selectedUser}
+          onClose={() => setSelectedUser(null)}
+        />
+      )}
     </div>
   );
 }

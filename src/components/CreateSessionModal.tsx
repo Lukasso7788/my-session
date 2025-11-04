@@ -15,12 +15,38 @@ export function CreateSessionModal({
   onSessionCreated,
 }: CreateSessionModalProps) {
   const [title, setTitle] = useState("");
-  const [host, setHost] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
   const [templates, setTemplates] = useState<SessionTemplate[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [profile, setProfile] = useState<any>(null);
+
+  // ✅ Load user profile automatically
+  useEffect(() => {
+    async function loadProfile() {
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        setError("You must be logged in to create a session.");
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .eq("id", user.id)
+        .single();
+
+      if (error) console.error("❌ Error loading profile:", error);
+      setProfile(data);
+    }
+
+    if (isOpen) loadProfile();
+  }, [isOpen]);
 
   // ✅ Load templates from Supabase
   useEffect(() => {
@@ -45,8 +71,13 @@ export function CreateSessionModal({
 
   // ✅ Create new session
   const handleCreate = async () => {
-    if (!title || !host || !selectedTemplate || !scheduledAt) {
+    if (!title || !selectedTemplate || !scheduledAt) {
       setError("Please fill out all fields.");
+      return;
+    }
+
+    if (!profile?.id) {
+      setError("Unable to load your profile info.");
       return;
     }
 
@@ -57,7 +88,7 @@ export function CreateSessionModal({
       const scheduledISO = new Date(scheduledAt).toISOString();
       const template = templates.find((t) => t.id === selectedTemplate);
 
-      // 🟦 1. Create a Daily.co room via Supabase Edge Function
+      // 🟦 1. Create Daily.co room via Supabase Edge Function
       const roomRes = await fetch(
         "https://cxqgzcjsjyszcbcbdusp.supabase.co/functions/v1/create-daily-room",
         {
@@ -82,7 +113,8 @@ export function CreateSessionModal({
       const { error } = await supabase.from("sessions").insert([
         {
           title,
-          host,
+          host_id: profile.id,
+          host_name: profile.full_name,
           template_id: selectedTemplate,
           start_time: scheduledISO,
           duration_minutes: template?.total_duration ?? 60,
@@ -99,7 +131,6 @@ export function CreateSessionModal({
       console.log("✅ Session saved to Supabase");
 
       setTitle("");
-      setHost("");
       setScheduledAt("");
       setSelectedTemplate("");
       onSessionCreated();
@@ -140,20 +171,6 @@ export function CreateSessionModal({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g., Deep Work Session"
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          {/* Host */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Your Name
-            </label>
-            <input
-              type="text"
-              value={host}
-              onChange={(e) => setHost(e.target.value)}
-              placeholder="Host name"
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -208,14 +225,19 @@ export function CreateSessionModal({
           {/* Submit */}
           <button
             onClick={handleCreate}
-            disabled={
-              !title || !host || !selectedTemplate || !scheduledAt || isCreating
-            }
+            disabled={!title || !selectedTemplate || !scheduledAt || isCreating}
             className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-300 transition"
           >
             {isCreating ? "Creating..." : "Create Session"}
           </button>
         </div>
+
+        {/* Display auto host info */}
+        {profile && (
+          <p className="text-xs text-gray-500 mt-3 text-center">
+            Hosted by <span className="font-medium">{profile.full_name}</span>
+          </p>
+        )}
       </div>
     </div>
   );
