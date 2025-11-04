@@ -15,7 +15,7 @@ export function SessionsPage() {
   const [user, setUser] = useState<any>(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
 
-  // ✅ Правильное восстановление сессии (фикс OAuth)
+  // ✅ Правильное восстановление сессии
   useEffect(() => {
     const getCurrentSession = async () => {
       const { data } = await supabase.auth.getSession();
@@ -41,7 +41,8 @@ export function SessionsPage() {
         .select(`
           id,
           title,
-          host,
+          host_id,
+          host_name,
           duration_minutes,
           format,
           start_time,
@@ -77,7 +78,6 @@ export function SessionsPage() {
     [sessions]
   );
 
-  // ⏰ Форматирование
   const formatDateTime = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleString("en-US", {
@@ -90,7 +90,6 @@ export function SessionsPage() {
 
   const isFutureSession = (dateString: string) => new Date(dateString) > new Date();
 
-  // 🚪 Обработчики
   const handleJoinSession = (sessionId: string) => {
     if (!user) {
       setIsLoginPromptOpen(true);
@@ -220,7 +219,15 @@ export function SessionsPage() {
                     <div className="flex flex-wrap gap-4 text-sm text-gray-600 mb-4">
                       <div className="flex items-center gap-1">
                         <Users size={16} />
-                        <span>Host: {session.host}</span>
+                        <span>
+                          Host:{" "}
+                          <span
+                            onClick={() => navigate(`/profile/${session.host_id}`)}
+                            className="text-blue-600 hover:underline cursor-pointer"
+                          >
+                            {session.host_name || "Unknown"}
+                          </span>
+                        </span>
                       </div>
                       <div className="flex items-center gap-1">
                         <Clock size={16} />
@@ -245,7 +252,6 @@ export function SessionsPage() {
                       )}
                     </div>
 
-                    {/* Format pill */}
                     <div className="inline-block bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-sm font-medium">
                       {formatSessionFormat(session.format)}
                     </div>
@@ -264,14 +270,12 @@ export function SessionsPage() {
         )}
       </div>
 
-      {/* ===== Create Modal ===== */}
       <CreateSessionModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSessionCreated={fetchSessions}
       />
 
-      {/* ===== Login Prompt ===== */}
       {isLoginPromptOpen && (
         <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-30">
           <div className="bg-white rounded-2xl p-8 w-[400px] text-center space-y-4 shadow-xl">

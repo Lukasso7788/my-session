@@ -88,7 +88,7 @@ export function CreateSessionModal({
       const scheduledISO = new Date(scheduledAt).toISOString();
       const template = templates.find((t) => t.id === selectedTemplate);
 
-      // 🟦 1. Create Daily.co room via Supabase Edge Function
+      // 🟦 Create Daily room
       const roomRes = await fetch(
         "https://cxqgzcjsjyszcbcbdusp.supabase.co/functions/v1/create-daily-room",
         {
@@ -109,7 +109,7 @@ export function CreateSessionModal({
       const dailyUrl = roomData.url;
       console.log("✅ Daily room created:", dailyUrl);
 
-      // 🟩 2. Save session in Supabase
+      // 🟩 Save session
       const { error } = await supabase.from("sessions").insert([
         {
           title,
@@ -200,13 +200,17 @@ export function CreateSessionModal({
                   <label
                     key={t.id}
                     className="flex items-center space-x-3 cursor-pointer"
+                    onClick={() => {
+                      setSelectedTemplate(t.id);
+                      if (!title) setTitle(t.name);
+                    }}
                   >
                     <input
                       type="radio"
                       name="session-template"
                       value={t.id}
                       checked={selectedTemplate === t.id}
-                      onChange={(e) => setSelectedTemplate(e.target.value)}
+                      onChange={() => {}}
                       className="w-4 h-4 text-blue-600"
                     />
                     <span className="text-sm text-gray-800">
@@ -232,7 +236,6 @@ export function CreateSessionModal({
           </button>
         </div>
 
-        {/* Display auto host info */}
         {profile && (
           <p className="text-xs text-gray-500 mt-3 text-center">
             Hosted by <span className="font-medium">{profile.full_name}</span>
