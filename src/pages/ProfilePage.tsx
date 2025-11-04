@@ -35,24 +35,39 @@ export default function ProfilePage() {
     loadProfile();
   }, [navigate]);
 
+  // ✅ Исправленный handleSave (корректно работает с RLS)
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
 
-    const updates = {
-      id: user.id,
-      full_name: fullName,
-      bio,
-      updated_at: new Date(),
-    };
+    try {
+      // 1️⃣ Обновляем метаданные пользователя (для auth.user_metadata)
+      const { error: authErr } = await supabase.auth.updateUser({
+        data: { full_name: fullName, bio },
+      });
+      if (authErr) throw authErr;
 
-    const { error } = await supabase
-      .from("profiles")
-      .upsert(updates, { onConflict: "id" });
+      // 2️⃣ Записываем (или создаём) профиль в таблице public.profiles
+      const { error: upsertErr } = await supabase
+        .from("profiles")
+        .upsert(
+          {
+            id: user.id, // ключ для RLS-политики
+            full_name: fullName,
+            bio,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "id" }
+        );
 
-    setSaving(false);
-    if (error) alert(error.message);
-    else alert("Profile updated!");
+      if (upsertErr) throw upsertErr;
+
+      alert("Profile updated!");
+    } catch (e: any) {
+      alert(e.message || "Failed to update profile");
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (loading)
