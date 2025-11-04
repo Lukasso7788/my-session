@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Plus, CheckCircle, Circle, Trash2 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useParams } from "react-router-dom";
@@ -23,95 +23,124 @@ export function IntentionsPanel() {
   const [newIntention, setNewIntention] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // 🔐 Загружаем текущего пользователя
+  // набор уже добавленных id, чтобы избегать дублей при realtime
+  const seenIds = useRef<Set<string>>(new Set());
+
+  // текущий фильтр по сессии, мемо чтобы не трогать подписку зря
+  const sessionFilter = useMemo(
+    () => (sessionId ? `session_id=eq.${sessionId}` : undefined),
+    [sessionId]
+  );
+
+  // 🔐 текущий пользователь
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
   }, []);
 
-  // 📦 Основная загрузка intentions с профилями
+  // 🔎 базовая загрузка (с join профилей)
   const loadIntentions = async () => {
     if (!sessionId) return;
-
     const { data, error } = await supabase
       .from("intentions")
-      .select(`
-        id, text, user_id, session_id, created_at, completed,
-        profiles ( full_name, avatar_url )
-      `)
+      .select(
+        `id, text, user_id, session_id, created_at, completed,
+         profiles ( full_name, avatar_url )`
+      )
       .eq("session_id", sessionId)
       .order("created_at", { ascending: false });
 
-    if (error) console.error("❌ Error loading intentions:", error);
-    else setIntentions(data || []);
+    if (error) {
+      console.error("❌ Error loading intentions:", error);
+      setLoading(false);
+      return;
+    }
 
+    const list = data || [];
+    list.forEach((row) => seenIds.current.add(row.id));
+    setIntentions(list);
     setLoading(false);
   };
 
-  // 🧠 Перенос последнего intention из прошлой сессии
-  const carryOverLastIntention = async (userId: string) => {
-    if (!userId || !sessionId) return;
-
-    // Проверяем, есть ли intention уже в этой сессии
-    const { data: existing } = await supabase
+  // helper: подтянуть одну запись с join-профилем
+  const fetchOneWithProfile = async (id: string): Promise<Intention | null> => {
+    const { data, error } = await supabase
       .from("intentions")
-      .select("id")
-      .eq("session_id", sessionId)
-      .eq("user_id", userId);
+      .select(
+        `id, text, user_id, session_id, created_at, completed,
+         profiles ( full_name, avatar_url )`
+      )
+      .eq("id", id)
+      .single();
 
-    if (existing && existing.length > 0) return; // уже есть
-
-    // Берём последний незавершённый intention из прошлых сессий
-    const { data: last } = await supabase
-      .from("intentions")
-      .select("text, completed")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false })
-      .limit(1);
-
-    if (last && last[0] && !last[0].completed) {
-      await supabase.from("intentions").insert([
-        {
-          user_id: userId,
-          session_id: sessionId,
-          text: last[0].text,
-          completed: false,
-        },
-      ]);
+    if (error) {
+      console.error("❌ Error fetching inserted intention:", error);
+      return null;
     }
+    return data as Intention;
   };
 
-  // 🔁 Подписка + перенос + первичная загрузка
+  // 🔁 первичная загрузка + точечные realtime-обновления
   useEffect(() => {
     if (!sessionId) return;
     loadIntentions();
 
-    // Переносим intention, если только вошёл
-    supabase.auth.getUser().then(({ data }) => {
-      if (data.user) carryOverLastIntention(data.user.id);
-    });
+    // если фильтра нет (на всякий случай), не подписываемся
+    if (!sessionFilter) return;
 
-    const channel = supabase
-      .channel("intentions_realtime")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "intentions",
-          filter: `session_id=eq.${sessionId}`,
-        },
-        () => {
-          loadIntentions();
-        }
-      )
-      .subscribe();
+    const channel = supabase.channel("intentions_realtime");
+
+    // INSERT: дотягиваем строку с join профилем и добавляем в начало
+    channel.on(
+      "postgres_changes",
+      { event: "INSERT", schema: "public", table: "intentions", filter: sessionFilter },
+      async (payload: any) => {
+        const id = payload?.new?.id as string | undefined;
+        if (!id || seenIds.current.has(id)) return;
+
+        const row = await fetchOneWithProfile(id);
+        if (!row) return;
+
+        seenIds.current.add(row.id);
+        setIntentions((prev) => [row, ...prev]);
+      }
+    );
+
+    // UPDATE: аккуратно обновляем нужный элемент
+    channel.on(
+      "postgres_changes",
+      { event: "UPDATE", schema: "public", table: "intentions", filter: sessionFilter },
+      async (payload: any) => {
+        const id = payload?.new?.id as string | undefined;
+        if (!id) return;
+
+        // обновление может приходить без join-профиля → дотянем
+        const row = await fetchOneWithProfile(id);
+        if (!row) return;
+
+        setIntentions((prev) => prev.map((i) => (i.id === id ? row : i)));
+      }
+    );
+
+    // DELETE: просто фильтруем по id
+    channel.on(
+      "postgres_changes",
+      { event: "DELETE", schema: "public", table: "intentions", filter: sessionFilter },
+      (payload: any) => {
+        const id = payload?.old?.id as string | undefined;
+        if (!id) return;
+        seenIds.current.delete(id);
+        setIntentions((prev) => prev.filter((i) => i.id !== id));
+      }
+    );
+
+    channel.subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [sessionId]);
+  }, [sessionFilter, sessionId]);
 
-  // ➕ Добавление intention
+  // ➕ добавить intention
   const handleAddIntention = async () => {
     if (!newIntention.trim() || !user || !sessionId) return;
 
@@ -126,9 +155,10 @@ export function IntentionsPanel() {
 
     if (error) console.error("❌ Error adding intention:", error);
     setNewIntention("");
+    // не вызываем reload — INSERT обработается realtime-ом
   };
 
-  // ✅ Переключение completed
+  // ✅ переключить completed
   const toggleCompleted = async (intention: Intention) => {
     const { error } = await supabase
       .from("intentions")
@@ -136,15 +166,17 @@ export function IntentionsPanel() {
       .eq("id", intention.id);
 
     if (error) console.error("❌ Error toggling completed:", error);
+    // обновление подтянется через UPDATE-подписку
   };
 
-  // 🗑 Удаление
+  // 🗑 удалить
   const handleDelete = async (id: string) => {
     const { error } = await supabase.from("intentions").delete().eq("id", id);
     if (error) console.error("❌ Error deleting intention:", error);
+    // удаление придёт через DELETE-подписку
   };
 
-  // 🧑‍🎨 Генерация аватара
+  // 🧑‍🎨 аватар
   const getAvatar = (profile?: any) =>
     profile?.avatar_url ||
     `https://ui-avatars.com/api/?name=${encodeURIComponent(
@@ -158,10 +190,9 @@ export function IntentionsPanel() {
       </div>
 
       <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+        {/* My intentions */}
         <div className="mb-6">
-          <h3 className="text-sm font-medium text-gray-700 mb-2">
-            My Intentions
-          </h3>
+          <h3 className="text-sm font-medium text-gray-700 mb-2">My Intentions</h3>
 
           {!user ? (
             <p className="text-sm text-gray-500 italic">
@@ -190,7 +221,7 @@ export function IntentionsPanel() {
                 <p className="text-sm text-gray-500 italic">Loading...</p>
               ) : (
                 intentions
-                  .filter((i) => i.user_id === user.id)
+                  .filter((i) => i.user_id === user?.id)
                   .map((intention) => (
                     <div
                       key={intention.id}
@@ -228,6 +259,7 @@ export function IntentionsPanel() {
                           handleDelete(intention.id);
                         }}
                         className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-gray-400 hover:text-red-600"
+                        title="Delete intention"
                       >
                         <Trash2 size={16} />
                       </button>
@@ -238,48 +270,48 @@ export function IntentionsPanel() {
           )}
         </div>
 
-        {/* === Team Intentions === */}
+        {/* Team intentions */}
         <div className="border-t pt-4">
           <h3 className="text-sm font-medium text-gray-700 mb-3">
             Team Intentions
           </h3>
 
-          {loading ? (
-            <p className="text-sm text-gray-500 italic">Loading...</p>
-          ) : (
-            <div className="space-y-3">
-              {intentions.map((item) => (
-                <div
-                  key={item.id}
-                  className={`flex items-start gap-3 p-3 rounded-lg ${
-                    item.completed ? "bg-green-50" : "bg-gray-50"
-                  }`}
-                >
-                  <img
-                    src={getAvatar(item.profiles)}
-                    alt="avatar"
-                    className="w-8 h-8 rounded-full border border-gray-300 object-cover"
-                  />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-gray-900">
-                      {item.user_id === user?.id
-                        ? "You"
-                        : item.profiles?.full_name || "Participant"}
-                    </p>
-                    <p
-                      className={`text-sm ${
-                        item.completed
-                          ? "text-gray-400 line-through"
-                          : "text-gray-600"
-                      }`}
-                    >
-                      {item.text}
-                    </p>
-                  </div>
+        {loading ? (
+          <p className="text-sm text-gray-500 italic">Loading...</p>
+        ) : intentions.length === 0 ? (
+          <p className="text-sm text-gray-500 italic">No team intentions</p>
+        ) : (
+          <div className="space-y-3">
+            {intentions.map((item) => (
+              <div
+                key={item.id}
+                className={`flex items-start gap-3 p-3 rounded-lg ${
+                  item.completed ? "bg-green-50" : "bg-gray-50"
+                }`}
+              >
+                <img
+                  src={getAvatar(item.profiles)}
+                  alt="avatar"
+                  className="w-8 h-8 rounded-full border border-gray-300 object-cover"
+                />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-gray-900">
+                    {item.user_id === user?.id
+                      ? "You"
+                      : item.profiles?.full_name || "Participant"}
+                  </p>
+                  <p
+                    className={`text-sm ${
+                      item.completed ? "text-gray-400 line-through" : "text-gray-600"
+                    }`}
+                  >
+                    {item.text}
+                  </p>
                 </div>
-              ))}
-            </div>
-          )}
+              </div>
+            ))}
+          </div>
+        )}
         </div>
       </div>
     </div>
