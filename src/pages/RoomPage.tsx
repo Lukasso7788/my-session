@@ -15,9 +15,8 @@ export function RoomPage() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [stages, setStages] = useState<any[]>([]);
-  const [currentStage, setCurrentStage] = useState(0);
-  const [progress, setProgress] = useState(0);
   const [hoveredStage, setHoveredStage] = useState<any>(null);
+  const [currentStage, setCurrentStage] = useState(0);
   const [remainingTime, setRemainingTime] = useState<string>("");
 
   const STAGE_COLOR_MAP: Record<string, string> = {
@@ -28,7 +27,7 @@ export function RoomPage() {
     outro: "#8FD8C6",
   };
 
-  // ✅ Load session
+  // ✅ Загружаем сессию
   useEffect(() => {
     async function loadSession() {
       if (!id) return;
@@ -87,17 +86,15 @@ export function RoomPage() {
     loadSession();
   }, [id]);
 
-  // ✅ Initialize Daily iframe safely
+  // ✅ Daily iframe
   useEffect(() => {
     if (!session?.daily_room_url || !containerRef.current) return;
 
-    // Уничтожаем предыдущий iframe, если есть
     if (callRef.current) {
       callRef.current.destroy().catch(() => {});
       callRef.current = null;
     }
 
-    // Создаём новый iframe
     const callFrame = DailyIframe.createFrame(containerRef.current, {
       iframeStyle: {
         width: "100%",
@@ -115,19 +112,10 @@ export function RoomPage() {
       ? `${session.daily_room_url}&layout=grid`
       : `${session.daily_room_url}?layout=grid`;
 
-    // Защита от race-condition при уходе
-    let cancelled = false;
-    callFrame
-      .join({ url: urlWithGrid })
-      .catch((err) => console.error("❌ Daily join error:", err))
-      .finally(() => {
-        if (cancelled && callRef.current) {
-          callRef.current.destroy().catch(() => {});
-          callRef.current = null;
-        }
-      });
+    callFrame.join({ url: urlWithGrid }).catch((err) => {
+      console.error("❌ Daily join error:", err);
+    });
 
-    // Обработка выхода
     callFrame.on("left-meeting", async () => {
       try {
         await callFrame.destroy();
@@ -137,7 +125,6 @@ export function RoomPage() {
     });
 
     return () => {
-      cancelled = true;
       if (callRef.current) {
         callRef.current.destroy().catch(() => {});
         callRef.current = null;
@@ -145,36 +132,36 @@ export function RoomPage() {
     };
   }, [session?.daily_room_url, navigate]);
 
-  // ✅ Stage progress tracking
+  // ✅ Отслеживаем текущую стадию по времени
   useEffect(() => {
-    if (!stages.length) return;
+    if (!session?.start_time || !stages.length) return;
 
-    const current = stages[currentStage];
-    const durationMs = current.duration * 60 * 1000;
-    const startTime = Date.now();
+    const tick = setInterval(() => {
+      const diffSec =
+        (Date.now() - new Date(session.start_time).getTime()) / 1000;
+      let total = 0;
+      let activeStage = stages.length - 1;
 
-    const interval = setInterval(() => {
-      const elapsed = Date.now() - startTime;
-      const ratio = Math.min(elapsed / durationMs, 1);
-      setProgress(ratio);
-
-      const remaining = Math.max(0, durationMs - elapsed);
-      const minutes = Math.floor(remaining / 60000);
-      const seconds = Math.floor((remaining % 60000) / 1000);
-      setRemainingTime(`${minutes}:${seconds.toString().padStart(2, "0")}`);
-
-      if (ratio >= 1) {
-        setCurrentStage((prev) =>
-          prev + 1 < stages.length ? prev + 1 : prev
-        );
-        setProgress(0);
+      for (let i = 0; i < stages.length; i++) {
+        const nextTotal = total + stages[i].duration * 60;
+        if (diffSec < nextTotal) {
+          activeStage = i;
+          const remaining = nextTotal - diffSec;
+          const minutes = Math.floor(remaining / 60);
+          const seconds = Math.floor(remaining % 60);
+          setRemainingTime(`${minutes}:${seconds.toString().padStart(2, "0")}`);
+          break;
+        }
+        total = nextTotal;
       }
+
+      setCurrentStage(activeStage);
     }, 1000);
 
-    return () => clearInterval(interval);
-  }, [currentStage, stages]);
+    return () => clearInterval(tick);
+  }, [session?.start_time, stages]);
 
-  // 🌀 Loading state
+  // 🌀 Loading
   if (loading)
     return (
       <div className="flex h-screen items-center justify-center bg-slate-900 text-white">
@@ -197,7 +184,6 @@ export function RoomPage() {
       </div>
     );
 
-  // ✅ Main render
   return (
     <div className="min-h-screen bg-slate-900 text-white flex justify-center">
       <div className="w-full max-w-[1720px] px-5 py-5 space-y-5">
@@ -215,8 +201,7 @@ export function RoomPage() {
           <div className="bg-white rounded-2xl overflow-hidden shadow-sm p-4 space-y-3">
             <SessionStageBar
               stages={stages}
-              currentStageIndex={currentStage}
-              currentStageProgress={progress}
+              startTime={session.start_time}
               onHoverStage={setHoveredStage}
             />
             <div className="flex justify-between items-center text-sm font-medium text-slate-700 mt-1">
@@ -232,12 +217,10 @@ export function RoomPage() {
 
         {/* Video + Sidebar */}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr,370px] gap-5">
-          {/* 🎥 Daily iframe */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden h-[77vh]">
             <div ref={containerRef} className="w-full h-[77vh]" />
           </div>
 
-          {/* 🧠 Intentions panel */}
           <div className="rounded-2xl border border-slate-800 bg-white text-black shadow-lg overflow-hidden h-[77vh]">
             <div className="p-4 h-full">
               <IntentionsPanel />
