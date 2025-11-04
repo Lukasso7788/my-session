@@ -23,10 +23,12 @@ export function IntentionsPanel() {
   const [newIntention, setNewIntention] = useState("");
   const [loading, setLoading] = useState(true);
 
+  // 🔐 Загружаем текущего пользователя
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
   }, []);
 
+  // 📦 Основная загрузка intentions с профилями
   const loadIntentions = async () => {
     if (!sessionId) return;
 
@@ -39,13 +41,54 @@ export function IntentionsPanel() {
       .eq("session_id", sessionId)
       .order("created_at", { ascending: false });
 
-    if (error) console.error("Error loading intentions:", error);
+    if (error) console.error("❌ Error loading intentions:", error);
     else setIntentions(data || []);
+
     setLoading(false);
   };
 
+  // 🧠 Перенос последнего intention из прошлой сессии
+  const carryOverLastIntention = async (userId: string) => {
+    if (!userId || !sessionId) return;
+
+    // Проверяем, есть ли intention уже в этой сессии
+    const { data: existing } = await supabase
+      .from("intentions")
+      .select("id")
+      .eq("session_id", sessionId)
+      .eq("user_id", userId);
+
+    if (existing && existing.length > 0) return; // уже есть
+
+    // Берём последний незавершённый intention из прошлых сессий
+    const { data: last } = await supabase
+      .from("intentions")
+      .select("text, completed")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (last && last[0] && !last[0].completed) {
+      await supabase.from("intentions").insert([
+        {
+          user_id: userId,
+          session_id: sessionId,
+          text: last[0].text,
+          completed: false,
+        },
+      ]);
+    }
+  };
+
+  // 🔁 Подписка + перенос + первичная загрузка
   useEffect(() => {
+    if (!sessionId) return;
     loadIntentions();
+
+    // Переносим intention, если только вошёл
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) carryOverLastIntention(data.user.id);
+    });
 
     const channel = supabase
       .channel("intentions_realtime")
@@ -57,23 +100,8 @@ export function IntentionsPanel() {
           table: "intentions",
           filter: `session_id=eq.${sessionId}`,
         },
-        (payload) => {
-          if (payload.eventType === "INSERT") {
-            setIntentions((prev) => {
-              if (prev.some((i) => i.id === payload.new.id)) return prev;
-              return [payload.new as Intention, ...prev];
-            });
-          } else if (payload.eventType === "UPDATE") {
-            setIntentions((prev) =>
-              prev.map((i) =>
-                i.id === payload.new.id ? (payload.new as Intention) : i
-              )
-            );
-          } else if (payload.eventType === "DELETE") {
-            setIntentions((prev) =>
-              prev.filter((i) => i.id !== payload.old.id)
-            );
-          }
+        () => {
+          loadIntentions();
         }
       )
       .subscribe();
@@ -83,6 +111,7 @@ export function IntentionsPanel() {
     };
   }, [sessionId]);
 
+  // ➕ Добавление intention
   const handleAddIntention = async () => {
     if (!newIntention.trim() || !user || !sessionId) return;
 
@@ -95,28 +124,27 @@ export function IntentionsPanel() {
       },
     ]);
 
-    if (error) console.error("Error adding intention:", error);
+    if (error) console.error("❌ Error adding intention:", error);
     setNewIntention("");
   };
 
+  // ✅ Переключение completed
   const toggleCompleted = async (intention: Intention) => {
     const { error } = await supabase
       .from("intentions")
       .update({ completed: !intention.completed })
       .eq("id", intention.id);
 
-    if (error) console.error("Error toggling completed:", error);
+    if (error) console.error("❌ Error toggling completed:", error);
   };
 
+  // 🗑 Удаление
   const handleDelete = async (id: string) => {
-    setIntentions((prev) => prev.filter((i) => i.id !== id));
     const { error } = await supabase.from("intentions").delete().eq("id", id);
-    if (error) {
-      console.error("Error deleting intention:", error);
-      loadIntentions();
-    }
+    if (error) console.error("❌ Error deleting intention:", error);
   };
 
+  // 🧑‍🎨 Генерация аватара
   const getAvatar = (profile?: any) =>
     profile?.avatar_url ||
     `https://ui-avatars.com/api/?name=${encodeURIComponent(
@@ -160,8 +188,6 @@ export function IntentionsPanel() {
 
               {loading ? (
                 <p className="text-sm text-gray-500 italic">Loading...</p>
-              ) : intentions.filter((i) => i.user_id === user.id).length === 0 ? (
-                <p className="text-sm text-gray-500 italic">No intentions yet</p>
               ) : (
                 intentions
                   .filter((i) => i.user_id === user.id)
@@ -202,7 +228,6 @@ export function IntentionsPanel() {
                           handleDelete(intention.id);
                         }}
                         className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-gray-400 hover:text-red-600"
-                        title="Delete intention"
                       >
                         <Trash2 size={16} />
                       </button>
@@ -213,10 +238,12 @@ export function IntentionsPanel() {
           )}
         </div>
 
+        {/* === Team Intentions === */}
         <div className="border-t pt-4">
           <h3 className="text-sm font-medium text-gray-700 mb-3">
             Team Intentions
           </h3>
+
           {loading ? (
             <p className="text-sm text-gray-500 italic">Loading...</p>
           ) : (
