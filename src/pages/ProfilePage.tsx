@@ -38,6 +38,33 @@ export default function ProfilePage() {
     loadProfile();
   }, [navigate]);
 
+  // ✅ Проверяем или создаём bucket "avatars" при первой попытке загрузки
+  const ensureBucketExists = async () => {
+    const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
+    if (bucketError) throw bucketError;
+
+    const hasAvatarsBucket = buckets.some((b) => b.name === "avatars");
+    if (!hasAvatarsBucket) {
+      try {
+        // Попытка создать bucket (если разрешено API)
+        const { error: createError } = await supabase.storage.createBucket("avatars", {
+          public: true,
+        });
+        if (createError) {
+          alert(
+            "⚠️ Bucket 'avatars' не найден и не удалось создать автоматически.\nСоздай его вручную в Supabase → Storage → New Bucket → 'avatars' (Public)."
+          );
+          throw createError;
+        } else {
+          console.log("✅ Bucket 'avatars' успешно создан.");
+        }
+      } catch (err) {
+        console.error("Ошибка при создании bucket:", err);
+        throw err;
+      }
+    }
+  };
+
   // ✅ Загрузка аватара в Supabase Storage
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
@@ -45,21 +72,20 @@ export default function ProfilePage() {
       const file = e.target.files?.[0];
       if (!file || !user) return;
 
+      await ensureBucketExists();
+
       const fileExt = file.name.split(".").pop();
       const filePath = `${user.id}-${Date.now()}.${fileExt}`;
 
-      // Загрузка в bucket 'avatars'
       const { error: uploadError } = await supabase.storage
         .from("avatars")
         .upload(filePath, file, { upsert: true });
 
       if (uploadError) throw uploadError;
 
-      // Получаем публичный URL
       const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
       const publicUrl = data.publicUrl;
 
-      // Обновляем профиль с новым URL
       const { error: updateError } = await supabase
         .from("profiles")
         .update({ avatar_url: publicUrl, updated_at: new Date().toISOString() })
@@ -68,27 +94,26 @@ export default function ProfilePage() {
       if (updateError) throw updateError;
 
       setAvatarUrl(publicUrl);
-      alert("Avatar updated!");
+      alert("✅ Avatar updated!");
     } catch (error: any) {
+      console.error(error);
       alert(error.message || "Error uploading avatar");
     } finally {
       setUploading(false);
     }
   };
 
-  // ✅ Сохранение данных профиля (RLS-safe)
+  // ✅ Сохранение профиля
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
 
     try {
-      // 1️⃣ Обновляем auth-метадату
       const { error: authErr } = await supabase.auth.updateUser({
         data: { full_name: fullName, bio, avatar_url: avatarUrl },
       });
       if (authErr) throw authErr;
 
-      // 2️⃣ Обновляем / создаём профиль
       const { error: upsertErr } = await supabase
         .from("profiles")
         .upsert(
