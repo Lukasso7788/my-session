@@ -8,6 +8,8 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [fullName, setFullName] = useState("");
   const [bio, setBio] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -28,6 +30,7 @@ export default function ProfilePage() {
       if (profile) {
         setFullName(profile.full_name || "");
         setBio(profile.bio || "");
+        setAvatarUrl(profile.avatar_url || null);
       }
       setLoading(false);
     }
@@ -35,26 +38,65 @@ export default function ProfilePage() {
     loadProfile();
   }, [navigate]);
 
-  // ✅ Исправленный handleSave (корректно работает с RLS)
+  // ✅ Загрузка аватара в Supabase Storage
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      setUploading(true);
+      const file = e.target.files?.[0];
+      if (!file || !user) return;
+
+      const fileExt = file.name.split(".").pop();
+      const filePath = `${user.id}-${Date.now()}.${fileExt}`;
+
+      // Загрузка в bucket 'avatars'
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      // Получаем публичный URL
+      const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
+      const publicUrl = data.publicUrl;
+
+      // Обновляем профиль с новым URL
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({ avatar_url: publicUrl, updated_at: new Date().toISOString() })
+        .eq("id", user.id);
+
+      if (updateError) throw updateError;
+
+      setAvatarUrl(publicUrl);
+      alert("Avatar updated!");
+    } catch (error: any) {
+      alert(error.message || "Error uploading avatar");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // ✅ Сохранение данных профиля (RLS-safe)
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
 
     try {
-      // 1️⃣ Обновляем метаданные пользователя (для auth.user_metadata)
+      // 1️⃣ Обновляем auth-метадату
       const { error: authErr } = await supabase.auth.updateUser({
-        data: { full_name: fullName, bio },
+        data: { full_name: fullName, bio, avatar_url: avatarUrl },
       });
       if (authErr) throw authErr;
 
-      // 2️⃣ Записываем (или создаём) профиль в таблице public.profiles
+      // 2️⃣ Обновляем / создаём профиль
       const { error: upsertErr } = await supabase
         .from("profiles")
         .upsert(
           {
-            id: user.id, // ключ для RLS-политики
+            id: user.id,
             full_name: fullName,
             bio,
+            avatar_url: avatarUrl,
             updated_at: new Date().toISOString(),
           },
           { onConflict: "id" }
@@ -78,11 +120,36 @@ export default function ProfilePage() {
     );
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white flex justify-center py-20">
+    <div className="min-h-screen bg-slate-900 text-white flex justify-center py-20 px-4">
       <div className="bg-slate-800 rounded-2xl p-10 shadow-lg w-[480px] text-center space-y-6">
         <h1 className="text-3xl font-bold mb-2">Your Profile</h1>
         <p className="text-slate-400">{user.email}</p>
 
+        {/* ==== Avatar Upload ==== */}
+        <div className="flex flex-col items-center mt-4 space-y-3">
+          <img
+            src={
+              avatarUrl ||
+              `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                fullName || "User"
+              )}`
+            }
+            alt="avatar"
+            className="w-28 h-28 rounded-full border border-slate-600 object-cover"
+          />
+          <label className="text-sm text-blue-400 hover:text-blue-300 cursor-pointer">
+            {uploading ? "Uploading..." : "Change Avatar"}
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleAvatarUpload}
+              disabled={uploading}
+            />
+          </label>
+        </div>
+
+        {/* ==== Profile Form ==== */}
         <div className="space-y-4 text-left mt-6">
           <label className="block text-sm text-slate-300">Full name</label>
           <input
@@ -109,6 +176,7 @@ export default function ProfilePage() {
           </button>
         </div>
 
+        {/* ==== Navigation Buttons ==== */}
         <div className="flex justify-between mt-8">
           <button
             onClick={() => navigate("/sessions")}
