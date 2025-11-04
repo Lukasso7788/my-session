@@ -57,23 +57,46 @@ export function IntentionsPanel() {
 
     console.log("✅ Subscribing to realtime for session:", sessionId);
 
-    const channel = supabase
-      .channel("intentions_realtime")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "intentions" },
-        (payload) => {
-          console.log("📡 Realtime event:", payload);
-          // обновляем только если это наша сессия
-          if (
-            payload.new?.session_id === sessionId ||
-            payload.old?.session_id === sessionId
-          ) {
-            loadIntentions();
-          }
+    const channel = supabase.channel("intentions_realtime");
+
+    // 📡 INSERT / UPDATE — просто перезагружаем
+    channel.on(
+      "postgres_changes",
+      { event: "INSERT", schema: "public", table: "intentions" },
+      (payload) => {
+        if (payload.new?.session_id === sessionId) {
+          console.log("📡 Realtime INSERT:", payload);
+          loadIntentions();
         }
-      )
-      .subscribe((status) => console.log("Realtime status:", status));
+      }
+    );
+
+    channel.on(
+      "postgres_changes",
+      { event: "UPDATE", schema: "public", table: "intentions" },
+      (payload) => {
+        if (payload.new?.session_id === sessionId) {
+          console.log("📡 Realtime UPDATE:", payload);
+          loadIntentions();
+        }
+      }
+    );
+
+    // 🗑 DELETE — удаляем локально без перезагрузки
+    channel.on(
+      "postgres_changes",
+      { event: "DELETE", schema: "public", table: "intentions" },
+      (payload: any) => {
+        const deletedId = payload?.old?.id;
+        if (!deletedId) return;
+
+        console.log("🗑 Realtime DELETE received:", deletedId);
+
+        setIntentions((prev) => prev.filter((i) => i.id !== deletedId));
+      }
+    );
+
+    channel.subscribe((status) => console.log("Realtime status:", status));
 
     return () => {
       supabase.removeChannel(channel);
@@ -99,8 +122,6 @@ export function IntentionsPanel() {
     }
 
     setNewIntention("");
-    // fallback: сразу подгружаем список, не ждём realtime
-    await loadIntentions();
   };
 
   // ✅ Переключение completed
