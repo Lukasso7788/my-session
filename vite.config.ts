@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: '', // ✅ именно пустая строка, не './'
+  base: '/',       
   build: {
     outDir: 'dist',
   },
