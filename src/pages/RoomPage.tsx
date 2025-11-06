@@ -1,3 +1,5 @@
+// ✅ FULL UPDATED RoomPage WITH FIX FOR "NO SOUND ON MIDDLE-OF-BLOCK ENTER"
+
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import DailyIframe, { DailyCall } from "@daily-co/daily-js";
@@ -23,13 +25,13 @@ export function RoomPage() {
 
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [userName, setUserName] = useState<string>("");
-
   const [lastErr, setLastErr] = useState<string>("");
 
-  // ✅ SOUND CONTEXT
+  // ✅ SOUND STATE
   const prevStageRef = useRef<number>(-1);
-  const welcomeLoopRef = useRef<HTMLAudioElement | null>(null);
+  const welcomeLoopAudio = useRef<HTMLAudioElement | null>(null);
 
+  // ✅ COLORS
   const STAGE_COLOR_MAP: Record<string, string> = {
     intro: "#8FD8C6",
     intentions: "#FFF9F2",
@@ -38,12 +40,17 @@ export function RoomPage() {
     outro: "#8FD8C6",
   };
 
-  // ✅ UPDATED: removed intro sound (because we now loop welcome), break handled separately
+  // ✅ ONE-SHOT SOUNDS
   const STAGE_SOUND_MAP: Record<string, string> = {
+    intro: "/sounds/welcome_start.mp3",
     intentions: "/sounds/intentions.mp3",
     focus: "/sounds/focus.mp3",
+    break: "/sounds/break_start.mp3",
     outro: "/sounds/outro.mp3",
   };
+
+  // ✅ LOOP FOR WELCOME ONLY
+  const WELCOME_LOOP = "/sounds/welcome_loop.mp3";
 
   const getRoomName = (url: string) => {
     try {
@@ -119,6 +126,7 @@ export function RoomPage() {
       } else {
         console.error("load session error:", error?.message);
       }
+
       setLoading(false);
     })();
   }, [id]);
@@ -126,6 +134,7 @@ export function RoomPage() {
   // ---------- RESOLVE USER NAME ----------
   useEffect(() => {
     let cancelled = false;
+
     (async () => {
       const { data } = await supabase.auth.getUser();
       const u = data.user;
@@ -145,6 +154,7 @@ export function RoomPage() {
       }
 
       if (!name && u?.email) name = u.email.split("@")[0];
+
       if (!cancelled) setUserName(name);
     })();
 
@@ -194,9 +204,7 @@ export function RoomPage() {
     let destroyed = false;
 
     const onJoined = () => {};
-    const onLeft = async () => {
-      await safeTearDownAndNavigate();
-    };
+    const onLeft = async () => await safeTearDownAndNavigate();
     const onError = (e: any) => {
       console.error("DAILY ERROR:", e);
       setLastErr(String(e?.errorMsg || e?.message || e));
@@ -274,13 +282,14 @@ export function RoomPage() {
     };
   }, [session?.daily_room_url, userName]);
 
-  // ---------- STAGE TIMER + SOUND TRIGGER ----------
+  // ---------- STAGE TIMER + SOUND ----------
   useEffect(() => {
     if (!session?.start_time || !stages.length) return;
 
+    const startTime = new Date(session.start_time).getTime();
+
     const timer = setInterval(() => {
-      const diffSec =
-        (Date.now() - new Date(session.start_time).getTime()) / 1000;
+      const diffSec = (Date.now() - startTime) / 1000;
 
       let total = 0;
       let active = stages.length - 1;
@@ -298,57 +307,40 @@ export function RoomPage() {
 
           break;
         }
+
         total = next;
       }
 
-      // ✅ SOUND LOGIC (updated)
+      // ✅ INIT prevStageRef ON FIRST COMPUTE → prevents mid-block trigger
+      if (prevStageRef.current === -1) {
+        prevStageRef.current = active; // ✅ FIXED
+      }
+
+      // ✅ STAGE CHANGED
       if (prevStageRef.current !== active) {
-        const prev = stages[prevStageRef.current];
-        const curr = stages[active];
+        const stage = stages[active];
+        const type = stage.type;
 
-        const prevType = prev?.type;
-        const currType = curr?.type;
-
-        // ✅ STOP welcome loop if leaving intro
-        if (prevType === "intro" && currType !== "intro") {
-          if (welcomeLoopRef.current) {
-            welcomeLoopRef.current.pause();
-            welcomeLoopRef.current.currentTime = 0;
-          }
+        // STOP WELCOME LOOP
+        if (welcomeLoopAudio.current) {
+          welcomeLoopAudio.current.pause();
+          welcomeLoopAudio.current = null;
         }
 
-        // ✅ START welcome loop if entering intro
-        if (currType === "intro") {
-          if (!welcomeLoopRef.current) {
-            welcomeLoopRef.current = new Audio("/sounds/welcome_loop.mp3");
-            welcomeLoopRef.current.loop = true;
-            welcomeLoopRef.current.volume = 0.45;
-          }
-          welcomeLoopRef.current.play().catch(() => {});
-        }
-
-        // --- BREAK START ---
-        if (currType === "break" && prevType !== "break") {
-          const audio = new Audio("/sounds/break_start.mp3");
-          audio.volume = 0.9;
+        // ✅ one-shot sounds
+        if (STAGE_SOUND_MAP[type]) {
+          const audio = new Audio(STAGE_SOUND_MAP[type]);
+          audio.volume = 0.8;
           audio.play().catch(() => {});
         }
 
-        // --- BREAK END ---
-        if (prevType === "break" && currType !== "break") {
-          const audio = new Audio("/sounds/break_end.mp3");
-          audio.volume = 0.9;
-          audio.play().catch(() => {});
-        }
-
-        // --- OTHER STAGES ---
-        if (currType !== "intro" && currType !== "break") {
-          const sound = STAGE_SOUND_MAP[currType];
-          if (sound) {
-            const audio = new Audio(sound);
-            audio.volume = 0.8;
-            audio.play().catch(() => {});
-          }
+        // ✅ WELCOME BLOCK LOOP
+        if (type === "intro") {
+          const loop = new Audio(WELCOME_LOOP);
+          loop.loop = true;
+          loop.volume = 0.35;
+          loop.play().catch(() => {});
+          welcomeLoopAudio.current = loop;
         }
 
         prevStageRef.current = active;
@@ -386,6 +378,7 @@ export function RoomPage() {
   return (
     <div className="min-h-screen bg-slate-900 text-white flex justify-center">
       <div className="w-full max-w-[1720px] px-5 py-5 space-y-5">
+
         {/* Header */}
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 shadow-lg p-4">
           <div className="flex justify-between items-end mb-3">
@@ -429,11 +422,7 @@ export function RoomPage() {
             className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden h-[77vh] relative"
             style={{ minHeight: "70vh" }}
           >
-            <div
-              ref={containerRef}
-              className="w-full h-full"
-              style={{ minHeight: "70vh" }}
-            />
+            <div ref={containerRef} className="w-full h-full" style={{ minHeight: "70vh" }} />
 
             {lastErr && (
               <div className="absolute top-4 left-4 bg-red-600 text-white px-3 py-2 rounded-lg text-xs shadow">
@@ -451,10 +440,7 @@ export function RoomPage() {
       </div>
 
       {selectedUser && (
-        <UserProfileModal
-          user={selectedUser}
-          onClose={() => setSelectedUser(null)}
-        />
+        <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
       )}
     </div>
   );
