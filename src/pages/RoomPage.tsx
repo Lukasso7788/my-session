@@ -20,6 +20,7 @@ export function RoomPage() {
   const [currentStage, setCurrentStage] = useState(0);
   const [remainingTime, setRemainingTime] = useState<string>("");
   const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [userName, setUserName] = useState<string>("");
 
   const STAGE_COLOR_MAP: Record<string, string> = {
     intro: "#8FD8C6",
@@ -29,13 +30,32 @@ export function RoomPage() {
     outro: "#8FD8C6",
   };
 
-  // ✅ Загружаем сессию с данными хоста
+  // ===== Helpers for localStorage state (persist across refresh) =====
+  const LS_ROOM_URL = "daily-room-url";
+  const LS_USER_NAME = "daily-user-name";
+  const LS_JOINED = "daily-joined"; // "true" | "false"
+
+  const persistState = (roomUrl?: string, name?: string, joined?: boolean) => {
+    if (roomUrl !== undefined) localStorage.setItem(LS_ROOM_URL, roomUrl);
+    if (name !== undefined) localStorage.setItem(LS_USER_NAME, name);
+    if (joined !== undefined) localStorage.setItem(LS_JOINED, joined ? "true" : "false");
+  };
+
+  const clearState = () => {
+    localStorage.removeItem(LS_ROOM_URL);
+    localStorage.removeItem(LS_USER_NAME);
+    localStorage.removeItem(LS_JOINED);
+  };
+
+  // ===== Load session (with host profile) & build stages =====
   useEffect(() => {
     async function loadSession() {
       if (!id) return;
       const { data, error } = await supabase
         .from("sessions")
-        .select("*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)")
+        .select(
+          "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)"
+        )
         .eq("id", id)
         .single();
 
@@ -88,15 +108,65 @@ export function RoomPage() {
     loadSession();
   }, [id]);
 
-  // ✅ Daily iframe
+  // ===== Resolve user display name (from profile/auth) and persist it =====
+  useEffect(() => {
+    let cancelled = false;
+    async function resolveUserName() {
+      // If we already have a cached name, prefer it
+      const cachedName = localStorage.getItem(LS_USER_NAME);
+      if (cachedName) {
+        if (!cancelled) setUserName(cachedName);
+        return;
+      }
+
+      const { data } = await supabase.auth.getUser();
+      const u = data.user;
+
+      let name =
+        (u?.user_metadata?.full_name as string) ||
+        (u?.user_metadata?.name as string) ||
+        "";
+
+      if (!name && u?.id) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("full_name")
+          .eq("id", u.id)
+          .single();
+        name = profile?.full_name || "";
+      }
+
+      // Final fallback
+      if (!name && u?.email) {
+        name = u.email.split("@")[0];
+      }
+
+      if (!cancelled) {
+        setUserName(name);
+        persistState(undefined, name, undefined);
+      }
+    }
+
+    resolveUserName();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // ===== Daily iframe lifecycle (refresh-proof) =====
   useEffect(() => {
     if (!session?.daily_room_url || !containerRef.current) return;
 
+    // Persist current room url for refresh continuity
+    persistState(session.daily_room_url, userName || undefined, undefined);
+
+    // Defensive destroy previous frame
     if (callRef.current) {
       callRef.current.destroy().catch(() => {});
       callRef.current = null;
     }
 
+    // Create new iframe
     const callFrame = DailyIframe.createFrame(containerRef.current, {
       iframeStyle: {
         width: "100%",
@@ -107,34 +177,78 @@ export function RoomPage() {
       showFullscreenButton: true,
       showLeaveButton: true,
     });
-
     callRef.current = callFrame;
 
+    // Construct URL w/ layout
     const urlWithGrid = session.daily_room_url.includes("?")
       ? `${session.daily_room_url}&layout=grid`
       : `${session.daily_room_url}?layout=grid`;
 
-    callFrame.join({ url: urlWithGrid }).catch((err) => {
-      console.error("❌ Daily join error:", err);
-    });
+    // If the user already joined before refresh → auto-join
+    const wasJoined = localStorage.getItem(LS_JOINED) === "true";
 
-    callFrame.on("left-meeting", async () => {
+    async function safeJoin() {
+      try {
+        if (wasJoined) {
+          // Auto re-join on refresh
+          await callFrame.join({
+            url: urlWithGrid,
+            userName: userName || undefined,
+          });
+        } else {
+          // First visit in this tab: show Daily prejoin UI (no immediate join)
+          await callFrame.load({
+            url: urlWithGrid,
+          });
+        }
+      } catch (err) {
+        console.error("❌ Daily join/load error:", err);
+        // Fallback: at least show prejoin
+        try {
+          await callFrame.load({ url: urlWithGrid });
+        } catch (err2) {
+          console.error("❌ Daily fallback load failed:", err2);
+        }
+      }
+    }
+
+    safeJoin();
+
+    // Daily events
+    const onJoined = () => {
+      persistState(undefined, undefined, true);
+    };
+    const onLeft = async () => {
+      persistState(undefined, undefined, false);
+      clearState();
       try {
         await callFrame.destroy();
       } catch {}
       callRef.current = null;
       navigate("/sessions");
-    });
-
-    return () => {
-      if (callRef.current) {
-        callRef.current.destroy().catch(() => {});
-        callRef.current = null;
-      }
     };
-  }, [session?.daily_room_url, navigate]);
+    const onError = (e: any) => {
+      console.error("❌ Daily error event:", e);
+    };
 
-  // ✅ Отслеживаем текущую стадию по времени
+    callFrame.on("joined-meeting", onJoined);
+    callFrame.on("left-meeting", onLeft);
+    callFrame.on("error", onError);
+
+    // Cleanup on unmount
+    return () => {
+      callFrame.off("joined-meeting", onJoined);
+      callFrame.off("left-meeting", onLeft);
+      callFrame.off("error", onError);
+      try {
+        callFrame.destroy();
+      } catch {}
+      callRef.current = null;
+    };
+    // include userName so we can re-init when it resolves
+  }, [session?.daily_room_url, userName, navigate]);
+
+  // ===== Stage tracking by session.start_time =====
   useEffect(() => {
     if (!session?.start_time || !stages.length) return;
 
@@ -163,7 +277,7 @@ export function RoomPage() {
     return () => clearInterval(tick);
   }, [session?.start_time, stages]);
 
-  // 🌀 Loading
+  // ===== UI =====
   if (loading)
     return (
       <div className="flex h-screen items-center justify-center bg-slate-900 text-white">
