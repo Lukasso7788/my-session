@@ -1,38 +1,102 @@
+import { useState } from "react";
 import { supabase } from "../lib/supabase";
+import { useNavigate } from "react-router-dom";
 
 export default function LoginPage() {
-  const handleLogin = async (provider: "google" | "facebook") => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider,
-      options: {
-        // 🔗 сразу редиректит обратно на прод-домен после входа
-        redirectTo: "https://my-session.vercel.app/sessions",
-      },
+  const navigate = useNavigate();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async () => {
+    if (!email || !password) {
+      alert("Please enter email and password");
+      return;
+    }
+
+    setLoading(true);
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
     });
-    if (error) alert(error.message);
+
+    setLoading(false);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    navigate("/sessions");
+  };
+
+  const loginWithGoogle = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin + "/sessions" }
+    });
+  };
+
+  const loginWithFacebook = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: "facebook",
+      options: { redirectTo: window.location.origin + "/sessions" }
+    });
   };
 
   return (
-    <div className="flex h-screen items-center justify-center bg-slate-900 text-white">
-      <div className="bg-slate-800 rounded-2xl p-10 shadow-lg w-[400px] text-center space-y-6">
-        <h1 className="text-3xl font-bold">Welcome to MySession</h1>
-        <p className="text-slate-400">Sign in to continue</p>
+    <div className="min-h-screen bg-slate-900 text-white flex justify-center items-center px-4">
+      <div className="bg-slate-800 rounded-2xl p-10 w-full max-w-md shadow-xl space-y-6">
 
-        <div className="space-y-3">
-          <button
-            onClick={() => handleLogin("google")}
-            className="w-full bg-white text-slate-800 py-3 rounded-lg font-medium hover:bg-slate-100"
-          >
-            Continue with Google
-          </button>
+        <h1 className="text-2xl font-bold text-center">Log In</h1>
 
-          <button
-            onClick={() => handleLogin("facebook")}
-            className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700"
-          >
-            Continue with Facebook
-          </button>
-        </div>
+        <input
+          type="email"
+          placeholder="Email"
+          className="w-full px-3 py-2 rounded bg-slate-700 border border-slate-600"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+
+        <input
+          type="password"
+          placeholder="Password"
+          className="w-full px-3 py-2 rounded bg-slate-700 border border-slate-600"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+
+        <button
+          onClick={handleLogin}
+          disabled={loading}
+          className="w-full bg-blue-600 py-2 rounded-lg hover:bg-blue-700"
+        >
+          {loading ? "Loading..." : "Login"}
+        </button>
+
+        <div className="h-px bg-slate-600 my-4"></div>
+
+        <button
+          onClick={loginWithGoogle}
+          className="w-full bg-white text-black py-2 rounded-lg hover:bg-gray-200"
+        >
+          Continue with Google
+        </button>
+
+        <button
+          onClick={loginWithFacebook}
+          className="w-full bg-blue-700 text-white py-2 rounded-lg hover:bg-blue-800"
+        >
+          Continue with Facebook
+        </button>
+
+        <p
+          className="text-sm text-blue-300 text-center cursor-pointer hover:underline"
+          onClick={() => navigate("/register")}
+        >
+          Don't have an account? Register
+        </p>
       </div>
     </div>
   );
