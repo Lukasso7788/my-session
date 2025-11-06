@@ -10,12 +10,10 @@ export function RoomPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  // ==== Refs
   const containerRef = useRef<HTMLDivElement>(null);
   const callRef = useRef<DailyCall | null>(null);
-  const initGuardRef = useRef(false); // StrictMode / double-mount guard
+  const initGuardRef = useRef(false);
 
-  // ==== State
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [stages, setStages] = useState<any[]>([]);
@@ -25,6 +23,16 @@ export function RoomPage() {
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [userName, setUserName] = useState<string>("");
 
+  // наш prejoin
+  const [token, setToken] = useState<string | null>(null);
+  const [showPrejoin, setShowPrejoin] = useState(false);
+  const [joining, setJoining] = useState(false);
+  const [lastErr, setLastErr] = useState<string>("");
+
+  const LS_JOINED = "daily-joined";
+  const markJoined = (v: boolean) => localStorage.setItem(LS_JOINED, v ? "true" : "false");
+  const wasJoined = () => localStorage.getItem(LS_JOINED) === "true";
+
   const STAGE_COLOR_MAP: Record<string, string> = {
     intro: "#8FD8C6",
     intentions: "#FFF9F2",
@@ -33,12 +41,6 @@ export function RoomPage() {
     outro: "#8FD8C6",
   };
 
-  // ===== LocalStorage flags (UX при refresh)
-  const LS_JOINED = "daily-joined";
-  const markJoined = (v: boolean) => localStorage.setItem(LS_JOINED, v ? "true" : "false");
-  const wasJoined = () => localStorage.getItem(LS_JOINED) === "true";
-
-  // ===== Load session (with host profile) & build stages
   useEffect(() => {
     (async () => {
       if (!id) return;
@@ -50,146 +52,102 @@ export function RoomPage() {
         .eq("id", id)
         .single();
 
-      if (error) {
-        console.error("❌ Error loading session:", error.message);
-      } else {
+      if (!error && data) {
         setSession(data);
 
         if (data?.schedule) {
           try {
-            const parsed =
-              typeof data.schedule === "string" ? JSON.parse(data.schedule) : data.schedule;
-
+            const parsed = typeof data.schedule === "string" ? JSON.parse(data.schedule) : data.schedule;
             const formatted = parsed.map((b: any) => {
-              const lowerName = (b.name || "").toLowerCase();
+              const lower = (b.name || "").toLowerCase();
               const type =
                 b.type ||
-                (lowerName.includes("welcome") || lowerName.includes("intro")
+                (lower.includes("welcome") || lower.includes("intro")
                   ? "intro"
-                  : lowerName.includes("intention")
+                  : lower.includes("intention")
                   ? "intentions"
-                  : lowerName.includes("focus")
+                  : lower.includes("focus")
                   ? "focus"
-                  : lowerName.includes("break") || lowerName.includes("pause")
+                  : lower.includes("break") || lower.includes("pause")
                   ? "break"
-                  : lowerName.includes("farewell") || lowerName.includes("celebrat")
+                  : lower.includes("farewell") || lower.includes("celebrat")
                   ? "outro"
                   : "focus");
-
-              return {
-                name: b.name,
-                duration: b.minutes,
-                color: STAGE_COLOR_MAP[type] || "#9ADEDC",
-              };
+              return { name: b.name, duration: b.minutes, color: STAGE_COLOR_MAP[type] || "#9ADEDC" };
             });
-
             setStages(formatted);
           } catch (e) {
-            console.error("❌ Error parsing schedule:", e);
+            console.error("schedule parse error", e);
           }
         }
+      } else {
+        console.error("load session error:", error?.message);
       }
-
       setLoading(false);
     })();
   }, [id]);
 
-  // ===== Resolve user display name
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const { data } = await supabase.auth.getUser();
       const u = data.user;
-
       let name =
         (u?.user_metadata?.full_name as string) ||
         (u?.user_metadata?.name as string) ||
         "";
-
       if (!name && u?.id) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("full_name")
-          .eq("id", u.id)
-          .single();
-        name = profile?.full_name || "";
+        const { data: p } = await supabase.from("profiles").select("full_name").eq("id", u.id).single();
+        name = p?.full_name || "";
       }
       if (!name && u?.email) name = u.email.split("@")[0];
-
       if (!cancelled) setUserName(name);
     })();
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
-  // ===== Helpers
   const getRoomName = (url: string) => {
     try {
       const u = new URL(url);
       const parts = u.pathname.split("/").filter(Boolean);
       return parts[parts.length - 1] || "";
-    } catch {
-      return "";
-    }
+    } catch { return ""; }
   };
 
-  const getToken = async (roomUrl: string) => {
+  const fetchToken = async (roomUrl: string) => {
     const roomName = getRoomName(roomUrl);
-    console.log("[Daily] requesting token for room:", roomName);
     const { data, error } = await supabase.functions.invoke("daily-token", {
       body: { roomName, userName, roomUrl },
     });
     if (error) throw error;
-    if (!data?.token) throw new Error("No token returned from daily-token");
+    if (!data?.token) throw new Error("No token returned");
     return data.token as string;
   };
 
-  // ===== Daily iframe lifecycle (token-based) with strict guard + debug
+  // создаём frame один раз на маунт/смену URL/имени
   useEffect(() => {
     if (!session?.daily_room_url || !containerRef.current || !userName) return;
-
-    // Guard от двойного вызова эффекта (StrictMode)
-    if (initGuardRef.current) {
-      console.log("[Daily] init skipped (guard)");
-      return;
-    }
+    if (initGuardRef.current) return;
     initGuardRef.current = true;
 
     const container = containerRef.current;
     const bounds = container.getBoundingClientRect();
-    console.log("[Daily] container bounds:", bounds);
-
-    // Если контейнер вдруг с нулём высоты — выставим аварийные размеры
     if (bounds.height < 100) {
       container.style.minHeight = "70vh";
       container.style.height = "70vh";
-      container.style.display = "block";
-      console.warn("[Daily] container was too small — applied fallback height 70vh");
     }
 
-    // Destroy previous (на всякий случай)
     if (callRef.current) {
       callRef.current.destroy().catch(() => {});
       callRef.current = null;
     }
 
-    console.log("[Daily] creating frame…");
-    const callFrame = DailyIframe.createFrame(container, {
-      iframeStyle: {
-        width: "100%",
-        height: "100%",
-        border: "0",
-        borderRadius: "1rem",
-      },
-      iframeAttributes: {
-        allow: "camera; microphone; fullscreen; display-capture",
-      },
+    const frame = DailyIframe.createFrame(container, {
+      iframeStyle: { width: "100%", height: "100%", border: "0", borderRadius: "1rem" },
       showFullscreenButton: true,
       showLeaveButton: true,
     });
-    callRef.current = callFrame;
+    callRef.current = frame;
 
     const urlWithGrid = session.daily_room_url.includes("?")
       ? `${session.daily_room_url}&layout=grid`
@@ -197,107 +155,97 @@ export function RoomPage() {
 
     (async () => {
       try {
-        const token = await getToken(session.daily_room_url);
-        console.log("[Daily] token received, wasJoined:", wasJoined());
+        const t = await fetchToken(session.daily_room_url);
+        setToken(t);
 
         if (wasJoined()) {
-          console.log("[Daily] calling join()");
-          await callFrame.join({ url: urlWithGrid, token, userName });
+          // авто-rejoin после refresh
+          await frame.join({ url: urlWithGrid, token: t, userName });
         } else {
-          console.log("[Daily] calling load() (prejoin UI)");
-          await callFrame.load({ url: urlWithGrid, token });
+          // показываем свой prejoin
+          setShowPrejoin(true);
         }
-      } catch (err) {
-        console.error("❌ Daily init error:", err);
-        try {
-          console.log("[Daily] fallback load() without token");
-          await callFrame.load({ url: urlWithGrid });
-        } catch (err2) {
-          console.error("❌ Daily fallback load failed:", err2);
-        }
+      } catch (e: any) {
+        console.error("daily init error:", e);
+        setLastErr(e?.message || "Failed to init Daily");
+        setShowPrejoin(true); // всё равно показать кнопку Join — попробовать ещё раз
       }
     })();
 
-    const onLoaded = () => console.log("[Daily] loaded-meeting");
-    const onJoined = () => {
-      console.log("[Daily] joined-meeting");
-      markJoined(true);
-    };
+    const onJoined = () => { markJoined(true); setShowPrejoin(false); };
     const onLeft = async () => {
-      console.log("[Daily] left-meeting");
       markJoined(false);
-      try {
-        await callFrame.destroy();
-      } catch {}
+      try { await frame.destroy(); } catch {}
       callRef.current = null;
-      initGuardRef.current = false; // позволим повторную инициализацию при возвращении
+      initGuardRef.current = false;
       navigate("/sessions");
     };
-    const onError = (e: any) => console.error("❌ Daily error:", e);
+    const onError = (e: any) => { console.error("daily error:", e); setLastErr(String(e?.errorMsg || e)); };
 
-    callFrame.on("loaded-meeting", onLoaded);
-    callFrame.on("joined-meeting", onJoined);
-    callFrame.on("left-meeting", onLeft);
-    callFrame.on("error", onError);
+    frame.on("joined-meeting", onJoined);
+    frame.on("left-meeting", onLeft);
+    frame.on("error", onError);
 
     return () => {
-      callFrame.off("loaded-meeting", onLoaded);
-      callFrame.off("joined-meeting", onJoined);
-      callFrame.off("left-meeting", onLeft);
-      callFrame.off("error", onError);
-      try {
-        callFrame.destroy();
-      } catch {}
+      frame.off("joined-meeting", onJoined);
+      frame.off("left-meeting", onLeft);
+      frame.off("error", onError);
+      try { frame.destroy(); } catch {}
       callRef.current = null;
       initGuardRef.current = false;
     };
   }, [session?.daily_room_url, userName, navigate]);
 
-  // ===== Stage tracking by session.start_time
+  // Кнопка Join
+  const handleJoin = async () => {
+    if (!callRef.current || !session?.daily_room_url || !token) return;
+    setJoining(true);
+    setLastErr("");
+    const urlWithGrid = session.daily_room_url.includes("?")
+      ? `${session.daily_room_url}&layout=grid`
+      : `${session.daily_room_url}?layout=grid`;
+    try {
+      await callRef.current.join({ url: urlWithGrid, token, userName });
+      // joined-meeting снимет prejoin
+    } catch (e: any) {
+      setLastErr(e?.message || "Join failed");
+      setJoining(false);
+    }
+  };
+
+  // таймер стадий
   useEffect(() => {
     if (!session?.start_time || !stages.length) return;
-
-    const tick = setInterval(() => {
+    const timer = setInterval(() => {
       const diffSec = (Date.now() - new Date(session.start_time).getTime()) / 1000;
       let total = 0;
-      let activeStage = stages.length - 1;
-
+      let active = stages.length - 1;
       for (let i = 0; i < stages.length; i++) {
-        const nextTotal = total + stages[i].duration * 60;
-        if (diffSec < nextTotal) {
-          activeStage = i;
-          const remaining = nextTotal - diffSec;
-          const minutes = Math.floor(remaining / 60);
-          const seconds = Math.floor(remaining % 60);
-          setRemainingTime(`${minutes}:${seconds.toString().padStart(2, "0")}`);
+        const next = total + stages[i].duration * 60;
+        if (diffSec < next) {
+          active = i;
+          const rem = next - diffSec;
+          const m = Math.floor(rem / 60);
+          const s = Math.floor(rem % 60);
+          setRemainingTime(`${m}:${s.toString().padStart(2, "0")}`);
           break;
         }
-        total = nextTotal;
+        total = next;
       }
-
-      setCurrentStage(activeStage);
+      setCurrentStage(active);
     }, 1000);
-
-    return () => clearInterval(tick);
+    return () => clearInterval(timer);
   }, [session?.start_time, stages]);
 
-  // ===== UI
   if (loading)
-    return (
-      <div className="flex h-screen items-center justify-center bg-slate-900 text-white">
-        Loading session...
-      </div>
-    );
+    return <div className="flex h-screen items-center justify-center bg-slate-900 text-white">Loading session...</div>;
 
   if (!session)
     return (
       <div className="flex h-screen items-center justify-center bg-slate-900 text-white">
         <div className="text-center space-y-3">
           <p className="text-lg font-medium">Session not found</p>
-          <button
-            onClick={() => navigate("/sessions")}
-            className="text-blue-400 hover:text-blue-300 underline"
-          >
+          <button onClick={() => navigate("/sessions")} className="text-blue-400 hover:text-blue-300 underline">
             Back to sessions
           </button>
         </div>
@@ -310,31 +258,20 @@ export function RoomPage() {
         {/* Header */}
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 shadow-lg p-4">
           <div className="flex justify-between items-end mb-3">
-            <div className="text-sm font-medium text-slate-400">
-              {session?.title ?? ""}
-            </div>
-            <div className="text-xs text-slate-500">
-              Stage {currentStage + 1} / {stages.length}
-            </div>
+            <div className="text-sm font-medium text-slate-400">{session?.title ?? ""}</div>
+            <div className="text-xs text-slate-500">Stage {currentStage + 1} / {stages.length}</div>
           </div>
 
           <div className="bg-white rounded-2xl overflow-hidden shadow-sm p-4 space-y-3">
-            <SessionStageBar
-              stages={stages}
-              startTime={session.start_time}
-              onHoverStage={setHoveredStage}
-            />
+            <SessionStageBar stages={stages} startTime={session.start_time} onHoverStage={setHoveredStage} />
             <div className="flex justify-between items-center text-sm font-medium text-slate-700 mt-1">
               <span>
-                {hoveredStage
-                  ? `${hoveredStage.name} • ${hoveredStage.duration} min`
-                  : stages[currentStage]?.name ?? ""}
+                {hoveredStage ? `${hoveredStage.name} • ${hoveredStage.duration} min` : stages[currentStage]?.name ?? ""}
               </span>
               <span className="text-slate-500">⏱ {remainingTime}</span>
             </div>
           </div>
 
-          {/* 👤 Host info */}
           {session.host_profile && (
             <p
               onClick={() => setSelectedUser(session.host_profile)}
@@ -349,14 +286,37 @@ export function RoomPage() {
         <div className="grid grid-cols-1 lg:grid-cols-[1fr,370px] gap-5">
           <div
             className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden h-[77vh] relative"
-            style={{ minHeight: "70vh" }} // <- жёсткий fallback
+            style={{ minHeight: "70vh" }}
           >
-            {/* Контейнер под iframe. Если он был «маленьким» — теперь точно не будет */}
-            <div
-              ref={containerRef}
-              className="w-full h-full"
-              style={{ minHeight: "70vh" }}
-            />
+            <div ref={containerRef} className="w-full h-full" style={{ minHeight: "70vh" }} />
+
+            {/* Наш prejoin-оверлей */}
+            {showPrejoin && (
+              <div className="absolute inset-0 bg-slate-900/90 backdrop-blur-sm flex items-center justify-center">
+                <div className="bg-white text-slate-900 rounded-2xl shadow-xl p-6 w-[360px] text-center space-y-4">
+                  <h3 className="text-lg font-semibold">Ready to join?</h3>
+                  <p className="text-sm text-slate-600">
+                    You’ll join as <span className="font-medium">{userName || "Guest"}</span>
+                  </p>
+                  {lastErr && (
+                    <p className="text-xs text-red-600 bg-red-50 rounded-md p-2">{lastErr}</p>
+                  )}
+                  <button
+                    onClick={handleJoin}
+                    disabled={joining || !token}
+                    className="w-full px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {joining ? "Joining..." : "Join session"}
+                  </button>
+                  <button
+                    onClick={() => navigate("/sessions")}
+                    className="w-full px-4 py-2 rounded-lg bg-slate-200 text-slate-800 hover:bg-slate-300"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="rounded-2xl border border-slate-800 bg-white text-black shadow-lg overflow-hidden h-[77vh]">
@@ -367,12 +327,8 @@ export function RoomPage() {
         </div>
       </div>
 
-      {/* Modal */}
       {selectedUser && (
-        <UserProfileModal
-          user={selectedUser}
-          onClose={() => setSelectedUser(null)}
-        />
+        <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
       )}
     </div>
   );
