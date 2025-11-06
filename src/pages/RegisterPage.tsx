@@ -50,6 +50,20 @@ export default function RegisterPage() {
     setLoading(false);
   };
 
+  const signupWithGoogle = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin + "/sessions" }
+    });
+  };
+
+  const signupWithFacebook = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: "facebook",
+      options: { redirectTo: window.location.origin + "/sessions" }
+    });
+  };
+
   return (
     <div className="min-h-screen bg-slate-900 text-white flex justify-center items-center px-4">
       <div className="bg-slate-800 rounded-2xl p-10 w-full max-w-md shadow-xl space-y-6">
@@ -86,6 +100,25 @@ export default function RegisterPage() {
           className="w-full bg-blue-600 py-2 rounded-lg hover:bg-blue-700"
         >
           {loading ? "Creating..." : "Sign Up"}
+        </button>
+
+        {/* Divider */}
+        <div className="h-px bg-slate-600 my-4"></div>
+
+        {/* ✅ Google Signup */}
+        <button
+          onClick={signupWithGoogle}
+          className="w-full bg-white text-black py-2 rounded-lg hover:bg-gray-200"
+        >
+          Continue with Google
+        </button>
+
+        {/* ✅ Facebook Signup */}
+        <button
+          onClick={signupWithFacebook}
+          className="w-full bg-blue-700 text-white py-2 rounded-lg hover:bg-blue-800"
+        >
+          Continue with Facebook
         </button>
 
         <p
