@@ -24,24 +24,35 @@ export function RoomPage() {
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [userName, setUserName] = useState<string>("");
 
-  const [token, setToken] = useState<string | null>(null);
   const [lastErr, setLastErr] = useState<string>("");
 
-  // Reset join state EVERY time entering room
-  useEffect(() => {
-    localStorage.removeItem("daily-joined");
-  }, []);
-
-  const LS_JOINED = "daily-joined";
-  const markJoined = (v: boolean) =>
-    localStorage.setItem(LS_JOINED, v ? "true" : "false");
-
+  // ---------- helpers ----------
   const STAGE_COLOR_MAP: Record<string, string> = {
     intro: "#8FD8C6",
     intentions: "#FFF9F2",
     focus: "#9ADEDC",
     break: "#FF9F8E",
     outro: "#8FD8C6",
+  };
+
+  const getRoomName = (url: string) => {
+    try {
+      const u = new URL(url);
+      const parts = u.pathname.split("/").filter(Boolean);
+      return parts[parts.length - 1] || "";
+    } catch {
+      return "";
+    }
+  };
+
+  const fetchToken = async (roomUrl: string) => {
+    const roomName = getRoomName(roomUrl);
+    const { data, error } = await supabase.functions.invoke("daily-token", {
+      body: { roomName, userName, roomUrl },
+    });
+    if (error) throw error;
+    if (!data?.token) throw new Error("No token returned");
+    return data.token as string;
   };
 
   // ---------- LOAD SESSION ----------
@@ -129,27 +140,6 @@ export function RoomPage() {
     };
   }, []);
 
-  // ---------- TOKEN FETCH ----------
-  const getRoomName = (url: string) => {
-    try {
-      const u = new URL(url);
-      const parts = u.pathname.split("/").filter(Boolean);
-      return parts[parts.length - 1] || "";
-    } catch {
-      return "";
-    }
-  };
-
-  const fetchToken = async (roomUrl: string) => {
-    const roomName = getRoomName(roomUrl);
-    const { data, error } = await supabase.functions.invoke("daily-token", {
-      body: { roomName, userName, roomUrl },
-    });
-    if (error) throw error;
-    if (!data?.token) throw new Error("No token returned");
-    return data.token as string;
-  };
-
   // ---------- DAILY INIT ----------
   useEffect(() => {
     if (!session?.daily_room_url || !containerRef.current || !userName) return;
@@ -158,86 +148,118 @@ export function RoomPage() {
 
     const container = containerRef.current;
 
-    // Guarantee height for iframe
+    // height guarantee
     const bounds = container.getBoundingClientRect();
     if (bounds.height < 100) {
       container.style.minHeight = "70vh";
       container.style.height = "70vh";
     }
 
+    // just in case
     if (callRef.current) {
-      callRef.current.destroy().catch(() => {});
+      try { callRef.current.destroy(); } catch {}
       callRef.current = null;
     }
 
     const frame = DailyIframe.createFrame(container, {
-      iframeStyle: {
-        width: "100%",
-        height: "100%",
-        border: "0",
-        borderRadius: "1rem",
-      },
+      iframeStyle: { width: "100%", height: "100%", border: "0", borderRadius: "1rem" },
       showFullscreenButton: true,
       showLeaveButton: true,
     });
-
     callRef.current = frame;
 
     const urlWithGrid = session.daily_room_url.includes("?")
       ? `${session.daily_room_url}&layout=grid`
       : `${session.daily_room_url}?layout=grid`;
 
+    let destroyed = false;
+
+    // stable handlers (Daily requires off(event, handler))
+    const onJoined = () => {
+      // no UI overlay anymore; just mark joined
+      // (kept for future logic)
+    };
+
+    const onLeft = async () => {
+      // user clicked Leave inside Daily UI
+      await safeTearDownAndNavigate();
+    };
+
+    const onError = (e: any) => {
+      console.error("DAILY ERROR:", e);
+      setLastErr(String(e?.errorMsg || e?.message || e));
+    };
+
+    const removeAll = () => {
+      try { frame.off("joined-meeting", onJoined); } catch {}
+      try { frame.off("left-meeting", onLeft); } catch {}
+      try { frame.off("error", onError); } catch {}
+    };
+
+    // auto-join
     (async () => {
       try {
-        const t = await fetchToken(session.daily_room_url);
-        setToken(t);
-
-        // Auto-join immediately
+        const token = await fetchToken(session.daily_room_url);
+        if (destroyed) return;
         await frame.join({
           url: urlWithGrid,
-          token: t,
+          token,
           userName,
           audioSource: true,
           videoSource: true,
         });
       } catch (e: any) {
-        console.error("daily init error:", e);
-        setLastErr(e?.message || "Failed to init Daily");
+        if (!destroyed) setLastErr(e?.message || "Failed to init Daily");
       }
     })();
 
-    frame.on("joined-meeting", () => {
-      markJoined(true);
-    });
+    frame.on("joined-meeting", onJoined);
+    frame.on("left-meeting", onLeft);
+    frame.on("error", onError);
 
-    frame.on("left-meeting", async () => {
-      markJoined(false);
+    // teardown used by both unmount and leave-handler
+    const safeTearDownAndNavigate = async () => {
+      if (destroyed) return;
+      destroyed = true;
+
+      removeAll(); // 1) remove listeners with exact handlers
+
       try {
+        // 2) try to leave first to allow Daily to cleanup internally
+        await frame.leave?.();
+      } catch {}
+
+      try {
+        // 3) then destroy iframe
         await frame.destroy();
       } catch {}
-      callRef.current = null;
+
+      if (callRef.current === frame) {
+        callRef.current = null;
+      }
       initGuardRef.current = false;
+
+      // 4) navigate only AFTER full cleanup
       navigate("/sessions", { replace: true });
-    });
-
-    frame.on("error", (e) => {
-      console.error("DAILY ERROR:", e);
-      setLastErr(String(e?.errorMsg || e));
-    });
-
-    return () => {
-      frame.off("joined-meeting");
-      frame.off("left-meeting");
-      frame.off("error");
-
-      try {
-        frame.destroy();
-      } catch {}
-
-      callRef.current = null;
-      initGuardRef.current = false;
     };
-  }, [session?.daily_room_url, userName, navigate]);
+
+    // unmount
+    return () => {
+      safeTearDownOnly(); // unmount shouldn’t navigate
+
+      function safeTearDownOnly() {
+        if (destroyed) return;
+        destroyed = true;
+
+        removeAll();
+        try { frame.leave?.(); } catch {}
+        try { frame.destroy(); } catch {}
+        if (callRef.current === frame) callRef.current = null;
+        initGuardRef.current = false;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.daily_room_url, userName]); // don't include navigate → keep handler stable
 
   // ---------- STAGE TIMER ----------
   useEffect(() => {
@@ -256,9 +278,7 @@ export function RoomPage() {
           const rem = next - diffSec;
           const m = Math.floor(rem / 60);
           const s = Math.floor(rem % 60);
-          setRemainingTime(
-            `${m}:${s.toString().padStart(2, "0")}`
-          );
+          setRemainingTime(`${m}:${s.toString().padStart(2, "0")}`);
           break;
         }
         total = next;
@@ -338,11 +358,7 @@ export function RoomPage() {
             className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden h-[77vh] relative"
             style={{ minHeight: "70vh" }}
           >
-            <div
-              ref={containerRef}
-              className="w-full h-full"
-              style={{ minHeight: "70vh" }}
-            />
+            <div ref={containerRef} className="w-full h-full" style={{ minHeight: "70vh" }} />
 
             {lastErr && (
               <div className="absolute top-4 left-4 bg-red-600 text-white px-3 py-2 rounded-lg text-xs shadow">
@@ -360,10 +376,7 @@ export function RoomPage() {
       </div>
 
       {selectedUser && (
-        <UserProfileModal
-          user={selectedUser}
-          onClose={() => setSelectedUser(null)}
-        />
+        <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
       )}
     </div>
   );
