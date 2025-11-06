@@ -2,32 +2,28 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-d
 import { SessionsPage } from "./pages/SessionsPage";
 import RoomPage from "./pages/RoomPage";
 import LoginPage from "./pages/LoginPage";
+import RegisterPage from "./pages/RegisterPage";
 import ProfilePage from "./pages/ProfilePage";
-import PublicProfilePage from "./pages/PublicProfilePage"; // 👈 новый импорт
+import PublicProfilePage from "./pages/PublicProfilePage";
 
 function App() {
   return (
     <Router>
       <Routes>
-        {/* перенаправляем с корня на /sessions */}
+        {/* redirect root → /sessions */}
         <Route path="/" element={<Navigate to="/sessions" replace />} />
 
-        {/* список всех сессий */}
         <Route path="/sessions" element={<SessionsPage />} />
-
-        {/* страница комнаты (встроенный Daily iframe) */}
         <Route path="/room/:id" element={<RoomPage />} />
 
-        {/* 🔐 страница входа / регистрации */}
+        {/* ✅ manual auth pages */}
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
 
-        {/* 👤 профиль текущего пользователя */}
         <Route path="/profile" element={<ProfilePage />} />
-
-        {/* 🌍 публичная страница профиля по user_id */}
         <Route path="/profile/:id" element={<PublicProfilePage />} />
 
-        {/* fallback — если маршрут не найден */}
+        {/* fallback */}
         <Route path="*" element={<Navigate to="/sessions" replace />} />
       </Routes>
     </Router>

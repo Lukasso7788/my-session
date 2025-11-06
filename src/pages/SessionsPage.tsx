@@ -15,7 +15,7 @@ export function SessionsPage() {
   const [user, setUser] = useState<any>(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
 
-  // ✅ Правильное восстановление сессии
+  // ✅ Восстановление auth-сессии
   useEffect(() => {
     const getCurrentSession = async () => {
       const { data } = await supabase.auth.getSession();
@@ -32,7 +32,7 @@ export function SessionsPage() {
     };
   }, []);
 
-  // ✅ Загружаем сессии
+  // ✅ Загрузка списка сессий
   const fetchSessions = async () => {
     try {
       setIsLoading(true);
@@ -51,6 +51,7 @@ export function SessionsPage() {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
+
       setSessions((data || []) as Session[]);
       localStorage.setItem("sessions", JSON.stringify(data || []));
     } catch (error) {
@@ -66,7 +67,7 @@ export function SessionsPage() {
     fetchSessions();
   }, []);
 
-  // 🔎 Проверка на истёкшие сессии
+  // Проверка на истечение
   const isExpired = (s: Session) => {
     if (!s.start_time) return false;
     const end = new Date(s.start_time).getTime() + s.duration_minutes * 60_000;
@@ -127,8 +128,10 @@ export function SessionsPage() {
               >
                 Log in
               </button>
+
+              {/* ✅ Исправлено: теперь ведёт на /register */}
               <button
-                onClick={() => navigate("/login")}
+                onClick={() => navigate("/register")}
                 className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 font-medium shadow"
               >
                 Sign up
@@ -229,6 +232,7 @@ export function SessionsPage() {
                           </span>
                         </span>
                       </div>
+
                       <div className="flex items-center gap-1">
                         <Clock size={16} />
                         <span>{session.duration_minutes} min</span>
