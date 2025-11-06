@@ -10,9 +10,12 @@ export function RoomPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
+  // ==== Refs
   const containerRef = useRef<HTMLDivElement>(null);
   const callRef = useRef<DailyCall | null>(null);
+  const initGuardRef = useRef(false); // StrictMode / double-mount guard
 
+  // ==== State
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [stages, setStages] = useState<any[]>([]);
@@ -30,16 +33,14 @@ export function RoomPage() {
     outro: "#8FD8C6",
   };
 
-  // ===== LocalStorage flags (для UX при refresh) =====
+  // ===== LocalStorage flags (UX при refresh)
   const LS_JOINED = "daily-joined";
-
-  const markJoined = (v: boolean) =>
-    localStorage.setItem(LS_JOINED, v ? "true" : "false");
+  const markJoined = (v: boolean) => localStorage.setItem(LS_JOINED, v ? "true" : "false");
   const wasJoined = () => localStorage.getItem(LS_JOINED) === "true";
 
-  // ===== Load session (with host profile) & build stages =====
+  // ===== Load session (with host profile) & build stages
   useEffect(() => {
-    async function loadSession() {
+    (async () => {
       if (!id) return;
       const { data, error } = await supabase
         .from("sessions")
@@ -49,7 +50,7 @@ export function RoomPage() {
         .eq("id", id)
         .single();
 
-    if (error) {
+      if (error) {
         console.error("❌ Error loading session:", error.message);
       } else {
         setSession(data);
@@ -57,9 +58,7 @@ export function RoomPage() {
         if (data?.schedule) {
           try {
             const parsed =
-              typeof data.schedule === "string"
-                ? JSON.parse(data.schedule)
-                : data.schedule;
+              typeof data.schedule === "string" ? JSON.parse(data.schedule) : data.schedule;
 
             const formatted = parsed.map((b: any) => {
               const lowerName = (b.name || "").toLowerCase();
@@ -73,8 +72,7 @@ export function RoomPage() {
                   ? "focus"
                   : lowerName.includes("break") || lowerName.includes("pause")
                   ? "break"
-                  : lowerName.includes("farewell") ||
-                    lowerName.includes("celebrat")
+                  : lowerName.includes("farewell") || lowerName.includes("celebrat")
                   ? "outro"
                   : "focus");
 
@@ -93,15 +91,13 @@ export function RoomPage() {
       }
 
       setLoading(false);
-    }
-
-    loadSession();
+    })();
   }, [id]);
 
-  // ===== Resolve user display name =====
+  // ===== Resolve user display name
   useEffect(() => {
     let cancelled = false;
-    async function resolveName() {
+    (async () => {
       const { data } = await supabase.auth.getUser();
       const u = data.user;
 
@@ -121,14 +117,14 @@ export function RoomPage() {
       if (!name && u?.email) name = u.email.split("@")[0];
 
       if (!cancelled) setUserName(name);
-    }
-    resolveName();
+    })();
+
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // ===== Helpers =====
+  // ===== Helpers
   const getRoomName = (url: string) => {
     try {
       const u = new URL(url);
@@ -141,30 +137,54 @@ export function RoomPage() {
 
   const getToken = async (roomUrl: string) => {
     const roomName = getRoomName(roomUrl);
+    console.log("[Daily] requesting token for room:", roomName);
     const { data, error } = await supabase.functions.invoke("daily-token", {
       body: { roomName, userName, roomUrl },
     });
     if (error) throw error;
-    return data?.token as string;
+    if (!data?.token) throw new Error("No token returned from daily-token");
+    return data.token as string;
   };
 
-  // ===== Daily iframe lifecycle (token-based) =====
+  // ===== Daily iframe lifecycle (token-based) with strict guard + debug
   useEffect(() => {
     if (!session?.daily_room_url || !containerRef.current || !userName) return;
 
-    // Destroy previous
+    // Guard от двойного вызова эффекта (StrictMode)
+    if (initGuardRef.current) {
+      console.log("[Daily] init skipped (guard)");
+      return;
+    }
+    initGuardRef.current = true;
+
+    const container = containerRef.current;
+    const bounds = container.getBoundingClientRect();
+    console.log("[Daily] container bounds:", bounds);
+
+    // Если контейнер вдруг с нулём высоты — выставим аварийные размеры
+    if (bounds.height < 100) {
+      container.style.minHeight = "70vh";
+      container.style.height = "70vh";
+      container.style.display = "block";
+      console.warn("[Daily] container was too small — applied fallback height 70vh");
+    }
+
+    // Destroy previous (на всякий случай)
     if (callRef.current) {
       callRef.current.destroy().catch(() => {});
       callRef.current = null;
     }
 
-    // Create frame
-    const callFrame = DailyIframe.createFrame(containerRef.current, {
+    console.log("[Daily] creating frame…");
+    const callFrame = DailyIframe.createFrame(container, {
       iframeStyle: {
         width: "100%",
         height: "100%",
         border: "0",
         borderRadius: "1rem",
+      },
+      iframeAttributes: {
+        allow: "camera; microphone; fullscreen; display-capture",
       },
       showFullscreenButton: true,
       showLeaveButton: true,
@@ -175,47 +195,53 @@ export function RoomPage() {
       ? `${session.daily_room_url}&layout=grid`
       : `${session.daily_room_url}?layout=grid`;
 
-    // Join/load with meeting token
     (async () => {
       try {
         const token = await getToken(session.daily_room_url);
+        console.log("[Daily] token received, wasJoined:", wasJoined());
+
         if (wasJoined()) {
-          await callFrame.join({
-            url: urlWithGrid,
-            token,
-            userName,
-          });
+          console.log("[Daily] calling join()");
+          await callFrame.join({ url: urlWithGrid, token, userName });
         } else {
-          // Сначала покажем prejoin (чтобы юзер нажал Join сам)
+          console.log("[Daily] calling load() (prejoin UI)");
           await callFrame.load({ url: urlWithGrid, token });
         }
       } catch (err) {
         console.error("❌ Daily init error:", err);
-        // fallback — хотя бы prejoin без токена (но обычно token обязателен для приватных комнат)
         try {
+          console.log("[Daily] fallback load() without token");
           await callFrame.load({ url: urlWithGrid });
-        } catch {}
+        } catch (err2) {
+          console.error("❌ Daily fallback load failed:", err2);
+        }
       }
     })();
 
-    const onJoined = () => markJoined(true);
+    const onLoaded = () => console.log("[Daily] loaded-meeting");
+    const onJoined = () => {
+      console.log("[Daily] joined-meeting");
+      markJoined(true);
+    };
     const onLeft = async () => {
+      console.log("[Daily] left-meeting");
       markJoined(false);
       try {
         await callFrame.destroy();
       } catch {}
       callRef.current = null;
+      initGuardRef.current = false; // позволим повторную инициализацию при возвращении
       navigate("/sessions");
     };
-    const onError = (e: any) => {
-      console.error("❌ Daily error:", e);
-    };
+    const onError = (e: any) => console.error("❌ Daily error:", e);
 
+    callFrame.on("loaded-meeting", onLoaded);
     callFrame.on("joined-meeting", onJoined);
     callFrame.on("left-meeting", onLeft);
     callFrame.on("error", onError);
 
     return () => {
+      callFrame.off("loaded-meeting", onLoaded);
       callFrame.off("joined-meeting", onJoined);
       callFrame.off("left-meeting", onLeft);
       callFrame.off("error", onError);
@@ -223,16 +249,16 @@ export function RoomPage() {
         callFrame.destroy();
       } catch {}
       callRef.current = null;
+      initGuardRef.current = false;
     };
   }, [session?.daily_room_url, userName, navigate]);
 
-  // ===== Stage tracking by session.start_time =====
+  // ===== Stage tracking by session.start_time
   useEffect(() => {
     if (!session?.start_time || !stages.length) return;
 
     const tick = setInterval(() => {
-      const diffSec =
-        (Date.now() - new Date(session.start_time).getTime()) / 1000;
+      const diffSec = (Date.now() - new Date(session.start_time).getTime()) / 1000;
       let total = 0;
       let activeStage = stages.length - 1;
 
@@ -255,7 +281,7 @@ export function RoomPage() {
     return () => clearInterval(tick);
   }, [session?.start_time, stages]);
 
-  // ===== UI =====
+  // ===== UI
   if (loading)
     return (
       <div className="flex h-screen items-center justify-center bg-slate-900 text-white">
@@ -321,8 +347,16 @@ export function RoomPage() {
 
         {/* Video + Sidebar */}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr,370px] gap-5">
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden h-[77vh]">
-            <div ref={containerRef} className="w-full h-[77vh]" />
+          <div
+            className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden h-[77vh] relative"
+            style={{ minHeight: "70vh" }} // <- жёсткий fallback
+          >
+            {/* Контейнер под iframe. Если он был «маленьким» — теперь точно не будет */}
+            <div
+              ref={containerRef}
+              className="w-full h-full"
+              style={{ minHeight: "70vh" }}
+            />
           </div>
 
           <div className="rounded-2xl border border-slate-800 bg-white text-black shadow-lg overflow-hidden h-[77vh]">
