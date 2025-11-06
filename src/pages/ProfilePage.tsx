@@ -38,44 +38,15 @@ export default function ProfilePage() {
     loadProfile();
   }, [navigate]);
 
-  // ✅ Проверяем или создаём bucket "avatars" при первой попытке загрузки
-  const ensureBucketExists = async () => {
-    const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
-    if (bucketError) throw bucketError;
-
-    const hasAvatarsBucket = buckets.some((b) => b.name === "avatars");
-    if (!hasAvatarsBucket) {
-      try {
-        // Попытка создать bucket (если разрешено API)
-        const { error: createError } = await supabase.storage.createBucket("avatars", {
-          public: true,
-        });
-        if (createError) {
-          alert(
-            "⚠️ Bucket 'avatars' не найден и не удалось создать автоматически.\nСоздай его вручную в Supabase → Storage → New Bucket → 'avatars' (Public)."
-          );
-          throw createError;
-        } else {
-          console.log("✅ Bucket 'avatars' успешно создан.");
-        }
-      } catch (err) {
-        console.error("Ошибка при создании bucket:", err);
-        throw err;
-      }
-    }
-  };
-
-  // ✅ Загрузка аватара в Supabase Storage
+  // ✅ Загрузка аватара в storage/avatars (bucket уже должен существовать)
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
       setUploading(true);
       const file = e.target.files?.[0];
       if (!file || !user) return;
 
-      await ensureBucketExists();
-
-      const fileExt = file.name.split(".").pop();
-      const filePath = `${user.id}-${Date.now()}.${fileExt}`;
+      const ext = file.name.split(".").pop();
+      const filePath = `${user.id}/${Date.now()}.${ext}`;
 
       const { error: uploadError } = await supabase.storage
         .from("avatars")
@@ -83,27 +54,32 @@ export default function ProfilePage() {
 
       if (uploadError) throw uploadError;
 
-      const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
+      const { data } = supabase.storage
+        .from("avatars")
+        .getPublicUrl(filePath);
+
       const publicUrl = data.publicUrl;
 
       const { error: updateError } = await supabase
         .from("profiles")
-        .update({ avatar_url: publicUrl, updated_at: new Date().toISOString() })
+        .update({
+          avatar_url: publicUrl,
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", user.id);
 
       if (updateError) throw updateError;
 
       setAvatarUrl(publicUrl);
       alert("✅ Avatar updated!");
-    } catch (error: any) {
-      console.error(error);
-      alert(error.message || "Error uploading avatar");
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || "Avatar upload failed");
     } finally {
       setUploading(false);
     }
   };
 
-  // ✅ Сохранение профиля
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
@@ -114,7 +90,7 @@ export default function ProfilePage() {
       });
       if (authErr) throw authErr;
 
-      const { error: upsertErr } = await supabase
+      const { error: profileErr } = await supabase
         .from("profiles")
         .upsert(
           {
@@ -127,11 +103,11 @@ export default function ProfilePage() {
           { onConflict: "id" }
         );
 
-      if (upsertErr) throw upsertErr;
+      if (profileErr) throw profileErr;
 
-      alert("Profile updated!");
-    } catch (e: any) {
-      alert(e.message || "Failed to update profile");
+      alert("✅ Profile updated!");
+    } catch (err: any) {
+      alert(err.message || "Failed to save profile");
     } finally {
       setSaving(false);
     }
