@@ -30,22 +30,12 @@ export function RoomPage() {
     outro: "#8FD8C6",
   };
 
-  // ===== Helpers for localStorage state (persist across refresh) =====
-  const LS_ROOM_URL = "daily-room-url";
-  const LS_USER_NAME = "daily-user-name";
-  const LS_JOINED = "daily-joined"; // "true" | "false"
+  // ===== LocalStorage flags (для UX при refresh) =====
+  const LS_JOINED = "daily-joined";
 
-  const persistState = (roomUrl?: string, name?: string, joined?: boolean) => {
-    if (roomUrl !== undefined) localStorage.setItem(LS_ROOM_URL, roomUrl);
-    if (name !== undefined) localStorage.setItem(LS_USER_NAME, name);
-    if (joined !== undefined) localStorage.setItem(LS_JOINED, joined ? "true" : "false");
-  };
-
-  const clearState = () => {
-    localStorage.removeItem(LS_ROOM_URL);
-    localStorage.removeItem(LS_USER_NAME);
-    localStorage.removeItem(LS_JOINED);
-  };
+  const markJoined = (v: boolean) =>
+    localStorage.setItem(LS_JOINED, v ? "true" : "false");
+  const wasJoined = () => localStorage.getItem(LS_JOINED) === "true";
 
   // ===== Load session (with host profile) & build stages =====
   useEffect(() => {
@@ -59,7 +49,7 @@ export function RoomPage() {
         .eq("id", id)
         .single();
 
-      if (error) {
+    if (error) {
         console.error("❌ Error loading session:", error.message);
       } else {
         setSession(data);
@@ -108,17 +98,10 @@ export function RoomPage() {
     loadSession();
   }, [id]);
 
-  // ===== Resolve user display name (from profile/auth) and persist it =====
+  // ===== Resolve user display name =====
   useEffect(() => {
     let cancelled = false;
-    async function resolveUserName() {
-      // If we already have a cached name, prefer it
-      const cachedName = localStorage.getItem(LS_USER_NAME);
-      if (cachedName) {
-        if (!cancelled) setUserName(cachedName);
-        return;
-      }
-
+    async function resolveName() {
       const { data } = await supabase.auth.getUser();
       const u = data.user;
 
@@ -135,38 +118,47 @@ export function RoomPage() {
           .single();
         name = profile?.full_name || "";
       }
+      if (!name && u?.email) name = u.email.split("@")[0];
 
-      // Final fallback
-      if (!name && u?.email) {
-        name = u.email.split("@")[0];
-      }
-
-      if (!cancelled) {
-        setUserName(name);
-        persistState(undefined, name, undefined);
-      }
+      if (!cancelled) setUserName(name);
     }
-
-    resolveUserName();
+    resolveName();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // ===== Daily iframe lifecycle (refresh-proof) =====
+  // ===== Helpers =====
+  const getRoomName = (url: string) => {
+    try {
+      const u = new URL(url);
+      const parts = u.pathname.split("/").filter(Boolean);
+      return parts[parts.length - 1] || "";
+    } catch {
+      return "";
+    }
+  };
+
+  const getToken = async (roomUrl: string) => {
+    const roomName = getRoomName(roomUrl);
+    const { data, error } = await supabase.functions.invoke("daily-token", {
+      body: { roomName, userName, roomUrl },
+    });
+    if (error) throw error;
+    return data?.token as string;
+  };
+
+  // ===== Daily iframe lifecycle (token-based) =====
   useEffect(() => {
-    if (!session?.daily_room_url || !containerRef.current) return;
+    if (!session?.daily_room_url || !containerRef.current || !userName) return;
 
-    // Persist current room url for refresh continuity
-    persistState(session.daily_room_url, userName || undefined, undefined);
-
-    // Defensive destroy previous frame
+    // Destroy previous
     if (callRef.current) {
       callRef.current.destroy().catch(() => {});
       callRef.current = null;
     }
 
-    // Create new iframe
+    // Create frame
     const callFrame = DailyIframe.createFrame(containerRef.current, {
       iframeStyle: {
         width: "100%",
@@ -179,48 +171,36 @@ export function RoomPage() {
     });
     callRef.current = callFrame;
 
-    // Construct URL w/ layout
     const urlWithGrid = session.daily_room_url.includes("?")
       ? `${session.daily_room_url}&layout=grid`
       : `${session.daily_room_url}?layout=grid`;
 
-    // If the user already joined before refresh → auto-join
-    const wasJoined = localStorage.getItem(LS_JOINED) === "true";
-
-    async function safeJoin() {
+    // Join/load with meeting token
+    (async () => {
       try {
-        if (wasJoined) {
-          // Auto re-join on refresh
+        const token = await getToken(session.daily_room_url);
+        if (wasJoined()) {
           await callFrame.join({
             url: urlWithGrid,
-            userName: userName || undefined,
+            token,
+            userName,
           });
         } else {
-          // First visit in this tab: show Daily prejoin UI (no immediate join)
-          await callFrame.load({
-            url: urlWithGrid,
-          });
+          // Сначала покажем prejoin (чтобы юзер нажал Join сам)
+          await callFrame.load({ url: urlWithGrid, token });
         }
       } catch (err) {
-        console.error("❌ Daily join/load error:", err);
-        // Fallback: at least show prejoin
+        console.error("❌ Daily init error:", err);
+        // fallback — хотя бы prejoin без токена (но обычно token обязателен для приватных комнат)
         try {
           await callFrame.load({ url: urlWithGrid });
-        } catch (err2) {
-          console.error("❌ Daily fallback load failed:", err2);
-        }
+        } catch {}
       }
-    }
+    })();
 
-    safeJoin();
-
-    // Daily events
-    const onJoined = () => {
-      persistState(undefined, undefined, true);
-    };
+    const onJoined = () => markJoined(true);
     const onLeft = async () => {
-      persistState(undefined, undefined, false);
-      clearState();
+      markJoined(false);
       try {
         await callFrame.destroy();
       } catch {}
@@ -228,14 +208,13 @@ export function RoomPage() {
       navigate("/sessions");
     };
     const onError = (e: any) => {
-      console.error("❌ Daily error event:", e);
+      console.error("❌ Daily error:", e);
     };
 
     callFrame.on("joined-meeting", onJoined);
     callFrame.on("left-meeting", onLeft);
     callFrame.on("error", onError);
 
-    // Cleanup on unmount
     return () => {
       callFrame.off("joined-meeting", onJoined);
       callFrame.off("left-meeting", onLeft);
@@ -245,7 +224,6 @@ export function RoomPage() {
       } catch {}
       callRef.current = null;
     };
-    // include userName so we can re-init when it resolves
   }, [session?.daily_room_url, userName, navigate]);
 
   // ===== Stage tracking by session.start_time =====
@@ -355,7 +333,7 @@ export function RoomPage() {
         </div>
       </div>
 
-      {/* Модалка профиля */}
+      {/* Modal */}
       {selectedUser && (
         <UserProfileModal
           user={selectedUser}
