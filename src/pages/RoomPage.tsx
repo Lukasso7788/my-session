@@ -26,13 +26,23 @@ export function RoomPage() {
 
   const [lastErr, setLastErr] = useState<string>("");
 
-  // ---------- helpers ----------
+  // ✅ SOUND CONTEXT
+  const prevStageRef = useRef<number>(-1);
+  const welcomeLoopRef = useRef<HTMLAudioElement | null>(null);
+
   const STAGE_COLOR_MAP: Record<string, string> = {
     intro: "#8FD8C6",
     intentions: "#FFF9F2",
     focus: "#9ADEDC",
     break: "#FF9F8E",
     outro: "#8FD8C6",
+  };
+
+  // ✅ UPDATED: removed intro sound (because we now loop welcome), break handled separately
+  const STAGE_SOUND_MAP: Record<string, string> = {
+    intentions: "/sounds/intentions.mp3",
+    focus: "/sounds/focus.mp3",
+    outro: "/sounds/outro.mp3",
   };
 
   const getRoomName = (url: string) => {
@@ -97,6 +107,7 @@ export function RoomPage() {
                 name: b.name,
                 duration: b.minutes,
                 color: STAGE_COLOR_MAP[type] || "#9ADEDC",
+                type,
               };
             });
 
@@ -118,6 +129,7 @@ export function RoomPage() {
     (async () => {
       const { data } = await supabase.auth.getUser();
       const u = data.user;
+
       let name =
         (u?.user_metadata?.full_name as string) ||
         (u?.user_metadata?.name as string) ||
@@ -135,6 +147,7 @@ export function RoomPage() {
       if (!name && u?.email) name = u.email.split("@")[0];
       if (!cancelled) setUserName(name);
     })();
+
     return () => {
       cancelled = true;
     };
@@ -147,25 +160,31 @@ export function RoomPage() {
     initGuardRef.current = true;
 
     const container = containerRef.current;
-
-    // height guarantee
     const bounds = container.getBoundingClientRect();
+
     if (bounds.height < 100) {
       container.style.minHeight = "70vh";
       container.style.height = "70vh";
     }
 
-    // just in case
     if (callRef.current) {
-      try { callRef.current.destroy(); } catch {}
+      try {
+        callRef.current.destroy();
+      } catch {}
       callRef.current = null;
     }
 
     const frame = DailyIframe.createFrame(container, {
-      iframeStyle: { width: "100%", height: "100%", border: "0", borderRadius: "1rem" },
+      iframeStyle: {
+        width: "100%",
+        height: "100%",
+        border: "0",
+        borderRadius: "1rem",
+      },
       showFullscreenButton: true,
       showLeaveButton: true,
     });
+
     callRef.current = frame;
 
     const urlWithGrid = session.daily_room_url.includes("?")
@@ -174,33 +193,32 @@ export function RoomPage() {
 
     let destroyed = false;
 
-    // stable handlers (Daily requires off(event, handler))
-    const onJoined = () => {
-      // no UI overlay anymore; just mark joined
-      // (kept for future logic)
-    };
-
+    const onJoined = () => {};
     const onLeft = async () => {
-      // user clicked Leave inside Daily UI
       await safeTearDownAndNavigate();
     };
-
     const onError = (e: any) => {
       console.error("DAILY ERROR:", e);
       setLastErr(String(e?.errorMsg || e?.message || e));
     };
 
     const removeAll = () => {
-      try { frame.off("joined-meeting", onJoined); } catch {}
-      try { frame.off("left-meeting", onLeft); } catch {}
-      try { frame.off("error", onError); } catch {}
+      try {
+        frame.off("joined-meeting", onJoined);
+      } catch {}
+      try {
+        frame.off("left-meeting", onLeft);
+      } catch {}
+      try {
+        frame.off("error", onError);
+      } catch {}
     };
 
-    // auto-join
     (async () => {
       try {
         const token = await fetchToken(session.daily_room_url);
         if (destroyed) return;
+
         await frame.join({
           url: urlWithGrid,
           token,
@@ -217,53 +235,49 @@ export function RoomPage() {
     frame.on("left-meeting", onLeft);
     frame.on("error", onError);
 
-    // teardown used by both unmount and leave-handler
     const safeTearDownAndNavigate = async () => {
       if (destroyed) return;
       destroyed = true;
 
-      removeAll(); // 1) remove listeners with exact handlers
-
+      removeAll();
       try {
-        // 2) try to leave first to allow Daily to cleanup internally
         await frame.leave?.();
       } catch {}
-
       try {
-        // 3) then destroy iframe
         await frame.destroy();
       } catch {}
 
-      if (callRef.current === frame) {
-        callRef.current = null;
-      }
+      if (callRef.current === frame) callRef.current = null;
       initGuardRef.current = false;
 
-      // 4) navigate only AFTER full cleanup
       navigate("/sessions", { replace: true });
     };
 
-    // unmount
     return () => {
-      safeTearDownOnly(); // unmount shouldn’t navigate
+      safeTearDownOnly();
 
       function safeTearDownOnly() {
         if (destroyed) return;
         destroyed = true;
 
         removeAll();
-        try { frame.leave?.(); } catch {}
-        try { frame.destroy(); } catch {}
+        try {
+          frame.leave?.();
+        } catch {}
+        try {
+          frame.destroy();
+        } catch {}
+
         if (callRef.current === frame) callRef.current = null;
         initGuardRef.current = false;
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.daily_room_url, userName]); // don't include navigate → keep handler stable
+  }, [session?.daily_room_url, userName]);
 
-  // ---------- STAGE TIMER ----------
+  // ---------- STAGE TIMER + SOUND TRIGGER ----------
   useEffect(() => {
     if (!session?.start_time || !stages.length) return;
+
     const timer = setInterval(() => {
       const diffSec =
         (Date.now() - new Date(session.start_time).getTime()) / 1000;
@@ -273,16 +287,73 @@ export function RoomPage() {
 
       for (let i = 0; i < stages.length; i++) {
         const next = total + stages[i].duration * 60;
+
         if (diffSec < next) {
           active = i;
+
           const rem = next - diffSec;
           const m = Math.floor(rem / 60);
           const s = Math.floor(rem % 60);
           setRemainingTime(`${m}:${s.toString().padStart(2, "0")}`);
+
           break;
         }
         total = next;
       }
+
+      // ✅ SOUND LOGIC (updated)
+      if (prevStageRef.current !== active) {
+        const prev = stages[prevStageRef.current];
+        const curr = stages[active];
+
+        const prevType = prev?.type;
+        const currType = curr?.type;
+
+        // ✅ STOP welcome loop if leaving intro
+        if (prevType === "intro" && currType !== "intro") {
+          if (welcomeLoopRef.current) {
+            welcomeLoopRef.current.pause();
+            welcomeLoopRef.current.currentTime = 0;
+          }
+        }
+
+        // ✅ START welcome loop if entering intro
+        if (currType === "intro") {
+          if (!welcomeLoopRef.current) {
+            welcomeLoopRef.current = new Audio("/sounds/welcome_loop.mp3");
+            welcomeLoopRef.current.loop = true;
+            welcomeLoopRef.current.volume = 0.45;
+          }
+          welcomeLoopRef.current.play().catch(() => {});
+        }
+
+        // --- BREAK START ---
+        if (currType === "break" && prevType !== "break") {
+          const audio = new Audio("/sounds/break_start.mp3");
+          audio.volume = 0.9;
+          audio.play().catch(() => {});
+        }
+
+        // --- BREAK END ---
+        if (prevType === "break" && currType !== "break") {
+          const audio = new Audio("/sounds/break_end.mp3");
+          audio.volume = 0.9;
+          audio.play().catch(() => {});
+        }
+
+        // --- OTHER STAGES ---
+        if (currType !== "intro" && currType !== "break") {
+          const sound = STAGE_SOUND_MAP[currType];
+          if (sound) {
+            const audio = new Audio(sound);
+            audio.volume = 0.8;
+            audio.play().catch(() => {});
+          }
+        }
+
+        prevStageRef.current = active;
+      }
+
       setCurrentStage(active);
     }, 1000);
 
@@ -358,7 +429,11 @@ export function RoomPage() {
             className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden h-[77vh] relative"
             style={{ minHeight: "70vh" }}
           >
-            <div ref={containerRef} className="w-full h-full" style={{ minHeight: "70vh" }} />
+            <div
+              ref={containerRef}
+              className="w-full h-full"
+              style={{ minHeight: "70vh" }}
+            />
 
             {lastErr && (
               <div className="absolute top-4 left-4 bg-red-600 text-white px-3 py-2 rounded-lg text-xs shadow">
@@ -376,7 +451,10 @@ export function RoomPage() {
       </div>
 
       {selectedUser && (
-        <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
+        <UserProfileModal
+          user={selectedUser}
+          onClose={() => setSelectedUser(null)}
+        />
       )}
     </div>
   );
