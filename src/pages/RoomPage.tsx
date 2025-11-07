@@ -1,5 +1,3 @@
-// ✅ FULL UPDATED RoomPage WITH FIX FOR "NO SOUND ON MIDDLE-OF-BLOCK ENTER"
-
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import DailyIframe, { DailyCall } from "@daily-co/daily-js";
@@ -7,6 +5,13 @@ import { IntentionsPanel } from "../components/IntentionsPanel";
 import { SessionStageBar } from "../components/SessionStageBar";
 import { supabase } from "../lib/supabase";
 import { UserProfileModal } from "../components/UserProfileModal";
+
+type Stage = {
+  name: string;
+  duration: number; // minutes
+  color: string;
+  type: "intro" | "intentions" | "focus" | "break" | "outro" | string;
+};
 
 export function RoomPage() {
   const { id } = useParams<{ id: string }>();
@@ -18,20 +23,25 @@ export function RoomPage() {
 
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [stages, setStages] = useState<any[]>([]);
-  const [hoveredStage, setHoveredStage] = useState<any>(null);
+  const [stages, setStages] = useState<Stage[]>([]);
+  const [hoveredStage, setHoveredStage] = useState<Stage | null>(null);
   const [currentStage, setCurrentStage] = useState(0);
   const [remainingTime, setRemainingTime] = useState<string>("");
 
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [userName, setUserName] = useState<string>("");
+
   const [lastErr, setLastErr] = useState<string>("");
 
-  // ✅ SOUND STATE
+  // ====== SOUND STATE ======
   const prevStageRef = useRef<number>(-1);
-  const welcomeLoopAudio = useRef<HTMLAudioElement | null>(null);
+  const firstTickDoneRef = useRef<boolean>(false);
+  const welcomeLoopRef = useRef<HTMLAudioElement | null>(null);
+  const audioUnlockedRef = useRef<boolean>(false); // autoplay unlock flag
 
-  // ✅ COLORS
+  // Config: how close to exact stage start counts as "real-time start"
+  const REALTIME_STAGE_START_TOLERANCE_SEC = 2;
+
   const STAGE_COLOR_MAP: Record<string, string> = {
     intro: "#8FD8C6",
     intentions: "#FFF9F2",
@@ -40,18 +50,68 @@ export function RoomPage() {
     outro: "#8FD8C6",
   };
 
-  // ✅ ONE-SHOT SOUNDS
+  // One-shot sounds (start cues)
   const STAGE_SOUND_MAP: Record<string, string> = {
-    intro: "/sounds/welcome_start.mp3",
     intentions: "/sounds/intentions.mp3",
     focus: "/sounds/focus.mp3",
     break: "/sounds/break_start.mp3",
     outro: "/sounds/outro.mp3",
   };
 
-  // ✅ LOOP FOR WELCOME ONLY
-  const WELCOME_LOOP = "/sounds/welcome_loop.mp3";
+  // Closing sound for break
+  const BREAK_END_SOUND = "/sounds/break_end.mp3";
 
+  // Welcome loop (only if user is at the real start of intro)
+  const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
+
+  // -------- helper: unlock audio on first user gesture --------
+  useEffect(() => {
+    const unlock = () => {
+      if (audioUnlockedRef.current) return;
+      const a = new Audio();
+      a.play().catch(() => {});
+      audioUnlockedRef.current = true;
+      window.removeEventListener("click", unlock, true);
+      window.removeEventListener("keydown", unlock, true);
+      window.removeEventListener("touchstart", unlock, true);
+    };
+    window.addEventListener("click", unlock, true);
+    window.addEventListener("keydown", unlock, true);
+    window.addEventListener("touchstart", unlock, true);
+    return () => {
+      window.removeEventListener("click", unlock, true);
+      window.removeEventListener("keydown", unlock, true);
+      window.removeEventListener("touchstart", unlock, true);
+    };
+  }, []);
+
+  const playOneShot = (url: string, volume = 0.9) => {
+    if (!url) return;
+    const a = new Audio(url);
+    a.volume = volume;
+    a.play().catch(() => {});
+  };
+
+  const startWelcomeLoop = () => {
+    stopWelcomeLoop();
+    const a = new Audio(WELCOME_LOOP_SOUND);
+    a.loop = true;
+    a.volume = 0.6;
+    welcomeLoopRef.current = a;
+    a.play().catch(() => {});
+  };
+
+  const stopWelcomeLoop = () => {
+    try {
+      if (welcomeLoopRef.current) {
+        welcomeLoopRef.current.pause();
+        welcomeLoopRef.current.currentTime = 0;
+        welcomeLoopRef.current = null;
+      }
+    } catch {}
+  };
+
+  // ---------- helpers ----------
   const getRoomName = (url: string) => {
     try {
       const u = new URL(url);
@@ -94,9 +154,9 @@ export function RoomPage() {
                 ? JSON.parse(data.schedule)
                 : data.schedule;
 
-            const formatted = parsed.map((b: any) => {
+            const formatted: Stage[] = parsed.map((b: any) => {
               const lower = (b.name || "").toLowerCase();
-              const type =
+              const type: Stage["type"] =
                 b.type ||
                 (lower.includes("welcome") || lower.includes("intro")
                   ? "intro"
@@ -109,7 +169,6 @@ export function RoomPage() {
                   : lower.includes("farewell") || lower.includes("celebrat")
                   ? "outro"
                   : "focus");
-
               return {
                 name: b.name,
                 duration: b.minutes,
@@ -126,7 +185,6 @@ export function RoomPage() {
       } else {
         console.error("load session error:", error?.message);
       }
-
       setLoading(false);
     })();
   }, [id]);
@@ -134,7 +192,6 @@ export function RoomPage() {
   // ---------- RESOLVE USER NAME ----------
   useEffect(() => {
     let cancelled = false;
-
     (async () => {
       const { data } = await supabase.auth.getUser();
       const u = data.user;
@@ -154,7 +211,6 @@ export function RoomPage() {
       }
 
       if (!name && u?.email) name = u.email.split("@")[0];
-
       if (!cancelled) setUserName(name);
     })();
 
@@ -178,9 +234,7 @@ export function RoomPage() {
     }
 
     if (callRef.current) {
-      try {
-        callRef.current.destroy();
-      } catch {}
+      try { callRef.current.destroy(); } catch {}
       callRef.current = null;
     }
 
@@ -204,22 +258,18 @@ export function RoomPage() {
     let destroyed = false;
 
     const onJoined = () => {};
-    const onLeft = async () => await safeTearDownAndNavigate();
+    const onLeft = async () => {
+      await safeTearDownAndNavigate();
+    };
     const onError = (e: any) => {
       console.error("DAILY ERROR:", e);
       setLastErr(String(e?.errorMsg || e?.message || e));
     };
 
     const removeAll = () => {
-      try {
-        frame.off("joined-meeting", onJoined);
-      } catch {}
-      try {
-        frame.off("left-meeting", onLeft);
-      } catch {}
-      try {
-        frame.off("error", onError);
-      } catch {}
+      try { frame.off("joined-meeting", onJoined); } catch {}
+      try { frame.off("left-meeting", onLeft); } catch {}
+      try { frame.off("error", onError); } catch {}
     };
 
     (async () => {
@@ -248,102 +298,125 @@ export function RoomPage() {
       destroyed = true;
 
       removeAll();
-      try {
-        await frame.leave?.();
-      } catch {}
-      try {
-        await frame.destroy();
-      } catch {}
+      try { await frame.leave?.(); } catch {}
+      try { await frame.destroy(); } catch {}
 
       if (callRef.current === frame) callRef.current = null;
       initGuardRef.current = false;
+
+      // always stop any loop when we leave
+      stopWelcomeLoop();
 
       navigate("/sessions", { replace: true });
     };
 
     return () => {
-      safeTearDownOnly();
-
-      function safeTearDownOnly() {
-        if (destroyed) return;
+      // unmount
+      if (!destroyed) {
         destroyed = true;
-
         removeAll();
-        try {
-          frame.leave?.();
-        } catch {}
-        try {
-          frame.destroy();
-        } catch {}
-
+        try { frame.leave?.(); } catch {}
+        try { frame.destroy(); } catch {}
         if (callRef.current === frame) callRef.current = null;
         initGuardRef.current = false;
+        stopWelcomeLoop();
       }
     };
-  }, [session?.daily_room_url, userName]);
+  }, [session?.daily_room_url, userName, navigate]);
 
-  // ---------- STAGE TIMER + SOUND ----------
+  // ---------- UTILS FOR STAGE TIME ----------
+  const getStageBoundaries = (startISO: string, items: Stage[]) => {
+    const startMs = new Date(startISO).getTime();
+    const starts: number[] = [];
+    const ends: number[] = [];
+    let acc = 0;
+    for (const st of items) {
+      const stStart = startMs + acc * 60 * 1000;
+      const stEnd = stStart + st.duration * 60 * 1000;
+      starts.push(stStart);
+      ends.push(stEnd);
+      acc += st.duration;
+    }
+    return { starts, ends };
+  };
+
+  // ---------- STAGE TIMER + SOUND TRIGGER ----------
   useEffect(() => {
     if (!session?.start_time || !stages.length) return;
 
-    const startTime = new Date(session.start_time).getTime();
+    const { starts, ends } = getStageBoundaries(session.start_time, stages);
 
     const timer = setInterval(() => {
-      const diffSec = (Date.now() - startTime) / 1000;
+      const now = Date.now();
+      const diffSec = (now - new Date(session.start_time).getTime()) / 1000;
 
       let total = 0;
       let active = stages.length - 1;
 
       for (let i = 0; i < stages.length; i++) {
         const next = total + stages[i].duration * 60;
-
         if (diffSec < next) {
           active = i;
-
           const rem = next - diffSec;
           const m = Math.floor(rem / 60);
           const s = Math.floor(rem % 60);
           setRemainingTime(`${m}:${s.toString().padStart(2, "0")}`);
-
           break;
         }
-
         total = next;
       }
 
-      // ✅ INIT prevStageRef ON FIRST COMPUTE → prevents mid-block trigger
-      if (prevStageRef.current === -1) {
-        prevStageRef.current = active; // ✅ FIXED
+      const stage = stages[active];
+      const stageStartMs = starts[active];
+      const stageEndMs = ends[active];
+      const offsetInStageSec = Math.max(0, Math.floor((now - stageStartMs) / 1000));
+
+      // FIRST TICK: don't play any one-shot if we are mid-block
+      if (!firstTickDoneRef.current) {
+        // Welcome loop special rule:
+        // start only if we are at real start of welcome (within tolerance)
+        if (stage?.type === "intro" && offsetInStageSec <= REALTIME_STAGE_START_TOLERANCE_SEC) {
+          startWelcomeLoop();
+        } else {
+          stopWelcomeLoop();
+        }
+        prevStageRef.current = active;
+        firstTickDoneRef.current = true;
+        setCurrentStage(active);
+        return;
       }
 
-      // ✅ STAGE CHANGED
+      // Stage changed?
       if (prevStageRef.current !== active) {
-        const stage = stages[active];
-        const type = stage.type;
+        const prev = stages[prevStageRef.current];
+        const prevType = prev?.type;
+        const newType = stage?.type;
 
-        // STOP WELCOME LOOP
-        if (welcomeLoopAudio.current) {
-          welcomeLoopAudio.current.pause();
-          welcomeLoopAudio.current = null;
+        // leaving a break => play break_end
+        if (prevType === "break" && newType !== "break") {
+          playOneShot(BREAK_END_SOUND);
         }
 
-        // ✅ one-shot sounds
-        if (STAGE_SOUND_MAP[type]) {
-          const audio = new Audio(STAGE_SOUND_MAP[type]);
-          audio.volume = 0.8;
-          audio.play().catch(() => {});
-        }
-
-        // ✅ WELCOME BLOCK LOOP
-        if (type === "intro") {
-          const loop = new Audio(WELCOME_LOOP);
-          loop.loop = true;
-          loop.volume = 0.35;
-          loop.play().catch(() => {});
-          welcomeLoopAudio.current = loop;
+        // whenever we enter intro — start loop
+        if (newType === "intro") {
+          startWelcomeLoop();
+        } else {
+          // entering anything else — stop welcome loop
+          stopWelcomeLoop();
+          // play stage start one-shot if defined (intentions/focus/break/outro)
+          const url = STAGE_SOUND_MAP[newType as keyof typeof STAGE_SOUND_MAP];
+          if (url) playOneShot(url);
         }
 
         prevStageRef.current = active;
+      }
+
+      // Hard stop loop at exact end of intro (in case timers drift)
+      if (stage?.type !== "intro" && welcomeLoopRef.current) {
+        stopWelcomeLoop();
+      }
+      if (stage?.type === "intro" && now >= stageEndMs) {
+        stopWelcomeLoop();
       }
 
       setCurrentStage(active);
@@ -378,7 +451,6 @@ export function RoomPage() {
   return (
     <div className="min-h-screen bg-slate-900 text-white flex justify-center">
       <div className="w-full max-w-[1720px] px-5 py-5 space-y-5">
-
         {/* Header */}
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 shadow-lg p-4">
           <div className="flex justify-between items-end mb-3">
@@ -422,7 +494,11 @@ export function RoomPage() {
             className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden h-[77vh] relative"
             style={{ minHeight: "70vh" }}
           >
-            <div ref={containerRef} className="w-full h-full" style={{ minHeight: "70vh" }} />
+            <div
+              ref={containerRef}
+              className="w-full h-full"
+              style={{ minHeight: "70vh" }}
+            />
 
             {lastErr && (
               <div className="absolute top-4 left-4 bg-red-600 text-white px-3 py-2 rounded-lg text-xs shadow">
@@ -440,7 +516,10 @@ export function RoomPage() {
       </div>
 
       {selectedUser && (
-        <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
+        <UserProfileModal
+          user={selectedUser}
+          onClose={() => setSelectedUser(null)}
+        />
       )}
     </div>
   );
