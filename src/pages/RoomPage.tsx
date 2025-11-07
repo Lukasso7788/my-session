@@ -1,3 +1,5 @@
+// FULL UPDATED ROOMPAGE WITH FIXED WELCOME LOOP BEHAVIOR
+
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import DailyIframe, { DailyCall } from "@daily-co/daily-js";
@@ -37,20 +39,9 @@ export function RoomPage() {
   const prevStageRef = useRef<number>(-1);
   const firstTickDoneRef = useRef<boolean>(false);
   const welcomeLoopRef = useRef<HTMLAudioElement | null>(null);
-  const audioUnlockedRef = useRef<boolean>(false); // autoplay unlock flag
+  const audioUnlockedRef = useRef<boolean>(false);
 
-  // Config: how close to exact stage start counts as "real-time start"
-  const REALTIME_STAGE_START_TOLERANCE_SEC = 2;
-
-  const STAGE_COLOR_MAP: Record<string, string> = {
-    intro: "#8FD8C6",
-    intentions: "#FFF9F2",
-    focus: "#9ADEDC",
-    break: "#FF9F8E",
-    outro: "#8FD8C6",
-  };
-
-  // One-shot sounds (start cues)
+  // ====== SOUND FILES ======
   const STAGE_SOUND_MAP: Record<string, string> = {
     intentions: "/sounds/intentions.mp3",
     focus: "/sounds/focus.mp3",
@@ -58,13 +49,10 @@ export function RoomPage() {
     outro: "/sounds/outro.mp3",
   };
 
-  // Closing sound for break
   const BREAK_END_SOUND = "/sounds/break_end.mp3";
-
-  // Welcome loop (only if user is at the real start of intro)
   const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
 
-  // -------- helper: unlock audio on first user gesture --------
+  // unlock browser autoplay
   useEffect(() => {
     const unlock = () => {
       if (audioUnlockedRef.current) return;
@@ -111,28 +99,9 @@ export function RoomPage() {
     } catch {}
   };
 
-  // ---------- helpers ----------
-  const getRoomName = (url: string) => {
-    try {
-      const u = new URL(url);
-      const parts = u.pathname.split("/").filter(Boolean);
-      return parts[parts.length - 1] || "";
-    } catch {
-      return "";
-    }
-  };
-
-  const fetchToken = async (roomUrl: string) => {
-    const roomName = getRoomName(roomUrl);
-    const { data, error } = await supabase.functions.invoke("daily-token", {
-      body: { roomName, userName, roomUrl },
-    });
-    if (error) throw error;
-    if (!data?.token) throw new Error("No token returned");
-    return data.token as string;
-  };
-
-  // ---------- LOAD SESSION ----------
+  // ============================================
+  // LOAD SESSION
+  // ============================================
   useEffect(() => {
     (async () => {
       if (!id) return;
@@ -144,10 +113,10 @@ export function RoomPage() {
         .eq("id", id)
         .single();
 
-      if (!error && data) {
+      if (data && !error) {
         setSession(data);
 
-        if (data?.schedule) {
+        if (data.schedule) {
           try {
             const parsed =
               typeof data.schedule === "string"
@@ -169,37 +138,42 @@ export function RoomPage() {
                   : lower.includes("farewell") || lower.includes("celebrat")
                   ? "outro"
                   : "focus");
+
               return {
                 name: b.name,
                 duration: b.minutes,
-                color: STAGE_COLOR_MAP[type] || "#9ADEDC",
+                color:
+                  {
+                    intro: "#8FD8C6",
+                    intentions: "#FFF9F2",
+                    focus: "#9ADEDC",
+                    break: "#FF9F8E",
+                    outro: "#8FD8C6",
+                  }[type] || "#9ADEDC",
                 type,
               };
             });
 
             setStages(formatted);
-          } catch (e) {
-            console.error("schedule parse error", e);
-          }
+          } catch {}
         }
-      } else {
-        console.error("load session error:", error?.message);
       }
+
       setLoading(false);
     })();
   }, [id]);
 
-  // ---------- RESOLVE USER NAME ----------
+  // ============================================
+  // RESOLVE USER NAME
+  // ============================================
   useEffect(() => {
-    let cancelled = false;
     (async () => {
       const { data } = await supabase.auth.getUser();
       const u = data.user;
-
       let name =
-        (u?.user_metadata?.full_name as string) ||
-        (u?.user_metadata?.name as string) ||
-        "";
+        u?.user_metadata?.full_name ||
+        u?.user_metadata?.name ||
+        (u?.email ? u.email.split("@")[0] : "");
 
       if (!name && u?.id) {
         const { data: p } = await supabase
@@ -210,25 +184,21 @@ export function RoomPage() {
         name = p?.full_name || "";
       }
 
-      if (!name && u?.email) name = u.email.split("@")[0];
-      if (!cancelled) setUserName(name);
+      setUserName(name);
     })();
-
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
-  // ---------- DAILY INIT ----------
+  // ============================================
+  // DAILY INIT
+  // ============================================
   useEffect(() => {
     if (!session?.daily_room_url || !containerRef.current || !userName) return;
     if (initGuardRef.current) return;
     initGuardRef.current = true;
 
     const container = containerRef.current;
-    const bounds = container.getBoundingClientRect();
 
-    if (bounds.height < 100) {
+    if (container.getBoundingClientRect().height < 100) {
       container.style.minHeight = "70vh";
       container.style.height = "70vh";
     }
@@ -251,100 +221,86 @@ export function RoomPage() {
 
     callRef.current = frame;
 
-    const urlWithGrid = session.daily_room_url.includes("?")
+    const withGrid = session.daily_room_url.includes("?")
       ? `${session.daily_room_url}&layout=grid`
       : `${session.daily_room_url}?layout=grid`;
 
     let destroyed = false;
 
-    const onJoined = () => {};
-    const onLeft = async () => {
-      await safeTearDownAndNavigate();
-    };
-    const onError = (e: any) => {
-      console.error("DAILY ERROR:", e);
-      setLastErr(String(e?.errorMsg || e?.message || e));
+    const removeAll = () => {
+      try { frame.off("joined-meeting"); } catch {}
+      try { frame.off("left-meeting"); } catch {}
+      try { frame.off("error"); } catch {}
     };
 
-    const removeAll = () => {
-      try { frame.off("joined-meeting", onJoined); } catch {}
-      try { frame.off("left-meeting", onLeft); } catch {}
-      try { frame.off("error", onError); } catch {}
+    const safeLeave = async () => {
+      if (destroyed) return;
+      destroyed = true;
+      removeAll();
+      try { await frame.leave?.(); } catch {}
+      try { await frame.destroy(); } catch {}
+      callRef.current = null;
+      stopWelcomeLoop();
+      navigate("/sessions", { replace: true });
     };
+
+    frame.on("left-meeting", safeLeave);
+    frame.on("error", (e) =>
+      setLastErr(String(e?.errorMsg || e?.message || e))
+    );
 
     (async () => {
       try {
-        const token = await fetchToken(session.daily_room_url);
-        if (destroyed) return;
+        const roomName = new URL(session.daily_room_url).pathname.split("/").pop() || "";
+        const { data } = await supabase.functions.invoke("daily-token", {
+          body: { roomName, userName, roomUrl: session.daily_room_url },
+        });
 
         await frame.join({
-          url: urlWithGrid,
-          token,
+          url: withGrid,
+          token: data.token,
           userName,
           audioSource: true,
           videoSource: true,
         });
       } catch (e: any) {
-        if (!destroyed) setLastErr(e?.message || "Failed to init Daily");
+        if (!destroyed) setLastErr(e?.message);
       }
     })();
 
-    frame.on("joined-meeting", onJoined);
-    frame.on("left-meeting", onLeft);
-    frame.on("error", onError);
-
-    const safeTearDownAndNavigate = async () => {
-      if (destroyed) return;
-      destroyed = true;
-
-      removeAll();
-      try { await frame.leave?.(); } catch {}
-      try { await frame.destroy(); } catch {}
-
-      if (callRef.current === frame) callRef.current = null;
-      initGuardRef.current = false;
-
-      // always stop any loop when we leave
-      stopWelcomeLoop();
-
-      navigate("/sessions", { replace: true });
-    };
-
     return () => {
-      // unmount
       if (!destroyed) {
         destroyed = true;
         removeAll();
         try { frame.leave?.(); } catch {}
         try { frame.destroy(); } catch {}
-        if (callRef.current === frame) callRef.current = null;
-        initGuardRef.current = false;
+        callRef.current = null;
         stopWelcomeLoop();
       }
     };
-  }, [session?.daily_room_url, userName, navigate]);
+  }, [session?.daily_room_url, userName]);
 
-  // ---------- UTILS FOR STAGE TIME ----------
-  const getStageBoundaries = (startISO: string, items: Stage[]) => {
+  // ============================================
+  // STAGE TIME CALC + SOUND LOGIC
+  // ============================================
+  const getStageWindows = (startISO: string, items: Stage[]) => {
     const startMs = new Date(startISO).getTime();
-    const starts: number[] = [];
-    const ends: number[] = [];
     let acc = 0;
-    for (const st of items) {
-      const stStart = startMs + acc * 60 * 1000;
-      const stEnd = stStart + st.duration * 60 * 1000;
-      starts.push(stStart);
-      ends.push(stEnd);
+    const starts = items.map((st) => {
+      const ms = startMs + acc * 60 * 1000;
       acc += st.duration;
-    }
+      return ms;
+    });
+    const ends = items.map(
+      (_, i) => starts[i] + items[i].duration * 60 * 1000
+    );
     return { starts, ends };
   };
 
-  // ---------- STAGE TIMER + SOUND TRIGGER ----------
   useEffect(() => {
     if (!session?.start_time || !stages.length) return;
 
-    const { starts, ends } = getStageBoundaries(session.start_time, stages);
+    const { starts, ends } = getStageWindows(session.start_time, stages);
 
     const timer = setInterval(() => {
       const now = Date.now();
@@ -352,70 +308,62 @@ export function RoomPage() {
 
       let total = 0;
       let active = stages.length - 1;
-
       for (let i = 0; i < stages.length; i++) {
         const next = total + stages[i].duration * 60;
         if (diffSec < next) {
           active = i;
           const rem = next - diffSec;
-          const m = Math.floor(rem / 60);
-          const s = Math.floor(rem % 60);
-          setRemainingTime(`${m}:${s.toString().padStart(2, "0")}`);
+          setRemainingTime(
+            `${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(
+              2,
+              "0"
+            )}`
+          );
           break;
         }
         total = next;
       }
 
       const stage = stages[active];
-      const stageStartMs = starts[active];
-      const stageEndMs = ends[active];
-      const offsetInStageSec = Math.max(0, Math.floor((now - stageStartMs) / 1000));
 
-      // FIRST TICK: don't play any one-shot if we are mid-block
+      // ===== FIRST TICK =====
       if (!firstTickDoneRef.current) {
-        // Welcome loop special rule:
-        // start only if we are at real start of welcome (within tolerance)
-        if (stage?.type === "intro" && offsetInStageSec <= REALTIME_STAGE_START_TOLERANCE_SEC) {
-          startWelcomeLoop();
-        } else {
-          stopWelcomeLoop();
-        }
+        // ✅ NEW LOGIC: welcome loop plays ALWAYS if we are in intro
+        if (stage.type === "intro") startWelcomeLoop();
+        else stopWelcomeLoop();
+
         prevStageRef.current = active;
         firstTickDoneRef.current = true;
         setCurrentStage(active);
         return;
       }
 
-      // Stage changed?
+      // ===== STAGE CHANGED =====
       if (prevStageRef.current !== active) {
         const prev = stages[prevStageRef.current];
         const prevType = prev?.type;
-        const newType = stage?.type;
+        const newType = stage.type;
 
-        // leaving a break => play break_end
+        // break end sound
         if (prevType === "break" && newType !== "break") {
           playOneShot(BREAK_END_SOUND);
         }
 
-        // whenever we enter intro — start loop
+        // entering intro → ALWAYS start loop
         if (newType === "intro") {
           startWelcomeLoop();
         } else {
-          // entering anything else — stop welcome loop
+          // entering any non-intro → stop loop
           stopWelcomeLoop();
-          // play stage start one-shot if defined (intentions/focus/break/outro)
-          const url = STAGE_SOUND_MAP[newType as keyof typeof STAGE_SOUND_MAP];
-          if (url) playOneShot(url);
+          const startSound = STAGE_SOUND_MAP[newType];
+          if (startSound) playOneShot(startSound);
         }
 
         prevStageRef.current = active;
       }
 
-      // Hard stop loop at exact end of intro (in case timers drift)
-      if (stage?.type !== "intro" && welcomeLoopRef.current) {
-        stopWelcomeLoop();
-      }
-      if (stage?.type === "intro" && now >= stageEndMs) {
+      // safety stop for loop after intro ends
+      if (stage.type !== "intro" && welcomeLoopRef.current) {
         stopWelcomeLoop();
       }
 
@@ -425,54 +373,46 @@ export function RoomPage() {
     return () => clearInterval(timer);
   }, [session?.start_time, stages]);
 
-  // ---------- UI ----------
+  // ============================================
+  // UI
+  // ============================================
   if (loading)
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-900 text-white">
+      <div className="flex h-screen justify-center items-center text-white bg-slate-900">
         Loading session...
       </div>
     );
 
   if (!session)
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-900 text-white">
-        <div className="text-center space-y-3">
-          <p className="text-lg font-medium">Session not found</p>
-          <button
-            onClick={() => navigate("/sessions")}
-            className="text-blue-400 hover:text-blue-300 underline"
-          >
-            Back to sessions
-          </button>
-        </div>
+      <div className="flex h-screen justify-center items-center text-white bg-slate-900">
+        <button onClick={() => navigate("/sessions")}>Back</button>
       </div>
     );
 
   return (
     <div className="min-h-screen bg-slate-900 text-white flex justify-center">
-      <div className="w-full max-w-[1720px] px-5 py-5 space-y-5">
-        {/* Header */}
+      <div className="max-w-[1720px] w-full px-5 py-5 space-y-5">
+
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 shadow-lg p-4">
-          <div className="flex justify-between items-end mb-3">
-            <div className="text-sm font-medium text-slate-400">
-              {session?.title ?? ""}
-            </div>
-            <div className="text-xs text-slate-500">
+          <div className="flex justify-between mb-3">
+            <span className="text-slate-400">{session.title}</span>
+            <span className="text-xs text-slate-500">
               Stage {currentStage + 1} / {stages.length}
-            </div>
+            </span>
           </div>
 
-          <div className="bg-white rounded-2xl overflow-hidden shadow-sm p-4 space-y-3">
+          <div className="bg-white p-4 rounded-2xl space-y-3 shadow-sm">
             <SessionStageBar
               stages={stages}
               startTime={session.start_time}
               onHoverStage={setHoveredStage}
             />
-            <div className="flex justify-between items-center text-sm font-medium text-slate-700 mt-1">
+            <div className="flex justify-between text-sm text-slate-700">
               <span>
                 {hoveredStage
                   ? `${hoveredStage.name} • ${hoveredStage.duration} min`
-                  : stages[currentStage]?.name ?? ""}
+                  : stages[currentStage]?.name}
               </span>
               <span className="text-slate-500">⏱ {remainingTime}</span>
             </div>
@@ -481,17 +421,16 @@ export function RoomPage() {
           {session.host_profile && (
             <p
               onClick={() => setSelectedUser(session.host_profile)}
-              className="text-sm text-slate-400 hover:text-blue-400 cursor-pointer mt-3"
+              className="cursor-pointer text-sm text-slate-400 hover:text-blue-400 mt-3"
             >
-              👤 Hosted by {session.host_profile.full_name ?? "Unknown"}
+              👤 Hosted by {session.host_profile.full_name}
             </p>
           )}
         </div>
 
-        {/* Video + Sidebar */}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr,370px] gap-5">
+        <div className="grid lg:grid-cols-[1fr,370px] gap-5">
           <div
-            className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden h-[77vh] relative"
+            className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden relative h-[77vh]"
             style={{ minHeight: "70vh" }}
           >
             <div
@@ -501,13 +440,13 @@ export function RoomPage() {
             />
 
             {lastErr && (
-              <div className="absolute top-4 left-4 bg-red-600 text-white px-3 py-2 rounded-lg text-xs shadow">
+              <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow">
                 {lastErr}
               </div>
             )}
           </div>
 
-          <div className="rounded-2xl border border-slate-800 bg-white text-black shadow-lg overflow-hidden h-[77vh]">
+          <div className="rounded-2xl border border-slate-800 bg-white text-black shadow-lg h-[77vh] overflow-hidden">
             <div className="p-4 h-full">
               <IntentionsPanel />
             </div>
