@@ -1,4 +1,6 @@
-const TAB_WIDTH = 197;
+const BUTTON_WIDTH = 197; // ширина кнопки по макету
+const GAP = 8; // расстояние между кнопками
+const BUTTON_HEIGHT = 48;
 
 const tabs = [
   {
@@ -24,44 +26,56 @@ const tabs = [
 export function SessionTypeSwitcher({ value, onChange }) {
   const activeIndex = tabs.findIndex((t) => t.id === value);
 
+  const sliderX = activeIndex * (BUTTON_WIDTH + GAP);
+
   return (
     <div
       className="
-        relative inline-flex items-center
-        bg-white border border-borderGray rounded-full
-        px-2 py-2
+        relative bg-white border border-borderGray rounded-full
+        px-3 py-2
+        flex items-center
+        h-[64px]
       "
-      style={{ width: TAB_WIDTH * 3 + 16 }}  // контейнер под три вкладки
+      style={{
+        gap: `${GAP}px`,
+      }}
     >
-      {/* Ползунок */}
+      {/* бегунок */}
       <div
         className="
-          absolute top-2 bottom-2
-          bg-brandBlack rounded-full
+          absolute top-2 bottom-2 bg-brandBlack rounded-full
           transition-all duration-300
         "
         style={{
-          width: TAB_WIDTH,
-          transform: `translateX(${activeIndex * TAB_WIDTH}px)`
+          width: BUTTON_WIDTH,
+          height: BUTTON_HEIGHT,
+          transform: `translateX(${sliderX}px)`,
         }}
       />
 
       {tabs.map((t) => {
         const isActive = value === t.id;
+
         return (
           <button
             key={t.id}
             onClick={() => onChange(t.id)}
             className={`
-              relative z-10 flex items-center justify-center gap-2
-              w-[197px] h-[44px]
-              text-[16px] font-normal transition-all rounded-full
-              ${isActive ? "text-white" : "text-brandBlack hover:text-black"}
+              relative z-10
+              flex items-center justify-center gap-2
+              rounded-full
+              text-[16px] font-normal
+              transition-colors
+              ${isActive ? "text-white" : "text-brandBlack"}
             `}
+            style={{
+              width: BUTTON_WIDTH,
+              height: BUTTON_HEIGHT,
+              padding: "12px 24px",
+            }}
           >
             <img
               src={isActive ? t.iconActive : t.iconInactive}
-              alt=""
               className="w-6 h-6"
             />
             <span>{t.label}</span>
