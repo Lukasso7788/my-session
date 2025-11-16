@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useRef, useEffect, useState } from "react";
 
 const tabs = [
   {
@@ -22,62 +22,57 @@ const tabs = [
 ];
 
 export function SessionTypeSwitcher({ value, onChange }) {
-  const containerRef = useRef(null);
+  const btnRefs = useRef({});
   const bgRef = useRef(null);
-  const btnRefs = useRef([]);
 
+  // Track background width/position
   useEffect(() => {
-    const activeIndex = tabs.findIndex((t) => t.id === value);
-    const btn = btnRefs.current[activeIndex];
+    const activeBtn = btnRefs.current[value];
     const bg = bgRef.current;
 
-    if (btn && bg) {
-      const { offsetWidth, offsetLeft } = btn;
-
+    if (activeBtn && bg) {
+      const { offsetWidth, offsetLeft } = activeBtn;
       bg.style.width = `${offsetWidth}px`;
       bg.style.transform = `translateX(${offsetLeft}px)`;
     }
   }, [value]);
 
   return (
-    <div
-      ref={containerRef}
-      className="
-        relative inline-flex items-center
-        bg-white border border-borderGray rounded-full
-        px-2 py-2
-      "
-    >
-      {/* Moving background */}
+    <div className="relative inline-flex bg-white border border-borderGray rounded-full px-2 py-2">
+
+      {/* ACTIVE BACKGROUND */}
       <div
         ref={bgRef}
         className="
-          absolute top-2 bottom-2 
+          absolute top-2 bottom-2
           bg-brandBlack rounded-full
           transition-all duration-300
         "
-        style={{ width: 0 }}
+        style={{ width: 0, transform: "translateX(0)" }}
       />
 
-      {tabs.map((t, i) => {
-        const isActive = t.id === value;
+      {tabs.map((t) => {
+        const isActive = value === t.id;
 
         return (
           <button
             key={t.id}
-            ref={(el) => (btnRefs.current[i] = el)}
+            ref={(el) => (btnRefs.current[t.id] = el)}
             onClick={() => onChange(t.id)}
             className={`
-              relative z-10 flex items-center gap-2
-              px-6 py-3 text-[16px] font-normal whitespace-nowrap
+              relative z-10
+              flex items-center gap-2
+              px-5 py-2
+              text-[16px] font-normal
+              whitespace-nowrap
               rounded-full transition-all
               ${isActive ? "text-white" : "text-brandBlack hover:text-black"}
             `}
           >
             <img
               src={isActive ? t.iconActive : t.iconInactive}
-              alt=""
               className="w-6 h-6"
+              alt=""
             />
             {t.label}
           </button>
