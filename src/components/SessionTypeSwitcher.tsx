@@ -25,10 +25,9 @@ export function SessionTypeSwitcher({ value, onChange }) {
   return (
     <div
       className="
-        relative w-full max-w-[420px]
+        relative inline-flex
         bg-white border border-borderGray rounded-full
-        mx-auto flex
-        px-3 py-2    /* 12px left/right, 8px top/bottom */
+        px-3 py-2  /* 12px по бокам, 8 сверху/снизу */
       "
     >
       {/* Active background */}
@@ -49,11 +48,11 @@ export function SessionTypeSwitcher({ value, onChange }) {
             key={t.id}
             onClick={() => onChange(t.id)}
             className={`
-              relative z-10 flex-1
+              relative z-10
               flex items-center justify-center gap-2
+              px-6 py-3    /* 24 по бокам, 12 сверху/снизу */
               text-[16px] font-normal whitespace-nowrap
               transition-all rounded-full
-              px-6 py-3     /* 24px left/right, 12px top/bottom */
               ${isActive ? "text-white" : "text-brandBlack hover:text-black"}
             `}
           >
