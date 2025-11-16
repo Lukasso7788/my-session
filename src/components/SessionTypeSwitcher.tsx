@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+const TAB_WIDTH = 197;
 
 const tabs = [
   {
@@ -22,60 +22,49 @@ const tabs = [
 ];
 
 export function SessionTypeSwitcher({ value, onChange }) {
-  const containerRef = useRef(null);
-  const btnRefs = useRef([]);
-  const [bgStyle, setBgStyle] = useState({});
-
-  useEffect(() => {
-    const index = tabs.findIndex((t) => t.id === value);
-    const btn = btnRefs.current[index];
-    if (!btn) return;
-
-    setBgStyle({
-      width: btn.offsetWidth + "px",
-      transform: `translateX(${btn.offsetLeft}px)`,
-    });
-  }, [value]);
+  const activeIndex = tabs.findIndex((t) => t.id === value);
 
   return (
     <div
-      ref={containerRef}
       className="
         relative inline-flex items-center
         bg-white border border-borderGray rounded-full
-        p-2
+        px-2 py-2
       "
+      style={{ width: TAB_WIDTH * 3 + 16 }}  // контейнер под три вкладки
     >
-      {/* бегунок */}
+      {/* Ползунок */}
       <div
         className="
           absolute top-2 bottom-2
           bg-brandBlack rounded-full
           transition-all duration-300
         "
-        style={bgStyle}
+        style={{
+          width: TAB_WIDTH,
+          transform: `translateX(${activeIndex * TAB_WIDTH}px)`
+        }}
       />
 
-      {tabs.map((t, idx) => {
+      {tabs.map((t) => {
         const isActive = value === t.id;
         return (
           <button
             key={t.id}
-            ref={(el) => (btnRefs.current[idx] = el)}
             onClick={() => onChange(t.id)}
             className={`
-              relative z-10 flex items-center gap-2
-              px-6 py-3
-              text-[16px] font-normal whitespace-nowrap
-              transition-all rounded-full
-              ${isActive ? "text-white" : "text-brandBlack"}
+              relative z-10 flex items-center justify-center gap-2
+              w-[197px] h-[44px]
+              text-[16px] font-normal transition-all rounded-full
+              ${isActive ? "text-white" : "text-brandBlack hover:text-black"}
             `}
           >
             <img
               src={isActive ? t.iconActive : t.iconInactive}
+              alt=""
               className="w-6 h-6"
             />
-            {t.label}
+            <span>{t.label}</span>
           </button>
         );
       })}
