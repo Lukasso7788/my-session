@@ -44,7 +44,7 @@ export function SessionTypeSwitcher({ value, onChange }) {
         px-3 py-2
       "
     >
-      {/* Dynamic active background */}
+      {/* Active BG */}
       <div
         className="
           absolute top-2 bottom-2
@@ -68,7 +68,7 @@ export function SessionTypeSwitcher({ value, onChange }) {
             className={`
               relative z-10
               flex items-center justify-center gap-2
-              px-6 py-3
+              px-3 py-2       /* FIXED - exactly 12px x 8px */
               text-[16px] font-normal whitespace-nowrap
               transition-all rounded-full
               ${isActive ? "text-white" : "text-brandBlack hover:text-black"}
