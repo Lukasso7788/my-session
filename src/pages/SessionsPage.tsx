@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Users, Clock, Plus, Calendar, UserCircle } from "lucide-react";
+import { Users, Clock, Calendar, UserCircle } from "lucide-react";
 import { CreateSessionModal } from "../components/CreateSessionModal";
 import { SessionTypeSwitcher } from "../components/SessionTypeSwitcher";
 import { formatSessionFormat } from "../utils/sessionHelpers";
@@ -76,6 +76,7 @@ export function SessionsPage() {
     fetchSessions();
   }, []);
 
+  // ---------- helpers ----------
   const isExpired = (s: Session) => {
     if (!s.start_time) return false;
     const end = new Date(s.start_time).getTime() + s.duration_minutes * 60_000;
@@ -116,6 +117,7 @@ export function SessionsPage() {
     setIsModalOpen(true);
   };
 
+  // ------- визуальные хелперы под тип сессии -------
   const getSessionKind = (type?: string | null) => {
     const low = (type || "").toLowerCase();
     if (low.includes("deep")) return "deep";
@@ -160,18 +162,24 @@ export function SessionsPage() {
       {/* ================= HEADER ================= */}
       <header className="border-b border-borderGray">
         <div className="max-w-[1280px] mx-auto px-8 py-6 flex items-center justify-between gap-3">
+          {/* Left nav */}
           <nav className="flex items-center gap-6 flex-1 text-sm text-[#2E2E2E]">
-            <button onClick={() => navigate("/sessions")} className="hover:text-black">
+            <button
+              onClick={() => navigate("/sessions")}
+              className="hover:text-black"
+            >
               Sessions
             </button>
             <button className="hover:text-black">Pricing</button>
             <button className="hover:text-black">Latest updates</button>
           </nav>
 
+          {/* Center logo */}
           <div className="flex-1 flex justify-center">
             <div className="text-4xl font-extrabold">MySession</div>
           </div>
 
+          {/* Right auth / create */}
           <div className="flex-1 flex items-center justify-end gap-3 relative">
             {!user ? (
               <div className="flex gap-3">
@@ -194,7 +202,11 @@ export function SessionsPage() {
                   onClick={handleCreateSessionClick}
                   className="inline-flex items-center gap-2 px-6 py-3 rounded-full border border-borderGray text-sm font-medium hover:bg-slate-50"
                 >
-                  <Plus size={18} />
+                  <img
+                    src="/icons/create-session.svg"
+                    alt="create session"
+                    className="w-5 h-5"
+                  />
                   <span>Create a session</span>
                 </button>
 
@@ -238,7 +250,7 @@ export function SessionsPage() {
         </div>
       </header>
 
-      {/* ================= CENTERED H1 + SWITCHER ================= */}
+      {/* ================= H1 + SWITCHER ================= */}
       <section className="max-w-[1280px] mx-auto px-8 pt-10 pb-6 space-y-8 text-center">
         <h1
           className="
@@ -297,12 +309,14 @@ export function SessionsPage() {
                 key={session.id}
                 className="border border-borderGray rounded-[42px] px-8 py-6 flex flex-col lg:flex-row lg:items-center justify-between gap-6 hover:bg-slate-50 transition-colors"
               >
+                {/* LEFT: текст и мета */}
                 <div className="flex-1 space-y-3">
                   <h3 className="text-[22px] font-semibold">
                     {session.title}
                   </h3>
 
                   <div className="flex flex-wrap gap-4 text-xs md:text-sm text-slate-600">
+                    {/* Host */}
                     <div className="flex items-center gap-1">
                       <Users size={16} />
                       <span>Host</span>
@@ -314,11 +328,13 @@ export function SessionsPage() {
                       </button>
                     </div>
 
+                    {/* Duration */}
                     <div className="flex items-center gap-1">
                       <Clock size={16} />
                       <span>{session.duration_minutes} min</span>
                     </div>
 
+                    {/* Start time */}
                     {session.start_time && (
                       <div
                         className={`flex items-center gap-1 font-medium ${
@@ -337,6 +353,7 @@ export function SessionsPage() {
                     )}
                   </div>
 
+                  {/* формат / тип сессии */}
                   <div
                     className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${formatBadgeClasses(
                       session.format
@@ -346,6 +363,7 @@ export function SessionsPage() {
                   </div>
                 </div>
 
+                {/* RIGHT: Join button */}
                 <div className="flex-shrink-0">
                   <button
                     onClick={() => handleJoinSession(session.id)}
