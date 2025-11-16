@@ -16,8 +16,9 @@ export function SessionsPage() {
   const [user, setUser] = useState<any>(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
 
-  // текущий тип вкладки (group / infinite / body)
-  const [sessionTypeTab, setSessionTypeTab] = useState<"group" | "infinite" | "body">("group");
+  const [sessionTypeTab, setSessionTypeTab] = useState<
+    "group" | "infinite" | "body"
+  >("group");
 
   // ---------- restore auth ----------
   useEffect(() => {
@@ -44,7 +45,8 @@ export function SessionsPage() {
       setIsLoading(true);
       const { data, error } = await supabase
         .from("sessions")
-        .select(`
+        .select(
+          `
           id,
           title,
           host_id,
@@ -53,7 +55,8 @@ export function SessionsPage() {
           format,
           start_time,
           status
-        `)
+        `
+        )
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -73,7 +76,6 @@ export function SessionsPage() {
     fetchSessions();
   }, []);
 
-  // ---------- helpers ----------
   const isExpired = (s: Session) => {
     if (!s.start_time) return false;
     const end = new Date(s.start_time).getTime() + s.duration_minutes * 60_000;
@@ -114,7 +116,6 @@ export function SessionsPage() {
     setIsModalOpen(true);
   };
 
-  // ------- визуальные хелперы под тип сессии -------
   const getSessionKind = (type?: string | null) => {
     const low = (type || "").toLowerCase();
     if (low.includes("deep")) return "deep";
@@ -151,7 +152,6 @@ export function SessionsPage() {
     }
   };
 
-  // пока infinite / body просто показывают плашку "coming soon"
   const visibleSessions =
     sessionTypeTab === "group" ? activeSessions : [];
 
@@ -160,24 +160,18 @@ export function SessionsPage() {
       {/* ================= HEADER ================= */}
       <header className="border-b border-borderGray">
         <div className="max-w-[1280px] mx-auto px-8 py-6 flex items-center justify-between gap-3">
-          {/* Left nav */}
           <nav className="flex items-center gap-6 flex-1 text-sm text-[#2E2E2E]">
-            <button
-              onClick={() => navigate("/sessions")}
-              className="hover:text-black"
-            >
+            <button onClick={() => navigate("/sessions")} className="hover:text-black">
               Sessions
             </button>
             <button className="hover:text-black">Pricing</button>
             <button className="hover:text-black">Latest updates</button>
           </nav>
 
-          {/* Center logo */}
           <div className="flex-1 flex justify-center">
             <div className="text-4xl font-extrabold">MySession</div>
           </div>
 
-          {/* Right auth / create */}
           <div className="flex-1 flex items-center justify-end gap-3 relative">
             {!user ? (
               <div className="flex gap-3">
@@ -244,9 +238,8 @@ export function SessionsPage() {
         </div>
       </header>
 
-      {/* ================= H1 + SWITCHER + CREATE ================= */}
-      <section className="max-w-[1280px] mx-auto px-8 pt-10 pb-6 space-y-8">
-        {/* H1 из макета */}
+      {/* ================= CENTERED H1 + SWITCHER ================= */}
+      <section className="max-w-[1280px] mx-auto px-8 pt-10 pb-6 space-y-8 text-center">
         <h1
           className="
             text-[24px]
@@ -254,32 +247,20 @@ export function SessionsPage() {
             xl:text-[36px]
             font-normal
             leading-tight
+            mx-auto
+            text-center
           "
         >
           Join a group focus session to stay accountable
         </h1>
 
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          {/* Tabs / session type switcher */}
-          <div className="flex justify-start">
-            <SessionTypeSwitcher
-              value={sessionTypeTab}
-              onChange={(val: "group" | "infinite" | "body") =>
-                setSessionTypeTab(val)
-              }
-            />
-          </div>
-
-          {/* Create session button (дублируем, как в макете – справа от switcher’а) */}
-          <div className="flex justify-start md:justify-end">
-            <button
-              onClick={handleCreateSessionClick}
-              className="inline-flex items-center gap-2 rounded-full bg-brandBlack text-white px-5 py-2.5 text-sm font-medium hover:bg-black transition-colors"
-            >
-              <Plus size={18} />
-              Create session
-            </button>
-          </div>
+        <div className="flex justify-center">
+          <SessionTypeSwitcher
+            value={sessionTypeTab}
+            onChange={(val: "group" | "infinite" | "body") =>
+              setSessionTypeTab(val)
+            }
+          />
         </div>
       </section>
 
@@ -316,14 +297,12 @@ export function SessionsPage() {
                 key={session.id}
                 className="border border-borderGray rounded-[42px] px-8 py-6 flex flex-col lg:flex-row lg:items-center justify-between gap-6 hover:bg-slate-50 transition-colors"
               >
-                {/* LEFT: текст и мета */}
                 <div className="flex-1 space-y-3">
                   <h3 className="text-[22px] font-semibold">
                     {session.title}
                   </h3>
 
                   <div className="flex flex-wrap gap-4 text-xs md:text-sm text-slate-600">
-                    {/* Host */}
                     <div className="flex items-center gap-1">
                       <Users size={16} />
                       <span>Host</span>
@@ -335,13 +314,11 @@ export function SessionsPage() {
                       </button>
                     </div>
 
-                    {/* Duration */}
                     <div className="flex items-center gap-1">
                       <Clock size={16} />
                       <span>{session.duration_minutes} min</span>
                     </div>
 
-                    {/* Start time */}
                     {session.start_time && (
                       <div
                         className={`flex items-center gap-1 font-medium ${
@@ -360,7 +337,6 @@ export function SessionsPage() {
                     )}
                   </div>
 
-                  {/* формат / тип сессии */}
                   <div
                     className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${formatBadgeClasses(
                       session.format
@@ -370,7 +346,6 @@ export function SessionsPage() {
                   </div>
                 </div>
 
-                {/* RIGHT: Join button */}
                 <div className="flex-shrink-0">
                   <button
                     onClick={() => handleJoinSession(session.id)}
@@ -390,14 +365,12 @@ export function SessionsPage() {
         )}
       </main>
 
-      {/* MODAL: create session */}
       <CreateSessionModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSessionCreated={fetchSessions}
       />
 
-      {/* LOGIN PROMPT */}
       {isLoginPromptOpen && (
         <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-30">
           <div className="bg-white rounded-2xl p-8 w-[400px] text-center space-y-4 shadow-xl">
