@@ -15,30 +15,27 @@ export function SessionsPage() {
   const [user, setUser] = useState<any>(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
 
-  // -------------------------------------
-  // AUTH RESTORE
-  // -------------------------------------
+  // restore auth
   useEffect(() => {
-    const getCurrent = async () => {
+    const getCurrentSession = async () => {
       const { data } = await supabase.auth.getSession();
       setUser(data?.session?.user ?? null);
     };
-    getCurrent();
+    getCurrentSession();
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_e, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
     });
 
-    return () => listener.subscription.unsubscribe();
+    return () => {
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
-  // -------------------------------------
-  // LOAD SESSIONS
-  // -------------------------------------
+  // load sessions
   const fetchSessions = async () => {
     try {
       setIsLoading(true);
-
       const { data, error } = await supabase
         .from("sessions")
         .select(`
@@ -55,12 +52,12 @@ export function SessionsPage() {
 
       if (error) throw error;
 
-      setSessions(data || []);
+      setSessions((data || []) as Session[]);
       localStorage.setItem("sessions", JSON.stringify(data || []));
-    } catch (err) {
-      // fallback
-      const stored = localStorage.getItem("sessions");
-      if (stored) setSessions(JSON.parse(stored));
+    } catch (error) {
+      console.error("Error fetching sessions:", error);
+      const saved = localStorage.getItem("sessions");
+      if (saved) setSessions(JSON.parse(saved));
     } finally {
       setIsLoading(false);
     }
@@ -70,12 +67,10 @@ export function SessionsPage() {
     fetchSessions();
   }, []);
 
-  // -------------------------------------
-  // Filters
-  // -------------------------------------
   const isExpired = (s: Session) => {
     if (!s.start_time) return false;
-    return Date.now() > new Date(s.start_time).getTime() + s.duration_minutes * 60_000;
+    const end = new Date(s.start_time).getTime() + s.duration_minutes * 60_000;
+    return Date.now() > end;
   };
 
   const activeSessions = useMemo(
@@ -83,62 +78,83 @@ export function SessionsPage() {
     [sessions]
   );
 
-  const isFutureSession = (dateString: string) =>
-    new Date(dateString) > new Date();
-
   const formatDateTime = (dateString: string) => {
-    const d = new Date(dateString);
-    return d.toLocaleString("en-US", {
+    const date = new Date(dateString);
+    return date.toLocaleString("en-US", {
       month: "short",
       day: "numeric",
       hour: "numeric",
-      minute: "2-digit"
+      minute: "2-digit",
     });
   };
 
-  // -------------------------------------
-  // JOIN SESSION
-  // -------------------------------------
+  const isFutureSession = (dateString: string) =>
+    new Date(dateString) > new Date();
+
   const handleJoinSession = (sessionId: string) => {
-    if (!user) return setIsLoginPromptOpen(true);
+    if (!user) {
+      setIsLoginPromptOpen(true);
+      return;
+    }
     navigate(`/room/${sessionId}`);
   };
 
-  // -------------------------------------
-  // CREATE SESSION
-  // -------------------------------------
   const handleCreateSessionClick = () => {
-    if (!user) return setIsLoginPromptOpen(true);
+    if (!user) {
+      setIsLoginPromptOpen(true);
+      return;
+    }
     setIsModalOpen(true);
   };
 
-  // -------------------------------------
-  // UI
-  // -------------------------------------
+  const sessionTypeColor = (type: string) => {
+    if (!type) return "text-brandBlack";
+
+    const low = type.toLowerCase();
+
+    if (low.includes("deep")) return "text-deepWork";
+    if (low.includes("pomo")) return "text-pomodoro";
+    if (low.includes("sprint")) return "text-sprints";
+
+    return "text-brandBlack";
+  };
+
+  const sessionTypeBadge = (type: string) => {
+    if (!type) return "text-brandBlack border-brandBlack";
+
+    const low = type.toLowerCase();
+
+    if (low.includes("deep")) return "text-deepWork border-deepWork";
+    if (low.includes("pomo")) return "text-pomodoro border-pomodoro";
+    if (low.includes("sprint")) return "text-sprints border-sprints";
+
+    return "text-brandBlack border-brandBlack";
+  };
+
+  const hoverType = (type: string) => {
+    const low = type.toLowerCase();
+
+    if (low.includes("deep")) return "hover:border-deepWork hover:text-deepWork";
+    if (low.includes("pomo")) return "hover:border-pomodoro hover:text-pomodoro";
+    if (low.includes("sprint")) return "hover:border-sprints hover:text-sprints";
+
+    return "hover:border-brandBlack hover:text-brandBlack";
+  };
+
   return (
     <div className="min-h-screen bg-white text-brandBlack font-inter">
 
-      {/* ---------------------------------------------------
-         HEADER
-      --------------------------------------------------- */}
-      <header className="max-w-6xl mx-auto px-8 py-6 flex items-center justify-between border-b border-borderGray">
+      {/* HEADER */}
+      <header className="max-w-6xl mx-auto px-8 py-6 flex items-center justify-between">
 
-        {/* Logo + Heading */}
-        <div className="flex flex-col gap-2">
-          <div className="text-[36px] font-extrabold leading-none">
-            MySession
-          </div>
+        <div className="text-2xl font-black">MySession</div>
 
-          <h1 className="
-            text-[24px]
-            md:text-[28px]
-            xl:text-[36px]
-            font-normal
-            leading-tight
-          ">
-            Join a group focus session to stay accountable
-          </h1>
-        </div>
+        {/* Nav */}
+        <nav className="flex gap-6 text-sm text-slate-600">
+          <button onClick={() => navigate("/sessions")} className="hover:text-black">Sessions</button>
+          <button className="hover:text-black">Pricing</button>
+          <button className="hover:text-black">Latest updates</button>
+        </nav>
 
         {/* Auth */}
         <div className="relative">
@@ -146,11 +162,10 @@ export function SessionsPage() {
             <div className="flex gap-3">
               <button
                 onClick={() => navigate("/login")}
-                className="px-4 py-2 rounded-full border border-borderGray text-brandBlack hover:bg-slate-50 text-sm font-medium"
+                className="px-4 py-2 rounded-full border border-borderGray text-sm hover:bg-slate-50"
               >
                 Log in
               </button>
-
               <button
                 onClick={() => navigate("/register")}
                 className="px-4 py-2 rounded-full bg-brandBlack text-white hover:bg-black text-sm font-medium"
@@ -162,13 +177,12 @@ export function SessionsPage() {
             <div>
               <button
                 onClick={() => setShowUserMenu((v) => !v)}
-                className="focus:outline-none"
+                className="flex items-center"
               >
                 {user.user_metadata?.avatar_url ? (
                   <img
                     src={user.user_metadata.avatar_url}
                     className="w-10 h-10 rounded-full border border-borderGray"
-                    alt="avatar"
                   />
                 ) : (
                   <UserCircle className="w-10 h-10 text-slate-600" />
@@ -176,14 +190,13 @@ export function SessionsPage() {
               </button>
 
               {showUserMenu && (
-                <div className="absolute right-0 mt-2 bg-white border border-borderGray rounded-xl shadow-lg w-48 z-20">
+                <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-borderGray z-20">
                   <button
                     onClick={() => navigate("/profile")}
                     className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50"
                   >
                     Profile
                   </button>
-
                   <button
                     onClick={async () => {
                       await supabase.auth.signOut();
@@ -200,115 +213,115 @@ export function SessionsPage() {
         </div>
       </header>
 
-      {/* ---------------------------------------------------
-         Create Session Button
-      --------------------------------------------------- */}
-      <div className="max-w-6xl mx-auto px-8 py-6">
-        <button
-          onClick={handleCreateSessionClick}
-          className="
-            inline-flex items-center gap-2
-            rounded-full bg-brandBlack text-white
-            px-5 py-2.5 text-sm font-medium
-            hover:bg-black transition-colors
-          "
-        >
-          <Plus size={18} />
-          Create session
-        </button>
+      {/* H1 + Button */}
+      <div className="max-w-6xl mx-auto px-8 mt-10">
+        <h1 className="text-[28px] md:text-[32px] xl:text-[40px] font-medium">
+          Join a group focus session to stay accountable
+        </h1>
+
+        <div className="flex justify-between items-center mt-8">
+          {/* Filter tabs */}
+          <div className="flex gap-3">
+            <button className="px-4 py-2 rounded-full bg-black text-white text-sm">
+              Group sessions
+            </button>
+            <button className="px-4 py-2 rounded-full bg-slate-100 text-sm">
+              Infinite rooms
+            </button>
+            <button className="px-4 py-2 rounded-full bg-slate-100 text-sm">
+              Body tripling
+            </button>
+          </div>
+
+          <button
+            onClick={handleCreateSessionClick}
+            className="flex items-center gap-2 px-5 py-2 rounded-full bg-brandBlack text-white hover:bg-black text-sm font-medium"
+          >
+            <Plus size={18} />
+            Create a session
+          </button>
+        </div>
       </div>
 
-      {/* ---------------------------------------------------
-         Sessions List
-      --------------------------------------------------- */}
-      <main className="max-w-6xl mx-auto px-8 pb-12">
-
+      {/* SESSION LIST */}
+      <div className="max-w-6xl mx-auto px-8 py-12">
         {isLoading ? (
           <div className="text-center py-12">
-            <div className="w-8 h-8 border-b-2 border-brandBlack rounded-full animate-spin mx-auto" />
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-brandBlack"></div>
           </div>
         ) : activeSessions.length === 0 ? (
           <div className="border border-borderGray rounded-2xl p-10 text-center">
             <p className="text-sm text-slate-600 mb-4">No active sessions available</p>
             <button
               onClick={handleCreateSessionClick}
-              className="text-sm text-brandBlack underline underline-offset-4"
+              className="text-sm underline underline-offset-4"
             >
               Create the first session
             </button>
           </div>
         ) : (
-          <div className="space-y-4">
-
-            {activeSessions.map((s) => (
+          <div className="space-y-6">
+            {activeSessions.map((session) => (
               <div
-                key={s.id}
-                className="
-                  border border-borderGray rounded-2xl
-                  px-6 py-4 flex justify-between items-start
-                  hover:bg-slate-50 transition-colors
-                "
+                key={session.id}
+                className="border border-borderGray rounded-2xl p-6 flex justify-between"
               >
+                {/* left */}
                 <div className="flex-1 space-y-3">
-
-                  <h3 className="text-lg font-semibold text-brandBlack">
-                    {s.title}
-                  </h3>
-
-                  <div className="flex flex-wrap gap-4 text-xs text-slate-600">
-
-                    <div className="flex items-center gap-1">
-                      <Users size={14} />
-                      <span>
-                        Host{" "}
-                        <button
-                          className="underline underline-offset-2"
-                          onClick={() => navigate(`/profile/${s.host_id}`)}
-                        >
-                          {s.host_name ?? "Unknown"}
-                        </button>
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-1">
-                      <Clock size={14} />
-                      <span>{s.duration_minutes} min</span>
-                    </div>
-
-                    {s.start_time && (
-                      <div
-                        className={`
-                          flex items-center gap-1 font-medium
-                          ${
-                            isFutureSession(s.start_time)
-                              ? "text-deepWork"
-                              : "text-pomodoro"
-                          }
-                        `}
-                      >
-                        <Calendar size={14} />
-                        <span>
-                          {isFutureSession(s.start_time)
-                            ? `Starts ${formatDateTime(s.start_time)}`
-                            : `Started ${formatDateTime(s.start_time)}`}
-                        </span>
-                      </div>
-                    )}
-
+                  <div className="text-xl font-semibold flex items-center gap-2">
+                    {session.title}
                   </div>
 
-                  <div className="inline-flex items-center border border-borderGray rounded-full px-3 py-1 text-xs font-medium">
-                    {formatSessionFormat(s.format)}
+                  <div className="flex gap-4 text-sm text-slate-600">
+                    {/* host */}
+                    <div className="flex items-center gap-1">
+                      <Users size={16} />
+                      Host:
+                      <button
+                        className="underline underline-offset-2"
+                        onClick={() => navigate(`/profile/${session.host_id}`)}
+                      >
+                        {session.host_name}
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <Clock size={16} />
+                      {session.duration_minutes} min
+                    </div>
+
+                    <div
+                      className={`flex items-center gap-1 font-medium ${
+                        isFutureSession(session.start_time)
+                          ? "text-deepWork"
+                          : "text-pomodoro"
+                      }`}
+                    >
+                      <Calendar size={16} />
+                      {isFutureSession(session.start_time)
+                        ? `Starts ${formatDateTime(session.start_time)}`
+                        : `Started ${formatDateTime(session.start_time)}`}
+                    </div>
+                  </div>
+
+                  <div
+                    className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${sessionTypeBadge(
+                      session.format
+                    )}`}
+                  >
+                    {formatSessionFormat(session.format)}
                   </div>
                 </div>
 
+                {/* right */}
                 <button
-                  onClick={() => handleJoinSession(s.id)}
-                  className="
-                    ml-4 rounded-full
-                    bg-deepWork text-white text-sm font-medium
-                    px-5 py-2 hover:opacity-90 transition-colors
-                  "
+                  onClick={() => handleJoinSession(session.id)}
+                  className={`
+                    ml-6 px-6 py-2 rounded-full border text-sm font-medium 
+                    bg-brandBlack text-white hover:bg-white hover:border-2
+                    transition-all
+                    ${hoverType(session.format)}
+                  `}
                 >
                   Join session
                 </button>
@@ -316,22 +329,19 @@ export function SessionsPage() {
             ))}
           </div>
         )}
+      </div>
 
-      </main>
-
-      {/* MODALS */}
       <CreateSessionModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSessionCreated={fetchSessions}
       />
 
+      {/* LOGIN PROMPT */}
       {isLoginPromptOpen && (
         <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-30">
           <div className="bg-white rounded-2xl p-8 w-[400px] text-center space-y-4 shadow-xl">
-            <h2 className="text-xl font-semibold text-brandBlack">
-              Sign up or Log in
-            </h2>
+            <h2 className="text-xl font-semibold">Sign up or Log in</h2>
             <p className="text-slate-600 text-sm">
               You need an account to create or join sessions.
             </p>
@@ -352,7 +362,6 @@ export function SessionsPage() {
           </div>
         </div>
       )}
-
     </div>
   );
 }
