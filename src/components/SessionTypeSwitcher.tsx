@@ -1,3 +1,5 @@
+import { useRef, useEffect, useState } from "react";
+
 const tabs = [
   {
     id: "group",
@@ -20,37 +22,53 @@ const tabs = [
 ];
 
 export function SessionTypeSwitcher({ value, onChange }) {
-  const activeIndex = tabs.findIndex((t) => t.id === value);
+  const btnRefs = useRef([]);
+  const [bgStyle, setBgStyle] = useState({ width: 0, left: 0 });
+
+  useEffect(() => {
+    const index = tabs.findIndex((t) => t.id === value);
+    const el = btnRefs.current[index];
+    if (el) {
+      setBgStyle({
+        width: el.offsetWidth,
+        left: el.offsetLeft,
+      });
+    }
+  }, [value]);
 
   return (
     <div
       className="
         relative inline-flex
         bg-white border border-borderGray rounded-full
-        px-3 py-2  /* 12px по бокам, 8 сверху/снизу */
+        px-3 py-2
       "
     >
-      {/* Active background */}
+      {/* Dynamic active background */}
       <div
         className="
           absolute top-2 bottom-2
-          w-1/3 bg-brandBlack rounded-full
+          bg-brandBlack rounded-full
           transition-all duration-300
         "
-        style={{ transform: `translateX(${activeIndex * 100}%)` }}
+        style={{
+          width: bgStyle.width,
+          transform: `translateX(${bgStyle.left}px)`,
+        }}
       />
 
-      {tabs.map((t) => {
+      {tabs.map((t, idx) => {
         const isActive = value === t.id;
 
         return (
           <button
             key={t.id}
+            ref={(el) => (btnRefs.current[idx] = el)}
             onClick={() => onChange(t.id)}
             className={`
               relative z-10
               flex items-center justify-center gap-2
-              px-6 py-3    /* 24 по бокам, 12 сверху/снизу */
+              px-6 py-3
               text-[16px] font-normal whitespace-nowrap
               transition-all rounded-full
               ${isActive ? "text-white" : "text-brandBlack hover:text-black"}
@@ -59,7 +77,7 @@ export function SessionTypeSwitcher({ value, onChange }) {
             <img
               src={isActive ? t.iconActive : t.iconInactive}
               alt=""
-              className="w-6 h-6" /* 24px */
+              className="w-6 h-6"
             />
             <span>{t.label}</span>
           </button>
