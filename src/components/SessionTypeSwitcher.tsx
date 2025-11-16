@@ -22,59 +22,50 @@ const tabs = [
 ];
 
 export function SessionTypeSwitcher({ value, onChange }) {
-  const btnRefs = useRef({});
-  const bgRef = useRef(null);
+  const [bgStyle, setBgStyle] = useState({});
+  const refs = useRef({});
 
-  // Track background width/position
   useEffect(() => {
-    const activeBtn = btnRefs.current[value];
-    const bg = bgRef.current;
+    const el = refs.current[value];
+    if (!el) return;
 
-    if (activeBtn && bg) {
-      const { offsetWidth, offsetLeft } = activeBtn;
-      bg.style.width = `${offsetWidth}px`;
-      bg.style.transform = `translateX(${offsetLeft}px)`;
-    }
+    const rect = el.getBoundingClientRect();
+    const parentRect = el.parentElement.getBoundingClientRect();
+
+    setBgStyle({
+      width: rect.width + "px",
+      height: rect.height + "px",
+      transform: `translateX(${rect.left - parentRect.left}px)`,
+    });
   }, [value]);
 
   return (
-    <div className="relative inline-flex bg-white border border-borderGray rounded-full px-2 py-2">
-
-      {/* ACTIVE BACKGROUND */}
+    <div className="relative inline-flex items-center bg-white border border-borderGray rounded-full px-2 py-2">
+      {/* Moving background */}
       <div
-        ref={bgRef}
-        className="
-          absolute top-2 bottom-2
-          bg-brandBlack rounded-full
-          transition-all duration-300
-        "
-        style={{ width: 0, transform: "translateX(0)" }}
+        className="absolute rounded-full bg-brandBlack transition-all duration-300"
+        style={bgStyle}
       />
 
+      {/* Tabs */}
       {tabs.map((t) => {
         const isActive = value === t.id;
 
         return (
           <button
             key={t.id}
-            ref={(el) => (btnRefs.current[t.id] = el)}
+            ref={(el) => (refs.current[t.id] = el)}
             onClick={() => onChange(t.id)}
-            className={`
-              relative z-10
-              flex items-center gap-2
-              px-5 py-2
-              text-[16px] font-normal
-              whitespace-nowrap
-              rounded-full transition-all
+            className={`relative z-10 inline-flex items-center gap-2 px-3 py-2 text-[16px] rounded-full transition-all
               ${isActive ? "text-white" : "text-brandBlack hover:text-black"}
             `}
           >
             <img
               src={isActive ? t.iconActive : t.iconInactive}
-              className="w-6 h-6"
               alt=""
+              className="w-5 h-5"
             />
-            {t.label}
+            <span>{t.label}</span>
           </button>
         );
       })}
