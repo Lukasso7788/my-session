@@ -49,7 +49,9 @@ export function SessionsPage() {
       }
     );
 
-    return () => listener.subscription.unsubscribe();
+    return () => {
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
   // load sessions
@@ -86,7 +88,8 @@ export function SessionsPage() {
 
   const isExpired = (s: Session) => {
     if (!s.start_time) return false;
-    const end = new Date(s.start_time).getTime() + s.duration_minutes * 60_000;
+    const end =
+      new Date(s.start_time).getTime() + s.duration_minutes * 60_000;
     return Date.now() > end;
   };
 
@@ -109,12 +112,18 @@ export function SessionsPage() {
     new Date(dateString) > new Date();
 
   const handleJoinSession = (sessionId: string) => {
-    if (!user) return setIsLoginPromptOpen(true);
+    if (!user) {
+      setIsLoginPromptOpen(true);
+      return;
+    }
     navigate(`/room/${sessionId}`);
   };
 
   const handleCreateSessionClick = () => {
-    if (!user) return setIsLoginPromptOpen(true);
+    if (!user) {
+      setIsLoginPromptOpen(true);
+      return;
+    }
     setIsModalOpen(true);
   };
 
@@ -126,15 +135,25 @@ export function SessionsPage() {
 
         <div className="text-2xl font-black">MySession</div>
 
-        {/* NAV */}
+        {/* Nav */}
         <nav className="flex gap-6 text-sm text-slate-600">
           <button onClick={() => navigate("/sessions")} className="hover:text-black">Sessions</button>
           <button className="hover:text-black">Pricing</button>
           <button className="hover:text-black">Latest updates</button>
         </nav>
 
-        {/* AUTH */}
+        {/* Auth */}
         <div className="relative flex items-center gap-4">
+
+          {/* Create session button with icon */}
+          <button
+            onClick={handleCreateSessionClick}
+            className="flex items-center gap-2 px-5 py-2 rounded-full bg-brandBlack text-white hover:bg-black text-sm font-medium"
+          >
+            <img src={CreateIcon} className="w-4 h-4" />
+            Create
+          </button>
+
           {!user ? (
             <div className="flex gap-3">
               <button
@@ -151,7 +170,7 @@ export function SessionsPage() {
               </button>
             </div>
           ) : (
-            <>
+            <div>
               <button
                 onClick={() => setShowUserMenu((v) => !v)}
                 className="flex items-center"
@@ -185,19 +204,20 @@ export function SessionsPage() {
                   </button>
                 </div>
               )}
-            </>
+            </div>
           )}
         </div>
       </header>
 
-      {/* CENTER TITLE */}
+      {/* CENTERED H1 + SWITCHER */}
       <div className="max-w-4xl mx-auto px-8 mt-10 text-center flex flex-col items-center">
-        <h1 className="text-[28px] md:text-[32px] xl:text-[40px] font-medium text-center">
+
+        <h1 className="text-[28px] md:text-[32px] xl:text-[40px] font-medium">
           Join a group focus session to stay accountable
         </h1>
 
-        {/* CENTER SWITCHER */}
         <div className="flex items-center gap-3 mt-8">
+
           {tabs.map((t) => (
             <button
               key={t.id}
@@ -215,17 +235,7 @@ export function SessionsPage() {
               {t.label}
             </button>
           ))}
-        </div>
 
-        {/* RIGHT-ALIGNED CREATE BUTTON */}
-        <div className="flex justify-end w-full mt-6 pr-2">
-          <button
-            onClick={handleCreateSessionClick}
-            className="flex items-center gap-2 px-5 py-2 rounded-full bg-brandBlack text-white hover:bg-black text-sm font-medium"
-          >
-            <img src={CreateIcon} className="w-4 h-4" />
-            Create session
-          </button>
         </div>
       </div>
 
@@ -256,6 +266,7 @@ export function SessionsPage() {
                   </div>
 
                   <div className="flex gap-4 text-sm text-slate-600">
+
                     <div className="flex items-center gap-1">
                       <Users size={16} />
                       Host:
@@ -310,7 +321,7 @@ export function SessionsPage() {
         onSessionCreated={fetchSessions}
       />
 
-      {/* LOGIN MODAL */}
+      {/* LOGIN PROMPT */}
       {isLoginPromptOpen && (
         <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-30">
           <div className="bg-white rounded-2xl p-8 w-[400px] text-center space-y-4 shadow-xl">
