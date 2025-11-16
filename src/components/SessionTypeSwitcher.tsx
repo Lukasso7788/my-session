@@ -1,25 +1,27 @@
-export function SessionTypeSwitcher({ value, onChange }) {
-  const tabs = [
-    {
-      id: "group",
-      label: "Group sessions",
-      iconActive: "/icons/group-active.svg",
-      iconInactive: "/icons/group-inactive.svg",
-    },
-    {
-      id: "infinite",
-      label: "Infinite rooms",
-      iconActive: "/icons/infinite-active.svg",
-      iconInactive: "/icons/infinite-inactive.svg",
-    },
-    {
-      id: "body",
-      label: "Body tripling",
-      iconActive: "/icons/body-active.svg",
-      iconInactive: "/icons/body-inactive.svg",
-    },
-  ];
+import { useState } from "react";
 
+const tabs = [
+  {
+    id: "group",
+    label: "Group sessions",
+    iconActive: "/icons/group-active.svg",
+    iconInactive: "/icons/group-inactive.svg",
+  },
+  {
+    id: "infinite",
+    label: "Infinite rooms",
+    iconActive: "/icons/infinite-active.svg",
+    iconInactive: "/icons/infinite-inactive.svg",
+  },
+  {
+    id: "body",
+    label: "Body tripling",
+    iconActive: "/icons/body-active.svg",
+    iconInactive: "/icons/body-inactive.svg",
+  },
+];
+
+export function SessionTypeSwitcher({ value, onChange }) {
   const activeIndex = tabs.findIndex((t) => t.id === value);
 
   return (
@@ -33,28 +35,22 @@ export function SessionTypeSwitcher({ value, onChange }) {
 
       {tabs.map((t) => {
         const isActive = value === t.id;
-
         return (
           <button
             key={t.id}
-            className={`
-              relative z-10 flex-1 
-              flex items-center justify-center gap-2
-              px-3 py-2
-              text-[16px] font-normal leading-normal
-              transition-all
-              ${
-                isActive
-                  ? "text-white"
-                  : "text-brandBlack hover:text-black"
-              }
-            `}
             onClick={() => onChange(t.id)}
+            className={`
+              relative z-10 flex-1 py-2 px-2
+              flex items-center justify-center gap-1.5
+              text-[16px] font-normal whitespace-nowrap
+              transition-all
+              ${isActive ? "text-white" : "text-brandBlack hover:text-black"}
+            `}
           >
             <img
               src={isActive ? t.iconActive : t.iconInactive}
               alt=""
-              className="w-4 h-4"
+              className="w-[18px] h-[18px]"
             />
             <span>{t.label}</span>
           </button>
