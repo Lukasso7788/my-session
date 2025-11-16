@@ -188,6 +188,51 @@ export function RoomPage() {
     })();
   }, []);
 
+  // ====== ATTENDANCE REALTIME ======
+useEffect(() => {
+  if (!id) return;
+
+  const fetchAttendance = async () => {
+    const { data, error } = await supabase
+      .from("session_attendance")
+      .select("*")
+      .eq("session_id", id);
+
+    if (error) {
+      console.error("Attendance fetch error:", error);
+      return;
+    }
+
+    console.log("Attendance updated:", data);
+  };
+
+  // INITIAL LOAD
+  fetchAttendance();
+
+  // SUBSCRIBE TO CHANGES IN attendance TABLE
+  const sub = supabase
+    .channel(`session-${id}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "session_attendance",
+        filter: `session_id=eq.${id}`,
+      },
+      () => {
+        console.log("Realtime attendance change received");
+        fetchAttendance();
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(sub);
+  };
+}, [id]);
+
+
   // ============================================
   // DAILY INIT
   // ============================================
