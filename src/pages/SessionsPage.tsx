@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Users, Clock, Calendar, UserCircle } from "lucide-react";
+import { UserCircle } from "lucide-react";
 import { CreateSessionModal } from "../components/CreateSessionModal";
 import { SessionTypeSwitcher } from "../components/SessionTypeSwitcher";
-import { formatSessionFormat } from "../utils/sessionHelpers";
 import { supabase } from "../lib/supabase";
+import { SessionCard } from "../components/SessionCard"; // ← новая карточка
 import type { Session } from "../types/session";
 
 export function SessionsPage() {
@@ -79,7 +79,7 @@ export function SessionsPage() {
   // ---------- helpers ----------
   const isExpired = (s: Session) => {
     if (!s.start_time) return false;
-    const end = new Date(s.start_time).getTime() + s.duration_minutes * 60_000;
+    const end = new Date(s.start_time).getTime() + s.duration_minutes * 60000;
     return Date.now() > end;
   };
 
@@ -87,19 +87,6 @@ export function SessionsPage() {
     () => sessions.filter((s) => !isExpired(s)),
     [sessions]
   );
-
-  const formatDateTime = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  };
-
-  const isFutureSession = (dateString: string) =>
-    new Date(dateString) > new Date();
 
   const handleJoinSession = (sessionId: string) => {
     if (!user) {
@@ -115,43 +102,6 @@ export function SessionsPage() {
       return;
     }
     setIsModalOpen(true);
-  };
-
-  // ------- визуальные хелперы под тип сессии -------
-  const getSessionKind = (type?: string | null) => {
-    const low = (type || "").toLowerCase();
-    if (low.includes("deep")) return "deep";
-    if (low.includes("pomo")) return "pomo";
-    if (low.includes("sprint")) return "sprint";
-    return "other";
-  };
-
-  const formatBadgeClasses = (type: string) => {
-    const kind = getSessionKind(type);
-    switch (kind) {
-      case "deep":
-        return "border-deepWork text-deepWork";
-      case "pomo":
-        return "border-pomodoro text-pomodoro";
-      case "sprint":
-        return "border-sprints text-sprints";
-      default:
-        return "border-brandBlack text-brandBlack";
-    }
-  };
-
-  const joinHoverClasses = (type: string) => {
-    const kind = getSessionKind(type);
-    switch (kind) {
-      case "deep":
-        return "hover:bg-deepWork";
-      case "pomo":
-        return "hover:bg-pomodoro";
-      case "sprint":
-        return "hover:bg-sprints";
-      default:
-        return "hover:bg-brandBlack";
-    }
   };
 
   const visibleSessions =
@@ -269,9 +219,7 @@ export function SessionsPage() {
         <div className="flex justify-center">
           <SessionTypeSwitcher
             value={sessionTypeTab}
-            onChange={(val: "group" | "infinite" | "body") =>
-              setSessionTypeTab(val)
-            }
+            onChange={(val) => setSessionTypeTab(val)}
           />
         </div>
       </section>
@@ -305,79 +253,12 @@ export function SessionsPage() {
         ) : (
           <div className="space-y-6">
             {visibleSessions.map((session) => (
-              <div
+              <SessionCard
                 key={session.id}
-                className="border border-borderGray rounded-[42px] px-8 py-6 flex flex-col lg:flex-row lg:items-center justify-between gap-6 hover:bg-slate-50 transition-colors"
-              >
-                {/* LEFT: текст и мета */}
-                <div className="flex-1 space-y-3">
-                  <h3 className="text-[22px] font-semibold">
-                    {session.title}
-                  </h3>
-
-                  <div className="flex flex-wrap gap-4 text-xs md:text-sm text-slate-600">
-                    {/* Host */}
-                    <div className="flex items-center gap-1">
-                      <Users size={16} />
-                      <span>Host</span>
-                      <button
-                        className="underline underline-offset-2"
-                        onClick={() => navigate(`/profile/${session.host_id}`)}
-                      >
-                        {session.host_name || "Unknown"}
-                      </button>
-                    </div>
-
-                    {/* Duration */}
-                    <div className="flex items-center gap-1">
-                      <Clock size={16} />
-                      <span>{session.duration_minutes} min</span>
-                    </div>
-
-                    {/* Start time */}
-                    {session.start_time && (
-                      <div
-                        className={`flex items-center gap-1 font-medium ${
-                          isFutureSession(session.start_time)
-                            ? "text-deepWork"
-                            : "text-pomodoro"
-                        }`}
-                      >
-                        <Calendar size={16} />
-                        <span>
-                          {isFutureSession(session.start_time)
-                            ? `Starts ${formatDateTime(session.start_time)}`
-                            : `Started ${formatDateTime(session.start_time)}`}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* формат / тип сессии */}
-                  <div
-                    className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${formatBadgeClasses(
-                      session.format
-                    )}`}
-                  >
-                    {formatSessionFormat(session.format)}
-                  </div>
-                </div>
-
-                {/* RIGHT: Join button */}
-                <div className="flex-shrink-0">
-                  <button
-                    onClick={() => handleJoinSession(session.id)}
-                    className={`
-                      px-6 py-2 rounded-full border text-sm font-medium
-                      bg-brandBlack text-white border-brandBlack
-                      transition-colors
-                      ${joinHoverClasses(session.format)}
-                    `}
-                  >
-                    Join session
-                  </button>
-                </div>
-              </div>
+                session={session}
+                onJoin={() => handleJoinSession(session.id)}
+                onHostClick={() => navigate(`/profile/${session.host_id}`)}
+              />
             ))}
           </div>
         )}
