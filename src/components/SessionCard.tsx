@@ -1,104 +1,79 @@
-// src/components/SessionCard.tsx
-import React from "react";
-import { useNavigate } from "react-router-dom";
-
-type Booking = {
-  user_id: string;
-};
-
-type Attendance = {
-  id: string;
-  session_id: string;
-  user_id: string;
-};
-
-type SessionCardProps = {
-  session: any; // Session + session_bookings + session_attendance
-  userId?: string | null;
-  onBook: (sessionId: string) => void;
-  onCancelBooking: (sessionId: string) => void;
-  onJoin: (sessionId: string) => void;
-  onDelete: (sessionId: string) => void;
-};
-
-const TYPE_META = {
-  deep: {
-    label: "Deep work",
-    color: "#5286F6",
-    bg: "#E4EDFF",
-    joinHover: "hover:bg-deepWork",
-  },
-  pomo: {
-    label: "Pomodoro 25/5",
-    color: "#F65252",
-    bg: "#FFE4E4",
-    joinHover: "hover:bg-pomodoro",
-  },
-  short: {
-    label: "Short sprints",
-    color: "#65D46C",
-    bg: "#E5FFE9",
-    joinHover: "hover:bg-sprints",
-  },
-  other: {
-    label: "Session",
-    color: "#2F2F2F",
-    bg: "#F3F4F6",
-    joinHover: "hover:bg-brandBlack",
-  },
-} as const;
-
-function getTypeKeyFromTitle(title: string): keyof typeof TYPE_META {
-  const t = (title || "").toLowerCase();
-  if (t.includes("15/3")) return "short";
-  if (t.includes("25/5") || t.includes("pomodoro")) return "pomo";
-  if (t.includes("uninterrupted") || t.includes("focus")) return "deep";
-  return "other";
-}
-
-function formatStartLabel(start_time?: string | null): string {
-  if (!start_time) return "";
-  const start = new Date(start_time).getTime();
-  const now = Date.now();
-  const diffMs = start - now;
-  const diffMin = Math.round(Math.abs(diffMs) / 60000);
-
-  if (diffMs > 0) {
-    // future
-    return `Starts in ${diffMin} mins`;
-  } else {
-    return `Started ${diffMin} mins ago`;
-  }
-}
+import { useEffect, useState } from "react";
+import { supabase } from "../lib/supabase";
 
 export function SessionCard({
   session,
   userId,
   onBook,
-  onCancelBooking,
+  onCancel,
   onJoin,
   onDelete,
-}: SessionCardProps) {
-  const navigate = useNavigate();
-
+}) {
   const isHost = session.host_id === userId;
+  const isBooked = session.bookings?.some((b) => b.user_id === userId);
 
-  const bookings: Booking[] =
-    session.session_bookings || session.bookings || [];
+  // --- SESSION TYPE COLORS ---
+  const typeMap = {
+    "Deep work": {
+      color: "#3B82F6",
+      bg: "#E4EDFF",
+      hover: "hover:bg-deepWork",
+    },
+    Pomodoro: {
+      color: "#EF4444",
+      bg: "#FFE4E4",
+      hover: "hover:bg-pomodoro",
+    },
+    "Short sprints": {
+      color: "#22C55E",
+      bg: "#E5FFE9",
+      hover: "hover:bg-sprints",
+    },
+  };
 
-  const isBooked = !!userId && bookings.some((b) => b.user_id === userId);
+  const t = typeMap[session.type] || {
+    color: "#000",
+    bg: "#EEE",
+    hover: "hover:bg-brandBlack",
+  };
 
-  const attendance: Attendance[] =
-    session.session_attendance || session.attendance || [];
+  // --- REALTIME ATTENDANCE ---
+  const [attendanceCount, setAttendanceCount] = useState<number>(0);
 
-  const currentCount = new Set(
-    attendance.map((a) => a.user_id)
-  ).size;
+  useEffect(() => {
+    let mounted = true;
 
-  const typeKey = getTypeKeyFromTitle(session.title) as keyof typeof TYPE_META;
-  const type = TYPE_META[typeKey];
+    const load = async () => {
+      const { data, error } = await supabase
+        .from("session_attendance")
+        .select("user_id")
+        .eq("session_id", session.id);
 
-  const startLabel = formatStartLabel(session.start_time);
+      if (!error && mounted) {
+        const unique = new Set(data?.map((x) => x.user_id));
+        setAttendanceCount(unique.size);
+      }
+    };
+
+    load();
+
+    // realtime listener
+    const channel = supabase
+      .channel(`attendance_${session.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "session_attendance" },
+        () => {
+          load();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      mounted = false;
+      supabase.removeChannel(channel);
+    };
+  }, [session.id]);
 
   return (
     <div
@@ -107,151 +82,139 @@ export function SessionCard({
         px-8 py-6 bg-white
         flex flex-col lg:flex-row items-start lg:items-center
         justify-between gap-6
-        hover:bg-slate-50 transition
-        relative
+        hover:bg-slate-50 transition relative
       "
     >
-      {/* small red cross – cancel session (host only) */}
+      {/* HOST DELETE BUTTON */}
       {isHost && (
         <button
           onClick={() => onDelete(session.id)}
           className="
-            absolute right-6 top-6
-            h-9 w-9 rounded-full
-            bg-[#FEE2E2]
-            flex items-center justify-center
-            hover:bg-[#FCA5A5]
-            transition
+            absolute right-6 top-6 h-10 w-10 rounded-full
+            bg-[#FEE2E2] flex items-center justify-center
+            hover:bg-[#FECACA] transition
           "
         >
-          <span className="text-[#EF4444] text-lg leading-none">×</span>
+          <img src='/icons/delete.svg' className='w-5 h-5' />
         </button>
       )}
 
-      {/* LEFT SIDE – title + meta + tag */}
-      <div className="flex-1 space-y-3 pr-6">
-        {/* title 29px → примерно text-[22px]/[24px], но оставим 22 чтобы не ломать */}
-        <h3 className="text-[22px] md:text-[24px] font-semibold leading-tight">
-          {session.title}
-        </h3>
+      {/* LEFT PART */}
+      <div className="flex-1 space-y-3">
+        {/* Title */}
+        <h3 className="text-[29px] font-bold">{session.title}</h3>
 
-        {/* meta row */}
-        <div className="flex flex-wrap items-center gap-4 text-[12px] md:text-[13px] text-[#606060]">
-          {/* host */}
+        {/* META ROW */}
+        <div className="flex flex-wrap gap-4 text-[12px] text-[#606060]">
+          {/* HOST */}
           <div className="flex items-center gap-1">
-            <img
-              src="/icons/group-inactive.svg"
-              className="w-4 h-4 opacity-60"
-              alt=""
-            />
-            <span>Host:</span>
-            <button
-              className="underline underline-offset-2"
-              onClick={() => navigate(`/profile/${session.host_id}`)}
-            >
-              {session.host_name || "Unknown"}
-            </button>
+            <img src="/icons/user.svg" className="w-4 h-4 opacity-60" />
+            <span>Host</span>
+            <span className="underline underline-offset-2">
+              {session.host_name}
+            </span>
           </div>
 
-          {/* duration */}
+          {/* DURATION */}
           <div className="flex items-center gap-1">
-            <img
-              src="/icons/clock.svg"
-              className="w-4 h-4 opacity-60"
-              alt=""
-            />
+            <img src="/icons/clock.svg" className="w-4 h-4 opacity-60" />
             <span>{session.duration_minutes} min</span>
           </div>
 
-          {/* start label */}
-          {session.start_time && (
+          {/* START TIME */}
+          {session.startsLabel && (
             <div className="flex items-center gap-1">
-              <img
-                src="/icons/calendar.svg"
-                className="w-4 h-4 opacity-60"
-                alt=""
-              />
-              <span>{startLabel}</span>
+              <img src="/icons/calendar.svg" className="w-4 h-4 opacity-60" />
+              <span>{session.startsLabel}</span>
             </div>
           )}
-        </div>
 
-        {/* type pill */}
-        <div
-          className="
-            inline-flex items-center rounded-full px-3 py-[4px]
-            text-[10px] font-normal
-          "
-          style={{ backgroundColor: type.bg, color: type.color }}
-        >
-          {type.label}
+          {/* TAG */}
+          <div
+            className="inline-flex items-center px-3 py-1 text-[10px] font-medium rounded-full"
+            style={{ backgroundColor: t.bg, color: t.color }}
+          >
+            {session.type}
+          </div>
         </div>
       </div>
 
-      {/* RIGHT SIDE – count + buttons */}
-      <div className="flex flex-col lg:flex-row items-center gap-4 flex-shrink-0">
-        {/* count block */}
+      {/* RIGHT SIDE */}
+      <div className="flex flex-row items-center gap-4 flex-shrink-0">
+
+        {/* COUNT BLOCK */}
         <div className="px-12 text-center">
-          <div className="text-[32px] font-bold text-brandBlack leading-none">
-            {currentCount}
+          <div className="text-[32px] font-bold text-brandBlack">
+            {attendanceCount}
           </div>
-          <div className="text-[10px] text-[#606060] mt-1 tracking-wide">
-            In the session
+          <div className="text-[10px] text-[#606060] font-light -mt-1">
+            in the session
           </div>
         </div>
 
-        {/* buttons */}
+        {/* BUTTONS */}
         <div className="flex items-center gap-2">
-          {/* Book / Booked */}
+
+          {/* BOOK / CANCEL BOOKING */}
           {!isBooked ? (
             <button
               onClick={() => onBook(session.id)}
               className="
-                inline-flex items-center justify-center gap-2
-                px-6 py-3 rounded-full
-                border border-brandBlack
-                text-[14px] font-semibold
-                hover:bg-bookedGreen/20 hover:border-bookedGreen
-                transition-colors
+                border border-brandBlack rounded-full
+                px-6 py-3 text-[14px] font-semibold
+                flex items-center gap-2
+                hover:text-[#65D46C] hover:bg-transparent transition
               "
             >
-              <img src="/icons/deepwork.svg" className="w-4 h-4" alt="" />
-              <span>Book session</span>
+              <img src="/icons/book.svg" className="w-4 h-4" />
+              Book session
             </button>
           ) : (
             <button
-              onClick={() => onCancelBooking(session.id)}
+              onClick={() => onCancel(session.id)}
               className="
-                inline-flex items-center justify-center gap-2
+                border border-[#32D74B]
+                bg-[#32D74B]/20
+                text-[#32D74B]
                 px-6 py-3 rounded-full
-                border border-bookedGreen
-                bg-bookedGreen/20
-                text-[14px] font-semibold text-bookedGreen
-                transition-colors
+                text-[14px] font-semibold
               "
             >
-              <span>Booked</span>
+              Booked
             </button>
           )}
 
-          {/* Join */}
+          {/* JOIN */}
           <button
             onClick={() => onJoin(session.id)}
             className={`
-              inline-flex items-center justify-center
-              px-6 py-3 rounded-full
-              text-[14px] font-semibold
-              bg-brandBlack text-white border border-brandBlack
-              transition-colors
-              ${type.joinHover}
+              rounded-full px-6 py-3 text-[14px] font-semibold
+              bg-brandBlack text-white
+              transition
+              ${t.hover}
+              hover:border-transparent
             `}
           >
             Join session
           </button>
+
+          {/* HOST CANCEL SESSION */}
+          {isHost && (
+            <button
+              onClick={() => onDelete(session.id)}
+              className="
+                bg-[#FEE2E2] text-[#EF4444]
+                px-6 py-3 rounded-full
+                flex items-center gap-2
+                text-[14px] font-semibold
+              "
+            >
+              <img src='/icons/delete.svg' className='w-4 h-4' />
+              Cancel
+            </button>
+          )}
         </div>
       </div>
     </div>
   );
 }
-
-export default SessionCard;
