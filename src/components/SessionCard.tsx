@@ -15,42 +15,45 @@ export default function SessionCard({
   const isHost = session.host_id === userId;
   const isBooked = session.session_bookings?.some((b) => b.user_id === userId);
 
-  // ---------- TYPE COLORS ----------
+  // ---- TYPE STYLES ----
   const typeMap = {
     "Deep work": {
       color: "#3B82F6",
       bg: "#E4EDFF",
+      icon: "/icons/deepwork.svg",
     },
     Pomodoro: {
       color: "#EF4444",
       bg: "#FFE4E4",
+      icon: "/icons/pomodoro.svg",
     },
     "Short sprints": {
       color: "#22C55E",
       bg: "#E5FFE9",
+      icon: "/icons/sprints.svg",
     },
   };
 
   const t = typeMap[session.type] || {
     color: "#000",
     bg: "#EEE",
+    icon: "/icons/default.svg",
   };
 
-  // ---------- REALTIME ATTENDANCE ----------
-  const [attendanceCount, setAttendance] = useState(0);
+  // ---- REALTIME ATTENDANCE ----
+  const [attendanceCount, setAttendanceCount] = useState(0);
 
   useEffect(() => {
     let mounted = true;
 
     const load = async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("session_attendance")
         .select("user_id")
         .eq("session_id", session.id);
 
-      if (mounted && data) {
-        const unique = new Set(data.map((u) => u.user_id));
-        setAttendance(unique.size);
+      if (!error && mounted) {
+        setAttendanceCount(new Set(data?.map((v) => v.user_id)).size);
       }
     };
 
@@ -58,11 +61,11 @@ export default function SessionCard({
 
     const channel = supabase
       .channel(`attendance_${session.id}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "session_attendance" },
-        load
-      )
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "session_attendance",
+      }, load)
       .subscribe();
 
     return () => {
@@ -71,34 +74,51 @@ export default function SessionCard({
     };
   }, [session.id]);
 
+  // Format start time
+  const formattedStart =
+    session.start_time ?
+    new Date(session.start_time).toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }) :
+    "";
+
   return (
     <div
       className="
-        border border-borderGray rounded-[42px]
-        px-8 py-6 bg-white
+        border border-borderGray bg-white rounded-[42px]
+        px-8 py-6
         flex flex-col lg:flex-row
         justify-between items-start lg:items-center
         gap-6 relative
+        hover:bg-slate-50 transition
       "
     >
-      {/* DELETE BUTTON (HOST ONLY) */}
+
+      {/* DELETE BUTTON (HOST) */}
       {isHost && (
         <button
           onClick={() => onDelete(session.id)}
           className="
-            absolute right-6 top-6 h-10 w-10 rounded-full
-            bg-[#FEE2E2] hover:bg-[#FECACA]
-            flex items-center justify-center transition
+            absolute top-6 right-6
+            h-10 w-10 rounded-full bg-[#FEE2E2]
+            flex items-center justify-center
+            hover:bg-[#FECACA] transition
           "
         >
           <img src="/icons/delete.svg" className="w-5 h-5" />
         </button>
       )}
 
-      {/* LEFT SECTION */}
-      <div className="flex-1 space-y-3">
+      {/* LEFT BLOCK */}
+      <div className="flex-1 flex flex-col gap-3">
+
         {/* TITLE */}
-        <h3 className="text-[29px] font-bold">{session.title}</h3>
+        <h3 className="text-[29px] font-bold">
+          {session.title}
+        </h3>
 
         {/* META ROW */}
         <div className="flex flex-wrap items-center gap-4 text-[12px] text-[#606060]">
@@ -106,50 +126,38 @@ export default function SessionCard({
           {/* HOST */}
           <button
             onClick={() => navigate(`/profile/${session.host_id}`)}
-            className="flex items-center gap-2 hover:text-black transition"
+            className="flex items-center gap-1 hover:opacity-70 transition"
           >
-            <img
-              src="/icons/host.svg"
-              className="w-4 h-4"
-              style={{ opacity: 0.7 }}
-            />
+            <img src="/icons/host.svg" className="w-4 h-4 opacity-60" />
+            <span>Host:</span>
             <span className="underline underline-offset-2">{session.host_name}</span>
           </button>
 
           {/* DURATION */}
-          <div className="flex items-center gap-2">
-            <img
-              src="/icons/duration.svg"
-              className="w-4 h-4"
-              style={{ opacity: 0.7 }}
-            />
+          <div className="flex items-center gap-1">
+            <img src="/icons/duration.svg" className="w-4 h-4 opacity-60" />
             <span>{session.duration_minutes} min</span>
           </div>
 
-          {/* START DATE */}
-          <div className="flex items-center gap-2">
-            <img
-              src="/icons/date.svg"
-              className="w-4 h-4"
-              style={{ opacity: 0.7 }}
-            />
-            <span>{session.startsLabel || "—"}</span>
+          {/* START TIME */}
+          <div className="flex items-center gap-1">
+            <img src="/icons/date.svg" className="w-4 h-4 opacity-60" />
+            <span>{formattedStart}</span>
           </div>
 
-          {/* —— OLD STYLE TYPE TAG —— */}
+          {/* TYPE TAG */}
           <div
-            className="inline-flex items-center px-3 py-1 rounded-full text-[10px] font-medium"
-            style={{
-              backgroundColor: t.bg,
-              color: t.color,
-            }}
+            className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-medium"
+            style={{ backgroundColor: t.bg, color: t.color }}
           >
+            <img src={t.icon} className="w-4 h-4" />
             {session.type}
           </div>
+
         </div>
       </div>
 
-      {/* RIGHT SECTION */}
+      {/* RIGHT SIDE (COUNT + BUTTONS) */}
       <div className="flex flex-row items-center gap-4 flex-shrink-0">
 
         {/* COUNT BLOCK */}
@@ -157,7 +165,7 @@ export default function SessionCard({
           <div className="text-[32px] font-bold text-brandBlack">
             {attendanceCount}
           </div>
-          <div className="text-[10px] font-light text-[#606060] -mt-1">
+          <div className="text-[10px] text-[#606060] font-light -mt-1">
             in the session
           </div>
         </div>
@@ -165,15 +173,14 @@ export default function SessionCard({
         {/* BUTTONS */}
         <div className="flex items-center gap-2">
 
-          {/* BOOK / CANCEL */}
+          {/* BOOK BUTTON */}
           {!isBooked ? (
             <button
               onClick={() => onBook(session.id)}
               className="
                 border border-brandBlack rounded-full
-                px-6 py-3 text-[14px] font-semibold
-                flex items-center gap-2
-                hover:text-[#65D46C] hover:bg-transparent transition
+                px-6 py-3 text-[14px] font-semibold flex items-center gap-2
+                hover:text-[#65D46C] transition
               "
             >
               <img src="/icons/book.svg" className="w-4 h-4" />
@@ -183,37 +190,35 @@ export default function SessionCard({
             <button
               onClick={() => onCancel(session.id)}
               className="
-                bg-[#32D74B]/20 border border-[#32D74B]
-                text-[#32D74B]
-                px-6 py-3 rounded-full
-                text-[14px] font-semibold
+                border border-[#32D74B] bg-[#32D74B]/20 text-[#32D74B]
+                px-6 py-3 rounded-full text-[14px] font-semibold
               "
             >
               Booked
             </button>
           )}
 
-          {/* JOIN */}
+          {/* JOIN BUTTON */}
           <button
             onClick={() => onJoin(session.id)}
             className="
               rounded-full px-6 py-3 text-[14px] font-semibold
-              bg-brandBlack text-white transition
-              hover:bg-black hover:border-transparent
+              bg-brandBlack text-white
+              hover:bg-black transition
+              border-none outline-none
             "
           >
             Join session
           </button>
 
-          {/* HOST CANCEL */}
+          {/* CANCEL SESSION (HOST) */}
           {isHost && (
             <button
               onClick={() => onDelete(session.id)}
               className="
                 bg-[#FEE2E2] text-[#EF4444]
-                px-6 py-3 rounded-full
+                px-6 py-3 rounded-full text-[14px] font-semibold
                 flex items-center gap-2
-                text-[14px] font-semibold
               "
             >
               <img src="/icons/delete.svg" className="w-4 h-4" />
