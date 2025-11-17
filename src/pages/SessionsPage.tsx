@@ -1,15 +1,22 @@
+// src/pages/SessionsPage.tsx
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { UserCircle } from "lucide-react";
 import { CreateSessionModal } from "../components/CreateSessionModal";
 import { SessionTypeSwitcher } from "../components/SessionTypeSwitcher";
+import SessionCard from "../components/SessionCard";
 import { supabase } from "../lib/supabase";
-import { SessionCard } from "../components/SessionCard"; // ← новая карточка
 import type { Session } from "../types/session";
+
+type SessionWithRelations = Session & {
+  session_bookings?: { user_id: string }[];
+  session_attendance?: { id: string; session_id: string; user_id: string }[];
+};
 
 export function SessionsPage() {
   const navigate = useNavigate();
-  const [sessions, setSessions] = useState<Session[]>([]);
+
+  const [sessions, setSessions] = useState<SessionWithRelations[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoginPromptOpen, setIsLoginPromptOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -20,7 +27,7 @@ export function SessionsPage() {
     "group" | "infinite" | "body"
   >("group");
 
-  // ---------- restore auth ----------
+  // ---------- auth restore ----------
   useEffect(() => {
     const getCurrentSession = async () => {
       const { data } = await supabase.auth.getSession();
@@ -43,6 +50,7 @@ export function SessionsPage() {
   const fetchSessions = async () => {
     try {
       setIsLoading(true);
+
       const { data, error } = await supabase
         .from("sessions")
         .select(
@@ -54,14 +62,16 @@ export function SessionsPage() {
           duration_minutes,
           format,
           start_time,
-          status
+          status,
+          session_bookings ( user_id ),
+          session_attendance ( id, session_id, user_id )
         `
         )
-        .order("created_at", { ascending: false });
+        .order("start_time", { ascending: true });
 
       if (error) throw error;
 
-      setSessions((data || []) as Session[]);
+      setSessions((data || []) as SessionWithRelations[]);
       localStorage.setItem("sessions", JSON.stringify(data || []));
     } catch (error) {
       console.error("Error fetching sessions:", error);
@@ -76,10 +86,58 @@ export function SessionsPage() {
     fetchSessions();
   }, []);
 
+  // ---------- realtime attendance ----------
+  useEffect(() => {
+    const channel = supabase
+      .channel("session-attendance")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "session_attendance" },
+        (payload) => {
+          setSessions((prev) => {
+            const sessionId =
+              // @ts-ignore – supabase payload shape
+              payload.new?.session_id || payload.old?.session_id;
+            if (!sessionId) return prev;
+
+            return prev.map((s) => {
+              if (s.id !== sessionId) return s;
+
+              let attendance = s.session_attendance || [];
+
+              if (payload.eventType === "INSERT") {
+                // @ts-ignore
+                attendance = [...attendance, payload.new];
+              } else if (payload.eventType === "DELETE") {
+                // @ts-ignore
+                const delId = payload.old.id;
+                attendance = attendance.filter((a) => a.id !== delId);
+              } else if (payload.eventType === "UPDATE") {
+                // редкий случай – перезапишем по id
+                // @ts-ignore
+                const newRow = payload.new;
+                attendance = attendance.map((a) =>
+                  a.id === newRow.id ? newRow : a
+                );
+              }
+
+              return { ...s, session_attendance: attendance };
+            });
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
   // ---------- helpers ----------
-  const isExpired = (s: Session) => {
+  const isExpired = (s: SessionWithRelations) => {
     if (!s.start_time) return false;
-    const end = new Date(s.start_time).getTime() + s.duration_minutes * 60000;
+    const end =
+      new Date(s.start_time).getTime() + s.duration_minutes * 60_000;
     return Date.now() > end;
   };
 
@@ -87,6 +145,9 @@ export function SessionsPage() {
     () => sessions.filter((s) => !isExpired(s)),
     [sessions]
   );
+
+  const visibleSessions =
+    sessionTypeTab === "group" ? activeSessions : [];
 
   const handleJoinSession = (sessionId: string) => {
     if (!user) {
@@ -104,12 +165,64 @@ export function SessionsPage() {
     setIsModalOpen(true);
   };
 
-  const visibleSessions =
-    sessionTypeTab === "group" ? activeSessions : [];
+  // ---------- booking actions ----------
+  const handleBook = async (sessionId: string) => {
+    if (!user) {
+      setIsLoginPromptOpen(true);
+      return;
+    }
+    const { error } = await supabase
+      .from("session_bookings")
+      .upsert(
+        { session_id: sessionId, user_id: user.id },
+        { onConflict: "session_id,user_id" }
+      );
 
+    if (error) {
+      console.error("Error booking session:", error);
+    } else {
+      fetchSessions();
+    }
+  };
+
+  const handleCancelBooking = async (sessionId: string) => {
+    if (!user) {
+      setIsLoginPromptOpen(true);
+      return;
+    }
+    const { error } = await supabase
+      .from("session_bookings")
+      .delete()
+      .eq("session_id", sessionId)
+      .eq("user_id", user.id);
+
+    if (error) {
+      console.error("Error cancelling booking:", error);
+    } else {
+      fetchSessions();
+    }
+  };
+
+  const handleDeleteSession = async (sessionId: string) => {
+    if (!user) return;
+    try {
+      const { error } = await supabase
+        .from("sessions")
+        .delete()
+        .eq("id", sessionId)
+        .eq("host_id", user.id);
+
+      if (error) throw error;
+      setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+    } catch (e) {
+      console.error("Error deleting session:", e);
+    }
+  };
+
+  // ---------- render ----------
   return (
     <div className="min-h-screen bg-white text-brandBlack font-inter">
-      {/* ================= HEADER ================= */}
+      {/* HEADER */}
       <header className="border-b border-borderGray">
         <div className="max-w-[1280px] mx-auto px-8 py-6 flex items-center justify-between gap-3">
           {/* Left nav */}
@@ -200,7 +313,7 @@ export function SessionsPage() {
         </div>
       </header>
 
-      {/* ================= H1 + SWITCHER ================= */}
+      {/* H1 + SWITCHER */}
       <section className="max-w-[1280px] mx-auto px-8 pt-10 pb-6 space-y-8 text-center">
         <h1
           className="
@@ -219,12 +332,14 @@ export function SessionsPage() {
         <div className="flex justify-center">
           <SessionTypeSwitcher
             value={sessionTypeTab}
-            onChange={(val) => setSessionTypeTab(val)}
+            onChange={(val: "group" | "infinite" | "body") =>
+              setSessionTypeTab(val)
+            }
           />
         </div>
       </section>
 
-      {/* ================= SESSION LIST ================= */}
+      {/* SESSION LIST */}
       <main className="max-w-[1280px] mx-auto px-8 pb-12">
         {sessionTypeTab !== "group" && (
           <div className="border border-borderGray rounded-2xl p-8 mb-6 text-sm text-slate-600">
@@ -256,8 +371,11 @@ export function SessionsPage() {
               <SessionCard
                 key={session.id}
                 session={session}
-                onJoin={() => handleJoinSession(session.id)}
-                onHostClick={() => navigate(`/profile/${session.host_id}`)}
+                userId={user?.id}
+                onBook={handleBook}
+                onCancelBooking={handleCancelBooking}
+                onJoin={handleJoinSession}
+                onDelete={handleDeleteSession}
               />
             ))}
           </div>
