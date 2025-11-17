@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { useNavigate } from "react-router-dom";
 
 export default function SessionCard({
   session,
@@ -9,6 +10,8 @@ export default function SessionCard({
   onJoin,
   onDelete,
 }) {
+  const navigate = useNavigate();
+
   const isHost = session.host_id === userId;
   const isBooked = session.session_bookings?.some((b) => b.user_id === userId);
 
@@ -90,23 +93,21 @@ export default function SessionCard({
       className="
         border border-borderGray rounded-[42px]
         bg-white
-        px-8 py-6
         flex flex-col lg:flex-row
         items-start lg:items-center justify-between
         gap-6
-        transition
+        relative
       "
       style={{ padding: "24px 32px" }}
     >
-      {/* DELETE (floating circle) */}
+      {/* DELETE BUTTON (FLOATING) */}
       {isHost && (
         <button
           onClick={() => onDelete(session.id)}
           className="
             absolute right-8 top-8 h-10 w-10 rounded-full
             bg-[#FEE2E2] flex items-center justify-center
-            hover:bg-[#FECACA]
-            transition
+            hover:bg-[#FECACA] transition
           "
         >
           <img src="/icons/delete.svg" className="w-4 h-4" />
@@ -124,12 +125,15 @@ export default function SessionCard({
         {/* META ROW */}
         <div className="flex flex-wrap items-center gap-4 text-[12px] text-[#606060]">
 
-          {/* HOST */}
-          <div className="flex items-center gap-1">
+          {/* HOST (CLICKABLE) */}
+          <button
+            onClick={() => navigate(`/profile/${session.host_id}`)}
+            className="flex items-center gap-1 hover:opacity-80 transition"
+          >
             <img src="/icons/host.svg" className="w-4 h-4 opacity-70" />
             <span>Host</span>
             <span className="underline underline-offset-2">{session.host_name}</span>
-          </div>
+          </button>
 
           {/* DURATION */}
           <div className="flex items-center gap-1">
@@ -137,13 +141,13 @@ export default function SessionCard({
             <span>{session.duration_minutes} min</span>
           </div>
 
-          {/* START DATE */}
+          {/* START DATE / TIME */}
           <div className="flex items-center gap-1">
             <img src="/icons/date.svg" className="w-4 h-4 opacity-70" />
             <span>{session.startsLabel}</span>
           </div>
 
-          {/* TYPE INDICATOR */}
+          {/* TYPE INDICATOR (OLD STYLE) */}
           <div
             className="inline-flex items-center gap-1 px-3 py-1 rounded-full"
             style={{
@@ -153,7 +157,11 @@ export default function SessionCard({
               fontWeight: 500,
             }}
           >
-            <img src={t.icon} className="w-4 h-4" />
+            <img
+              src={t.icon}
+              className="w-4 h-4"
+              style={{ filter: `drop-shadow(0 0 0 ${t.color})` }}
+            />
             {resolvedType}
           </div>
         </div>
@@ -161,6 +169,16 @@ export default function SessionCard({
 
       {/* RIGHT SECTION */}
       <div className="flex flex-row items-center gap-6">
+
+        {/* VERTICAL LINE */}
+        <div
+          style={{
+            width: 1,
+            height: "100%",
+            background: "#D9D9D9",
+            marginRight: 36,
+          }}
+        />
 
         {/* COUNT BLOCK */}
         <div className="px-12 text-center">
@@ -209,11 +227,9 @@ export default function SessionCard({
           <button
             onClick={() => onJoin(session.id)}
             className="
-              rounded-full px-6 py-3
-              text-[14px] font-semibold
+              rounded-full px-6 py-3 text-[14px] font-semibold
               bg-brandBlack text-white
-              hover:bg-black
-              transition
+              hover:bg-black transition
               border-none
             "
           >
@@ -231,7 +247,7 @@ export default function SessionCard({
                 text-[14px] font-semibold
               "
             >
-              <img src="/icons/delete.svg" className="w-4 h-4" />
+              <img src='/icons/delete.svg' className='w-4 h-4' />
               Cancel
             </button>
           )}
