@@ -244,7 +244,7 @@ export function CreateSessionModal({
         </div>
 
         {profile && (
-          <p className="text-xs text-gray-500 mt-4 text-center font-inter">
+          <p className="text-xs text-gray-400 mt-4 text-center font-inter">
             Hosted by <span className="font-medium">{profile.full_name}</span>
           </p>
         )}
