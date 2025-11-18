@@ -1,200 +1,232 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import Header from "../components/Header";
 
 export default function ProfilePage() {
   const navigate = useNavigate();
   const [user, setUser] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+
+  const [profile, setProfile] = useState<any>(null);
+  const [sessions, setSessions] = useState<any[]>([]);
+
+  const [editMode, setEditMode] = useState(false);
   const [fullName, setFullName] = useState("");
   const [bio, setBio] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // Load profile
   useEffect(() => {
-    async function loadProfile() {
+    async function load() {
       const { data } = await supabase.auth.getUser();
       if (!data.user) {
         navigate("/login");
         return;
       }
+
       setUser(data.user);
 
-      const { data: profile } = await supabase
+      // profile
+      const { data: prof } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", data.user.id)
         .single();
 
-      if (profile) {
-        setFullName(profile.full_name || "");
-        setBio(profile.bio || "");
-        setAvatarUrl(profile.avatar_url || null);
-      }
-      setLoading(false);
+      setProfile(prof);
+      setFullName(prof.full_name || "");
+      setBio(prof.bio || "");
+      setAvatarUrl(prof.avatar_url || null);
+
+      // sessions
+      const { data: sess } = await supabase
+        .from("sessions")
+        .select("id, title, start_time, format")
+        .eq("host_id", data.user.id)
+        .order("start_time", { ascending: false });
+
+      setSessions(sess || []);
     }
 
-    loadProfile();
-  }, [navigate]);
+    load();
+  }, []);
 
-  // ✅ Загрузка аватара в storage/avatars (bucket уже должен существовать)
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    try {
-      setUploading(true);
-      const file = e.target.files?.[0];
-      if (!file || !user) return;
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
 
-      const ext = file.name.split(".").pop();
-      const filePath = `${user.id}/${Date.now()}.${ext}`;
+    const ext = file.name.split(".").pop();
+    const filePath = `${user.id}/${Date.now()}.${ext}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from("avatars")
-        .upload(filePath, file, { upsert: true });
+    const { error: upErr } = await supabase.storage
+      .from("avatars")
+      .upload(filePath, file, { upsert: true });
 
-      if (uploadError) throw uploadError;
-
-      const { data } = supabase.storage
-        .from("avatars")
-        .getPublicUrl(filePath);
-
-      const publicUrl = data.publicUrl;
-
-      const { error: updateError } = await supabase
-        .from("profiles")
-        .update({
-          avatar_url: publicUrl,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", user.id);
-
-      if (updateError) throw updateError;
-
-      setAvatarUrl(publicUrl);
-      alert("✅ Avatar updated!");
-    } catch (err: any) {
-      console.error(err);
-      alert(err.message || "Avatar upload failed");
-    } finally {
-      setUploading(false);
+    if (upErr) {
+      alert("Failed to upload avatar");
+      return;
     }
+
+    const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
+    setAvatarUrl(data.publicUrl);
   };
 
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
 
-    try {
-      const { error: authErr } = await supabase.auth.updateUser({
-        data: { full_name: fullName, bio, avatar_url: avatarUrl },
-      });
-      if (authErr) throw authErr;
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        full_name: fullName,
+        bio,
+        avatar_url: avatarUrl,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", user.id);
 
-      const { error: profileErr } = await supabase
-        .from("profiles")
-        .upsert(
-          {
-            id: user.id,
-            full_name: fullName,
-            bio,
-            avatar_url: avatarUrl,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "id" }
-        );
+    setSaving(false);
 
-      if (profileErr) throw profileErr;
-
-      alert("✅ Profile updated!");
-    } catch (err: any) {
-      alert(err.message || "Failed to save profile");
-    } finally {
-      setSaving(false);
+    if (error) {
+      alert("Failed to save");
+      return;
     }
+
+    setProfile((p: any) => ({
+      ...p,
+      full_name: fullName,
+      bio,
+      avatar_url: avatarUrl,
+    }));
+
+    setEditMode(false);
   };
 
-  if (loading)
-    return (
-      <div className="flex items-center justify-center h-screen text-white bg-slate-900">
-        <p>Loading...</p>
-      </div>
-    );
+  if (!profile) return <div />;
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white flex justify-center py-20 px-4">
-      <div className="bg-slate-800 rounded-2xl p-10 shadow-lg w-[480px] text-center space-y-6">
-        <h1 className="text-3xl font-bold mb-2">Your Profile</h1>
-        <p className="text-slate-400">{user.email}</p>
+    <div className="bg-white min-h-screen">
+      <Header />
 
-        {/* ==== Avatar Upload ==== */}
-        <div className="flex flex-col items-center mt-4 space-y-3">
-          <img
-            src={
-              avatarUrl ||
-              `https://ui-avatars.com/api/?name=${encodeURIComponent(
-                fullName || "User"
-              )}`
-            }
-            alt="avatar"
-            className="w-28 h-28 rounded-full border border-slate-600 object-cover"
-          />
-          <label className="text-sm text-blue-400 hover:text-blue-300 cursor-pointer">
-            {uploading ? "Uploading..." : "Change Avatar"}
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleAvatarUpload}
-              disabled={uploading}
+      <div className="max-w-[1000px] mx-auto px-8 py-10">
+        {/* Back */}
+        <button
+          onClick={() => navigate(-1)}
+          className="text-[15px] flex items-center gap-2 text-black/70 hover:text-black"
+        >
+          ← Back
+        </button>
+
+        {/* Avatar + Info */}
+        <div className="flex flex-col items-center mt-10 space-y-3">
+          <label className="cursor-pointer relative">
+            <img
+              src={
+                avatarUrl ||
+                `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                  fullName || "User"
+                )}`
+              }
+              alt="avatar"
+              className="w-28 h-28 rounded-full object-cover"
             />
+            {editMode && (
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleAvatarUpload}
+              />
+            )}
           </label>
+
+          {editMode ? (
+            <input
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              className="text-[28px] font-semibold text-center border-b border-black/20 pb-1"
+            />
+          ) : (
+            <h1 className="text-[32px] font-semibold">{profile.full_name}</h1>
+          )}
+
+          {/* Meta */}
+          <div className="flex items-center gap-3 text-[15px] text-black/60">
+            <span>📅 Since {profile.created_at?.slice(0, 10)}</span>
+            <span>•</span>
+            <span>📊 {sessions.length} sessions</span>
+          </div>
+
+          {/* Edit or Save */}
+          {!editMode ? (
+            <button
+              onClick={() => setEditMode(true)}
+              className="mt-3 px-4 py-2 border rounded-xl text-[14px] hover:bg-black hover:text-white transition"
+            >
+              Edit profile
+            </button>
+          ) : (
+            <div className="flex gap-3 mt-3">
+              <button
+                onClick={handleSave}
+                className="px-5 py-2 bg-black text-white rounded-xl text-[14px]"
+                disabled={saving}
+              >
+                {saving ? "Saving..." : "Save changes"}
+              </button>
+              <button
+                onClick={() => {
+                  setEditMode(false);
+                  setFullName(profile.full_name);
+                  setBio(profile.bio);
+                  setAvatarUrl(profile.avatar_url);
+                }}
+                className="px-5 py-2 rounded-xl border text-[14px]"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* ==== Profile Form ==== */}
-        <div className="space-y-4 text-left mt-6">
-          <label className="block text-sm text-slate-300">Full name</label>
-          <input
-            type="text"
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-            className="w-full px-3 py-2 rounded-md bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+        {/* Bio */}
+        <div className="mt-8 border-t pt-6">
+          <h2 className="text-[17px] font-medium mb-2">Bio:</h2>
 
-          <label className="block text-sm text-slate-300 mt-3">Bio</label>
-          <textarea
-            value={bio}
-            onChange={(e) => setBio(e.target.value)}
-            rows={3}
-            className="w-full px-3 py-2 rounded-md bg-slate-700 text-white border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="mt-4 bg-blue-600 px-6 py-2 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50"
-          >
-            {saving ? "Saving..." : "Save changes"}
-          </button>
+          {editMode ? (
+            <textarea
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              rows={3}
+              className="w-full border rounded-xl p-3 text-[15px]"
+            />
+          ) : (
+            <p className="text-[16px] text-black/80">
+              {bio || "No bio provided."}
+            </p>
+          )}
         </div>
 
-        {/* ==== Navigation Buttons ==== */}
-        <div className="flex justify-between mt-8">
-          <button
-            onClick={() => navigate("/sessions")}
-            className="text-slate-400 hover:text-white underline"
-          >
-            ← Back to Sessions
-          </button>
+        {/* Sessions List */}
+        <div className="mt-12">
+          <h2 className="text-[22px] font-semibold mb-4">
+            Current hosted & upcoming sessions:
+          </h2>
 
-          <button
-            onClick={async () => {
-              await supabase.auth.signOut();
-              navigate("/login");
-            }}
-            className="text-red-400 hover:text-red-500"
-          >
-            Log out
-          </button>
+          <div className="space-y-2">
+            {sessions.map((s) => (
+              <div
+                key={s.id}
+                className="flex justify-between items-center px-4 py-3 bg-black/5 rounded-xl"
+              >
+                <span className="text-[15px]">{s.title}</span>
+                <span className="text-[14px] text-black/60">
+                  {s.start_time?.slice(0, 10)}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
