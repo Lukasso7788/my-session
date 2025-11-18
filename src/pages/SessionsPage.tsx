@@ -222,7 +222,7 @@ export function SessionsPage() {
     <div className="min-h-screen bg-white text-brandBlack font-inter">
       {/* HEADER */}
       <header className="border-b border-borderGray">
-        <div className="max-w-[1280px] mx-auto px-8 py-6 flex items-center justify-between gap-3">
+        <div className="w-full px-8 py-6 flex items-center justify-between gap-3">
           {/* Left nav */}
           <nav className="flex items-center gap-6 flex-1 text-sm text-[#2E2E2E]">
             <button
@@ -312,7 +312,7 @@ export function SessionsPage() {
       </header>
 
       {/* MAIN CONTENT */}
-      <main className="max-w-[1280px] mx-auto px-8 pb-12">
+      <main className="w-full px-8 pb-12">
         {/* H1 */}
         <div className="pt-[100px] pb-[50px] text-center">
           <h1
