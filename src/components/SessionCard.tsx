@@ -135,7 +135,7 @@ export default function SessionCard({
         flex items-center gap-2 transition-all duration-150
         ${
           isHoveringBook
-            ? "text-[#65D46C] border-brandBlack bg-[#65D46C]/10"
+            ? "text-[#65D46C] border-[#65D46C] bg-[#65D46C]/10"
             : "border-brandBlack text-brandBlack bg-white"
         }
       `}
