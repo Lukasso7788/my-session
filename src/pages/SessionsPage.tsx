@@ -314,7 +314,7 @@ export function SessionsPage() {
       {/* MAIN CONTENT */}
       <main className="max-w-[1280px] mx-auto px-8 pb-12">
         {/* H1 */}
-        <div className="pt-[100px] mb-[0px] text-center">
+        <div className="pt-[100px] pb-[50px] text-center">
           <h1
             className="
               text-[24px]
