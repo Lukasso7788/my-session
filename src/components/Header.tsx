@@ -1,30 +1,31 @@
 // src/components/Header.tsx
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { UserCircle } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { UserCircle } from "lucide-react";
 
-export default function Header() {
+export function Header() {
     const navigate = useNavigate();
+
     const [user, setUser] = useState<any>(null);
     const [showUserMenu, setShowUserMenu] = useState(false);
     const [isHoveringCreate, setIsHoveringCreate] = useState(false);
 
-    // Restore session
+    // Restore auth
     useEffect(() => {
-        const load = async () => {
+        const loadUser = async () => {
             const { data } = await supabase.auth.getSession();
             setUser(data?.session?.user ?? null);
         };
-        load();
+        loadUser();
 
         const { data: listener } = supabase.auth.onAuthStateChange(
-            (_ev, session) => {
-                setUser(session?.user ?? null);
-            }
+            (_event, session) => setUser(session?.user ?? null)
         );
 
-        return () => listener.subscription.unsubscribe();
+        return () => {
+            listener.subscription.unsubscribe();
+        };
     }, []);
 
     return (
@@ -43,7 +44,7 @@ export default function Header() {
                     <button className="hover:text-black">Latest updates</button>
                 </nav>
 
-                {/* CENTER LOGO */}
+                {/* LOGO */}
                 <div className="flex-1 flex justify-center">
                     <button
                         onClick={() => navigate("/")}
@@ -53,7 +54,7 @@ export default function Header() {
                     </button>
                 </div>
 
-                {/* RIGHT AUTH */}
+                {/* AUTH / USER */}
                 <div className="flex-1 flex items-center justify-end gap-3 relative">
                     {!user ? (
                         <div className="flex gap-3">
@@ -75,7 +76,7 @@ export default function Header() {
                         <>
                             {/* CREATE SESSION BUTTON */}
                             <button
-                                onClick={() => navigate("/sessions#create")}
+                                onClick={() => navigate("#open-create-modal")}
                                 onMouseEnter={() => setIsHoveringCreate(true)}
                                 onMouseLeave={() => setIsHoveringCreate(false)}
                                 className={`
@@ -106,7 +107,7 @@ export default function Header() {
                                     <img
                                         src={user.user_metadata.avatar_url}
                                         alt="avatar"
-                                        className="w-[50px] h-[50px] rounded-full border border-borderGray object-cover"
+                                        className="w-[50px] h-[50px] rounded-full border border-borderGray"
                                     />
                                 ) : (
                                     <UserCircle className="w-10 h-10 text-slate-600" />
@@ -127,7 +128,6 @@ export default function Header() {
                                         onClick={async () => {
                                             await supabase.auth.signOut();
                                             setShowUserMenu(false);
-                                            navigate("/login");
                                         }}
                                         className="w-full text-left px-4 py-2 text-sm font-light text-red-600 hover:bg-red-50"
                                     >
@@ -142,3 +142,5 @@ export default function Header() {
         </header>
     );
 }
+
+export default Header;
