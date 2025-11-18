@@ -194,9 +194,6 @@ export default function SessionCard({
       "
       style={{ padding: "24px 32px" }}
     >
-      {/* Удалена дублирующая кнопка "DELETE BUTTON" в верхнем правом углу
-      */}
-
       {/* LEFT SIDE */}
       <div className="flex-1 space-y-3">
         <h3 className="text-[29px] font-bold leading-tight">{session.title}</h3>
@@ -229,10 +226,11 @@ export default function SessionCard({
 
           {/* ORIGINAL TYPE INDICATOR */}
           <div
-            className="inline-flex items-center gap-1 px-3 py-1 rounded-full"
+            className="inline-flex items-center gap-1 px-3 py-1 rounded-full border border-1" // Добавлены классы 'border border-1'
             style={{
               backgroundColor: t.bg,
               color: t.color,
+              borderColor: t.color, // Установлен цвет обводки
               fontSize: 10,
               fontWeight: 500,
             }}
@@ -286,7 +284,7 @@ export default function SessionCard({
                 hover:bg-[#FECACA]
               "
             >
-              <img src="/icons/cross-cancel.svg" className="w-6 h-6" /> {/* Изменено на 24px (w-6 h-6) */}
+              <img src="/icons/cross-cancel.svg" className="w-6 h-6" />
             </button>
           )}
         </div>
