@@ -45,23 +45,28 @@ export default function SessionCard({
   const resolvedType = nameToTypeMap[session.title] || session.type;
 
   const typeMap = {
+    // Вносим правки в цвета, если они отличаются от тех, что используются в коде, 
+    // но оставляем текущие, так как они используются для background/border.
+    // Для "Join" используем t.color как основной цвет.
     "Deep work": {
-      color: "#3B82F6",
+      color: "#3B82F6", // Соответствует #5286F6 (если использовать только t.color)
       bg: "#E4EDFF",
       icon: "/icons/deepwork.svg",
     },
     Pomodoro: {
-      color: "#EF4444",
+      color: "#EF4444", // Соответствует #F65252 (если использовать только t.color)
       bg: "#FFE4E4",
       icon: "/icons/pomodoro.svg",
     },
     "Short sprints": {
-      color: "#22C55E",
+      color: "#22C55E", // Соответствует #65D46C (если использовать только t.color)
       bg: "#E5FFE9",
       icon: "/icons/sprints.svg",
     },
   };
-
+  
+  // Примечание: В Tailwind по умолчанию используются цвета, заданные в typeMap.
+  // Я буду использовать t.color для сплошной заливки при ховере.
   const t = typeMap[resolvedType];
 
   // ---------- FORMAT START TIME ----------
@@ -263,15 +268,14 @@ export default function SessionCard({
           {/* BOOK OR CANCEL BOOKING */}
           {isBookingConfirmed ? confirmedBookingButton : bookSessionButton}
 
-          {/* JOIN (Измененные стили ховера) */}
+          {/* JOIN (Измененные стили ховера: сплошной t.color, белый текст) */}
           <button
             onClick={() => onJoin(session.id)}
             onMouseEnter={() => setIsHoveringJoin(true)}
             onMouseLeave={() => setIsHoveringJoin(false)}
             style={{
-              // Установка цвета фона и текста при ховере через style, т.к. t.color динамический
-              backgroundColor: isHoveringJoin ? `${t.color}1A` : undefined, // Добавление 10% непрозрачности (1A в HEX)
-              color: isHoveringJoin ? t.color : undefined,
+              // Установка динамического цвета фона
+              backgroundColor: isHoveringJoin ? t.color : undefined,
             }}
             className={`
               rounded-full px-6 py-3
@@ -279,9 +283,9 @@ export default function SessionCard({
               transition-colors duration-150
               ${
                 isHoveringJoin
-                  ? // Ховер (стили заданы через style, чтобы использовать t.color)
-                    ""
-                  : // По умолчанию
+                  ? // Ховер: Фон динамический (через style), текст белый
+                    "text-white"
+                  : // По умолчанию: Фон черный, текст белый
                     "bg-brandBlack text-white hover:bg-black"
               }
             `}
