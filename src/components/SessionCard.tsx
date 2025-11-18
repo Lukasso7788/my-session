@@ -124,27 +124,29 @@ export default function SessionCard({
     setIsHoveringCancel(false); // Сброс ховера на всякий случай
   };
 
-  // Кнопка Book session
+  // Кнопка Book session (начальное состояние)
   const bookSessionButton = (
     <button
       onClick={handleBookSession}
       onMouseEnter={() => setIsHoveringBook(true)}
       onMouseLeave={() => setIsHoveringBook(false)}
       className={`
-        border rounded-full px-6 py-3 text-[14px] font-semibold
+        rounded-full px-6 py-3 text-[14px] font-semibold
         flex items-center gap-2 transition-all duration-150
         ${
           isHoveringBook
-            ? "text-[#65D46C] border-[#65D46C] bg-[#65D46C]/10"
-            : "border-brandBlack text-brandBlack bg-white"
+            ? // Ховер: текст/иконка зеленый, обводка зеленая, фон зеленый 10%
+              "text-[#65D46C] border border-[#65D46C] bg-[#65D46C]/10"
+            : // По умолчанию: текст/обводка черный, фон белый
+              "border border-brandBlack text-brandBlack bg-white"
         }
       `}
     >
       <img
         src={
           isHoveringBook
-            ? "/icons/book-session-green.svg" // Предполагается, что 'book-session-green.svg' существует
-            : "/icons/book-session.svg"
+            ? "/icons/book-session-green.svg" // Иконка при ховере
+            : "/icons/book-session.svg" // Иконка по умолчанию
         }
         className="w-4 h-4"
       />
@@ -152,7 +154,7 @@ export default function SessionCard({
     </button>
   );
 
-  // Кнопка Cancel booking (после подтверждения)
+  // Кнопка Cancel booking (состояние после бронирования)
   const confirmedBookingButton = (
     <button
       onClick={isHoveringCancel ? handleCancelBooking : undefined} // Клик работает только при ховере (Cancel booking)
@@ -163,9 +165,9 @@ export default function SessionCard({
         transition-all duration-150 ease-in-out
         ${
           isHoveringCancel
-            ? // Стиль ховера для отмены
+            ? // Стиль ховера для отмены: Красная обводка, красный текст, красный фон 5%
               "border border-[#F65252] bg-[#F65252]/5 text-[#F65252] px-6"
-            : // Стиль подтвержденной брони (маленькая иконка)
+            : // Стиль подтвержденной брони (маленькая иконка): Зеленая обводка, зеленый фон 10%, фиксированный размер
               "border border-[#65D46C] bg-[#65D46C]/10 w-[48px] h-[48px]"
         }
       `}
@@ -173,12 +175,14 @@ export default function SessionCard({
       {isHoveringCancel ? (
         // Контент при ховере (Cancel booking)
         <>
-          <img src="/icons/cross-cancel.svg" className="w-5 h-5 mr-2" />{" "}
-          {/* Предполагается, что 'cross-cancel.svg' существует */}
+          <img
+            src="/icons/cross-cancel.svg"
+            className="w-4 h-4 mr-2"
+          />
           Cancel booking
         </>
       ) : (
-        // Контент в нормальном состоянии (Booked, маленькая иконка)
+        // Контент в нормальном состоянии (Booked, маленькая иконка 24px)
         <img
           src="/icons/book-session-green.svg"
           className="w-6 h-6" // Иконка 24px
@@ -197,7 +201,7 @@ export default function SessionCard({
       "
       style={{ padding: "24px 32px" }}
     >
-      {/* DELETE BUTTON */}
+      {/* DELETE BUTTON (TOP RIGHT) */}
       {isHost && (
         <button
           onClick={() => onDelete(session.id)}
@@ -274,7 +278,7 @@ export default function SessionCard({
 
         {/* BUTTONS */}
         <div className="flex items-center gap-2">
-          {/* BOOK OR CANCEL BOOKING - ОТОБРАЖЕНИЕ СОГЛАСНО НОВОЙ ЛОГИКЕ */}
+          {/* BOOK OR CANCEL BOOKING */}
           {isBookingConfirmed ? confirmedBookingButton : bookSessionButton}
 
           {/* JOIN */}
@@ -290,19 +294,17 @@ export default function SessionCard({
             Join session
           </button>
 
-          {/* HOST CANCEL */}
+          {/* HOST CANCEL (КРУГЛАЯ КНОПКА С КРЕСТИКОМ) */}
           {isHost && (
             <button
               onClick={() => onDelete(session.id)}
               className="
-                bg-[#FEE2E2] text-[#EF4444]
-                px-6 py-3 rounded-full
-                flex items-center gap-2
-                text-[14px] font-semibold
+                h-10 w-10 rounded-full
+                bg-[#FEE2E2] flex items-center justify-center
+                hover:bg-[#FECACA]
               "
             >
-              <img src="/icons/delete.svg" className="w-4 h-4" />
-              Cancel
+              <img src="/icons/cross-cancel.svg" className="w-4 h-4" />
             </button>
           )}
         </div>
