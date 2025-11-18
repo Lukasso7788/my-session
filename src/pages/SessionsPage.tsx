@@ -240,7 +240,12 @@ export function SessionsPage() {
 
           {/* Center logo */}
           <div className="flex-1 flex justify-center">
-            <div className="text-4xl font-extrabold">MySession</div>
+            <button
+              onClick={() => navigate("/")}
+              className="text-4xl font-extrabold hover:opacity-80 transition"
+            >
+              MySession
+            </button>
           </div>
 
           {/* Right auth */}
