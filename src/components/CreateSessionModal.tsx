@@ -22,7 +22,7 @@ export function CreateSessionModal({
   const [error, setError] = useState<string | null>(null);
   const [profile, setProfile] = useState<any>(null);
 
-  // ✅ Load user profile automatically
+  // Load user profile
   useEffect(() => {
     async function loadProfile() {
       const {
@@ -48,7 +48,7 @@ export function CreateSessionModal({
     if (isOpen) loadProfile();
   }, [isOpen]);
 
-  // ✅ Load templates from Supabase
+  // Load templates
   useEffect(() => {
     if (!isOpen) return;
 
@@ -69,7 +69,7 @@ export function CreateSessionModal({
     loadTemplates();
   }, [isOpen]);
 
-  // ✅ Create new session
+  // Create session
   const handleCreate = async () => {
     if (!title || !selectedTemplate || !scheduledAt) {
       setError("Please fill out all fields.");
@@ -88,7 +88,7 @@ export function CreateSessionModal({
       const scheduledISO = new Date(scheduledAt).toISOString();
       const template = templates.find((t) => t.id === selectedTemplate);
 
-      // 🟦 Create Daily room
+      // Create Daily room
       const roomRes = await fetch(
         "https://cxqgzcjsjyszcbcbdusp.supabase.co/functions/v1/create-daily-room",
         {
@@ -107,9 +107,8 @@ export function CreateSessionModal({
       }
 
       const dailyUrl = roomData.url;
-      console.log("✅ Daily room created:", dailyUrl);
 
-      // 🟩 Save session
+      // Save session
       const { error } = await supabase.from("sessions").insert([
         {
           title,
@@ -128,8 +127,6 @@ export function CreateSessionModal({
 
       if (error) throw error;
 
-      console.log("✅ Session saved to Supabase");
-
       setTitle("");
       setScheduledAt("");
       setSelectedTemplate("");
@@ -146,60 +143,64 @@ export function CreateSessionModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-xl">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold text-gray-800">
-            Create Focus Session
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-[16px] p-6 w-full max-w-md shadow-xl">
+
+        {/* HEADER */}
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-[20px] font-bold text-brandBlack font-inter">
+            Create focus session
           </h2>
           <button
             onClick={onClose}
             className="text-gray-500 hover:text-gray-700 transition"
           >
-            <X size={20} />
+            <X size={22} />
           </button>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-5">
+
           {/* Title */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Session Title
+            <label className="block text-[14px] font-medium text-brandBlack mb-1 font-inter">
+              Session title
             </label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g., Deep Work Session"
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter"
             />
           </div>
 
           {/* Start Time */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Start Time
+            <label className="block text-[14px] font-medium text-brandBlack mb-1 font-inter">
+              Start time
             </label>
             <input
               type="datetime-local"
               value={scheduledAt}
               onChange={(e) => setScheduledAt(e.target.value)}
               min={new Date().toISOString().slice(0, 16)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter"
             />
           </div>
 
           {/* Templates */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Session Format
+            <label className="block text-[14px] font-medium text-brandBlack mb-2 font-inter">
+              Session format
             </label>
-            <div className="max-h-40 overflow-y-auto pr-2 space-y-2">
+
+            <div className="max-h-48 overflow-y-auto pr-2 space-y-3">
               {templates.length > 0 ? (
                 templates.map((t) => (
                   <label
                     key={t.id}
-                    className="flex items-center space-x-3 cursor-pointer"
+                    className="flex items-center gap-3 cursor-pointer"
                     onClick={() => {
                       setSelectedTemplate(t.id);
                       if (!title) setTitle(t.name);
@@ -210,10 +211,16 @@ export function CreateSessionModal({
                       name="session-template"
                       value={t.id}
                       checked={selectedTemplate === t.id}
-                      onChange={() => {}}
-                      className="w-4 h-4 text-blue-600"
+                      onChange={() => { }}
+                      className="w-4 h-4 text-brandBlack"
                     />
-                    <span className="text-sm text-gray-800">
+
+                    <img
+                      src={`/icons/${t.icon || t.name.toLowerCase()}.svg`}
+                      className="w-4 h-4"
+                    />
+
+                    <span className="text-[16px] text-brandBlack font-inter">
                       {t.name} ({t.total_duration} min)
                     </span>
                   </label>
@@ -226,18 +233,18 @@ export function CreateSessionModal({
 
           {error && <p className="text-red-600 text-sm">{error}</p>}
 
-          {/* Submit */}
+          {/* Submit button */}
           <button
             onClick={handleCreate}
             disabled={!title || !selectedTemplate || !scheduledAt || isCreating}
-            className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-300 transition"
+            className="w-full bg-brandBlack text-white py-3 rounded-[42px] font-medium text-[15px] font-inter hover:bg-black disabled:bg-gray-300 transition"
           >
-            {isCreating ? "Creating..." : "Create Session"}
+            {isCreating ? "Creating..." : "Create session"}
           </button>
         </div>
 
         {profile && (
-          <p className="text-xs text-gray-500 mt-3 text-center">
+          <p className="text-xs text-gray-500 mt-4 text-center font-inter">
             Hosted by <span className="font-medium">{profile.full_name}</span>
           </p>
         )}
