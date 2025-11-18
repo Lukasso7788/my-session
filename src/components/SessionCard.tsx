@@ -11,7 +11,21 @@ export default function SessionCard({
   onDelete,
 }) {
   const isHost = session.host_id === userId;
-  const isBooked = session.session_bookings?.some((b) => b.user_id === userId);
+  const initialIsBooked = session.session_bookings?.some(
+    (b) => b.user_id === userId
+  );
+
+  // Состояние для управления переходом к кнопке "Cancel Booking" после клика
+  // Изначально синхронизировано с фактическим бронированием
+  const [isBookingConfirmed, setIsBookingConfirmed] =
+    useState(initialIsBooked);
+  // Состояние для управления ховером на кнопке "Cancel Booking"
+  const [isHoveringCancel, setIsHoveringCancel] = useState(false);
+
+  // Синхронизация initialIsBooked с isBookingConfirmed при изменении сессии
+  useEffect(() => {
+    setIsBookingConfirmed(initialIsBooked);
+  }, [session.id, initialIsBooked]);
 
   // ---------- FIXED TEMPLATE → TYPE MAP ----------
   const nameToTypeMap: Record<string, string> = {
@@ -92,6 +106,83 @@ export default function SessionCard({
     };
   }, [session.id]);
 
+  // Обработчик клика для бронирования
+  const handleBookSession = () => {
+    onBook(session.id);
+    // Установка состояния подтвержденного бронирования после клика
+    setIsBookingConfirmed(true);
+  };
+
+  // Обработчик клика для отмены бронирования
+  const handleCancelBooking = () => {
+    onCancelBooking(session.id);
+    // Возврат к состоянию "Book Session"
+    setIsBookingConfirmed(false);
+    setIsHoveringCancel(false); // Сброс ховера на всякий случай
+  };
+
+  // Кнопка Book session
+  const bookSessionButton = (
+    <button
+      onClick={handleBookSession}
+      className={`
+        border rounded-full px-6 py-3 text-[14px] font-semibold
+        flex items-center gap-2 transition-all duration-150
+        ${
+          // Логика ховера для Book session
+          isHoveringCancel === false && // Убедимся, что не используется состояние для отмены
+          "hover:text-[#65D46C] hover:border-brandBlack hover:bg-[#65D46C]/10 border-brandBlack text-brandBlack"
+        }
+      `}
+      onMouseEnter={() => setIsHoveringCancel(false)} // Обеспечивает корректное состояние ховера
+    >
+      <img
+        src={
+          isHoveringCancel === false && // Убедимся, что не используется состояние для отмены
+          "book-session-green" // Предполагается, что 'book-session-green.svg' существует
+            ? "/icons/book-session-green.svg"
+            : "/icons/book-session.svg"
+        }
+        className="w-4 h-4"
+      />
+      Book session
+    </button>
+  );
+
+  // Кнопка Cancel booking (после подтверждения)
+  const confirmedBookingButton = (
+    <button
+      onClick={isHoveringCancel ? handleCancelBooking : undefined} // Клик работает только при ховере (Cancel booking)
+      onMouseEnter={() => setIsHoveringCancel(true)}
+      onMouseLeave={() => setIsHoveringCancel(false)}
+      className={`
+        rounded-full py-3 text-[14px] font-semibold flex items-center justify-center
+        transition-all duration-150 ease-in-out
+        ${
+          isHoveringCancel
+            ? // Стиль ховера для отмены
+              "border border-[#F65252] bg-[#F65252]/5 text-[#F65252] px-6"
+            : // Стиль подтвержденной брони
+              "bg-[#65D46C] border border-[#65D46C] w-[48px] h-[48px]"
+        }
+      `}
+    >
+      {isHoveringCancel ? (
+        // Контент при ховере (Cancel booking)
+        <>
+          <img src="/icons/cross-cancel.svg" className="w-4 h-4 mr-2" /> {/* Предполагается, что 'cross-cancel.svg' существует */}
+          Cancel booking
+        </>
+      ) : (
+        // Контент в нормальном состоянии (Booked, маленькая иконка)
+        <img
+          src="/icons/book-session-green.svg"
+          className="w-6 h-6" // Иконка 24px
+        />
+      )}
+    </button>
+  );
+
   return (
     <div
       className="
@@ -122,7 +213,6 @@ export default function SessionCard({
 
         {/* META ROW */}
         <div className="flex flex-wrap items-center gap-4 text-[12px] text-[#606060]">
-
           {/* HOST */}
           <Link
             to={`/profile/${session.host_id}`}
@@ -165,7 +255,6 @@ export default function SessionCard({
 
       {/* RIGHT SIDE */}
       <div className="flex items-center gap-8">
-
         {/* VERTICAL LINE */}
         <div className="w-px h-16 bg-[#D9D9D9]" />
 
@@ -181,34 +270,8 @@ export default function SessionCard({
 
         {/* BUTTONS */}
         <div className="flex items-center gap-2">
-
-          {/* BOOK OR CANCEL BOOKING */}
-          {!isBooked ? (
-            <button
-              onClick={() => onBook(session.id)}
-              className="
-                border border-brandBlack rounded-full
-                px-6 py-3 text-[14px] font-semibold
-                flex items-center gap-2
-                hover:text-[#65D46C]
-              "
-            >
-              <img src="/icons/book-session.svg" className="w-4 h-4" />
-              Book session
-            </button>
-          ) : (
-            <button
-              onClick={() => onCancelBooking(session.id)}
-              className="
-                bg-[#32D74B]/20 border border-[#32D74B]
-                text-[#32D74B]
-                px-6 py-3 rounded-full
-                text-[14px] font-semibold
-              "
-            >
-              Cancel booking
-            </button>
-          )}
+          {/* BOOK OR CANCEL BOOKING - ОТОБРАЖЕНИЕ СОГЛАСНО НОВОЙ ЛОГИКЕ */}
+          {isBookingConfirmed ? confirmedBookingButton : bookSessionButton}
 
           {/* JOIN */}
           <button
@@ -234,7 +297,7 @@ export default function SessionCard({
                 text-[14px] font-semibold
               "
             >
-              <img src='/icons/delete.svg' className='w-4 h-4' />
+              <img src="/icons/delete.svg" className="w-4 h-4" />
               Cancel
             </button>
           )}
