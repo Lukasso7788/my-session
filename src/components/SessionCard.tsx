@@ -21,6 +21,8 @@ export default function SessionCard({
     useState(initialIsBooked);
   // Состояние для управления ховером на кнопке "Cancel Booking"
   const [isHoveringCancel, setIsHoveringCancel] = useState(false);
+  // Состояние для управления ховером на кнопке "Book Session"
+  const [isHoveringBook, setIsHoveringBook] = useState(false);
 
   // Синхронизация initialIsBooked с isBookingConfirmed при изменении сессии
   useEffect(() => {
@@ -111,6 +113,7 @@ export default function SessionCard({
     onBook(session.id);
     // Установка состояния подтвержденного бронирования после клика
     setIsBookingConfirmed(true);
+    setIsHoveringBook(false); // Сброс ховера на Book
   };
 
   // Обработчик клика для отмены бронирования
@@ -125,22 +128,22 @@ export default function SessionCard({
   const bookSessionButton = (
     <button
       onClick={handleBookSession}
+      onMouseEnter={() => setIsHoveringBook(true)}
+      onMouseLeave={() => setIsHoveringBook(false)}
       className={`
         border rounded-full px-6 py-3 text-[14px] font-semibold
         flex items-center gap-2 transition-all duration-150
         ${
-          // Логика ховера для Book session
-          isHoveringCancel === false && // Убедимся, что не используется состояние для отмены
-          "hover:text-[#65D46C] hover:border-brandBlack hover:bg-[#65D46C]/10 border-brandBlack text-brandBlack"
+          isHoveringBook
+            ? "text-[#65D46C] border-brandBlack bg-[#65D46C]/10"
+            : "border-brandBlack text-brandBlack bg-white"
         }
       `}
-      onMouseEnter={() => setIsHoveringCancel(false)} // Обеспечивает корректное состояние ховера
     >
       <img
         src={
-          isHoveringCancel === false && // Убедимся, что не используется состояние для отмены
-          "book-session-green" // Предполагается, что 'book-session-green.svg' существует
-            ? "/icons/book-session-green.svg"
+          isHoveringBook
+            ? "/icons/book-session-green.svg" // Предполагается, что 'book-session-green.svg' существует
             : "/icons/book-session.svg"
         }
         className="w-4 h-4"
@@ -162,15 +165,16 @@ export default function SessionCard({
           isHoveringCancel
             ? // Стиль ховера для отмены
               "border border-[#F65252] bg-[#F65252]/5 text-[#F65252] px-6"
-            : // Стиль подтвержденной брони
-              "bg-[#65D46C] border border-[#65D46C] w-[48px] h-[48px]"
+            : // Стиль подтвержденной брони (маленькая иконка)
+              "border border-[#65D46C] bg-[#65D46C]/10 w-[48px] h-[48px]"
         }
       `}
     >
       {isHoveringCancel ? (
         // Контент при ховере (Cancel booking)
         <>
-          <img src="/icons/cross-cancel.svg" className="w-4 h-4 mr-2" /> {/* Предполагается, что 'cross-cancel.svg' существует */}
+          <img src="/icons/cross-cancel.svg" className="w-4 h-4 mr-2" />{" "}
+          {/* Предполагается, что 'cross-cancel.svg' существует */}
           Cancel booking
         </>
       ) : (
