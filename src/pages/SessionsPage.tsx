@@ -312,7 +312,7 @@ export function SessionsPage() {
         </div>
       </header>
 
-      {/* H1 */}
+      {/* H1 - отдельная секция с py-[100px] */}
       <section className="max-w-[1280px] mx-auto px-8 py-[100px] text-center">
         <h1
           className="
@@ -329,7 +329,7 @@ export function SessionsPage() {
         </h1>
       </section>
       
-      {/* SWITCHER */}
+      {/* SWITCHER - отдельная секция с mb-[55px] */}
       <section className="max-w-[1280px] mx-auto px-8 mb-[55px] text-center">
         <div className="flex justify-center">
           <SessionTypeSwitcher
@@ -344,6 +344,7 @@ export function SessionsPage() {
 
       {/* SESSION LIST */}
       <main className="max-w-[1280px] mx-auto px-8 pb-12">
+        {/* Контейнер для карточек сессий с рамкой и паддингом 32px */}
         <div className="border border-[#DBD8D8] rounded-2xl p-8">
           {sessionTypeTab !== "group" && (
             <div className="border border-borderGray rounded-2xl p-8 mb-6 text-sm text-slate-600">
@@ -417,7 +418,7 @@ export function SessionsPage() {
           </div>
         </div>
       )}
-    </div>
+    </div> // <-- Добавленный закрывающий </div> для корневого элемента
   );
 }
 
