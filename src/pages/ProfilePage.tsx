@@ -5,6 +5,7 @@ import Header from "../components/Header";
 
 export default function ProfilePage() {
   const navigate = useNavigate();
+
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -16,6 +17,7 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
 
+  // 📌 LOAD PROFILE
   useEffect(() => {
     async function loadProfile() {
       const { data } = await supabase.auth.getUser();
@@ -44,7 +46,7 @@ export default function ProfilePage() {
     loadProfile();
   }, [navigate]);
 
-  // ================== Upload avatar ===================
+  // 📌 UPLOAD AVATAR
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
       setUploading(true);
@@ -66,10 +68,19 @@ export default function ProfilePage() {
 
       const publicUrl = data.publicUrl;
 
-      await supabase.from("profiles").update({
-        avatar_url: publicUrl,
-        updated_at: new Date().toISOString(),
-      }).eq("id", user.id);
+      // 🔥 IMPORTANT — update AUTH user_metadata so Header updates automatically
+      await supabase.auth.updateUser({
+        data: { avatar_url: publicUrl }
+      });
+
+      // Update profile table
+      await supabase
+        .from("profiles")
+        .update({
+          avatar_url: publicUrl,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", user.id);
 
       setAvatarUrl(publicUrl);
     } catch (err) {
@@ -79,16 +90,28 @@ export default function ProfilePage() {
     }
   };
 
+  // 📌 SAVE PROFILE
   const handleSave = async () => {
+    if (!user) return;
+
     setSaving(true);
 
     try {
-      await supabase.from("profiles").update({
-        full_name: fullName,
-        bio,
-        avatar_url: avatarUrl,
-        updated_at: new Date().toISOString(),
-      }).eq("id", user.id);
+      // Update profile table
+      await supabase
+        .from("profiles")
+        .update({
+          full_name: fullName,
+          bio,
+          avatar_url: avatarUrl,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", user.id);
+
+      // 🔥 Sync auth metadata
+      await supabase.auth.updateUser({
+        data: { full_name: fullName, avatar_url: avatarUrl }
+      });
 
       setEditMode(false);
     } catch (err) {
@@ -105,7 +128,7 @@ export default function ProfilePage() {
       <Header />
 
       <div className="w-full max-w-4xl mx-auto px-6 py-12">
-        {/* Back */}
+        {/* BACK BUTTON */}
         <button
           onClick={() => navigate(-1)}
           className="text-sm flex items-center gap-2 text-gray-500 hover:text-black mb-6"
@@ -113,7 +136,7 @@ export default function ProfilePage() {
           ← Back
         </button>
 
-        {/* Avatar */}
+        {/* AVATAR */}
         <div className="flex flex-col items-center gap-4">
           <img
             src={
@@ -138,15 +161,15 @@ export default function ProfilePage() {
           )}
         </div>
 
-        {/* Name */}
+        {/* NAME */}
         <h1 className="text-3xl font-semibold text-center mt-4">{fullName}</h1>
 
-        {/* Meta */}
+        {/* META */}
         <p className="text-center text-gray-500 mt-2">
           Since 12.11.2025 • 120 sessions
         </p>
 
-        {/* Edit button */}
+        {/* EDIT BUTTON */}
         <div className="flex justify-center mt-4">
           <button
             onClick={() => setEditMode(!editMode)}
@@ -156,7 +179,7 @@ export default function ProfilePage() {
           </button>
         </div>
 
-        {/* Bio */}
+        {/* BIO */}
         <div className="mt-10 border-t pt-8">
           <h2 className="text-lg font-semibold mb-2">Bio</h2>
 
@@ -172,7 +195,7 @@ export default function ProfilePage() {
           )}
         </div>
 
-        {/* Save button */}
+        {/* SAVE BUTTON */}
         {editMode && (
           <button
             onClick={handleSave}
@@ -183,7 +206,7 @@ export default function ProfilePage() {
           </button>
         )}
 
-        {/* Sessions list placeholder */}
+        {/* FUTURE SESSIONS LIST PLACEHOLDER */}
         <div className="mt-12">
           <h2 className="text-xl font-semibold mb-4">
             Current hosted & upcoming sessions:
