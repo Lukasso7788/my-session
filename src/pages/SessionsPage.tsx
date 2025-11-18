@@ -303,21 +303,22 @@ export function SessionsPage() {
 
                 {showUserMenu && (
                   <div className="absolute right-0 top-12 w-48 bg-white rounded-xl shadow-lg border border-borderGray z-20">
-                    <button
-                      onClick={() => navigate("/profile")}
-                      className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50"
-                    >
-                      Profile
-                    </button>
-                    <button
-                      onClick={async () => {
-                        await supabase.auth.signOut();
-                        setShowUserMenu(false);
-                      }}
-                      className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
-                    >
-                      Log out
-                    </button>
+                      <button
+                        onClick={() => navigate("/profile")}
+                        className="w-full text-left px-4 py-2 text-sm font-light hover:bg-slate-50"
+                      >
+                        Profile
+                      </button>
+
+                      <button
+                        onClick={async () => {
+                          await supabase.auth.signOut();
+                          setShowUserMenu(false);
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm font-light text-red-600 hover:bg-red-50"
+                      >
+                        Log out
+                      </button>
                   </div>
                 )}
               </>
