@@ -315,7 +315,7 @@ export function SessionsPage() {
                           await supabase.auth.signOut();
                           setShowUserMenu(false);
                         }}
-                        className="w-full text-left px-5 py-2 text-sm font-light text-red-600 hover:bg-red-50"
+                        className="w-full text-left px-4 py-2 text-sm font-light text-red-600 hover:bg-red-50"
                       >
                         Log out
                       </button>
