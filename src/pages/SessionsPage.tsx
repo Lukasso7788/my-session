@@ -289,7 +289,7 @@ export function SessionsPage() {
                     <img
                       src={user.user_metadata.avatar_url}
                       alt="avatar"
-                      className="w-10 h-10 rounded-full border border-borderGray"
+                      className="w-[50px] h-[50px] rounded-full border border-borderGray"
                     />
                   ) : (
                     <UserCircle className="w-10 h-10 text-slate-600" />
