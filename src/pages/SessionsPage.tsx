@@ -22,13 +22,13 @@ export function SessionsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  
+  // НОВОЕ: Состояние для ховера на кнопке "Create a session"
+  const [isHoveringCreate, setIsHoveringCreate] = useState(false);
 
   const [sessionTypeTab, setSessionTypeTab] = useState<
     "group" | "infinite" | "body"
   >("group");
-  
-  // НОВОЕ: Состояние для ховера кнопки "Create a session", чтобы инвертировать иконку
-  const [isHoveringCreate, setIsHoveringCreate] = useState(false);
 
   // ---------- auth restore ----------
   useEffect(() => {
@@ -266,18 +266,15 @@ export function SessionsPage() {
                   onClick={handleCreateSessionClick}
                   onMouseEnter={() => setIsHoveringCreate(true)}
                   onMouseLeave={() => setIsHoveringCreate(false)}
-                  className="
+                  className={`
                     inline-flex items-center gap-2 px-6 py-3 rounded-full 
-                    bg-brandBlack text-white hover:bg-black
-                    text-base font-medium transition-colors duration-150
-                  "
+                    border text-base font-medium transition-colors duration-200
+                    border-[#2F2F2F] 
+                    ${isHoveringCreate ? 'bg-[#2F2F2F] text-white' : 'hover:bg-slate-50'}
+                  `}
                 >
                   <img
-                    src={
-                      isHoveringCreate
-                        ? "/icons/create-session-white.svg"
-                        : "/icons/create-session-white.svg" // Используем белую иконку по умолчанию, так как фон черный
-                    }
+                    src={isHoveringCreate ? "/icons/create-session-white.svg" : "/icons/create-session.svg"}
                     alt="create session"
                     className="w-5 h-5"
                   />
