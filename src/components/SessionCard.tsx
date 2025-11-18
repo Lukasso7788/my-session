@@ -226,7 +226,7 @@ export default function SessionCard({
             <span>{startDateString}</span>
           </div>
 
-          {/* ORIGINAL TYPE INDICATOR */}
+          {/* ORIGINAL TYPE INDICATOR (С обводкой) */}
           <div
             className="inline-flex items-center gap-1 px-3 py-1 rounded-full border border-1"
             style={{
@@ -263,27 +263,33 @@ export default function SessionCard({
           {/* BOOK OR CANCEL BOOKING */}
           {isBookingConfirmed ? confirmedBookingButton : bookSessionButton}
 
-          {/* JOIN */}
+          {/* JOIN (Измененные стили ховера) */}
           <button
             onClick={() => onJoin(session.id)}
             onMouseEnter={() => setIsHoveringJoin(true)}
             onMouseLeave={() => setIsHoveringJoin(false)}
-            className="
+            style={{
+              // Установка цвета фона и текста при ховере через style, т.к. t.color динамический
+              backgroundColor: isHoveringJoin ? `${t.color}1A` : undefined, // Добавление 10% непрозрачности (1A в HEX)
+              color: isHoveringJoin ? t.color : undefined,
+            }}
+            className={`
               rounded-full px-6 py-3
               text-[14px] font-semibold
-              bg-brandBlack text-white
-              hover:bg-black transition-all duration-150
-            "
-            style={
-              isHoveringJoin
-                ? { color: t.color, borderColor: t.color, borderWidth: '2px', borderStyle: 'solid', backgroundColor: 'white' }
-                : {}
-            }
+              transition-colors duration-150
+              ${
+                isHoveringJoin
+                  ? // Ховер (стили заданы через style, чтобы использовать t.color)
+                    ""
+                  : // По умолчанию
+                    "bg-brandBlack text-white hover:bg-black"
+              }
+            `}
           >
             Join session
           </button>
 
-          {/* HOST CANCEL (КРУГЛАЯ КНОПКА С КРЕСТИКОМ 24PX) */}
+          {/* HOST CANCEL */}
           {isHost && (
             <button
               onClick={() => onDelete(session.id)}
