@@ -1,26 +1,53 @@
-// src/components/Header.tsx
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { UserCircle } from "lucide-react";
 
-export function Header() {
+export default function Header() {
     const navigate = useNavigate();
 
     const [user, setUser] = useState<any>(null);
+    const [profile, setProfile] = useState<any>(null);
+
     const [showUserMenu, setShowUserMenu] = useState(false);
     const [isHoveringCreate, setIsHoveringCreate] = useState(false);
 
-    // Restore auth
+    // ---------------- LOAD USER ----------------
     useEffect(() => {
-        const loadUser = async () => {
+        const load = async () => {
             const { data } = await supabase.auth.getSession();
-            setUser(data?.session?.user ?? null);
+            const authUser = data?.session?.user ?? null;
+
+            setUser(authUser);
+
+            if (authUser?.id) {
+                const { data: p } = await supabase
+                    .from("profiles")
+                    .select("*")
+                    .eq("id", authUser.id)
+                    .single();
+
+                setProfile(p);
+            }
         };
-        loadUser();
+
+        load();
 
         const { data: listener } = supabase.auth.onAuthStateChange(
-            (_event, session) => setUser(session?.user ?? null)
+            async (_event, session) => {
+                const currentUser = session?.user ?? null;
+                setUser(currentUser);
+
+                if (currentUser?.id) {
+                    const { data: p } = await supabase
+                        .from("profiles")
+                        .select("*")
+                        .eq("id", currentUser.id)
+                        .single();
+
+                    setProfile(p);
+                }
+            }
         );
 
         return () => {
@@ -28,16 +55,19 @@ export function Header() {
         };
     }, []);
 
+    const avatarSrc =
+        profile?.avatar_url ||
+        `https://ui-avatars.com/api/?name=${encodeURIComponent(
+            profile?.full_name || "User"
+        )}`;
+
     return (
         <header className="border-b border-borderGray">
             <div className="w-full px-8 py-6 flex items-center justify-between gap-3">
 
                 {/* LEFT NAV */}
                 <nav className="flex items-center gap-6 flex-1 text-sm text-[#2E2E2E]">
-                    <button
-                        onClick={() => navigate("/sessions")}
-                        className="hover:text-black"
-                    >
+                    <button onClick={() => navigate("/sessions")} className="hover:text-black">
                         Sessions
                     </button>
                     <button className="hover:text-black">Pricing</button>
@@ -54,7 +84,7 @@ export function Header() {
                     </button>
                 </div>
 
-                {/* AUTH / USER */}
+                {/* RIGHT AUTH AREA */}
                 <div className="flex-1 flex items-center justify-end gap-3 relative">
                     {!user ? (
                         <div className="flex gap-3">
@@ -64,7 +94,6 @@ export function Header() {
                             >
                                 Log in
                             </button>
-
                             <button
                                 onClick={() => navigate("/register")}
                                 className="px-4 py-2 rounded-full bg-brandBlack text-white hover:bg-black text-sm font-medium"
@@ -74,7 +103,7 @@ export function Header() {
                         </div>
                     ) : (
                         <>
-                            {/* CREATE SESSION BUTTON */}
+                            {/* CREATE SESSION */}
                             <button
                                 onClick={() => navigate("#open-create-modal")}
                                 onMouseEnter={() => setIsHoveringCreate(true)}
@@ -92,26 +121,20 @@ export function Header() {
                                             ? "/icons/create-session-white.svg"
                                             : "/icons/create-session.svg"
                                     }
-                                    alt="create session"
                                     className="w-5 h-5"
                                 />
                                 <span>Create a session</span>
                             </button>
 
-                            {/* AVATAR BUTTON */}
+                            {/* AVATAR */}
                             <button
                                 onClick={() => setShowUserMenu((v) => !v)}
                                 className="flex items-center"
                             >
-                                {user.user_metadata?.avatar_url ? (
-                                    <img
-                                        src={user.user_metadata.avatar_url}
-                                        alt="avatar"
-                                        className="w-[50px] h-[50px] rounded-full border border-borderGray"
-                                    />
-                                ) : (
-                                    <UserCircle className="w-10 h-10 text-slate-600" />
-                                )}
+                                <img
+                                    src={avatarSrc}
+                                    className="w-[50px] h-[50px] rounded-full border border-borderGray object-cover"
+                                />
                             </button>
 
                             {/* DROPDOWN */}
@@ -142,5 +165,3 @@ export function Header() {
         </header>
     );
 }
-
-export default Header;
