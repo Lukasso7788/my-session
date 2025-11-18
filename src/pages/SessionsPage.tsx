@@ -123,7 +123,6 @@ export function SessionsPage() {
 
               return { ...s, session_attendance: attendance };
             });
-          });
         }
       )
       .subscribe();
@@ -309,12 +308,12 @@ export function SessionsPage() {
                 )}
               </>
             )}
-        </div>
+          </div>
         </div>
       </header>
 
-      {/* H1 + SWITCHER */}
-      <section className="max-w-[1280px] mx-auto px-8 py-[100px] space-y-8 text-center">
+      {/* H1 */}
+      <section className="max-w-[1280px] mx-auto px-8 py-[100px] text-center">
         <h1
           className="
             text-[24px]
@@ -328,7 +327,10 @@ export function SessionsPage() {
         >
           Join a group focus session to stay accountable
         </h1>
-
+      </section>
+      
+      {/* SWITCHER */}
+      <section className="max-w-[1280px] mx-auto px-8 mb-[55px] text-center">
         <div className="flex justify-center">
           <SessionTypeSwitcher
             value={sessionTypeTab}
@@ -339,47 +341,50 @@ export function SessionsPage() {
         </div>
       </section>
 
+
       {/* SESSION LIST */}
       <main className="max-w-[1280px] mx-auto px-8 pb-12">
-        {sessionTypeTab !== "group" && (
-          <div className="border border-borderGray rounded-2xl p-8 mb-6 text-sm text-slate-600">
-            {sessionTypeTab === "infinite"
-              ? "Infinite rooms are coming soon."
-              : "Body tripling is coming soon."}
-          </div>
-        )}
+        <div className="border border-[#DBD8D8] rounded-2xl p-8">
+          {sessionTypeTab !== "group" && (
+            <div className="border border-borderGray rounded-2xl p-8 mb-6 text-sm text-slate-600">
+              {sessionTypeTab === "infinite"
+                ? "Infinite rooms are coming soon."
+                : "Body tripling is coming soon."}
+            </div>
+          )}
 
-        {isLoading ? (
-          <div className="text-center py-12">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-brandBlack" />
-          </div>
-        ) : visibleSessions.length === 0 ? (
-          <div className="border border-borderGray rounded-2xl p-10 text-center">
-            <p className="text-sm text-slate-600 mb-4">
-              No active sessions available
-            </p>
-            <button
-              onClick={handleCreateSessionClick}
-              className="text-sm underline underline-offset-4"
-            >
-              Create the first session
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {visibleSessions.map((session) => (
-              <SessionCard
-                key={session.id}
-                session={session}
-                userId={user?.id}
-                onBook={handleBook}
-                onCancelBooking={handleCancelBooking}
-                onJoin={handleJoinSession}
-                onDelete={handleDeleteSession}
-              />
-            ))}
-          </div>
-        )}
+          {isLoading ? (
+            <div className="text-center py-12">
+              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-brandBlack" />
+            </div>
+          ) : visibleSessions.length === 0 ? (
+            <div className="p-2 text-center">
+              <p className="text-sm text-slate-600 mb-4">
+                No active sessions available
+              </p>
+              <button
+                onClick={handleCreateSessionClick}
+                className="text-sm underline underline-offset-4"
+              >
+                Create the first session
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {visibleSessions.map((session) => (
+                <SessionCard
+                  key={session.id}
+                  session={session}
+                  userId={user?.id}
+                  onBook={handleBook}
+                  onCancelBooking={handleCancelBooking}
+                  onJoin={handleJoinSession}
+                  onDelete={handleDeleteSession}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </main>
 
       <CreateSessionModal
