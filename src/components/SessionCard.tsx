@@ -16,7 +16,6 @@ export default function SessionCard({
   );
 
   // Состояние для управления переходом к кнопке "Cancel Booking" после клика
-  // Изначально синхронизировано с фактическим бронированием
   const [isBookingConfirmed, setIsBookingConfirmed] =
     useState(initialIsBooked);
   // Состояние для управления ховером на кнопке "Cancel Booking"
@@ -111,17 +110,15 @@ export default function SessionCard({
   // Обработчик клика для бронирования
   const handleBookSession = () => {
     onBook(session.id);
-    // Установка состояния подтвержденного бронирования после клика
     setIsBookingConfirmed(true);
-    setIsHoveringBook(false); // Сброс ховера на Book
+    setIsHoveringBook(false);
   };
 
   // Обработчик клика для отмены бронирования
   const handleCancelBooking = () => {
     onCancelBooking(session.id);
-    // Возврат к состоянию "Book Session"
     setIsBookingConfirmed(false);
-    setIsHoveringCancel(false); // Сброс ховера на всякий случай
+    setIsHoveringCancel(false);
   };
 
   // Кнопка Book session (начальное состояние)
@@ -135,18 +132,16 @@ export default function SessionCard({
         flex items-center gap-2 transition-all duration-150
         ${
           isHoveringBook
-            ? // Ховер: текст/иконка зеленый, обводка зеленая, фон зеленый 10%
-              "text-[#65D46C] border border-[#65D46C] bg-[#65D46C]/10"
-            : // По умолчанию: текст/обводка черный, фон белый
-              "border border-brandBlack text-brandBlack bg-white"
+            ? "text-[#65D46C] border border-[#65D46C] bg-[#65D46C]/10"
+            : "border border-brandBlack text-brandBlack bg-white"
         }
       `}
     >
       <img
         src={
           isHoveringBook
-            ? "/icons/book-session-green.svg" // Иконка при ховере
-            : "/icons/book-session.svg" // Иконка по умолчанию
+            ? "/icons/book-session-green.svg"
+            : "/icons/book-session.svg"
         }
         className="w-4 h-4"
       />
@@ -157,7 +152,7 @@ export default function SessionCard({
   // Кнопка Cancel booking (состояние после бронирования)
   const confirmedBookingButton = (
     <button
-      onClick={isHoveringCancel ? handleCancelBooking : undefined} // Клик работает только при ховере (Cancel booking)
+      onClick={isHoveringCancel ? handleCancelBooking : undefined}
       onMouseEnter={() => setIsHoveringCancel(true)}
       onMouseLeave={() => setIsHoveringCancel(false)}
       className={`
@@ -165,10 +160,8 @@ export default function SessionCard({
         transition-all duration-150 ease-in-out
         ${
           isHoveringCancel
-            ? // Стиль ховера для отмены: Красная обводка, красный текст, красный фон 5%
-              "border border-[#F65252] bg-[#F65252]/5 text-[#F65252] px-6"
-            : // Стиль подтвержденной брони (маленькая иконка): Зеленая обводка, зеленый фон 10%, фиксированный размер
-              "border border-[#65D46C] bg-[#65D46C]/10 w-[48px] h-[48px]"
+            ? "border border-[#F65252] bg-[#F65252]/5 text-[#F65252] px-6"
+            : "border border-[#65D46C] bg-[#65D46C]/10 w-[48px] h-[48px]"
         }
       `}
     >
@@ -185,7 +178,7 @@ export default function SessionCard({
         // Контент в нормальном состоянии (Booked, маленькая иконка 24px)
         <img
           src="/icons/book-session-green.svg"
-          className="w-6 h-6" // Иконка 24px
+          className="w-6 h-6"
         />
       )}
     </button>
@@ -201,19 +194,8 @@ export default function SessionCard({
       "
       style={{ padding: "24px 32px" }}
     >
-      {/* DELETE BUTTON (TOP RIGHT) */}
-      {isHost && (
-        <button
-          onClick={() => onDelete(session.id)}
-          className="
-            absolute right-8 top-8 h-10 w-10 rounded-full
-            bg-[#FEE2E2] flex items-center justify-center
-            hover:bg-[#FECACA]
-          "
-        >
-          <img src="/icons/delete.svg" className="w-4 h-4" />
-        </button>
-      )}
+      {/* Удалена дублирующая кнопка "DELETE BUTTON" в верхнем правом углу
+      */}
 
       {/* LEFT SIDE */}
       <div className="flex-1 space-y-3">
@@ -294,7 +276,7 @@ export default function SessionCard({
             Join session
           </button>
 
-          {/* HOST CANCEL (КРУГЛАЯ КНОПКА С КРЕСТИКОМ) */}
+          {/* HOST CANCEL (КРУГЛАЯ КНОПКА С КРЕСТИКОМ 24PX) */}
           {isHost && (
             <button
               onClick={() => onDelete(session.id)}
@@ -304,7 +286,7 @@ export default function SessionCard({
                 hover:bg-[#FECACA]
               "
             >
-              <img src="/icons/cross-cancel.svg" className="w-4 h-4" />
+              <img src="/icons/cross-cancel.svg" className="w-6 h-6" /> {/* Изменено на 24px (w-6 h-6) */}
             </button>
           )}
         </div>
