@@ -22,6 +22,8 @@ export default function SessionCard({
   const [isHoveringCancel, setIsHoveringCancel] = useState(false);
   // Состояние для управления ховером на кнопке "Book Session"
   const [isHoveringBook, setIsHoveringBook] = useState(false);
+  // Состояние для управления ховером на кнопке "Join Session"
+  const [isHoveringJoin, setIsHoveringJoin] = useState(false);
 
   // Синхронизация initialIsBooked с isBookingConfirmed при изменении сессии
   useEffect(() => {
@@ -226,11 +228,11 @@ export default function SessionCard({
 
           {/* ORIGINAL TYPE INDICATOR */}
           <div
-            className="inline-flex items-center gap-1 px-3 py-1 rounded-full border border-1" // Добавлены классы 'border border-1'
+            className="inline-flex items-center gap-1 px-3 py-1 rounded-full border border-1"
             style={{
               backgroundColor: t.bg,
               color: t.color,
-              borderColor: t.color, // Установлен цвет обводки
+              borderColor: t.color,
               fontSize: 10,
               fontWeight: 500,
             }}
@@ -264,12 +266,19 @@ export default function SessionCard({
           {/* JOIN */}
           <button
             onClick={() => onJoin(session.id)}
+            onMouseEnter={() => setIsHoveringJoin(true)}
+            onMouseLeave={() => setIsHoveringJoin(false)}
             className="
               rounded-full px-6 py-3
               text-[14px] font-semibold
               bg-brandBlack text-white
-              hover:bg-black
+              hover:bg-black transition-all duration-150
             "
+            style={
+              isHoveringJoin
+                ? { color: t.color, borderColor: t.color, borderWidth: '2px', borderStyle: 'solid', backgroundColor: 'white' }
+                : {}
+            }
           >
             Join session
           </button>
