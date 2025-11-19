@@ -22,33 +22,48 @@ export function CreateSessionModal({
   const [error, setError] = useState<string | null>(null);
   const [profile, setProfile] = useState<any>(null);
 
-  // Load user profile
+  // Load user
   useEffect(() => {
-    async function loadProfile() {
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
+    if (!isOpen) return;
 
-      if (authError || !user) {
+    async function loadProfile() {
+      setError(null);
+
+      // first load session (required in prod)
+      const sessionRes = await supabase.auth.getSession();
+      const session = sessionRes.data.session;
+
+      if (!session) {
         setError("You must be logged in to create a session.");
         return;
       }
 
+      const user = session.user;
+      if (!user) {
+        setError("You must be logged in to create a session.");
+        return;
+      }
+
+      // then load profile
       const { data, error } = await supabase
         .from("profiles")
         .select("id, full_name")
         .eq("id", user.id)
         .single();
 
-      if (error) console.error("❌ Error loading profile:", error);
+      if (error) {
+        console.error("❌ Error loading profile:", error);
+        setError("Failed to load your profile.");
+        return;
+      }
+
       setProfile(data);
     }
 
-    if (isOpen) loadProfile();
+    loadProfile();
   }, [isOpen]);
 
-  // Load templates
+  // Load Templates
   useEffect(() => {
     if (!isOpen) return;
 
@@ -56,20 +71,20 @@ export function CreateSessionModal({
       const { data, error } = await supabase
         .from("session_templates")
         .select("*")
-        .order("total_duration", { ascending: true });
+        .order("total_duration");
 
       if (error) {
-        console.error("Error loading templates:", error);
+        console.error("❌ Error loading templates:", error);
         setError("Failed to load templates.");
-      } else {
-        setTemplates(data || []);
+        return;
       }
+
+      setTemplates(data || []);
     }
 
     loadTemplates();
   }, [isOpen]);
 
-  // Create session
   const handleCreate = async () => {
     if (!title || !selectedTemplate || !scheduledAt) {
       setError("Please fill out all fields.");
@@ -77,7 +92,7 @@ export function CreateSessionModal({
     }
 
     if (!profile?.id) {
-      setError("Unable to load your profile info.");
+      setError("Unable to load your profile.");
       return;
     }
 
@@ -88,27 +103,22 @@ export function CreateSessionModal({
       const scheduledISO = new Date(scheduledAt).toISOString();
       const template = templates.find((t) => t.id === selectedTemplate);
 
-      // Create Daily room
-      const roomRes = await fetch(
-        "https://cxqgzcjsjyszcbcbdusp.supabase.co/functions/v1/create-daily-room",
+      // Create Daily room via Supabase Functions
+      const { data: fnData, error: fnError } = await supabase.functions.invoke(
+        "create-daily-room",
         {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          },
+          body: {},
         }
       );
 
-      const roomData = await roomRes.json();
-      if (!roomRes.ok || !roomData.url) {
-        console.error("❌ Daily room creation failed:", roomData);
+      if (fnError || !fnData?.url) {
+        console.error("❌ Daily room creation failed:", fnData);
         throw new Error("Failed to create Daily room");
       }
 
-      const dailyUrl = roomData.url;
+      const dailyUrl = fnData.url;
 
-      // Save session
+      // Create Session
       const { error } = await supabase.from("sessions").insert([
         {
           title,
@@ -127,13 +137,15 @@ export function CreateSessionModal({
 
       if (error) throw error;
 
+      // Reset
       setTitle("");
       setScheduledAt("");
       setSelectedTemplate("");
+
       onSessionCreated();
       onClose();
     } catch (err: any) {
-      console.error("Error creating session:", err);
+      console.error("❌ Error creating session:", err);
       setError(err.message || "Failed to create session");
     } finally {
       setIsCreating(false);
