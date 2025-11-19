@@ -1,19 +1,27 @@
 // src/pages/SessionsPage.tsx
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { SessionTypeSwitcher } from "../components/SessionTypeSwitcher";
 import SessionCard from "../components/SessionCard";
-import Header from "../components/Header";   // ← ВЕРНУЛ ЭТО
+import Header from "../components/Header";
 import { supabase } from "../lib/supabase";
 import type { Session } from "../types/session";
+import { useCreateSessionModal } from "../hooks/useCreateSessionModal";
 
 type SessionWithRelations = Session & {
+  host_id?: string;
+  host_name?: string;
+  duration_minutes: number;
+  format?: string;
+  start_time?: string;
+  status?: string;
   session_bookings?: { user_id: string }[];
   session_attendance?: { id: string; session_id: string; user_id: string }[];
 };
 
 export function SessionsPage() {
   const navigate = useNavigate();
+  const modal = useCreateSessionModal();
 
   const [sessions, setSessions] = useState<SessionWithRelations[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -23,7 +31,7 @@ export function SessionsPage() {
     "group" | "infinite" | "body"
   >("group");
 
-  // AUTH RESTORE
+  // ---------- AUTH RESTORE ----------
   useEffect(() => {
     const getCurrentSession = async () => {
       const { data } = await supabase.auth.getSession();
@@ -38,8 +46,8 @@ export function SessionsPage() {
     return () => listener.subscription.unsubscribe();
   }, []);
 
-  // LOAD SESSIONS
-  const fetchSessions = async () => {
+  // ---------- LOAD SESSIONS ----------
+  const fetchSessions = useCallback(async () => {
     try {
       setIsLoading(true);
 
@@ -71,13 +79,18 @@ export function SessionsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchSessions();
-  }, []);
+  }, [fetchSessions]);
 
-  // REALTIME ATTENDANCE
+  // ---------- ГЛОБАЛЬНАЯ МОДАЛКА: после создания сессии перезагружаем список ----------
+  useEffect(() => {
+    modal.setOnCreatedCallback(fetchSessions);
+  }, [modal, fetchSessions]);
+
+  // ---------- REALTIME ATTENDANCE ----------
   useEffect(() => {
     const channel = supabase
       .channel("session-attendance")
@@ -87,6 +100,7 @@ export function SessionsPage() {
         (payload) => {
           setSessions((prev) => {
             const sessionId =
+              // @ts-ignore
               payload.new?.session_id || payload.old?.session_id;
             if (!sessionId) return prev;
 
@@ -96,11 +110,14 @@ export function SessionsPage() {
               let attendance = s.session_attendance || [];
 
               if (payload.eventType === "INSERT") {
+                // @ts-ignore
                 attendance = [...attendance, payload.new];
               } else if (payload.eventType === "DELETE") {
+                // @ts-ignore
                 const delId = payload.old.id;
                 attendance = attendance.filter((a) => a.id !== delId);
               } else if (payload.eventType === "UPDATE") {
+                // @ts-ignore
                 const newRow = payload.new;
                 attendance = attendance.map((a) =>
                   a.id === newRow.id ? newRow : a
@@ -117,6 +134,7 @@ export function SessionsPage() {
     return () => supabase.removeChannel(channel);
   }, []);
 
+  // ---------- HELPERS ----------
   const isExpired = (s: SessionWithRelations) => {
     if (!s.start_time) return false;
     const end =
@@ -132,6 +150,7 @@ export function SessionsPage() {
   const visibleSessions =
     sessionTypeTab === "group" ? activeSessions : [];
 
+  // ---------- ACTIONS ----------
   const handleJoinSession = (sessionId: string) => {
     if (!user) {
       navigate("/login");
@@ -140,15 +159,74 @@ export function SessionsPage() {
     navigate(`/room/${sessionId}`);
   };
 
+  const handleBookSession = async (sessionId: string) => {
+    if (!user) {
+      navigate("/login");
+      return;
+    }
+
+    try {
+      const { error } = await supabase.from("session_bookings").insert({
+        session_id: sessionId,
+        user_id: user.id,
+      });
+
+      if (error) throw error;
+
+      await fetchSessions();
+    } catch (err) {
+      console.error("Error booking session:", err);
+    }
+  };
+
+  const handleCancelBooking = async (sessionId: string) => {
+    if (!user) {
+      navigate("/login");
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("session_bookings")
+        .delete()
+        .eq("session_id", sessionId)
+        .eq("user_id", user.id);
+
+      if (error) throw error;
+
+      await fetchSessions();
+    } catch (err) {
+      console.error("Error cancelling booking:", err);
+    }
+  };
+
+  const handleDeleteSession = async (sessionId: string) => {
+    if (!user) {
+      navigate("/login");
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("sessions")
+        .delete()
+        .eq("id", sessionId);
+
+      if (error) throw error;
+
+      setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+    } catch (err) {
+      console.error("Error deleting session:", err);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-white text-brandBlack font-inter">
-
-      {/* HEADER ДОБАВЛЕН ОБРАТНО */}
+      {/* Глобальный HEADER */}
       <Header />
 
       {/* MAIN CONTENT */}
       <main className="w-full px-8 pb-12">
-
         <div className="pt-[100px] pb-[50px] text-center">
           <h1 className="text-[24px] md:text-[28px] xl:text-[36px] font-normal leading-tight mx-auto">
             Join a group focus session to stay accountable
@@ -173,6 +251,14 @@ export function SessionsPage() {
                 <p className="text-sm text-slate-600 mb-4">
                   No active sessions available
                 </p>
+                {user && (
+                  <button
+                    onClick={() => modal.open()}
+                    className="text-sm underline underline-offset-4"
+                  >
+                    Create the first session
+                  </button>
+                )}
               </div>
             ) : (
               <div className="space-y-6">
@@ -182,6 +268,9 @@ export function SessionsPage() {
                     session={session}
                     userId={user?.id}
                     onJoin={handleJoinSession}
+                    onBook={handleBookSession}
+                    onCancelBooking={handleCancelBooking}
+                    onDelete={handleDeleteSession}
                   />
                 ))}
               </div>

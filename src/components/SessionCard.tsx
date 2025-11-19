@@ -1,6 +1,16 @@
+// src/components/SessionCard.tsx
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { Link } from "react-router-dom";
+
+interface SessionCardProps {
+    session: any;
+    userId?: string;
+    onBook: (sessionId: string) => void;
+    onCancelBooking: (sessionId: string) => void;
+    onJoin: (sessionId: string) => void;
+    onDelete: (sessionId: string) => void;
+}
 
 export default function SessionCard({
     session,
@@ -9,14 +19,14 @@ export default function SessionCard({
     onCancelBooking,
     onJoin,
     onDelete,
-}) {
+}: SessionCardProps) {
     const isHost = session.host_id === userId;
     const initialIsBooked = session.session_bookings?.some(
-        (b) => b.user_id === userId
+        (b: any) => b.user_id === userId
     );
 
     const [isBookingConfirmed, setIsBookingConfirmed] =
-        useState(initialIsBooked);
+        useState<boolean>(initialIsBooked);
     const [isHoveringCancel, setIsHoveringCancel] = useState(false);
     const [isHoveringBook, setIsHoveringBook] = useState(false);
     const [isHoveringJoin, setIsHoveringJoin] = useState(false);
@@ -29,17 +39,18 @@ export default function SessionCard({
     const nameToTypeMap: Record<string, string> = {
         "1 Hour — Pomodoro 15/3": "Short sprints",
         "2 Hours — Pomodoro 15/3": "Short sprints",
-
         "1 Hour — Pomodoro 25/5": "Pomodoro",
         "2 Hours — Pomodoro 25/5": "Pomodoro",
-
         "1 Hour — Uninterrupted Focus": "Deep work",
         "2 Hours — 2x 50min Focus Blocks": "Deep work",
     };
 
     const resolvedType = nameToTypeMap[session.title] || session.type;
 
-    const typeMap = {
+    const typeMap: Record<
+        string,
+        { color: string; bg: string; icon: string }
+    > = {
         "Deep work": {
             color: "#3B82F6",
             bg: "#E4EDFF",
@@ -57,7 +68,11 @@ export default function SessionCard({
         },
     };
 
-    const t = typeMap[resolvedType];
+    const t = typeMap[resolvedType] || {
+        color: "#111827",
+        bg: "#E5E7EB",
+        icon: "/icons/deepwork.svg",
+    };
 
     const startDateString = session.start_time
         ? new Date(session.start_time).toLocaleString("en-US", {
@@ -74,10 +89,15 @@ export default function SessionCard({
         let active = true;
 
         const load = async () => {
-            const { data } = await supabase
+            const { data, error } = await supabase
                 .from("session_attendance")
                 .select("user_id")
                 .eq("session_id", session.id);
+
+            if (error) {
+                console.error("Error loading attendance:", error);
+                return;
+            }
 
             if (active) {
                 const s = new Set(data?.map((x) => x.user_id));
@@ -136,7 +156,7 @@ export default function SessionCard({
                 }
                 className="w-4 h-4"
             />
-            Book session
+            <span>Book session</span>
         </button>
     );
 
@@ -187,14 +207,19 @@ export default function SessionCard({
         >
             {/* LEFT */}
             <div className="flex-1 space-y-3">
-                <h3 className="text-[29px] font-bold leading-tight">{session.title}</h3>
+                <h3 className="text-[29px] font-bold leading-tight">
+                    {session.title}
+                </h3>
 
                 <div className="flex flex-wrap items-center gap-4 text-[12px] text-[#606060]">
                     <Link
                         to={`/profile/${session.host_id}`}
                         className="flex items-center gap-1 hover:opacity-70"
                     >
-                        <img src="/icons/host.svg" className="w-4 h-4 opacity-70" />
+                        <img
+                            src="/icons/host.svg"
+                            className="w-4 h-4 opacity-70"
+                        />
                         <span>Host</span>
                         <span className="underline underline-offset-2">
                             {session.host_name}
@@ -202,12 +227,18 @@ export default function SessionCard({
                     </Link>
 
                     <div className="flex items-center gap-1">
-                        <img src="/icons/duration.svg" className="w-4 h-4 opacity-70" />
+                        <img
+                            src="/icons/duration.svg"
+                            className="w-4 h-4 opacity-70"
+                        />
                         <span>{session.duration_minutes} min</span>
                     </div>
 
                     <div className="flex items-center gap-1">
-                        <img src="/icons/date.svg" className="w-4 h-4 opacity-70" />
+                        <img
+                            src="/icons/date.svg"
+                            className="w-4 h-4 opacity-70"
+                        />
                         <span>{startDateString}</span>
                     </div>
 
@@ -236,7 +267,6 @@ export default function SessionCard({
 
             {/* RIGHT */}
             <div className="flex items-center gap-8">
-                {/* FIXED LINE */}
                 <div className="w-px h-16 bg-[#D9D9D9]" />
 
                 <div className="px-12 text-center">
@@ -249,7 +279,9 @@ export default function SessionCard({
                 </div>
 
                 <div className="flex items-center gap-2">
-                    {isBookingConfirmed ? confirmedBookingButton : bookSessionButton}
+                    {isBookingConfirmed
+                        ? confirmedBookingButton
+                        : bookSessionButton}
 
                     <button
                         onClick={() => onJoin(session.id)}
@@ -280,7 +312,10 @@ export default function SessionCard({
                 hover:bg-[#FECACA]
               "
                         >
-                            <img src="/icons/cross-cancel.svg" className="w-6 h-6" />
+                            <img
+                                src="/icons/cross-cancel.svg"
+                                className="w-6 h-6"
+                            />
                         </button>
                     )}
                 </div>

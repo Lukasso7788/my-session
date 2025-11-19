@@ -3,13 +3,18 @@ import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import type { SessionTemplate } from "../types/session";
-import { useCreateSessionModal } from "../hooks/useCreateSessionModal";
 
-export function CreateSessionModal() {
-  const modal = useCreateSessionModal(); // 👈 глобальное состояние
-  const isOpen = modal.isOpen;
-  const onClose = modal.close;
+interface CreateSessionModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSessionCreated: () => void;
+}
 
+export function CreateSessionModal({
+  isOpen,
+  onClose,
+  onSessionCreated,
+}: CreateSessionModalProps) {
   const [title, setTitle] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
@@ -18,7 +23,7 @@ export function CreateSessionModal() {
   const [error, setError] = useState<string | null>(null);
   const [profile, setProfile] = useState<any>(null);
 
-  /** ------------------ LOAD USER PROFILE ------------------ **/
+  // ---------- LOAD USER PROFILE ----------
   useEffect(() => {
     if (!isOpen) return;
 
@@ -28,8 +33,9 @@ export function CreateSessionModal() {
       const sessionRes = await supabase.auth.getSession();
       const session = sessionRes.data.session;
 
-      if (!session) {
+      if (!session || !session.user) {
         setError("You must be logged in to create a session.");
+        setProfile(null);
         return;
       }
 
@@ -44,6 +50,7 @@ export function CreateSessionModal() {
       if (error) {
         console.error("❌ Error loading profile:", error);
         setError("Failed to load your profile.");
+        setProfile(null);
         return;
       }
 
@@ -53,7 +60,7 @@ export function CreateSessionModal() {
     loadProfile();
   }, [isOpen]);
 
-  /** ------------------ LOAD TEMPLATES ------------------ **/
+  // ---------- LOAD TEMPLATES ----------
   useEffect(() => {
     if (!isOpen) return;
 
@@ -61,7 +68,7 @@ export function CreateSessionModal() {
       const { data, error } = await supabase
         .from("session_templates")
         .select("*")
-        .order("total_duration");
+        .order("total_duration", { ascending: true });
 
       if (error) {
         console.error("❌ Error loading templates:", error);
@@ -75,7 +82,7 @@ export function CreateSessionModal() {
     loadTemplates();
   }, [isOpen]);
 
-  /** ------------------ CREATE SESSION ------------------ **/
+  // ---------- CREATE SESSION ----------
   const handleCreate = async () => {
     if (!title || !selectedTemplate || !scheduledAt) {
       setError("Please fill out all fields.");
@@ -94,20 +101,22 @@ export function CreateSessionModal() {
       const scheduledISO = new Date(scheduledAt).toISOString();
       const template = templates.find((t) => t.id === selectedTemplate);
 
-      // Call Supabase Edge Function to create Daily room
+      // 1) Create Daily room via Supabase Edge Function
       const { data: fnData, error: fnError } = await supabase.functions.invoke(
         "create-daily-room",
-        { body: {} }
+        {
+          body: {},
+        }
       );
 
       if (fnError || !fnData?.url) {
-        console.error("❌ Daily room creation failed:", fnData);
+        console.error("❌ Daily room creation failed:", fnData, fnError);
         throw new Error("Failed to create Daily room");
       }
 
-      const dailyUrl = fnData.url;
+      const dailyUrl = fnData.url as string;
 
-      // Insert session into DB
+      // 2) Insert session into "sessions"
       const { error } = await supabase.from("sessions").insert([
         {
           title,
@@ -126,13 +135,13 @@ export function CreateSessionModal() {
 
       if (error) throw error;
 
-      // Reset
+      // 3) Reset & notify
       setTitle("");
       setScheduledAt("");
       setSelectedTemplate("");
 
-      modal.close();
-      modal.onCreated(); // 👈 чтобы SessionsPage обновился
+      onSessionCreated();
+      onClose();
     } catch (err: any) {
       console.error("❌ Error creating session:", err);
       setError(err.message || "Failed to create session");
@@ -146,7 +155,6 @@ export function CreateSessionModal() {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-[16px] p-6 w-full max-w-md shadow-xl">
-
         {/* HEADER */}
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-[20px] font-bold text-brandBlack font-inter">
@@ -163,21 +171,21 @@ export function CreateSessionModal() {
         <div className="space-y-5">
           {/* Title */}
           <div>
-            <label className="block text-[14px] mb-1 font-inter">
+            <label className="block text-[14px] font-medium text-brandBlack mb-1 font-inter">
               Session title
             </label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Deep Work Session"
-              className="w-full px-3 py-3 border border-gray-300 rounded-[16px]"
+              placeholder="e.g., Deep Work Session"
+              className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter"
             />
           </div>
 
           {/* Start Time */}
           <div>
-            <label className="block text-[14px] mb-1 font-inter">
+            <label className="block text-[14px] font-medium text-brandBlack mb-1 font-inter">
               Start time
             </label>
             <input
@@ -185,13 +193,13 @@ export function CreateSessionModal() {
               value={scheduledAt}
               onChange={(e) => setScheduledAt(e.target.value)}
               min={new Date().toISOString().slice(0, 16)}
-              className="w-full px-3 py-3 border border-gray-300 rounded-[16px]"
+              className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter"
             />
           </div>
 
           {/* Templates */}
           <div>
-            <label className="block text-[14px] mb-2 font-inter">
+            <label className="block text-[14px] font-medium text-brandBlack mb-2 font-inter">
               Session format
             </label>
 
@@ -211,27 +219,35 @@ export function CreateSessionModal() {
                       name="session-template"
                       value={t.id}
                       checked={selectedTemplate === t.id}
-                      readOnly
+                      onChange={() => { }}
+                      className="w-4 h-4 text-brandBlack"
+                    />
+
+                    <img
+                      src={`/icons/${t.icon || t.name.toLowerCase()}.svg`}
                       className="w-4 h-4"
                     />
-                    <span className="text-[16px] font-inter">
+
+                    <span className="text-[16px] text-brandBlack font-inter">
                       {t.name} ({t.total_duration} min)
                     </span>
                   </label>
                 ))
               ) : (
-                <p>Loading templates...</p>
+                <p className="text-sm text-gray-500">Loading templates...</p>
               )}
             </div>
           </div>
 
           {error && <p className="text-red-600 text-sm">{error}</p>}
 
-          {/* Submit */}
+          {/* Submit button */}
           <button
             onClick={handleCreate}
-            disabled={!title || !selectedTemplate || !scheduledAt || isCreating}
-            className="w-full bg-brandBlack text-white py-3 rounded-[42px] font-medium text-[15px] hover:bg-black disabled:bg-gray-300 transition"
+            disabled={
+              !title || !selectedTemplate || !scheduledAt || isCreating
+            }
+            className="w-full bg-brandBlack text-white py-3 rounded-[42px] font-medium text-[15px] font-inter hover:bg-black disabled:bg-gray-300 transition"
           >
             {isCreating ? "Creating..." : "Create session"}
           </button>
@@ -239,7 +255,8 @@ export function CreateSessionModal() {
 
         {profile && (
           <p className="text-xs text-gray-400 mt-4 text-center font-inter">
-            Hosted by <span className="font-medium">{profile.full_name}</span>
+            Hosted by{" "}
+            <span className="font-medium">{profile.full_name}</span>
           </p>
         )}
       </div>
