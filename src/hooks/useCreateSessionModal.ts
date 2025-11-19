@@ -1,34 +1,29 @@
 // src/hooks/useCreateSessionModal.ts
-import { createContext, useContext, useState } from "react";
+import { create } from "zustand";
+import { createContext, useContext } from "react";
 
-interface ModalContextType {
+interface CreateSessionModalStore {
     isOpen: boolean;
     open: () => void;
     close: () => void;
+    onCreated: () => void;
+    setOnCreatedCallback: (fn: () => void) => void;
+    onCreatedCallback?: () => void;
 }
 
-const CreateSessionModalContext = createContext<ModalContextType | null>(null);
+export const useCreateSessionModal = create<CreateSessionModalStore>((set) => ({
+    isOpen: false,
 
-export function CreateSessionModalProvider({ children }: { children: React.ReactNode }) {
-    const [isOpen, setIsOpen] = useState(false);
+    open: () => set({ isOpen: true }),
+    close: () => set({ isOpen: false }),
 
-    const value: ModalContextType = {
-        isOpen,
-        open: () => setIsOpen(true),
-        close: () => setIsOpen(false),
-    };
+    onCreatedCallback: undefined,
 
-    return (
-        <CreateSessionModalContext.Provider value= { value } >
-        { children }
-        </CreateSessionModalContext.Provider>
-  );
-}
+    onCreated: () =>
+        set((state) => {
+            state.onCreatedCallback?.();
+            return {};
+        }),
 
-export function useCreateSessionModal() {
-    const ctx = useContext(CreateSessionModalContext);
-    if (!ctx) {
-        throw new Error("useCreateSessionModal must be used inside provider");
-    }
-    return ctx;
-}
+    setOnCreatedCallback: (fn) => set({ onCreatedCallback: fn }),
+}));
