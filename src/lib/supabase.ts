@@ -43,3 +43,6 @@ export interface Session {
   created_at: string;
   status: "scheduled" | "active" | "completed";
 }
+
+console.log("ENV URL:", import.meta.env.VITE_SUPABASE_URL);
+console.log("ENV KEY:", import.meta.env.VITE_SUPABASE_ANON_KEY);
