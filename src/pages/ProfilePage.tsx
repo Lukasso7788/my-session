@@ -17,6 +17,16 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
 
+  useEffect(() => {
+    async function test() {
+      const { data, error } = await supabase.from("profiles").select("*").limit(1);
+      console.log("profiles test:", data, error);
+    }
+
+    test();
+  }, []);
+
+
   // 📌 LOAD PROFILE
   useEffect(() => {
     async function loadProfile() {
