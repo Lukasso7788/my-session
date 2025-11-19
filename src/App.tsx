@@ -1,4 +1,3 @@
-// src/App.tsx
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 
 import { SessionsPage } from "./pages/SessionsPage";
@@ -8,44 +7,29 @@ import RegisterPage from "./pages/RegisterPage";
 import ProfilePage from "./pages/ProfilePage";
 import PublicProfilePage from "./pages/PublicProfilePage";
 
-// глобальная модалка
+import { CreateSessionModalProvider } from "./hooks/useCreateSessionModal";
 import { CreateSessionModal } from "./components/CreateSessionModal";
 
-// zustand store (чтобы читать isOpen)
-import { useCreateSessionModal } from "./hooks/useCreateSessionModal";
-
-function App() {
-  const modal = useCreateSessionModal();
-
+export default function App() {
   return (
-    <Router>
-      {/* Глобальная модалка — всегда смонтирована */}
-      <CreateSessionModal
-        isOpen={modal.isOpen}
-        onClose={modal.close}
-        onSessionCreated={modal.onCreated}
-      />
+    <CreateSessionModalProvider>
+      <Router>
+        <Routes>
+          <Route path="/" element={<Navigate to="/sessions" replace />} />
 
-      <Routes>
-        {/* redirect root → /sessions */}
-        <Route path="/" element={<Navigate to="/sessions" replace />} />
+          <Route path="/sessions" element={<SessionsPage />} />
+          <Route path="/room/:id" element={<RoomPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/profile/:id" element={<PublicProfilePage />} />
 
-        <Route path="/sessions" element={<SessionsPage />} />
-        <Route path="/room/:id" element={<RoomPage />} />
+          <Route path="*" element={<Navigate to="/sessions" replace />} />
+        </Routes>
 
-        {/* auth */}
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
-
-        {/* profiles */}
-        <Route path="/profile" element={<ProfilePage />} />
-        <Route path="/profile/:id" element={<PublicProfilePage />} />
-
-        {/* fallback */}
-        <Route path="*" element={<Navigate to="/sessions" replace />} />
-      </Routes>
-    </Router>
+        {/* ГЛОБАЛЬНАЯ МОДАЛКА */}
+        <CreateSessionModal />
+      </Router>
+    </CreateSessionModalProvider>
   );
 }
-
-export default App;
