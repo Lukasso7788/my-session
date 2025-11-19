@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { SessionTypeSwitcher } from "../components/SessionTypeSwitcher";
 import SessionCard from "../components/SessionCard";
+import Header from "../components/Header";   // ← ВЕРНУЛ ЭТО
 import { supabase } from "../lib/supabase";
 import type { Session } from "../types/session";
 
@@ -86,7 +87,6 @@ export function SessionsPage() {
         (payload) => {
           setSessions((prev) => {
             const sessionId =
-              // @ts-ignore
               payload.new?.session_id || payload.old?.session_id;
             if (!sessionId) return prev;
 
@@ -117,7 +117,6 @@ export function SessionsPage() {
     return () => supabase.removeChannel(channel);
   }, []);
 
-  // HELPERS
   const isExpired = (s: SessionWithRelations) => {
     if (!s.start_time) return false;
     const end =
@@ -144,25 +143,18 @@ export function SessionsPage() {
   return (
     <div className="min-h-screen bg-white text-brandBlack font-inter">
 
+      {/* HEADER ДОБАВЛЕН ОБРАТНО */}
+      <Header />
+
       {/* MAIN CONTENT */}
       <main className="w-full px-8 pb-12">
 
         <div className="pt-[100px] pb-[50px] text-center">
-          <h1
-            className="
-              text-[24px]
-              md:text-[28px]
-              xl:text-[36px]
-              font-normal
-              leading-tight
-              mx-auto
-            "
-          >
+          <h1 className="text-[24px] md:text-[28px] xl:text-[36px] font-normal leading-tight mx-auto">
             Join a group focus session to stay accountable
           </h1>
         </div>
 
-        {/* SWITCHER */}
         <div className="w-full">
           <div className="flex justify-center mb-[55px]">
             <SessionTypeSwitcher
@@ -171,7 +163,6 @@ export function SessionsPage() {
             />
           </div>
 
-          {/* SESSION LIST */}
           <div className="border border-[#DBD8D8] rounded-2xl p-8">
             {isLoading ? (
               <div className="text-center py-12">
