@@ -39,3 +39,11 @@ export interface Session {
   format: "uninterrupted" | "pomodoro_25_5" | "pomodoro_15_3";
   focus_blocks: FocusBlock[];
   daily_room_url: string | null;
+  participant_count: number;
+  scheduled_at: string;
+  created_at: string;
+  status: "scheduled" | "active" | "completed";
+}
+
+console.log("ENV URL:", import.meta.env.VITE_SUPABASE_URL);
+console.log("ENV KEY:", import.meta.env.VITE_SUPABASE_ANON_KEY);
