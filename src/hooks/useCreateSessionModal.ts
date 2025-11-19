@@ -1,29 +1,47 @@
-// src/hooks/useCreateSessionModal.ts
-import { create } from "zustand";
-import { createContext, useContext } from "react";
+import { createContext, useContext, useState, ReactNode } from "react";
 
-interface CreateSessionModalStore {
+type CreateSessionModalContextType = {
     isOpen: boolean;
     open: () => void;
     close: () => void;
-    onCreated: () => void;
-    setOnCreatedCallback: (fn: () => void) => void;
-    onCreatedCallback?: () => void;
+    onCreatedCallback: (() => void) | null;
+    setOnCreatedCallback: (cb: () => void) => void;
+};
+
+const CreateSessionModalContext =
+    createContext<CreateSessionModalContextType | null>(null);
+
+export function CreateSessionModalProvider({ children }: { children: ReactNode }) {
+    const [isOpen, setIsOpen] = useState(false);
+    const [onCreatedCallback, setOnCreatedCallbackState] = useState<(() => void) | null>(null);
+
+    const open = () => setIsOpen(true);
+    const close = () => setIsOpen(false);
+
+    const setOnCreatedCallback = (cb: () => void) => {
+        setOnCreatedCallbackState(() => cb);
+    };
+
+    return (
+        <CreateSessionModalContext.Provider
+      value= {{
+        isOpen,
+            open,
+            close,
+            onCreatedCallback,
+            setOnCreatedCallback,
+      }
+}
+    >
+    { children }
+    </CreateSessionModalContext.Provider>
+  );
 }
 
-export const useCreateSessionModal = create<CreateSessionModalStore>((set) => ({
-    isOpen: false,
-
-    open: () => set({ isOpen: true }),
-    close: () => set({ isOpen: false }),
-
-    onCreatedCallback: undefined,
-
-    onCreated: () =>
-        set((state) => {
-            state.onCreatedCallback?.();
-            return {};
-        }),
-
-    setOnCreatedCallback: (fn) => set({ onCreatedCallback: fn }),
-}));
+export function useCreateSessionModal() {
+    const ctx = useContext(CreateSessionModalContext);
+    if (!ctx) {
+        throw new Error("useCreateSessionModal must be used inside CreateSessionModalProvider");
+    }
+    return ctx;
+}
