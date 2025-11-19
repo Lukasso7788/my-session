@@ -2,22 +2,21 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { UserCircle } from "lucide-react";
+import { useCreateSessionModal } from "../hooks/useCreateSessionModal";
 
 export default function Header() {
     const navigate = useNavigate();
+    const modal = useCreateSessionModal();
 
     const [user, setUser] = useState<any>(null);
     const [profile, setProfile] = useState<any>(null);
-
     const [showUserMenu, setShowUserMenu] = useState(false);
     const [isHoveringCreate, setIsHoveringCreate] = useState(false);
 
-    // ---------------- LOAD USER ----------------
     useEffect(() => {
-        const load = async () => {
+        async function load() {
             const { data } = await supabase.auth.getSession();
             const authUser = data?.session?.user ?? null;
-
             setUser(authUser);
 
             if (authUser?.id) {
@@ -26,33 +25,29 @@ export default function Header() {
                     .select("*")
                     .eq("id", authUser.id)
                     .single();
-
                 setProfile(p);
             }
-        };
+        }
 
         load();
 
         const { data: listener } = supabase.auth.onAuthStateChange(
             async (_event, session) => {
-                const currentUser = session?.user ?? null;
-                setUser(currentUser);
+                const u = session?.user ?? null;
+                setUser(u);
 
-                if (currentUser?.id) {
+                if (u) {
                     const { data: p } = await supabase
                         .from("profiles")
                         .select("*")
-                        .eq("id", currentUser.id)
+                        .eq("id", u.id)
                         .single();
-
                     setProfile(p);
                 }
             }
         );
 
-        return () => {
-            listener.subscription.unsubscribe();
-        };
+        return () => listener.subscription.unsubscribe();
     }, []);
 
     const avatarSrc =
@@ -65,7 +60,6 @@ export default function Header() {
         <header className="border-b border-borderGray">
             <div className="w-full px-8 py-6 flex items-center justify-between gap-3">
 
-                {/* LEFT NAV */}
                 <nav className="flex items-center gap-6 flex-1 text-sm text-[#2E2E2E]">
                     <button onClick={() => navigate("/sessions")} className="hover:text-black">
                         Sessions
@@ -74,7 +68,6 @@ export default function Header() {
                     <button className="hover:text-black">Latest updates</button>
                 </nav>
 
-                {/* LOGO */}
                 <div className="flex-1 flex justify-center">
                     <button
                         onClick={() => navigate("/")}
@@ -84,7 +77,6 @@ export default function Header() {
                     </button>
                 </div>
 
-                {/* RIGHT AUTH AREA */}
                 <div className="flex-1 flex items-center justify-end gap-3 relative">
                     {!user ? (
                         <div className="flex gap-3">
@@ -94,6 +86,7 @@ export default function Header() {
                             >
                                 Log in
                             </button>
+
                             <button
                                 onClick={() => navigate("/register")}
                                 className="px-4 py-2 rounded-full bg-brandBlack text-white hover:bg-black text-sm font-medium"
@@ -103,9 +96,9 @@ export default function Header() {
                         </div>
                     ) : (
                         <>
-                            {/* CREATE SESSION */}
+                            {/* CREATE SESSION → вызывает глобальную модалку */}
                             <button
-                                onClick={() => navigate("#open-create-modal")}
+                                onClick={() => modal.open()}
                                 onMouseEnter={() => setIsHoveringCreate(true)}
                                 onMouseLeave={() => setIsHoveringCreate(false)}
                                 className={`
@@ -126,7 +119,6 @@ export default function Header() {
                                 <span>Create a session</span>
                             </button>
 
-                            {/* AVATAR */}
                             <button
                                 onClick={() => setShowUserMenu((v) => !v)}
                                 className="flex items-center"
@@ -137,7 +129,6 @@ export default function Header() {
                                 />
                             </button>
 
-                            {/* DROPDOWN */}
                             {showUserMenu && (
                                 <div className="absolute right-0 top-12 w-48 bg-white rounded-xl shadow-lg border border-borderGray z-20">
                                     <button
