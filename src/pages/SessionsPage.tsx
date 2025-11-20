@@ -85,8 +85,9 @@ export function SessionsPage() {
     fetchSessions();
   }, [fetchSessions]);
 
-  // ---------- ГЛОБАЛЬНАЯ МОДАЛКА: после создания сессии перезагружаем список ----------
+  // ---------- GLOBAL MODAL CREATED CALLBACK ----------
   useEffect(() => {
+    if (!modal || !modal.setOnCreatedCallback) return;
     modal.setOnCreatedCallback(fetchSessions);
   }, [modal, fetchSessions]);
 
@@ -222,7 +223,7 @@ export function SessionsPage() {
 
   return (
     <div className="min-h-screen bg-white text-brandBlack font-inter">
-      {/* Глобальный HEADER */}
+      {/* GLOBAL HEADER */}
       <Header />
 
       {/* MAIN CONTENT */}

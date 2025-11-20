@@ -1,9 +1,8 @@
-// src/App.tsx
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { CreateSessionModalProvider } from "./hooks/useCreateSessionModal";
-import { CreateSessionModal } from "./components/CreateSessionModal";
+import { Routes, Route, Navigate } from "react-router-dom";
+import { CreateSessionModalProvider } from "./context/CreateSessionModalContext";
 
 import SessionsPage from "./pages/SessionsPage";
+import RoomPage from "./pages/RoomPage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import ProfilePage from "./pages/ProfilePage";
@@ -12,21 +11,16 @@ import PublicProfilePage from "./pages/PublicProfilePage";
 export default function App() {
   return (
     <CreateSessionModalProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<SessionsPage />} />
-          <Route path="/sessions" element={<SessionsPage />} />
-
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-
-          <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/profile/:id" element={<PublicProfilePage />} />
-        </Routes>
-
-        {/* глобальная модалка */}
-        <CreateSessionModal />
-      </BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Navigate to="/sessions" replace />} />
+        <Route path="/sessions" element={<SessionsPage />} />
+        <Route path="/room/:id" element={<RoomPage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/profile/:id" element={<PublicProfilePage />} />
+        <Route path="*" element={<Navigate to="/sessions" replace />} />
+      </Routes>
     </CreateSessionModalProvider>
   );
 }
