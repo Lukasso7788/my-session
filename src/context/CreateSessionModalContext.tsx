@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, ReactNode } from "react";
-import CreateSessionModal from "../components/CreateSessionModal";
+import { CreateSessionModal } from "../components/CreateSessionModal";
 
 interface Ctx {
     isOpen: boolean;
