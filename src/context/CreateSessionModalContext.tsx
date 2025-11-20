@@ -5,6 +5,7 @@ interface Ctx {
     isOpen: boolean;
     open: () => void;
     close: () => void;
+    onCreatedCallback: () => void;
     setOnCreatedCallback: (cb: () => void) => void;
 }
 
@@ -12,7 +13,7 @@ const CreateSessionModalContext = createContext<Ctx | null>(null);
 
 export function CreateSessionModalProvider({ children }: { children: ReactNode }) {
     const [isOpen, setIsOpen] = useState(false);
-    const [onCreated, setOnCreated] = useState<() => void>(() => () => { });
+    const [onCreatedCallback, setOnCreatedCallback] = useState(() => () => { });
 
     const open = () => setIsOpen(true);
     const close = () => setIsOpen(false);
@@ -23,14 +24,16 @@ export function CreateSessionModalProvider({ children }: { children: ReactNode }
                 isOpen,
                 open,
                 close,
-                setOnCreatedCallback: (cb) => setOnCreated(() => cb),
+                onCreatedCallback,
+                setOnCreatedCallback,
             }}
         >
             {children}
+
             <CreateSessionModal
                 isOpen={isOpen}
                 onClose={close}
-                onSessionCreated={onCreated}
+                onSessionCreated={onCreatedCallback}
             />
         </CreateSessionModalContext.Provider>
     );
@@ -38,6 +41,6 @@ export function CreateSessionModalProvider({ children }: { children: ReactNode }
 
 export function useCreateSessionModal() {
     const ctx = useContext(CreateSessionModalContext);
-    if (!ctx) throw new Error("useCreateSessionModal must be used inside Provider");
+    if (!ctx) throw new Error("useCreateSessionModal must be used inside CreateSessionModalProvider");
     return ctx;
 }

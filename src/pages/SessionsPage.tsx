@@ -1,6 +1,7 @@
 // src/pages/SessionsPage.tsx
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+
 import { SessionTypeSwitcher } from "../components/SessionTypeSwitcher";
 import SessionCard from "../components/SessionCard";
 import Header from "../components/Header";
@@ -85,6 +86,12 @@ export default function SessionsPage() {
     fetchSessions();
   }, [fetchSessions]);
 
+  // ---------- GLOBAL MODAL CREATED CALLBACK ----------
+  useEffect(() => {
+    if (!modal?.setOnCreatedCallback) return;
+    modal.setOnCreatedCallback(fetchSessions);
+  }, [modal, fetchSessions]);
+
   // ---------- REALTIME ATTENDANCE ----------
   useEffect(() => {
     const channel = supabase
@@ -95,7 +102,6 @@ export default function SessionsPage() {
         (payload) => {
           setSessions((prev) => {
             const sessionId =
-              // @ts-ignore
               payload.new?.session_id || payload.old?.session_id;
             if (!sessionId) return prev;
 
@@ -105,17 +111,14 @@ export default function SessionsPage() {
               let attendance = s.session_attendance || [];
 
               if (payload.eventType === "INSERT") {
-                // @ts-ignore
                 attendance = [...attendance, payload.new];
               } else if (payload.eventType === "DELETE") {
-                // @ts-ignore
-                const delId = payload.old.id;
-                attendance = attendance.filter((a) => a.id !== delId);
+                attendance = attendance.filter(
+                  (a) => a.id !== payload.old.id
+                );
               } else if (payload.eventType === "UPDATE") {
-                // @ts-ignore
-                const newRow = payload.new;
                 attendance = attendance.map((a) =>
-                  a.id === newRow.id ? newRow : a
+                  a.id === payload.new.id ? payload.new : a
                 );
               }
 
@@ -217,10 +220,8 @@ export default function SessionsPage() {
 
   return (
     <div className="min-h-screen bg-white text-brandBlack font-inter">
-      {/* GLOBAL HEADER */}
       <Header />
 
-      {/* MAIN CONTENT */}
       <main className="w-full px-8 pb-12">
         <div className="pt-[100px] pb-[50px] text-center">
           <h1 className="text-[24px] md:text-[28px] xl:text-[36px] font-normal leading-tight mx-auto">
