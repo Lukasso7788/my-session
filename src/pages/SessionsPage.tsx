@@ -9,6 +9,12 @@ import { supabase } from "../lib/supabase";
 import type { Session } from "../types/session";
 import { useCreateSessionModal } from "../hooks/useCreateSessionModal";
 
+// src/pages/SessionsPage.tsx
+console.log("%cSESSIONS PAGE: file loaded", "color: purple");
+
+export default function SessionsPage() {
+  console.log("%cSESSIONS PAGE: rendered", "color: purple");
+
 type SessionWithRelations = Session & {
   host_id?: string;
   host_name?: string;

@@ -1,3 +1,6 @@
+// src/components/Header.tsx
+console.log("%cHEADER: file loaded", "color: orange");
+
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
@@ -5,9 +8,9 @@ import { UserCircle } from "lucide-react";
 import { useCreateSessionModal } from "../hooks/useCreateSessionModal";
 
 export default function Header() {
+    console.log("%cHEADER: component rendered", "color: orange");
     const navigate = useNavigate();
     const modal = useCreateSessionModal();
-
     const [user, setUser] = useState<any>(null);
     const [profile, setProfile] = useState<any>(null);
     const [showUserMenu, setShowUserMenu] = useState(false);
