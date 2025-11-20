@@ -19,7 +19,7 @@ type SessionWithRelations = Session & {
   session_attendance?: { id: string; session_id: string; user_id: string }[];
 };
 
-export function SessionsPage() {
+export default function SessionsPage() {
   const navigate = useNavigate();
   const modal = useCreateSessionModal();
 
@@ -84,12 +84,6 @@ export function SessionsPage() {
   useEffect(() => {
     fetchSessions();
   }, [fetchSessions]);
-
-  // ---------- GLOBAL MODAL CREATED CALLBACK ----------
-  useEffect(() => {
-    if (!modal || !modal.setOnCreatedCallback) return;
-    modal.setOnCreatedCallback(fetchSessions);
-  }, [modal, fetchSessions]);
 
   // ---------- REALTIME ATTENDANCE ----------
   useEffect(() => {
@@ -282,5 +276,3 @@ export function SessionsPage() {
     </div>
   );
 }
-
-export default SessionsPage;
