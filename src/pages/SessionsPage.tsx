@@ -1,19 +1,12 @@
 // src/pages/SessionsPage.tsx
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-
 import { SessionTypeSwitcher } from "../components/SessionTypeSwitcher";
 import SessionCard from "../components/SessionCard";
 import Header from "../components/Header";
 import { supabase } from "../lib/supabase";
 import type { Session } from "../types/session";
 import { useCreateSessionModal } from "../hooks/useCreateSessionModal";
-
-// src/pages/SessionsPage.tsx
-console.log("%cSESSIONS PAGE: file loaded", "color: purple");
-
-export default function SessionsPage() {
-  console.log("%cSESSIONS PAGE: rendered", "color: purple");
 
 type SessionWithRelations = Session & {
   host_id?: string;
@@ -38,7 +31,7 @@ export default function SessionsPage() {
     "group" | "infinite" | "body"
   >("group");
 
-  // ---------- AUTH RESTORE ----------
+  // Restore auth
   useEffect(() => {
     const getCurrentSession = async () => {
       const { data } = await supabase.auth.getSession();
@@ -53,7 +46,7 @@ export default function SessionsPage() {
     return () => listener.subscription.unsubscribe();
   }, []);
 
-  // ---------- LOAD SESSIONS ----------
+  // Load sessions
   const fetchSessions = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -92,13 +85,7 @@ export default function SessionsPage() {
     fetchSessions();
   }, [fetchSessions]);
 
-  // ---------- GLOBAL MODAL CREATED CALLBACK ----------
-  useEffect(() => {
-    if (!modal?.setOnCreatedCallback) return;
-    modal.setOnCreatedCallback(fetchSessions);
-  }, [modal, fetchSessions]);
-
-  // ---------- REALTIME ATTENDANCE ----------
+  // Realtime attendance
   useEffect(() => {
     const channel = supabase
       .channel("session-attendance")
@@ -108,6 +95,7 @@ export default function SessionsPage() {
         (payload) => {
           setSessions((prev) => {
             const sessionId =
+              // @ts-ignore
               payload.new?.session_id || payload.old?.session_id;
             if (!sessionId) return prev;
 
@@ -117,14 +105,16 @@ export default function SessionsPage() {
               let attendance = s.session_attendance || [];
 
               if (payload.eventType === "INSERT") {
+                // @ts-ignore
                 attendance = [...attendance, payload.new];
               } else if (payload.eventType === "DELETE") {
-                attendance = attendance.filter(
-                  (a) => a.id !== payload.old.id
-                );
+                const delId = payload.old.id;
+                attendance = attendance.filter((a) => a.id !== delId);
               } else if (payload.eventType === "UPDATE") {
+                // @ts-ignore
+                const newRow = payload.new;
                 attendance = attendance.map((a) =>
-                  a.id === payload.new.id ? payload.new : a
+                  a.id === newRow.id ? newRow : a
                 );
               }
 
@@ -138,91 +128,18 @@ export default function SessionsPage() {
     return () => supabase.removeChannel(channel);
   }, []);
 
-  // ---------- HELPERS ----------
+  // Filter expired
   const isExpired = (s: SessionWithRelations) => {
     if (!s.start_time) return false;
     const end =
-      new Date(s.start_time).getTime() + s.duration_minutes * 60_000;
+      new Date(s.start_time).getTime() + s.duration_minutes * 60 * 1000;
     return Date.now() > end;
   };
 
-  const activeSessions = useMemo(
-    () => sessions.filter((s) => !isExpired(s)),
-    [sessions]
-  );
-
-  const visibleSessions =
-    sessionTypeTab === "group" ? activeSessions : [];
-
-  // ---------- ACTIONS ----------
-  const handleJoinSession = (sessionId: string) => {
-    if (!user) {
-      navigate("/login");
-      return;
-    }
-    navigate(`/room/${sessionId}`);
-  };
-
-  const handleBookSession = async (sessionId: string) => {
-    if (!user) {
-      navigate("/login");
-      return;
-    }
-
-    try {
-      const { error } = await supabase.from("session_bookings").insert({
-        session_id: sessionId,
-        user_id: user.id,
-      });
-
-      if (error) throw error;
-
-      await fetchSessions();
-    } catch (err) {
-      console.error("Error booking session:", err);
-    }
-  };
-
-  const handleCancelBooking = async (sessionId: string) => {
-    if (!user) {
-      navigate("/login");
-      return;
-    }
-
-    try {
-      const { error } = await supabase
-        .from("session_bookings")
-        .delete()
-        .eq("session_id", sessionId)
-        .eq("user_id", user.id);
-
-      if (error) throw error;
-
-      await fetchSessions();
-    } catch (err) {
-      console.error("Error cancelling booking:", err);
-    }
-  };
-
-  const handleDeleteSession = async (sessionId: string) => {
-    if (!user) {
-      navigate("/login");
-      return;
-    }
-
-    try {
-      const { error } = await supabase
-        .from("sessions")
-        .delete()
-        .eq("id", sessionId);
-
-      if (error) throw error;
-
-      setSessions((prev) => prev.filter((s) => s.id !== sessionId));
-    } catch (err) {
-      console.error("Error deleting session:", err);
-    }
-  };
+  const visibleSessions = useMemo(() => {
+    const active = sessions.filter((s) => !isExpired(s));
+    return sessionTypeTab === "group" ? active : [];
+  }, [sessions, sessionTypeTab]);
 
   return (
     <div className="min-h-screen bg-white text-brandBlack font-inter">
@@ -230,7 +147,7 @@ export default function SessionsPage() {
 
       <main className="w-full px-8 pb-12">
         <div className="pt-[100px] pb-[50px] text-center">
-          <h1 className="text-[24px] md:text-[28px] xl:text-[36px] font-normal leading-tight mx-auto">
+          <h1 className="text-[24px] md:text-[28px] xl:text-[36px]">
             Join a group focus session to stay accountable
           </h1>
         </div>
@@ -239,14 +156,14 @@ export default function SessionsPage() {
           <div className="flex justify-center mb-[55px]">
             <SessionTypeSwitcher
               value={sessionTypeTab}
-              onChange={(val) => setSessionTypeTab(val)}
+              onChange={setSessionTypeTab}
             />
           </div>
 
           <div className="border border-[#DBD8D8] rounded-2xl p-8">
             {isLoading ? (
               <div className="text-center py-12">
-                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-brandBlack" />
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brandBlack mx-auto" />
               </div>
             ) : visibleSessions.length === 0 ? (
               <div className="p-2 text-center">
@@ -256,7 +173,7 @@ export default function SessionsPage() {
                 {user && (
                   <button
                     onClick={() => modal.open()}
-                    className="text-sm underline underline-offset-4"
+                    className="text-sm underline"
                   >
                     Create the first session
                   </button>
@@ -269,10 +186,31 @@ export default function SessionsPage() {
                     key={session.id}
                     session={session}
                     userId={user?.id}
-                    onJoin={handleJoinSession}
-                    onBook={handleBookSession}
-                    onCancelBooking={handleCancelBooking}
-                    onDelete={handleDeleteSession}
+                    onJoin={(id) =>
+                      user ? navigate(`/room/${id}`) : navigate("/login")
+                    }
+                    onBook={async (id) => {
+                      if (!user) return navigate("/login");
+                      await supabase.from("session_bookings").insert({
+                        session_id: id,
+                        user_id: user.id,
+                      });
+                      fetchSessions();
+                    }}
+                    onCancelBooking={async (id) => {
+                      if (!user) return navigate("/login");
+                      await supabase
+                        .from("session_bookings")
+                        .delete()
+                        .eq("session_id", id)
+                        .eq("user_id", user.id);
+                      fetchSessions();
+                    }}
+                    onDelete={async (id) => {
+                      if (!user) return navigate("/login");
+                      await supabase.from("sessions").delete().eq("id", id);
+                      setSessions((p) => p.filter((s) => s.id !== id));
+                    }}
                   />
                 ))}
               </div>

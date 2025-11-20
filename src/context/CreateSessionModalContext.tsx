@@ -1,22 +1,29 @@
+// src/context/CreateSessionModalContext.tsx
 import { createContext, useContext, useState, ReactNode } from "react";
 import { CreateSessionModal } from "../components/CreateSessionModal";
 
-interface Ctx {
+type CreateSessionModalContextType = {
     isOpen: boolean;
     open: () => void;
     close: () => void;
-    onCreatedCallback: () => void;
+    onCreatedCallback: (() => void) | null;
     setOnCreatedCallback: (cb: () => void) => void;
-}
+};
 
-const CreateSessionModalContext = createContext<Ctx | null>(null);
+const CreateSessionModalContext =
+    createContext<CreateSessionModalContextType | null>(null);
 
 export function CreateSessionModalProvider({ children }: { children: ReactNode }) {
     const [isOpen, setIsOpen] = useState(false);
-    const [onCreatedCallback, setOnCreatedCallback] = useState(() => () => { });
+    const [onCreatedCallback, setOnCreatedCallbackState] =
+        useState<(() => void) | null>(null);
 
     const open = () => setIsOpen(true);
     const close = () => setIsOpen(false);
+
+    const setOnCreatedCallback = (cb: () => void) => {
+        setOnCreatedCallbackState(() => cb);
+    };
 
     return (
         <CreateSessionModalContext.Provider
@@ -33,7 +40,7 @@ export function CreateSessionModalProvider({ children }: { children: ReactNode }
             <CreateSessionModal
                 isOpen={isOpen}
                 onClose={close}
-                onSessionCreated={onCreatedCallback}
+                onSessionCreated={onCreatedCallback || (() => { })}
             />
         </CreateSessionModalContext.Provider>
     );
@@ -41,6 +48,10 @@ export function CreateSessionModalProvider({ children }: { children: ReactNode }
 
 export function useCreateSessionModal() {
     const ctx = useContext(CreateSessionModalContext);
-    if (!ctx) throw new Error("useCreateSessionModal must be used inside CreateSessionModalProvider");
+    if (!ctx) {
+        throw new Error(
+            "useCreateSessionModal must be used inside CreateSessionModalProvider"
+        );
+    }
     return ctx;
 }
