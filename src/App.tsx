@@ -1,3 +1,4 @@
+// src/App.tsx
 import { Routes, Route, Navigate } from "react-router-dom";
 
 import SessionsPage from "./pages/SessionsPage";
@@ -7,7 +8,7 @@ import RegisterPage from "./pages/RegisterPage";
 import ProfilePage from "./pages/ProfilePage";
 import PublicProfilePage from "./pages/PublicProfilePage";
 
-function App() {
+export default function App() {
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/sessions" replace />} />
@@ -25,5 +26,3 @@ function App() {
     </Routes>
   );
 }
-
-export default App;
