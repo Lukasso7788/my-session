@@ -1,4 +1,6 @@
+// src/App.tsx
 import { Routes, Route, Navigate } from "react-router-dom";
+
 import { CreateSessionModalProvider } from "./context/CreateSessionModalContext";
 
 import SessionsPage from "./pages/SessionsPage";
@@ -8,19 +10,25 @@ import RegisterPage from "./pages/RegisterPage";
 import ProfilePage from "./pages/ProfilePage";
 import PublicProfilePage from "./pages/PublicProfilePage";
 
-export default function App() {
+function App() {
   return (
     <CreateSessionModalProvider>
       <Routes>
         <Route path="/" element={<Navigate to="/sessions" replace />} />
+
         <Route path="/sessions" element={<SessionsPage />} />
         <Route path="/room/:id" element={<RoomPage />} />
+
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/profile/:id" element={<PublicProfilePage />} />
+
         <Route path="*" element={<Navigate to="/sessions" replace />} />
       </Routes>
     </CreateSessionModalProvider>
   );
 }
+
+export default App;
