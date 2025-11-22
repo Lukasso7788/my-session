@@ -1,7 +1,6 @@
 // src/lib/supabase.ts
 import { createClient } from "@supabase/supabase-js";
 
-// ---- Load env ----
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
@@ -12,38 +11,21 @@ if (!supabaseAnonKey) {
   console.error("❌ Missing VITE_SUPABASE_ANON_KEY");
 }
 
-// ---- Create client ----
-export const supabase = createClient(supabaseUrl!, supabaseAnonKey!);
+export const supabase = createClient(supabaseUrl!, supabaseAnonKey!, {
+  auth: {
+    persistSession: true,          // хранить сессию в localStorage
+    autoRefreshToken: true,        // автообновление токенов
+    detectSessionInUrl: true,      // ВАЖНО для OAuth
+    storageKey: "mysession-auth",  // свой ключ, чтобы не конфликтовать
+  },
+});
 
-// ---- Debug: expose in browser ----
+// debug
 if (typeof window !== "undefined") {
   // @ts-ignore
   window.supabase = supabase;
+  // небольшая отладка в консоли
+  supabase.auth.getSession().then(({ data }) => {
+    console.log("🔎 initial session from supabase.ts:", data);
+  });
 }
-
-/* ------------------------------------------------------------------ */
-/*                          ТИПЫ                                      */
-/* ------------------------------------------------------------------ */
-
-export interface FocusBlock {
-  type: "focus" | "break";
-  duration_minutes: number;
-  start_offset_minutes: number;
-}
-
-export interface Session {
-  id: string;
-  title: string;
-  host: string;
-  duration_minutes: number;
-  format: "uninterrupted" | "pomodoro_25_5" | "pomodoro_15_3";
-  focus_blocks: FocusBlock[];
-  daily_room_url: string | null;
-  participant_count: number;
-  scheduled_at: string;
-  created_at: string;
-  status: "scheduled" | "active" | "completed";
-}
-
-console.log("ENV URL:", import.meta.env.VITE_SUPABASE_URL);
-console.log("ENV KEY:", import.meta.env.VITE_SUPABASE_ANON_KEY);

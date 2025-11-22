@@ -4,44 +4,53 @@ import { useNavigate } from "react-router-dom";
 
 export default function LoginPage() {
   const navigate = useNavigate();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // ---- EMAIL / PASSWORD LOGIN ----
   const handleLogin = async () => {
     if (!email || !password) {
       alert("Please enter email and password");
       return;
     }
 
-    setLoading(true);
+    try {
+      setLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    setLoading(false);
+      if (error) {
+        alert(error.message);
+        return;
+      }
 
-    if (error) {
-      alert(error.message);
-      return;
+      navigate("/sessions");
+    } finally {
+      setLoading(false);
     }
-
-    navigate("/sessions");
   };
 
+  // ---- OAUTH PROVIDERS ----
   const loginWithGoogle = async () => {
     await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: window.location.origin + "/sessions" }
+      options: {
+        redirectTo: `${window.location.origin}/sessions`,
+      },
     });
   };
 
   const loginWithFacebook = async () => {
     await supabase.auth.signInWithOAuth({
       provider: "facebook",
-      options: { redirectTo: window.location.origin + "/sessions" }
+      options: {
+        redirectTo: `${window.location.origin}/sessions`,
+      },
     });
   };
 
@@ -51,6 +60,7 @@ export default function LoginPage() {
 
         <h1 className="text-2xl font-bold text-center">Log In</h1>
 
+        {/* Email */}
         <input
           type="email"
           placeholder="Email"
@@ -59,6 +69,7 @@ export default function LoginPage() {
           onChange={(e) => setEmail(e.target.value)}
         />
 
+        {/* Password */}
         <input
           type="password"
           placeholder="Password"
@@ -67,6 +78,7 @@ export default function LoginPage() {
           onChange={(e) => setPassword(e.target.value)}
         />
 
+        {/* Email Login Button */}
         <button
           onClick={handleLogin}
           disabled={loading}
@@ -77,6 +89,7 @@ export default function LoginPage() {
 
         <div className="h-px bg-slate-600 my-4"></div>
 
+        {/* Google */}
         <button
           onClick={loginWithGoogle}
           className="w-full bg-white text-black py-2 rounded-lg hover:bg-gray-200"
@@ -84,6 +97,7 @@ export default function LoginPage() {
           Continue with Google
         </button>
 
+        {/* Facebook */}
         <button
           onClick={loginWithFacebook}
           className="w-full bg-blue-700 text-white py-2 rounded-lg hover:bg-blue-800"
