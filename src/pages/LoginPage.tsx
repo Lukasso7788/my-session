@@ -1,3 +1,4 @@
+// src/pages/LoginPage.tsx
 import { useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useNavigate } from "react-router-dom";
@@ -9,8 +10,10 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // ---- EMAIL / PASSWORD LOGIN ----
+  // ---------------- EMAIL / PASSWORD LOGIN ----------------
   const handleLogin = async () => {
+    console.log("[DEBUG Login] Email login started", { email });
+
     if (!email || !password) {
       alert("Please enter email and password");
       return;
@@ -19,37 +22,53 @@ export default function LoginPage() {
     try {
       setLoading(true);
 
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
+      console.log("[DEBUG Login] signInWithPassword response:", { data, error });
+
       if (error) {
+        console.error("[DEBUG Login] Login error:", error);
         alert(error.message);
         return;
       }
 
+      // Проверяем, попала ли сессия в storage
+      const rawStorage = localStorage.getItem("mysession-auth");
+      console.log("[DEBUG Login] LocalStorage after login:", rawStorage);
+
+      const { data: sessionData } = await supabase.auth.getSession();
+      console.log("[DEBUG Login] getSession() after email login:", sessionData);
+
       navigate("/sessions");
+    } catch (err) {
+      console.error("[DEBUG Login] Unexpected login exception:", err);
     } finally {
       setLoading(false);
     }
   };
 
-  // ---- OAUTH PROVIDERS ----
+  // ---------------- OAUTH PROVIDERS ----------------
   const loginWithGoogle = async () => {
+    console.log("[DEBUG Login] Google OAuth started");
+
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/sessions`,
+        redirectTo: `${window.location.origin}/auth/callback`,
       },
     });
   };
 
   const loginWithFacebook = async () => {
+    console.log("[DEBUG Login] Facebook OAuth started");
+
     await supabase.auth.signInWithOAuth({
       provider: "facebook",
       options: {
-        redirectTo: `${window.location.origin}/sessions`,
+        redirectTo: `${window.location.origin}/auth/callback`,
       },
     });
   };
