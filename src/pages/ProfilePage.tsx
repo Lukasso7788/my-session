@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import type { User } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import Header from "../components/Header";
 
 export default function ProfilePage() {
   const navigate = useNavigate();
 
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [fullName, setFullName] = useState("");
@@ -17,32 +18,22 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
 
+  // 📌 LOAD USER + PROFILE (через getSession + onAuthStateChange)
   useEffect(() => {
-    async function test() {
-      const { data, error } = await supabase.from("profiles").select("*").limit(1);
-      console.log("profiles test:", data, error);
-    }
+    let isMounted = true;
 
-    test();
-  }, []);
-
-
-  // 📌 LOAD PROFILE
-  useEffect(() => {
-    async function loadProfile() {
-      const { data } = await supabase.auth.getUser();
-      if (!data.user) {
-        navigate("/login");
-        return;
-      }
-
-      setUser(data.user);
-
-      const { data: profile } = await supabase
+    const loadProfile = async (currentUser: User) => {
+      const { data: profile, error } = await supabase
         .from("profiles")
-        .select("*")
-        .eq("id", data.user.id)
+        .select("full_name,bio,avatar_url")
+        .eq("id", currentUser.id)
         .single();
+
+      if (!isMounted) return;
+
+      if (error) {
+        console.error("Error loading profile:", error);
+      }
 
       if (profile) {
         setFullName(profile.full_name || "");
@@ -51,17 +42,64 @@ export default function ProfilePage() {
       }
 
       setLoading(false);
-    }
+    };
 
-    loadProfile();
+    const init = async () => {
+      const {
+        data: { session },
+        error,
+      } = await supabase.auth.getSession();
+
+      if (error) {
+        console.error("getSession error:", error);
+      }
+
+      const currentUser = session?.user;
+      if (!currentUser) {
+        if (!isMounted) return;
+        navigate("/login", { replace: true });
+        return;
+      }
+
+      if (!isMounted) return;
+
+      setUser(currentUser);
+      await loadProfile(currentUser);
+    };
+
+    init();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      const currentUser = session?.user ?? null;
+
+      if (!isMounted) return;
+
+      if (!currentUser) {
+        setUser(null);
+        navigate("/login", { replace: true });
+        return;
+      }
+
+      setUser(currentUser);
+      // профиль перезагрузим при смене юзера
+      loadProfile(currentUser);
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, [navigate]);
 
   // 📌 UPLOAD AVATAR
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
-      setUploading(true);
       const file = e.target.files?.[0];
       if (!file || !user) return;
+
+      setUploading(true);
 
       const ext = file.name.split(".").pop();
       const filePath = `${user.id}/${Date.now()}.${ext}`;
@@ -72,19 +110,19 @@ export default function ProfilePage() {
 
       if (uploadError) throw uploadError;
 
-      const { data } = supabase.storage
-        .from("avatars")
-        .getPublicUrl(filePath);
-
+      const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
       const publicUrl = data.publicUrl;
 
-      // 🔥 IMPORTANT — update AUTH user_metadata so Header updates automatically
-      await supabase.auth.updateUser({
-        data: { avatar_url: publicUrl }
+      // auth metadata
+      const { error: updateUserError } = await supabase.auth.updateUser({
+        data: { avatar_url: publicUrl },
       });
+      if (updateUserError) {
+        console.error("updateUser error:", updateUserError);
+      }
 
-      // Update profile table
-      await supabase
+      // profile row
+      const { error: updateProfileError } = await supabase
         .from("profiles")
         .update({
           avatar_url: publicUrl,
@@ -92,9 +130,13 @@ export default function ProfilePage() {
         })
         .eq("id", user.id);
 
+      if (updateProfileError) {
+        console.error("update profile error:", updateProfileError);
+      }
+
       setAvatarUrl(publicUrl);
     } catch (err) {
-      console.error(err);
+      console.error("avatar upload error:", err);
     } finally {
       setUploading(false);
     }
@@ -107,8 +149,7 @@ export default function ProfilePage() {
     setSaving(true);
 
     try {
-      // Update profile table
-      await supabase
+      const { error: updateProfileError } = await supabase
         .from("profiles")
         .update({
           full_name: fullName,
@@ -118,20 +159,34 @@ export default function ProfilePage() {
         })
         .eq("id", user.id);
 
-      // 🔥 Sync auth metadata
-      await supabase.auth.updateUser({
-        data: { full_name: fullName, avatar_url: avatarUrl }
+      if (updateProfileError) {
+        console.error("update profile error:", updateProfileError);
+      }
+
+      const { error: updateUserError } = await supabase.auth.updateUser({
+        data: { full_name: fullName, avatar_url: avatarUrl },
       });
+
+      if (updateUserError) {
+        console.error("updateUser error:", updateUserError);
+      }
 
       setEditMode(false);
     } catch (err) {
-      console.error(err);
+      console.error("save profile error:", err);
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading) return <div className="p-10">Loading...</div>;
+  if (loading) {
+    return (
+      <>
+        <Header />
+        <div className="p-10">Loading profile...</div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -172,7 +227,9 @@ export default function ProfilePage() {
         </div>
 
         {/* NAME */}
-        <h1 className="text-3xl font-semibold text-center mt-4">{fullName}</h1>
+        <h1 className="text-3xl font-semibold text-center mt-4">
+          {fullName || "New user"}
+        </h1>
 
         {/* META */}
         <p className="text-center text-gray-500 mt-2">
@@ -210,7 +267,7 @@ export default function ProfilePage() {
           <button
             onClick={handleSave}
             disabled={saving}
-            className="mt-6 px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800"
+            className="mt-6 px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 disabled:opacity-60"
           >
             {saving ? "Saving..." : "Save changes"}
           </button>
