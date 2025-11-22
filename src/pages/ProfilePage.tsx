@@ -1,16 +1,12 @@
-// src/pages/ProfilePage.tsx
-
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { User } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import Header from "../components/Header";
+import { useAuth } from "../context/AuthContext";
 
 export default function ProfilePage() {
   const navigate = useNavigate();
-
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { user, profile, loading, reloadProfile } = useAuth();
 
   const [fullName, setFullName] = useState("");
   const [bio, setBio] = useState("");
@@ -20,84 +16,38 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  // ---------- LOAD USER + PROFILE ----------
   useEffect(() => {
-    let isMounted = true;
+    if (!loading && !user) {
+      navigate("/login", { replace: true });
+    }
+  }, [loading, user, navigate]);
 
-    const loadProfile = async (currentUser: User) => {
-      const { data: profile, error } = await supabase
+  useEffect(() => {
+    if (!user) return;
+
+    const loadProfileData = async () => {
+      const { data: prof, error } = await supabase
         .from("profiles")
         .select("full_name,bio,avatar_url")
-        .eq("id", currentUser.id)
+        .eq("id", user.id)
         .single();
 
-      if (!isMounted) return;
-
       if (error) {
-        console.error("loadProfile error:", error);
-      }
-
-      if (profile) {
-        setFullName(profile.full_name || "");
-        setBio(profile.bio || "");
-        setAvatarUrl(profile.avatar_url || null);
-      }
-
-      setLoading(false);
-    };
-
-    const init = async () => {
-      const {
-        data: { session },
-        error,
-      } = await supabase.auth.getSession();
-
-      if (error) {
-        console.error("getSession error:", error);
-      }
-
-      const currentUser = session?.user ?? null;
-
-      if (!currentUser) {
-        if (!isMounted) return;
-        navigate("/login", { replace: true });
+        console.error("Error loading profile:", error);
         return;
       }
 
-      if (!isMounted) return;
-
-      setUser(currentUser);
-      await loadProfile(currentUser);
+      setFullName(prof.full_name || "");
+      setBio(prof.bio || "");
+      setAvatarUrl(prof.avatar_url || null);
     };
 
-    init();
+    loadProfileData();
+  }, [user]);
 
-    // подписка на изменения сессии
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      const currentUser = session?.user ?? null;
-
-      if (!isMounted) return;
-
-      if (!currentUser) {
-        setUser(null);
-        navigate("/login", { replace: true });
-        return;
-      }
-
-      setUser(currentUser);
-      loadProfile(currentUser);
-    });
-
-    return () => {
-      isMounted = false;
-      subscription.unsubscribe();
-    };
-  }, [navigate]);
-
-  // ---------- UPLOAD AVATAR ----------
-  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
     try {
       const file = e.target.files?.[0];
       if (!file || !user) return;
@@ -116,7 +66,6 @@ export default function ProfilePage() {
       const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
       const publicUrl = data.publicUrl;
 
-      // обновляем user_metadata (для Header)
       const { error: updateUserError } = await supabase.auth.updateUser({
         data: { avatar_url: publicUrl },
       });
@@ -124,7 +73,6 @@ export default function ProfilePage() {
         console.error("updateUser metadata error:", updateUserError);
       }
 
-      // обновляем строку профиля
       const { error: updateProfileError } = await supabase
         .from("profiles")
         .update({
@@ -138,6 +86,7 @@ export default function ProfilePage() {
       }
 
       setAvatarUrl(publicUrl);
+      await reloadProfile();
     } catch (err) {
       console.error("avatar upload error:", err);
     } finally {
@@ -145,7 +94,6 @@ export default function ProfilePage() {
     }
   };
 
-  // ---------- SAVE PROFILE ----------
   const handleSave = async () => {
     if (!user) return;
 
@@ -175,6 +123,7 @@ export default function ProfilePage() {
       }
 
       setEditMode(false);
+      await reloadProfile();
     } catch (err) {
       console.error("save profile error:", err);
     } finally {
@@ -191,12 +140,22 @@ export default function ProfilePage() {
     );
   }
 
+  if (!user) {
+    return (
+      <>
+        <Header />
+        <div className="p-10">Redirecting to login...</div>
+      </>
+    );
+  }
+
+  const displayName = fullName || profile?.full_name || "New user";
+
   return (
     <>
       <Header />
 
       <div className="w-full max-w-4xl mx-auto px-6 py-12">
-        {/* BACK BUTTON */}
         <button
           onClick={() => navigate(-1)}
           className="text-sm flex items-center gap-2 text-gray-500 hover:text-black mb-6"
@@ -204,13 +163,12 @@ export default function ProfilePage() {
           ← Back
         </button>
 
-        {/* AVATAR */}
         <div className="flex flex-col items-center gap-4">
           <img
             src={
               avatarUrl ||
               `https://ui-avatars.com/api/?name=${encodeURIComponent(
-                fullName || "User"
+                displayName || "User"
               )}`
             }
             className="w-28 h-28 rounded-full object-cover border border-gray-200"
@@ -229,17 +187,14 @@ export default function ProfilePage() {
           )}
         </div>
 
-        {/* NAME */}
         <h1 className="text-3xl font-semibold text-center mt-4">
-          {fullName || "New user"}
+          {displayName}
         </h1>
 
-        {/* META */}
         <p className="text-center text-gray-500 mt-2">
           Since 12.11.2025 • 120 sessions
         </p>
 
-        {/* EDIT BUTTON */}
         <div className="flex justify-center mt-4">
           <button
             onClick={() => setEditMode(!editMode)}
@@ -249,7 +204,6 @@ export default function ProfilePage() {
           </button>
         </div>
 
-        {/* BIO */}
         <div className="mt-10 border-t pt-8">
           <h2 className="text-lg font-semibold mb-2">Bio</h2>
 
@@ -265,7 +219,6 @@ export default function ProfilePage() {
           )}
         </div>
 
-        {/* SAVE BUTTON */}
         {editMode && (
           <button
             onClick={handleSave}
@@ -276,7 +229,6 @@ export default function ProfilePage() {
           </button>
         )}
 
-        {/* FUTURE SESSIONS LIST PLACEHOLDER */}
         <div className="mt-12">
           <h2 className="text-xl font-semibold mb-4">
             Current hosted & upcoming sessions:

@@ -1,4 +1,3 @@
-// src/lib/supabase.ts
 import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -13,19 +12,15 @@ if (!supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl!, supabaseAnonKey!, {
   auth: {
-    persistSession: true,          // хранить сессию в localStorage
-    autoRefreshToken: true,        // автообновление токенов
-    detectSessionInUrl: true,      // ВАЖНО для OAuth
-    storageKey: "mysession-auth",  // свой ключ, чтобы не конфликтовать
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    storageKey: "mysession-auth",
   },
 });
 
-// debug
+// Debug
 if (typeof window !== "undefined") {
   // @ts-ignore
   window.supabase = supabase;
-  // небольшая отладка в консоли
-  supabase.auth.getSession().then(({ data }) => {
-    console.log("🔎 initial session from supabase.ts:", data);
-  });
 }

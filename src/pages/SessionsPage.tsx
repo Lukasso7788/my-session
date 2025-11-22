@@ -1,4 +1,3 @@
-// src/pages/SessionsPage.tsx
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { SessionTypeSwitcher } from "../components/SessionTypeSwitcher";
@@ -7,6 +6,7 @@ import Header from "../components/Header";
 import { supabase } from "../lib/supabase";
 import type { Session } from "../types/session";
 import { useCreateSessionModal } from "../hooks/useCreateSessionModal";
+import { useAuth } from "../context/AuthContext";
 
 type SessionWithRelations = Session & {
   host_id?: string;
@@ -22,29 +22,14 @@ type SessionWithRelations = Session & {
 export function SessionsPage() {
   const navigate = useNavigate();
   const modal = useCreateSessionModal();
+  const { user } = useAuth();
 
   const [sessions, setSessions] = useState<SessionWithRelations[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [user, setUser] = useState<any>(null);
 
   const [sessionTypeTab, setSessionTypeTab] = useState<
     "group" | "infinite" | "body"
   >("group");
-
-  // ---------- AUTH RESTORE ----------
-  useEffect(() => {
-    const getCurrentSession = async () => {
-      const { data } = await supabase.auth.getSession();
-      setUser(data?.session?.user ?? null);
-    };
-    getCurrentSession();
-
-    const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, session) => setUser(session?.user ?? null)
-    );
-
-    return () => listener.subscription.unsubscribe();
-  }, []);
 
   // ---------- LOAD SESSIONS ----------
   const fetchSessions = useCallback(async () => {
@@ -53,7 +38,8 @@ export function SessionsPage() {
 
       const { data, error } = await supabase
         .from("sessions")
-        .select(`
+        .select(
+          `
           id,
           title,
           host_id,
@@ -64,7 +50,8 @@ export function SessionsPage() {
           status,
           session_bookings ( user_id ),
           session_attendance ( id, session_id, user_id )
-        `)
+        `
+        )
         .order("start_time", { ascending: true });
 
       if (error) throw error;
@@ -85,7 +72,7 @@ export function SessionsPage() {
     fetchSessions();
   }, [fetchSessions]);
 
-  // ---------- ГЛОБАЛЬНАЯ МОДАЛКА: после создания сессии перезагружаем список ----------
+  // ---------- ГЛОБАЛЬНАЯ МОДАЛКА ----------
   useEffect(() => {
     modal.setOnCreatedCallback(fetchSessions);
   }, [modal, fetchSessions]);
@@ -99,9 +86,8 @@ export function SessionsPage() {
         { event: "*", schema: "public", table: "session_attendance" },
         (payload) => {
           setSessions((prev) => {
-            const sessionId =
-              // @ts-ignore
-              payload.new?.session_id || payload.old?.session_id;
+            // @ts-ignore
+            const sessionId = payload.new?.session_id || payload.old?.session_id;
             if (!sessionId) return prev;
 
             return prev.map((s) => {
@@ -131,7 +117,9 @@ export function SessionsPage() {
       )
       .subscribe();
 
-    return () => supabase.removeChannel(channel);
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   // ---------- HELPERS ----------
@@ -222,10 +210,8 @@ export function SessionsPage() {
 
   return (
     <div className="min-h-screen bg-white text-brandBlack font-inter">
-      {/* Глобальный HEADER */}
       <Header />
 
-      {/* MAIN CONTENT */}
       <main className="w-full px-8 pb-12">
         <div className="pt-[100px] pb-[50px] text-center">
           <h1 className="text-[24px] md:text-[28px] xl:text-[36px] font-normal leading-tight mx-auto">

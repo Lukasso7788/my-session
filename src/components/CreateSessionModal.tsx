@@ -1,8 +1,8 @@
-// src/components/CreateSessionModal.tsx
 import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import type { SessionTemplate } from "../types/session";
+import { useAuth } from "../context/AuthContext";
 
 interface CreateSessionModalProps {
   isOpen: boolean;
@@ -15,56 +15,22 @@ export function CreateSessionModal({
   onClose,
   onSessionCreated,
 }: CreateSessionModalProps) {
+  const { user, profile, loading } = useAuth();
+
   const [title, setTitle] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
   const [templates, setTemplates] = useState<SessionTemplate[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [profile, setProfile] = useState<any>(null);
-
-  // ---------- LOAD USER PROFILE ----------
-  useEffect(() => {
-    if (!isOpen) return;
-
-    async function loadProfile() {
-      setError(null);
-
-      const sessionRes = await supabase.auth.getSession();
-      const session = sessionRes.data.session;
-
-      if (!session || !session.user) {
-        setError("You must be logged in to create a session.");
-        setProfile(null);
-        return;
-      }
-
-      const user = session.user;
-
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, full_name")
-        .eq("id", user.id)
-        .single();
-
-      if (error) {
-        console.error("❌ Error loading profile:", error);
-        setError("Failed to load your profile.");
-        setProfile(null);
-        return;
-      }
-
-      setProfile(data);
-    }
-
-    loadProfile();
-  }, [isOpen]);
 
   // ---------- LOAD TEMPLATES ----------
   useEffect(() => {
     if (!isOpen) return;
 
     async function loadTemplates() {
+      setError(null);
+
       const { data, error } = await supabase
         .from("session_templates")
         .select("*")
@@ -89,8 +55,8 @@ export function CreateSessionModal({
       return;
     }
 
-    if (!profile?.id) {
-      setError("Unable to load your profile.");
+    if (!user || !profile?.id) {
+      setError("You must be logged in to create a session.");
       return;
     }
 
@@ -135,7 +101,6 @@ export function CreateSessionModal({
 
       if (error) throw error;
 
-      // 3) Reset & notify
       setTitle("");
       setScheduledAt("");
       setSelectedTemplate("");
@@ -151,6 +116,8 @@ export function CreateSessionModal({
   };
 
   if (!isOpen) return null;
+
+  const hostName = profile?.full_name || user?.email || "Unknown host";
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -168,95 +135,101 @@ export function CreateSessionModal({
           </button>
         </div>
 
-        <div className="space-y-5">
-          {/* Title */}
-          <div>
-            <label className="block text-[14px] font-medium text-brandBlack mb-1 font-inter">
-              Session title
-            </label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g., Deep Work Session"
-              className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter"
-            />
-          </div>
-
-          {/* Start Time */}
-          <div>
-            <label className="block text-[14px] font-medium text-brandBlack mb-1 font-inter">
-              Start time
-            </label>
-            <input
-              type="datetime-local"
-              value={scheduledAt}
-              onChange={(e) => setScheduledAt(e.target.value)}
-              min={new Date().toISOString().slice(0, 16)}
-              className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter"
-            />
-          </div>
-
-          {/* Templates */}
-          <div>
-            <label className="block text-[14px] font-medium text-brandBlack mb-2 font-inter">
-              Session format
-            </label>
-
-            <div className="max-h-48 overflow-y-auto pr-2 space-y-3">
-              {templates.length > 0 ? (
-                templates.map((t) => (
-                  <label
-                    key={t.id}
-                    className="flex items-center gap-3 cursor-pointer"
-                    onClick={() => {
-                      setSelectedTemplate(t.id);
-                      if (!title) setTitle(t.name);
-                    }}
-                  >
-                    <input
-                      type="radio"
-                      name="session-template"
-                      value={t.id}
-                      checked={selectedTemplate === t.id}
-                      onChange={() => { }}
-                      className="w-4 h-4 text-brandBlack"
-                    />
-
-                    <img
-                      src={`/icons/${t.icon || t.name.toLowerCase()}.svg`}
-                      className="w-4 h-4"
-                    />
-
-                    <span className="text-[16px] text-brandBlack font-inter">
-                      {t.name} ({t.total_duration} min)
-                    </span>
-                  </label>
-                ))
-              ) : (
-                <p className="text-sm text-gray-500">Loading templates...</p>
-              )}
+        {loading || !user ? (
+          <p className="text-sm text-gray-500 mb-4">
+            {loading
+              ? "Checking your account..."
+              : "You must be logged in to create a session."}
+          </p>
+        ) : (
+          <div className="space-y-5">
+            {/* Title */}
+            <div>
+              <label className="block text-[14px] font-medium text-brandBlack mb-1 font-inter">
+                Session title
+              </label>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g., Deep Work Session"
+                className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter"
+              />
             </div>
+
+            {/* Start Time */}
+            <div>
+              <label className="block text-[14px] font-medium text-brandBlack mb-1 font-inter">
+                Start time
+              </label>
+              <input
+                type="datetime-local"
+                value={scheduledAt}
+                onChange={(e) => setScheduledAt(e.target.value)}
+                min={new Date().toISOString().slice(0, 16)}
+                className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter"
+              />
+            </div>
+
+            {/* Templates */}
+            <div>
+              <label className="block text-[14px] font-medium text-brandBlack mb-2 font-inter">
+                Session format
+              </label>
+
+              <div className="max-h-48 overflow-y-auto pr-2 space-y-3">
+                {templates.length > 0 ? (
+                  templates.map((t) => (
+                    <label
+                      key={t.id}
+                      className="flex items-center gap-3 cursor-pointer"
+                      onClick={() => {
+                        setSelectedTemplate(t.id);
+                        if (!title) setTitle(t.name);
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="session-template"
+                        value={t.id}
+                        checked={selectedTemplate === t.id}
+                        onChange={() => { }}
+                        className="w-4 h-4 text-brandBlack"
+                      />
+
+                      <img
+                        src={`/icons/${t.icon || t.name.toLowerCase()}.svg`}
+                        className="w-4 h-4"
+                      />
+
+                      <span className="text-[16px] text-brandBlack font-inter">
+                        {t.name} ({t.total_duration} min)
+                      </span>
+                    </label>
+                  ))
+                ) : (
+                  <p className="text-sm text-gray-500">Loading templates...</p>
+                )}
+              </div>
+            </div>
+
+            {error && <p className="text-red-600 text-sm">{error}</p>}
+
+            <button
+              onClick={handleCreate}
+              disabled={
+                !title || !selectedTemplate || !scheduledAt || isCreating
+              }
+              className="w-full bg-brandBlack text-white py-3 rounded-[42px] font-medium text-[15px] font-inter hover:bg-black disabled:bg-gray-300 transition"
+            >
+              {isCreating ? "Creating..." : "Create session"}
+            </button>
           </div>
+        )}
 
-          {error && <p className="text-red-600 text-sm">{error}</p>}
-
-          {/* Submit button */}
-          <button
-            onClick={handleCreate}
-            disabled={
-              !title || !selectedTemplate || !scheduledAt || isCreating
-            }
-            className="w-full bg-brandBlack text-white py-3 rounded-[42px] font-medium text-[15px] font-inter hover:bg-black disabled:bg-gray-300 transition"
-          >
-            {isCreating ? "Creating..." : "Create session"}
-          </button>
-        </div>
-
-        {profile && (
+        {user && (
           <p className="text-xs text-gray-400 mt-4 text-center font-inter">
-            Hosted by{" "}
-            <span className="font-medium">{profile.full_name}</span>
+            Hosted by <span className="font-medium">{hostName}</span>
           </p>
         )}
       </div>

@@ -1,6 +1,4 @@
-// src/components/SessionCard.tsx
 import { useEffect, useState } from "react";
-import { supabase } from "../lib/supabase";
 import { Link } from "react-router-dom";
 
 interface SessionCardProps {
@@ -83,44 +81,10 @@ export default function SessionCard({
         })
         : "";
 
-    const [attendanceCount, setAttendanceCount] = useState(0);
-
-    useEffect(() => {
-        let active = true;
-
-        const load = async () => {
-            const { data, error } = await supabase
-                .from("session_attendance")
-                .select("user_id")
-                .eq("session_id", session.id);
-
-            if (error) {
-                console.error("Error loading attendance:", error);
-                return;
-            }
-
-            if (active) {
-                const s = new Set(data?.map((x) => x.user_id));
-                setAttendanceCount(s.size);
-            }
-        };
-
-        load();
-
-        const channel = supabase
-            .channel(`attendance_${session.id}`)
-            .on(
-                "postgres_changes",
-                { event: "*", schema: "public", table: "session_attendance" },
-                load
-            )
-            .subscribe();
-
-        return () => {
-            active = false;
-            supabase.removeChannel(channel);
-        };
-    }, [session.id]);
+    // attendance из session.session_attendance
+    const attendanceCount = new Set(
+        (session.session_attendance || []).map((a: any) => a.user_id)
+    ).size;
 
     const handleBookSession = () => {
         onBook(session.id);
@@ -176,10 +140,7 @@ export default function SessionCard({
         >
             {isHoveringCancel ? (
                 <>
-                    <img
-                        src="/icons/cross-cancel.svg"
-                        className="w-4 h-4 mr-2"
-                    />
+                    <img src="/icons/cross-cancel.svg" className="w-4 h-4 mr-2" />
                     Cancel booking
                 </>
             ) : (
