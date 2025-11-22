@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
-import { UserCircle } from "lucide-react";
 import { useCreateSessionModal } from "../hooks/useCreateSessionModal";
 
 export default function Header() {
@@ -13,41 +12,64 @@ export default function Header() {
     const [showUserMenu, setShowUserMenu] = useState(false);
     const [isHoveringCreate, setIsHoveringCreate] = useState(false);
 
+    // ---------------- LOAD USER + PROFILE ----------------
     useEffect(() => {
-        async function load() {
-            const { data } = await supabase.auth.getSession();
-            const authUser = data?.session?.user ?? null;
+        let mounted = true;
+
+        const load = async () => {
+            const {
+                data: { session },
+                error,
+            } = await supabase.auth.getSession();
+
+            if (error) console.error("getSession error:", error);
+
+            const authUser = session?.user ?? null;
+
+            if (!mounted) return;
+
             setUser(authUser);
 
             if (authUser?.id) {
-                const { data: p } = await supabase
+                const { data: p, error: errP } = await supabase
                     .from("profiles")
                     .select("*")
                     .eq("id", authUser.id)
                     .single();
-                setProfile(p);
+
+                if (errP) console.error("profile load error:", errP);
+
+                if (mounted) setProfile(p);
             }
-        }
+        };
 
         load();
 
-        const { data: listener } = supabase.auth.onAuthStateChange(
-            async (_event, session) => {
-                const u = session?.user ?? null;
-                setUser(u);
+        const {
+            data: { subscription },
+        } = supabase.auth.onAuthStateChange(async (_event, session) => {
+            const u = session?.user ?? null;
 
-                if (u) {
-                    const { data: p } = await supabase
-                        .from("profiles")
-                        .select("*")
-                        .eq("id", u.id)
-                        .single();
-                    setProfile(p);
-                }
+            if (!mounted) return;
+            setUser(u);
+
+            if (u?.id) {
+                const { data: p } = await supabase
+                    .from("profiles")
+                    .select("*")
+                    .eq("id", u.id)
+                    .single();
+
+                if (mounted) setProfile(p);
+            } else {
+                setProfile(null);
             }
-        );
+        });
 
-        return () => listener.subscription.unsubscribe();
+        return () => {
+            mounted = false;
+            subscription.unsubscribe();
+        };
     }, []);
 
     const avatarSrc =
@@ -60,14 +82,19 @@ export default function Header() {
         <header className="border-b border-borderGray">
             <div className="w-full px-8 py-6 flex items-center justify-between gap-3">
 
+                {/* LEFT NAV */}
                 <nav className="flex items-center gap-6 flex-1 text-sm text-[#2E2E2E]">
-                    <button onClick={() => navigate("/sessions")} className="hover:text-black">
+                    <button
+                        onClick={() => navigate("/sessions")}
+                        className="hover:text-black"
+                    >
                         Sessions
                     </button>
                     <button className="hover:text-black">Pricing</button>
                     <button className="hover:text-black">Latest updates</button>
                 </nav>
 
+                {/* LOGO */}
                 <div className="flex-1 flex justify-center">
                     <button
                         onClick={() => navigate("/")}
@@ -77,6 +104,7 @@ export default function Header() {
                     </button>
                 </div>
 
+                {/* RIGHT SIDE */}
                 <div className="flex-1 flex items-center justify-end gap-3 relative">
                     {!user ? (
                         <div className="flex gap-3">
@@ -96,17 +124,17 @@ export default function Header() {
                         </div>
                     ) : (
                         <>
-                            {/* CREATE SESSION → вызывает глобальную модалку */}
+                            {/* CREATE SESSION */}
                             <button
                                 onClick={() => modal.open()}
                                 onMouseEnter={() => setIsHoveringCreate(true)}
                                 onMouseLeave={() => setIsHoveringCreate(false)}
                                 className={`
-                  inline-flex items-center gap-2 px-6 py-3 rounded-full 
-                  border text-base font-medium transition-colors duration-200
-                  border-[#2F2F2F] 
-                  ${isHoveringCreate ? "bg-[#2F2F2F] text-white" : "hover:bg-slate-50"}
-                `}
+                                    inline-flex items-center gap-2 px-6 py-3 rounded-full 
+                                    border text-base font-medium transition-colors duration-200
+                                    border-[#2F2F2F] 
+                                    ${isHoveringCreate ? "bg-[#2F2F2F] text-white" : "hover:bg-slate-50"}
+                                `}
                             >
                                 <img
                                     src={
@@ -119,6 +147,7 @@ export default function Header() {
                                 <span>Create a session</span>
                             </button>
 
+                            {/* AVATAR BTN */}
                             <button
                                 onClick={() => setShowUserMenu((v) => !v)}
                                 className="flex items-center"
@@ -129,6 +158,7 @@ export default function Header() {
                                 />
                             </button>
 
+                            {/* USER DROPDOWN */}
                             {showUserMenu && (
                                 <div className="absolute right-0 top-12 w-48 bg-white rounded-xl shadow-lg border border-borderGray z-20">
                                     <button
@@ -138,10 +168,12 @@ export default function Header() {
                                         Profile
                                     </button>
 
+                                    {/* ✅ пункт 4 — logout + redirect */}
                                     <button
                                         onClick={async () => {
                                             await supabase.auth.signOut();
                                             setShowUserMenu(false);
+                                            navigate("/login"); // ← пункт №4
                                         }}
                                         className="w-full text-left px-4 py-2 text-sm font-light text-red-600 hover:bg-red-50"
                                     >
