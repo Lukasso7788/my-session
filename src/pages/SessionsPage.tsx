@@ -1,12 +1,15 @@
+// src/pages/SessionsPage.tsx
+const DEBUG = true;
+
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { SessionTypeSwitcher } from "../components/SessionTypeSwitcher";
 import SessionCard from "../components/SessionCard";
 import Header from "../components/Header";
 import { supabase } from "../lib/supabase";
-import type { Session } from "../types/session";
 import { useCreateSessionModal } from "../hooks/useCreateSessionModal";
 import { useAuth } from "../context/AuthContext";
+import type { Session } from "../types/session";
 
 type SessionWithRelations = Session & {
   host_id?: string;
@@ -31,15 +34,16 @@ export function SessionsPage() {
     "group" | "infinite" | "body"
   >("group");
 
-  // ---------- LOAD SESSIONS ----------
+  // --- LOAD SESSIONS ---
   const fetchSessions = useCallback(async () => {
+    if (DEBUG) console.log("[DEBUG Sessions] Fetch sessions…");
+
     try {
       setIsLoading(true);
 
       const { data, error } = await supabase
         .from("sessions")
-        .select(
-          `
+        .select(`
           id,
           title,
           host_id,
@@ -50,19 +54,19 @@ export function SessionsPage() {
           status,
           session_bookings ( user_id ),
           session_attendance ( id, session_id, user_id )
-        `
-        )
+        `)
         .order("start_time", { ascending: true });
 
-      if (error) throw error;
+      if (error) {
+        console.error("[DEBUG Sessions] Fetch error:", error);
+        throw error;
+      }
 
-      setSessions((data || []) as SessionWithRelations[]);
-      localStorage.setItem("sessions", JSON.stringify(data || []));
-    } catch (error) {
-      console.error("Error fetching sessions:", error);
+      if (DEBUG) console.log("[DEBUG Sessions] Loaded:", data);
 
-      const saved = localStorage.getItem("sessions");
-      if (saved) setSessions(JSON.parse(saved));
+      setSessions(data || []);
+    } catch (err) {
+      console.error("[DEBUG Sessions] FAILED LOADING:", err);
     } finally {
       setIsLoading(false);
     }
@@ -72,19 +76,24 @@ export function SessionsPage() {
     fetchSessions();
   }, [fetchSessions]);
 
-  // ---------- ГЛОБАЛЬНАЯ МОДАЛКА ----------
+  // --- Refresh after modal creates session ---
   useEffect(() => {
     modal.setOnCreatedCallback(fetchSessions);
+    if (DEBUG) console.log("[DEBUG Sessions] Modal callback set");
   }, [modal, fetchSessions]);
 
-  // ---------- REALTIME ATTENDANCE ----------
+  // --- REALTIME ATTENDANCE ---
   useEffect(() => {
+    if (DEBUG) console.log("[DEBUG Sessions] Subscribe to realtime attendance");
+
     const channel = supabase
       .channel("session-attendance")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "session_attendance" },
         (payload) => {
+          if (DEBUG) console.log("[DEBUG Sessions] Realtime event:", payload);
+
           setSessions((prev) => {
             // @ts-ignore
             const sessionId = payload.new?.session_id || payload.old?.session_id;
@@ -96,17 +105,12 @@ export function SessionsPage() {
               let attendance = s.session_attendance || [];
 
               if (payload.eventType === "INSERT") {
-                // @ts-ignore
                 attendance = [...attendance, payload.new];
               } else if (payload.eventType === "DELETE") {
-                // @ts-ignore
-                const delId = payload.old.id;
-                attendance = attendance.filter((a) => a.id !== delId);
+                attendance = attendance.filter((a) => a.id !== payload.old.id);
               } else if (payload.eventType === "UPDATE") {
-                // @ts-ignore
-                const newRow = payload.new;
                 attendance = attendance.map((a) =>
-                  a.id === newRow.id ? newRow : a
+                  a.id === payload.new.id ? payload.new : a
                 );
               }
 
@@ -118,16 +122,18 @@ export function SessionsPage() {
       .subscribe();
 
     return () => {
+      if (DEBUG) console.log("[DEBUG Sessions] Remove realtime channel");
       supabase.removeChannel(channel);
     };
   }, []);
 
-  // ---------- HELPERS ----------
+  // --- HELPERS ---
   const isExpired = (s: SessionWithRelations) => {
     if (!s.start_time) return false;
-    const end =
-      new Date(s.start_time).getTime() + s.duration_minutes * 60_000;
-    return Date.now() > end;
+    return (
+      Date.now() >
+      new Date(s.start_time).getTime() + s.duration_minutes * 60_000
+    );
   };
 
   const activeSessions = useMemo(
@@ -138,76 +144,68 @@ export function SessionsPage() {
   const visibleSessions =
     sessionTypeTab === "group" ? activeSessions : [];
 
-  // ---------- ACTIONS ----------
-  const handleJoinSession = (sessionId: string) => {
+  // --- ACTIONS ---
+  const join = (id: string) => {
     if (!user) {
-      navigate("/login");
-      return;
+      if (DEBUG) console.log("[DEBUG Sessions] Join → no user, redirect");
+      return navigate("/login");
     }
-    navigate(`/room/${sessionId}`);
+
+    if (DEBUG) console.log("[DEBUG Sessions] Join session:", id);
+    navigate(`/room/${id}`);
   };
 
-  const handleBookSession = async (sessionId: string) => {
+  const book = async (id: string) => {
     if (!user) {
-      navigate("/login");
-      return;
+      if (DEBUG) console.log("[DEBUG Sessions] Book → no user, redirect");
+      return navigate("/login");
     }
 
+    if (DEBUG) console.log("[DEBUG Sessions] Booking:", id);
+
     try {
-      const { error } = await supabase.from("session_bookings").insert({
-        session_id: sessionId,
+      await supabase.from("session_bookings").insert({
+        session_id: id,
         user_id: user.id,
       });
-
-      if (error) throw error;
-
-      await fetchSessions();
+      fetchSessions();
     } catch (err) {
-      console.error("Error booking session:", err);
+      console.error("[DEBUG Sessions] Booking error:", err);
     }
   };
 
-  const handleCancelBooking = async (sessionId: string) => {
-    if (!user) {
-      navigate("/login");
-      return;
-    }
+  const cancel = async (id: string) => {
+    if (!user) return navigate("/login");
+
+    if (DEBUG) console.log("[DEBUG Sessions] Cancel booking:", id);
 
     try {
-      const { error } = await supabase
+      await supabase
         .from("session_bookings")
         .delete()
-        .eq("session_id", sessionId)
+        .eq("session_id", id)
         .eq("user_id", user.id);
 
-      if (error) throw error;
-
-      await fetchSessions();
+      fetchSessions();
     } catch (err) {
-      console.error("Error cancelling booking:", err);
+      console.error("[DEBUG Sessions] Cancel error:", err);
     }
   };
 
-  const handleDeleteSession = async (sessionId: string) => {
-    if (!user) {
-      navigate("/login");
-      return;
-    }
+  const remove = async (id: string) => {
+    if (!user) return navigate("/login");
+
+    if (DEBUG) console.log("[DEBUG Sessions] Delete session:", id);
 
     try {
-      const { error } = await supabase
-        .from("sessions")
-        .delete()
-        .eq("id", sessionId);
-
-      if (error) throw error;
-
-      setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+      await supabase.from("sessions").delete().eq("id", id);
+      setSessions((prev) => prev.filter((s) => s.id !== id));
     } catch (err) {
-      console.error("Error deleting session:", err);
+      console.error("[DEBUG Sessions] Delete error:", err);
     }
   };
 
+  // --- RENDER ---
   return (
     <div className="min-h-screen bg-white text-brandBlack font-inter">
       <Header />
@@ -223,7 +221,10 @@ export function SessionsPage() {
           <div className="flex justify-center mb-[55px]">
             <SessionTypeSwitcher
               value={sessionTypeTab}
-              onChange={(val) => setSessionTypeTab(val)}
+              onChange={(v) => {
+                if (DEBUG) console.log("[DEBUG Sessions] Tab changed:", v);
+                setSessionTypeTab(v);
+              }}
             />
           </div>
 
@@ -237,9 +238,14 @@ export function SessionsPage() {
                 <p className="text-sm text-slate-600 mb-4">
                   No active sessions available
                 </p>
+
                 {user && (
                   <button
-                    onClick={() => modal.open()}
+                    onClick={() => {
+                      if (DEBUG)
+                        console.log("[DEBUG Sessions] Create first session");
+                      modal.open();
+                    }}
                     className="text-sm underline underline-offset-4"
                   >
                     Create the first session
@@ -248,15 +254,15 @@ export function SessionsPage() {
               </div>
             ) : (
               <div className="space-y-6">
-                {visibleSessions.map((session) => (
+                {visibleSessions.map((s) => (
                   <SessionCard
-                    key={session.id}
-                    session={session}
+                    key={s.id}
+                    session={s}
                     userId={user?.id}
-                    onJoin={handleJoinSession}
-                    onBook={handleBookSession}
-                    onCancelBooking={handleCancelBooking}
-                    onDelete={handleDeleteSession}
+                    onJoin={join}
+                    onBook={book}
+                    onCancelBooking={cancel}
+                    onDelete={remove}
                   />
                 ))}
               </div>
