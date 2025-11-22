@@ -30,29 +30,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [profile, setProfile] = useState<Profile | null>(null);
     const [loading, setLoading] = useState(true);
 
-    const loadProfile = useCallback(
-        async (u: User | null) => {
-            if (!u) {
-                setProfile(null);
-                return;
-            }
+    const loadProfile = useCallback(async (u: User | null) => {
+        console.log("[Auth] loadProfile for:", u?.id);
 
-            const { data, error } = await supabase
-                .from("profiles")
-                .select("id, full_name, avatar_url")
-                .eq("id", u.id)
-                .single();
+        if (!u) {
+            setProfile(null);
+            return;
+        }
 
-            if (error) {
-                console.error("loadProfile error:", error);
-                setProfile(null);
-                return;
-            }
+        const { data, error } = await supabase
+            .from("profiles")
+            .select("id, full_name, avatar_url")
+            .eq("id", u.id)
+            .single();
 
-            setProfile(data as Profile);
-        },
-        []
-    );
+        if (error) {
+            console.error("[Auth] loadProfile error:", error);
+            setProfile(null);
+            return;
+        }
+
+        setProfile(data as Profile);
+    }, []);
 
     const reloadProfile = useCallback(async () => {
         if (!user) return;
@@ -63,18 +62,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         let mounted = true;
 
         const init = async () => {
-            const {
-                data: { session },
-                error,
-            } = await supabase.auth.getSession();
+            console.log("[Auth] INIT start");
 
-            if (error) {
-                console.error("getSession error:", error);
-            }
+            const { data, error } = await supabase.auth.getSession();
+
+            if (error) console.error("[Auth] getSession error:", error);
+            console.log("[Auth] getSession result:", data);
 
             if (!mounted) return;
 
-            const currentUser = session?.user ?? null;
+            const currentUser = data.session?.user ?? null;
             setUser(currentUser);
 
             if (currentUser) {
@@ -82,56 +79,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
 
             setLoading(false);
+            console.log("[Auth] INIT done → loading = false");
         };
 
         init();
 
-        const {
-            data: { subscription },
-        } = supabase.auth.onAuthStateChange(async (_event, session) => {
-            if (!mounted) return;
-            const currentUser = session?.user ?? null;
-            setUser(currentUser);
+        const { data: listener } = supabase.auth.onAuthStateChange(
+            async (event, session) => {
+                console.log("[Auth] StateChange:", event, session);
 
-            if (currentUser) {
-                await loadProfile(currentUser);
-            } else {
-                setProfile(null);
+                if (!mounted) return;
+                const currentUser = session?.user ?? null;
+
+                setUser(currentUser);
+
+                if (currentUser) {
+                    await loadProfile(currentUser);
+                } else {
+                    setProfile(null);
+                }
             }
-        });
+        );
 
         return () => {
             mounted = false;
-            subscription.unsubscribe();
+            listener.subscription.unsubscribe();
         };
     }, [loadProfile]);
 
     const signOut = useCallback(async () => {
-        try {
-            await supabase.auth.signOut();
-        } catch (e) {
-            console.error("signOut error:", e);
-        } finally {
-            setUser(null);
-            setProfile(null);
-        }
+        console.log("[Auth] signOut()");
+        await supabase.auth.signOut();
+        setUser(null);
+        setProfile(null);
     }, []);
 
-    const value: AuthContextValue = {
-        user,
-        profile,
-        loading,
-        reloadProfile,
-        signOut,
-    };
-
-    return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+    return (
+        <AuthContext.Provider
+            value={{ user, profile, loading, reloadProfile, signOut }}
+        >
+            {children}
+        </AuthContext.Provider>
+    );
 }
 
 export function useAuth() {
     const ctx = useContext(AuthContext);
-    if (!ctx) {
-        throw new Error("useAuth must be used within AuthProvider");
-    }
+    if (!ctx) throw new Error("useAuth must be used within AuthProvider");
     return ctx;
 }
