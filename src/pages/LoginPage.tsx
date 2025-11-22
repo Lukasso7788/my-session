@@ -10,7 +10,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // ---------------- EMAIL / PASSWORD LOGIN ----------------
   const handleLogin = async () => {
     console.log("[DEBUG Login] Email login started", { email });
 
@@ -35,25 +34,23 @@ export default function LoginPage() {
         return;
       }
 
-      // Проверяем, попала ли сессия в storage
-      const rawStorage = localStorage.getItem("mysession-auth");
-      console.log("[DEBUG Login] LocalStorage after login:", rawStorage);
+      console.log("[DEBUG Login] Checking saved session...");
+      const raw = localStorage.getItem("mysession-auth");
+      console.log("[DEBUG Login] LocalStorage:", raw);
 
-      const { data: sessionData } = await supabase.auth.getSession();
-      console.log("[DEBUG Login] getSession() after email login:", sessionData);
+      const sessionCheck = await supabase.auth.getSession();
+      console.log("[DEBUG Login] getSession():", sessionCheck);
 
       navigate("/sessions");
     } catch (err) {
-      console.error("[DEBUG Login] Unexpected login exception:", err);
+      console.error("[DEBUG Login] Unexpected exception:", err);
     } finally {
       setLoading(false);
     }
   };
 
-  // ---------------- OAUTH PROVIDERS ----------------
   const loginWithGoogle = async () => {
-    console.log("[DEBUG Login] Google OAuth started");
-
+    console.log("[DEBUG OAuth] Starting Google login…");
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
@@ -63,8 +60,7 @@ export default function LoginPage() {
   };
 
   const loginWithFacebook = async () => {
-    console.log("[DEBUG Login] Facebook OAuth started");
-
+    console.log("[DEBUG OAuth] Starting Facebook login…");
     await supabase.auth.signInWithOAuth({
       provider: "facebook",
       options: {
@@ -76,10 +72,8 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-slate-900 text-white flex justify-center items-center px-4">
       <div className="bg-slate-800 rounded-2xl p-10 w-full max-w-md shadow-xl space-y-6">
-
         <h1 className="text-2xl font-bold text-center">Log In</h1>
 
-        {/* Email */}
         <input
           type="email"
           placeholder="Email"
@@ -88,7 +82,6 @@ export default function LoginPage() {
           onChange={(e) => setEmail(e.target.value)}
         />
 
-        {/* Password */}
         <input
           type="password"
           placeholder="Password"
@@ -97,18 +90,16 @@ export default function LoginPage() {
           onChange={(e) => setPassword(e.target.value)}
         />
 
-        {/* Email Login Button */}
         <button
           onClick={handleLogin}
           disabled={loading}
           className="w-full bg-blue-600 py-2 rounded-lg hover:bg-blue-700"
         >
-          {loading ? "Loading..." : "Login"}
+          {loading ? "Loading…" : "Login"}
         </button>
 
         <div className="h-px bg-slate-600 my-4"></div>
 
-        {/* Google */}
         <button
           onClick={loginWithGoogle}
           className="w-full bg-white text-black py-2 rounded-lg hover:bg-gray-200"
@@ -116,7 +107,6 @@ export default function LoginPage() {
           Continue with Google
         </button>
 
-        {/* Facebook */}
         <button
           onClick={loginWithFacebook}
           className="w-full bg-blue-700 text-white py-2 rounded-lg hover:bg-blue-800"

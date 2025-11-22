@@ -1,3 +1,4 @@
+// src/lib/supabase.ts
 import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL!;
@@ -9,12 +10,11 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     detectSessionInUrl: true,
 
-    storage: window.localStorage, // ← критично!
+    storage: window.localStorage,
     storageKey: "mysession-auth",
   },
 });
 
-// Debug
 if (typeof window !== "undefined") {
   // @ts-ignore
   window.supabase = supabase;

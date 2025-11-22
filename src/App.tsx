@@ -1,3 +1,4 @@
+// src/App.tsx
 import { Routes, Route, Navigate } from "react-router-dom";
 
 import { SessionsPage } from "./pages/SessionsPage";
@@ -6,16 +7,14 @@ import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import ProfilePage from "./pages/ProfilePage";
 import PublicProfilePage from "./pages/PublicProfilePage";
+import AuthCallback from "./pages/AuthCallback";
 
 import { CreateSessionModalProvider } from "./hooks/useCreateSessionModal";
 import { CreateSessionModal } from "./components/CreateSessionModal";
 
 export default function App() {
   return (
-    // Контекст модалки — ОК, он может быть здесь
     <CreateSessionModalProvider>
-      {/* ❌ Router УБРАН — он теперь только в main.tsx */}
-
       <Routes>
         <Route path="/" element={<Navigate to="/sessions" replace />} />
 
@@ -26,10 +25,12 @@ export default function App() {
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/profile/:id" element={<PublicProfilePage />} />
 
+        {/* 🔥 OAuth callback */}
+        <Route path="/auth/callback" element={<AuthCallback />} />
+
         <Route path="*" element={<Navigate to="/sessions" replace />} />
       </Routes>
 
-      {/* Глобальная модалка — отлично */}
       <CreateSessionModal />
     </CreateSessionModalProvider>
   );
