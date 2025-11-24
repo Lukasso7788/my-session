@@ -38,7 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             return;
         }
         try {
-            console.log("[Auth] Fetching profile for:", u.id);
+            // console.log("[Auth] Fetching profile for:", u.id);
             const { data, error } = await supabase
                 .from("profiles")
                 .select("id, full_name, avatar_url")
@@ -46,9 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 .single();
 
             if (error) {
-                console.warn("[Auth] Profile fetch warning:", error.message);
-                // Не сбрасываем профиль в null жестко, если была ошибка сети, 
-                // но в данном случае лучше считать что профиля нет.
+                console.warn("[Auth] Profile missing/error:", error.message);
                 setProfile(null);
                 return;
             }
@@ -68,18 +66,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         let mounted = true;
 
         const initSession = async () => {
-            console.log("[Auth] INIT start");
+            console.log("[Auth] INIT start with Timeout Race");
 
-            // Создаем промис тайм-аута: если Supabase тупит дольше 4 сек -> отменяем ожидание
+            // 1. Создаем таймер на 4 секунды
             const timeoutPromise = new Promise((_, reject) =>
                 setTimeout(() => reject(new Error("Timeout")), 4000)
             );
 
-            // Реальный запрос к Supabase
+            // 2. Реальный запрос
             const sessionPromise = supabase.auth.getSession();
 
             try {
-                // Гонка: кто быстрее — ответ сервера или таймер?
+                // 3. Кто быстрее?
                 const { data, error } = await Promise.race([sessionPromise, timeoutPromise]) as any;
 
                 if (error) throw error;
@@ -89,14 +87,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     setUser(data.session?.user ?? null);
 
                     if (data.session?.user) {
-                        // Профиль грузим без await, чтобы не блочить UI, если база тупит
-                        loadProfile(data.session.user).catch(console.error);
+                        // Грузим профиль, но НЕ ждем его (не блокируем загрузку)
+                        loadProfile(data.session.user).catch(e => console.error("Profile load error", e));
                     }
                 }
             } catch (error) {
                 console.error("[Auth] Init Error or Timeout:", error);
             } finally {
-                // ЖЕЛЕЗНАЯ ГАРАНТИЯ: Снимаем лоадер
+                // 4. ГАРАНТИЯ: Снимаем лоадер
                 if (mounted) {
                     console.log("[Auth] Force stopping loading spinner");
                     setLoading(false);
@@ -116,7 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 setSession(currentSession);
                 setUser(currentUser);
 
-                // СРАЗУ снимаем лоадер. Не ждем профиль.
+                // СРАЗУ снимаем лоадер
                 setLoading(false);
 
                 if (currentUser) {
