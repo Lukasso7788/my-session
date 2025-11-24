@@ -1,4 +1,3 @@
-// src/components/Header.tsx
 const DEBUG = true;
 
 import { useState } from "react";
@@ -15,9 +14,9 @@ export default function Header() {
     const [hoverCreate, setHoverCreate] = useState(false);
 
     if (DEBUG) {
-        console.log("[DEBUG Header] user:", user);
-        console.log("[DEBUG Header] profile:", profile);
-        console.log("[DEBUG Header] loading:", loading);
+        // console.log("[DEBUG Header] user:", user);
+        // console.log("[DEBUG Header] profile:", profile);
+        // console.log("[DEBUG Header] loading:", loading);
     }
 
     const avatarSrc =
@@ -57,7 +56,7 @@ export default function Header() {
                         <div className="flex gap-3">
                             <button
                                 onClick={() => {
-                                    if (DEBUG) console.log("[DEBUG Header] Navigate → /login");
+                                    if (DEBUG) console.log("[DEBUG Header] Navigate -> /login");
                                     navigate("/login");
                                 }}
                                 className="px-4 py-2 rounded-full border border-borderGray text-sm hover:bg-slate-50"
@@ -67,7 +66,7 @@ export default function Header() {
 
                             <button
                                 onClick={() => {
-                                    if (DEBUG) console.log("[DEBUG Header] Navigate → /register");
+                                    if (DEBUG) console.log("[DEBUG Header] Navigate -> /register");
                                     navigate("/register");
                                 }}
                                 className="px-4 py-2 rounded-full bg-brandBlack text-white hover:bg-black text-sm font-medium"
@@ -122,7 +121,7 @@ export default function Header() {
                                 <div className="absolute right-0 top-12 w-48 bg-white rounded-xl shadow-lg border border-borderGray z-20">
                                     <button
                                         onClick={() => {
-                                            if (DEBUG) console.log("[DEBUG Header] Navigate → /profile");
+                                            if (DEBUG) console.log("[DEBUG Header] Navigate -> /profile");
                                             navigate("/profile");
                                             setShowUserMenu(false);
                                         }}
@@ -133,7 +132,7 @@ export default function Header() {
 
                                     <button
                                         onClick={async () => {
-                                            if (DEBUG) console.log("[DEBUG Header] Logging out…");
+                                            if (DEBUG) console.log("[DEBUG Header] Logging out...");
                                             await signOut();
                                             navigate("/login");
                                             setShowUserMenu(false);

@@ -46,7 +46,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 .single();
 
             if (error) {
-                console.warn("[Auth] Profile missing/error:", error.message);
+                // Это не критическая ошибка, просто профиля пока нет
+                console.warn("[Auth] Profile missing/error (non-critical):", error.message);
                 setProfile(null);
                 return;
             }
@@ -68,16 +69,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const initSession = async () => {
             console.log("[Auth] INIT start with Timeout Race");
 
-            // 1. Создаем таймер на 4 секунды
+            // 1. Создаем таймер на 4 секунды (предохранитель)
             const timeoutPromise = new Promise((_, reject) =>
                 setTimeout(() => reject(new Error("Timeout")), 4000)
             );
 
-            // 2. Реальный запрос
+            // 2. Реальный запрос к Supabase
             const sessionPromise = supabase.auth.getSession();
 
             try {
-                // 3. Кто быстрее?
+                // 3. Гонка: кто быстрее — ответ сервера или таймер?
                 const { data, error } = await Promise.race([sessionPromise, timeoutPromise]) as any;
 
                 if (error) throw error;
@@ -87,14 +88,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     setUser(data.session?.user ?? null);
 
                     if (data.session?.user) {
-                        // Грузим профиль, но НЕ ждем его (не блокируем загрузку)
+                        // Запускаем загрузку профиля, но НЕ ждем её (no await), 
+                        // чтобы интерфейс отрисовался сразу, не блокируя UI
                         loadProfile(data.session.user).catch(e => console.error("Profile load error", e));
                     }
                 }
             } catch (error) {
                 console.error("[Auth] Init Error or Timeout:", error);
             } finally {
-                // 4. ГАРАНТИЯ: Снимаем лоадер
+                // 4. ГАРАНТИЯ: Снимаем лоадер ВСЕГДА
                 if (mounted) {
                     console.log("[Auth] Force stopping loading spinner");
                     setLoading(false);
@@ -114,7 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 setSession(currentSession);
                 setUser(currentUser);
 
-                // СРАЗУ снимаем лоадер
+                // ВАЖНО: Снимаем лоадер СРАЗУ, не дожидаясь профиля
                 setLoading(false);
 
                 if (currentUser) {

@@ -1,4 +1,3 @@
-// src/pages/SessionsPage.tsx
 const DEBUG = true;
 
 import { useState, useEffect, useMemo, useCallback } from "react";
@@ -147,7 +146,7 @@ export function SessionsPage() {
   // --- ACTIONS ---
   const join = (id: string) => {
     if (!user) {
-      if (DEBUG) console.log("[DEBUG Sessions] Join → no user, redirect");
+      if (DEBUG) console.log("[DEBUG Sessions] Join -> no user, redirect");
       return navigate("/login");
     }
 
@@ -157,7 +156,7 @@ export function SessionsPage() {
 
   const book = async (id: string) => {
     if (!user) {
-      if (DEBUG) console.log("[DEBUG Sessions] Book → no user, redirect");
+      if (DEBUG) console.log("[DEBUG Sessions] Book -> no user, redirect");
       return navigate("/login");
     }
 
