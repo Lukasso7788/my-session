@@ -38,7 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             return;
         }
         try {
-            // console.log("[Auth] Fetching profile for:", u.id);
+            // Запрос профиля. Если его нет — не страшно, просто будет null.
             const { data, error } = await supabase
                 .from("profiles")
                 .select("id, full_name, avatar_url")
@@ -46,8 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 .single();
 
             if (error) {
-                // Это не критическая ошибка, просто профиля пока нет
-                console.warn("[Auth] Profile missing/error (non-critical):", error.message);
+                console.warn("[Auth] Profile fetch warning (non-critical):", error.message);
                 setProfile(null);
                 return;
             }
@@ -67,9 +66,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         let mounted = true;
 
         const initSession = async () => {
-            console.log("[Auth] INIT start with Timeout Race");
+            console.log("[Auth] INIT start with Timeout Race Protection");
 
-            // 1. Создаем таймер на 4 секунды (предохранитель)
+            // 1. Создаем "предохранитель" на 4 секунды
             const timeoutPromise = new Promise((_, reject) =>
                 setTimeout(() => reject(new Error("Timeout")), 4000)
             );
@@ -78,7 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const sessionPromise = supabase.auth.getSession();
 
             try {
-                // 3. Гонка: кто быстрее — ответ сервера или таймер?
+                // 3. Кто быстрее — ответ сервера или таймер?
                 const { data, error } = await Promise.race([sessionPromise, timeoutPromise]) as any;
 
                 if (error) throw error;
@@ -88,8 +87,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     setUser(data.session?.user ?? null);
 
                     if (data.session?.user) {
-                        // Запускаем загрузку профиля, но НЕ ждем её (no await), 
-                        // чтобы интерфейс отрисовался сразу, не блокируя UI
+                        // Запускаем загрузку профиля БЕЗ await.
+                        // Это ключевой момент: мы не блокируем UI ожиданием профиля.
                         loadProfile(data.session.user).catch(e => console.error("Profile load error", e));
                     }
                 }
@@ -108,7 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
             async (event, currentSession) => {
-                console.log("[Auth] StateChange:", event);
+                // console.log("[Auth] StateChange:", event);
 
                 if (!mounted) return;
 
@@ -116,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 setSession(currentSession);
                 setUser(currentUser);
 
-                // ВАЖНО: Снимаем лоадер СРАЗУ, не дожидаясь профиля
+                // Сразу снимаем лоадер, чтобы интерфейс реагировал мгновенно
                 setLoading(false);
 
                 if (currentUser) {
@@ -151,7 +150,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 export function useAuth() {
-    const ctx = useContext(AuthContext);
-    if (!ctx) throw new Error("useAuth must be used within AuthProvider");
-    return ctx;
+    const context = useContext(AuthContext);
+    if (context === undefined) {
+        throw new Error('useAuth must be used within an AuthProvider');
+    }
+    return context;
 }

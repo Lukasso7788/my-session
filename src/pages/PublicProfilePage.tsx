@@ -3,35 +3,61 @@ import { useEffect, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { supabase } from "../lib/supabase";
 
+type PublicProfile = {
+  id: string;
+  full_name: string;
+  avatar_url: string;
+  bio: string;
+  updated_at: string;
+};
+
+type HostedSession = {
+  id: string;
+  title: string;
+  created_at: string;
+};
+
 export default function PublicProfilePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [profile, setProfile] = useState<any>(null);
-  const [sessions, setSessions] = useState<any[]>([]);
+
+  const [profile, setProfile] = useState<PublicProfile | null>(null);
+  const [sessions, setSessions] = useState<HostedSession[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function loadProfile() {
       if (!id) return;
 
-      const [{ data: profileData, error: profileError }, { data: sessionData }] =
-        await Promise.all([
-          supabase
-            .from("profiles")
-            .select("id, full_name, avatar_url, bio, updated_at")
-            .eq("id", id)
-            .single(),
-          supabase
-            .from("sessions")
-            .select("id, title, created_at")
-            .eq("host_id", id)
-            .order("created_at", { ascending: false }),
-        ]);
+      setLoading(true);
+      try {
+        const [{ data: profileData, error: profileError }, { data: sessionData }] =
+          await Promise.all([
+            supabase
+              .from("profiles")
+              .select("id, full_name, avatar_url, bio, updated_at")
+              .eq("id", id)
+              .single(),
+            supabase
+              .from("sessions")
+              .select("id, title, created_at")
+              .eq("host_id", id)
+              .order("created_at", { ascending: false }),
+          ]);
 
-      if (profileError) console.error("❌ Error loading profile:", profileError);
-      setProfile(profileData);
-      setSessions(sessionData || []);
-      setLoading(false);
+        if (profileError) {
+          console.error("Error loading profile:", profileError);
+          setProfile(null);
+        } else {
+          setProfile(profileData);
+        }
+
+        setSessions(sessionData || []);
+      } catch (err) {
+        console.error("Public profile fetch error:", err);
+      } finally {
+        setLoading(false);
+      }
     }
 
     loadProfile();
@@ -40,7 +66,7 @@ export default function PublicProfilePage() {
   if (loading)
     return (
       <div className="flex h-screen items-center justify-center text-white bg-slate-900">
-        <p>Loading...</p>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white" />
       </div>
     );
 
@@ -66,7 +92,7 @@ export default function PublicProfilePage() {
     )}`;
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white flex justify-center py-16 px-4">
+    <div className="min-h-screen bg-slate-900 text-white flex justify-center py-16 px-4 font-inter">
       <div className="w-full max-w-[720px] space-y-10">
         {/* 🔙 Back button */}
         <div>
@@ -89,17 +115,19 @@ export default function PublicProfilePage() {
               className="w-28 h-28 rounded-full mx-auto border border-slate-600 object-cover"
             />
             <h1 className="text-3xl font-bold">{profile.full_name}</h1>
-            <p className="text-slate-400 text-sm max-w-md mx-auto">
+            <p className="text-slate-400 text-sm max-w-md mx-auto whitespace-pre-wrap">
               {profile.bio || "This user has not added a bio yet."}
             </p>
-            <p className="text-xs text-slate-500">
-              Last updated:{" "}
-              {new Date(profile.updated_at).toLocaleDateString(undefined, {
-                month: "short",
-                day: "numeric",
-                year: "numeric",
-              })}
-            </p>
+            {profile.updated_at && (
+              <p className="text-xs text-slate-500">
+                Last updated:{" "}
+                {new Date(profile.updated_at).toLocaleDateString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}
+              </p>
+            )}
           </div>
 
           {/* ==== Hosted Sessions ==== */}

@@ -16,38 +16,40 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
 
+  // 1. Защита маршрута
   useEffect(() => {
     if (!loading && !user) {
       navigate("/login", { replace: true });
     }
   }, [loading, user, navigate]);
 
+  // 2. Загрузка данных
   useEffect(() => {
     if (!user) return;
 
-    const loadProfileData = async () => {
-      const { data: prof, error } = await supabase
+    if (profile) {
+      setFullName(profile.full_name || "");
+      setAvatarUrl(profile.avatar_url || null);
+    }
+
+    const loadBio = async () => {
+      const { data, error } = await supabase
         .from("profiles")
-        .select("full_name,bio,avatar_url")
+        .select("full_name, bio, avatar_url")
         .eq("id", user.id)
         .single();
 
-      if (error) {
-        console.error("Error loading profile:", error);
-        return;
+      if (!error && data) {
+        setFullName(data.full_name || "");
+        setBio(data.bio || "");
+        setAvatarUrl(data.avatar_url || null);
       }
-
-      setFullName(prof.full_name || "");
-      setBio(prof.bio || "");
-      setAvatarUrl(prof.avatar_url || null);
     };
 
-    loadProfileData();
-  }, [user]);
+    loadBio();
+  }, [user, profile]);
 
-  const handleAvatarUpload = async (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
       const file = e.target.files?.[0];
       if (!file || !user) return;
@@ -66,29 +68,25 @@ export default function ProfilePage() {
       const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
       const publicUrl = data.publicUrl;
 
-      const { error: updateUserError } = await supabase.auth.updateUser({
-        data: { avatar_url: publicUrl },
-      });
-      if (updateUserError) {
-        console.error("updateUser metadata error:", updateUserError);
-      }
-
-      const { error: updateProfileError } = await supabase
-        .from("profiles")
-        .update({
+      // Обновляем всё параллельно
+      await Promise.all([
+        supabase.auth.updateUser({ data: { avatar_url: publicUrl } }),
+        supabase.from("profiles").update({
           avatar_url: publicUrl,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", user.id);
-
-      if (updateProfileError) {
-        console.error("update profile error:", updateProfileError);
-      }
+          updated_at: new Date().toISOString()
+        }).eq("id", user.id)
+      ]);
 
       setAvatarUrl(publicUrl);
       await reloadProfile();
-    } catch (err) {
-      console.error("avatar upload error:", err);
+    } catch (err: any) {
+      console.error("Avatar upload error:", err);
+      // Уведомление пользователя, если бакета нет
+      if (err.message && err.message.includes("Bucket not found")) {
+        alert("Ошибка: В Supabase не создан Storage Bucket 'avatars'. Создайте его в панели управления и сделайте Public.");
+      } else {
+        alert("Ошибка загрузки. Проверьте консоль.");
+      }
     } finally {
       setUploading(false);
     }
@@ -96,11 +94,10 @@ export default function ProfilePage() {
 
   const handleSave = async () => {
     if (!user) return;
-
     setSaving(true);
 
     try {
-      const { error: updateProfileError } = await supabase
+      const { error } = await supabase
         .from("profiles")
         .update({
           full_name: fullName,
@@ -110,22 +107,17 @@ export default function ProfilePage() {
         })
         .eq("id", user.id);
 
-      if (updateProfileError) {
-        console.error("update profile error:", updateProfileError);
-      }
+      if (error) throw error;
 
-      const { error: updateUserError } = await supabase.auth.updateUser({
+      await supabase.auth.updateUser({
         data: { full_name: fullName, avatar_url: avatarUrl },
       });
-
-      if (updateUserError) {
-        console.error("updateUser metadata error:", updateUserError);
-      }
 
       setEditMode(false);
       await reloadProfile();
     } catch (err) {
-      console.error("save profile error:", err);
+      console.error("Save profile error:", err);
+      alert("Не удалось сохранить профиль.");
     } finally {
       setSaving(false);
     }
@@ -135,51 +127,52 @@ export default function ProfilePage() {
     return (
       <>
         <Header />
-        <div className="p-10">Loading profile...</div>
+        <div className="flex justify-center pt-20">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black" />
+        </div>
       </>
     );
   }
 
-  if (!user) {
-    return (
-      <>
-        <Header />
-        <div className="p-10">Redirecting to login...</div>
-      </>
-    );
-  }
+  if (!user) return null;
 
   const displayName = fullName || profile?.full_name || "New user";
 
   return (
-    <>
+    <div className="min-h-screen bg-white font-sans text-gray-900">
       <Header />
 
       <div className="w-full max-w-4xl mx-auto px-6 py-12">
         <button
           onClick={() => navigate(-1)}
-          className="text-sm flex items-center gap-2 text-gray-500 hover:text-black mb-6"
+          className="text-sm flex items-center gap-2 text-gray-500 hover:text-black mb-6 transition-colors"
         >
           ← Back
         </button>
 
         <div className="flex flex-col items-center gap-4">
-          <img
-            src={
-              avatarUrl ||
-              `https://ui-avatars.com/api/?name=${encodeURIComponent(
-                displayName || "User"
-              )}`
-            }
-            className="w-28 h-28 rounded-full object-cover border border-gray-200"
-          />
+          <div className="relative group">
+            <img
+              src={
+                avatarUrl ||
+                `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}`
+              }
+              className={`w-32 h-32 rounded-full object-cover border border-gray-200 shadow-sm ${uploading ? 'opacity-50' : ''}`}
+            />
+            {uploading && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="animate-spin h-8 w-8 border-b-2 border-black rounded-full"></div>
+              </div>
+            )}
+          </div>
 
           {editMode && (
-            <label className="text-sm text-blue-600 cursor-pointer">
+            <label className="text-sm text-blue-600 cursor-pointer hover:underline font-medium">
               {uploading ? "Uploading..." : "Change avatar"}
               <input
                 type="file"
                 className="hidden"
+                accept="image/*"
                 onChange={handleAvatarUpload}
                 disabled={uploading}
               />
@@ -187,56 +180,70 @@ export default function ProfilePage() {
           )}
         </div>
 
-        <h1 className="text-3xl font-semibold text-center mt-4">
-          {displayName}
-        </h1>
+        {editMode ? (
+          <div className="mt-6 flex justify-center">
+            <input
+              type="text"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              className="text-3xl font-bold text-center border-b-2 border-gray-200 focus:border-black outline-none pb-2 w-full max-w-md transition-colors"
+              placeholder="Your Name"
+            />
+          </div>
+        ) : (
+          <h1 className="text-3xl font-bold text-center mt-6">
+            {displayName}
+          </h1>
+        )}
 
-        <p className="text-center text-gray-500 mt-2">
-          Since 12.11.2025 • 120 sessions
-        </p>
-
-        <div className="flex justify-center mt-4">
+        <div className="flex justify-center mt-6">
           <button
             onClick={() => setEditMode(!editMode)}
-            className="px-4 py-2 border rounded-lg hover:bg-gray-100 transition"
+            className="px-5 py-2.5 border border-gray-300 rounded-full hover:bg-gray-50 transition text-sm font-medium"
           >
-            {editMode ? "Cancel" : "Edit profile"}
+            {editMode ? "Cancel Editing" : "Edit Profile"}
           </button>
         </div>
 
-        <div className="mt-10 border-t pt-8">
-          <h2 className="text-lg font-semibold mb-2">Bio</h2>
+        <div className="mt-12 border-t border-gray-100 pt-8 max-w-2xl mx-auto">
+          <h2 className="text-lg font-semibold mb-3">About</h2>
 
           {editMode ? (
             <textarea
               value={bio}
               onChange={(e) => setBio(e.target.value)}
-              className="w-full border p-3 rounded-lg"
-              rows={3}
+              className="w-full border border-gray-300 p-4 rounded-xl focus:ring-2 focus:ring-black focus:border-transparent outline-none transition-all"
+              rows={5}
+              placeholder="Tell us about yourself..."
             />
           ) : (
-            <p className="text-gray-700">{bio || "No bio yet."}</p>
+            <p className="text-gray-600 whitespace-pre-wrap leading-relaxed">
+              {bio || <span className="text-gray-400 italic">No bio added yet.</span>}
+            </p>
           )}
         </div>
 
         {editMode && (
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="mt-6 px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 disabled:opacity-60"
-          >
-            {saving ? "Saving..." : "Save changes"}
-          </button>
+          <div className="mt-8 flex justify-center">
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="px-8 py-3 bg-black text-white rounded-full hover:bg-gray-800 disabled:opacity-50 transition font-medium shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 active:translate-y-0"
+            >
+              {saving ? "Saving..." : "Save Changes"}
+            </button>
+          </div>
         )}
 
-        <div className="mt-12">
-          <h2 className="text-xl font-semibold mb-4">
-            Current hosted & upcoming sessions:
+        <div className="mt-16 pt-8 border-t border-gray-100">
+          <h2 className="text-xl font-bold mb-6">
+            Hosted Sessions History
           </h2>
-
-          <div className="text-gray-600">TODO: sessions list</div>
+          <div className="bg-gray-50 rounded-xl p-8 text-center border border-gray-100 border-dashed">
+            <p className="text-gray-500 text-sm">No sessions history available yet.</p>
+          </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }
