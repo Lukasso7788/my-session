@@ -1,41 +1,52 @@
-import { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { supabase } from "../lib/supabase";
+import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
 
-export default function AuthCallback() {
+export const AuthCallback = () => {
     const navigate = useNavigate();
-    console.log("AuthCallback mounted", window.location.href);
+
     useEffect(() => {
-        async function finishLogin() {
-            console.log("[AuthCallback] Starting...");
+        let mounted = true;
 
-            const hash = window.location.hash.substring(1);
-            const params = new URLSearchParams(hash);
+        const handleAuthRedirect = async () => {
+            // 1. Сначала проверяем, не обработал ли Supabase сессию уже сам (это часто бывает быстрее рендера)
+            const { data: { session } } = await supabase.auth.getSession();
 
-            const access_token = params.get("access_token");
-            const refresh_token = params.get("refresh_token");
-
-            console.log("[AuthCallback] Tokens from URL:", {
-                access_token,
-                refresh_token,
-            });
-
-            if (access_token && refresh_token) {
-                const { data, error } = await supabase.auth.setSession({
-                    access_token,
-                    refresh_token,
-                });
-
-                console.log("[AuthCallback] setSession() result:", { data, error });
-            } else {
-                console.warn("[AuthCallback] Missing tokens in URL!");
+            if (session && mounted) {
+                // Сессия уже активна — мгновенный редирект
+                navigate('/sessions', { replace: true });
+                return;
             }
 
-            navigate("/sessions");
-        }
+            // 2. Если сессии еще нет (Supabase в процессе обработки URL), слушаем событие входа
+            const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+                if ((event === 'SIGNED_IN' || session) && mounted) {
+                    navigate('/sessions', { replace: true });
+                }
+            });
 
-        finishLogin();
-    }, []);
+            return () => {
+                subscription.unsubscribe();
+            };
+        };
 
-    return <div>Processing login…</div>;
-}
+        handleAuthRedirect();
+
+        // Предотвращаем утечку памяти, если компонент размонтируется
+        return () => {
+            mounted = false;
+        };
+    }, [navigate]);
+
+    return (
+        <div className="flex items-center justify-center min-h-screen bg-gray-50 text-gray-900">
+            <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <h2 className="text-xl font-semibold mb-2">Завершаем вход...</h2>
+                <p className="text-gray-500">Подождите, мы перенаправляем вас в приложение.</p>
+            </div>
+        </div>
+    );
+};
+
+export default AuthCallback;
