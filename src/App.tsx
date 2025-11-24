@@ -18,6 +18,7 @@ export default function App() {
   return (
     <CreateSessionModalProvider>
       <Routes>
+        {/* Redirect "/" → "/sessions" */}
         <Route path="/" element={<Navigate to="/sessions" replace />} />
 
         <Route path="/sessions" element={<SessionsPage />} />
@@ -27,9 +28,28 @@ export default function App() {
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/profile/:id" element={<PublicProfilePage />} />
 
-        {/* 🔥 OAuth callback */}
-        <Route path="/auth/callback/" element={<AuthCallback />} />
+        {/* 🔥 OAuth callback — ДВА РОУТА */}
+        <Route
+          path="/auth/callback"
+          element={
+            <>
+              {console.log("[ROUTER] Matched /auth/callback")}
+              <AuthCallback />
+            </>
+          }
+        />
 
+        <Route
+          path="/auth/callback/"
+          element={
+            <>
+              {console.log("[ROUTER] Matched /auth/callback/")}
+              <AuthCallback />
+            </>
+          }
+        />
+
+        {/* Fallback */}
         <Route path="*" element={<Navigate to="/sessions" replace />} />
       </Routes>
 
