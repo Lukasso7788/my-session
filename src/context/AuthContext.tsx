@@ -38,6 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             return;
         }
         try {
+            console.log("[Auth] Fetching profile for:", u.id);
             const { data, error } = await supabase
                 .from("profiles")
                 .select("id, full_name, avatar_url")
@@ -45,8 +46,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 .single();
 
             if (error) {
-                // Если профиля нет, просто пишем warning, но не ломаем приложение
                 console.warn("[Auth] Profile fetch warning:", error.message);
+                // Не сбрасываем профиль в null жестко, если была ошибка сети, 
+                // но в данном случае лучше считать что профиля нет.
                 setProfile(null);
                 return;
             }
@@ -67,9 +69,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         const initSession = async () => {
             console.log("[Auth] INIT start");
+
+            // Создаем промис тайм-аута: если Supabase тупит дольше 4 сек -> отменяем ожидание
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error("Timeout")), 4000)
+            );
+
+            // Реальный запрос к Supabase
+            const sessionPromise = supabase.auth.getSession();
+
             try {
-                // 1. Получаем сессию
-                const { data, error } = await supabase.auth.getSession();
+                // Гонка: кто быстрее — ответ сервера или таймер?
+                const { data, error } = await Promise.race([sessionPromise, timeoutPromise]) as any;
 
                 if (error) throw error;
 
@@ -78,16 +89,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     setUser(data.session?.user ?? null);
 
                     if (data.session?.user) {
-                        await loadProfile(data.session.user);
+                        // Профиль грузим без await, чтобы не блочить UI, если база тупит
+                        loadProfile(data.session.user).catch(console.error);
                     }
                 }
             } catch (error) {
-                console.error("[Auth] Init Error:", error);
+                console.error("[Auth] Init Error or Timeout:", error);
             } finally {
-                // ВАЖНО: Всегда выключаем загрузку, даже если профиль не нашелся
+                // ЖЕЛЕЗНАЯ ГАРАНТИЯ: Снимаем лоадер
                 if (mounted) {
+                    console.log("[Auth] Force stopping loading spinner");
                     setLoading(false);
-                    console.log("[Auth] INIT done -> loading set to FALSE");
                 }
             }
         };
@@ -104,10 +116,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 setSession(currentSession);
                 setUser(currentUser);
 
-                // Сначала снимаем лоадер, чтобы UI не висел
+                // СРАЗУ снимаем лоадер. Не ждем профиль.
                 setLoading(false);
 
-                // А потом грузим профиль
                 if (currentUser) {
                     await loadProfile(currentUser);
                 } else {
