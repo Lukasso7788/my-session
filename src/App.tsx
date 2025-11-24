@@ -13,6 +13,8 @@ import { CreateSessionModalProvider } from "./hooks/useCreateSessionModal";
 import { CreateSessionModal } from "./components/CreateSessionModal";
 
 export default function App() {
+  console.log("[ROUTER] App mounted");
+
   return (
     <CreateSessionModalProvider>
       <Routes>
@@ -26,7 +28,7 @@ export default function App() {
         <Route path="/profile/:id" element={<PublicProfilePage />} />
 
         {/* 🔥 OAuth callback */}
-        <Route path="/auth/callback" element={<AuthCallback />} />
+        <Route path="/auth/callback/" element={<AuthCallback />} />
 
         <Route path="*" element={<Navigate to="/sessions" replace />} />
       </Routes>

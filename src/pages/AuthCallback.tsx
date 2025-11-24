@@ -4,7 +4,7 @@ import { supabase } from "../lib/supabase";
 
 export default function AuthCallback() {
     const navigate = useNavigate();
-
+    console.log("AuthCallback mounted", window.location.href);
     useEffect(() => {
         async function finishLogin() {
             console.log("[AuthCallback] Starting...");

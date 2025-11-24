@@ -51,20 +51,28 @@ export default function LoginPage() {
 
   const loginWithGoogle = async () => {
     console.log("[DEBUG OAuth] Starting Google login…");
+
+    const redirect = `${window.location.origin}/auth/callback/`;
+    console.log("[DEBUG OAuth] Using redirectTo =", redirect);
+
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: redirect,   // ← ВАЖНО: СЛЭШ В КОНЦЕ!
       },
     });
   };
 
   const loginWithFacebook = async () => {
     console.log("[DEBUG OAuth] Starting Facebook login…");
+
+    const redirect = `${window.location.origin}/auth/callback/`;
+    console.log("[DEBUG OAuth] Using redirectTo =", redirect);
+
     await supabase.auth.signInWithOAuth({
       provider: "facebook",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: redirect,
       },
     });
   };
