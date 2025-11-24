@@ -1,29 +1,23 @@
-// src/pages/AuthCallback.tsx
 import { useEffect } from "react";
-import { supabase } from "../lib/supabase";
 import { useNavigate } from "react-router-dom";
+import { supabase } from "../lib/supabase";
 
 export default function AuthCallback() {
     const navigate = useNavigate();
 
     useEffect(() => {
-        console.log("[OAuth Callback] Page loaded, checking session…");
+        async function finishLogin() {
+            console.log("[AuthCallback] Running finishLogin()");
 
-        supabase.auth
-            .getSession()
-            .then(({ data }) => {
-                console.log("[OAuth Callback] Session:", data);
-                navigate("/sessions");
-            })
-            .catch((err) => {
-                console.error("[OAuth Callback] Error:", err);
-                navigate("/login");
-            });
+            const { data, error } = await supabase.auth.getSession();
+
+            console.log("[AuthCallback] Session:", data?.session);
+            console.log("[AuthCallback] Error:", error);
+
+            navigate("/sessions");
+        }
+        finishLogin();
     }, []);
 
-    return (
-        <div className="flex items-center justify-center min-h-screen text-xl">
-            Completing login…
-        </div>
-    );
+    return <div>Processing login...</div>;
 }
