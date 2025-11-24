@@ -45,7 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 .single();
 
             if (error) {
-                console.error("[Auth] loadProfile error:", error.message);
+                console.warn("[Auth] loadProfile warning (user might be new):", error.message);
                 setProfile(null);
                 return;
             }
@@ -66,35 +66,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const initSession = async () => {
             console.log("[Auth] INIT start");
             try {
-                // 1. Получаем сессию
                 const { data, error } = await supabase.auth.getSession();
-
-                if (error) {
-                    throw error;
-                }
+                if (error) throw error;
 
                 if (mounted) {
-                    const currentSession = data.session;
-                    const currentUser = currentSession?.user ?? null;
+                    setSession(data.session);
+                    setUser(data.session?.user ?? null);
 
-                    setSession(currentSession);
-                    setUser(currentUser);
-
-                    if (currentUser) {
-                        await loadProfile(currentUser);
+                    if (data.session?.user) {
+                        await loadProfile(data.session.user);
                     }
                 }
             } catch (error) {
                 console.error("[Auth] Init Error:", error);
             } finally {
-                // ИСПРАВЛЕНИЕ: Убрал проверку if (mounted) для setLoading
-                // React стейт обновлять на размонтированном компоненте нельзя, но
-                // в 99% случаев зависание происходит, когда компонент ЕЩЕ смонтирован,
-                // но флаг mounted уже ложно сработал из-за StrictMode.
-                // Безопасный вариант:
                 if (mounted) {
-                    setLoading(false);
-                    console.log("[Auth] INIT done -> loading set to FALSE");
+                    setLoading(false); // ГАРАНТИРОВАННО снимаем лоадер при старте
                 }
             }
         };
@@ -111,13 +98,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 setSession(currentSession);
                 setUser(currentUser);
 
+                // Сначала снимаем лоадер, чтобы UI не висел!
+                setLoading(false);
+
+                // А потом спокойно грузим профиль в фоне
                 if (currentUser) {
                     await loadProfile(currentUser);
                 } else {
                     setProfile(null);
                 }
-
-                setLoading(false);
             }
         );
 
@@ -132,6 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
         setSession(null);
         setProfile(null);
+        setLoading(false);
     }, []);
 
     return (
