@@ -6,19 +6,16 @@
       "use": "@vercel/static-build"
     }
   ],
-  "routes": [
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "rewrites": [
     {
-      "src": "/auth/callback",
-      "dest": "/index.html"
+      "source": "/auth/callback",
+      "destination": "/index.html"
     },
     {
-      "src": "/assets/(.*)",
-      "dest": "/assets/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
-  ],
-  "outputDirectory": "dist"
+  ]
 }
