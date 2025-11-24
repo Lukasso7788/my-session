@@ -1,13 +1,10 @@
-{
-  "version": 2,
-    "builds": [
-      { "src": "package.json", "use": "@vercel/static-build" }
-    ],
-      "buildCommand": "npm run build",
-        "outputDirectory": "dist",
-          "rewrites": [
-            { "source": "/auth/callback", "destination": "/index.html" },
-            { "source": "/(.*)", "destination": "/index.html" }
-          ],
-            "cleanUrls": true
-}
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+
+export default defineConfig({
+  plugins: [react()],
+  base: "", // пусто
+  build: {
+    outDir: "dist",
+  },
+});
