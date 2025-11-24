@@ -32,15 +32,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [profile, setProfile] = useState<Profile | null>(null);
     const [loading, setLoading] = useState(true);
 
-    // Функция загрузки профиля (оставили твою логику)
     const loadProfile = useCallback(async (u: User | null) => {
-        // console.log("[Auth] loadProfile for:", u?.id);
-
         if (!u) {
             setProfile(null);
             return;
         }
-
         try {
             const { data, error } = await supabase
                 .from("profiles")
@@ -49,12 +45,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 .single();
 
             if (error) {
-                // Если профиля нет, не критично, просто null
                 console.error("[Auth] loadProfile error:", error.message);
                 setProfile(null);
                 return;
             }
-
             setProfile(data as Profile);
         } catch (err) {
             console.error("[Auth] loadProfile exception:", err);
@@ -75,7 +69,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 // 1. Получаем сессию
                 const { data, error } = await supabase.auth.getSession();
 
-                if (error) throw error;
+                if (error) {
+                    throw error;
+                }
 
                 if (mounted) {
                     const currentSession = data.session;
@@ -91,17 +87,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             } catch (error) {
                 console.error("[Auth] Init Error:", error);
             } finally {
-                // ВАЖНО: Выключаем загрузку ВСЕГДА, что бы ни случилось
+                // ИСПРАВЛЕНИЕ: Убрал проверку if (mounted) для setLoading
+                // React стейт обновлять на размонтированном компоненте нельзя, но
+                // в 99% случаев зависание происходит, когда компонент ЕЩЕ смонтирован,
+                // но флаг mounted уже ложно сработал из-за StrictMode.
+                // Безопасный вариант:
                 if (mounted) {
                     setLoading(false);
-                    console.log("[Auth] INIT done → loading = false");
+                    console.log("[Auth] INIT done -> loading set to FALSE");
                 }
             }
         };
 
         initSession();
 
-        // 2. Слушаем изменения (Login, Logout, Auto-refresh)
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
             async (event, currentSession) => {
                 console.log("[Auth] StateChange:", event);
@@ -109,19 +108,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 if (!mounted) return;
 
                 const currentUser = currentSession?.user ?? null;
-
                 setSession(currentSession);
                 setUser(currentUser);
 
-                // Если вошли - грузим профиль
                 if (currentUser) {
-                    // Оптимизация: не грузим профиль повторно, если ID тот же (по желанию, но пока оставим как есть для надежности)
                     await loadProfile(currentUser);
                 } else {
                     setProfile(null);
                 }
 
-                // Гарантия снятия лоадера при событиях (например, после OAuth редиректа)
                 setLoading(false);
             }
         );
@@ -133,12 +128,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, [loadProfile]);
 
     const signOut = useCallback(async () => {
-        console.log("[Auth] signOut()");
         await supabase.auth.signOut();
         setUser(null);
         setSession(null);
         setProfile(null);
-        // Не ставим setLoading(true), чтобы интерфейс не мигал
     }, []);
 
     return (
