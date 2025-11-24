@@ -45,13 +45,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 .single();
 
             if (error) {
-                console.warn("[Auth] loadProfile warning (user might be new):", error.message);
+                // Если профиля нет, просто пишем warning, но не ломаем приложение
+                console.warn("[Auth] Profile fetch warning:", error.message);
                 setProfile(null);
                 return;
             }
             setProfile(data as Profile);
         } catch (err) {
             console.error("[Auth] loadProfile exception:", err);
+            setProfile(null);
         }
     }, []);
 
@@ -66,7 +68,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const initSession = async () => {
             console.log("[Auth] INIT start");
             try {
+                // 1. Получаем сессию
                 const { data, error } = await supabase.auth.getSession();
+
                 if (error) throw error;
 
                 if (mounted) {
@@ -80,8 +84,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             } catch (error) {
                 console.error("[Auth] Init Error:", error);
             } finally {
+                // ВАЖНО: Всегда выключаем загрузку, даже если профиль не нашелся
                 if (mounted) {
-                    setLoading(false); // ГАРАНТИРОВАННО снимаем лоадер при старте
+                    setLoading(false);
+                    console.log("[Auth] INIT done -> loading set to FALSE");
                 }
             }
         };
@@ -98,10 +104,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 setSession(currentSession);
                 setUser(currentUser);
 
-                // Сначала снимаем лоадер, чтобы UI не висел!
+                // Сначала снимаем лоадер, чтобы UI не висел
                 setLoading(false);
 
-                // А потом спокойно грузим профиль в фоне
+                // А потом грузим профиль
                 if (currentUser) {
                     await loadProfile(currentUser);
                 } else {
