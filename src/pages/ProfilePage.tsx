@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import Header from "../components/Header";
 import { useAuth } from "../context/AuthContext";
+import { Calendar, Users } from "lucide-react";
 
 export default function ProfilePage() {
   const navigate = useNavigate();
@@ -11,31 +12,38 @@ export default function ProfilePage() {
   const [fullName, setFullName] = useState("");
   const [bio, setBio] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [createdAt, setCreatedAt] = useState<string>("—");
 
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  // 1. Защита маршрута
+  // -----------------------
+  // 1. Redirect when not logged in
+  // -----------------------
   useEffect(() => {
-    if (!loading && !user) {
-      navigate("/login", { replace: true });
-    }
+    if (!loading && !user) navigate("/login", { replace: true });
   }, [loading, user, navigate]);
 
-  // 2. Загрузка данных (РОВНО КАК БЫЛО)
+  // -----------------------
+  // 2. LOAD BIO + PROFILE FROM SUPABASE  (ВАЖНО!)
+  // -----------------------
   useEffect(() => {
     if (!user) return;
 
     if (profile) {
       setFullName(profile.full_name || "");
       setAvatarUrl(profile.avatar_url || null);
+
+      if (profile.created_at) {
+        setCreatedAt(new Date(profile.created_at).toLocaleDateString());
+      }
     }
 
     const loadBio = async () => {
       const { data, error } = await supabase
         .from("profiles")
-        .select("full_name, bio, avatar_url")
+        .select("full_name, bio, avatar_url, created_at")
         .eq("id", user.id)
         .single();
 
@@ -43,16 +51,20 @@ export default function ProfilePage() {
         setFullName(data.full_name || "");
         setBio(data.bio || "");
         setAvatarUrl(data.avatar_url || null);
+
+        if (data.created_at) {
+          setCreatedAt(new Date(data.created_at).toLocaleDateString());
+        }
       }
     };
 
     loadBio();
-  }, [user, profile, reloadProfile]);
+  }, [user, profile]);
 
-  // 3. Загрузка аватара (КАК БЫЛО)
-  const handleAvatarUpload = async (
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) => {
+  // -----------------------
+  // 3. Upload avatar
+  // -----------------------
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
       const file = e.target.files?.[0];
       if (!file || !user) return;
@@ -71,7 +83,6 @@ export default function ProfilePage() {
       const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
       const publicUrl = data.publicUrl;
 
-      // Обновляем всё параллельно
       await Promise.all([
         supabase.auth.updateUser({ data: { avatar_url: publicUrl } }),
         supabase
@@ -85,28 +96,23 @@ export default function ProfilePage() {
 
       setAvatarUrl(publicUrl);
       await reloadProfile();
-    } catch (err: any) {
-      console.error("Avatar upload error:", err);
-
-      if (err.message && err.message.includes("Bucket not found")) {
-        alert(
-          "Ошибка: В Supabase не создан Storage Bucket 'avatars'. Создайте его в панели управления и сделайте Public.",
-        );
-      } else {
-        alert("Ошибка загрузки. Проверьте консоль.");
-      }
+    } catch (error: any) {
+      console.error("Avatar upload error:", error);
+      alert("Upload failed. Check console.");
     } finally {
       setUploading(false);
     }
   };
 
-  // 4. Сохранение профиля (КАК БЫЛО)
+  // -----------------------
+  // 4. SAVE PROFILE
+  // -----------------------
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
 
     try {
-      const { error } = await supabase
+      await supabase
         .from("profiles")
         .update({
           full_name: fullName,
@@ -116,17 +122,15 @@ export default function ProfilePage() {
         })
         .eq("id", user.id);
 
-      if (error) throw error;
-
       await supabase.auth.updateUser({
         data: { full_name: fullName, avatar_url: avatarUrl },
       });
 
       setEditMode(false);
       await reloadProfile();
-    } catch (err) {
-      console.error("Save profile error:", err);
-      alert("Не удалось сохранить профиль.");
+    } catch (error) {
+      console.error("Save profile error:", error);
+      alert("Failed to save profile.");
     } finally {
       setSaving(false);
     }
@@ -137,7 +141,7 @@ export default function ProfilePage() {
       <>
         <Header />
         <div className="flex justify-center pt-20">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black" />
+          <div className="animate-spin h-8 w-8 rounded-full border-b-2 border-black" />
         </div>
       </>
     );
@@ -145,130 +149,133 @@ export default function ProfilePage() {
 
   if (!user) return null;
 
-  const displayName = fullName || profile?.full_name || "New user";
+  const displayName = fullName || "User";
+  const totalSessions = profile?.total_sessions ?? 0;
 
   return (
     <>
       <Header />
 
-      <main className="min-h-screen bg-white font-inter text-gray-900">
-        <div className="w-full max-w-4xl mx-auto px-6 py-12">
-          {/* Верхняя строка: Back слева, Edit справа */}
-          <div className="flex items-center justify-between mb-6">
-            <button
-              onClick={() => navigate(-1)}
-              className="text-sm flex items-center gap-2 text-gray-500 hover:text-black transition-colors"
-            >
-              ← Back
-            </button>
+      <main className="w-full max-w-4xl mx-auto px-6 pt-10 pb-24 font-inter text-gray-900">
 
-            <button
-              onClick={() => setEditMode(!editMode)}
-              className="px-5 py-2.5 border border-gray-300 rounded-full hover:bg-gray-50 transition text-sm font-medium"
-            >
-              {editMode ? "Cancel editing" : "Edit profile"}
-            </button>
-          </div>
+        {/* Back / Edit */}
+        <div className="flex items-center justify-between mb-10">
+          <button
+            onClick={() => navigate(-1)}
+            className="text-sm text-gray-600 hover:text-black flex items-center gap-2"
+          >
+            ← Back
+          </button>
 
-          {/* Аватар + имя */}
-          <div className="flex flex-col items-center gap-4">
-            <div className="relative group">
-              <img
-                src={
-                  avatarUrl ||
-                  `https://ui-avatars.com/api/?name=${encodeURIComponent(
-                    displayName,
-                  )}`
-                }
-                className={`w-32 h-32 rounded-full object-cover border border-gray-200 shadow-sm ${uploading ? "opacity-50" : ""
-                  }`}
-              />
-              {uploading && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="animate-spin h-8 w-8 border-b-2 border-black rounded-full" />
-                </div>
-              )}
-            </div>
+          <button
+            onClick={() => setEditMode(!editMode)}
+            className="px-5 py-2 border border-gray-300 rounded-full hover:bg-gray-50 transition text-sm font-medium flex items-center gap-2"
+          >
+            ✏️ Edit profile
+          </button>
+        </div>
+
+        {/* Avatar + Name */}
+        <div className="flex flex-col items-center">
+          <div className="relative">
+            <img
+              src={
+                avatarUrl ||
+                `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                  displayName
+                )}`
+              }
+              className="w-28 h-28 rounded-full object-cover border border-gray-200 shadow-sm"
+            />
 
             {editMode && (
-              <label className="text-sm text-blue-600 cursor-pointer hover:underline font-medium">
-                {uploading ? "Uploading..." : "Change avatar"}
+              <label className="absolute -bottom-2 right-0 bg-white px-3 py-1 border rounded-full text-xs cursor-pointer shadow-sm hover:bg-gray-50">
+                Change
                 <input
                   type="file"
                   className="hidden"
-                  accept="image/*"
                   onChange={handleAvatarUpload}
+                  accept="image/*"
                   disabled={uploading}
                 />
               </label>
             )}
           </div>
 
-          {/* Имя */}
-          {editMode ? (
-            <div className="mt-6 flex justify-center">
-              <input
-                type="text"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                className="text-3xl font-bold text-center border-b-2 border-gray-200 focus:border-black outline-none pb-2 w-full max-w-md transition-colors"
-                placeholder="Your Name"
-              />
-            </div>
-          ) : (
-            <h1 className="text-3xl font-bold text-center mt-6">
-              {displayName}
-            </h1>
-          )}
+          <h1 className="text-3xl font-bold mt-4">{displayName}</h1>
 
-          {/* ABOUT / BIO */}
-          <div className="mt-12 border-t border-gray-100 pt-8 max-w-2xl mx-auto">
-            <h2 className="text-lg font-semibold mb-3">About</h2>
+          <div className="flex items-center gap-6 mt-2 text-gray-600 text-sm">
+            <span className="flex items-center gap-1">
+              <Calendar size={16} /> Since {createdAt}
+            </span>
 
-            {editMode ? (
-              <textarea
-                value={bio}
-                onChange={(e) => setBio(e.target.value)}
-                className="w-full border border-gray-300 p-4 rounded-xl focus:ring-2 focus:ring-black focus:border-transparent outline-none transition-all"
-                rows={5}
-                placeholder="Tell us about yourself..."
-              />
-            ) : (
-              <p className="text-gray-600 whitespace-pre-wrap leading-relaxed">
-                {bio || (
-                  <span className="text-gray-400 italic">
-                    No bio added yet.
-                  </span>
-                )}
-              </p>
-            )}
-          </div>
-
-          {/* Кнопка Save */}
-          {editMode && (
-            <div className="mt-8 flex justify-center">
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="px-8 py-3 bg-black text-white rounded-full hover:bg-gray-800 disabled:opacity-50 transition font-medium shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 active:translate-y-0"
-              >
-                {saving ? "Saving..." : "Save Changes"}
-              </button>
-            </div>
-          )}
-
-          {/* Hosted sessions */}
-          <div className="mt-16 pt-8 border-t border-gray-100">
-            <h2 className="text-xl font-bold mb-6">
-              Hosted Sessions History
-            </h2>
-            <div className="bg-gray-50 rounded-xl p-8 text-center">
-              <p className="text-gray-500 text-sm">
-                No sessions history available yet.
-              </p>
-            </div>
+            <span className="flex items-center gap-1">
+              <Users size={16} /> {totalSessions} sessions
+            </span>
           </div>
         </div>
+
+        {/* Divider */}
+        <div className="mt-10 border-t border-gray-200" />
+
+        {/* BIO */}
+        <section className="mt-8">
+          <h2 className="font-semibold mb-2">Bio:</h2>
+
+          {editMode ? (
+            <textarea
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              className="w-full border border-gray-300 p-4 rounded-xl focus:ring-2 focus:ring-black outline-none transition"
+              rows={4}
+              placeholder="Tell us about yourself..."
+            />
+          ) : (
+            <p className="text-gray-800 text-lg">
+              {bio || (
+                <span className="text-gray-400 italic">No bio added yet.</span>
+              )}
+            </p>
+          )}
+        </section>
+
+        {/* Save */}
+        {editMode && (
+          <div className="mt-6 flex justify-end">
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="px-8 py-3 bg-black text-white rounded-full hover:bg-gray-800 disabled:opacity-50 transition font-medium shadow"
+            >
+              {saving ? "Saving..." : "Save Changes"}
+            </button>
+          </div>
+        )}
+
+        {/* Divider */}
+        <div className="mt-16 border-t border-gray-200" />
+
+        {/* Hosted sessions */}
+        <section className="mt-10">
+          <h2 className="text-xl font-bold mb-6">
+            Current hosted & upcoming sessions:
+          </h2>
+
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="bg-gray-50 rounded-xl px-5 py-3 flex items-center justify-between"
+              >
+                <span className="text-gray-800 text-sm">
+                  ☕ 25/5 pomodoro – 2 hour focus session
+                </span>
+
+                <span className="text-gray-500 text-xs">12.11.2025</span>
+              </div>
+            ))}
+          </div>
+        </section>
       </main>
     </>
   );
