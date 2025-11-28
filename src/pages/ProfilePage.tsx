@@ -18,39 +18,24 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  // -----------------------
   // 1. Redirect when not logged in
-  // -----------------------
   useEffect(() => {
     if (!loading && !user) navigate("/login", { replace: true });
   }, [loading, user, navigate]);
 
-  // -----------------------
-  // 2. LOAD BIO + PROFILE FROM SUPABASE  (ВАЖНО!)
-  // -----------------------
+  // 2. Загрузка данных (ВОССТАНОВЛЕНО 1:1, КАК БЫЛО РАНЬШЕ)
   useEffect(() => {
     if (!user) return;
 
-    // ⬇️ ПРОФИЛЬ ИЗ КОНТЕКСТА (быстрый UI reload) — ИСПРАВЛЕНО
     if (profile) {
       setFullName(profile.full_name || "");
       setAvatarUrl(profile.avatar_url || null);
-
-      // ⬇️ ДОБАВЛЕНО! НЕ затираем bio, если его нет в profile
-      if (profile.bio !== undefined && profile.bio !== null) {
-        setBio(profile.bio);
-      }
-
-      if (profile.created_at) {
-        setCreatedAt(new Date(profile.created_at).toLocaleDateString());
-      }
     }
 
-    // ⬇️ ГЛАВНАЯ ПОДГРУЗКА БИО ИЗ БД
     const loadBio = async () => {
       const { data, error } = await supabase
         .from("profiles")
-        .select("full_name, bio, avatar_url, created_at")
+        .select("full_name, bio, avatar_url")
         .eq("id", user.id)
         .single();
 
@@ -58,19 +43,32 @@ export default function ProfilePage() {
         setFullName(data.full_name || "");
         setBio(data.bio || "");
         setAvatarUrl(data.avatar_url || null);
-
-        if (data.created_at) {
-          setCreatedAt(new Date(data.created_at).toLocaleDateString());
-        }
       }
     };
 
     loadBio();
   }, [user, profile]);
 
-  // -----------------------
-  // 3. Upload avatar
-  // -----------------------
+  // 3. Загрузка даты регистрации (created_at) — отдельный эффект
+  useEffect(() => {
+    if (!user) return;
+
+    const loadCreatedAt = async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("created_at")
+        .eq("id", user.id)
+        .single();
+
+      if (!error && data?.created_at) {
+        setCreatedAt(new Date(data.created_at).toLocaleDateString());
+      }
+    };
+
+    loadCreatedAt();
+  }, [user]);
+
+  // 4. Upload avatar
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
       const file = e.target.files?.[0];
@@ -111,9 +109,7 @@ export default function ProfilePage() {
     }
   };
 
-  // -----------------------
-  // 4. SAVE PROFILE
-  // -----------------------
+  // 5. SAVE PROFILE
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
@@ -143,9 +139,7 @@ export default function ProfilePage() {
     }
   };
 
-  // -----------------------
   // RENDER
-  // -----------------------
 
   if (loading) {
     return (
@@ -168,7 +162,6 @@ export default function ProfilePage() {
       <Header />
 
       <main className="w-full px-6 pt-10 pb-24 font-inter text-gray-900">
-
         {/* Back / Edit */}
         <div className="flex items-center justify-between mb-10">
           <button
