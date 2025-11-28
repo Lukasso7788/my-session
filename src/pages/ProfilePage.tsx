@@ -12,23 +12,26 @@ export default function ProfilePage() {
   const [fullName, setFullName] = useState("");
   const [bio, setBio] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [createdAt, setCreatedAt] = useState<string>("—");
 
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  // Redirect if not logged in
+  // Redirect when not logged in
   useEffect(() => {
     if (!loading && !user) navigate("/login", { replace: true });
   }, [loading, user, navigate]);
 
-  // Load profile data
+  // === ✔ ВОССТАНОВЛЁННЫЙ КОД: ЗАГРУЗКА BIO ИЗ SUPABASE ===
   useEffect(() => {
     if (!user) return;
 
     if (profile) {
       setFullName(profile.full_name || "");
       setAvatarUrl(profile.avatar_url || null);
+      if (profile.created_at)
+        setCreatedAt(new Date(profile.created_at).toLocaleDateString());
     }
 
     const loadBio = async () => {
@@ -42,19 +45,17 @@ export default function ProfilePage() {
         setFullName(data.full_name || "");
         setBio(data.bio || "");
         setAvatarUrl(data.avatar_url || null);
+
+        if (data.created_at)
+          setCreatedAt(new Date(data.created_at).toLocaleDateString());
       }
     };
 
     loadBio();
   }, [user, profile]);
 
-  const joinedDate = profile?.created_at
-    ? new Date(profile.created_at).toLocaleDateString()
-    : "—";
-
   const totalSessions = profile?.total_sessions ?? 0;
 
-  // Save profile
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
@@ -77,7 +78,7 @@ export default function ProfilePage() {
       setEditMode(false);
       await reloadProfile();
     } catch (err) {
-      console.error("Save profile error:", err);
+      console.error("Save error:", err);
       alert("Failed to save profile.");
     } finally {
       setSaving(false);
@@ -97,7 +98,7 @@ export default function ProfilePage() {
 
   if (!user) return null;
 
-  const displayName = fullName || profile?.full_name || "User";
+  const displayName = fullName || "User";
 
   return (
     <>
@@ -127,7 +128,7 @@ export default function ProfilePage() {
 
           <div className="flex items-center gap-4 mt-2 text-gray-600 text-sm">
             <span className="flex items-center gap-1">
-              <Calendar size={16} /> Since {joinedDate}
+              <Calendar size={16} /> Since {createdAt}
             </span>
 
             <span className="flex items-center gap-1">
@@ -135,12 +136,15 @@ export default function ProfilePage() {
             </span>
           </div>
 
-          <button
-            onClick={() => setEditMode(!editMode)}
-            className="mt-5 px-5 py-2 border border-gray-300 rounded-full hover:bg-gray-50 transition text-sm font-medium flex items-center gap-2"
-          >
-            ✏️ Edit profile
-          </button>
+          {/* Edit profile BUTTON → LEFT SIDE */}
+          <div className="w-full flex justify-start mt-5">
+            <button
+              onClick={() => setEditMode(!editMode)}
+              className="px-5 py-2 border border-gray-300 rounded-full hover:bg-gray-50 transition text-sm font-medium flex items-center gap-2"
+            >
+              ✏️ Edit profile
+            </button>
+          </div>
         </div>
 
         {/* Divider */}
@@ -160,16 +164,14 @@ export default function ProfilePage() {
             />
           ) : (
             <p className="text-gray-800 text-lg">
-              {bio || (
-                <span className="text-gray-400 italic">No bio added yet.</span>
-              )}
+              {bio || <span className="text-gray-400 italic">No bio added yet.</span>}
             </p>
           )}
         </section>
 
         {/* Save */}
         {editMode && (
-          <div className="mt-6 flex justify-center">
+          <div className="mt-6 flex justify-start">
             <button
               onClick={handleSave}
               disabled={saving}
@@ -193,7 +195,7 @@ export default function ProfilePage() {
             {[1, 2, 3].map((i) => (
               <div
                 key={i}
-                className="bg-gray-50 border border-gray-200 rounded-xl px-5 py-3 flex items-center justify-between shadow-sm"
+                className="bg-gray-50 rounded-xl px-5 py-3 flex items-center justify-between shadow-sm"
               >
                 <span className="text-gray-800 text-sm">
                   ☕ 25/5 pomodoro – 2 hour focus session
