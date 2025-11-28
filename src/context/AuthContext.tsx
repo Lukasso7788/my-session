@@ -32,13 +32,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [profile, setProfile] = useState<Profile | null>(null);
     const [loading, setLoading] = useState(true);
 
+    // Загружает профиль
     const loadProfile = useCallback(async (u: User | null) => {
         if (!u) {
             setProfile(null);
             return;
         }
+
         try {
-            // Запрос профиля. Если его нет — не страшно, просто будет null.
             const { data, error } = await supabase
                 .from("profiles")
                 .select("id, full_name, avatar_url")
@@ -46,10 +47,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 .single();
 
             if (error) {
-                console.warn("[Auth] Profile fetch warning (non-critical):", error.message);
+                console.warn("[Auth] Profile fetch warning:", error.message);
                 setProfile(null);
                 return;
             }
+
             setProfile(data as Profile);
         } catch (err) {
             console.error("[Auth] loadProfile exception:", err);
@@ -62,72 +64,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await loadProfile(user);
     }, [user, loadProfile]);
 
+    // 🌟 ВОССТАНОВЛЕНИЕ СЕССИИ + LISTENER
     useEffect(() => {
-        let mounted = true;
+        let active = true;
 
-        const initSession = async () => {
-            console.log("[Auth] INIT start with Timeout Race Protection");
+        const restoreSession = async () => {
+            const {
+                data: { session },
+            } = await supabase.auth.getSession();
 
-            // 1. Создаем "предохранитель" на 4 секунды
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error("Timeout")), 4000)
-            );
+            if (!active) return;
 
-            // 2. Реальный запрос к Supabase
-            const sessionPromise = supabase.auth.getSession();
+            setSession(session);
+            setUser(session?.user ?? null);
 
-            try {
-                // 3. Кто быстрее — ответ сервера или таймер?
-                const { data, error } = await Promise.race([sessionPromise, timeoutPromise]) as any;
-
-                if (error) throw error;
-
-                if (mounted) {
-                    setSession(data.session);
-                    setUser(data.session?.user ?? null);
-
-                    if (data.session?.user) {
-                        // Запускаем загрузку профиля БЕЗ await.
-                        // Это ключевой момент: мы не блокируем UI ожиданием профиля.
-                        loadProfile(data.session.user).catch(e => console.error("Profile load error", e));
-                    }
-                }
-            } catch (error) {
-                console.error("[Auth] Init Error or Timeout:", error);
-            } finally {
-                // 4. ГАРАНТИЯ: Снимаем лоадер ВСЕГДА
-                if (mounted) {
-                    console.log("[Auth] Force stopping loading spinner");
-                    setLoading(false);
-                }
+            if (session?.user) {
+                loadProfile(session.user); // без await — чтобы не блокировать UI
             }
+
+            setLoading(false);
         };
 
-        initSession();
+        restoreSession();
 
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(
+        // Auth listener
+        const { data: subscription } = supabase.auth.onAuthStateChange(
             async (event, currentSession) => {
-                // console.log("[Auth] StateChange:", event);
-
-                if (!mounted) return;
+                if (!active) return;
 
                 const currentUser = currentSession?.user ?? null;
+
                 setSession(currentSession);
                 setUser(currentUser);
 
-                // Сразу снимаем лоадер, чтобы интерфейс реагировал мгновенно
-                setLoading(false);
-
                 if (currentUser) {
-                    await loadProfile(currentUser);
+                    loadProfile(currentUser); // без await — listener не блокируется
                 } else {
                     setProfile(null);
                 }
+
+                setLoading(false);
             }
         );
 
         return () => {
-            mounted = false;
+            active = false;
             subscription.unsubscribe();
         };
     }, [loadProfile]);
@@ -152,7 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 export function useAuth() {
     const context = useContext(AuthContext);
     if (context === undefined) {
-        throw new Error('useAuth must be used within an AuthProvider');
+        throw new Error("useAuth must be used within an AuthProvider");
     }
     return context;
 }
