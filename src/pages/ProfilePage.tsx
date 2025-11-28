@@ -23,7 +23,7 @@ export default function ProfilePage() {
     if (!loading && !user) navigate("/login", { replace: true });
   }, [loading, user, navigate]);
 
-  // === ✔ ВОССТАНОВЛЁННЫЙ КОД: ЗАГРУЗКА BIO ИЗ SUPABASE ===
+  // === ✔ ВОССТАНОВЛЁННО: загрузка bio из Supabase ===
   useEffect(() => {
     if (!user) return;
 
@@ -106,13 +106,22 @@ export default function ProfilePage() {
 
       <main className="w-full max-w-4xl mx-auto px-6 pt-10 pb-24 font-inter text-gray-900">
 
-        {/* Back */}
-        <button
-          onClick={() => navigate(-1)}
-          className="text-sm text-gray-600 hover:text-black mb-6 flex items-center gap-2"
-        >
-          ← Back
-        </button>
+        {/* === Back / Edit profile (left / right) === */}
+        <div className="flex items-center justify-between mb-10">
+          <button
+            onClick={() => navigate(-1)}
+            className="text-sm text-gray-600 hover:text-black flex items-center gap-2"
+          >
+            ← Back
+          </button>
+
+          <button
+            onClick={() => setEditMode(!editMode)}
+            className="px-5 py-2 border border-gray-300 rounded-full hover:bg-gray-50 transition text-sm font-medium flex items-center gap-2"
+          >
+            ✏️ Edit profile
+          </button>
+        </div>
 
         {/* Avatar + Name */}
         <div className="flex flex-col items-center">
@@ -134,16 +143,6 @@ export default function ProfilePage() {
             <span className="flex items-center gap-1">
               <Users size={16} /> {totalSessions} sessions
             </span>
-          </div>
-
-          {/* Edit profile BUTTON → LEFT SIDE */}
-          <div className="w-full flex justify-start mt-5">
-            <button
-              onClick={() => setEditMode(!editMode)}
-              className="px-5 py-2 border border-gray-300 rounded-full hover:bg-gray-50 transition text-sm font-medium flex items-center gap-2"
-            >
-              ✏️ Edit profile
-            </button>
           </div>
         </div>
 
@@ -171,7 +170,7 @@ export default function ProfilePage() {
 
         {/* Save */}
         {editMode && (
-          <div className="mt-6 flex justify-start">
+          <div className="mt-6 flex justify-end">
             <button
               onClick={handleSave}
               disabled={saving}
@@ -185,7 +184,7 @@ export default function ProfilePage() {
         {/* Divider */}
         <div className="mt-16 border-t border-gray-200" />
 
-        {/* Sessions */}
+        {/* Hosted sessions */}
         <section className="mt-10">
           <h2 className="text-xl font-bold mb-6">
             Current hosted & upcoming sessions:
@@ -195,7 +194,7 @@ export default function ProfilePage() {
             {[1, 2, 3].map((i) => (
               <div
                 key={i}
-                className="bg-gray-50 rounded-xl px-5 py-3 flex items-center justify-between shadow-sm"
+                className="bg-gray-50 rounded-xl px-5 py-3 flex items-center justify-between"
               >
                 <span className="text-gray-800 text-sm">
                   ☕ 25/5 pomodoro – 2 hour focus session
