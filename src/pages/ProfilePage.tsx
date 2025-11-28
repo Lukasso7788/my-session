@@ -16,14 +16,12 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  // 1. Защита маршрута
+  // Redirect if not logged in
   useEffect(() => {
-    if (!loading && !user) {
-      navigate("/login", { replace: true });
-    }
+    if (!loading && !user) navigate("/login", { replace: true });
   }, [loading, user, navigate]);
 
-  // 2. Загрузка данных
+  // Load profile data
   useEffect(() => {
     if (!user) return;
 
@@ -49,6 +47,7 @@ export default function ProfilePage() {
     loadBio();
   }, [user, profile]);
 
+  // Avatar upload
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
       const file = e.target.files?.[0];
@@ -68,30 +67,28 @@ export default function ProfilePage() {
       const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
       const publicUrl = data.publicUrl;
 
-      // Обновляем всё параллельно
       await Promise.all([
         supabase.auth.updateUser({ data: { avatar_url: publicUrl } }),
-        supabase.from("profiles").update({
-          avatar_url: publicUrl,
-          updated_at: new Date().toISOString()
-        }).eq("id", user.id)
+        supabase
+          .from("profiles")
+          .update({
+            avatar_url: publicUrl,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", user.id),
       ]);
 
       setAvatarUrl(publicUrl);
       await reloadProfile();
     } catch (err: any) {
       console.error("Avatar upload error:", err);
-      // Уведомление пользователя, если бакета нет
-      if (err.message && err.message.includes("Bucket not found")) {
-        alert("Ошибка: В Supabase не создан Storage Bucket 'avatars'. Создайте его в панели управления и сделайте Public.");
-      } else {
-        alert("Ошибка загрузки. Проверьте консоль.");
-      }
+      alert("Error uploading avatar. Check console.");
     } finally {
       setUploading(false);
     }
   };
 
+  // Save profile
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
@@ -117,7 +114,7 @@ export default function ProfilePage() {
       await reloadProfile();
     } catch (err) {
       console.error("Save profile error:", err);
-      alert("Не удалось сохранить профиль.");
+      alert("Failed to save profile.");
     } finally {
       setSaving(false);
     }
@@ -139,17 +136,21 @@ export default function ProfilePage() {
   const displayName = fullName || profile?.full_name || "New user";
 
   return (
-    <div className="min-h-screen bg-white font-sans text-gray-900">
+    <>
       <Header />
 
-      <div className="w-full max-w-4xl mx-auto px-6 py-12">
+      {/* MAIN PAGE WRAPPER — consistent with other pages */}
+      <main className="w-full max-w-4xl mx-auto px-6 py-12 font-inter text-gray-900">
+
+        {/* Back button */}
         <button
           onClick={() => navigate(-1)}
-          className="text-sm flex items-center gap-2 text-gray-500 hover:text-black mb-6 transition-colors"
+          className="text-sm flex items-center gap-2 text-gray-500 hover:text-black mb-6 transition"
         >
           ← Back
         </button>
 
+        {/* Avatar */}
         <div className="flex flex-col items-center gap-4">
           <div className="relative group">
             <img
@@ -157,8 +158,10 @@ export default function ProfilePage() {
                 avatarUrl ||
                 `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}`
               }
-              className={`w-32 h-32 rounded-full object-cover border border-gray-200 shadow-sm ${uploading ? 'opacity-50' : ''}`}
+              className={`w-32 h-32 rounded-full object-cover border border-gray-200 shadow-sm ${uploading ? "opacity-50" : ""
+                }`}
             />
+
             {uploading && (
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="animate-spin h-8 w-8 border-b-2 border-black rounded-full"></div>
@@ -174,28 +177,29 @@ export default function ProfilePage() {
                 className="hidden"
                 accept="image/*"
                 onChange={handleAvatarUpload}
-                disabled={uploading}
               />
             </label>
           )}
         </div>
 
+        {/* Name */}
         {editMode ? (
           <div className="mt-6 flex justify-center">
             <input
               type="text"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              className="text-3xl font-bold text-center border-b-2 border-gray-200 focus:border-black outline-none pb-2 w-full max-w-md transition-colors"
+              className="text-3xl font-bold text-center border-b-2 border-gray-200 focus:border-black outline-none pb-2 w-full max-w-md transition"
               placeholder="Your Name"
             />
           </div>
         ) : (
-          <h1 className="text-3xl font-bold text-center mt-6">
+          <h1 className="text-3xl font-bold text-center mt-6 font-inter">
             {displayName}
           </h1>
         )}
 
+        {/* Edit button */}
         <div className="flex justify-center mt-6">
           <button
             onClick={() => setEditMode(!editMode)}
@@ -205,45 +209,51 @@ export default function ProfilePage() {
           </button>
         </div>
 
-        <div className="mt-12 border-t border-gray-100 pt-8 max-w-2xl mx-auto">
+        {/* About */}
+        <section className="mt-12 border-t border-gray-100 pt-8 max-w-2xl mx-auto">
           <h2 className="text-lg font-semibold mb-3">About</h2>
 
           {editMode ? (
             <textarea
               value={bio}
               onChange={(e) => setBio(e.target.value)}
-              className="w-full border border-gray-300 p-4 rounded-xl focus:ring-2 focus:ring-black focus:border-transparent outline-none transition-all"
+              className="w-full border border-gray-300 p-4 rounded-xl focus:ring-2 focus:ring-black outline-none transition"
               rows={5}
               placeholder="Tell us about yourself..."
             />
           ) : (
             <p className="text-gray-600 whitespace-pre-wrap leading-relaxed">
-              {bio || <span className="text-gray-400 italic">No bio added yet.</span>}
+              {bio || (
+                <span className="text-gray-400 italic">No bio added yet.</span>
+              )}
             </p>
           )}
-        </div>
+        </section>
 
+        {/* Save */}
         {editMode && (
           <div className="mt-8 flex justify-center">
             <button
               onClick={handleSave}
               disabled={saving}
-              className="px-8 py-3 bg-black text-white rounded-full hover:bg-gray-800 disabled:opacity-50 transition font-medium shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 active:translate-y-0"
+              className="px-8 py-3 bg-black text-white rounded-full hover:bg-gray-800 disabled:opacity-50 transition font-medium shadow-md"
             >
               {saving ? "Saving..." : "Save Changes"}
             </button>
           </div>
         )}
 
-        <div className="mt-16 pt-8 border-t border-gray-100">
-          <h2 className="text-xl font-bold mb-6">
-            Hosted Sessions History
-          </h2>
+        {/* Session history */}
+        <section className="mt-16 pt-8 border-t border-gray-100">
+          <h2 className="text-xl font-bold mb-6">Hosted Sessions History</h2>
+
           <div className="bg-gray-50 rounded-xl p-8 text-center border border-gray-100 border-dashed">
-            <p className="text-gray-500 text-sm">No sessions history available yet.</p>
+            <p className="text-gray-500 text-sm">
+              No sessions history available yet.
+            </p>
           </div>
-        </div>
-      </div>
-    </div>
+        </section>
+      </main>
+    </>
   );
 }
