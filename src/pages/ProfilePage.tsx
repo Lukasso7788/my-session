@@ -31,15 +31,22 @@ export default function ProfilePage() {
   useEffect(() => {
     if (!user) return;
 
+    // ⬇️ ПРОФИЛЬ ИЗ КОНТЕКСТА (быстрый UI reload) — ИСПРАВЛЕНО
     if (profile) {
       setFullName(profile.full_name || "");
       setAvatarUrl(profile.avatar_url || null);
+
+      // ⬇️ ДОБАВЛЕНО! НЕ затираем bio, если его нет в profile
+      if (profile.bio !== undefined && profile.bio !== null) {
+        setBio(profile.bio);
+      }
 
       if (profile.created_at) {
         setCreatedAt(new Date(profile.created_at).toLocaleDateString());
       }
     }
 
+    // ⬇️ ГЛАВНАЯ ПОДГРУЗКА БИО ИЗ БД
     const loadBio = async () => {
       const { data, error } = await supabase
         .from("profiles")
@@ -135,6 +142,10 @@ export default function ProfilePage() {
       setSaving(false);
     }
   };
+
+  // -----------------------
+  // RENDER
+  // -----------------------
 
   if (loading) {
     return (
