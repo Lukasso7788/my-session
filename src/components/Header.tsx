@@ -2,7 +2,7 @@ const DEBUG = true;
 
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useCreateSessionModal } from "../hooks/useCreateSessionModal";
+import { useCreateSessionModal } from "../context/CreateSessionModalContext";
 import { useAuth } from "../context/AuthContext";
 
 export default function Header() {

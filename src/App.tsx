@@ -9,8 +9,7 @@ import ProfilePage from "./pages/ProfilePage";
 import PublicProfilePage from "./pages/PublicProfilePage";
 import AuthCallback from "./pages/AuthCallback";
 
-import { CreateSessionModalProvider } from "./hooks/useCreateSessionModal";
-import { CreateSessionModal } from "./components/CreateSessionModal";
+import { CreateSessionModalProvider } from "./context/CreateSessionModalContext";
 
 export default function App() {
   console.log("[ROUTER] App mounted");
@@ -18,7 +17,6 @@ export default function App() {
   return (
     <CreateSessionModalProvider>
       <Routes>
-        {/* Redirect "/" → "/sessions" */}
         <Route path="/" element={<Navigate to="/sessions" replace />} />
 
         <Route path="/sessions" element={<SessionsPage />} />
@@ -28,7 +26,7 @@ export default function App() {
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/profile/:id" element={<PublicProfilePage />} />
 
-        {/* 🔥 OAuth callback — ДВА РОУТА */}
+        {/* OAuth */}
         <Route
           path="/auth/callback"
           element={
@@ -38,7 +36,6 @@ export default function App() {
             </>
           }
         />
-
         <Route
           path="/auth/callback/"
           element={
@@ -52,8 +49,6 @@ export default function App() {
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/sessions" replace />} />
       </Routes>
-
-      <CreateSessionModal />
     </CreateSessionModalProvider>
   );
 }

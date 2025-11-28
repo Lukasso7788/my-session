@@ -6,7 +6,7 @@ import { SessionTypeSwitcher } from "../components/SessionTypeSwitcher";
 import SessionCard from "../components/SessionCard";
 import Header from "../components/Header";
 import { supabase } from "../lib/supabase";
-import { useCreateSessionModal } from "../hooks/useCreateSessionModal";
+import { useCreateSessionModal } from "../context/CreateSessionModalContext";
 import { useAuth } from "../context/AuthContext";
 import type { Session } from "../types/session";
 
