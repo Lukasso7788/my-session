@@ -156,7 +156,7 @@ export default function ProfilePage() {
     <>
       <Header />
 
-      <main className="w-full max-w-4xl mx-auto px-6 pt-10 pb-24 font-inter text-gray-900">
+      <main className="w-full px-6 pt-10 pb-24 font-inter text-gray-900">
 
         {/* Back / Edit */}
         <div className="flex items-center justify-between mb-10">
