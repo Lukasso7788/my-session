@@ -10,7 +10,7 @@ export default function HeaderLite() {
             <div className="w-full max-w-6xl mx-auto px-8 py-6 flex justify-center">
                 <button
                     onClick={() => navigate("/")}
-                    className="text-[36px] font-extrabold leading-none hover:opacity-80 transition"
+                    className="text-[36px] font-extrabold text-brandBlack leading-none hover:opacity-80 transition"
                 >
                     MySession
                 </button>
