@@ -389,7 +389,6 @@ export function RoomPage() {
 
       // ===== FIRST TICK =====
       if (!firstTickDoneRef.current) {
-        // ✅ NEW LOGIC: welcome loop plays ALWAYS if we are in intro
         if (stage.type === "intro") startWelcomeLoop();
         else stopWelcomeLoop();
 
@@ -405,16 +404,13 @@ export function RoomPage() {
         const prevType = prev?.type;
         const newType = stage.type;
 
-        // break end sound
         if (prevType === "break" && newType !== "break") {
           playOneShot(BREAK_END_SOUND);
         }
 
-        // entering intro → ALWAYS start loop
         if (newType === "intro") {
           startWelcomeLoop();
         } else {
-          // entering any non-intro → stop loop
           stopWelcomeLoop();
           const startSound = STAGE_SOUND_MAP[newType];
           if (startSound) playOneShot(startSound);
@@ -423,7 +419,6 @@ export function RoomPage() {
         prevStageRef.current = active;
       }
 
-      // safety stop for loop after intro ends
       if (stage.type !== "intro" && welcomeLoopRef.current) {
         stopWelcomeLoop();
       }
@@ -454,8 +449,9 @@ export function RoomPage() {
   return (
     <div className="min-h-screen bg-[#050F1A] text-white flex justify-center">
       <div className="max-w-[1720px] w-full px-5 py-5 space-y-5">
+
         {/* TOP BAR CARD */}
-        <div className="rounded-2xl border border-[#223247] bg-[#101B29] shadow-lg px-6 py-4">
+        <div className="rounded-2xl bg-[#1F2937] shadow-lg px-6 py-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between mb-3">
             <div>
               <p className="text-sm text-slate-200">{session.title}</p>
@@ -470,7 +466,7 @@ export function RoomPage() {
               {session.host_profile && (
                 <button
                   onClick={() => setSelectedUser(session.host_profile)}
-                  className="flex items-center gap-2 px-3 py-1 rounded-full border border-[#2C3E52] bg-[#0B1824] text-xs text-slate-200 hover:bg-[#142235] transition"
+                  className="flex items-center gap-2 px-3 py-1 rounded-full bg-[#0B1824] text-xs text-slate-200 hover:bg-[#142235] transition"
                 >
                   <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-[#101B29]">
                     {session.host_profile.full_name?.[0] ?? "H"}
@@ -479,7 +475,7 @@ export function RoomPage() {
                 </button>
               )}
 
-              <div className="flex items-center gap-2 px-3 py-1 rounded-full border border-[#2C3E52] bg-[#0B1824] text-xs text-slate-200">
+              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-[#0B1824] text-xs text-slate-200">
                 <span role="img" aria-hidden="true">
                   ⏱
                 </span>
@@ -488,7 +484,7 @@ export function RoomPage() {
             </div>
           </div>
 
-          <div className="mt-1">
+          <div className="mt-1 bg-[#1F2937] p-4 rounded-2xl border border-[#404651]">
             <SessionStageBar
               stages={stages}
               startTime={session.start_time}
@@ -507,9 +503,10 @@ export function RoomPage() {
 
         {/* MAIN GRID */}
         <div className="grid lg:grid-cols-[minmax(0,1fr),420px] gap-5">
+
           {/* VIDEO AREA */}
           <div
-            className="rounded-2xl border border-[#223247] bg-[#101B29] shadow-lg overflow-hidden relative h-[77vh]"
+            className="rounded-2xl bg-[#1F2937] shadow-lg overflow-hidden relative h-[77vh]"
             style={{ minHeight: "70vh" }}
           >
             <div
@@ -525,8 +522,8 @@ export function RoomPage() {
             )}
           </div>
 
-          {/* INTENTIONS PANEL */}
-          <div className="rounded-2xl border border-[#223247] bg-[#101B29] text-white shadow-lg h-[77vh] overflow-hidden">
+          {/* INTENTIONS */}
+          <div className="rounded-2xl bg-[#1F2937] text-white shadow-lg h-[77vh] overflow-hidden">
             <div className="p-4 h-full">
               <IntentionsPanel />
             </div>
