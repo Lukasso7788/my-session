@@ -1,3 +1,5 @@
+// src/pages/RegisterPage.tsx
+
 import { useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useNavigate } from "react-router-dom";
@@ -52,14 +54,14 @@ export default function RegisterPage() {
   const signupWithGoogle = async () => {
     await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: window.location.origin + "/sessions" },
+      options: { redirectTo: `${window.location.origin}/sessions` },
     });
   };
 
   const signupWithFacebook = async () => {
     await supabase.auth.signInWithOAuth({
       provider: "facebook",
-      options: { redirectTo: window.location.origin + "/sessions" },
+      options: { redirectTo: `${window.location.origin}/sessions` },
     });
   };
 
@@ -69,7 +71,6 @@ export default function RegisterPage() {
       <HeaderLite />
 
       <div className="flex flex-col items-center w-full pt-16 px-4">
-
         <div className="w-full max-w-md mx-auto">
 
           <h2 className="text-center text-2xl font-semibold mb-8">
@@ -81,7 +82,7 @@ export default function RegisterPage() {
           <input
             type="text"
             placeholder="Enter your name"
-            className="w-full border border-gray-300 rounded-xl px-4 py-3 mb-4 bg-white focus:ring-2 focus:ring-black outline-none"
+            className="w-full border border-gray-300 rounded-[16px] px-4 py-3 mb-4 bg-white focus:ring-2 focus:ring-[#2F2F2F] outline-none"
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
           />
@@ -91,7 +92,7 @@ export default function RegisterPage() {
           <input
             type="email"
             placeholder="Enter your email"
-            className="w-full border border-gray-300 rounded-xl px-4 py-3 mb-4 bg-white focus:ring-2 focus:ring-black outline-none"
+            className="w-full border border-gray-300 rounded-[16px] px-4 py-3 mb-4 bg-white focus:ring-2 focus:ring-[#2F2F2F] outline-none"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
@@ -102,7 +103,7 @@ export default function RegisterPage() {
             <input
               type={showPass ? "text" : "password"}
               placeholder="Enter your password here"
-              className="w-full border border-gray-300 rounded-xl px-4 py-3 bg-white focus:ring-2 focus:ring-black outline-none"
+              className="w-full border border-gray-300 rounded-[16px] px-4 py-3 bg-white focus:ring-2 focus:ring-[#2F2F2F] outline-none"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
@@ -114,11 +115,11 @@ export default function RegisterPage() {
             </button>
           </div>
 
-          {/* MAIN SIGN UP BUTTON */}
+          {/* Sign Up button */}
           <button
             onClick={handleRegister}
             disabled={loading}
-            className="w-full bg-black text-white py-3 rounded-[16px] text-[18px] font-semibold hover:bg-gray-800 transition mb-6"
+            className="w-full bg-[#2F2F2F] text-white py-3 rounded-[16px] text-[18px] font-semibold hover:bg-[#1F1F1F] transition mb-6"
           >
             {loading ? "Creating…" : "Sign Up"}
           </button>
@@ -126,7 +127,7 @@ export default function RegisterPage() {
           {/* Google */}
           <button
             onClick={signupWithGoogle}
-            className="w-full py-3 border border-gray-300 rounded-[16px] text-[18px] font-semibold flex items-center justify-center gap-3 mb-3 hover:bg-gray-50 transition"
+            className="w-full py-3 border border-gray-300 rounded-[16px] flex items-center justify-center gap-3 mb-3 hover:bg-gray-50 transition text-[18px] font-semibold"
           >
             <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5" />
             Continue with Google
@@ -135,7 +136,7 @@ export default function RegisterPage() {
           {/* Facebook */}
           <button
             onClick={signupWithFacebook}
-            className="w-full py-3 rounded-[16px] text-[18px] font-semibold flex items-center justify-center gap-3 mb-3 bg-[#1877F2] text-white hover:bg-[#0f66d3] transition"
+            className="w-full py-3 rounded-[16px] flex items-center justify-center gap-3 mb-3 bg-[#1877F2] text-white hover:bg-[#0f66d3] transition text-[18px] font-semibold"
           >
             <img src="https://www.svgrepo.com/show/475647/facebook-color.svg" className="w-5" />
             Continue with Facebook
@@ -143,7 +144,7 @@ export default function RegisterPage() {
 
           {/* Apple */}
           <button
-            className="w-full py-3 rounded-[16px] text-[18px] font-semibold flex items-center justify-center gap-3 bg-black text-white hover:bg-gray-900 transition"
+            className="w-full py-3 rounded-[16px] flex items-center justify-center gap-3 bg-[#2F2F2F] text-white hover:bg-[#1F1F1F] transition text-[18px] font-semibold"
           >
             <img src="https://www.svgrepo.com/show/303128/apple-logo.svg" className="w-5 invert" />
             Continue with Apple
