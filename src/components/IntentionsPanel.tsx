@@ -216,7 +216,7 @@ export function IntentionsPanel() {
                 </div>
 
                 {/* USER intentions */}
-                <div className="flex flex-col gap-0">
+                <div className="flex flex-col gap-0.5">
                   {loading ? (
                     <p className="text-sm text-[#9CA3AF] italic">Loading...</p>
                   ) : (
