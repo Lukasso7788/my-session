@@ -13,12 +13,6 @@ export default function Header() {
     const [showUserMenu, setShowUserMenu] = useState(false);
     const [hoverCreate, setHoverCreate] = useState(false);
 
-    if (DEBUG) {
-        // console.log("[DEBUG Header] user:", user);
-        // console.log("[DEBUG Header] profile:", profile);
-        // console.log("[DEBUG Header] loading:", loading);
-    }
-
     const avatarSrc =
         profile?.avatar_url ||
         `https://ui-avatars.com/api/?name=${encodeURIComponent(
@@ -31,18 +25,27 @@ export default function Header() {
 
                 {/* LEFT NAV */}
                 <nav className="flex items-center gap-6 flex-1 text-sm text-[#2E2E2E]">
-                    <button onClick={() => navigate("/sessions")} className="hover:text-black">
+                    <button
+                        onClick={() => navigate("/sessions")}
+                        className="hover:text-brandBlack"
+                    >
                         Sessions
                     </button>
-                    <button className="hover:text-black">Pricing</button>
-                    <button className="hover:text-black">Latest updates</button>
+
+                    <button className="hover:text-brandBlack">
+                        Pricing
+                    </button>
+
+                    <button className="hover:text-brandBlack">
+                        Latest updates
+                    </button>
                 </nav>
 
                 {/* LOGO */}
                 <div className="flex-1 flex justify-center">
                     <button
                         onClick={() => navigate("/")}
-                        className="text-4xl font-extrabold hover:opacity-80 transition"
+                        className="text-4xl font-extrabold text-brandBlack hover:opacity-80 transition"
                     >
                         MySession
                     </button>
@@ -54,6 +57,8 @@ export default function Header() {
                         <div className="text-sm text-gray-500">Checking session...</div>
                     ) : !user ? (
                         <div className="flex gap-3">
+
+                            {/* LOG IN */}
                             <button
                                 onClick={() => {
                                     if (DEBUG) console.log("[DEBUG Header] Navigate -> /login");
@@ -64,15 +69,17 @@ export default function Header() {
                                 Log in
                             </button>
 
+                            {/* SIGN UP */}
                             <button
                                 onClick={() => {
                                     if (DEBUG) console.log("[DEBUG Header] Navigate -> /register");
                                     navigate("/register");
                                 }}
-                                className="px-4 py-2 rounded-full bg-brandBlack text-white hover:bg-black text-sm font-medium"
+                                className="px-4 py-2 rounded-full bg-brandBlack text-white hover:bg-brandBlack text-sm font-medium"
                             >
                                 Sign up
                             </button>
+
                         </div>
                     ) : (
                         <>
@@ -85,11 +92,11 @@ export default function Header() {
                                 onMouseEnter={() => setHoverCreate(true)}
                                 onMouseLeave={() => setHoverCreate(false)}
                                 className={`
-                  inline-flex items-center gap-2 px-6 py-3 rounded-full
-                  border text-base font-medium transition-colors duration-200
-                  border-[#2F2F2F]
-                  ${hoverCreate ? "bg-[#2F2F2F] text-white" : "hover:bg-slate-50"}
-                `}
+                                    inline-flex items-center gap-2 px-6 py-3 rounded-full
+                                    border text-base font-medium transition-colors duration-200
+                                    border-[#2F2F2F]
+                                    ${hoverCreate ? "bg-[#2F2F2F] text-white" : "hover:bg-slate-50"}
+                                `}
                             >
                                 <img
                                     src={
