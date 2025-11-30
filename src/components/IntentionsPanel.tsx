@@ -287,7 +287,7 @@ export function IntentionsPanel() {
             ) : intentions.length === 0 ? (
               <p className="text-sm text-[#9CA3AF] italic">No team intentions</p>
             ) : (
-              <div className="flex flex-col gap-[12px]">
+              <div className="flex flex-col gap-[0px]">
                 {intentions.map((item) => (
                   <div
                     key={item.id}

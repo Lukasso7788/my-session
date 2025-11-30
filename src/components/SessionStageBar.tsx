@@ -51,7 +51,7 @@ export function SessionStageBar({ stages, startTime, onHoverStage }: Props) {
   }, [elapsed, stages]);
 
   return (
-    <div className="flex w-full h-5 rounded-2xl overflow-hidden bg-slate-200 border border-slate-300 shadow-inner">
+    <div className="flex w-full h-5 rounded-2xl overflow-hidden bg-slate-200 shadow-inner">
       {stages.map((stage, index) => {
         const width = (stage.duration / (totalDuration / 60)) * 100;
         const isActive = index === currentStageIndex;
