@@ -57,7 +57,7 @@ export function RoomPage() {
     const unlock = () => {
       if (audioUnlockedRef.current) return;
       const a = new Audio();
-      a.play().catch(() => {});
+      a.play().catch(() => { });
       audioUnlockedRef.current = true;
       window.removeEventListener("click", unlock, true);
       window.removeEventListener("keydown", unlock, true);
@@ -77,7 +77,7 @@ export function RoomPage() {
     if (!url) return;
     const a = new Audio(url);
     a.volume = volume;
-    a.play().catch(() => {});
+    a.play().catch(() => { });
   };
 
   const startWelcomeLoop = () => {
@@ -86,7 +86,7 @@ export function RoomPage() {
     a.loop = true;
     a.volume = 0.6;
     welcomeLoopRef.current = a;
-    a.play().catch(() => {});
+    a.play().catch(() => { });
   };
 
   const stopWelcomeLoop = () => {
@@ -96,7 +96,7 @@ export function RoomPage() {
         welcomeLoopRef.current.currentTime = 0;
         welcomeLoopRef.current = null;
       }
-    } catch {}
+    } catch { }
   };
 
   // ============================================
@@ -130,14 +130,14 @@ export function RoomPage() {
                 (lower.includes("welcome") || lower.includes("intro")
                   ? "intro"
                   : lower.includes("intention")
-                  ? "intentions"
-                  : lower.includes("focus")
-                  ? "focus"
-                  : lower.includes("break") || lower.includes("pause")
-                  ? "break"
-                  : lower.includes("farewell") || lower.includes("celebrat")
-                  ? "outro"
-                  : "focus");
+                    ? "intentions"
+                    : lower.includes("focus")
+                      ? "focus"
+                      : lower.includes("break") || lower.includes("pause")
+                        ? "break"
+                        : lower.includes("farewell") || lower.includes("celebrat")
+                          ? "outro"
+                          : "focus");
 
               return {
                 name: b.name,
@@ -155,7 +155,7 @@ export function RoomPage() {
             });
 
             setStages(formatted);
-          } catch {}
+          } catch { }
         }
       }
 
@@ -189,49 +189,48 @@ export function RoomPage() {
   }, []);
 
   // ====== ATTENDANCE REALTIME ======
-useEffect(() => {
-  if (!id) return;
+  useEffect(() => {
+    if (!id) return;
 
-  const fetchAttendance = async () => {
-    const { data, error } = await supabase
-      .from("session_attendance")
-      .select("*")
-      .eq("session_id", id);
+    const fetchAttendance = async () => {
+      const { data, error } = await supabase
+        .from("session_attendance")
+        .select("*")
+        .eq("session_id", id);
 
-    if (error) {
-      console.error("Attendance fetch error:", error);
-      return;
-    }
-
-    console.log("Attendance updated:", data);
-  };
-
-  // INITIAL LOAD
-  fetchAttendance();
-
-  // SUBSCRIBE TO CHANGES IN attendance TABLE
-  const sub = supabase
-    .channel(`session-${id}`)
-    .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "session_attendance",
-        filter: `session_id=eq.${id}`,
-      },
-      () => {
-        console.log("Realtime attendance change received");
-        fetchAttendance();
+      if (error) {
+        console.error("Attendance fetch error:", error);
+        return;
       }
-    )
-    .subscribe();
 
-  return () => {
-    supabase.removeChannel(sub);
-  };
-}, [id]);
+      console.log("Attendance updated:", data);
+    };
 
+    // INITIAL LOAD
+    fetchAttendance();
+
+    // SUBSCRIBE TO CHANGES IN attendance TABLE
+    const sub = supabase
+      .channel(`session-${id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "session_attendance",
+          filter: `session_id=eq.${id}`,
+        },
+        () => {
+          console.log("Realtime attendance change received");
+          fetchAttendance();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(sub);
+    };
+  }, [id]);
 
   // ============================================
   // DAILY INIT
@@ -249,7 +248,9 @@ useEffect(() => {
     }
 
     if (callRef.current) {
-      try { callRef.current.destroy(); } catch {}
+      try {
+        callRef.current.destroy();
+      } catch { }
       callRef.current = null;
     }
 
@@ -273,17 +274,27 @@ useEffect(() => {
     let destroyed = false;
 
     const removeAll = () => {
-      try { frame.off("joined-meeting"); } catch {}
-      try { frame.off("left-meeting"); } catch {}
-      try { frame.off("error"); } catch {}
+      try {
+        frame.off("joined-meeting");
+      } catch { }
+      try {
+        frame.off("left-meeting");
+      } catch { }
+      try {
+        frame.off("error");
+      } catch { }
     };
 
     const safeLeave = async () => {
       if (destroyed) return;
       destroyed = true;
       removeAll();
-      try { await frame.leave?.(); } catch {}
-      try { await frame.destroy(); } catch {}
+      try {
+        await frame.leave?.();
+      } catch { }
+      try {
+        await frame.destroy();
+      } catch { }
       callRef.current = null;
       stopWelcomeLoop();
       navigate("/sessions", { replace: true });
@@ -296,7 +307,8 @@ useEffect(() => {
 
     (async () => {
       try {
-        const roomName = new URL(session.daily_room_url).pathname.split("/").pop() || "";
+        const roomName =
+          new URL(session.daily_room_url).pathname.split("/").pop() || "";
         const { data } = await supabase.functions.invoke("daily-token", {
           body: { roomName, userName, roomUrl: session.daily_room_url },
         });
@@ -317,8 +329,12 @@ useEffect(() => {
       if (!destroyed) {
         destroyed = true;
         removeAll();
-        try { frame.leave?.(); } catch {}
-        try { frame.destroy(); } catch {}
+        try {
+          frame.leave?.();
+        } catch { }
+        try {
+          frame.destroy();
+        } catch { }
         callRef.current = null;
         stopWelcomeLoop();
       }
@@ -423,59 +439,77 @@ useEffect(() => {
   // ============================================
   if (loading)
     return (
-      <div className="flex h-screen justify-center items-center text-white bg-slate-900">
+      <div className="flex h-screen justify-center items-center text-white bg-[#050F1A]">
         Loading session...
       </div>
     );
 
   if (!session)
     return (
-      <div className="flex h-screen justify-center items-center text-white bg-slate-900">
+      <div className="flex h-screen justify-center items-center text-white bg-[#050F1A]">
         <button onClick={() => navigate("/sessions")}>Back</button>
       </div>
     );
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white flex justify-center">
+    <div className="min-h-screen bg-[#050F1A] text-white flex justify-center">
       <div className="max-w-[1720px] w-full px-5 py-5 space-y-5">
+        {/* TOP BAR CARD */}
+        <div className="rounded-2xl border border-[#223247] bg-[#101B29] shadow-lg px-6 py-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between mb-3">
+            <div>
+              <p className="text-sm text-slate-200">{session.title}</p>
+              {stages.length > 0 && (
+                <p className="text-xs text-slate-400 mt-1">
+                  Stage {currentStage + 1} / {stages.length}
+                </p>
+              )}
+            </div>
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 shadow-lg p-4">
-          <div className="flex justify-between mb-3">
-            <span className="text-slate-400">{session.title}</span>
-            <span className="text-xs text-slate-500">
-              Stage {currentStage + 1} / {stages.length}
-            </span>
+            <div className="flex items-center gap-3">
+              {session.host_profile && (
+                <button
+                  onClick={() => setSelectedUser(session.host_profile)}
+                  className="flex items-center gap-2 px-3 py-1 rounded-full border border-[#2C3E52] bg-[#0B1824] text-xs text-slate-200 hover:bg-[#142235] transition"
+                >
+                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-[#101B29]">
+                    {session.host_profile.full_name?.[0] ?? "H"}
+                  </span>
+                  <span>Host: {session.host_profile.full_name}</span>
+                </button>
+              )}
+
+              <div className="flex items-center gap-2 px-3 py-1 rounded-full border border-[#2C3E52] bg-[#0B1824] text-xs text-slate-200">
+                <span role="img" aria-hidden="true">
+                  ⏱
+                </span>
+                <span>{remainingTime || "--:--"}</span>
+              </div>
+            </div>
           </div>
 
-          <div className="bg-white p-4 rounded-2xl space-y-3 shadow-sm">
+          <div className="mt-1">
             <SessionStageBar
               stages={stages}
               startTime={session.start_time}
               onHoverStage={setHoveredStage}
             />
-            <div className="flex justify-between text-sm text-slate-700">
-              <span>
-                {hoveredStage
-                  ? `${hoveredStage.name} • ${hoveredStage.duration} min`
-                  : stages[currentStage]?.name}
-              </span>
-              <span className="text-slate-500">⏱ {remainingTime}</span>
-            </div>
           </div>
 
-          {session.host_profile && (
-            <p
-              onClick={() => setSelectedUser(session.host_profile)}
-              className="cursor-pointer text-sm text-slate-400 hover:text-blue-400 mt-3"
-            >
-              👤 Hosted by {session.host_profile.full_name}
-            </p>
-          )}
+          <div className="mt-3 flex justify-between text-xs text-slate-300">
+            <span>
+              {hoveredStage
+                ? `${hoveredStage.name} • ${hoveredStage.duration} min`
+                : stages[currentStage]?.name}
+            </span>
+          </div>
         </div>
 
-        <div className="grid lg:grid-cols-[1fr,370px] gap-5">
+        {/* MAIN GRID */}
+        <div className="grid lg:grid-cols-[minmax(0,1fr),420px] gap-5">
+          {/* VIDEO AREA */}
           <div
-            className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden relative h-[77vh]"
+            className="rounded-2xl border border-[#223247] bg-[#101B29] shadow-lg overflow-hidden relative h-[77vh]"
             style={{ minHeight: "70vh" }}
           >
             <div
@@ -491,7 +525,8 @@ useEffect(() => {
             )}
           </div>
 
-          <div className="rounded-2xl border border-slate-800 bg-white text-black shadow-lg h-[77vh] overflow-hidden">
+          {/* INTENTIONS PANEL */}
+          <div className="rounded-2xl border border-[#223247] bg-[#101B29] text-white shadow-lg h-[77vh] overflow-hidden">
             <div className="p-4 h-full">
               <IntentionsPanel />
             </div>
