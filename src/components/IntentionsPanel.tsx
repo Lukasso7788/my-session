@@ -29,7 +29,7 @@ export function IntentionsPanel() {
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
   }, []);
 
-  // LOAD INTENTIONS
+  // LOAD
   const loadIntentions = async () => {
     if (!sessionId) return;
     const { data, error } = await supabase
@@ -109,13 +109,9 @@ export function IntentionsPanel() {
   return (
     <div className="flex flex-col w-full h-full bg-[#1F2937] text-[#F3F4F6] font-inter">
 
-      {/* =========================
-          SWITCHER (Intentions / Chat)
-      ========================== */}
+      {/* TABS */}
       <div className="px-4 pt-4">
         <div className="flex gap-4 pb-0">
-
-          {/* Intentions tab */}
           <button
             onClick={() => setActiveTab("intentions")}
             className={`
@@ -132,7 +128,6 @@ export function IntentionsPanel() {
             Intentions
           </button>
 
-          {/* Chat tab */}
           <button
             onClick={() => setActiveTab("chat")}
             className={`
@@ -151,36 +146,32 @@ export function IntentionsPanel() {
         </div>
       </div>
 
-      {/* Divider under tabs */}
       <div className="h-px bg-[#404651] mt-3"></div>
 
-      {/* ============================
-            CONTENT
-      ============================ */}
+      {/* CONTENT */}
       <div className="flex-1 overflow-y-auto px-4 py-4 custom-scrollbar">
 
-        {/* === CHAT TAB === */}
+        {/* CHAT */}
         {activeTab === "chat" && (
           <div className="text-[#9CA3AF] italic">(Chat coming soon)</div>
         )}
 
-        {/* === INTENTIONS TAB === */}
+        {/* INTENTIONS */}
         {activeTab === "intentions" && (
           <>
 
-            {/* ===========================================
-                BLOCK: My Intentions
-            ============================================ */}
+            {/* My Intentions */}
             <div className="mb-5">
 
               <h3 className="text-[14px] font-medium text-[#F3F4F6] mb-3">
                 My intentions
               </h3>
 
-              {/* Input + Add intention button */}
               <div className="mb-[16px]">
 
                 <div className="flex items-center gap-2 mb-[12px]">
+
+                  {/* INPUT — updated */}
                   <input
                     type="text"
                     value={newIntention}
@@ -189,7 +180,7 @@ export function IntentionsPanel() {
                     placeholder="Add an intention"
                     className="
                       flex-1 
-                      bg-[#1F2937] border border-[#404651] 
+                      bg-[#374151] border border-[#404651] 
                       rounded-[8px]
                       px-[12px] py-[14px]
                       text-[14px] text-[#F3F4F6]
@@ -198,25 +189,24 @@ export function IntentionsPanel() {
                     "
                   />
 
-                  {/* Add Button "+" */}
+                  {/* BUTTON "+" — updated */}
                   <button
                     onClick={handleAddIntention}
                     className="
                       flex items-center justify-center
-                      bg-[#4C9FFF]/20 hover:bg-[#4C9FFF]/30
-                      text-[#4C9FFF]
+                      bg-[#4C9FFF] hover:bg-[#3B89E8]
+                      text-white
                       rounded-[8px]
                       px-[8px] py-[10px]
-                      transition
                       leading-none
                       text-[32px] font-light
+                      transition
                     "
                   >
                     +
                   </button>
                 </div>
 
-                {/* USER intentions */}
                 <div className="flex flex-col gap-2">
                   {loading ? (
                     <p className="text-sm text-[#9CA3AF] italic">Loading...</p>
@@ -225,7 +215,9 @@ export function IntentionsPanel() {
                     .map((intention) => (
                       <div
                         key={intention.id}
-                        className={`flex items-center justify-between p-2 rounded group cursor-pointer transition
+                        className={`
+                            flex items-center justify-between p-2 rounded 
+                            group cursor-pointer transition
                             ${intention.completed
                             ? "bg-[rgba(0,255,55,0.05)]"
                             : "hover:bg-[rgba(55,65,81,0.20)]"
@@ -269,16 +261,12 @@ export function IntentionsPanel() {
                     ))}
                 </div>
               </div>
-
             </div>
 
             {/* Divider */}
             <div className="h-px bg-[#404651] my-[20px]"></div>
 
-            {/* ===========================================
-                BLOCK: Team Intentions
-            ============================================ */}
-
+            {/* Team intentions */}
             <h3 className="text-[14px] font-medium text-[#F3F4F6] mb-[12px]">
               Team intentions
             </h3>
@@ -300,9 +288,10 @@ export function IntentionsPanel() {
                       }
                     `}
                   >
+                    {/* Avatar — updated to 40x40 */}
                     <img
                       src={getAvatar(item.profiles)}
-                      className="w-8 h-8 rounded-full object-cover"
+                      className="w-10 h-10 rounded-full object-cover"
                     />
 
                     <div className="flex-1">
