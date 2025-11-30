@@ -1,4 +1,4 @@
-// FULL UPDATED ROOMPAGE WITH FIXED WELCOME LOOP BEHAVIOR + NEW DOUBLE-CONTAINER TOP BAR (REV 2)
+// FULL UPDATED ROOMPAGE WITH FIXED WELCOME LOOP BEHAVIOR + NEW DOUBLE-CONTAINER TOP BAR (REV 3)
 
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -348,24 +348,23 @@ export function RoomPage() {
   useEffect(() => {
     if (!session?.start_time || !stages.length) return;
 
-    const { starts, ends } = getStageWindows(session.start_time, stages);
+    const { starts } = getStageWindows(session.start_time, stages);
 
     const timer = setInterval(() => {
       const now = Date.now();
-      const diffSec = (now - new Date(session.start_time).getTime()) / 1000;
+      const diffSec =
+        (now - new Date(session.start_time).getTime()) / 1000;
 
       let total = 0;
       let active = stages.length - 1;
+
       for (let i = 0; i < stages.length; i++) {
         const next = total + stages[i].duration * 60;
         if (diffSec < next) {
           active = i;
           const rem = next - diffSec;
           setRemainingTime(
-            `${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(
-              2,
-              "0"
-            )}`
+            `${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`
           );
           break;
         }
@@ -397,8 +396,8 @@ export function RoomPage() {
           startWelcomeLoop();
         } else {
           stopWelcomeLoop();
-          const startSound = STAGE_SOUND_MAP[newType];
-          if (startSound) playOneShot(startSound);
+          const sound = STAGE_SOUND_MAP[newType];
+          if (sound) playOneShot(sound);
         }
 
         prevStageRef.current = active;
@@ -432,15 +431,15 @@ export function RoomPage() {
     <div className="min-h-screen bg-[#050F1A] text-white flex justify-center">
       <div className="max-w-[1720px] w-full px-5 py-5 space-y-5">
 
-        {/* ============================
-            NEW DOUBLE-CONTAINER TOPBAR (REV 2)
-        ============================ */}
+        {/* ======================
+            DOUBLE-CONTAINER TOP BAR (REV 3)
+        ====================== */}
         <div className="flex w-full rounded-2xl overflow-hidden">
 
           {/* LEFT BLOCK (91%) */}
           <div className="w-[91%] bg-[#1F2937] px-6 py-8 rounded-l-2xl">
 
-            {/* TITLE + HOST BADGE INLINE */}
+            {/* ROW: SESSION TITLE + HOST BADGE */}
             <div className="flex items-center justify-between w-full">
               <p className="font-inter font-medium text-[17px] text-[#F3F4F6]/85">
                 {session.title}
@@ -466,8 +465,8 @@ export function RoomPage() {
               )}
             </div>
 
-            {/* STAGE BAR */}
-            <div className="mt-6">
+            {/* STAGE BAR (max height 24px, spacing 10px) */}
+            <div className="mt-2 max-h-[24px]">
               <SessionStageBar
                 stages={stages}
                 startTime={session.start_time}
@@ -477,7 +476,7 @@ export function RoomPage() {
           </div>
 
           {/* RIGHT TIMER BLOCK (9%) */}
-          <div className="w-[9%] bg-[#1F2937] rounded-r-2xl flex flex-col items-center justify-center gap-3 border-l border-[#D8D8D8]">
+          <div className="w-[9%] bg-[#1F2937] rounded-r-2xl flex flex-col items-center justify-center gap-1 border-l border-[#404651]">
             <img
               src="/icons/session_timer.svg"
               className="w-[48px] h-[48px]"
@@ -517,6 +516,7 @@ export function RoomPage() {
             </div>
           </div>
         </div>
+
       </div>
 
       {selectedUser && (
