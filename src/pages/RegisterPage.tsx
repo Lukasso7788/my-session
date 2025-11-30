@@ -73,7 +73,7 @@ export default function RegisterPage() {
       <div className="flex flex-col items-center w-full pt-16 px-4">
         <div className="w-full max-w-md mx-auto">
 
-          <h2 className="text-center text-2xl font-semibold mb-8">
+          <h2 className="text-center text-[32px] font-bold mb-8">
             Create an Account
           </h2>
 

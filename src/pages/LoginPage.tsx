@@ -61,7 +61,7 @@ export default function LoginPage() {
       <div className="flex flex-col items-center w-full pt-16 px-4">
         <div className="w-full max-w-md mx-auto">
 
-          <h2 className="text-center text-2xl font-semibold mb-8">Log in</h2>
+          <h2 className="text-center text-[32px] font-bold mb-8">Log in</h2>
 
           {/* Email */}
           <label className="block text-sm mb-1">Email address</label>
