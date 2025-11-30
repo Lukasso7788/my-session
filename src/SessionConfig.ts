@@ -15,11 +15,11 @@ export interface SessionFormat {
 }
 
 const COLORS = {
-  social: "#2563EB", // blue
+  social: "#80DF86", // blue
   intentions: "#9333EA", // purple
-  focus: "#10B981", // green
-  break: "#F59E0B", // amber
-  celebrate: "#EF4444", // red
+  focus: "#4CA0FF", // green
+  break: "#F9ADA2", // amber
+  celebrate: "#80DF86", // red
 };
 
 export const sessionFormats: SessionFormat[] = [
