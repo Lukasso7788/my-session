@@ -216,7 +216,7 @@ export function IntentionsPanel() {
                 </div>
 
                 {/* USER intentions */}
-                <div className="flex flex-col gap-1">
+                <div className="flex flex-col gap-1.5">
                   {loading ? (
                     <p className="text-sm text-[#9CA3AF] italic">Loading...</p>
                   ) : (
@@ -287,7 +287,7 @@ export function IntentionsPanel() {
             ) : intentions.length === 0 ? (
               <p className="text-sm text-[#9CA3AF] italic">No team intentions</p>
             ) : (
-              <div className="flex flex-col gap-[4px]">
+              <div className="flex flex-col gap-[6px]">
                 {intentions.map((item) => (
                   <div
                     key={item.id}
