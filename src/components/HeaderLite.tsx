@@ -7,7 +7,7 @@ export default function HeaderLite() {
 
     return (
         <header className="border-b border-borderGray w-full bg-white">
-            <div className="w-full max-w-6xl mx-auto px-8 py-5 flex justify-center">
+            <div className="w-full max-w-6xl mx-auto px-8 py-6 flex justify-center">
                 <button
                     onClick={() => navigate("/")}
                     className="text-[36px] font-extrabold leading-none hover:opacity-80 transition"
