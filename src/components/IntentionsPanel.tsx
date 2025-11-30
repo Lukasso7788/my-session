@@ -29,7 +29,7 @@ export function IntentionsPanel() {
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
   }, []);
 
-  // LOAD
+  // LOAD INTENTIONS
   const loadIntentions = async () => {
     if (!sessionId) return;
     const { data, error } = await supabase
@@ -52,17 +52,20 @@ export function IntentionsPanel() {
 
     const channel = supabase.channel("intentions_realtime");
 
-    channel.on("postgres_changes",
+    channel.on(
+      "postgres_changes",
       { event: "INSERT", schema: "public", table: "intentions" },
       (payload) => payload.new?.session_id === sessionId && loadIntentions()
     );
 
-    channel.on("postgres_changes",
+    channel.on(
+      "postgres_changes",
       { event: "UPDATE", schema: "public", table: "intentions" },
       (payload) => payload.new?.session_id === sessionId && loadIntentions()
     );
 
-    channel.on("postgres_changes",
+    channel.on(
+      "postgres_changes",
       { event: "DELETE", schema: "public", table: "intentions" },
       (payload: any) => {
         const deletedId = payload?.old?.id;
@@ -109,13 +112,16 @@ export function IntentionsPanel() {
   return (
     <div className="flex flex-col w-full h-full bg-[#1F2937] text-[#F3F4F6] font-inter">
 
-      {/* TABS */}
+      {/* =========================
+          SWITCHER (Intentions / Chat)
+      ========================== */}
       <div className="px-4 pt-4">
-        <div className="flex gap-4 pb-0">
+        <div className="flex gap-0 pb-0">
+          {/* Intentions tab */}
           <button
             onClick={() => setActiveTab("intentions")}
             className={`
-              flex items-center gap-2 px-3 py-2
+              flex flex-1 items-center justify-center gap-2 px-3 py-2
               text-[20px] font-medium rounded-none
               transition 
               ${activeTab === "intentions"
@@ -128,10 +134,11 @@ export function IntentionsPanel() {
             Intentions
           </button>
 
+          {/* Chat tab */}
           <button
             onClick={() => setActiveTab("chat")}
             className={`
-              flex items-center gap-2 px-3 py-2
+              flex flex-1 items-center justify-center gap-2 px-3 py-2
               text-[20px] font-medium rounded-none
               transition
               ${activeTab === "chat"
@@ -146,32 +153,33 @@ export function IntentionsPanel() {
         </div>
       </div>
 
+      {/* Divider under tabs */}
       <div className="h-px bg-[#404651] mt-3"></div>
 
-      {/* CONTENT */}
+      {/* ============================
+            CONTENT
+      ============================ */}
       <div className="flex-1 overflow-y-auto px-4 py-4 custom-scrollbar">
 
-        {/* CHAT */}
+        {/* === CHAT TAB === */}
         {activeTab === "chat" && (
           <div className="text-[#9CA3AF] italic">(Chat coming soon)</div>
         )}
 
-        {/* INTENTIONS */}
+        {/* === INTENTIONS TAB === */}
         {activeTab === "intentions" && (
           <>
-
-            {/* My Intentions */}
+            {/* ===========================================
+                BLOCK: My Intentions
+            ============================================ */}
             <div className="mb-5">
-
               <h3 className="text-[14px] font-medium text-[#F3F4F6] mb-3">
                 My intentions
               </h3>
 
+              {/* Input + Add intention button */}
               <div className="mb-[16px]">
-
                 <div className="flex items-center gap-2 mb-[12px]">
-
-                  {/* INPUT — updated */}
                   <input
                     type="text"
                     value={newIntention}
@@ -189,7 +197,7 @@ export function IntentionsPanel() {
                     "
                   />
 
-                  {/* BUTTON "+" — updated */}
+                  {/* Add Button "+" */}
                   <button
                     onClick={handleAddIntention}
                     className="
@@ -198,67 +206,68 @@ export function IntentionsPanel() {
                       text-white
                       rounded-[8px]
                       px-[8px] py-[10px]
+                      transition
                       leading-none
                       text-[32px] font-light
-                      transition
                     "
                   >
                     +
                   </button>
                 </div>
 
+                {/* USER intentions */}
                 <div className="flex flex-col gap-2">
                   {loading ? (
                     <p className="text-sm text-[#9CA3AF] italic">Loading...</p>
-                  ) : intentions
-                    .filter((i) => i.user_id === user?.id)
-                    .map((intention) => (
-                      <div
-                        key={intention.id}
-                        className={`
-                            flex items-center justify-between p-2 rounded 
-                            group cursor-pointer transition
+                  ) : (
+                    intentions
+                      .filter((i) => i.user_id === user?.id)
+                      .map((intention) => (
+                        <div
+                          key={intention.id}
+                          className={`flex items-center justify-between p-2 rounded group cursor-pointer transition
                             ${intention.completed
-                            ? "bg-[rgba(0,255,55,0.05)]"
-                            : "hover:bg-[rgba(55,65,81,0.20)]"
-                          }
+                              ? "bg-[rgba(0,255,55,0.05)]"
+                              : "hover:bg-[rgba(55,65,81,0.20)]"
+                            }
                           `}
-                        onClick={() => toggleCompleted(intention)}
-                      >
-                        <div className="flex items-start gap-2">
-                          {intention.completed ? (
-                            <CheckCircle size={18} className="text-[#00FF37] mt-0.5" />
-                          ) : (
-                            <Circle size={18} className="text-[#9CA3AF] mt-0.5" />
-                          )}
-                          <span
-                            className={`
+                          onClick={() => toggleCompleted(intention)}
+                        >
+                          <div className="flex items-start gap-2">
+                            {intention.completed ? (
+                              <CheckCircle size={18} className="text-[#00FF37] mt-0.5" />
+                            ) : (
+                              <Circle size={18} className="text-[#9CA3AF] mt-0.5" />
+                            )}
+                            <span
+                              className={`
                                 text-sm
                                 ${intention.completed
-                                ? "text-[#F3F4F6]/75 line-through"
-                                : "text-[#F3F4F6]/75"
-                              }
+                                  ? "text-[#F3F4F6]/75 line-through"
+                                  : "text-[#F3F4F6]/75"
+                                }
                               `}
-                          >
-                            {intention.text}
-                          </span>
-                        </div>
+                            >
+                              {intention.text}
+                            </span>
+                          </div>
 
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDelete(intention.id);
-                          }}
-                          className="
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDelete(intention.id);
+                            }}
+                            className="
                               opacity-0 group-hover:opacity-100 
                               transition-opacity p-1 
                               text-[#9CA3AF] hover:text-red-500
                             "
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    ))}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      ))
+                  )}
                 </div>
               </div>
             </div>
@@ -266,7 +275,9 @@ export function IntentionsPanel() {
             {/* Divider */}
             <div className="h-px bg-[#404651] my-[20px]"></div>
 
-            {/* Team intentions */}
+            {/* ===========================================
+                BLOCK: Team Intentions
+            ============================================ */}
             <h3 className="text-[14px] font-medium text-[#F3F4F6] mb-[12px]">
               Team intentions
             </h3>
@@ -288,7 +299,6 @@ export function IntentionsPanel() {
                       }
                     `}
                   >
-                    {/* Avatar — updated to 40x40 */}
                     <img
                       src={getAvatar(item.profiles)}
                       className="w-10 h-10 rounded-full object-cover"
