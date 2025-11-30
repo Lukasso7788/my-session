@@ -1,4 +1,4 @@
-// FULL UPDATED ROOMPAGE WITH FIXED WELCOME LOOP BEHAVIOR
+// FULL UPDATED ROOMPAGE WITH FIXED WELCOME LOOP BEHAVIOR + TOP BAR UI
 
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -449,37 +449,47 @@ export function RoomPage() {
   return (
     <div className="min-h-screen bg-[#050F1A] text-white flex justify-center">
       <div className="max-w-[1720px] w-full px-5 py-5 space-y-5">
-
         {/* TOP BAR CARD */}
         <div className="rounded-2xl bg-[#1F2937] shadow-lg px-6 py-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between mb-3">
+            {/* Title */}
             <div>
-              <p className="text-sm text-slate-200">{session.title}</p>
-              {stages.length > 0 && (
-                <p className="text-xs text-slate-400 mt-1">
-                  Stage {currentStage + 1} / {stages.length}
-                </p>
-              )}
+              <p className="font-inter font-medium text-[16px] text-[#F3F4F6]/85">
+                {session.title}
+              </p>
             </div>
 
-            <div className="flex items-center gap-3">
+            {/* Host badge + timer */}
+            <div className="flex items-center gap-4">
               {session.host_profile && (
                 <button
                   onClick={() => setSelectedUser(session.host_profile)}
-                  className="flex items-center gap-2 px-3 py-1 rounded-full bg-[#0B1824] text-xs text-slate-200 hover:bg-[#142235] transition"
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[#F3F4F6]/60 bg-transparent text-[14px] text-[#F3F4F6]/85 hover:bg-[#111827] transition font-inter"
                 >
-                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-[#101B29]">
-                    {session.host_profile.full_name?.[0] ?? "H"}
+                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#F3F4F6]/10 text-xs text-[#F3F4F6]/85">
+                    👤
                   </span>
-                  <span>Host: {session.host_profile.full_name}</span>
+
+                  <span className="flex items-center gap-1">
+                    <span className="font-normal">Host:</span>
+                    <span className="font-bold">
+                      {session.host_profile.full_name || "Host"}
+                    </span>
+                  </span>
                 </button>
               )}
 
-              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-[#0B1824] text-xs text-slate-200">
-                <span role="img" aria-hidden="true">
-                  ⏱
+              <div className="flex items-center gap-3 pl-4 border-l border-[#F3F4F6]/85">
+                <div className="w-[52px] h-[52px] flex items-center justify-center">
+                  <img
+                    src="/icons/session_timer.svg"
+                    alt="Session timer"
+                    className="w-[52px] h-[52px]"
+                  />
+                </div>
+                <span className="font-inter font-normal text-[24px] leading-none text-[#F3F4F6]/85">
+                  {remainingTime || "--:--"}
                 </span>
-                <span>{remainingTime || "--:--"}</span>
               </div>
             </div>
           </div>
@@ -491,19 +501,10 @@ export function RoomPage() {
               onHoverStage={setHoveredStage}
             />
           </div>
-
-          <div className="mt-3 flex justify-between text-xs text-slate-300">
-            <span>
-              {hoveredStage
-                ? `${hoveredStage.name} • ${hoveredStage.duration} min`
-                : stages[currentStage]?.name}
-            </span>
-          </div>
         </div>
 
         {/* MAIN GRID */}
         <div className="grid lg:grid-cols-[minmax(0,1fr),420px] gap-5">
-
           {/* VIDEO AREA */}
           <div
             className="rounded-2xl bg-[#1F2937] shadow-lg overflow-hidden relative h-[77vh]"
