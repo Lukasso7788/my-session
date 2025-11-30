@@ -16,7 +16,7 @@ export interface SessionFormat {
 
 const COLORS = {
   social: "#80DF86", // blue
-  intentions: "#9333EA", // purple
+  intentions: "#ADD3FF", // purple
   focus: "#4CA0FF", // green
   break: "#F9ADA2", // amber
   celebrate: "#80DF86", // red

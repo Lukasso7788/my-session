@@ -139,12 +139,12 @@ export function RoomPage() {
                 duration: b.minutes,
                 color:
                   {
-                    intro: "#8FD8C6",
-                    intentions: "#FFF9F2",
-                    focus: "#9ADEDC",
-                    break: "#FF9F8E",
-                    outro: "#8FD8C6",
-                  }[type] || "#9ADEDC",
+                    intro: "#80DF86",
+                    intentions: "#ADD3FF",
+                    focus: "#4CA0FF",
+                    break: "#F9ADA2",
+                    outro: "#80DF86",
+                  }[type] || "#F63135",
                 type,
               };
             });
