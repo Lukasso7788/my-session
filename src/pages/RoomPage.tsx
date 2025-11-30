@@ -1,4 +1,4 @@
-// FULL UPDATED ROOMPAGE WITH FIXED WELCOME LOOP BEHAVIOR + TOP BAR UI
+// FULL UPDATED ROOMPAGE WITH FIXED WELCOME LOOP BEHAVIOR + NEW DOUBLE-CONTAINER TOP BAR
 
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -10,7 +10,7 @@ import { UserProfileModal } from "../components/UserProfileModal";
 
 type Stage = {
   name: string;
-  duration: number; // minutes
+  duration: number;
   color: string;
   type: "intro" | "intentions" | "focus" | "break" | "outro" | string;
 };
@@ -35,13 +35,11 @@ export function RoomPage() {
 
   const [lastErr, setLastErr] = useState<string>("");
 
-  // ====== SOUND STATE ======
   const prevStageRef = useRef<number>(-1);
   const firstTickDoneRef = useRef<boolean>(false);
   const welcomeLoopRef = useRef<HTMLAudioElement | null>(null);
   const audioUnlockedRef = useRef<boolean>(false);
 
-  // ====== SOUND FILES ======
   const STAGE_SOUND_MAP: Record<string, string> = {
     intentions: "/sounds/intentions.mp3",
     focus: "/sounds/focus.mp3",
@@ -52,7 +50,6 @@ export function RoomPage() {
   const BREAK_END_SOUND = "/sounds/break_end.mp3";
   const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
 
-  // unlock browser autoplay
   useEffect(() => {
     const unlock = () => {
       if (audioUnlockedRef.current) return;
@@ -99,9 +96,7 @@ export function RoomPage() {
     } catch { }
   };
 
-  // ============================================
   // LOAD SESSION
-  // ============================================
   useEffect(() => {
     (async () => {
       if (!id) return;
@@ -163,9 +158,7 @@ export function RoomPage() {
     })();
   }, [id]);
 
-  // ============================================
   // RESOLVE USER NAME
-  // ============================================
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getUser();
@@ -188,7 +181,7 @@ export function RoomPage() {
     })();
   }, []);
 
-  // ====== ATTENDANCE REALTIME ======
+  // REALTIME ATTENDANCE
   useEffect(() => {
     if (!id) return;
 
@@ -206,10 +199,8 @@ export function RoomPage() {
       console.log("Attendance updated:", data);
     };
 
-    // INITIAL LOAD
     fetchAttendance();
 
-    // SUBSCRIBE TO CHANGES IN attendance TABLE
     const sub = supabase
       .channel(`session-${id}`)
       .on(
@@ -232,9 +223,7 @@ export function RoomPage() {
     };
   }, [id]);
 
-  // ============================================
   // DAILY INIT
-  // ============================================
   useEffect(() => {
     if (!session?.daily_room_url || !containerRef.current || !userName) return;
     if (initGuardRef.current) return;
@@ -341,9 +330,7 @@ export function RoomPage() {
     };
   }, [session?.daily_room_url, userName]);
 
-  // ============================================
-  // STAGE TIME CALC + SOUND LOGIC
-  // ============================================
+  // STAGE LOGIC
   const getStageWindows = (startISO: string, items: Stage[]) => {
     const startMs = new Date(startISO).getTime();
     let acc = 0;
@@ -387,7 +374,6 @@ export function RoomPage() {
 
       const stage = stages[active];
 
-      // ===== FIRST TICK =====
       if (!firstTickDoneRef.current) {
         if (stage.type === "intro") startWelcomeLoop();
         else stopWelcomeLoop();
@@ -398,7 +384,6 @@ export function RoomPage() {
         return;
       }
 
-      // ===== STAGE CHANGED =====
       if (prevStageRef.current !== active) {
         const prev = stages[prevStageRef.current];
         const prevType = prev?.type;
@@ -429,9 +414,7 @@ export function RoomPage() {
     return () => clearInterval(timer);
   }, [session?.start_time, stages]);
 
-  // ============================================
   // UI
-  // ============================================
   if (loading)
     return (
       <div className="flex h-screen justify-center items-center text-white bg-[#050F1A]">
@@ -449,62 +432,66 @@ export function RoomPage() {
   return (
     <div className="min-h-screen bg-[#050F1A] text-white flex justify-center">
       <div className="max-w-[1720px] w-full px-5 py-5 space-y-5">
-        {/* TOP BAR CARD */}
-        <div className="rounded-2xl bg-[#1F2937] shadow-lg px-6 py-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between mb-3">
-            {/* Title */}
-            <div>
-              <p className="font-inter font-medium text-[16px] text-[#F3F4F6]/85">
-                {session.title}
-              </p>
-            </div>
 
-            {/* Host badge + timer */}
-            <div className="flex items-center gap-4">
-              {session.host_profile && (
-                <button
-                  onClick={() => setSelectedUser(session.host_profile)}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[#F3F4F6]/60 bg-transparent text-[14px] text-[#F3F4F6]/85 hover:bg-[#111827] transition font-inter"
-                >
-                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#F3F4F6]/10 text-xs text-[#F3F4F6]/85">
-                    👤
+        {/* ============================
+            NEW DOUBLE-CONTAINER TOPBAR
+        ============================ */}
+        <div className="flex w-full rounded-2xl overflow-hidden">
+
+          {/* LEFT MAIN BLOCK (91%) */}
+          <div className="w-[91%] bg-[#1F2937] px-6 py-8 rounded-l-2xl">
+
+            {/* Session Title */}
+            <p className="font-inter font-medium text-[17px] text-[#F3F4F6]/85">
+              {session.title}
+            </p>
+
+            {/* HOST BADGE */}
+            {session.host_profile && (
+              <button
+                onClick={() => setSelectedUser(session.host_profile)}
+                className="mt-4 flex items-center gap-2 px-4 py-1.5 rounded-full border border-[#DBD8D8] bg-transparent text-[14px] text-[#F3F4F6]/85 hover:bg-[#111827] transition font-inter"
+              >
+                <img
+                  src="/icons/host_session_icon.svg"
+                  className="h-5 w-5 opacity-90"
+                />
+
+                <span className="flex items-center gap-1">
+                  <span className="font-normal">Host:</span>
+                  <span className="font-bold">
+                    {session.host_profile.full_name}
                   </span>
-
-                  <span className="flex items-center gap-1">
-                    <span className="font-normal">Host:</span>
-                    <span className="font-bold">
-                      {session.host_profile.full_name || "Host"}
-                    </span>
-                  </span>
-                </button>
-              )}
-
-              <div className="flex items-center gap-3 pl-4 border-l border-[#F3F4F6]/85">
-                <div className="w-[52px] h-[52px] flex items-center justify-center">
-                  <img
-                    src="/icons/session_timer.svg"
-                    alt="Session timer"
-                    className="w-[52px] h-[52px]"
-                  />
-                </div>
-                <span className="font-inter font-normal text-[24px] leading-none text-[#F3F4F6]/85">
-                  {remainingTime || "--:--"}
                 </span>
-              </div>
+              </button>
+            )}
+
+            {/* STAGE BAR */}
+            <div className="mt-6">
+              <SessionStageBar
+                stages={stages}
+                startTime={session.start_time}
+                onHoverStage={setHoveredStage}
+              />
             </div>
           </div>
 
-          <div className="mt-1 bg-[#1F2937] p-4 rounded-2xl border border-[#404651]">
-            <SessionStageBar
-              stages={stages}
-              startTime={session.start_time}
-              onHoverStage={setHoveredStage}
+          {/* RIGHT TIMER BLOCK (9%) */}
+          <div className="w-[9%] bg-[#1F2937] rounded-r-2xl flex flex-col items-center justify-center gap-3">
+            <img
+              src="/icons/session_timer.svg"
+              className="w-[48px] h-[48px]"
             />
+
+            <span className="font-inter text-[26px]">
+              {remainingTime || "--:--"}
+            </span>
           </div>
         </div>
 
         {/* MAIN GRID */}
         <div className="grid lg:grid-cols-[minmax(0,1fr),420px] gap-5">
+
           {/* VIDEO AREA */}
           <div
             className="rounded-2xl bg-[#1F2937] shadow-lg overflow-hidden relative h-[77vh]"
