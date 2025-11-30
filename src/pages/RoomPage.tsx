@@ -1,4 +1,4 @@
-// FULL UPDATED ROOMPAGE WITH FIXED WELCOME LOOP BEHAVIOR + NEW DOUBLE-CONTAINER TOP BAR
+// FULL UPDATED ROOMPAGE WITH FIXED WELCOME LOOP BEHAVIOR + NEW DOUBLE-CONTAINER TOP BAR (REV 2)
 
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -414,7 +414,6 @@ export function RoomPage() {
     return () => clearInterval(timer);
   }, [session?.start_time, stages]);
 
-  // UI
   if (loading)
     return (
       <div className="flex h-screen justify-center items-center text-white bg-[#050F1A]">
@@ -434,37 +433,38 @@ export function RoomPage() {
       <div className="max-w-[1720px] w-full px-5 py-5 space-y-5">
 
         {/* ============================
-            NEW DOUBLE-CONTAINER TOPBAR
+            NEW DOUBLE-CONTAINER TOPBAR (REV 2)
         ============================ */}
         <div className="flex w-full rounded-2xl overflow-hidden">
 
-          {/* LEFT MAIN BLOCK (91%) */}
+          {/* LEFT BLOCK (91%) */}
           <div className="w-[91%] bg-[#1F2937] px-6 py-8 rounded-l-2xl">
 
-            {/* Session Title */}
-            <p className="font-inter font-medium text-[17px] text-[#F3F4F6]/85">
-              {session.title}
-            </p>
+            {/* TITLE + HOST BADGE INLINE */}
+            <div className="flex items-center justify-between w-full">
+              <p className="font-inter font-medium text-[17px] text-[#F3F4F6]/85">
+                {session.title}
+              </p>
 
-            {/* HOST BADGE */}
-            {session.host_profile && (
-              <button
-                onClick={() => setSelectedUser(session.host_profile)}
-                className="mt-4 flex items-center gap-2 px-4 py-1.5 rounded-full border border-[#DBD8D8] bg-transparent text-[14px] text-[#F3F4F6]/85 hover:bg-[#111827] transition font-inter"
-              >
-                <img
-                  src="/icons/host_session_icon.svg"
-                  className="h-5 w-5 opacity-90"
-                />
+              {session.host_profile && (
+                <button
+                  onClick={() => setSelectedUser(session.host_profile)}
+                  className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-[#DBD8D8] bg-transparent text-[14px] text-[#F3F4F6]/85 hover:bg-[#111827] transition font-inter"
+                >
+                  <img
+                    src="/icons/host_session_icon.svg"
+                    className="h-5 w-5 opacity-90"
+                  />
 
-                <span className="flex items-center gap-1">
-                  <span className="font-normal">Host:</span>
-                  <span className="font-bold">
-                    {session.host_profile.full_name}
+                  <span className="flex items-center gap-1">
+                    <span className="font-normal">Host:</span>
+                    <span className="font-bold">
+                      {session.host_profile.full_name}
+                    </span>
                   </span>
-                </span>
-              </button>
-            )}
+                </button>
+              )}
+            </div>
 
             {/* STAGE BAR */}
             <div className="mt-6">
@@ -477,7 +477,7 @@ export function RoomPage() {
           </div>
 
           {/* RIGHT TIMER BLOCK (9%) */}
-          <div className="w-[9%] bg-[#1F2937] rounded-r-2xl flex flex-col items-center justify-center gap-3">
+          <div className="w-[9%] bg-[#1F2937] rounded-r-2xl flex flex-col items-center justify-center gap-3 border-l border-[#D8D8D8]">
             <img
               src="/icons/session_timer.svg"
               className="w-[48px] h-[48px]"
