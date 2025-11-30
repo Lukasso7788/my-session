@@ -114,11 +114,11 @@ export default function RegisterPage() {
             </button>
           </div>
 
-          {/* Sign Up */}
+          {/* MAIN SIGN UP BUTTON */}
           <button
             onClick={handleRegister}
             disabled={loading}
-            className="w-full bg-black text-white py-3 rounded-full font-medium hover:bg-gray-800 transition mb-6"
+            className="w-full bg-black text-white py-3 rounded-[16px] text-[18px] font-semibold hover:bg-gray-800 transition mb-6"
           >
             {loading ? "Creating…" : "Sign Up"}
           </button>
@@ -126,7 +126,7 @@ export default function RegisterPage() {
           {/* Google */}
           <button
             onClick={signupWithGoogle}
-            className="w-full py-3 border border-gray-300 rounded-full flex items-center justify-center gap-3 mb-3 hover:bg-gray-50 transition"
+            className="w-full py-3 border border-gray-300 rounded-[16px] text-[18px] font-semibold flex items-center justify-center gap-3 mb-3 hover:bg-gray-50 transition"
           >
             <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5" />
             Continue with Google
@@ -135,7 +135,7 @@ export default function RegisterPage() {
           {/* Facebook */}
           <button
             onClick={signupWithFacebook}
-            className="w-full py-3 rounded-full flex items-center justify-center gap-3 mb-3 bg-[#1877F2] text-white hover:bg-[#0f66d3] transition"
+            className="w-full py-3 rounded-[16px] text-[18px] font-semibold flex items-center justify-center gap-3 mb-3 bg-[#1877F2] text-white hover:bg-[#0f66d3] transition"
           >
             <img src="https://www.svgrepo.com/show/475647/facebook-color.svg" className="w-5" />
             Continue with Facebook
@@ -143,7 +143,7 @@ export default function RegisterPage() {
 
           {/* Apple */}
           <button
-            className="w-full py-3 rounded-full flex items-center justify-center gap-3 bg-black text-white hover:bg-gray-900 transition"
+            className="w-full py-3 rounded-[16px] text-[18px] font-semibold flex items-center justify-center gap-3 bg-black text-white hover:bg-gray-900 transition"
           >
             <img src="https://www.svgrepo.com/show/303128/apple-logo.svg" className="w-5 invert" />
             Continue with Apple
@@ -160,7 +160,6 @@ export default function RegisterPage() {
           </p>
 
         </div>
-
       </div>
     </div>
   );
