@@ -19,12 +19,14 @@ export default function ProfilePage() {
 
   const [editButtonHover, setEditButtonHover] = useState(false);
 
-  // 1. Redirect when not logged in
+  const brandBlack = "#2F2F2F";
+
+  // Redirect
   useEffect(() => {
     if (!loading && !user) navigate("/login", { replace: true });
   }, [loading, user, navigate]);
 
-  // 2. Загрузка данных (ВОССТАНОВЛЕНО 1:1, КАК БЫЛО РАНЬШЕ)
+  // Load profile
   useEffect(() => {
     if (!user) return;
 
@@ -50,7 +52,7 @@ export default function ProfilePage() {
     loadBio();
   }, [user, profile]);
 
-  // 3. Загрузка даты регистрации (created_at) — отдельный эффект
+  // Load created_at
   useEffect(() => {
     if (!user) return;
 
@@ -69,7 +71,7 @@ export default function ProfilePage() {
     loadCreatedAt();
   }, [user]);
 
-  // 4. Upload avatar
+  // Upload avatar
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
       const file = e.target.files?.[0];
@@ -110,7 +112,7 @@ export default function ProfilePage() {
     }
   };
 
-  // 5. SAVE PROFILE
+  // Save
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
@@ -140,8 +142,7 @@ export default function ProfilePage() {
     }
   };
 
-  // RENDER
-
+  // Loading
   if (loading) {
     return (
       <>
@@ -177,11 +178,11 @@ export default function ProfilePage() {
       <Header />
 
       <main className="w-full px-8 pt-10 pb-24 font-inter text-gray-900">
-        {/* Back / Edit */}
+        {/* Header buttons */}
         <div className="flex items-center justify-between mb-10">
           <button
             onClick={() => navigate(-1)}
-            className="text-sm text-gray-600 hover:text-black flex items-center gap-2"
+            className="text-[16px] text-[#2F2F2F] hover:text-black flex items-center gap-2"
           >
             ← Back
           </button>
@@ -191,12 +192,19 @@ export default function ProfilePage() {
             onMouseEnter={() => setEditButtonHover(true)}
             onMouseLeave={() => setEditButtonHover(false)}
             disabled={saving}
-            className="inline-flex items-center gap-2 px-5 py-2 rounded-full border border-gray-300 bg-white text-sm font-medium text-[#111827] hover:bg-[#2F2F2F] hover:text-white hover:border-[#2F2F2F] transition disabled:opacity-60 disabled:cursor-not-allowed"
+            className="
+            inline-flex items-center gap-2 px-6 py-2 rounded-full
+            border border-[#2F2F2F]
+            text-[16px] font-normal text-[#2F2F2F]
+            hover:bg-[#2F2F2F] hover:text-white
+            hover:border-[#2F2F2F]
+            transition disabled:opacity-60 disabled:cursor-not-allowed
+          "
           >
             <img
               src={actionIconSrc}
               alt={editMode ? "Save changes" : "Edit profile"}
-              className="w-4 h-4"
+              className="w-6 h-6"
             />
             <span>{actionLabel}</span>
           </button>
@@ -229,7 +237,10 @@ export default function ProfilePage() {
             )}
           </div>
 
-          <h1 className="text-3xl font-bold mt-4">{displayName}</h1>
+          {/* NAME */}
+          <h1 className="font-inter font-bold text-[32px] text-[#2F2F2F] mt-4">
+            {displayName}
+          </h1>
 
           <div className="flex items-center gap-6 mt-2 text-sm">
             {/* Created date */}
@@ -237,9 +248,9 @@ export default function ProfilePage() {
               <img
                 src="/icons/date_profile.svg"
                 alt="Account creation date"
-                className="w-[16px] h-[16px]"
+                className="w-[24px] h-[24px]"
               />
-              <span className="text-[14px] font-light text-[#F3F4F6]/70">
+              <span className="text-[14px] font-light text-[#2F2F2F]">
                 Since {createdAt}
               </span>
             </span>
@@ -249,9 +260,9 @@ export default function ProfilePage() {
               <img
                 src="/icons/session_count.svg"
                 alt="Total hosted sessions"
-                className="w-[16px] h-[16px]"
+                className="w-[24px] h-[24px]"
               />
-              <span className="text-[14px] font-medium text-[#F3F4F6]/90">
+              <span className="text-[14px] font-bold text-[#2F2F2F]">
                 {totalSessions} sessions
               </span>
             </span>
@@ -269,7 +280,10 @@ export default function ProfilePage() {
             <textarea
               value={bio}
               onChange={(e) => setBio(e.target.value)}
-              className="w-full border border-gray-300 p-4 rounded-xl focus:ring-2 focus:ring-black outline-none transition"
+              className="
+              w-full border border-gray-300 p-4 rounded-xl
+              focus:ring-2 focus:ring-black outline-none transition
+            "
               rows={4}
               placeholder="Tell us about yourself..."
             />
