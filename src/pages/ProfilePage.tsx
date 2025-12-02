@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import Header from "../components/Header";
 import { useAuth } from "../context/AuthContext";
-import { Calendar, Users } from "lucide-react";
 
 export default function ProfilePage() {
   const navigate = useNavigate();
@@ -17,6 +16,8 @@ export default function ProfilePage() {
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+
+  const [editButtonHover, setEditButtonHover] = useState(false);
 
   // 1. Redirect when not logged in
   useEffect(() => {
@@ -157,11 +158,25 @@ export default function ProfilePage() {
   const displayName = fullName || "User";
   const totalSessions = profile?.total_sessions ?? 0;
 
+  const actionIconSrc = !editMode
+    ? editButtonHover
+      ? "/icons/edit_profile_hover.svg"
+      : "/icons/edit_profile.svg"
+    : editButtonHover
+      ? "/icons/save_changes_hover.svg"
+      : "/icons/save_changes.svg";
+
+  const actionLabel = editMode
+    ? saving
+      ? "Saving..."
+      : "Save changes"
+    : "Edit profile";
+
   return (
     <>
       <Header />
 
-      <main className="w-full px-6 pt-10 pb-24 font-inter text-gray-900">
+      <main className="w-full px-8 pt-10 pb-24 font-inter text-gray-900">
         {/* Back / Edit */}
         <div className="flex items-center justify-between mb-10">
           <button
@@ -172,10 +187,18 @@ export default function ProfilePage() {
           </button>
 
           <button
-            onClick={() => setEditMode(!editMode)}
-            className="px-5 py-2 border border-gray-300 rounded-full hover:bg-gray-50 transition text-sm font-medium flex items-center gap-2"
+            onClick={editMode ? handleSave : () => setEditMode(true)}
+            onMouseEnter={() => setEditButtonHover(true)}
+            onMouseLeave={() => setEditButtonHover(false)}
+            disabled={saving}
+            className="inline-flex items-center gap-2 px-5 py-2 rounded-full border border-gray-300 bg-white text-sm font-medium text-[#111827] hover:bg-[#2F2F2F] hover:text-white hover:border-[#2F2F2F] transition disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            ✏️ Edit profile
+            <img
+              src={actionIconSrc}
+              alt={editMode ? "Save changes" : "Edit profile"}
+              className="w-4 h-4"
+            />
+            <span>{actionLabel}</span>
           </button>
         </div>
 
@@ -208,7 +231,7 @@ export default function ProfilePage() {
 
           <h1 className="text-3xl font-bold mt-4">{displayName}</h1>
 
-          <div className="flex items-center gap-6 mt-2 text-gray-600 text-sm">
+          <div className="flex items-center gap-6 mt-2 text-sm">
             {/* Created date */}
             <span className="flex items-center gap-2">
               <img
@@ -216,7 +239,9 @@ export default function ProfilePage() {
                 alt="Account creation date"
                 className="w-[16px] h-[16px]"
               />
-              <span>Since {createdAt}</span>
+              <span className="text-[14px] font-light text-[#F3F4F6]/70">
+                Since {createdAt}
+              </span>
             </span>
 
             {/* Session count */}
@@ -226,7 +251,9 @@ export default function ProfilePage() {
                 alt="Total hosted sessions"
                 className="w-[16px] h-[16px]"
               />
-              <span>{totalSessions} sessions</span>
+              <span className="text-[14px] font-medium text-[#F3F4F6]/90">
+                {totalSessions} sessions
+              </span>
             </span>
           </div>
         </div>
@@ -254,19 +281,6 @@ export default function ProfilePage() {
             </p>
           )}
         </section>
-
-        {/* Save */}
-        {editMode && (
-          <div className="mt-6 flex justify-end">
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="px-8 py-3 bg-black text-white rounded-full hover:bg-gray-800 disabled:opacity-50 transition font-medium shadow"
-            >
-              {saving ? "Saving..." : "Save Changes"}
-            </button>
-          </div>
-        )}
 
         {/* Divider */}
         <div className="mt-16 border-t border-gray-200" />
