@@ -19,6 +19,9 @@ export default function ProfilePage() {
 
   const [editButtonHover, setEditButtonHover] = useState(false);
 
+  // NEW: sessions of the host
+  const [sessions, setSessions] = useState<any[]>([]);
+
   const brandBlack = "#2F2F2F";
 
   // Redirect
@@ -70,6 +73,23 @@ export default function ProfilePage() {
 
     loadCreatedAt();
   }, [user]);
+
+  // NEW: load hosted sessions
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const loadSessions = async () => {
+      const { data, error } = await supabase
+        .from("sessions")
+        .select("id, title, created_at")
+        .eq("host_id", user.id)
+        .order("created_at", { ascending: false });
+
+      if (!error && data) setSessions(data);
+    };
+
+    loadSessions();
+  }, [user?.id]);
 
   // Upload avatar
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -193,13 +213,13 @@ export default function ProfilePage() {
             onMouseLeave={() => setEditButtonHover(false)}
             disabled={saving}
             className="
-            inline-flex items-center gap-2 px-6 py-2 rounded-full
-            border border-[#2F2F2F]
-            text-[16px] font-normal text-[#2F2F2F]
-            hover:bg-[#2F2F2F] hover:text-white
-            hover:border-[#2F2F2F]
-            transition disabled:opacity-60 disabled:cursor-not-allowed
-          "
+              inline-flex items-center gap-2 px-6 py-2 rounded-full
+              border border-[#2F2F2F]
+              text-[16px] font-normal text-[#2F2F2F]
+              hover:bg-[#2F2F2F] hover:text-white
+              hover:border-[#2F2F2F]
+              transition disabled:opacity-60 disabled:cursor-not-allowed
+            "
           >
             <img
               src={actionIconSrc}
@@ -281,9 +301,9 @@ export default function ProfilePage() {
               value={bio}
               onChange={(e) => setBio(e.target.value)}
               className="
-              w-full border border-gray-300 p-4 rounded-xl
-              focus:ring-2 focus:ring-black outline-none transition
-            "
+                w-full border border-gray-300 p-4 rounded-xl
+                focus:ring-2 focus:ring-black outline-none transition
+              "
               rows={4}
               placeholder="Tell us about yourself..."
             />
@@ -299,26 +319,38 @@ export default function ProfilePage() {
         {/* Divider */}
         <div className="mt-16 border-t border-gray-200" />
 
-        {/* Hosted sessions */}
+        {/* ==== Hosted Sessions ==== */}
         <section className="mt-10">
-          <h2 className="text-xl font-bold mb-6">
-            Current hosted & upcoming sessions:
+          <h2 className="text-xl font-bold mb-6 text-[#2F2F2F]">
+            Hosted Sessions
           </h2>
 
-          <div className="space-y-3">
-            {[1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="bg-gray-50 rounded-xl px-5 py-3 flex items-center justify-between"
-              >
-                <span className="text-gray-800 text-sm">
-                  ☕ 25/5 pomodoro – 2 hour focus session
-                </span>
-
-                <span className="text-gray-500 text-xs">12.11.2025</span>
-              </div>
-            ))}
-          </div>
+          {sessions.length === 0 ? (
+            <p className="text-slate-500 text-sm text-center">
+              No sessions hosted yet.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {sessions.map((s) => (
+                <div
+                  key={s.id}
+                  onClick={() => navigate(`/room/${s.id}`)}
+                  className="
+                    bg-gray-50 rounded-xl px-5 py-3
+                    flex items-center justify-between
+                    hover:bg-gray-100 transition cursor-pointer
+                  "
+                >
+                  <span className="text-[14px] text-gray-800">
+                    {s.title}
+                  </span>
+                  <span className="text-[12px] text-gray-500">
+                    {new Date(s.created_at).toLocaleDateString()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
       </main>
     </>
