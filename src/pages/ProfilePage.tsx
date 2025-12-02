@@ -209,12 +209,24 @@ export default function ProfilePage() {
           <h1 className="text-3xl font-bold mt-4">{displayName}</h1>
 
           <div className="flex items-center gap-6 mt-2 text-gray-600 text-sm">
-            <span className="flex items-center gap-1">
-              <Calendar size={16} /> Since {createdAt}
+            {/* Created date */}
+            <span className="flex items-center gap-2">
+              <img
+                src="/icons/date_profile.svg"
+                alt="Account creation date"
+                className="w-[16px] h-[16px]"
+              />
+              <span>Since {createdAt}</span>
             </span>
 
-            <span className="flex items-center gap-1">
-              <Users size={16} /> {totalSessions} sessions
+            {/* Session count */}
+            <span className="flex items-center gap-2">
+              <img
+                src="/icons/session_count.svg"
+                alt="Total hosted sessions"
+                className="w-[16px] h-[16px]"
+              />
+              <span>{totalSessions} sessions</span>
             </span>
           </div>
         </div>
