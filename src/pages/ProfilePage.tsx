@@ -262,7 +262,7 @@ export default function ProfilePage() {
                 alt="Total hosted sessions"
                 className="w-[24px] h-[24px]"
               />
-              <span className="text-[14px] font-bold text-[#2F2F2F]">
+              <span className="text-[14px] font-medium text-[#2F2F2F]">
                 {totalSessions} sessions
               </span>
             </span>
