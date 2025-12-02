@@ -19,10 +19,53 @@ export default function ProfilePage() {
 
   const [editButtonHover, setEditButtonHover] = useState(false);
 
-  // NEW: sessions of the host
+  // Sessions of host
   const [sessions, setSessions] = useState<any[]>([]);
 
   const brandBlack = "#2F2F2F";
+
+  // === STATUS BADGES ===
+  const getSessionStatus = (session: any) => {
+    if (!session.start_time) return null;
+
+    const now = Date.now();
+    const start = new Date(session.start_time).getTime();
+
+    let durationMinutes = 0;
+
+    if (session.schedule) {
+      try {
+        const parsed =
+          typeof session.schedule === "string"
+            ? JSON.parse(session.schedule)
+            : session.schedule;
+
+        durationMinutes = parsed.reduce(
+          (sum: number, block: any) => sum + (block.minutes || 0),
+          0
+        );
+      } catch { }
+    }
+
+    const end = start + durationMinutes * 60 * 1000;
+
+    if (now < start) return "Upcoming";
+    if (now >= start && now <= end) return "Live";
+    return "Finished";
+  };
+
+  const getBadgeClass = (status: string) => {
+    switch (status) {
+      case "Upcoming":
+        return "px-2 py-0.5 text-[11px] rounded-full bg-[#DBEAFE] text-[#1D4ED8]";
+      case "Live":
+        return "px-2 py-0.5 text-[11px] rounded-full bg-[#DCFCE7] text-[#15803D]";
+      case "Finished":
+        return "px-2 py-0.5 text-[11px] rounded-full bg-[#E5E7EB] text-[#374151]";
+      default:
+        return "";
+    }
+  };
 
   // Redirect
   useEffect(() => {
@@ -74,14 +117,14 @@ export default function ProfilePage() {
     loadCreatedAt();
   }, [user]);
 
-  // NEW: load hosted sessions
+  // Load hosted sessions
   useEffect(() => {
     if (!user?.id) return;
 
     const loadSessions = async () => {
       const { data, error } = await supabase
         .from("sessions")
-        .select("id, title, created_at")
+        .select("id, title, start_time, schedule, created_at")
         .eq("host_id", user.id)
         .order("created_at", { ascending: false });
 
@@ -132,7 +175,7 @@ export default function ProfilePage() {
     }
   };
 
-  // Save
+  // Save profile
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
@@ -162,7 +205,7 @@ export default function ProfilePage() {
     }
   };
 
-  // Loading
+  // Loading state
   if (loading) {
     return (
       <>
@@ -331,24 +374,37 @@ export default function ProfilePage() {
             </p>
           ) : (
             <div className="space-y-3">
-              {sessions.map((s) => (
-                <div
-                  key={s.id}
-                  onClick={() => navigate(`/room/${s.id}`)}
-                  className="
-                    bg-gray-50 rounded-xl px-5 py-3
-                    flex items-center justify-between
-                    hover:bg-gray-100 transition cursor-pointer
-                  "
-                >
-                  <span className="text-[14px] text-gray-800">
-                    {s.title}
-                  </span>
-                  <span className="text-[12px] text-gray-500">
-                    {new Date(s.created_at).toLocaleDateString()}
-                  </span>
-                </div>
-              ))}
+              {sessions.map((s) => {
+                const status = getSessionStatus(s);
+
+                return (
+                  <div
+                    key={s.id}
+                    onClick={() => navigate(`/room/${s.id}`)}
+                    className="
+                      bg-gray-50 rounded-xl px-5 py-3
+                      flex items-center justify-between
+                      hover:bg-gray-100 transition cursor-pointer
+                    "
+                  >
+                    <span className="text-[14px] text-gray-800">
+                      {s.title}
+                    </span>
+
+                    <div className="flex items-center gap-3">
+                      <span className="text-[12px] text-gray-500">
+                        {new Date(s.created_at).toLocaleDateString()}
+                      </span>
+
+                      {status && (
+                        <span className={getBadgeClass(status)}>
+                          {status}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>
