@@ -24,7 +24,7 @@ export default function Header() {
         <header className="border-b border-borderGray bg-white sticky top-0 z-30">
             <div className="w-full px-5 md:px-8 py-5 flex items-center justify-between gap-3">
 
-                {/* LEFT NAV (visible >=1024px) */}
+                {/* LEFT NAV (only on >=1024px) */}
                 <nav className="hidden lg:flex items-center gap-6 flex-1 text-sm text-[#2E2E2E]">
                     <button
                         onClick={() => navigate("/sessions")}
@@ -32,19 +32,12 @@ export default function Header() {
                     >
                         Sessions
                     </button>
-
                     <button className="hover:text-brandBlack">Pricing</button>
-
                     <button className="hover:text-brandBlack">Latest updates</button>
                 </nav>
 
-                {/* LOGO — always left on <1024px, center >=1024px */}
-                <div
-                    className={`flex-1 flex ${
-                        // <1024px → left, >=1024px → center
-                        "justify-start lg:justify-center"
-                        }`}
-                >
+                {/* LOGO */}
+                <div className="flex-1 flex justify-start lg:justify-center">
                     <button
                         onClick={() => navigate("/")}
                         className="text-[28px] md:text-4xl font-extrabold text-brandBlack hover:opacity-80 transition"
@@ -58,44 +51,30 @@ export default function Header() {
                     {loading ? (
                         <div className="text-sm text-gray-500">Checking session...</div>
                     ) : !user ? (
-                        <>
-                            {/* -------- WHEN NO USER -------- */}
-                            <div className="hidden sm:flex gap-3">
-                                <button
-                                    onClick={() => navigate("/login")}
-                                    className="px-4 py-2 rounded-full border border-borderGray text-sm hover:bg-slate-50"
-                                >
-                                    Log in
-                                </button>
-
-                                <button
-                                    onClick={() => navigate("/register")}
-                                    className="px-4 py-2 rounded-full bg-brandBlack text-white text-sm font-medium hover:bg-brandBlack"
-                                >
-                                    Sign up
-                                </button>
-                            </div>
-
-                            {/* burger shown always below lg */}
+                        <div className="hidden sm:flex gap-3">
                             <button
-                                onClick={() => setMobileMenu(true)}
-                                className="lg:hidden flex items-center p-2"
+                                onClick={() => navigate("/login")}
+                                className="px-4 py-2 rounded-full border border-borderGray text-sm hover:bg-slate-50"
                             >
-                                <img src="/icons/burger-menu.svg" className="w-7 h-7" />
+                                Log in
                             </button>
-                        </>
+
+                            <button
+                                onClick={() => navigate("/register")}
+                                className="px-4 py-2 rounded-full bg-brandBlack text-white hover:bg-brandBlack text-sm font-medium"
+                            >
+                                Sign up
+                            </button>
+                        </div>
                     ) : (
                         <>
-                            {/* CREATE SESSION - SHOW TEXT ALWAYS BELOW 1024px */}
+                            {/* CREATE SESSION: only from ≥768px */}
                             <button
-                                onClick={() => {
-                                    if (DEBUG) console.log("[DEBUG Header] Opening create modal");
-                                    modal.open();
-                                }}
+                                onClick={() => modal.open()}
                                 onMouseEnter={() => setHoverCreate(true)}
                                 onMouseLeave={() => setHoverCreate(false)}
                                 className={`
-                  inline-flex items-center gap-2 px-4 md:px-6 py-2 md:py-3 rounded-full
+                  hidden md:inline-flex items-center gap-2 px-6 py-3 rounded-full
                   border text-base font-medium transition-colors duration-200
                   border-[#2F2F2F]
                   ${hoverCreate ? "bg-[#2F2F2F] text-white" : "hover:bg-slate-50"}
@@ -112,18 +91,20 @@ export default function Header() {
                                 <span>Create a session</span>
                             </button>
 
-                            {/* AVATAR */}
-                            <button
-                                onClick={() => setShowUserMenu((v) => !v)}
-                                className="hidden sm:flex items-center"
-                            >
-                                <img
-                                    src={avatarSrc}
-                                    className="w-[42px] h-[42px] md:w-[50px] md:h-[50px] rounded-full border border-borderGray object-cover"
-                                />
-                            </button>
+                            {/* AVATAR (always from ≥360px in your mockup) */}
+                            {user && (
+                                <button
+                                    onClick={() => setShowUserMenu((v) => !v)}
+                                    className="hidden sm:flex items-center"
+                                >
+                                    <img
+                                        src={avatarSrc}
+                                        className="w-[42px] h-[42px] md:w-[50px] md:h-[50px] rounded-full border border-borderGray object-cover"
+                                    />
+                                </button>
+                            )}
 
-                            {/* BURGER (only <1024px) */}
+                            {/* BURGER (hidden only on ≥1024px) */}
                             <button
                                 onClick={() => setMobileMenu(true)}
                                 className="lg:hidden flex items-center p-2"
@@ -131,7 +112,7 @@ export default function Header() {
                                 <img src="/icons/burger-menu.svg" className="w-7 h-7" />
                             </button>
 
-                            {/* USER MENU (desktop) */}
+                            {/* Desktop User Menu */}
                             {showUserMenu && (
                                 <div className="hidden sm:block absolute right-0 top-14 w-48 bg-white rounded-xl shadow-lg border border-borderGray z-40">
                                     <button
@@ -161,13 +142,11 @@ export default function Header() {
                 </div>
             </div>
 
-            {/* --------- FULL-SCREEN MOBILE MENU --------- */}
+            {/* FULL-SCREEN MENU */}
             {mobileMenu && (
-                <div className="fixed inset-0 w-full h-full z-50 bg-white max-h-screen overflow-y-auto animate-fadeIn">
-                    {/* TOP BAR */}
+                <div className="fixed inset-0 z-50 bg-white w-full max-w-full h-screen overflow-y-auto animate-fadeIn">
                     <div className="flex justify-between items-center px-5 py-4 border-b border-borderGray">
                         <span className="text-xl font-bold">Menu</span>
-
                         <button
                             onClick={() => setMobileMenu(false)}
                             className="p-2"
@@ -176,7 +155,6 @@ export default function Header() {
                         </button>
                     </div>
 
-                    {/* CONTENT */}
                     <div className="flex flex-col gap-6 p-6 text-lg text-brandBlack">
                         <button
                             onClick={() => {
@@ -192,6 +170,7 @@ export default function Header() {
 
                         {user && (
                             <>
+                                {/* Create always available in menu */}
                                 <button
                                     onClick={() => {
                                         modal.open();
