@@ -243,7 +243,7 @@ export default function SessionCard({
                 </div>
 
                 {/* divider + attendance */}
-                <div className="flex max-[480px]:hidden items-center gap-6 md:gap-8">
+                <div className="flex max-[480px]:hidden xl:hidden items-center gap-6 md:gap-8">
                     <div className="w-px h-10 bg-[#D9D9D9]" />
                     <div className="text-center">
                         <div className="text-[32px] font-bold text-brandBlack">
