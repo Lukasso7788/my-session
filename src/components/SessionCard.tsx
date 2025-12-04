@@ -1,10 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
-//──────────────────────────────────────────────────────────────
-// TYPES
-//──────────────────────────────────────────────────────────────
-
 interface SessionCardProps {
     session: any;
     userId?: string;
@@ -13,10 +9,6 @@ interface SessionCardProps {
     onJoin: (sessionId: string) => void;
     onDelete: (sessionId: string) => void;
 }
-
-//──────────────────────────────────────────────────────────────
-// COMPONENT
-//──────────────────────────────────────────────────────────────
 
 export default function SessionCard({
     session,
@@ -40,14 +32,9 @@ export default function SessionCard({
     const [isHoveringJoin, setIsHoveringJoin] = useState(false);
     const [isHoveringCard, setIsHoveringCard] = useState(false);
 
-    // Sync booking state
     useEffect(() => {
         setIsBookingConfirmed(initialIsBooked);
     }, [session.id, initialIsBooked]);
-
-    //──────────────────────────────────────────────────────────
-    // TYPE mapping
-    //──────────────────────────────────────────────────────────
 
     const nameToTypeMap: Record<string, string> = {
         "1 Hour — Pomodoro 15/3": "Short sprints",
@@ -87,9 +74,6 @@ export default function SessionCard({
         icon: "/icons/deepwork.svg",
     };
 
-    //──────────────────────────────────────────────────────────
-    // Date
-    //──────────────────────────────────────────────────────────
     const startDateString = session.start_time
         ? new Date(session.start_time).toLocaleString("en-US", {
             month: "short",
@@ -99,17 +83,9 @@ export default function SessionCard({
         })
         : "";
 
-    //──────────────────────────────────────────────────────────
-    // Attendance
-    //──────────────────────────────────────────────────────────
-
     const attendanceCount = new Set(
         (session.session_attendance || []).map((a: any) => a.user_id)
     ).size;
-
-    //──────────────────────────────────────────────────────────
-    // ACTION handlers
-    //──────────────────────────────────────────────────────────
 
     const handleBookSession = () => {
         onBook(session.id);
@@ -122,10 +98,6 @@ export default function SessionCard({
         setIsBookingConfirmed(false);
         setIsHoveringCancel(false);
     };
-
-    //──────────────────────────────────────────────────────────
-    // BUTTONS
-    //──────────────────────────────────────────────────────────
 
     const bookSessionButton = (
         <button
@@ -186,10 +158,6 @@ export default function SessionCard({
         </>
     );
 
-    //──────────────────────────────────────────────────────────
-    // RETURN
-    //──────────────────────────────────────────────────────────
-
     return (
         <div
             onMouseEnter={() => setIsHoveringCard(true)}
@@ -198,70 +166,73 @@ export default function SessionCard({
                 border border-borderGray rounded-[42px] bg-white relative
                 transition-all duration-200 
                 hover:bg-[#F6F6F6] hover:border-[#A3A3A3]
-                flex flex-col md:flex-row justify-between gap-6
+                flex flex-col gap-6
                 p-6 sm:p-8
             "
         >
-            {/* LEFT: title + info */}
-            <div className="flex flex-col flex-1 gap-3">
-                <h3 className="text-[29px] font-bold leading-tight">
-                    {session.title}
-                </h3>
+            {/* ROW: info + attendance */}
+            <div className="
+                flex flex-col lg:flex-row justify-between
+                items-start lg:items-center
+                gap-6 w-full
+            ">
+                {/* LEFT: title + info */}
+                <div className="flex flex-col flex-1 gap-3">
+                    <h3 className="text-[29px] font-bold leading-tight">
+                        {session.title}
+                    </h3>
 
-                {/* Session info */}
-                <div className="flex flex-wrap items-center gap-4 text-[12px] text-[#606060]">
-                    <Link
-                        to={`/profile/${session.host_id}`}
-                        className="flex items-center gap-1 hover:opacity-70"
-                    >
-                        <img src="/icons/host.svg" className="w-4 h-4 opacity-70" />
-                        <span>Host</span>
-                        <span className="underline underline-offset-2">
-                            {session.host_name}
-                        </span>
-                    </Link>
+                    <div className="
+                        flex flex-wrap items-center gap-4
+                        text-[12px] text-[#606060]
+                    ">
+                        <Link
+                            to={`/profile/${session.host_id}`}
+                            className="flex items-center gap-1 hover:opacity-70"
+                        >
+                            <img src="/icons/host.svg" className="w-4 h-4 opacity-70" />
+                            <span>Host</span>
+                            <span className="underline underline-offset-2">
+                                {session.host_name}
+                            </span>
+                        </Link>
 
-                    <div className="flex items-center gap-1">
-                        <img src="/icons/duration.svg" className="w-4 h-4 opacity-70" />
-                        <span>{session.duration_minutes} min</span>
-                    </div>
+                        <div className="flex items-center gap-1">
+                            <img src="/icons/duration.svg" className="w-4 h-4 opacity-70" />
+                            <span>{session.duration_minutes} min</span>
+                        </div>
 
-                    <div className="flex items-center gap-1">
-                        <img src="/icons/date.svg" className="w-4 h-4 opacity-70" />
-                        <span>{startDateString}</span>
-                    </div>
+                        <div className="flex items-center gap-1">
+                            <img src="/icons/date.svg" className="w-4 h-4 opacity-70" />
+                            <span>{startDateString}</span>
+                        </div>
 
-                    {/* Tag */}
-                    <div
-                        className="inline-flex items-center gap-1 px-3 py-1 rounded-full border transition-all duration-200"
-                        style={{
-                            backgroundColor: isHoveringCard ? t.color : t.bg,
-                            color: isHoveringCard ? "white" : t.color,
-                            borderColor: t.color,
-                            fontSize: 10,
-                            fontWeight: 500,
-                        }}
-                    >
-                        <img
-                            src={
-                                isHoveringCard
-                                    ? t.icon.replace(".svg", "-white.svg")
-                                    : t.icon
-                            }
-                            className="w-4 h-4"
-                        />
-                        {resolvedType}
+                        {/* Type tag */}
+                        <div
+                            className="inline-flex items-center gap-1 px-3 py-1 rounded-full border transition-all duration-200"
+                            style={{
+                                backgroundColor: isHoveringCard ? t.color : t.bg,
+                                color: isHoveringCard ? "white" : t.color,
+                                borderColor: t.color,
+                                fontSize: 10,
+                                fontWeight: 500,
+                            }}
+                        >
+                            <img
+                                src={
+                                    isHoveringCard
+                                        ? t.icon.replace(".svg", "-white.svg")
+                                        : t.icon
+                                }
+                                className="w-4 h-4"
+                            />
+                            {resolvedType}
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            {/* RIGHT: attendance + buttons */}
-            <div className="
-                flex flex-col md:flex-row items-start md:items-center
-                gap-6 md:gap-8 flex-1 md:flex-none
-            ">
-                {/* separator + attendance */}
-                <div className="flex items-center gap-6 md:gap-8">
+                {/* RIGHT: ONLY ATTENDANCE */}
+                <div className="flex items-center gap-6 md:gap-8 shrink-0">
                     <div className="w-px h-16 bg-[#D9D9D9]" />
 
                     <div className="text-center">
@@ -273,59 +244,63 @@ export default function SessionCard({
                         </div>
                     </div>
                 </div>
-
-                {/* BUTTONS */}
-                <div className="
-                    session-actions flex items-center gap-2
-                    flex-wrap md:flex-nowrap
-                    w-full md:w-auto
-                ">
-                    {isBookingConfirmed ? confirmedBookingButton : bookSessionButton}
-
-                    <button
-                        onClick={() => onJoin(session.id)}
-                        onMouseEnter={() => setIsHoveringJoin(true)}
-                        onMouseLeave={() => setIsHoveringJoin(false)}
-                        className={`
-                            rounded-full px-6 py-3 text-[14px] font-semibold
-                            transition-colors duration-150
-                            w-full sm:w-auto
-                            ${isHoveringJoin
-                                ? "text-white"
-                                : "bg-brandBlack text-white hover:bg-black"
-                            }
-                        `}
-                        style={{
-                            backgroundColor: isHoveringJoin ? t.color : undefined,
-                        }}
-                    >
-                        Join session
-                    </button>
-
-                    {isHost && (
-                        <button
-                            onClick={() => onDelete(session.id)}
-                            className="
-                                h-10 w-10 rounded-full bg-[#FEE2E2]
-                                flex items-center justify-center
-                                hover:bg-[#FECACA]
-                            "
-                        >
-                            <img src="/icons/cross-cancel.svg" className="w-6 h-6" />
-                        </button>
-                    )}
-                </div>
             </div>
 
-            {/* MOBILE BREAKS FIX */}
+            {/* BUTTONS */}
+            <div className="
+                session-actions
+                flex items-center gap-2
+                flex-wrap md:flex-nowrap
+                w-full
+            ">
+                {isBookingConfirmed ? confirmedBookingButton : bookSessionButton}
+
+                {/* JOIN */}
+                <button
+                    onClick={() => onJoin(session.id)}
+                    onMouseEnter={() => setIsHoveringJoin(true)}
+                    onMouseLeave={() => setIsHoveringJoin(false)}
+                    className={`
+                        rounded-full px-6 py-3 text-[14px] font-semibold
+                        transition-colors duration-150
+                        w-full sm:w-auto
+                        ${isHoveringJoin
+                            ? "text-white"
+                            : "bg-brandBlack text-white hover:bg-black"
+                        }
+                    `}
+                    style={{
+                        backgroundColor: isHoveringJoin ? t.color : undefined,
+                    }}
+                >
+                    Join session
+                </button>
+
+                {/* DELETE */}
+                {isHost && (
+                    <button
+                        onClick={() => onDelete(session.id)}
+                        className="
+                            h-10 w-10 rounded-full bg-[#FEE2E2]
+                            flex items-center justify-center
+                            hover:bg-[#FECACA]
+                            shrink-0
+                        "
+                    >
+                        <img src="/icons/cross-cancel.svg" className="w-6 h-6" />
+                    </button>
+                )}
+            </div>
+
+            {/* MOBILE STYLE ADJUSTMENTS */}
             <style>{`
                 @media (max-width: 480px) {
                     .session-actions {
                         flex-direction: column !important;
                         align-items: stretch !important;
                         width: 100%;
+                        gap: 8px !important;
                     }
-
                     .session-actions > button {
                         width: 100% !important;
                     }
