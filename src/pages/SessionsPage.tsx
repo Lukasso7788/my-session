@@ -227,7 +227,7 @@ export function SessionsPage() {
             />
           </div>
 
-          <div className="border border-[#DBD8D8] rounded-2xl p-8">
+          <div className="border border-[#DBD8D8] rounded-[24px] p-8">
             {isLoading ? (
               <div className="text-center py-12">
                 <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-brandBlack" />
