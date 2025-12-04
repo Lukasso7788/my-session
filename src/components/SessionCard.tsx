@@ -103,8 +103,9 @@ export default function SessionCard({
             onMouseEnter={() => setIsHoveringBook(true)}
             onMouseLeave={() => setIsHoveringBook(false)}
             className={`
+                flex items-center justify-center
                 rounded-full px-6 py-3 text-[14px] font-semibold
-                flex items-center gap-2 transition-all duration-150
+                gap-2 transition-all duration-150
                 ${isHoveringBook
                     ? "text-[#65D46C] border border-[#65D46C] bg-[#65D46C]/10"
                     : "border border-brandBlack text-brandBlack bg-white"
@@ -129,7 +130,8 @@ export default function SessionCard({
             onMouseEnter={() => setIsHoveringCancel(true)}
             onMouseLeave={() => setIsHoveringCancel(false)}
             className={`
-                rounded-full py-3 text-[14px] font-semibold flex items-center justify-center
+                flex items-center justify-center
+                rounded-full py-3 text-[14px] font-semibold
                 transition-all duration-150 ease-in-out
                 ${isHoveringCancel
                     ? "border border-[#F65252] bg-[#F65252]/5 text-[#F65252] px-6"
@@ -159,20 +161,17 @@ export default function SessionCard({
                 border border-borderGray rounded-[42px] bg-white
                 transition-all duration-200
                 hover:bg-[#F6F6F6] hover:border-[#A3A3A3]
-                p-6 lg:p-8
-                flex flex-col lg:flex-row w-full gap-6
-          "
+                p-6 xl:p-8
+                flex flex-col xl:flex-row w-full gap-6
+            "
         >
-            {/* LEFT BLOCK (Session info + type badge) */}
-            <div className="flex flex-col gap-3 lg:flex-1">
+            {/* LEFT BLOCK */}
+            <div className="flex flex-col gap-3 xl:flex-1">
                 <h3 className="text-[24px] md:text-[29px] font-bold leading-tight">
                     {session.title}
                 </h3>
 
-                <div className="
-                    flex flex-wrap items-center gap-4
-                    text-[12px] text-[#606060]
-                ">
+                <div className="flex flex-wrap items-center gap-4 text-[12px] text-[#606060]">
                     <Link
                         to={`/profile/${session.host_id}`}
                         className="flex items-center gap-1 hover:opacity-70"
@@ -217,10 +216,10 @@ export default function SessionCard({
                 </div>
             </div>
 
-            {/* RIGHT BLOCK (attendance + buttons) */}
-            <div className="flex flex-col lg:flex-row items-center lg:gap-8 w-full lg:w-auto">
+            {/* RIGHT BLOCK */}
+            <div className="flex flex-col xl:flex-row items-center xl:gap-8 w-full xl:w-auto">
                 {/* divider + attendance */}
-                <div className="hidden lg:flex items-center gap-8">
+                <div className="hidden sm:flex items-center gap-8">
                     <div className="w-px h-16 bg-[#D9D9D9]" />
 
                     <div className="text-center">
@@ -234,10 +233,12 @@ export default function SessionCard({
                 </div>
 
                 {/* buttons */}
-                <div className="
-                    flex flex-col sm:flex-row lg:flex-row gap-3
-                    w-full lg:w-auto
-                ">
+                <div
+                    className="
+                        flex max-[479px]:flex-col sm:flex-row
+                        gap-3 w-full xl:w-auto
+                    "
+                >
                     {isBookingConfirmed
                         ? confirmedBookingButton
                         : bookSessionButton}
@@ -250,6 +251,7 @@ export default function SessionCard({
                             backgroundColor: isHoveringJoin ? t.color : undefined,
                         }}
                         className={`
+                            flex items-center justify-center
                             rounded-full px-6 py-3 text-[14px] font-semibold
                             transition-colors duration-150
                             ${isHoveringJoin
@@ -265,8 +267,8 @@ export default function SessionCard({
                         <button
                             onClick={() => onDelete(session.id)}
                             className="
-                                h-10 w-10 rounded-full bg-[#FEE2E2]
                                 flex items-center justify-center
+                                h-10 w-10 rounded-full bg-[#FEE2E2]
                                 hover:bg-[#FECACA]
                             "
                         >
