@@ -1,3 +1,4 @@
+// FULL CODE STARTS HERE
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -19,14 +20,12 @@ export default function SessionCard({
     onDelete,
 }: SessionCardProps) {
     const isHost = session.host_id === userId;
-
     const initialIsBooked = session.session_bookings?.some(
         (b: any) => b.user_id === userId
     );
 
     const [isBookingConfirmed, setIsBookingConfirmed] =
         useState<boolean>(initialIsBooked);
-
     const [isHoveringCancel, setIsHoveringCancel] = useState(false);
     const [isHoveringBook, setIsHoveringBook] = useState(false);
     const [isHoveringJoin, setIsHoveringJoin] = useState(false);
@@ -47,10 +46,7 @@ export default function SessionCard({
 
     const resolvedType = nameToTypeMap[session.title] || session.type;
 
-    const typeMap: Record<
-        string,
-        { color: string; bg: string; icon: string }
-    > = {
+    const typeMap: Record<string, { color: string; bg: string; icon: string }> = {
         "Deep work": {
             color: "#3B82F6",
             bg: "#E4EDFF",
@@ -105,14 +101,13 @@ export default function SessionCard({
             onMouseEnter={() => setIsHoveringBook(true)}
             onMouseLeave={() => setIsHoveringBook(false)}
             className={`
-                rounded-full px-6 py-3 text-[14px] font-semibold
-                flex items-center gap-2 transition-all duration-150
-                w-full sm:w-auto
-                ${isHoveringBook
+        rounded-full px-6 py-3 text-[14px] font-semibold
+        flex items-center gap-2 transition-all duration-150
+        ${isHoveringBook
                     ? "text-[#65D46C] border border-[#65D46C] bg-[#65D46C]/10"
                     : "border border-brandBlack text-brandBlack bg-white"
                 }
-            `}
+      `}
         >
             <img
                 src={
@@ -127,35 +122,28 @@ export default function SessionCard({
     );
 
     const confirmedBookingButton = (
-        <>
-            {isHoveringCancel && (
-                <button
-                    onClick={handleCancelBooking}
-                    className="rounded-full px-6 py-3 text-[14px] font-semibold w-full sm:w-auto
-                        border border-[#F65252] bg-[#F65252]/5 text-[#F65252]
-                        flex items-center justify-center gap-2
-                        transition-all duration-150"
-                >
-                    <img src="/icons/cross-cancel.svg" className="w-4 h-4" />
+        <button
+            onClick={isHoveringCancel ? handleCancelBooking : undefined}
+            onMouseEnter={() => setIsHoveringCancel(true)}
+            onMouseLeave={() => setIsHoveringCancel(false)}
+            className={`
+        rounded-full py-3 text-[14px] font-semibold flex items-center justify-center
+        transition-all duration-150 ease-in-out
+        ${isHoveringCancel
+                    ? "border border-[#F65252] bg-[#F65252]/5 text-[#F65252] px-6"
+                    : "border border-[#65D46C] bg-[#65D46C]/10 w-[48px] h-[48px]"
+                }
+      `}
+        >
+            {isHoveringCancel ? (
+                <>
+                    <img src="/icons/cross-cancel.svg" className="w-4 h-4 mr-2" />
                     Cancel booking
-                </button>
+                </>
+            ) : (
+                <img src="/icons/book-session-green.svg" className="w-6 h-6" />
             )}
-
-            {!isHoveringCancel && (
-                <button
-                    onMouseEnter={() => setIsHoveringCancel(true)}
-                    className="
-                        rounded-full h-12 w-12 border border-[#65D46C]
-                        bg-[#65D46C]/10 flex items-center justify-center
-                    "
-                >
-                    <img
-                        src="/icons/book-session-green.svg"
-                        className="w-6 h-6"
-                    />
-                </button>
-            )}
-        </>
+        </button>
     );
 
     return (
@@ -163,29 +151,23 @@ export default function SessionCard({
             onMouseEnter={() => setIsHoveringCard(true)}
             onMouseLeave={() => setIsHoveringCard(false)}
             className="
-                border border-borderGray rounded-[42px] bg-white relative
-                transition-all duration-200 
-                hover:bg-[#F6F6F6] hover:border-[#A3A3A3]
-                flex flex-col gap-6
-                p-6 sm:p-8
-            "
+        border border-borderGray rounded-[42px]
+        bg-white relative
+        flex flex-col gap-4
+        transition-all duration-200 
+        hover:bg-[#F6F6F6] hover:border-[#A3A3A3]
+      "
+            style={{ padding: "24px 32px" }}
         >
-            {/* ROW: info + attendance */}
-            <div className="
-                flex flex-col lg:flex-row justify-between
-                items-start lg:items-center
-                gap-6 w-full
-            ">
+            {/* TOP ROW: session-info + attendance */}
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                 {/* LEFT: title + info */}
-                <div className="flex flex-col flex-1 gap-3">
-                    <h3 className="text-[29px] font-bold leading-tight">
+                <div className="flex-1 space-y-3">
+                    <h3 className="text-[22px] sm:text-[26px] lg:text-[29px] font-bold leading-tight">
                         {session.title}
                     </h3>
 
-                    <div className="
-                        flex flex-wrap items-center gap-4
-                        text-[12px] text-[#606060]
-                    ">
+                    <div className="flex flex-wrap items-center gap-4 text-[12px] text-[#606060]">
                         <Link
                             to={`/profile/${session.host_id}`}
                             className="flex items-center gap-1 hover:opacity-70"
@@ -207,7 +189,6 @@ export default function SessionCard({
                             <span>{startDateString}</span>
                         </div>
 
-                        {/* Type tag */}
                         <div
                             className="inline-flex items-center gap-1 px-3 py-1 rounded-full border transition-all duration-200"
                             style={{
@@ -231,81 +212,61 @@ export default function SessionCard({
                     </div>
                 </div>
 
-                {/* RIGHT: ONLY ATTENDANCE */}
-                <div className="flex items-center gap-6 md:gap-8 shrink-0">
-                    <div className="w-px h-16 bg-[#D9D9D9]" />
-
+                {/* RIGHT: attendance + divider, hidden under 480px */}
+                <div className="hidden sm:flex items-center gap-6 shrink-0">
+                    <div className="w-px h-12 bg-[#D9D9D9]" />
                     <div className="text-center">
-                        <div className="text-[32px] font-bold text-brandBlack">
+                        <div className="text-[28px] font-bold text-brandBlack">
                             {attendanceCount}
                         </div>
-                        <div className="text-[10px] text-[#606060] font-light -mt-1">
+                        <div className="text-[10px] text-[#606060] font-light">
                             in the session
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* BUTTONS */}
-            <div className="
-                session-actions
-                flex items-center gap-2
-                flex-wrap md:flex-nowrap
-                w-full
-            ">
+            {/* BUTTON BLOCK */}
+            <div
+                className="
+          flex flex-col xs:flex-row xs:items-center 
+          gap-2 xs:gap-3 
+          mt-2
+        "
+            >
                 {isBookingConfirmed ? confirmedBookingButton : bookSessionButton}
 
-                {/* JOIN */}
                 <button
                     onClick={() => onJoin(session.id)}
                     onMouseEnter={() => setIsHoveringJoin(true)}
                     onMouseLeave={() => setIsHoveringJoin(false)}
+                    style={{ backgroundColor: isHoveringJoin ? t.color : undefined }}
                     className={`
-                        rounded-full px-6 py-3 text-[14px] font-semibold
-                        transition-colors duration-150
-                        w-full sm:w-auto
-                        ${isHoveringJoin
+            rounded-full px-6 py-3 text-[14px] font-semibold transition-colors duration-150
+            ${isHoveringJoin
                             ? "text-white"
                             : "bg-brandBlack text-white hover:bg-black"
                         }
-                    `}
-                    style={{
-                        backgroundColor: isHoveringJoin ? t.color : undefined,
-                    }}
+          `}
                 >
                     Join session
                 </button>
 
-                {/* DELETE */}
                 {isHost && (
                     <button
                         onClick={() => onDelete(session.id)}
                         className="
-                            h-10 w-10 rounded-full bg-[#FEE2E2]
-                            flex items-center justify-center
-                            hover:bg-[#FECACA]
-                            shrink-0
-                        "
+              xs:h-10 xs:w-10 rounded-full
+              bg-[#FEE2E2] flex items-center justify-center
+              hover:bg-[#FECACA]
+              px-4 py-3 xs:px-0 xs:py-0
+            "
                     >
                         <img src="/icons/cross-cancel.svg" className="w-6 h-6" />
                     </button>
                 )}
             </div>
-
-            {/* MOBILE STYLE ADJUSTMENTS */}
-            <style>{`
-                @media (max-width: 480px) {
-                    .session-actions {
-                        flex-direction: column !important;
-                        align-items: stretch !important;
-                        width: 100%;
-                        gap: 8px !important;
-                    }
-                    .session-actions > button {
-                        width: 100% !important;
-                    }
-                }
-            `}</style>
         </div>
     );
 }
+// FULL CODE ENDS
