@@ -229,7 +229,7 @@ export default function SessionCard({
             {/* BUTTON BLOCK */}
             <div
                 className="
-          flex flex-col xs:flex-row xs:items-center 
+          flex flex-row xs:flex-col xs:items-center 
           gap-2 xs:gap-3 
           mt-2
         "
