@@ -107,7 +107,7 @@ export default function SessionCard({
                 rounded-full px-6 py-3 text-[14px] font-semibold
                 flex items-center justify-center gap-2
                 transition-all duration-150
-+               w-full xl:w-auto
+                w-full xl:w-auto
                 ${isHoveringBook
                     ? "text-[#65D46C] border border-[#65D46C] bg-[#65D46C]/10"
                     : "border border-brandBlack text-brandBlack bg-white"
@@ -135,7 +135,7 @@ export default function SessionCard({
                 rounded-full py-3 text-[14px] font-semibold
                 flex items-center justify-center
                 transition-all duration-150 ease-in-out
-+               w-full xl:w-auto
+                w-full xl:w-auto
                 ${isHoveringCancel
                     ? "border border-[#F65252] bg-[#F65252]/5 text-[#F65252] px-6"
                     : "border border-[#65D46C] bg-[#65D46C]/10 w-[48px] h-[48px]"
@@ -273,37 +273,37 @@ export default function SessionCard({
                     onClick={() => onJoin(session.id)}
                     onMouseEnter={() => setIsHoveringJoin(true)}
                     onMouseLeave={() => setIsHoveringJoin(false)}
-+                   className={`
+                    className={`
                         rounded-full px-6 py-3 text-[14px] font-semibold
                         flex items-center justify-center
                         transition-colors duration-150
                         w-full xl:w-auto
                         ${isHoveringJoin
-                        ? "text-white bg-brandBlack"
-                        : "bg-brandBlack text-white hover:bg-black"
-                    }
+                            ? "text-white bg-brandBlack"
+                            : "bg-brandBlack text-white hover:bg-black"
+                        }
                     `}
                 >
-                Join session
-            </button>
+                    Join session
+                </button>
 
-            {isHost && (
-                <button
-                    onClick={() => onDelete(session.id)}
-                    className="
+                {isHost && (
+                    <button
+                        onClick={() => onDelete(session.id)}
+                        className="
                             h-10 w-10 rounded-full
                             bg-[#FEE2E2]
                             flex items-center justify-center
                             hover:bg-[#FECACA]
                         "
-                >
-                    <img
-                        src="/icons/cross-cancel.svg"
-                        className="w-6 h-6"
-                    />
-                </button>
-            )}
+                    >
+                        <img
+                            src="/icons/cross-cancel.svg"
+                            className="w-6 h-6"
+                        />
+                    </button>
+                )}
+            </div>
         </div>
-        </div >
     );
 }
