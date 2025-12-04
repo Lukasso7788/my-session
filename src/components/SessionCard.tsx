@@ -168,7 +168,7 @@ export default function SessionCard({
                 w-full gap-6
             "
         >
-            {/* INFO + ATTENDANCE */}
+            {/* INFO */}
             <div
                 className="
                     flex flex-col xl:flex-row
@@ -177,7 +177,6 @@ export default function SessionCard({
                     gap-4 flex-1
                 "
             >
-                {/* Info */}
                 <div className="flex flex-col gap-3">
                     <h3 className="text-[24px] md:text-[29px] font-bold leading-tight">
                         {session.title}
@@ -242,8 +241,8 @@ export default function SessionCard({
                     </div>
                 </div>
 
-                {/* divider + attendance */}
-                <div className="flex max-[480px]:hidden xl:hidden items-center gap-6 md:gap-8">
+                {/* ATTENDANCE ONLY ≥1280px */}
+                <div className="hidden xl:flex items-center gap-6">
                     <div className="w-px h-10 bg-[#D9D9D9]" />
                     <div className="text-center">
                         <div className="text-[32px] font-bold text-brandBlack">
