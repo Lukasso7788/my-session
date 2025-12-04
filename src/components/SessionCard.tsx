@@ -161,15 +161,16 @@ export default function SessionCard({
                 border border-borderGray rounded-[42px] bg-white
                 transition-all duration-200
                 hover:bg-[#F6F6F6] hover:border-[#A3A3A3]
-                p-6 xl:p-8
-                flex flex-col xl:flex-row w-full gap-6
+                p-6
+                flex flex-col lg:flex-row
+                w-full gap-6
         "
         >
-            {/* LEFT: INFO + ATTENDANCE */}
+            {/* INFO + ATTENDANCE */}
             <div
                 className="
-                    flex flex-col xl:flex-row
-                    xl:items-center xl:justify-between
+                    flex flex-col lg:flex-row
+                    lg:items-center lg:justify-between
                     gap-4 flex-1
                 "
             >
@@ -228,7 +229,7 @@ export default function SessionCard({
                 </div>
 
                 {/* divider + attendance */}
-                <div className="hidden sm:flex items-center gap-6 xl:gap-8">
+                <div className="hidden sm:flex items-center gap-6 lg:gap-8">
                     <div className="w-px h-10 bg-[#D9D9D9]" />
                     <div className="text-center">
                         <div className="text-[32px] font-bold text-brandBlack">
@@ -244,8 +245,8 @@ export default function SessionCard({
             {/* BUTTONS */}
             <div
                 className="
-                    flex flex-col sm:flex-row xl:flex-row
-                    gap-3 w-full xl:w-auto
+                    flex flex-col sm:flex-row lg:flex-row
+                    gap-3 w-full lg:w-auto
                     items-center justify-center
                 "
             >
