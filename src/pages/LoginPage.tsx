@@ -118,7 +118,11 @@ export default function LoginPage() {
             onClick={loginWithFacebook}
             className="w-full py-3 rounded-[16px] flex items-center justify-center gap-3 mb-3 bg-[#1877F2] text-white hover:bg-[#0f66d3] transition text-[18px] font-semibold"
           >
-            <img src="https://www.svgrepo.com/show/475647/facebook-color.svg" className="w-5" />
+            <img
+              src="/icons/facebook.svg"
+              className="w-5 h-5"
+              alt="Facebook icon"
+            />
             Continue with Facebook
           </button>
 
@@ -126,7 +130,11 @@ export default function LoginPage() {
           <button
             className="w-full py-3 rounded-[16px] flex items-center justify-center gap-3 bg-[#2F2F2F] text-white hover:bg-[#1F1F1F] transition text-[18px] font-semibold"
           >
-            <img src="https://www.svgrepo.com/show/303128/apple-logo.svg" className="w-5 invert" />
+            <img
+              src="/icons/apple.svg"
+              className="w-5 h-5"
+              alt="Apple icon"
+            />
             Continue with Apple
           </button>
 
