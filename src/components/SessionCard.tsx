@@ -106,7 +106,7 @@ export default function SessionCard({
                 rounded-full px-6 py-3 text-[14px] font-semibold
                 flex items-center justify-center gap-2
                 transition-all duration-150
-                w-full sm:w-auto
+                w-full sm:w-auto max-[480px]:w-full
                 ${isHoveringBook
                     ? "text-[#65D46C] border border-[#65D46C] bg-[#65D46C]/10"
                     : "border border-brandBlack text-brandBlack bg-white"
@@ -134,7 +134,7 @@ export default function SessionCard({
                 rounded-full py-3 text-[14px] font-semibold
                 flex items-center justify-center
                 transition-all duration-150 ease-in-out
-                w-full sm:w-auto
+                w-full sm:w-auto max-[480px]:w-full
                 ${isHoveringCancel
                     ? "border border-[#F65252] bg-[#F65252]/5 text-[#F65252] px-6"
                     : "border border-[#65D46C] bg-[#65D46C]/10 w-[48px] h-[48px]"
@@ -164,15 +164,16 @@ export default function SessionCard({
                 transition-all duration-200
                 hover:bg-[#F6F6F6] hover:border-[#A3A3A3]
                 p-6
-                flex flex-col md:flex-row
+                flex flex-col xl:flex-row
                 w-full gap-6
             "
         >
             {/* INFO + ATTENDANCE */}
             <div
                 className="
-                    flex flex-col md:flex-row
-                    md:items-center md:justify-between
+                    flex flex-col xl:flex-row
+                    items-start xl:items-center
+                    justify-between
                     gap-4 flex-1
                 "
             >
@@ -258,8 +259,10 @@ export default function SessionCard({
             {/* BUTTONS */}
             <div
                 className="
-                    flex flex-col sm:flex-row md:flex-row
-                    gap-3 w-full md:w-auto
+                    flex flex-col sm:flex-row
+                    max-[480px]:flex-col
+                    gap-3
+                    w-full xl:w-auto
                     items-center justify-center
                 "
             >
@@ -278,7 +281,7 @@ export default function SessionCard({
                         rounded-full px-6 py-3 text-[14px] font-semibold
                         flex items-center justify-center
                         transition-colors duration-150
-                        w-full sm:w-auto
+                        w-full sm:w-auto max-[480px]:w-full
                         ${isHoveringJoin
                             ? "text-white"
                             : "bg-brandBlack text-white hover:bg-black"
