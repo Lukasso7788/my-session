@@ -103,9 +103,9 @@ export default function SessionCard({
             onMouseEnter={() => setIsHoveringBook(true)}
             onMouseLeave={() => setIsHoveringBook(false)}
             className={`
-                flex items-center justify-center
                 rounded-full px-6 py-3 text-[14px] font-semibold
-                gap-2 transition-all duration-150
+                flex items-center justify-center gap-2
+                transition-all duration-150 w-full sm:w-auto
                 ${isHoveringBook
                     ? "text-[#65D46C] border border-[#65D46C] bg-[#65D46C]/10"
                     : "border border-brandBlack text-brandBlack bg-white"
@@ -130,9 +130,9 @@ export default function SessionCard({
             onMouseEnter={() => setIsHoveringCancel(true)}
             onMouseLeave={() => setIsHoveringCancel(false)}
             className={`
-                flex items-center justify-center
-                rounded-full py-3 text-[14px] font-semibold
+                rounded-full py-3 text-[14px] font-semibold flex items-center justify-center
                 transition-all duration-150 ease-in-out
+                w-full sm:w-auto
                 ${isHoveringCancel
                     ? "border border-[#F65252] bg-[#F65252]/5 text-[#F65252] px-6"
                     : "border border-[#65D46C] bg-[#65D46C]/10 w-[48px] h-[48px]"
@@ -163,65 +163,73 @@ export default function SessionCard({
                 hover:bg-[#F6F6F6] hover:border-[#A3A3A3]
                 p-6 xl:p-8
                 flex flex-col xl:flex-row w-full gap-6
-            "
+        "
         >
-            {/* LEFT BLOCK */}
-            <div className="flex flex-col gap-3 xl:flex-1">
-                <h3 className="text-[24px] md:text-[29px] font-bold leading-tight">
-                    {session.title}
-                </h3>
+            {/* LEFT: INFO + ATTENDANCE */}
+            <div
+                className="
+                    flex flex-col xl:flex-row
+                    xl:items-center xl:justify-between
+                    gap-4 flex-1
+                "
+            >
+                {/* Info */}
+                <div className="flex flex-col gap-3">
+                    <h3 className="text-[24px] md:text-[29px] font-bold leading-tight">
+                        {session.title}
+                    </h3>
 
-                <div className="flex flex-wrap items-center gap-4 text-[12px] text-[#606060]">
-                    <Link
-                        to={`/profile/${session.host_id}`}
-                        className="flex items-center gap-1 hover:opacity-70"
-                    >
-                        <img src="/icons/host.svg" className="w-4 h-4 opacity-70" />
-                        <span>Host</span>
-                        <span className="underline underline-offset-2">
-                            {session.host_name}
-                        </span>
-                    </Link>
+                    <div className="
+                        flex flex-wrap items-center gap-4
+                        text-[12px] text-[#606060]
+                    ">
+                        <Link
+                            to={`/profile/${session.host_id}`}
+                            className="flex items-center gap-1 hover:opacity-70"
+                        >
+                            <img src="/icons/host.svg" className="w-4 h-4 opacity-70" />
+                            <span>Host</span>
+                            <span className="underline underline-offset-2">
+                                {session.host_name}
+                            </span>
+                        </Link>
 
-                    <div className="flex items-center gap-1">
-                        <img src="/icons/duration.svg" className="w-4 h-4 opacity-70" />
-                        <span>{session.duration_minutes} min</span>
-                    </div>
+                        <div className="flex items-center gap-1">
+                            <img src="/icons/duration.svg" className="w-4 h-4 opacity-70" />
+                            <span>{session.duration_minutes} min</span>
+                        </div>
 
-                    <div className="flex items-center gap-1">
-                        <img src="/icons/date.svg" className="w-4 h-4 opacity-70" />
-                        <span>{startDateString}</span>
-                    </div>
+                        <div className="flex items-center gap-1">
+                            <img src="/icons/date.svg" className="w-4 h-4 opacity-70" />
+                            <span>{startDateString}</span>
+                        </div>
 
-                    <div
-                        className="inline-flex items-center gap-1 px-3 py-1 rounded-full border"
-                        style={{
-                            backgroundColor: isHoveringCard ? t.color : t.bg,
-                            color: isHoveringCard ? "white" : t.color,
-                            borderColor: t.color,
-                            fontSize: 10,
-                            fontWeight: 500,
-                        }}
-                    >
-                        <img
-                            src={
-                                isHoveringCard
-                                    ? t.icon.replace(".svg", "-white.svg")
-                                    : t.icon
-                            }
-                            className="w-4 h-4"
-                        />
-                        {resolvedType}
+                        <div
+                            className="inline-flex items-center gap-1 px-3 py-1 rounded-full border"
+                            style={{
+                                backgroundColor: isHoveringCard ? t.color : t.bg,
+                                color: isHoveringCard ? "white" : t.color,
+                                borderColor: t.color,
+                                fontSize: 10,
+                                fontWeight: 500,
+                            }}
+                        >
+                            <img
+                                src={
+                                    isHoveringCard
+                                        ? t.icon.replace(".svg", "-white.svg")
+                                        : t.icon
+                                }
+                                className="w-4 h-4"
+                            />
+                            {resolvedType}
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            {/* RIGHT BLOCK */}
-            <div className="flex flex-col xl:flex-row items-center xl:gap-8 w-full xl:w-auto">
                 {/* divider + attendance */}
-                <div className="hidden sm:flex items-center gap-8">
-                    <div className="w-px h-16 bg-[#D9D9D9]" />
-
+                <div className="hidden sm:flex items-center gap-6 xl:gap-8">
+                    <div className="w-px h-10 bg-[#D9D9D9]" />
                     <div className="text-center">
                         <div className="text-[32px] font-bold text-brandBlack">
                             {attendanceCount}
@@ -231,54 +239,57 @@ export default function SessionCard({
                         </div>
                     </div>
                 </div>
+            </div>
 
-                {/* buttons */}
-                <div
-                    className="
-                        flex max-[479px]:flex-col sm:flex-row
-                        gap-3 w-full xl:w-auto
-                    "
+            {/* BUTTONS */}
+            <div
+                className="
+                    flex flex-col sm:flex-row xl:flex-row
+                    gap-3 w-full xl:w-auto
+                    items-center justify-center
+                "
+            >
+                {isBookingConfirmed
+                    ? confirmedBookingButton
+                    : bookSessionButton}
+
+                <button
+                    onClick={() => onJoin(session.id)}
+                    onMouseEnter={() => setIsHoveringJoin(true)}
+                    onMouseLeave={() => setIsHoveringJoin(false)}
+                    style={{
+                        backgroundColor: isHoveringJoin ? t.color : undefined,
+                    }}
+                    className={`
+                        rounded-full px-6 py-3 text-[14px] font-semibold
+                        flex items-center justify-center
+                        transition-colors duration-150
+                        w-full sm:w-auto
+                        ${isHoveringJoin
+                            ? "text-white"
+                            : "bg-brandBlack text-white hover:bg-black"
+                        }
+                    `}
                 >
-                    {isBookingConfirmed
-                        ? confirmedBookingButton
-                        : bookSessionButton}
+                    Join session
+                </button>
 
+                {isHost && (
                     <button
-                        onClick={() => onJoin(session.id)}
-                        onMouseEnter={() => setIsHoveringJoin(true)}
-                        onMouseLeave={() => setIsHoveringJoin(false)}
-                        style={{
-                            backgroundColor: isHoveringJoin ? t.color : undefined,
-                        }}
-                        className={`
+                        onClick={() => onDelete(session.id)}
+                        className="
+                            h-10 w-10 rounded-full
+                            bg-[#FEE2E2]
                             flex items-center justify-center
-                            rounded-full px-6 py-3 text-[14px] font-semibold
-                            transition-colors duration-150
-                            ${isHoveringJoin
-                                ? "text-white"
-                                : "bg-brandBlack text-white hover:bg-black"
-                            }
-                        `}
+                            hover:bg-[#FECACA]
+                        "
                     >
-                        Join session
+                        <img
+                            src="/icons/cross-cancel.svg"
+                            className="w-6 h-6"
+                        />
                     </button>
-
-                    {isHost && (
-                        <button
-                            onClick={() => onDelete(session.id)}
-                            className="
-                                flex items-center justify-center
-                                h-10 w-10 rounded-full bg-[#FEE2E2]
-                                hover:bg-[#FECACA]
-                            "
-                        >
-                            <img
-                                src="/icons/cross-cancel.svg"
-                                className="w-6 h-6"
-                            />
-                        </button>
-                    )}
-                </div>
+                )}
             </div>
         </div>
     );
