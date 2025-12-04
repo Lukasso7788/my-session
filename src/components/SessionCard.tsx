@@ -81,7 +81,6 @@ export default function SessionCard({
         })
         : "";
 
-    // attendance из session.session_attendance
     const attendanceCount = new Set(
         (session.session_attendance || []).map((a: any) => a.user_id)
     ).size;
@@ -104,8 +103,8 @@ export default function SessionCard({
             onMouseEnter={() => setIsHoveringBook(true)}
             onMouseLeave={() => setIsHoveringBook(false)}
             className={`
-        rounded-full px-6 py-3 text-[14px] font-semibold
-        flex items-center gap-2 transition-all duration-150
+        rounded-full px-6 py-3 text-[14px] font-semibold flex items-center gap-2 transition-all duration-150
+        w-full md:w-auto
         ${isHoveringBook
                     ? "text-[#65D46C] border border-[#65D46C] bg-[#65D46C]/10"
                     : "border border-brandBlack text-brandBlack bg-white"
@@ -130,11 +129,11 @@ export default function SessionCard({
             onMouseEnter={() => setIsHoveringCancel(true)}
             onMouseLeave={() => setIsHoveringCancel(false)}
             className={`
-        rounded-full py-3 text-[14px] font-semibold flex items-center justify-center
-        transition-all duration-150 ease-in-out
+        rounded-full py-3 text-[14px] font-semibold flex items-center justify-center transition-all duration-150 ease-in-out
+        w-full md:w-[48px]
         ${isHoveringCancel
                     ? "border border-[#F65252] bg-[#F65252]/5 text-[#F65252] px-6"
-                    : "border border-[#65D46C] bg-[#65D46C]/10 w-[48px] h-[48px]"
+                    : "border border-[#65D46C] bg-[#65D46C]/10 h-[48px]"
                 }
       `}
         >
@@ -144,10 +143,7 @@ export default function SessionCard({
                     Cancel booking
                 </>
             ) : (
-                <img
-                    src="/icons/book-session-green.svg"
-                    className="w-6 h-6"
-                />
+                <img src="/icons/book-session-green.svg" className="w-6 h-6" />
             )}
         </button>
     );
@@ -157,18 +153,17 @@ export default function SessionCard({
             onMouseEnter={() => setIsHoveringCard(true)}
             onMouseLeave={() => setIsHoveringCard(false)}
             className="
-        border border-borderGray rounded-[42px]
-        bg-white relative
-        flex flex-col lg:flex-row justify-between
-        gap-6
-        transition-all duration-200 
+        border border-borderGray rounded-[42px] bg-white relative
+        flex flex-col md:flex-row md:items-center justify-between
+        gap-6 transition-all duration-200 
+        px-5 py-6 md:px-8 md:py-8
         hover:bg-[#F6F6F6] hover:border-[#A3A3A3]
+        max-sm:hover:bg-transparent max-sm:hover:border-borderGray
       "
-            style={{ padding: "24px 32px" }}
         >
-            {/* LEFT */}
+            {/* LEFT SIDE */}
             <div className="flex-1 space-y-3">
-                <h3 className="text-[29px] font-bold leading-tight">
+                <h3 className="text-[22px] md:text-[29px] font-bold leading-tight">
                     {session.title}
                 </h3>
 
@@ -177,10 +172,7 @@ export default function SessionCard({
                         to={`/profile/${session.host_id}`}
                         className="flex items-center gap-1 hover:opacity-70"
                     >
-                        <img
-                            src="/icons/host.svg"
-                            className="w-4 h-4 opacity-70"
-                        />
+                        <img src="/icons/host.svg" className="w-4 h-4 opacity-70" />
                         <span>Host</span>
                         <span className="underline underline-offset-2">
                             {session.host_name}
@@ -188,18 +180,12 @@ export default function SessionCard({
                     </Link>
 
                     <div className="flex items-center gap-1">
-                        <img
-                            src="/icons/duration.svg"
-                            className="w-4 h-4 opacity-70"
-                        />
+                        <img src="/icons/duration.svg" className="w-4 h-4 opacity-70" />
                         <span>{session.duration_minutes} min</span>
                     </div>
 
                     <div className="flex items-center gap-1">
-                        <img
-                            src="/icons/date.svg"
-                            className="w-4 h-4 opacity-70"
-                        />
+                        <img src="/icons/date.svg" className="w-4 h-4 opacity-70" />
                         <span>{startDateString}</span>
                     </div>
 
@@ -224,22 +210,23 @@ export default function SessionCard({
                         {resolvedType}
                     </div>
                 </div>
-            </div>
 
-            {/* RIGHT */}
-            <div className="flex items-center gap-8">
-                <div className="w-px h-16 bg-[#D9D9D9]" />
-
-                <div className="px-12 text-center">
-                    <div className="text-[32px] font-bold text-brandBlack">
+                {/* ATTENDANCE on mobile */}
+                <div className="md:hidden flex items-end gap-2 mt-2">
+                    <div className="text-[24px] font-bold text-brandBlack leading-none">
                         {attendanceCount}
                     </div>
-                    <div className="text-[10px] text-[#606060] font-light -mt-1">
+                    <div className="text-[11px] text-[#606060] font-light">
                         in the session
                     </div>
                 </div>
+            </div>
 
-                <div className="flex items-center gap-2">
+            {/* RIGHT SIDE */}
+            <div className="flex flex-col-reverse md:flex-row items-center w-full md:w-auto gap-4 md:gap-8 mt-4 md:mt-0">
+
+                {/* BUTTONS */}
+                <div className="flex flex-col md:flex-row gap-3 md:gap-2 w-full md:w-auto">
                     {isBookingConfirmed
                         ? confirmedBookingButton
                         : bookSessionButton}
@@ -252,9 +239,8 @@ export default function SessionCard({
                             backgroundColor: isHoveringJoin ? t.color : undefined,
                         }}
                         className={`
-              rounded-full px-6 py-3
-              text-[14px] font-semibold
-              transition-colors duration-150
+              rounded-full px-6 py-3 text-[14px] font-semibold transition-colors duration-150 
+              w-full md:w-auto
               ${isHoveringJoin
                                 ? "text-white"
                                 : "bg-brandBlack text-white hover:bg-black"
@@ -263,24 +249,44 @@ export default function SessionCard({
                     >
                         Join session
                     </button>
+                </div>
 
-                    {isHost && (
+                {/* ATTENDANCE block desktop only */}
+                <div className="hidden md:flex items-center gap-2 md:gap-0 md:flex-col md:px-12 text-center">
+                    <div className="text-[32px] font-bold text-brandBlack leading-none">
+                        {attendanceCount}
+                    </div>
+                    <div className="text-[10px] text-[#606060] font-light -mt-1">
+                        in the session
+                    </div>
+                </div>
+
+                {/* Divider desktop */}
+                <div className="hidden md:block w-px h-16 bg-[#D9D9D9]" />
+
+                {/* DELETE HOST BUTTON MOBILE */}
+                {isHost && (
+                    <div className="md:hidden w-full flex justify-end">
                         <button
                             onClick={() => onDelete(session.id)}
-                            className="
-                h-10 w-10 rounded-full
-                bg-[#FEE2E2] flex items-center justify-center
-                hover:bg-[#FECACA]
-              "
+                            className="h-10 w-10 rounded-full bg-[#FEE2E2] flex items-center justify-center hover:bg-[#FECACA]"
                         >
-                            <img
-                                src="/icons/cross-cancel.svg"
-                                className="w-6 h-6"
-                            />
+                            <img src="/icons/cross-cancel.svg" className="w-6 h-6" />
                         </button>
-                    )}
-                </div>
+                    </div>
+                )}
+
             </div>
+
+            {/* DELETE HOST BUTTON DESKTOP */}
+            {isHost && (
+                <button
+                    onClick={() => onDelete(session.id)}
+                    className="hidden md:flex h-10 w-10 rounded-full bg-[#FEE2E2] flex items-center justify-center hover:bg-[#FECACA]"
+                >
+                    <img src="/icons/cross-cancel.svg" className="w-6 h-6" />
+                </button>
+            )}
         </div>
     );
 }
