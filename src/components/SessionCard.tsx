@@ -105,7 +105,8 @@ export default function SessionCard({
             className={`
                 rounded-full px-6 py-3 text-[14px] font-semibold
                 flex items-center justify-center gap-2
-                transition-all duration-150 w-full sm:w-auto
+                transition-all duration-150
+                w-full sm:w-auto
                 ${isHoveringBook
                     ? "text-[#65D46C] border border-[#65D46C] bg-[#65D46C]/10"
                     : "border border-brandBlack text-brandBlack bg-white"
@@ -130,7 +131,8 @@ export default function SessionCard({
             onMouseEnter={() => setIsHoveringCancel(true)}
             onMouseLeave={() => setIsHoveringCancel(false)}
             className={`
-                rounded-full py-3 text-[14px] font-semibold flex items-center justify-center
+                rounded-full py-3 text-[14px] font-semibold
+                flex items-center justify-center
                 transition-all duration-150 ease-in-out
                 w-full sm:w-auto
                 ${isHoveringCancel
@@ -162,15 +164,15 @@ export default function SessionCard({
                 transition-all duration-200
                 hover:bg-[#F6F6F6] hover:border-[#A3A3A3]
                 p-6
-                flex flex-col lg:flex-row
+                flex flex-col md:flex-row
                 w-full gap-6
-        "
+            "
         >
             {/* INFO + ATTENDANCE */}
             <div
                 className="
-                    flex flex-col lg:flex-row
-                    lg:items-center lg:justify-between
+                    flex flex-col md:flex-row
+                    md:items-center md:justify-between
                     gap-4 flex-1
                 "
             >
@@ -180,15 +182,20 @@ export default function SessionCard({
                         {session.title}
                     </h3>
 
-                    <div className="
-                        flex flex-wrap items-center gap-4
-                        text-[12px] text-[#606060]
-                    ">
+                    <div
+                        className="
+                            flex flex-wrap items-center gap-4
+                            text-[12px] text-[#606060]
+                        "
+                    >
                         <Link
                             to={`/profile/${session.host_id}`}
                             className="flex items-center gap-1 hover:opacity-70"
                         >
-                            <img src="/icons/host.svg" className="w-4 h-4 opacity-70" />
+                            <img
+                                src="/icons/host.svg"
+                                className="w-4 h-4 opacity-70"
+                            />
                             <span>Host</span>
                             <span className="underline underline-offset-2">
                                 {session.host_name}
@@ -196,12 +203,18 @@ export default function SessionCard({
                         </Link>
 
                         <div className="flex items-center gap-1">
-                            <img src="/icons/duration.svg" className="w-4 h-4 opacity-70" />
+                            <img
+                                src="/icons/duration.svg"
+                                className="w-4 h-4 opacity-70"
+                            />
                             <span>{session.duration_minutes} min</span>
                         </div>
 
                         <div className="flex items-center gap-1">
-                            <img src="/icons/date.svg" className="w-4 h-4 opacity-70" />
+                            <img
+                                src="/icons/date.svg"
+                                className="w-4 h-4 opacity-70"
+                            />
                             <span>{startDateString}</span>
                         </div>
 
@@ -229,7 +242,7 @@ export default function SessionCard({
                 </div>
 
                 {/* divider + attendance */}
-                <div className="hidden sm:flex items-center gap-6 lg:gap-8">
+                <div className="flex max-[480px]:hidden items-center gap-6 md:gap-8">
                     <div className="w-px h-10 bg-[#D9D9D9]" />
                     <div className="text-center">
                         <div className="text-[32px] font-bold text-brandBlack">
@@ -245,8 +258,8 @@ export default function SessionCard({
             {/* BUTTONS */}
             <div
                 className="
-                    flex flex-col sm:flex-row lg:flex-row
-                    gap-3 w-full lg:w-auto
+                    flex flex-col sm:flex-row md:flex-row
+                    gap-3 w-full md:w-auto
                     items-center justify-center
                 "
             >
