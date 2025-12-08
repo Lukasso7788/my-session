@@ -1,12 +1,16 @@
-// FULL UPDATED ROOMPAGE WITH FIXED WELCOME LOOP BEHAVIOR + NEW DOUBLE-CONTAINER TOP BAR (REV 3)
+// FULL UPDATED ROOMPAGE — JITSI VERSION (REV JITSI 1.0)
+// Daily полностью удалён, заменён на JitsiMeetExternalAPI.
+// Все добавления/удаления помечены комментариями.
 
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import DailyIframe, { DailyCall } from "@daily-co/daily-js";
 import { IntentionsPanel } from "../components/IntentionsPanel";
 import { SessionStageBar } from "../components/SessionStageBar";
 import { supabase } from "../lib/supabase";
 import { UserProfileModal } from "../components/UserProfileModal";
+
+// ❌ REMOVED Daily imports
+// import DailyIframe, { DailyCall } from "@daily-co/daily-js";
 
 type Stage = {
   name: string;
@@ -20,8 +24,12 @@ export function RoomPage() {
   const navigate = useNavigate();
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const callRef = useRef<DailyCall | null>(null);
-  const initGuardRef = useRef(false);
+
+  // ❌ REMOVED DailyCall ref
+  // const callRef = useRef<DailyCall | null>(null);
+
+  // ❌ REMOVED initGuardRef
+  // const initGuardRef = useRef(false);
 
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -50,6 +58,7 @@ export function RoomPage() {
   const BREAK_END_SOUND = "/sounds/break_end.mp3";
   const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
 
+  // AUDIO UNLOCK
   useEffect(() => {
     const unlock = () => {
       if (audioUnlockedRef.current) return;
@@ -96,7 +105,7 @@ export function RoomPage() {
     } catch { }
   };
 
-  // LOAD SESSION
+  // LOAD SESSION DATA
   useEffect(() => {
     (async () => {
       if (!id) return;
@@ -158,7 +167,7 @@ export function RoomPage() {
     })();
   }, [id]);
 
-  // RESOLVE USER NAME
+  // USER NAME / PROFILE
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getUser();
@@ -223,114 +232,57 @@ export function RoomPage() {
     };
   }, [id]);
 
-  // DAILY INIT
+  // ======================================================
+  // 🔥 JITSI INIT (REPLACING DAILY COMPLETELY)
+  // ======================================================
   useEffect(() => {
-    if (!session?.daily_room_url || !containerRef.current || !userName) return;
-    if (initGuardRef.current) return;
-    initGuardRef.current = true;
+    if (!containerRef.current || !id) return;
+    if (!userName) return;
 
-    const container = containerRef.current;
+    // Clean container before inserting a new iframe
+    containerRef.current.innerHTML = "";
 
-    if (container.getBoundingClientRect().height < 100) {
-      container.style.minHeight = "70vh";
-      container.style.height = "70vh";
-    }
-
-    if (callRef.current) {
-      try {
-        callRef.current.destroy();
-      } catch { }
-      callRef.current = null;
-    }
-
-    const frame = DailyIframe.createFrame(container, {
-      iframeStyle: {
+    try {
+      const domain = "63.250.60.176"; // your Jitsi server
+      const options = {
+        roomName: `session-${id}`,
+        parentNode: containerRef.current,
         width: "100%",
         height: "100%",
-        border: "0",
-        borderRadius: "1rem",
-      },
-      showFullscreenButton: true,
-      showLeaveButton: true,
-    });
+        userInfo: {
+          displayName: userName,
+        },
+        configOverwrite: {
+          prejoinPageEnabled: false,
+        },
+        interfaceConfigOverwrite: {},
+      };
 
-    callRef.current = frame;
+      // ADDED: Jitsi API constructor
+      const api = new (window as any).JitsiMeetExternalAPI(domain, options);
 
-    const withGrid = session.daily_room_url.includes("?")
-      ? `${session.daily_room_url}&layout=grid`
-      : `${session.daily_room_url}?layout=grid`;
+      api.addListener("videoConferenceLeft", () => {
+        navigate("/sessions", { replace: true });
+      });
 
-    let destroyed = false;
+      api.addListener("errorOccurred", (err: any) => {
+        setLastErr(String(err?.message || err));
+      });
 
-    const removeAll = () => {
-      try {
-        frame.off("joined-meeting");
-      } catch { }
-      try {
-        frame.off("left-meeting");
-      } catch { }
-      try {
-        frame.off("error");
-      } catch { }
-    };
-
-    const safeLeave = async () => {
-      if (destroyed) return;
-      destroyed = true;
-      removeAll();
-      try {
-        await frame.leave?.();
-      } catch { }
-      try {
-        await frame.destroy();
-      } catch { }
-      callRef.current = null;
-      stopWelcomeLoop();
-      navigate("/sessions", { replace: true });
-    };
-
-    frame.on("left-meeting", safeLeave);
-    frame.on("error", (e) =>
-      setLastErr(String(e?.errorMsg || e?.message || e))
-    );
-
-    (async () => {
-      try {
-        const roomName =
-          new URL(session.daily_room_url).pathname.split("/").pop() || "";
-        const { data } = await supabase.functions.invoke("daily-token", {
-          body: { roomName, userName, roomUrl: session.daily_room_url },
-        });
-
-        await frame.join({
-          url: withGrid,
-          token: data.token,
-          userName,
-          audioSource: true,
-          videoSource: true,
-        });
-      } catch (e: any) {
-        if (!destroyed) setLastErr(e?.message);
-      }
-    })();
-
-    return () => {
-      if (!destroyed) {
-        destroyed = true;
-        removeAll();
+      return () => {
         try {
-          frame.leave?.();
+          api.dispose();
         } catch { }
-        try {
-          frame.destroy();
-        } catch { }
-        callRef.current = null;
-        stopWelcomeLoop();
-      }
-    };
-  }, [session?.daily_room_url, userName]);
+      };
+    } catch (e: any) {
+      setLastErr(String(e?.message));
+    }
+  }, [id, userName]);
 
-  // STAGE LOGIC
+  // ======================================================
+  // STAGE LOGIC (UNCHANGED)
+  // ======================================================
+
   const getStageWindows = (startISO: string, items: Stage[]) => {
     const startMs = new Date(startISO).getTime();
     let acc = 0;
@@ -364,7 +316,9 @@ export function RoomPage() {
           active = i;
           const rem = next - diffSec;
           setRemainingTime(
-            `${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`
+            `${Math.floor(rem / 60)}:${String(
+              Math.floor(rem % 60)
+            ).padStart(2, "0")}`
           );
           break;
         }
@@ -413,6 +367,10 @@ export function RoomPage() {
     return () => clearInterval(timer);
   }, [session?.start_time, stages]);
 
+  // ======================================================
+  // RENDER
+  // ======================================================
+
   if (loading)
     return (
       <div className="flex h-screen justify-center items-center text-white bg-[#050F1A]">
@@ -430,16 +388,12 @@ export function RoomPage() {
   return (
     <div className="min-h-screen bg-[#050F1A] text-white flex justify-center">
       <div className="max-w-[1720px] w-full px-5 py-5 space-y-5">
-
         {/* ======================
             DOUBLE-CONTAINER TOP BAR (REV 3)
         ====================== */}
         <div className="flex w-full rounded-2xl overflow-hidden">
-
           {/* LEFT BLOCK (91%) */}
           <div className="w-[91%] bg-[#1F2937] px-6 py-8 rounded-l-2xl">
-
-            {/* ROW: SESSION TITLE + HOST BADGE */}
             <div className="flex items-center justify-between w-full">
               <p className="font-inter font-medium text-[17px] text-[#F3F4F6]/85">
                 {session.title}
@@ -465,7 +419,6 @@ export function RoomPage() {
               )}
             </div>
 
-            {/* STAGE BAR (max height 24px, spacing 10px) */}
             <div className="mt-2 max-h-[24px]">
               <SessionStageBar
                 stages={stages}
@@ -475,13 +428,8 @@ export function RoomPage() {
             </div>
           </div>
 
-          {/* RIGHT TIMER BLOCK (9%) */}
           <div className="w-[9%] bg-[#1F2937] rounded-r-2xl flex flex-col items-center justify-center gap-1 border-l border-[#404651]">
-            <img
-              src="/icons/session_timer.svg"
-              className="w-[48px] h-[48px]"
-            />
-
+            <img src="/icons/session_timer.svg" className="w-[48px] h-[48px]" />
             <span className="font-inter text-[26px]">
               {remainingTime || "--:--"}
             </span>
@@ -490,12 +438,12 @@ export function RoomPage() {
 
         {/* MAIN GRID */}
         <div className="grid lg:grid-cols-[minmax(0,1fr),420px] gap-5">
-
           {/* VIDEO AREA */}
           <div
             className="rounded-2xl bg-[#1F2937] shadow-lg overflow-hidden relative h-[77vh]"
             style={{ minHeight: "70vh" }}
           >
+            {/* ADDED: Jitsi container */}
             <div
               ref={containerRef}
               className="w-full h-full"
@@ -516,7 +464,6 @@ export function RoomPage() {
             </div>
           </div>
         </div>
-
       </div>
 
       {selectedUser && (
