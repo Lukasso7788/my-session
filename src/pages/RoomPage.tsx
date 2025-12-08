@@ -430,7 +430,7 @@ export function RoomPage() {
 
           <div className="w-[9%] bg-[#1F2937] rounded-r-2xl flex flex-col items-center justify-center gap-1 border-l border-[#404651]">
             <img src="/icons/session_timer.svg" className="w-[48px] h-[48px]" />
-            <span className="font-inter text-[26px]">
+            <span className="font-inter text-[24px]">
               {remainingTime || "--:--"}
             </span>
           </div>
