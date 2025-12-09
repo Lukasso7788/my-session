@@ -1,5 +1,3 @@
-// FULL UPDATED ROOMPAGE WITH JITSI INTEGRATION (ROOM = session.id)
-
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { IntentionsPanel } from "../components/IntentionsPanel";
@@ -21,7 +19,8 @@ export function RoomPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const jitsiRef = useRef<HTMLDivElement | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const apiRef = useRef<any>(null);
 
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -40,6 +39,9 @@ export function RoomPage() {
   const welcomeLoopRef = useRef<HTMLAudioElement | null>(null);
   const audioUnlockedRef = useRef<boolean>(false);
 
+  const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
+  const BREAK_END_SOUND = "/sounds/break_end.mp3";
+
   const STAGE_SOUND_MAP: Record<string, string> = {
     intentions: "/sounds/intentions.mp3",
     focus: "/sounds/focus.mp3",
@@ -47,22 +49,23 @@ export function RoomPage() {
     outro: "/sounds/outro.mp3",
   };
 
-  const BREAK_END_SOUND = "/sounds/break_end.mp3";
-  const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
-
+  // Unlock audio
   useEffect(() => {
     const unlock = () => {
       if (audioUnlockedRef.current) return;
       const a = new Audio();
       a.play().catch(() => { });
       audioUnlockedRef.current = true;
+
       window.removeEventListener("click", unlock, true);
       window.removeEventListener("keydown", unlock, true);
       window.removeEventListener("touchstart", unlock, true);
     };
+
     window.addEventListener("click", unlock, true);
     window.addEventListener("keydown", unlock, true);
     window.addEventListener("touchstart", unlock, true);
+
     return () => {
       window.removeEventListener("click", unlock, true);
       window.removeEventListener("keydown", unlock, true);
@@ -87,20 +90,17 @@ export function RoomPage() {
   };
 
   const stopWelcomeLoop = () => {
-    try {
-      if (welcomeLoopRef.current) {
-        welcomeLoopRef.current.pause();
-        welcomeLoopRef.current.currentTime = 0;
-        welcomeLoopRef.current = null;
-      }
-    } catch { }
+    if (welcomeLoopRef.current) {
+      welcomeLoopRef.current.pause();
+      welcomeLoopRef.current.currentTime = 0;
+      welcomeLoopRef.current = null;
+    }
   };
 
-  // LOAD SESSION DATA
+  // Load session
   useEffect(() => {
     (async () => {
       if (!id) return;
-
       const { data, error } = await supabase
         .from("sessions")
         .select(
@@ -160,11 +160,12 @@ export function RoomPage() {
     })();
   }, [id]);
 
-  // RESOLVE USER NAME
+  // Resolve username
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getUser();
       const u = data.user;
+
       let name =
         u?.user_metadata?.full_name ||
         u?.user_metadata?.name ||
@@ -176,6 +177,7 @@ export function RoomPage() {
           .select("full_name")
           .eq("id", u.id)
           .single();
+
         name = p?.full_name || "";
       }
 
@@ -183,7 +185,7 @@ export function RoomPage() {
     })();
   }, []);
 
-  // REALTIME ATTENDANCE LISTENER
+  // Realtime attendance (unchanged)
   useEffect(() => {
     if (!id) return;
 
@@ -194,10 +196,9 @@ export function RoomPage() {
         .eq("session_id", id);
 
       if (error) {
-        console.error("Attendance fetch error:", error);
+        console.error("Attendance error", error);
         return;
       }
-      console.log("Attendance updated:", data);
     };
 
     fetchAttendance();
@@ -212,76 +213,68 @@ export function RoomPage() {
           table: "session_attendance",
           filter: `session_id=eq.${id}`,
         },
-        () => {
-          console.log("Realtime attendance change");
-          fetchAttendance();
-        }
+        fetchAttendance
       )
       .subscribe();
 
     return () => supabase.removeChannel(sub);
   }, [id]);
 
-  // JITSI INIT — 🔥 MAIN FIX 🔥
+  // JITSI INIT — main change
   useEffect(() => {
-    if (!session?.id || !jitsiRef.current) return;
+    if (!id || !session || !containerRef.current || !userName) return;
 
-    try {
-      const domain = "jitsi.lukassodesign.site";
-
-      const options = {
-        roomName: session.id, // ✔ Вариант A — теперь всегда работает
-        parentNode: jitsiRef.current,
-        width: "100%",
-        height: "100%",
-        interfaceConfigOverwrite: {
-          SHOW_BRAND_WATERMARK: false,
-          SHOW_POWERED_BY: false,
-          SHOW_WATERMARK_FOR_GUESTS: false,
-        },
-        configOverwrite: {
-          disableDeepLinking: true,
-        },
-        userInfo: {
-          displayName: userName || "Guest",
-        },
-      };
-
-      const api = new JitsiMeetExternalAPI(domain, options);
-
-      api.addEventListeners({
-        videoConferenceJoined: () => {
-          console.log("Jitsi joined");
-        },
-        videoConferenceLeft: () => {
-          console.log("Jitsi left");
-        },
-        error: (e: any) => console.error("Jitsi error:", e),
-      });
-
-      return () => {
-        try {
-          api.dispose();
-        } catch { }
-      };
-    } catch (e) {
-      console.error("Jitsi init error:", e);
-      setLastErr(String(e));
+    // Destroy previous instance
+    if (apiRef.current) {
+      try {
+        apiRef.current.dispose();
+      } catch { }
+      apiRef.current = null;
     }
-  }, [session?.id, userName]);
 
-  // STAGE TIMER LOGIC
+    const roomName = `room-${id}`;
+
+    const api = new JitsiMeetExternalAPI("jitsi.lukassodesign.site", {
+      roomName,
+      parentNode: containerRef.current,
+      width: "100%",
+      height: "100%",
+      userInfo: { displayName: userName },
+      configOverwrite: {
+        prejoinPageEnabled: false,
+      },
+      interfaceConfigOverwrite: {},
+    });
+
+    apiRef.current = api;
+
+    api.addEventListener("videoConferenceLeft", () => {
+      navigate("/sessions", { replace: true });
+    });
+
+    return () => {
+      try {
+        apiRef.current?.dispose();
+      } catch { }
+      apiRef.current = null;
+    };
+  }, [session, userName]);
+
+  // Stage system (unchanged)
   const getStageWindows = (startISO: string, items: Stage[]) => {
     const startMs = new Date(startISO).getTime();
     let acc = 0;
+
     const starts = items.map((st) => {
       const ms = startMs + acc * 60 * 1000;
       acc += st.duration;
       return ms;
     });
+
     const ends = items.map(
       (_, i) => starts[i] + items[i].duration * 60 * 1000
     );
+
     return { starts, ends };
   };
 
@@ -330,8 +323,9 @@ export function RoomPage() {
         const prevType = prev?.type;
         const newType = stage.type;
 
-        if (prevType === "break" && newType !== "break")
+        if (prevType === "break" && newType !== "break") {
           playOneShot(BREAK_END_SOUND);
+        }
 
         if (newType === "intro") startWelcomeLoop();
         else {
@@ -343,8 +337,9 @@ export function RoomPage() {
         prevStageRef.current = active;
       }
 
-      if (stage.type !== "intro" && welcomeLoopRef.current)
+      if (stage.type !== "intro" && welcomeLoopRef.current) {
         stopWelcomeLoop();
+      }
 
       setCurrentStage(active);
     }, 1000);
@@ -369,7 +364,8 @@ export function RoomPage() {
   return (
     <div className="min-h-screen bg-[#050F1A] text-white flex justify-center">
       <div className="max-w-[1720px] w-full px-5 py-5 space-y-5">
-        {/* ====================== TOP BAR ====================== */}
+
+        {/* TOP BAR */}
         <div className="flex w-full rounded-2xl overflow-hidden">
           <div className="w-[91%] bg-[#1F2937] px-6 py-8 rounded-l-2xl">
             <div className="flex items-center justify-between w-full">
@@ -380,9 +376,12 @@ export function RoomPage() {
               {session.host_profile && (
                 <button
                   onClick={() => setSelectedUser(session.host_profile)}
-                  className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-[#DBD8D8] bg-transparent text-[14px] text-[#F3F4F6]/85"
+                  className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-[#DBD8D8] text-[14px]"
                 >
-                  <span className="font-normal">Host:</span>
+                  <img
+                    src="/icons/host_session_icon.svg"
+                    className="h-5 w-5 opacity-90"
+                  />
                   <span className="font-bold">
                     {session.host_profile.full_name}
                   </span>
@@ -400,17 +399,26 @@ export function RoomPage() {
           </div>
 
           <div className="w-[9%] bg-[#1F2937] rounded-r-2xl flex flex-col items-center justify-center gap-1 border-l border-[#404651]">
+            <img
+              src="/icons/session_timer.svg"
+              className="w-[48px] h-[48px]"
+            />
             <span className="font-inter text-[26px]">
               {remainingTime || "--:--"}
             </span>
           </div>
         </div>
 
-        {/* ====================== MAIN GRID ====================== */}
+        {/* MAIN GRID */}
         <div className="grid lg:grid-cols-[minmax(0,1fr),420px] gap-5">
-          <div className="rounded-2xl bg-[#1F2937] shadow-lg overflow-hidden relative h-[77vh]">
+
+          {/* VIDEO AREA */}
+          <div
+            className="rounded-2xl bg-[#1F2937] shadow-lg overflow-hidden relative h-[77vh]"
+            style={{ minHeight: "70vh" }}
+          >
             <div
-              ref={jitsiRef}
+              ref={containerRef}
               className="w-full h-full"
               style={{ minHeight: "70vh" }}
             />
@@ -422,6 +430,7 @@ export function RoomPage() {
             )}
           </div>
 
+          {/* INTENTIONS */}
           <div className="rounded-2xl bg-[#1F2937] text-white shadow-lg h-[77vh] overflow-hidden">
             <div className="p-4 h-full">
               <IntentionsPanel />
