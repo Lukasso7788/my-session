@@ -1,12 +1,14 @@
+// FULL JITSI SDK ROOMPAGE (multi-video grid, no Daily)
+
+// =====================
+// Types & React imports
+// =====================
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { IntentionsPanel } from "../components/IntentionsPanel";
 import { SessionStageBar } from "../components/SessionStageBar";
 import { supabase } from "../lib/supabase";
 import { UserProfileModal } from "../components/UserProfileModal";
-
-// @ts-ignore
-import JitsiMeetExternalAPI from "https://jitsi.lukassodesign.site/external_api.js";
 
 type Stage = {
   name: string;
@@ -15,12 +17,94 @@ type Stage = {
   type: "intro" | "intentions" | "focus" | "break" | "outro" | string;
 };
 
+declare global {
+  interface Window {
+    JitsiMeetJS?: any;
+    config?: any;
+  }
+}
+
+// =====================
+// Jitsi constants/helpers
+// =====================
+
+const JITSI_DOMAIN = "jitsi.lukassodesign.site";
+const JITSI_CONFIG_URL = `https://${JITSI_DOMAIN}/config.js`;
+const JITSI_LIB_URL = `https://${JITSI_DOMAIN}/libs/lib-jitsi-meet.min.js`;
+
+let jitsiLoaderPromise: Promise<void> | null = null;
+
+function loadJitsiScripts(): Promise<void> {
+  if (typeof window === "undefined") {
+    return Promise.reject(new Error("Jitsi can only be loaded in browser"));
+  }
+
+  if (window.JitsiMeetJS && window.config) {
+    return Promise.resolve();
+  }
+
+  if (jitsiLoaderPromise) return jitsiLoaderPromise;
+
+  jitsiLoaderPromise = new Promise<void>((resolve, reject) => {
+    let loaded = 0;
+    const onLoad = () => {
+      loaded += 1;
+      if (loaded === 2) {
+        if (window.JitsiMeetJS && window.config) {
+          resolve();
+        } else {
+          reject(new Error("Jitsi scripts loaded but globals are missing"));
+        }
+      }
+    };
+
+    const onError = (src: string) => {
+      reject(new Error(`Failed to load Jitsi script: ${src}`));
+    };
+
+    // config.js
+    if (!document.querySelector(`script[src="${JITSI_CONFIG_URL}"]`)) {
+      const scConfig = document.createElement("script");
+      scConfig.src = JITSI_CONFIG_URL;
+      scConfig.async = true;
+      scConfig.onload = onLoad;
+      scConfig.onerror = () => onError(JITSI_CONFIG_URL);
+      document.head.appendChild(scConfig);
+    } else {
+      onLoad();
+    }
+
+    // lib-jitsi-meet.min.js
+    if (!document.querySelector(`script[src="${JITSI_LIB_URL}"]`)) {
+      const scLib = document.createElement("script");
+      scLib.src = JITSI_LIB_URL;
+      scLib.async = true;
+      scLib.onload = onLoad;
+      scLib.onerror = () => onError(JITSI_LIB_URL);
+      document.head.appendChild(scLib);
+    } else {
+      onLoad();
+    }
+  });
+
+  return jitsiLoaderPromise;
+}
+
+// ===============
+// RoomPage
+// ===============
 export function RoomPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const apiRef = useRef<any>(null);
+
+  // Jitsi refs
+  const connectionRef = useRef<any | null>(null);
+  const conferenceRef = useRef<any | null>(null);
+  const localTracksRef = useRef<any[]>([]);
+  const remoteTracksRef = useRef<Record<string, any[]>>({});
+  const jitsiInitGuardRef = useRef(false);
 
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -39,9 +123,6 @@ export function RoomPage() {
   const welcomeLoopRef = useRef<HTMLAudioElement | null>(null);
   const audioUnlockedRef = useRef<boolean>(false);
 
-  const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
-  const BREAK_END_SOUND = "/sounds/break_end.mp3";
-
   const STAGE_SOUND_MAP: Record<string, string> = {
     intentions: "/sounds/intentions.mp3",
     focus: "/sounds/focus.mp3",
@@ -49,23 +130,25 @@ export function RoomPage() {
     outro: "/sounds/outro.mp3",
   };
 
-  // Unlock audio
+  const BREAK_END_SOUND = "/sounds/break_end.mp3";
+  const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
+
+  // ================
+  // AUDIO UNLOCK HACK
+  // ================
   useEffect(() => {
     const unlock = () => {
       if (audioUnlockedRef.current) return;
       const a = new Audio();
       a.play().catch(() => { });
       audioUnlockedRef.current = true;
-
       window.removeEventListener("click", unlock, true);
       window.removeEventListener("keydown", unlock, true);
       window.removeEventListener("touchstart", unlock, true);
     };
-
     window.addEventListener("click", unlock, true);
     window.addEventListener("keydown", unlock, true);
     window.addEventListener("touchstart", unlock, true);
-
     return () => {
       window.removeEventListener("click", unlock, true);
       window.removeEventListener("keydown", unlock, true);
@@ -90,14 +173,20 @@ export function RoomPage() {
   };
 
   const stopWelcomeLoop = () => {
-    if (welcomeLoopRef.current) {
-      welcomeLoopRef.current.pause();
-      welcomeLoopRef.current.currentTime = 0;
-      welcomeLoopRef.current = null;
+    try {
+      if (welcomeLoopRef.current) {
+        welcomeLoopRef.current.pause();
+        welcomeLoopRef.current.currentTime = 0;
+        welcomeLoopRef.current = null;
+      }
+    } catch {
+      // ignore
     }
   };
 
-  // Load session
+  // ==========================
+  // LOAD SESSION FROM SUPABASE
+  // ==========================
   useEffect(() => {
     (async () => {
       if (!id) return;
@@ -131,8 +220,7 @@ export function RoomPage() {
                       ? "focus"
                       : lower.includes("break") || lower.includes("pause")
                         ? "break"
-                        : lower.includes("farewell") ||
-                          lower.includes("celebrat")
+                        : lower.includes("farewell") || lower.includes("celebrat")
                           ? "outro"
                           : "focus");
 
@@ -152,7 +240,9 @@ export function RoomPage() {
             });
 
             setStages(formatted);
-          } catch { }
+          } catch {
+            // ignore schedule parse errors
+          }
         }
       }
 
@@ -160,12 +250,13 @@ export function RoomPage() {
     })();
   }, [id]);
 
-  // Resolve username
+  // ====================
+  // RESOLVE USER NAME
+  // ====================
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getUser();
       const u = data.user;
-
       let name =
         u?.user_metadata?.full_name ||
         u?.user_metadata?.name ||
@@ -177,7 +268,6 @@ export function RoomPage() {
           .select("full_name")
           .eq("id", u.id)
           .single();
-
         name = p?.full_name || "";
       }
 
@@ -185,7 +275,9 @@ export function RoomPage() {
     })();
   }, []);
 
-  // Realtime attendance (unchanged)
+  // =========================
+  // REALTIME ATTENDANCE LOGIC
+  // =========================
   useEffect(() => {
     if (!id) return;
 
@@ -196,9 +288,11 @@ export function RoomPage() {
         .eq("session_id", id);
 
       if (error) {
-        console.error("Attendance error", error);
+        console.error("Attendance fetch error:", error);
         return;
       }
+
+      console.log("Attendance updated:", data);
     };
 
     fetchAttendance();
@@ -213,68 +307,316 @@ export function RoomPage() {
           table: "session_attendance",
           filter: `session_id=eq.${id}`,
         },
-        fetchAttendance
+        () => {
+          console.log("Realtime attendance change received");
+          fetchAttendance();
+        }
       )
       .subscribe();
 
-    return () => supabase.removeChannel(sub);
+    return () => {
+      supabase.removeChannel(sub);
+    };
   }, [id]);
 
-  // JITSI INIT — main change
-  useEffect(() => {
-    if (!id || !session || !containerRef.current || !userName) return;
+  // ===================
+  // JITSI: helpers
+  // ===================
 
-    // Destroy previous instance
-    if (apiRef.current) {
-      try {
-        apiRef.current.dispose();
-      } catch { }
-      apiRef.current = null;
+  const attachVideoTrack = (
+    track: any,
+    participantId: string,
+    isLocal: boolean
+  ) => {
+    if (!containerRef.current) return;
+    if (track.getType && track.getType() !== "video") return;
+
+    const container = containerRef.current;
+
+    const existing = container.querySelector<HTMLVideoElement>(
+      `video[data-participant-id="${participantId}"][data-track-id="${track.getId?.() ?? ""}"]`
+    );
+    if (existing) {
+      track.attach(existing);
+      return;
     }
 
-    const roomName = `room-${id}`;
+    const video = document.createElement("video");
+    video.autoplay = true;
+    video.muted = isLocal; // локальное видео мьютим
+    video.playsInline = true;
+    video.dataset.participantId = participantId;
+    video.dataset.trackId = track.getId ? String(track.getId()) : "";
+    video.style.width = "100%";
+    video.style.height = "100%";
+    video.style.objectFit = "cover";
 
-    const api = new JitsiMeetExternalAPI("jitsi.lukassodesign.site", {
-      roomName,
-      parentNode: containerRef.current,
-      width: "100%",
-      height: "100%",
-      userInfo: { displayName: userName },
-      configOverwrite: {
-        prejoinPageEnabled: false,
-      },
-      interfaceConfigOverwrite: {},
-    });
+    const wrapper = document.createElement("div");
+    wrapper.style.flex = "1 1 0";
+    wrapper.style.minWidth = "0";
+    wrapper.style.minHeight = "0";
+    wrapper.style.display = "flex";
+    wrapper.style.alignItems = "center";
+    wrapper.style.justifyContent = "center";
+    wrapper.style.padding = "2px";
+    wrapper.dataset.participantId = participantId;
+    wrapper.dataset.trackId = video.dataset.trackId;
 
-    apiRef.current = api;
+    wrapper.appendChild(video);
+    container.appendChild(wrapper);
 
-    api.addEventListener("videoConferenceLeft", () => {
-      navigate("/sessions", { replace: true });
-    });
+    track.attach(video);
+
+    // Простенький CSS-grid через flexbox:
+    container.style.display = "flex";
+    container.style.flexWrap = "wrap";
+    container.style.gap = "4px";
+  };
+
+  const detachVideoTrack = (track: any) => {
+    if (!containerRef.current) return;
+
+    const id = track.getId ? String(track.getId()) : "";
+    const container = containerRef.current;
+
+    const wrapper = container.querySelector<HTMLDivElement>(
+      `div[data-track-id="${id}"]`
+    );
+    if (wrapper) {
+      const video = wrapper.querySelector("video");
+      try {
+        if (video) {
+          track.detach(video);
+        }
+      } catch {
+        // ignore
+      }
+      container.removeChild(wrapper);
+    }
+  };
+
+  const cleanupAllVideo = () => {
+    if (!containerRef.current) return;
+    const container = containerRef.current;
+    container.innerHTML = "";
+  };
+
+  // ====================
+  // JITSI: main effect
+  // ====================
+  useEffect(() => {
+    if (!session || !userName) return;
+    if (jitsiInitGuardRef.current) return;
+    jitsiInitGuardRef.current = true;
+
+    let disposed = false;
+
+    const initJitsi = async () => {
+      try {
+        await loadJitsiScripts();
+
+        if (disposed) return;
+
+        const JitsiMeetJS = window.JitsiMeetJS;
+        const cfg = window.config;
+
+        if (!JitsiMeetJS || !cfg) {
+          throw new Error("Jitsi globals not available");
+        }
+
+        JitsiMeetJS.setLogLevel(JitsiMeetJS.logLevels.ERROR);
+        JitsiMeetJS.init(cfg);
+
+        const options = {
+          hosts: cfg.hosts,
+          serviceUrl: cfg.websocket || cfg.bosh,
+          clientNode: cfg.clientNode,
+        };
+
+        const connection = new JitsiMeetJS.JitsiConnection(
+          null,
+          undefined,
+          options
+        );
+        connectionRef.current = connection;
+
+        const roomNameRaw =
+          session.jitsi_room_name ||
+          (session.daily_room_url
+            ? (() => {
+              try {
+                const u = new URL(session.daily_room_url);
+                const parts = u.pathname.split("/").filter(Boolean);
+                return parts[parts.length - 1] || `session-${session.id}`;
+              } catch {
+                return `session-${session.id}`;
+              }
+            })()
+            : `session-${session.id}`);
+
+        const roomName = roomNameRaw || `session-${session.id}`;
+
+        const onConnectionSuccess = async () => {
+          if (disposed) return;
+
+          const conf = connection.initJitsiConference(roomName, cfg.conference);
+          conferenceRef.current = conf;
+
+          conf.on(
+            JitsiMeetJS.events.conference.TRACK_ADDED,
+            (track: any) => {
+              if (disposed) return;
+              if (track.isLocal && track.isLocal()) return;
+              const participantId = track.getParticipantId
+                ? track.getParticipantId()
+                : "remote";
+              if (!remoteTracksRef.current[participantId]) {
+                remoteTracksRef.current[participantId] = [];
+              }
+              remoteTracksRef.current[participantId].push(track);
+              attachVideoTrack(track, participantId, false);
+            }
+          );
+
+          conf.on(
+            JitsiMeetJS.events.conference.TRACK_REMOVED,
+            (track: any) => {
+              detachVideoTrack(track);
+            }
+          );
+
+          conf.on(
+            JitsiMeetJS.events.conference.USER_LEFT,
+            (id: string) => {
+              const arr = remoteTracksRef.current[id] || [];
+              arr.forEach((t: any) => detachVideoTrack(t));
+              delete remoteTracksRef.current[id];
+            }
+          );
+
+          conf.on(
+            JitsiMeetJS.events.conference.CONFERENCE_ERROR,
+            (e: any) => {
+              console.error("Jitsi conference error", e);
+              setLastErr("Conference error");
+            }
+          );
+
+          conf.join();
+
+          // Local tracks
+          const localTracks = await JitsiMeetJS.createLocalTracks({
+            devices: ["audio", "video"],
+          });
+
+          if (disposed) return;
+
+          localTracksRef.current = localTracks;
+
+          localTracks.forEach((track: any) => {
+            if (track.getType && track.getType() === "video") {
+              attachVideoTrack(track, "local", true);
+            } else if (track.getType && track.getType() === "audio") {
+              // для локального аудио можем не создавать элемент, достаточно добавить в конференцию
+            }
+
+            conf.addTrack(track).catch((err: any) => {
+              console.error("Error adding local track", err);
+            });
+          });
+        };
+
+        const onConnectionFailed = () => {
+          if (disposed) return;
+          setLastErr("Jitsi connection failed");
+        };
+
+        const onConnectionDisconnected = () => {
+          // no-op for now
+        };
+
+        connection.addEventListener(
+          JitsiMeetJS.events.connection.CONNECTION_ESTABLISHED,
+          onConnectionSuccess
+        );
+        connection.addEventListener(
+          JitsiMeetJS.events.connection.CONNECTION_FAILED,
+          onConnectionFailed
+        );
+        connection.addEventListener(
+          JitsiMeetJS.events.connection.CONNECTION_DISCONNECTED,
+          onConnectionDisconnected
+        );
+
+        connection.connect();
+      } catch (e: any) {
+        if (!disposed) {
+          console.error("Jitsi init error", e);
+          setLastErr(String(e?.message || e));
+        }
+      }
+    };
+
+    initJitsi();
 
     return () => {
+      disposed = true;
+
       try {
-        apiRef.current?.dispose();
-      } catch { }
-      apiRef.current = null;
+        const conf = conferenceRef.current;
+        if (conf) {
+          conf.leave().catch(() => { });
+        }
+      } catch {
+        // ignore
+      }
+
+      try {
+        localTracksRef.current.forEach((t) => {
+          try {
+            t.dispose();
+          } catch {
+            // ignore
+          }
+        });
+      } catch {
+        // ignore
+      }
+
+      localTracksRef.current = [];
+      remoteTracksRef.current = {};
+
+      try {
+        const conn = connectionRef.current;
+        if (conn) {
+          conn.disconnect().catch(() => { });
+        }
+      } catch {
+        // ignore
+      }
+
+      connectionRef.current = null;
+      conferenceRef.current = null;
+
+      cleanupAllVideo();
+      stopWelcomeLoop();
     };
   }, [session, userName]);
 
-  // Stage system (unchanged)
+  // =====================
+  // STAGE LOGIC (как было)
+  // =====================
   const getStageWindows = (startISO: string, items: Stage[]) => {
     const startMs = new Date(startISO).getTime();
     let acc = 0;
-
     const starts = items.map((st) => {
       const ms = startMs + acc * 60 * 1000;
       acc += st.duration;
       return ms;
     });
-
     const ends = items.map(
       (_, i) => starts[i] + items[i].duration * 60 * 1000
     );
-
     return { starts, ends };
   };
 
@@ -327,8 +669,9 @@ export function RoomPage() {
           playOneShot(BREAK_END_SOUND);
         }
 
-        if (newType === "intro") startWelcomeLoop();
-        else {
+        if (newType === "intro") {
+          startWelcomeLoop();
+        } else {
           stopWelcomeLoop();
           const sound = STAGE_SOUND_MAP[newType];
           if (sound) playOneShot(sound);
@@ -347,6 +690,10 @@ export function RoomPage() {
     return () => clearInterval(timer);
   }, [session?.start_time, stages]);
 
+  // =====================
+  // RENDER
+  // =====================
+
   if (loading)
     return (
       <div className="flex h-screen justify-center items-center text-white bg-[#050F1A]">
@@ -364,10 +711,13 @@ export function RoomPage() {
   return (
     <div className="min-h-screen bg-[#050F1A] text-white flex justify-center">
       <div className="max-w-[1720px] w-full px-5 py-5 space-y-5">
-
-        {/* TOP BAR */}
+        {/* ======================
+            DOUBLE-CONTAINER TOP BAR
+        ====================== */}
         <div className="flex w-full rounded-2xl overflow-hidden">
+          {/* LEFT BLOCK (91%) */}
           <div className="w-[91%] bg-[#1F2937] px-6 py-8 rounded-l-2xl">
+            {/* ROW: SESSION TITLE + HOST BADGE */}
             <div className="flex items-center justify-between w-full">
               <p className="font-inter font-medium text-[17px] text-[#F3F4F6]/85">
                 {session.title}
@@ -376,19 +726,24 @@ export function RoomPage() {
               {session.host_profile && (
                 <button
                   onClick={() => setSelectedUser(session.host_profile)}
-                  className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-[#DBD8D8] text-[14px]"
+                  className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-[#DBD8D8] bg-transparent text-[14px] text-[#F3F4F6]/85 hover:bg-[#111827] transition font-inter"
                 >
                   <img
                     src="/icons/host_session_icon.svg"
                     className="h-5 w-5 opacity-90"
                   />
-                  <span className="font-bold">
-                    {session.host_profile.full_name}
+
+                  <span className="flex items-center gap-1">
+                    <span className="font-normal">Host:</span>
+                    <span className="font-bold">
+                      {session.host_profile.full_name}
+                    </span>
                   </span>
                 </button>
               )}
             </div>
 
+            {/* STAGE BAR */}
             <div className="mt-2 max-h-[24px]">
               <SessionStageBar
                 stages={stages}
@@ -398,6 +753,7 @@ export function RoomPage() {
             </div>
           </div>
 
+          {/* RIGHT TIMER BLOCK (9%) */}
           <div className="w-[9%] bg-[#1F2937] rounded-r-2xl flex flex-col items-center justify-center gap-1 border-l border-[#404651]">
             <img
               src="/icons/session_timer.svg"
@@ -411,8 +767,7 @@ export function RoomPage() {
 
         {/* MAIN GRID */}
         <div className="grid lg:grid-cols-[minmax(0,1fr),420px] gap-5">
-
-          {/* VIDEO AREA */}
+          {/* VIDEO AREA: теперь Jitsi SDK grid */}
           <div
             className="rounded-2xl bg-[#1F2937] shadow-lg overflow-hidden relative h-[77vh]"
             style={{ minHeight: "70vh" }}
