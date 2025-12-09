@@ -243,7 +243,7 @@ export function RoomPage() {
     containerRef.current.innerHTML = "";
 
     try {
-      const domain = "63.250.60.176"; // your Jitsi server
+      const domain = "jitsi.lukassodesign.site"; // your Jitsi server
       const options = {
         roomName: `session-${id}`,
         parentNode: containerRef.current,
