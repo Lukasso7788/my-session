@@ -2,11 +2,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import DailyIframe, { DailyCall } from "@daily-co/daily-js";
 import { IntentionsPanel } from "../components/IntentionsPanel";
 import { SessionStageBar } from "../components/SessionStageBar";
 import { supabase } from "../lib/supabase";
 import { UserProfileModal } from "../components/UserProfileModal";
+
+declare global {
+  interface Window {
+    JitsiMeetExternalAPI?: any;
+  }
+}
 
 type Stage = {
   name: string;
@@ -20,7 +25,7 @@ export function RoomPage() {
   const navigate = useNavigate();
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const callRef = useRef<DailyCall | null>(null);
+  const jitsiApiRef = useRef<any | null>(null);
   const initGuardRef = useRef(false);
 
   const [session, setSession] = useState<any>(null);
@@ -130,7 +135,8 @@ export function RoomPage() {
                       ? "focus"
                       : lower.includes("break") || lower.includes("pause")
                         ? "break"
-                        : lower.includes("farewell") || lower.includes("celebrat")
+                        : lower.includes("farewell") ||
+                          lower.includes("celebrat")
                           ? "outro"
                           : "focus");
 
@@ -223,9 +229,10 @@ export function RoomPage() {
     };
   }, [id]);
 
-  // DAILY INIT
+  // JITSI INIT
   useEffect(() => {
-    if (!session?.daily_room_url || !containerRef.current || !userName) return;
+    if (!session || !containerRef.current || !userName) return;
+
     if (initGuardRef.current) return;
     initGuardRef.current = true;
 
@@ -236,99 +243,90 @@ export function RoomPage() {
       container.style.height = "70vh";
     }
 
-    if (callRef.current) {
+    if (jitsiApiRef.current) {
       try {
-        callRef.current.destroy();
+        jitsiApiRef.current.dispose();
       } catch { }
-      callRef.current = null;
+      jitsiApiRef.current = null;
     }
 
-    const frame = DailyIframe.createFrame(container, {
-      iframeStyle: {
-        width: "100%",
-        height: "100%",
-        border: "0",
-        borderRadius: "1rem",
+    const domain = "jitsi.lukassodesign.site";
+
+    const roomName =
+      (session as any).jitsi_room ||
+      (session as any).jitsi_room_name ||
+      (session.id ?? "").toString() ||
+      "default-room";
+
+    const options = {
+      roomName,
+      parentNode: container,
+      width: "100%",
+      height: "100%",
+      interfaceConfigOverwrite: {
+        // сюда потом сможешь добавить кастомную конфигурацию UI
       },
-      showFullscreenButton: true,
-      showLeaveButton: true,
-    });
-
-    callRef.current = frame;
-
-    const withGrid = session.daily_room_url.includes("?")
-      ? `${session.daily_room_url}&layout=grid`
-      : `${session.daily_room_url}?layout=grid`;
-
-    let destroyed = false;
-
-    const removeAll = () => {
-      try {
-        frame.off("joined-meeting");
-      } catch { }
-      try {
-        frame.off("left-meeting");
-      } catch { }
-      try {
-        frame.off("error");
-      } catch { }
+      configOverwrite: {
+        prejoinPageEnabled: false,
+      },
+      userInfo: {
+        displayName: userName,
+      },
     };
 
-    const safeLeave = async () => {
-      if (destroyed) return;
-      destroyed = true;
-      removeAll();
-      try {
-        await frame.leave?.();
-      } catch { }
-      try {
-        await frame.destroy();
-      } catch { }
-      callRef.current = null;
+    const JitsiAPI = window.JitsiMeetExternalAPI;
+    if (!JitsiAPI) {
+      setLastErr("JitsiMeetExternalAPI is not available on window");
+      return;
+    }
+
+    let api: any;
+    let disposed = false;
+
+    try {
+      api = new JitsiAPI(domain, options);
+      jitsiApiRef.current = api;
+    } catch (e: any) {
+      setLastErr(String(e?.message || e));
+      return;
+    }
+
+    const onLeft = () => {
+      if (disposed) return;
+      disposed = true;
       stopWelcomeLoop();
+      try {
+        api.dispose();
+      } catch { }
+      jitsiApiRef.current = null;
       navigate("/sessions", { replace: true });
     };
 
-    frame.on("left-meeting", safeLeave);
-    frame.on("error", (e) =>
-      setLastErr(String(e?.errorMsg || e?.message || e))
-    );
+    const onError = (e: any) => {
+      setLastErr(String(e?.message || e));
+    };
 
-    (async () => {
-      try {
-        const roomName =
-          new URL(session.daily_room_url).pathname.split("/").pop() || "";
-        const { data } = await supabase.functions.invoke("daily-token", {
-          body: { roomName, userName, roomUrl: session.daily_room_url },
-        });
-
-        await frame.join({
-          url: withGrid,
-          token: data.token,
-          userName,
-          audioSource: true,
-          videoSource: true,
-        });
-      } catch (e: any) {
-        if (!destroyed) setLastErr(e?.message);
-      }
-    })();
+    api.addListener("videoConferenceLeft", onLeft);
+    api.addListener("error", onError);
 
     return () => {
-      if (!destroyed) {
-        destroyed = true;
-        removeAll();
-        try {
-          frame.leave?.();
-        } catch { }
-        try {
-          frame.destroy();
-        } catch { }
-        callRef.current = null;
-        stopWelcomeLoop();
-      }
+      if (disposed) return;
+      disposed = true;
+
+      try {
+        api.removeListener("videoConferenceLeft", onLeft);
+      } catch { }
+      try {
+        api.removeListener("error", onError);
+      } catch { }
+
+      try {
+        api.dispose();
+      } catch { }
+      jitsiApiRef.current = null;
+      stopWelcomeLoop();
     };
-  }, [session?.daily_room_url, userName]);
+  }, [session, userName, navigate]);
 
   // STAGE LOGIC
   const getStageWindows = (startISO: string, items: Stage[]) => {
@@ -364,7 +362,9 @@ export function RoomPage() {
           active = i;
           const rem = next - diffSec;
           setRemainingTime(
-            `${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`
+            `${Math.floor(rem / 60)}:${String(
+              Math.floor(rem % 60)
+            ).padStart(2, "0")}`
           );
           break;
         }
@@ -430,15 +430,12 @@ export function RoomPage() {
   return (
     <div className="min-h-screen bg-[#050F1A] text-white flex justify-center">
       <div className="max-w-[1720px] w-full px-5 py-5 space-y-5">
-
         {/* ======================
             DOUBLE-CONTAINER TOP BAR (REV 3)
         ====================== */}
         <div className="flex w-full rounded-2xl overflow-hidden">
-
           {/* LEFT BLOCK (91%) */}
           <div className="w-[91%] bg-[#1F2937] px-6 py-8 rounded-l-2xl">
-
             {/* ROW: SESSION TITLE + HOST BADGE */}
             <div className="flex items-center justify-between w-full">
               <p className="font-inter font-medium text-[17px] text-[#F3F4F6]/85">
@@ -490,7 +487,6 @@ export function RoomPage() {
 
         {/* MAIN GRID */}
         <div className="grid lg:grid-cols-[minmax(0,1fr),420px] gap-5">
-
           {/* VIDEO AREA */}
           <div
             className="rounded-2xl bg-[#1F2937] shadow-lg overflow-hidden relative h-[77vh]"
@@ -516,7 +512,6 @@ export function RoomPage() {
             </div>
           </div>
         </div>
-
       </div>
 
       {selectedUser && (
