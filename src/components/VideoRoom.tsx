@@ -3,7 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { JitsiParticipant, JitsiTrack } from "../lib/jitsiEngine";
 
-export type ReactionType = "fire" | "laugh" | "clap" | "heart" | "thumbsUp" | "thumbsDown";
+export type ReactionType =
+    | "fire"
+    | "laugh"
+    | "clap"
+    | "heart"
+    | "thumbsUp"
+    | "thumbsDown";
 
 export type Reaction = {
     id: number;
@@ -16,6 +22,10 @@ type VideoRoomProps = {
     onToggleVideo: () => void;
     onToggleScreenShare: () => void;
     onLeave?: () => void;
+
+    // NEW:
+    incomingReactions?: { id: number; fromId: string; type: ReactionType }[];
+    onSendReaction?: (type: ReactionType) => void;
 };
 
 const reactionEmoji: Record<ReactionType, string> = {
@@ -39,13 +49,10 @@ function attachTrackToMedia(track: JitsiTrack | undefined, element: HTMLMediaEle
     return () => {
         try {
             track.detach(element);
-        } catch {
-            // ignore
-        }
+        } catch { }
     };
 }
 
-// простые инлайновые иконки вместо эмодзи
 function MicIcon() {
     return (
         <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
@@ -115,13 +122,11 @@ function VideoTile({ participant }: { participant: JitsiParticipant }) {
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const audioRef = useRef<HTMLAudioElement | null>(null);
 
-    // attach video (camera) только если не muted
     useEffect(() => {
         if (!videoRef.current || !participant.videoTrack || participant.videoMuted) return;
         return attachTrackToMedia(participant.videoTrack, videoRef.current);
     }, [participant.videoTrack, participant.videoMuted]);
 
-    // attach audio (remote only)
     useEffect(() => {
         if (participant.isLocal) return;
         if (!audioRef.current || !participant.audioTrack) return;
@@ -153,7 +158,6 @@ function VideoTile({ participant }: { participant: JitsiParticipant }) {
                 </div>
             )}
 
-            {/* name + mic status */}
             <div className="absolute left-3 bottom-3 rounded-md bg-black/55 px-2 py-1 text-[11px] flex items-center gap-2">
                 <span className="text-white/80">
                     {participant.isLocal ? "You" : participant.displayName || "Guest"}
@@ -190,7 +194,6 @@ function ScreenShareLayout({
 
     return (
         <div className="relative w-full h-full flex flex-col md:flex-row gap-2">
-            {/* main screenshare */}
             <div className="relative flex-1 bg-black rounded-2xl overflow-hidden">
                 <video
                     ref={screenVideoRef}
@@ -214,7 +217,6 @@ function ScreenShareLayout({
                 )}
             </div>
 
-            {/* strip of others */}
             <div className="flex md:flex-col gap-2 md:w-52 w-full md:h-full">
                 {others.map((p) => (
                     <div key={p.id} className="flex-1 min-h-[70px]">
@@ -227,13 +229,55 @@ function ScreenShareLayout({
 }
 
 export function VideoRoom(props: VideoRoomProps) {
-    const { participants, onToggleAudio, onToggleVideo, onToggleScreenShare, onLeave } =
-        props;
+    const {
+        participants,
+        onToggleAudio,
+        onToggleVideo,
+        onToggleScreenShare,
+        onLeave,
+        incomingReactions,
+        onSendReaction,
+    } = props;
 
     const [reactions, setReactions] = useState<Reaction[]>([]);
-    const [showReactionsMenu, setShowReactionsMenu] = useState(false);
     const [reactionCounter, setReactionCounter] = useState(0);
+    const [showReactionsMenu, setShowReactionsMenu] = useState(false);
     const menuRef = useRef<HTMLDivElement | null>(null);
+
+    const addReaction = (type: ReactionType) => {
+        const id = reactionCounter + 1;
+        setReactionCounter(id);
+
+        setReactions((prev) => [...prev, { id, type }]);
+
+        setTimeout(() => {
+            setReactions((prev) => prev.filter((r) => r.id !== id));
+        }, 1600);
+    };
+
+    const handleReactionClick = (type: ReactionType) => {
+        addReaction(type);
+        onSendReaction?.(type);
+    };
+
+    useEffect(() => {
+        if (!incomingReactions || incomingReactions.length === 0) return;
+        incomingReactions.forEach((r) => addReaction(r.type));
+    }, [incomingReactions]);
+
+    useEffect(() => {
+        if (!showReactionsMenu) return;
+
+        const handleClickOutside = (e: MouseEvent) => {
+            if (!menuRef.current) return;
+            if (!menuRef.current.contains(e.target as Node)) {
+                setShowReactionsMenu(false);
+            }
+        };
+
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [showReactionsMenu]);
 
     const screenSharer = useMemo(
         () => participants.find((p) => p.isScreenSharing && p.screenTrack),
@@ -254,34 +298,6 @@ export function VideoRoom(props: VideoRoomProps) {
     const isVideoMuted = !!localParticipant?.videoMuted;
     const isScreenSharing = !!localParticipant?.isScreenSharing;
 
-    const handleReactionClick = (type: ReactionType) => {
-        const id = reactionCounter + 1;
-        setReactionCounter(id);
-        setReactions((prev) => [...prev, { id, type }]);
-
-        setTimeout(() => {
-            setReactions((prev) => prev.filter((r) => r.id !== id));
-        }, 1500);
-    };
-
-    // закрытие меню при клике вне
-    useEffect(() => {
-        if (!showReactionsMenu) return;
-
-        const handleClickOutside = (e: MouseEvent) => {
-            const target = e.target as Node | null;
-            if (!menuRef.current || !target) return;
-            if (!menuRef.current.contains(target)) {
-                setShowReactionsMenu(false);
-            }
-        };
-
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => {
-            document.removeEventListener("mousedown", handleClickOutside);
-        };
-    }, [showReactionsMenu]);
-
     const count = participants.length;
 
     const gridColsClass =
@@ -300,7 +316,6 @@ export function VideoRoom(props: VideoRoomProps) {
 
     return (
         <div className="relative w-full h-full flex flex-col">
-            {/* VIDEO AREA */}
             <div className="flex-1 relative overflow-hidden rounded-2xl bg-black/80">
                 {!screenSharer && (
                     <div className={`w-full h-full grid gap-2 p-2 ${gridColsClass}`}>
@@ -312,11 +327,13 @@ export function VideoRoom(props: VideoRoomProps) {
 
                 {screenSharer && (
                     <div className="w-full h-full p-2">
-                        <ScreenShareLayout screenSharer={screenSharer} others={othersForScreen} />
+                        <ScreenShareLayout
+                            screenSharer={screenSharer}
+                            others={othersForScreen}
+                        />
                     </div>
                 )}
 
-                {/* REACTIONS FLOATING OVERLAY */}
                 {reactions.length > 0 && (
                     <div className="pointer-events-none absolute inset-0 flex items-end justify-center pb-20">
                         {reactions.map((r) => (
@@ -328,9 +345,9 @@ export function VideoRoom(props: VideoRoomProps) {
                 )}
             </div>
 
-            {/* CONTROLS BAR */}
             <div className="mt-3 flex items-center justify-center">
                 <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-[#020617]/90 border border-white/10 shadow-lg">
+
                     <button
                         onClick={onToggleAudio}
                         className={
@@ -343,6 +360,7 @@ export function VideoRoom(props: VideoRoomProps) {
                     >
                         <MicIcon />
                     </button>
+
                     <button
                         onClick={onToggleVideo}
                         className={
@@ -355,6 +373,7 @@ export function VideoRoom(props: VideoRoomProps) {
                     >
                         <CameraIcon />
                     </button>
+
                     <button
                         onClick={onToggleScreenShare}
                         className={
@@ -376,6 +395,7 @@ export function VideoRoom(props: VideoRoomProps) {
                         >
                             <SmileIcon />
                         </button>
+
                         {showReactionsMenu && (
                             <div className="absolute bottom-12 left-1/2 -translate-x-1/2 bg-[#020617] border border-white/10 rounded-2xl px-3 py-2 flex gap-2 text-xl">
                                 <button onClick={() => handleReactionClick("fire")}>🔥</button>
@@ -388,7 +408,6 @@ export function VideoRoom(props: VideoRoomProps) {
                         )}
                     </div>
 
-                    {/* leave */}
                     {onLeave && (
                         <button
                             onClick={onLeave}

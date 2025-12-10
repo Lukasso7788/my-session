@@ -1,5 +1,5 @@
 // src/pages/RoomPage.tsx
-// ROOMPAGE + JITSI ENGINE + VIDEO UI (UPDATED)
+// ROOMPAGE + JITSI ENGINE + VIDEO UI (UPDATED WITH REACTIONS)
 
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -9,6 +9,7 @@ import { supabase } from "../lib/supabase";
 import { UserProfileModal } from "../components/UserProfileModal";
 import { JitsiEngine, JitsiParticipant } from "../lib/jitsiEngine";
 import { VideoRoom } from "../components/VideoRoom";
+import type { ReactionType } from "../components/VideoRoom";
 
 type Stage = {
   name: string;
@@ -36,13 +37,17 @@ export function RoomPage() {
   const engineRef = useRef<JitsiEngine | null>(null);
   const [participants, setParticipants] = useState<JitsiParticipant[]>([]);
 
-  // ★ ADDED — track if new participant joined (for sound)
+  // ★ SOUND WHEN USER JOINS
   const prevCountRef = useRef<number>(0);
 
-  // ★ ADDED — track active screen sharer (to detect frozen share)
+  // ★ TRACK SCREEN SHARER
   const [activeScreenSharer, setActiveScreenSharer] = useState<string | null>(null);
 
-  // AUDIO setup -------------
+  // ★ REACTIONS RECEIVED FROM OTHER USERS
+  const [incomingReactions, setIncomingReactions] = useState<{ id: number; type: ReactionType }[]>([]);
+  const reactionIdRef = useRef<number>(0);
+
+  // AUDIO ---------------------------------------------------------
   const prevStageRef = useRef<number>(-1);
   const firstTickDoneRef = useRef<boolean>(false);
   const welcomeLoopRef = useRef<HTMLAudioElement | null>(null);
@@ -58,9 +63,9 @@ export function RoomPage() {
   const BREAK_END_SOUND = "/sounds/break_end.mp3";
   const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
 
-  // ================
-  // AUDIO UNLOCK
-  // ================
+  // ============================================================
+  // UNLOCK AUDIO
+  // ============================================================
   useEffect(() => {
     const unlock = () => {
       if (audioUnlockedRef.current) return;
@@ -109,9 +114,9 @@ export function RoomPage() {
     } catch { }
   };
 
-  // ====================================
+  // ============================================================
   // LOAD SESSION FROM SUPABASE
-  // ====================================
+  // ============================================================
   useEffect(() => {
     (async () => {
       if (!id) return;
@@ -174,9 +179,9 @@ export function RoomPage() {
     })();
   }, [id]);
 
-  // ================
+  // ============================================================
   // RESOLVE USER NAME
-  // ================
+  // ============================================================
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getUser();
@@ -200,9 +205,9 @@ export function RoomPage() {
     })();
   }, []);
 
-  // ================================
+  // ============================================================
   // REALTIME ATTENDANCE
-  // ================================
+  // ============================================================
   useEffect(() => {
     if (!id) return;
 
@@ -216,8 +221,6 @@ export function RoomPage() {
         console.error("Attendance fetch error:", error);
         return;
       }
-
-      console.log("Attendance updated:", data);
     };
 
     fetchAttendance();
@@ -233,7 +236,6 @@ export function RoomPage() {
           filter: `session_id=eq.${id}`,
         },
         () => {
-          console.log("Realtime attendance change received");
           fetchAttendance();
         }
       )
@@ -244,33 +246,32 @@ export function RoomPage() {
     };
   }, [id]);
 
-  // ====================================
-  // JITSI INIT
-  // ====================================
+  // ============================================================
+  // JITSI INIT + REACTIONS HANDLING
+  // ============================================================
   useEffect(() => {
     if (!session || !userName) return;
     if (engineRef.current) return;
 
     const engine = new JitsiEngine({
       onParticipantsUpdate: (list) => {
-        // ★ ADDED — detect new participant → play join sound
+        // sound on join (only when first participant joins second)
         if (prevCountRef.current < 2 && list.length === 2) {
           playOneShot("/sounds/user_joined.mp3", 0.9);
         }
         prevCountRef.current = list.length;
 
-        // ★ ADDED — detect screensharing start/stop
+        // detect screen sharer
         const sharer = list.find((p) => p.isScreenSharing);
         if (sharer) {
           if (activeScreenSharer !== sharer.id) {
             setActiveScreenSharer(sharer.id);
           }
         } else if (activeScreenSharer !== null) {
-          // if screen share ended — reset
           setActiveScreenSharer(null);
         }
 
-        // ★ ADDED — fix displayName for remote participant
+        // fix displayName for host
         const updated = list.map((p) => {
           if (!p.isLocal && p.displayName === "Guest") {
             if (session?.host_profile?.full_name && session.host_profile.id === p.id) {
@@ -287,6 +288,17 @@ export function RoomPage() {
         console.log("Jitsi conference joined");
       },
 
+      onReactionReceived: (fromId, reaction) => {
+        const newId = reactionIdRef.current + 1;
+        reactionIdRef.current = newId;
+
+        setIncomingReactions((prev) => [...prev, { id: newId, type: reaction as ReactionType }]);
+
+        setTimeout(() => {
+          setIncomingReactions((prev) => prev.filter((r) => r.id !== newId));
+        }, 1500);
+      },
+
       onError: (msg) => {
         console.error("Jitsi error:", msg);
         setLastErr(msg);
@@ -295,6 +307,7 @@ export function RoomPage() {
 
     engineRef.current = engine;
 
+    // resolve room name
     const roomNameRaw =
       session.jitsi_room_name ||
       (session.daily_room_url
@@ -309,9 +322,7 @@ export function RoomPage() {
         })()
         : `session-${session.id}`);
 
-    const safeRoomName = roomNameRaw
-      .toLowerCase()
-      .replace(/[^a-z0-9-_]/g, "");
+    const safeRoomName = roomNameRaw.toLowerCase().replace(/[^a-z0-9-_]/g, "");
 
     engine
       .initAndJoin(safeRoomName || `session-${session.id}`, userName || "Guest")
@@ -331,13 +342,15 @@ export function RoomPage() {
     };
   }, [session, userName]);
 
-  // BUTTON HANDLERS ----------
+  // BUTTON HANDLERS
   const handleToggleAudio = () => engineRef.current?.toggleAudioMute();
   const handleToggleVideo = () => engineRef.current?.toggleVideoMute();
   const handleToggleScreenShare = () => engineRef.current?.toggleScreenShare();
   const handleLeave = () => navigate("/sessions", { replace: true });
 
-  // STAGES ----------
+  // ============================================================
+  // STAGES TIMER
+  // ============================================================
   const getStageWindows = (startISO: string, items: Stage[]) => {
     const startMs = new Date(startISO).getTime();
     let acc = 0;
@@ -357,8 +370,7 @@ export function RoomPage() {
 
     const timer = setInterval(() => {
       const now = Date.now();
-      const diffSec =
-        (now - new Date(session.start_time).getTime()) / 1000;
+      const diffSec = (now - new Date(session.start_time).getTime()) / 1000;
 
       let total = 0;
       let active = stages.length - 1;
@@ -369,9 +381,7 @@ export function RoomPage() {
           active = i;
           const rem = next - diffSec;
           setRemainingTime(
-            `${Math.floor(rem / 60)}:${String(
-              Math.floor(rem % 60)
-            ).padStart(2, "0")}`
+            `${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`
           );
           break;
         }
@@ -420,7 +430,9 @@ export function RoomPage() {
     return () => clearInterval(timer);
   }, [session?.start_time, stages]);
 
-  // RENDER ----------------------
+  // ============================================================
+  // RENDER
+  // ============================================================
   if (loading)
     return (
       <div className="flex h-screen justify-center items-center text-white bg-[#050F1A]">
@@ -440,7 +452,7 @@ export function RoomPage() {
       <div className="max-w-[1720px] w-full px-5 py-5 space-y-5">
         {/* TOP BAR */}
         <div className="flex w-full rounded-2xl overflow-hidden">
-          {/* LEFT BLOCK (91%) */}
+          {/* LEFT BLOCK */}
           <div className="w-[91%] bg-[#1F2937] px-6 py-8 rounded-l-2xl">
             <div className="flex items-center justify-between w-full">
               <p className="font-inter font-medium text-[17px] text-[#F3F4F6]/85">
@@ -452,16 +464,10 @@ export function RoomPage() {
                   onClick={() => setSelectedUser(session.host_profile)}
                   className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-[#DBD8D8] bg-transparent text-[14px] text-[#F3F4F6]/85 hover:bg-[#111827] transition font-inter"
                 >
-                  <img
-                    src="/icons/host_session_icon.svg"
-                    className="h-5 w-5 opacity-90"
-                  />
-
+                  <img src="/icons/host_session_icon.svg" className="h-5 w-5 opacity-90" />
                   <span className="flex items-center gap-1">
                     <span className="font-normal">Host:</span>
-                    <span className="font-bold">
-                      {session.host_profile.full_name}
-                    </span>
+                    <span className="font-bold">{session.host_profile.full_name}</span>
                   </span>
                 </button>
               )}
@@ -478,13 +484,8 @@ export function RoomPage() {
 
           {/* TIMER */}
           <div className="w-[9%] bg-[#1F2937] rounded-r-2xl flex flex-col items-center justify-center gap-1 border-l border-[#404651]">
-            <img
-              src="/icons/session_timer.svg"
-              className="w-[48px] h-[48px]"
-            />
-            <span className="font-inter text-[26px]">
-              {remainingTime || "--:--"}
-            </span>
+            <img src="/icons/session_timer.svg" className="w-[48px] h-[48px]" />
+            <span className="font-inter text-[26px]">{remainingTime || "--:--"}</span>
           </div>
         </div>
 
@@ -499,8 +500,8 @@ export function RoomPage() {
                 onToggleVideo={handleToggleVideo}
                 onToggleScreenShare={handleToggleScreenShare}
                 onLeave={handleLeave}
-                // ★ ADDED — pass active screen sharer to help UI avoid freezes
                 activeScreenSharer={activeScreenSharer}
+                incomingReactions={incomingReactions}
               />
             </div>
 
@@ -521,14 +522,10 @@ export function RoomPage() {
       </div>
 
       {selectedUser && (
-        <UserProfileModal
-          user={selectedUser}
-          onClose={() => setSelectedUser(null)}
-        />
+        <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
       )}
     </div>
   );
 }
 
 export default RoomPage;
-
