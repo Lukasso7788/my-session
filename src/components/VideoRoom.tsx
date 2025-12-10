@@ -16,6 +16,9 @@ type VideoRoomProps = {
     onToggleVideo: () => void;
     onToggleScreenShare: () => void;
     onLeave?: () => void;
+
+    /** Важное: движок передаёт callback для глобальных реакций */
+    onExternalReaction?: (cb: (emoji: string) => void) => void;
 };
 
 const reactionEmoji: Record<ReactionType, string> = {
@@ -27,136 +30,53 @@ const reactionEmoji: Record<ReactionType, string> = {
     thumbsDown: "👎",
 };
 
-function attachTrackToMedia(track: JitsiTrack | undefined, element: HTMLMediaElement | null) {
+function attachTrack(track: JitsiTrack | undefined, element: HTMLMediaElement | null) {
     if (!track || !element) return;
-
     try {
         track.attach(element);
+        return () => track.detach(element);
     } catch (e) {
         console.error("attach error", e);
     }
-
-    return () => {
-        try {
-            track.detach(element);
-        } catch {
-            // ignore
-        }
-    };
-}
-
-// простые инлайновые иконки вместо эмодзи
-function MicIcon() {
-    return (
-        <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-            <path
-                d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"
-                fill="currentColor"
-            />
-            <path
-                d="M6 11a1 1 0 0 0-2 0 8 8 0 0 0 7 7.93V21H9a1 1 0 0 0 0 2h6a1 1 0 1 0 0-2h-2v-2.07A8 8 0 0 0 20 11a1 1 0 0 0-2 0 6 6 0 0 1-12 0z"
-                fill="currentColor"
-            />
-        </svg>
-    );
-}
-
-function CameraIcon() {
-    return (
-        <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-            <rect x="4" y="6" width="11" height="12" rx="2" fill="currentColor" />
-            <path
-                d="M17 9.5 21 7v10l-4-2.5z"
-                fill="currentColor"
-            />
-        </svg>
-    );
-}
-
-function ScreenIcon() {
-    return (
-        <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-            <rect x="3" y="4" width="18" height="12" rx="2" fill="currentColor" />
-            <rect x="9" y="18" width="6" height="2" rx="1" fill="currentColor" />
-        </svg>
-    );
-}
-
-function SmileIcon() {
-    return (
-        <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-            <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="1.5" />
-            <circle cx="9" cy="10" r="0.8" fill="currentColor" />
-            <circle cx="15" cy="10" r="0.8" fill="currentColor" />
-            <path
-                d="M9 15c.7.8 1.6 1.2 3 1.2s2.3-.4 3-1.2"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-            />
-        </svg>
-    );
-}
-
-function LeaveIcon() {
-    return (
-        <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true">
-            <path
-                d="M5 5h6a1 1 0 0 1 0 2H7v10h4a1 1 0 0 1 0 2H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"
-                fill="currentColor"
-            />
-            <path
-                d="M13.7 8.3a1 1 0 0 1 1.4 0L19 12l-3.9 3.7a1 1 0 0 1-1.4-1.4L15.6 13H11a1 1 0 0 1 0-2h4.6l-1.3-1.3a1 1 0 0 1 0-1.4z"
-                fill="currentColor"
-            />
-        </svg>
-    );
 }
 
 function VideoTile({ participant }: { participant: JitsiParticipant }) {
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const audioRef = useRef<HTMLAudioElement | null>(null);
 
-    // attach video (camera), только если не muted
+    // attach video
     useEffect(() => {
-        if (!videoRef.current || !participant.videoTrack || participant.videoMuted) return;
-        return attachTrackToMedia(participant.videoTrack, videoRef.current);
+        if (!videoRef.current) return;
+        if (participant.videoMuted || !participant.videoTrack) return;
+        return attachTrack(participant.videoTrack, videoRef.current);
     }, [participant.videoTrack, participant.videoMuted]);
 
-    // attach audio (remote only)
+    // attach remote audio
     useEffect(() => {
         if (participant.isLocal) return;
         if (!audioRef.current || !participant.audioTrack) return;
-        return attachTrackToMedia(participant.audioTrack, audioRef.current);
+        return attachTrack(participant.audioTrack, audioRef.current);
     }, [participant.audioTrack, participant.isLocal]);
-
-    const showVideo = !!participant.videoTrack && !participant.videoMuted;
 
     return (
         <div className="relative bg-black rounded-2xl overflow-hidden flex items-center justify-center">
-            {showVideo && (
+            {!participant.videoMuted && participant.videoTrack ? (
                 <video
                     ref={videoRef}
                     autoPlay
                     playsInline
                     muted={participant.isLocal}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-contain bg-black"
                 />
-            )}
-
-            {!showVideo && (
-                <div className="w-full h-full flex flex-col items-center justify-center bg-[#111827]">
-                    <div className="w-16 h-16 rounded-full bg-[#374151] flex items-center justify-center text-2xl font-semibold">
+            ) : (
+                <div className="w-full h-full flex items-center justify-center bg-[#111827]">
+                    <span className="text-3xl font-semibold">
                         {participant.displayName?.[0]?.toUpperCase() || "?"}
-                    </div>
-                    <span className="mt-2 text-sm text-white/80">
-                        {participant.isLocal ? "You" : participant.displayName || "Guest"}
                     </span>
                 </div>
             )}
 
-            {/* name + mic status (снизу поверх видео / аватара) */}
+            {/* Info bar */}
             <div className="absolute left-3 bottom-3 rounded-md bg-black/55 px-2 py-1 text-[11px] flex items-center gap-2">
                 <span className="text-white/80">
                     {participant.isLocal ? "You" : participant.displayName || "Guest"}
@@ -181,45 +101,38 @@ function ScreenShareLayout({
     screenSharer: JitsiParticipant;
     others: JitsiParticipant[];
 }) {
-    const screenVideoRef = useRef<HTMLVideoElement | null>(null);
+    const ref = useRef<HTMLVideoElement | null>(null);
 
-    // screen track
     useEffect(() => {
-        if (!screenVideoRef.current || !screenSharer.screenTrack) return;
-        return attachTrackToMedia(screenSharer.screenTrack, screenVideoRef.current);
+        if (!ref.current || !screenSharer.screenTrack) return;
+        return attachTrack(screenSharer.screenTrack, ref.current);
     }, [screenSharer.screenTrack]);
 
-    const cameraParticipant = screenSharer.videoTrack && !screenSharer.videoMuted
-        ? screenSharer
-        : undefined;
+    const cameraTile = screenSharer.videoTrack && !screenSharer.videoMuted ? (
+        <div className="absolute top-3 right-3 w-40 h-24 rounded-xl overflow-hidden border border-white/40 shadow-lg bg-black">
+            <VideoTile participant={screenSharer} />
+        </div>
+    ) : null;
 
     return (
         <div className="relative w-full h-full flex flex-col md:flex-row gap-2">
-            {/* main screenshare */}
-            <div className="relative flex-1 bg-black rounded-2xl overflow-hidden">
+            <div className="relative flex-1 rounded-2xl overflow-hidden bg-black">
                 <video
-                    ref={screenVideoRef}
+                    ref={ref}
                     autoPlay
                     playsInline
                     muted={screenSharer.isLocal}
                     className="w-full h-full object-contain bg-black"
                 />
-                <div className="absolute left-3 bottom-3 rounded-md bg-black/60 px-2 py-1 text-[11px]">
-                    <span className="text-white/80">
-                        {screenSharer.isLocal
-                            ? "You (screen)"
-                            : `${screenSharer.displayName || "Guest"} (screen)`}
-                    </span>
+                <div className="absolute left-3 bottom-3 rounded-md bg-black/60 px-2 py-1 text-[11px] text-white/80">
+                    {screenSharer.isLocal
+                        ? "You (screen)"
+                        : `${screenSharer.displayName} (screen)`}
                 </div>
-
-                {cameraParticipant && (
-                    <div className="hidden md:block absolute top-3 right-3 w-40 h-24 rounded-xl overflow-hidden border border-white/30 shadow-lg">
-                        <VideoTile participant={cameraParticipant} />
-                    </div>
-                )}
+                {cameraTile}
             </div>
 
-            {/* strip of others */}
+            {/* Others */}
             <div className="flex md:flex-col gap-2 md:w-52 w-full md:h-full">
                 {others.map((p) => (
                     <div key={p.id} className="flex-1 min-h-[70px]">
@@ -231,92 +144,90 @@ function ScreenShareLayout({
     );
 }
 
-export function VideoRoom(props: VideoRoomProps) {
-    const { participants, onToggleAudio, onToggleVideo, onToggleScreenShare, onLeave } =
-        props;
-
+export function VideoRoom({
+    participants,
+    onToggleAudio,
+    onToggleVideo,
+    onToggleScreenShare,
+    onLeave,
+    onExternalReaction,
+}: VideoRoomProps) {
     const [reactions, setReactions] = useState<Reaction[]>([]);
     const [showReactionsMenu, setShowReactionsMenu] = useState(false);
-    const [reactionCounter, setReactionCounter] = useState(0);
+    const [counter, setCounter] = useState(0);
     const menuRef = useRef<HTMLDivElement | null>(null);
+
+    const spawnReaction = (type: ReactionType) => {
+        const id = counter + 1;
+        setCounter(id);
+        setReactions((p) => [...p, { id, type }]);
+
+        setTimeout(() => {
+            setReactions((p) => p.filter((r) => r.id !== id));
+        }, 1600); // увеличено
+    };
+
+    // global reactions from engine
+    useEffect(() => {
+        if (!onExternalReaction) return;
+        onExternalReaction((emoji) => spawnReaction(emoji as ReactionType));
+    }, [onExternalReaction]);
+
+    // close menu on outside click
+    useEffect(() => {
+        function handleOutside(e: any) {
+            if (menuRef.current && !menuRef.current.contains(e.target)) {
+                setShowReactionsMenu(false);
+            }
+        }
+        document.addEventListener("mousedown", handleOutside);
+        return () => document.removeEventListener("mousedown", handleOutside);
+    }, []);
 
     const screenSharer = useMemo(
         () => participants.find((p) => p.isScreenSharing && p.screenTrack),
         [participants]
     );
 
-    const othersForScreen = useMemo(() => {
+    const others = useMemo(() => {
         if (!screenSharer) return [];
         return participants.filter((p) => p.id !== screenSharer.id);
     }, [participants, screenSharer]);
 
-    const handleReactionClick = (type: ReactionType) => {
-        const id = reactionCounter + 1;
-        setReactionCounter(id);
-        setReactions((prev) => [...prev, { id, type }]);
-
-        setTimeout(() => {
-            setReactions((prev) => prev.filter((r) => r.id !== id));
-        }, 1200);
-    };
-
-    // закрытие меню при клике вне
-    useEffect(() => {
-        if (!showReactionsMenu) return;
-
-        const handleClickOutside = (e: MouseEvent) => {
-            const target = e.target as Node | null;
-            if (!menuRef.current || !target) return;
-            if (!menuRef.current.contains(target)) {
-                setShowReactionsMenu(false);
-            }
-        };
-
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => {
-            document.removeEventListener("mousedown", handleClickOutside);
-        };
-    }, [showReactionsMenu]);
-
     const count = participants.length;
 
-    const gridColsClass =
+    const gridCols =
         count <= 1
-            ? "grid-cols-1 sm:grid-cols-1 md:grid-cols-1"
+            ? "grid-cols-1"
             : count === 2
-                ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-2"
+                ? "grid-cols-2"
                 : count <= 4
-                    ? "grid-cols-2 sm:grid-cols-2 md:grid-cols-2"
+                    ? "grid-cols-2 sm:grid-cols-2"
                     : count <= 9
-                        ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-3"
-                        : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4";
+                        ? "grid-cols-3"
+                        : "grid-cols-4";
 
     return (
         <div className="relative w-full h-full flex flex-col">
-            {/* VIDEO AREA */}
+            {/* VIDEO */}
             <div className="flex-1 relative overflow-hidden rounded-2xl bg-black/80">
-                {!screenSharer && (
-                    <div className={`w-full h-full grid gap-2 p-2 ${gridColsClass}`}>
+                {!screenSharer ? (
+                    <div className={`w-full h-full grid gap-2 p-2 ${gridCols}`}>
                         {participants.map((p) => (
                             <VideoTile key={p.id} participant={p} />
                         ))}
                     </div>
-                )}
-
-                {screenSharer && (
+                ) : (
                     <div className="w-full h-full p-2">
-                        <ScreenShareLayout screenSharer={screenSharer} others={othersForScreen} />
+                        <ScreenShareLayout screenSharer={screenSharer} others={others} />
                     </div>
                 )}
 
-                {/* REACTIONS FLOATING OVERLAY */}
+                {/* Floating reactions */}
                 {reactions.length > 0 && (
                     <div className="pointer-events-none absolute inset-0 flex items-end justify-center pb-20">
                         {reactions.map((r) => (
-                            <div
-                                key={r.id}
-                                className="text-4xl drop-shadow-lg animate-bounce"
-                            >
+                            <div key={r.id} className="text-4xl drop-shadow-xl animate-bounce">
                                 {reactionEmoji[r.type]}
                             </div>
                         ))}
@@ -324,56 +235,69 @@ export function VideoRoom(props: VideoRoomProps) {
                 )}
             </div>
 
-            {/* CONTРОLS BAR */}
+            {/* CONTROLS */}
             <div className="mt-3 flex items-center justify-center">
                 <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-[#020617]/90 border border-white/10 shadow-lg">
+
+                    {/* MIC */}
                     <button
                         onClick={onToggleAudio}
-                        className="w-10 h-10 rounded-full bg-[#111827] flex items-center justify-center text-white hover:bg-[#1f2937] text-sm"
+                        className="icon-btn"
                     >
-                        <MicIcon />
-                    </button>
-                    <button
-                        onClick={onToggleVideo}
-                        className="w-10 h-10 rounded-full bg-[#111827] flex items-center justify-center text-white hover:bg-[#1f2937] text-sm"
-                    >
-                        <CameraIcon />
-                    </button>
-                    <button
-                        onClick={onToggleScreenShare}
-                        className="w-10 h-10 rounded-full bg-[#111827] flex items-center justify-center text-white hover:bg-[#1f2937] text-sm"
-                    >
-                        <ScreenIcon />
+                        <img src="/icons/mic.svg" className="w-5 h-5 opacity-90" />
                     </button>
 
-                    {/* reactions */}
+                    {/* CAMERA */}
+                    <button
+                        onClick={onToggleVideo}
+                        className="icon-btn"
+                    >
+                        <img src="/icons/camera.svg" className="w-5 h-5 opacity-90" />
+                    </button>
+
+                    {/* SCREEN SHARE */}
+                    <button
+                        onClick={onToggleScreenShare}
+                        className="icon-btn"
+                    >
+                        <img src="/icons/screenshare.svg" className="w-5 h-5 opacity-90" />
+                    </button>
+
+                    {/* REACTIONS */}
                     <div className="relative" ref={menuRef}>
                         <button
                             onClick={() => setShowReactionsMenu((v) => !v)}
-                            className="w-10 h-10 rounded-full bg-[#111827] flex items-center justify-center text-white hover:bg-[#1f2937] text-sm"
+                            className="icon-btn"
                         >
-                            <SmileIcon />
+                            <img src="/icons/reactions.svg" className="w-5 h-5 opacity-90" />
                         </button>
+
                         {showReactionsMenu && (
                             <div className="absolute bottom-12 left-1/2 -translate-x-1/2 bg-[#020617] border border-white/10 rounded-2xl px-3 py-2 flex gap-2 text-xl">
-                                <button onClick={() => handleReactionClick("fire")}>🔥</button>
-                                <button onClick={() => handleReactionClick("laugh")}>😂</button>
-                                <button onClick={() => handleReactionClick("clap")}>👏</button>
-                                <button onClick={() => handleReactionClick("heart")}>❤️</button>
-                                <button onClick={() => handleReactionClick("thumbsUp")}>👍</button>
-                                <button onClick={() => handleReactionClick("thumbsDown")}>👎</button>
+                                {(
+                                    ["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown"] as ReactionType[]
+                                ).map((t) => (
+                                    <button
+                                        key={t}
+                                        onClick={() => {
+                                            spawnReaction(t);
+                                        }}
+                                        className="hover:scale-125 transition"
+                                    >
+                                        {reactionEmoji[t]}
+                                    </button>
+                                ))}
                             </div>
                         )}
                     </div>
 
-                    {/* leave */}
+                    {/* LEAVE */}
                     {onLeave && (
                         <button
                             onClick={onLeave}
-                            className="ml-2 px-3 h-9 rounded-full bg-red-600 text-white text-xs font-medium hover:bg-red-700 inline-flex items-center gap-1"
+                            className="ml-2 px-3 h-9 rounded-full bg-red-600 text-white text-xs font-medium hover:bg-red-700"
                         >
-                            <LeaveIcon />
-                            <span>Leave</span>
+                            Leave
                         </button>
                     )}
                 </div>

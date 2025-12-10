@@ -24,6 +24,7 @@ export type JitsiParticipant = {
 export type JitsiEngineCallbacks = {
     onParticipantsUpdate?: (participants: JitsiParticipant[]) => void;
     onConferenceJoin?: () => void;
+    onReaction?: (emoji: string) => void;
     onError?: (message: string) => void;
 };
 
@@ -94,6 +95,8 @@ export class JitsiEngine {
     private config: any | null = null;
     private connection: any | null = null;
     private conference: any | null = null;
+    private dataChannel: any | null = null;
+
     private participants: Record<string, JitsiParticipant> = {};
     private localUserId: string | null = null;
     private localScreenshareTrack: JitsiTrack | null = null;
@@ -103,9 +106,9 @@ export class JitsiEngine {
         this.callbacks = callbacks;
     }
 
-    // ==============
+    // =====================================================
     // PUBLIC API
-    // ==============
+    // =====================================================
     async initAndJoin(roomName: string, userName: string): Promise<void> {
         await loadJitsiScripts();
 
@@ -137,43 +140,38 @@ export class JitsiEngine {
             this.setupConference(roomName, userName);
         };
 
-        const onConnectionFailed = () => {
-            if (this.disposed) return;
-            this.callbacks.onError?.("Jitsi connection failed");
-        };
-
-        const onConnectionDisconnected = () => {
-            // noop
-        };
-
         connection.addEventListener(
             this.JitsiMeetJS.events.connection.CONNECTION_ESTABLISHED,
             onConnectionSuccess
         );
+
         connection.addEventListener(
             this.JitsiMeetJS.events.connection.CONNECTION_FAILED,
-            onConnectionFailed
-        );
-        connection.addEventListener(
-            this.JitsiMeetJS.events.connection.CONNECTION_DISCONNECTED,
-            onConnectionDisconnected
+            () => this.callbacks.onError?.("Jitsi connection failed")
         );
 
         connection.connect();
     }
 
+    sendReaction(emoji: string) {
+        if (this.dataChannel) {
+            this.dataChannel.send(
+                JSON.stringify({ type: "reaction", emoji })
+            );
+        }
+    }
+
     async toggleAudioMute(): Promise<void> {
         if (!this.conference || !this.localUserId) return;
         const local = this.participants[this.localUserId];
-        if (!local || !local.audioTrack) return;
+        if (!local?.audioTrack) return;
 
-        const track = local.audioTrack;
         try {
-            if (track.isMuted && track.isMuted()) {
-                await track.unmute();
+            if (local.audioTrack.isMuted()) {
+                await local.audioTrack.unmute();
                 local.audioMuted = false;
             } else {
-                await track.mute();
+                await local.audioTrack.mute();
                 local.audioMuted = true;
             }
             this.emitParticipants();
@@ -185,15 +183,14 @@ export class JitsiEngine {
     async toggleVideoMute(): Promise<void> {
         if (!this.conference || !this.localUserId) return;
         const local = this.participants[this.localUserId];
-        if (!local || !local.videoTrack) return;
+        if (!local?.videoTrack) return;
 
-        const track = local.videoTrack;
         try {
-            if (track.isMuted && track.isMuted()) {
-                await track.unmute();
+            if (local.videoTrack.isMuted()) {
+                await local.videoTrack.unmute();
                 local.videoMuted = false;
             } else {
-                await track.mute();
+                await local.videoTrack.mute();
                 local.videoMuted = true;
             }
             this.emitParticipants();
@@ -207,38 +204,26 @@ export class JitsiEngine {
 
         const local = this.participants[this.localUserId];
 
-        // stop
         if (this.localScreenshareTrack) {
             try {
                 await this.conference.removeTrack(this.localScreenshareTrack);
-            } catch {
-                // ignore
-            }
-            try {
                 this.localScreenshareTrack.dispose();
-            } catch {
-                // ignore
-            }
+            } catch { }
+
             this.localScreenshareTrack = null;
-            if (local) {
-                local.isScreenSharing = false;
-                local.screenTrack = undefined;
-                this.emitParticipants();
-            }
+            local.isScreenSharing = false;
+            local.screenTrack = undefined;
+            this.emitParticipants();
             return;
         }
 
-        // start
         try {
             const tracks = await this.JitsiMeetJS.createLocalTracks({
                 devices: ["desktop"],
             });
 
             const screenTrack = tracks.find(
-                (t: any) => t.getType && t.getType() === "desktop"
-            ) || tracks.find(
-                (t: any) =>
-                    t.getVideoType && t.getVideoType() === "desktop"
+                (t: any) => t.getType() === "desktop"
             );
 
             if (!screenTrack) return;
@@ -247,13 +232,10 @@ export class JitsiEngine {
 
             await this.conference.addTrack(screenTrack);
 
-            if (local) {
-                local.isScreenSharing = true;
-                local.screenTrack = screenTrack;
-                this.emitParticipants();
-            }
+            local.isScreenSharing = true;
+            local.screenTrack = screenTrack;
+            this.emitParticipants();
         } catch (e) {
-            console.error("toggleScreenShare error", e);
             this.callbacks.onError?.("Screen share failed");
         }
     }
@@ -263,95 +245,59 @@ export class JitsiEngine {
 
         try {
             if (this.localScreenshareTrack) {
-                try {
-                    await this.conference?.removeTrack(this.localScreenshareTrack);
-                } catch {
-                    // ignore
-                }
-                try {
-                    this.localScreenshareTrack.dispose();
-                } catch {
-                    // ignore
-                }
-                this.localScreenshareTrack = null;
+                await this.conference?.removeTrack(this.localScreenshareTrack);
+                this.localScreenshareTrack.dispose();
             }
-        } catch {
-            // ignore
-        }
+        } catch { }
 
         try {
             Object.values(this.participants).forEach((p) => {
                 [p.videoTrack, p.audioTrack, p.screenTrack].forEach((t) => {
                     try {
-                        t && t.dispose && t.dispose();
-                    } catch {
-                        // ignore
-                    }
+                        t?.dispose();
+                    } catch { }
                 });
             });
-        } catch {
-            // ignore
-        }
+        } catch { }
 
         this.participants = {};
-        this.emitParticipants();
 
         try {
             await this.conference?.leave();
-        } catch {
-            // ignore
-        }
+        } catch { }
 
         try {
             await this.connection?.disconnect();
-        } catch {
-            // ignore
-        }
+        } catch { }
 
         this.conference = null;
         this.connection = null;
         this.localUserId = null;
     }
 
-    // ===========
-    // INTERNAL
-    // ===========
+    // =====================================================
+    // INTERNAL LOGIC
+    // =====================================================
     private setupConference(roomName: string, userName: string) {
         if (!this.connection || !this.JitsiMeetJS || !this.config) return;
 
-        const conferenceOptions: any = { ...(this.config.conference || {}) };
+        const conferenceOptions = { ...(this.config.conference || {}) };
         if (userName) {
             conferenceOptions.statisticsId = userName.toLowerCase();
         }
 
-        const baseRoomName =
-            roomName && roomName.trim().length > 0 ? roomName : "default-room";
-
-        let safeRoomName = baseRoomName
-            .toLowerCase()
-            .replace(/[^a-z0-9-_]/g, "");
-
-        if (!safeRoomName) {
-            safeRoomName = "session-" + Math.random().toString(36).substring(2, 8);
-        }
-
-        console.log("Joining Jitsi room:", {
-            rawRoomName: roomName,
-            safeRoomName,
-        });
-
-        const conf = this.connection.initJitsiConference(
-            safeRoomName,
-            conferenceOptions
-        );
+        const safeName = roomName.toLowerCase().replace(/[^a-z0-9-_]/g, "");
+        const conf = this.connection.initJitsiConference(safeName, conferenceOptions);
         this.conference = conf;
 
         const events = this.JitsiMeetJS.events;
 
+        // ===========================================
+        // CONFERENCE JOINED — где мы получаем userId
+        // ===========================================
         conf.on(events.conference.CONFERENCE_JOINED, () => {
-            if (this.disposed) return;
-
             const anyConf = conf as any;
+
             let localId: string | null = null;
 
             if (typeof anyConf.getLocalUserId === "function") {
@@ -360,25 +306,36 @@ export class JitsiEngine {
                 localId = anyConf.myUserId();
             }
 
-            console.log("Jitsi CONFERENCE_JOINED localId:", localId);
-
             if (!localId) {
                 this.callbacks.onError?.("Failed to resolve local user id");
                 return;
             }
 
             this.localUserId = localId;
-
-            // прокидываем имя из Supabase в Jitsi displayName
-            if (userName && typeof anyConf.setDisplayName === "function") {
-                anyConf.setDisplayName(userName);
-            }
-
             this.ensureLocalParticipant(userName);
             this.callbacks.onConferenceJoin?.();
             this.createLocalTracks();
         });
 
+        // ===========================================================
+        // DATA CHANNEL — глобальные реакции
+        // ===========================================================
+        conf.on(events.conference.DATA_CHANNEL_OPENED, (channel: any) => {
+            this.dataChannel = channel;
+
+            channel.onmessage = (msg: any) => {
+                try {
+                    const data = JSON.parse(msg.data);
+                    if (data.type === "reaction") {
+                        this.callbacks.onReaction?.(data.emoji);
+                    }
+                } catch { }
+            };
+        });
+
+        // ===========================================================
+        // TRACK EVENTS
+        // ===========================================================
         conf.on(events.conference.TRACK_ADDED, (track: any) => {
             if (this.disposed) return;
             this.handleTrackAdded(track);
@@ -394,20 +351,17 @@ export class JitsiEngine {
             this.handleTrackMuteChanged(track);
         });
 
+        // ===========================================================
+        // PARTICIPANTS
+        // ===========================================================
         conf.on(events.conference.USER_JOINED, (id: string, user: any) => {
             if (this.disposed) return;
             this.ensureRemoteParticipant(id, user?._displayName || "Guest");
         });
 
         conf.on(events.conference.USER_LEFT, (id: string) => {
-            if (this.disposed) return;
             delete this.participants[id];
             this.emitParticipants();
-        });
-
-        conf.on(events.conference.CONFERENCE_ERROR, (e: any) => {
-            console.error("Jitsi conference error", e);
-            this.callbacks.onError?.("Conference error");
         });
 
         conf.join();
@@ -415,10 +369,11 @@ export class JitsiEngine {
 
     private ensureLocalParticipant(displayName: string) {
         if (!this.localUserId) return;
+
         if (!this.participants[this.localUserId]) {
             this.participants[this.localUserId] = {
                 id: this.localUserId,
-                displayName: displayName || "Me",
+                displayName,
                 isLocal: true,
                 audioMuted: false,
                 videoMuted: false,
@@ -432,7 +387,7 @@ export class JitsiEngine {
         if (!this.participants[id]) {
             this.participants[id] = {
                 id,
-                displayName: displayName || "Guest",
+                displayName,
                 isLocal: false,
                 audioMuted: false,
                 videoMuted: false,
@@ -452,105 +407,101 @@ export class JitsiEngine {
 
             for (const track of tracks) {
                 await this.conference.addTrack(track);
-                // TRACK_ADDED обработает map participants
             }
         } catch (e) {
-            console.error("createLocalTracks error", e);
             this.callbacks.onError?.("Failed to access camera/microphone");
         }
     }
 
     private handleTrackAdded(track: any) {
-        const type = track.getType && track.getType();
-        const videoType = track.getVideoType && track.getVideoType();
-        const isLocal = track.isLocal && track.isLocal();
+        const type = track.getType();
+        const isLocal = track.isLocal();
+
         const participantId = isLocal
             ? this.localUserId
-            : track.getParticipantId
-                ? track.getParticipantId()
-                : null;
+            : track.getParticipantId?.() ||
+            track?.ownerEndpointId ||
+            track?.containers?.[0]?.id ||
+            null;
 
         if (!participantId) return;
 
-        if (isLocal) {
-            this.ensureLocalParticipant("");
-        } else {
-            this.ensureRemoteParticipant(participantId, "Guest");
-        }
+        if (isLocal) this.ensureLocalParticipant("");
+        else this.ensureRemoteParticipant(participantId, "Guest");
 
         const p = this.participants[participantId];
         if (!p) return;
 
-        const isDesktop =
-            type === "desktop" || videoType === "desktop";
-
-        if (isDesktop) {
-            p.screenTrack = track;
-            p.isScreenSharing = true;
-        } else if (type === "audio") {
+        if (type === "audio") {
             p.audioTrack = track;
-            p.audioMuted = track.isMuted ? track.isMuted() : false;
+            p.audioMuted = track.isMuted();
         } else if (type === "video") {
             p.videoTrack = track;
-            p.videoMuted = track.isMuted ? track.isMuted() : false;
+            p.videoMuted = track.isMuted();
+        } else if (type === "desktop") {
+            p.screenTrack = track;
+            p.isScreenSharing = true;
         }
 
         this.emitParticipants();
     }
 
     private handleTrackRemoved(track: any) {
-        const type = track.getType && track.getType();
-        const videoType = track.getVideoType && track.getVideoType();
-        const isLocal = track.isLocal && track.isLocal();
+        const type = track.getType();
+        const isLocal = track.isLocal();
+
         const participantId = isLocal
             ? this.localUserId
-            : track.getParticipantId
-                ? track.getParticipantId()
-                : null;
+            : track.getParticipantId?.() ||
+            track?.ownerEndpointId ||
+            track?.containers?.[0]?.id ||
+            null;
 
         if (!participantId) return;
+
         const p = this.participants[participantId];
         if (!p) return;
 
-        const isDesktop =
-            type === "desktop" || videoType === "desktop";
-
-        if (isDesktop && p.screenTrack === track) {
-            p.screenTrack = undefined;
-            p.isScreenSharing = false;
-        } else if (type === "audio" && p.audioTrack === track) {
-            p.audioTrack = undefined;
-        } else if (type === "video" && p.videoTrack === track) {
-            p.videoTrack = undefined;
+        if (type === "audio") {
+            if (p.audioTrack === track) p.audioTrack = undefined;
+        } else if (type === "video") {
+            if (p.videoTrack === track) p.videoTrack = undefined;
+        } else if (type === "desktop") {
+            if (p.screenTrack === track) {
+                p.screenTrack = undefined;
+                p.isScreenSharing = false;
+            }
         }
 
         this.emitParticipants();
     }
 
     private handleTrackMuteChanged(track: any) {
-        const type = track.getType && track.getType();
-        const isLocal = track.isLocal && track.isLocal();
+        const type = track.getType();
+        const isLocal = track.isLocal();
+
         const participantId = isLocal
             ? this.localUserId
-            : track.getParticipantId
-                ? track.getParticipantId()
-                : null;
+            : track.getParticipantId?.() ||
+            track?.ownerEndpointId ||
+            track?.containers?.[0]?.id ||
+            null;
 
         if (!participantId) return;
+
         const p = this.participants[participantId];
         if (!p) return;
 
         if (type === "audio") {
-            p.audioMuted = track.isMuted ? track.isMuted() : p.audioMuted;
+            p.audioMuted = track.isMuted();
         } else if (type === "video") {
-            p.videoMuted = track.isMuted ? track.isMuted() : p.videoMuted;
+            p.videoMuted = track.isMuted();
         }
 
         this.emitParticipants();
     }
 
     private emitParticipants() {
-        const arr = Object.values(this.participants);
-        this.callbacks.onParticipantsUpdate?.(arr);
+        this.callbacks.onParticipantsUpdate?.(Object.values(this.participants));
     }
 }
