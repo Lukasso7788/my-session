@@ -45,15 +45,84 @@ function attachTrackToMedia(track: JitsiTrack | undefined, element: HTMLMediaEle
     };
 }
 
+// простые инлайновые иконки вместо эмодзи
+function MicIcon() {
+    return (
+        <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
+            <path
+                d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"
+                fill="currentColor"
+            />
+            <path
+                d="M6 11a1 1 0 0 0-2 0 8 8 0 0 0 7 7.93V21H9a1 1 0 0 0 0 2h6a1 1 0 1 0 0-2h-2v-2.07A8 8 0 0 0 20 11a1 1 0 0 0-2 0 6 6 0 0 1-12 0z"
+                fill="currentColor"
+            />
+        </svg>
+    );
+}
+
+function CameraIcon() {
+    return (
+        <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
+            <rect x="4" y="6" width="11" height="12" rx="2" fill="currentColor" />
+            <path
+                d="M17 9.5 21 7v10l-4-2.5z"
+                fill="currentColor"
+            />
+        </svg>
+    );
+}
+
+function ScreenIcon() {
+    return (
+        <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="12" rx="2" fill="currentColor" />
+            <rect x="9" y="18" width="6" height="2" rx="1" fill="currentColor" />
+        </svg>
+    );
+}
+
+function SmileIcon() {
+    return (
+        <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="1.5" />
+            <circle cx="9" cy="10" r="0.8" fill="currentColor" />
+            <circle cx="15" cy="10" r="0.8" fill="currentColor" />
+            <path
+                d="M9 15c.7.8 1.6 1.2 3 1.2s2.3-.4 3-1.2"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+            />
+        </svg>
+    );
+}
+
+function LeaveIcon() {
+    return (
+        <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true">
+            <path
+                d="M5 5h6a1 1 0 0 1 0 2H7v10h4a1 1 0 0 1 0 2H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"
+                fill="currentColor"
+            />
+            <path
+                d="M13.7 8.3a1 1 0 0 1 1.4 0L19 12l-3.9 3.7a1 1 0 0 1-1.4-1.4L15.6 13H11a1 1 0 0 1 0-2h4.6l-1.3-1.3a1 1 0 0 1 0-1.4z"
+                fill="currentColor"
+            />
+        </svg>
+    );
+}
+
 function VideoTile({ participant }: { participant: JitsiParticipant }) {
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const audioRef = useRef<HTMLAudioElement | null>(null);
 
-    // attach video (camera)
+    // attach video (camera), только если не muted
     useEffect(() => {
-        if (!videoRef.current || !participant.videoTrack) return;
+        if (!videoRef.current || !participant.videoTrack || participant.videoMuted) return;
         return attachTrackToMedia(participant.videoTrack, videoRef.current);
-    }, [participant.videoTrack]);
+    }, [participant.videoTrack, participant.videoMuted]);
 
     // attach audio (remote only)
     useEffect(() => {
@@ -62,24 +131,32 @@ function VideoTile({ participant }: { participant: JitsiParticipant }) {
         return attachTrackToMedia(participant.audioTrack, audioRef.current);
     }, [participant.audioTrack, participant.isLocal]);
 
+    const showVideo = !!participant.videoTrack && !participant.videoMuted;
+
     return (
         <div className="relative bg-black rounded-2xl overflow-hidden flex items-center justify-center">
-            <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted={participant.isLocal}
-                className="w-full h-full object-cover"
-            />
-            {!participant.videoTrack && (
-                <div className="w-full h-full flex items-center justify-center bg-[#111827]">
-                    <span className="text-3xl font-semibold">
+            {showVideo && (
+                <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted={participant.isLocal}
+                    className="w-full h-full object-cover"
+                />
+            )}
+
+            {!showVideo && (
+                <div className="w-full h-full flex flex-col items-center justify-center bg-[#111827]">
+                    <div className="w-16 h-16 rounded-full bg-[#374151] flex items-center justify-center text-2xl font-semibold">
                         {participant.displayName?.[0]?.toUpperCase() || "?"}
+                    </div>
+                    <span className="mt-2 text-sm text-white/80">
+                        {participant.isLocal ? "You" : participant.displayName || "Guest"}
                     </span>
                 </div>
             )}
 
-            {/* name + mic status */}
+            {/* name + mic status (снизу поверх видео / аватара) */}
             <div className="absolute left-3 bottom-3 rounded-md bg-black/55 px-2 py-1 text-[11px] flex items-center gap-2">
                 <span className="text-white/80">
                     {participant.isLocal ? "You" : participant.displayName || "Guest"}
@@ -112,7 +189,9 @@ function ScreenShareLayout({
         return attachTrackToMedia(screenSharer.screenTrack, screenVideoRef.current);
     }, [screenSharer.screenTrack]);
 
-    const cameraParticipant = screenSharer.videoTrack ? screenSharer : undefined;
+    const cameraParticipant = screenSharer.videoTrack && !screenSharer.videoMuted
+        ? screenSharer
+        : undefined;
 
     return (
         <div className="relative w-full h-full flex flex-col md:flex-row gap-2">
@@ -127,7 +206,9 @@ function ScreenShareLayout({
                 />
                 <div className="absolute left-3 bottom-3 rounded-md bg-black/60 px-2 py-1 text-[11px]">
                     <span className="text-white/80">
-                        {screenSharer.isLocal ? "You (screen)" : `${screenSharer.displayName} (screen)`}
+                        {screenSharer.isLocal
+                            ? "You (screen)"
+                            : `${screenSharer.displayName || "Guest"} (screen)`}
                     </span>
                 </div>
 
@@ -157,6 +238,7 @@ export function VideoRoom(props: VideoRoomProps) {
     const [reactions, setReactions] = useState<Reaction[]>([]);
     const [showReactionsMenu, setShowReactionsMenu] = useState(false);
     const [reactionCounter, setReactionCounter] = useState(0);
+    const menuRef = useRef<HTMLDivElement | null>(null);
 
     const screenSharer = useMemo(
         () => participants.find((p) => p.isScreenSharing && p.screenTrack),
@@ -172,12 +254,29 @@ export function VideoRoom(props: VideoRoomProps) {
         const id = reactionCounter + 1;
         setReactionCounter(id);
         setReactions((prev) => [...prev, { id, type }]);
-        setShowReactionsMenu(false);
 
         setTimeout(() => {
             setReactions((prev) => prev.filter((r) => r.id !== id));
         }, 1200);
     };
+
+    // закрытие меню при клике вне
+    useEffect(() => {
+        if (!showReactionsMenu) return;
+
+        const handleClickOutside = (e: MouseEvent) => {
+            const target = e.target as Node | null;
+            if (!menuRef.current || !target) return;
+            if (!menuRef.current.contains(target)) {
+                setShowReactionsMenu(false);
+            }
+        };
+
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, [showReactionsMenu]);
 
     const count = participants.length;
 
@@ -216,7 +315,7 @@ export function VideoRoom(props: VideoRoomProps) {
                         {reactions.map((r) => (
                             <div
                                 key={r.id}
-                                className="text-4xl drop-shadow-lg animate-pulse"
+                                className="text-4xl drop-shadow-lg animate-bounce"
                             >
                                 {reactionEmoji[r.type]}
                             </div>
@@ -225,35 +324,35 @@ export function VideoRoom(props: VideoRoomProps) {
                 )}
             </div>
 
-            {/* CONTROLS BAR */}
+            {/* CONTРОLS BAR */}
             <div className="mt-3 flex items-center justify-center">
                 <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-[#020617]/90 border border-white/10 shadow-lg">
                     <button
                         onClick={onToggleAudio}
                         className="w-10 h-10 rounded-full bg-[#111827] flex items-center justify-center text-white hover:bg-[#1f2937] text-sm"
                     >
-                        🎙
+                        <MicIcon />
                     </button>
                     <button
                         onClick={onToggleVideo}
                         className="w-10 h-10 rounded-full bg-[#111827] flex items-center justify-center text-white hover:bg-[#1f2937] text-sm"
                     >
-                        🎥
+                        <CameraIcon />
                     </button>
                     <button
                         onClick={onToggleScreenShare}
                         className="w-10 h-10 rounded-full bg-[#111827] flex items-center justify-center text-white hover:bg-[#1f2937] text-sm"
                     >
-                        🖥
+                        <ScreenIcon />
                     </button>
 
                     {/* reactions */}
-                    <div className="relative">
+                    <div className="relative" ref={menuRef}>
                         <button
                             onClick={() => setShowReactionsMenu((v) => !v)}
                             className="w-10 h-10 rounded-full bg-[#111827] flex items-center justify-center text-white hover:bg-[#1f2937] text-sm"
                         >
-                            😊
+                            <SmileIcon />
                         </button>
                         {showReactionsMenu && (
                             <div className="absolute bottom-12 left-1/2 -translate-x-1/2 bg-[#020617] border border-white/10 rounded-2xl px-3 py-2 flex gap-2 text-xl">
@@ -271,9 +370,10 @@ export function VideoRoom(props: VideoRoomProps) {
                     {onLeave && (
                         <button
                             onClick={onLeave}
-                            className="ml-2 px-3 h-9 rounded-full bg-red-600 text-white text-xs font-medium hover:bg-red-700"
+                            className="ml-2 px-3 h-9 rounded-full bg-red-600 text-white text-xs font-medium hover:bg-red-700 inline-flex items-center gap-1"
                         >
-                            Leave
+                            <LeaveIcon />
+                            <span>Leave</span>
                         </button>
                     )}
                 </div>

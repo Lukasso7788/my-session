@@ -236,6 +236,9 @@ export class JitsiEngine {
 
             const screenTrack = tracks.find(
                 (t: any) => t.getType && t.getType() === "desktop"
+            ) || tracks.find(
+                (t: any) =>
+                    t.getVideoType && t.getVideoType() === "desktop"
             );
 
             if (!screenTrack) return;
@@ -365,6 +368,12 @@ export class JitsiEngine {
             }
 
             this.localUserId = localId;
+
+            // прокидываем имя из Supabase в Jitsi displayName
+            if (userName && typeof anyConf.setDisplayName === "function") {
+                anyConf.setDisplayName(userName);
+            }
+
             this.ensureLocalParticipant(userName);
             this.callbacks.onConferenceJoin?.();
             this.createLocalTracks();
@@ -453,6 +462,7 @@ export class JitsiEngine {
 
     private handleTrackAdded(track: any) {
         const type = track.getType && track.getType();
+        const videoType = track.getVideoType && track.getVideoType();
         const isLocal = track.isLocal && track.isLocal();
         const participantId = isLocal
             ? this.localUserId
@@ -471,15 +481,18 @@ export class JitsiEngine {
         const p = this.participants[participantId];
         if (!p) return;
 
-        if (type === "audio") {
+        const isDesktop =
+            type === "desktop" || videoType === "desktop";
+
+        if (isDesktop) {
+            p.screenTrack = track;
+            p.isScreenSharing = true;
+        } else if (type === "audio") {
             p.audioTrack = track;
             p.audioMuted = track.isMuted ? track.isMuted() : false;
         } else if (type === "video") {
             p.videoTrack = track;
             p.videoMuted = track.isMuted ? track.isMuted() : false;
-        } else if (type === "desktop") {
-            p.screenTrack = track;
-            p.isScreenSharing = true;
         }
 
         this.emitParticipants();
@@ -487,6 +500,7 @@ export class JitsiEngine {
 
     private handleTrackRemoved(track: any) {
         const type = track.getType && track.getType();
+        const videoType = track.getVideoType && track.getVideoType();
         const isLocal = track.isLocal && track.isLocal();
         const participantId = isLocal
             ? this.localUserId
@@ -498,13 +512,16 @@ export class JitsiEngine {
         const p = this.participants[participantId];
         if (!p) return;
 
-        if (type === "audio" && p.audioTrack === track) {
+        const isDesktop =
+            type === "desktop" || videoType === "desktop";
+
+        if (isDesktop && p.screenTrack === track) {
+            p.screenTrack = undefined;
+            p.isScreenSharing = false;
+        } else if (type === "audio" && p.audioTrack === track) {
             p.audioTrack = undefined;
         } else if (type === "video" && p.videoTrack === track) {
             p.videoTrack = undefined;
-        } else if (type === "desktop" && p.screenTrack === track) {
-            p.screenTrack = undefined;
-            p.isScreenSharing = false;
         }
 
         this.emitParticipants();
