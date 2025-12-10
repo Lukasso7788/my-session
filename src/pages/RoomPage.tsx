@@ -24,6 +24,11 @@ declare global {
   }
 }
 
+// Jitsi room name sanitizer (UUID → allowed Jitsi name)
+function toJitsiRoomName(id: string) {
+  return id.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+}
+
 // =====================
 // Jitsi constants/helpers
 // =====================
@@ -459,7 +464,10 @@ export function RoomPage() {
         const onConnectionSuccess = async () => {
           if (disposed) return;
 
-          const conf = connection.initJitsiConference(roomName, cfg.conference);
+          const conf = connection.initJitsiConference(
+            toJitsiRoomName(roomName),
+            cfg.conference
+          );
           conferenceRef.current = conf;
 
           conf.on(
