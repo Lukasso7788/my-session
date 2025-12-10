@@ -24,11 +24,6 @@ declare global {
   }
 }
 
-// Jitsi room name sanitizer (UUID → allowed Jitsi name)
-function toJitsiRoomName(id: string) {
-  return id.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
-}
-
 // =====================
 // Jitsi constants/helpers
 // =====================
@@ -339,7 +334,8 @@ export function RoomPage() {
     const container = containerRef.current;
 
     const existing = container.querySelector<HTMLVideoElement>(
-      `video[data-participant-id="${participantId}"][data-track-id="${track.getId?.() ?? ""}"]`
+      `video[data-participant-id="${participantId}"][data-track-id="${track.getId?.() ?? ""
+      }"]`
     );
     if (existing) {
       track.attach(existing);
@@ -464,9 +460,17 @@ export function RoomPage() {
         const onConnectionSuccess = async () => {
           if (disposed) return;
 
+          // *************
+          // HERE CHANGED:
+          // *************
+          const conferenceOptions = {
+            ...(cfg.conference || {}),
+            statisticsId: userName || undefined,
+          };
+
           const conf = connection.initJitsiConference(
-            toJitsiRoomName(roomName),
-            cfg.conference
+            roomName,
+            conferenceOptions
           );
           conferenceRef.current = conf;
 
@@ -525,7 +529,7 @@ export function RoomPage() {
             if (track.getType && track.getType() === "video") {
               attachVideoTrack(track, "local", true);
             } else if (track.getType && track.getType() === "audio") {
-              // для локального аудио можем не создавать элемент, достаточно добавить в конференцию
+              // локальное аудио не обязательно рендерить
             }
 
             conf.addTrack(track).catch((err: any) => {
