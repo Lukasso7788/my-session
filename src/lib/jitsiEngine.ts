@@ -1,5 +1,5 @@
 // ============================================================================
-// src/lib/jitsiEngine.ts — NEW VERSION WITH RTCDataChannel BROADCAST
+// src/lib/jitsiEngine.ts — версия с P2P + fallback для реакций + фикс скриншера
 // ============================================================================
 
 declare global {
@@ -26,7 +26,7 @@ export type JitsiParticipant = {
 export type JitsiEngineCallbacks = {
     onParticipantsUpdate?: (participants: JitsiParticipant[]) => void;
     onConferenceJoin?: () => void;
-    onReactionReceived?: (id: string, reaction: string) => void;
+    onReactionReceived?: (fromId: string, reaction: string) => void;
     onError?: (message: string) => void;
 };
 
@@ -40,38 +40,55 @@ let jitsiLoaderPromise: Promise<void> | null = null;
 // SCRIPT LOADER
 // ============================================================================
 async function loadJitsiScripts(): Promise<void> {
-    if (typeof window === "undefined") throw new Error("Jitsi must run in browser");
+    if (typeof window === "undefined") {
+        throw new Error("Jitsi can only be loaded in browser");
+    }
 
-    if (window.JitsiMeetJS && window.config) return;
+    if (window.JitsiMeetJS && window.config) {
+        return;
+    }
 
     if (jitsiLoaderPromise) return jitsiLoaderPromise;
 
     jitsiLoaderPromise = new Promise<void>((resolve, reject) => {
         let loaded = 0;
+
         const done = () => {
             loaded += 1;
             if (loaded === 2) {
-                if (window.JitsiMeetJS && window.config) resolve();
-                else reject(new Error("Jitsi loaded but globals missing"));
+                if (window.JitsiMeetJS && window.config) {
+                    resolve();
+                } else {
+                    reject(new Error("Jitsi scripts loaded but globals are missing"));
+                }
             }
         };
-        const fail = (src: string) => reject(new Error(`Failed JS: ${src}`));
+
+        const onError = (src: string) => {
+            reject(new Error(`Failed to load Jitsi script: ${src}`));
+        };
 
         if (!document.querySelector(`script[src="${JITSI_CONFIG_URL}"]`)) {
-            const s = document.createElement("script");
-            s.src = JITSI_CONFIG_URL;
-            s.onload = done;
-            s.onerror = () => fail(JITSI_CONFIG_URL);
-            document.head.appendChild(s);
-        } else done();
+            const scConfig = document.createElement("script");
+            scConfig.src = JITSI_CONFIG_URL;
+            scConfig.async = true;
+            scConfig.onload = done;
+            scConfig.onerror = () => onError(JITSI_CONFIG_URL);
+            document.head.appendChild(scConfig);
+        } else {
+            done();
+        }
 
         if (!document.querySelector(`script[src="${JITSI_LIB_URL}"]`)) {
-            const s = document.createElement("script");
-            s.src = JITSI_LIB_URL;
-            s.onload = done;
-            s.onerror = () => fail(JITSI_LIB_URL);
-            document.head.appendChild(s);
-        } else done();
+            const scLib = document.createElement("script");
+            scLib.src = JITSI_LIB_URL;
+            scLib.async = true;
+            scLib.onload = done;
+            scLib.onerror = () => onError(JITSI_LIB_URL);
+            document.head.appendChild(scLib);
+        } else {
+            done();
+        }
     });
 
     return jitsiLoaderPromise;
@@ -82,9 +99,9 @@ async function loadJitsiScripts(): Promise<void> {
 // ============================================================================
 export class JitsiEngine {
     private callbacks: JitsiEngineCallbacks;
+
     private JitsiMeetJS: any | null = null;
     private config: any | null = null;
-
     private connection: any | null = null;
     private conference: any | null = null;
 
@@ -94,7 +111,7 @@ export class JitsiEngine {
     private localScreenshareTrack: JitsiTrack | null = null;
     private disposed = false;
 
-    // NEW: P2P RTC infra
+    // P2P datachannel infra (оставляем, но реакции теперь дублируем через endpoint messages)
     private peerConnections = new Map<string, RTCPeerConnection>();
     private dataChannels = new Map<string, RTCDataChannel>();
 
@@ -102,17 +119,18 @@ export class JitsiEngine {
         this.callbacks = callbacks;
     }
 
-    // ============================================================================
+    // ========================================================================
     // PUBLIC API
-    // ============================================================================
+    // ========================================================================
     async initAndJoin(roomName: string, userName: string): Promise<void> {
         await loadJitsiScripts();
 
         this.JitsiMeetJS = window.JitsiMeetJS;
         this.config = window.config;
 
-        if (!this.JitsiMeetJS || !this.config)
-            throw new Error("Jitsi globals missing");
+        if (!this.JitsiMeetJS || !this.config) {
+            throw new Error("Jitsi globals not available");
+        }
 
         this.JitsiMeetJS.setLogLevel(this.JitsiMeetJS.logLevels.ERROR);
         this.JitsiMeetJS.init(this.config);
@@ -120,24 +138,35 @@ export class JitsiEngine {
         const options = {
             hosts: this.config.hosts,
             serviceUrl: this.config.websocket || this.config.bosh,
-            clientNode: this.config.clientNode
+            clientNode: this.config.clientNode,
         };
 
-        const conn = new this.JitsiMeetJS.JitsiConnection(null, undefined, options);
-        this.connection = conn;
+        const connection = new this.JitsiMeetJS.JitsiConnection(
+            null,
+            undefined,
+            options
+        );
+        this.connection = connection;
 
-        conn.addEventListener(
+        connection.addEventListener(
             this.JitsiMeetJS.events.connection.CONNECTION_ESTABLISHED,
-            () => !this.disposed && this.setupConference(roomName, userName)
+            () => {
+                if (this.disposed) return;
+                this.setupConference(roomName, userName);
+            }
         );
-        conn.addEventListener(
+        connection.addEventListener(
             this.JitsiMeetJS.events.connection.CONNECTION_FAILED,
-            () => this.callbacks.onError?.("Connection failed")
+            () => {
+                if (this.disposed) return;
+                this.callbacks.onError?.("Jitsi connection failed");
+            }
         );
 
-        conn.connect();
+        connection.connect();
     }
 
+    // локальный юзер кликает реакцию
     public sendReaction(type: string) {
         this.broadcastLocalEvent({ kind: "reaction", reaction: type });
     }
@@ -145,138 +174,299 @@ export class JitsiEngine {
     private broadcastLocalEvent(ev: any) {
         const msg = JSON.stringify(ev);
 
+        // 1) через datachannel (если P2P взлетит)
         for (const dc of this.dataChannels.values()) {
-            if (dc.readyState === "open") dc.send(msg);
+            if (dc.readyState === "open") {
+                try {
+                    dc.send(msg);
+                } catch {
+                    // ignore
+                }
+            }
+        }
+
+        // 2) fallback через Jitsi endpoint messages (надёжно)
+        if (this.conference && this.localUserId) {
+            Object.keys(this.participants).forEach((id) => {
+                if (id === this.localUserId) return;
+                try {
+                    this.conference!.sendEndpointMessage(id, ev);
+                } catch {
+                    // ignore
+                }
+            });
         }
     }
 
-    async toggleAudioMute() {
+    async toggleAudioMute(): Promise<void> {
         if (!this.conference || !this.localUserId) return;
-        const p = this.participants[this.localUserId];
-        if (!p?.audioTrack) return;
+        const local = this.participants[this.localUserId];
+        if (!local || !local.audioTrack) return;
 
+        const track = local.audioTrack;
         try {
-            if (p.audioTrack.isMuted()) await p.audioTrack.unmute();
-            else await p.audioTrack.mute();
-            p.audioMuted = p.audioTrack.isMuted();
+            if (track.isMuted && track.isMuted()) {
+                await track.unmute();
+                local.audioMuted = false;
+            } else {
+                await track.mute();
+                local.audioMuted = true;
+            }
             this.emitParticipants();
         } catch (e) {
-            console.error(e);
+            console.error("toggleAudioMute error", e);
         }
     }
 
-    async toggleVideoMute() {
+    async toggleVideoMute(): Promise<void> {
         if (!this.conference || !this.localUserId) return;
-        const p = this.participants[this.localUserId];
-        if (!p?.videoTrack) return;
+        const local = this.participants[this.localUserId];
+        if (!local || !local.videoTrack) return;
 
+        const track = local.videoTrack;
         try {
-            if (p.videoTrack.isMuted()) await p.videoTrack.unmute();
-            else await p.videoTrack.mute();
-            p.videoMuted = p.videoTrack.isMuted();
+            if (track.isMuted && track.isMuted()) {
+                await track.unmute();
+                local.videoMuted = false;
+            } else {
+                await track.mute();
+                local.videoMuted = true;
+            }
             this.emitParticipants();
         } catch (e) {
-            console.error(e);
+            console.error("toggleVideoMute error", e);
         }
     }
 
-    async toggleScreenShare() {
-        if (!this.conference || !this.localUserId || !this.JitsiMeetJS) return;
+    async toggleScreenShare(): Promise<void> {
+        if (!this.conference || !this.JitsiMeetJS || !this.localUserId) return;
 
         const local = this.participants[this.localUserId];
 
+        // stop (через нашу кнопку)
         if (this.localScreenshareTrack) {
-            await this.conference.removeTrack(this.localScreenshareTrack).catch(() => { });
-            this.localScreenshareTrack.dispose?.();
-            this.localScreenshareTrack = null;
-
-            local.isScreenSharing = false;
-            local.screenTrack = undefined;
-            this.emitParticipants();
+            await this.handleLocalScreenshareStopped();
             return;
         }
 
+        // start
         try {
-            const tracks = await this.JitsiMeetJS.createLocalTracks({ devices: ["desktop"] });
+            const tracks = await this.JitsiMeetJS.createLocalTracks({
+                devices: ["desktop"],
+            });
+
             const screenTrack =
-                tracks.find((t: any) => t.getType?.() === "desktop") ||
-                tracks.find((t: any) => t.getVideoType?.() === "desktop");
+                tracks.find((t: any) => t.getType && t.getType() === "desktop") ||
+                tracks.find(
+                    (t: any) => t.getVideoType && t.getVideoType() === "desktop"
+                );
 
             if (!screenTrack) return;
 
             this.localScreenshareTrack = screenTrack;
+
+            // подписка на локальный STOP (когда юзер жмёт "Stop sharing" в браузере)
+            const trackEvents = this.JitsiMeetJS.events.track;
+            if (trackEvents?.LOCAL_TRACK_STOPPED) {
+                screenTrack.addEventListener(
+                    trackEvents.LOCAL_TRACK_STOPPED,
+                    () => {
+                        this.handleLocalScreenshareStopped();
+                    }
+                );
+            }
+
             await this.conference.addTrack(screenTrack);
 
-            local.isScreenSharing = true;
-            local.screenTrack = screenTrack;
-            this.emitParticipants();
+            if (local) {
+                local.isScreenSharing = true;
+                local.screenTrack = screenTrack;
+                this.emitParticipants();
+            }
         } catch (e) {
-            console.error(e);
+            console.error("toggleScreenShare error", e);
             this.callbacks.onError?.("Screen share failed");
         }
     }
 
-    async dispose() {
+    private async handleLocalScreenshareStopped() {
+        if (!this.localScreenshareTrack || !this.conference || !this.localUserId) {
+            this.localScreenshareTrack = null;
+            return;
+        }
+
+        const local = this.participants[this.localUserId];
+
+        try {
+            await this.conference.removeTrack(this.localScreenshareTrack);
+        } catch {
+            // ignore
+        }
+        try {
+            this.localScreenshareTrack.dispose?.();
+        } catch {
+            // ignore
+        }
+
+        this.localScreenshareTrack = null;
+
+        if (local) {
+            local.isScreenSharing = false;
+            local.screenTrack = undefined;
+            this.emitParticipants();
+        }
+    }
+
+    async dispose(): Promise<void> {
         this.disposed = true;
 
+        // P2P
         for (const dc of this.dataChannels.values()) {
-            try { dc.close(); } catch { }
+            try {
+                dc.close();
+            } catch {
+                // ignore
+            }
         }
         for (const pc of this.peerConnections.values()) {
-            try { pc.close(); } catch { }
+            try {
+                pc.close();
+            } catch {
+                // ignore
+            }
         }
-
         this.dataChannels.clear();
         this.peerConnections.clear();
 
-        if (this.localScreenshareTrack) {
-            try { await this.conference?.removeTrack(this.localScreenshareTrack); } catch { }
-            try { this.localScreenshareTrack.dispose(); } catch { }
+        // локальный скриншер
+        try {
+            if (this.localScreenshareTrack) {
+                try {
+                    await this.conference?.removeTrack(this.localScreenshareTrack);
+                } catch { }
+                try {
+                    this.localScreenshareTrack.dispose();
+                } catch { }
+                this.localScreenshareTrack = null;
+            }
+        } catch {
+            // ignore
         }
 
-        for (const p of Object.values(this.participants)) {
-            for (const t of [p.videoTrack, p.audioTrack, p.screenTrack]) {
-                try { t?.dispose?.(); } catch { }
-            }
+        // треки участников
+        try {
+            Object.values(this.participants).forEach((p) => {
+                [p.videoTrack, p.audioTrack, p.screenTrack].forEach((t) => {
+                    try {
+                        t && t.dispose && t.dispose();
+                    } catch {
+                        // ignore
+                    }
+                });
+            });
+        } catch {
+            // ignore
         }
 
         this.participants = {};
         this.emitParticipants();
 
-        try { await this.conference?.leave(); } catch { }
-        try { await this.connection?.disconnect(); } catch { }
+        try {
+            await this.conference?.leave();
+        } catch {
+            // ignore
+        }
+
+        try {
+            await this.connection?.disconnect();
+        } catch {
+            // ignore
+        }
 
         this.conference = null;
         this.connection = null;
         this.localUserId = null;
     }
 
-    // ============================================================================
+    // ========================================================================
     // INTERNAL
-    // ============================================================================
+    // ========================================================================
     private setupConference(roomName: string, userName: string) {
         if (!this.connection || !this.JitsiMeetJS || !this.config) return;
 
-        const options = { ...(this.config.conference || {}) };
-        if (userName) options.statisticsId = userName.toLowerCase();
+        const conferenceOptions: any = { ...(this.config.conference || {}) };
+        if (userName) {
+            conferenceOptions.statisticsId = userName.toLowerCase();
+        }
 
-        const safe = (roomName || "default")
+        const baseRoomName =
+            roomName && roomName.trim().length > 0 ? roomName : "default-room";
+
+        let safeRoomName = baseRoomName
             .toLowerCase()
-            .replace(/[^a-z0-9-_]/g, "") || "room";
+            .replace(/[^a-z0-9-_]/g, "");
 
-        const conf = this.connection.initJitsiConference(safe, options);
+        if (!safeRoomName) {
+            safeRoomName = "session-" + Math.random().toString(36).substring(2, 8);
+        }
+
+        console.log("Joining Jitsi room:", {
+            rawRoomName: roomName,
+            safeRoomName,
+        });
+
+        const conf = this.connection.initJitsiConference(
+            safeRoomName,
+            conferenceOptions
+        );
         this.conference = conf;
 
         const events = this.JitsiMeetJS.events;
 
-        // ------------------------------- USER JOINED -------------------------------
+        // ------------------------ CONFERENCE_JOINED ------------------------
+        conf.on(events.conference.CONFERENCE_JOINED, () => {
+            if (this.disposed) return;
+
+            const anyConf = conf as any;
+            let localId: string | null = null;
+
+            if (typeof anyConf.getLocalUserId === "function") {
+                localId = anyConf.getLocalUserId();
+            } else if (typeof anyConf.myUserId === "function") {
+                localId = anyConf.myUserId();
+            }
+
+            console.log("Jitsi CONFERENCE_JOINED localId:", localId);
+
+            if (!localId) {
+                this.callbacks.onError?.("Failed to resolve local user id");
+                return;
+            }
+
+            this.localUserId = localId;
+
+            // имя из Supabase → в Jitsi
+            if (userName && typeof anyConf.setDisplayName === "function") {
+                anyConf.setDisplayName(userName);
+            }
+
+            this.ensureLocalParticipant(userName);
+            this.callbacks.onConferenceJoin?.();
+            this.createLocalTracks();
+        });
+
+        // --------------------------- USER_JOINED ---------------------------
         conf.on(events.conference.USER_JOINED, (id: string, user: any) => {
+            if (this.disposed) return;
             this.ensureRemoteParticipant(id, user?._displayName || "Guest");
+            // P2P handshake-инициализация (оставляем)
             this.createPeerConnectionFor(id);
         });
 
-        // ------------------------------ USER LEFT ---------------------------------
+        // --------------------------- USER_LEFT -----------------------------
         conf.on(events.conference.USER_LEFT, (id: string) => {
+            if (this.disposed) return;
+
             this.peerConnections.get(id)?.close();
             this.dataChannels.get(id)?.close();
             this.peerConnections.delete(id);
@@ -286,43 +476,38 @@ export class JitsiEngine {
             this.emitParticipants();
         });
 
-        // -------------------------- CONFERENCE JOINED -----------------------------
-        conf.on(events.conference.CONFERENCE_JOINED, () => {
-            const anyConf = conf as any;
-            const id =
-                anyConf.getLocalUserId?.() ||
-                anyConf.myUserId?.() ||
-                null;
-
-            if (!id) {
-                this.callbacks.onError?.("Local user id missing");
-                return;
+        // ----------------------- DISPLAY_NAME_CHANGED ----------------------
+        conf.on(
+            events.conference.DISPLAY_NAME_CHANGED,
+            (id: string, displayName: string) => {
+                if (this.disposed) return;
+                const p = this.participants[id];
+                if (p) {
+                    p.displayName = displayName || p.displayName;
+                    this.emitParticipants();
+                } else {
+                    this.ensureRemoteParticipant(id, displayName || "Guest");
+                }
             }
+        );
 
-            this.localUserId = id;
-
-            if (userName && conf.setDisplayName)
-                conf.setDisplayName(userName);
-
-            this.ensureLocalParticipant(userName);
-            this.callbacks.onConferenceJoin?.();
-            this.createLocalTracks();
-        });
-
-        // --------------------------- TRACK EVENTS ----------------------------------
+        // -------------------------- TRACKS ---------------------------------
         conf.on(events.conference.TRACK_ADDED, (track: any) => {
-            if (!this.disposed) this.handleTrackAdded(track);
+            if (this.disposed) return;
+            this.handleTrackAdded(track);
         });
 
         conf.on(events.conference.TRACK_REMOVED, (track: any) => {
-            if (!this.disposed) this.handleTrackRemoved(track);
+            if (this.disposed) return;
+            this.handleTrackRemoved(track);
         });
 
         conf.on(events.conference.TRACK_MUTE_CHANGED, (track: any) => {
-            if (!this.disposed) this.handleTrackMuteChanged(track);
+            if (this.disposed) return;
+            this.handleTrackMuteChanged(track);
         });
 
-        // -------------------------- DATA-CHANNEL SIGNALING --------------------------
+        // ------------------- ENDPOINT MESSAGE (signal + reactions) ----------
         conf.on(
             events.conference.ENDPOINT_MESSAGE_RECEIVED,
             (senderId: string, payload: any) => {
@@ -333,12 +518,11 @@ export class JitsiEngine {
         conf.join();
     }
 
-    // ============================================================================
+    // ========================================================================
     // PARTICIPANTS
-    // ============================================================================
+    // ========================================================================
     private ensureLocalParticipant(displayName: string) {
         if (!this.localUserId) return;
-
         if (!this.participants[this.localUserId]) {
             this.participants[this.localUserId] = {
                 id: this.localUserId,
@@ -346,7 +530,7 @@ export class JitsiEngine {
                 isLocal: true,
                 audioMuted: false,
                 videoMuted: false,
-                isScreenSharing: false
+                isScreenSharing: false,
             };
             this.emitParticipants();
         }
@@ -356,47 +540,55 @@ export class JitsiEngine {
         if (!this.participants[id]) {
             this.participants[id] = {
                 id,
-                displayName,
+                displayName: displayName || "Guest",
                 isLocal: false,
                 audioMuted: false,
                 videoMuted: false,
-                isScreenSharing: false
+                isScreenSharing: false,
             };
             this.emitParticipants();
         }
     }
 
-    // ============================================================================
+    // ========================================================================
     // TRACKS
-    // ============================================================================
+    // ========================================================================
     private async createLocalTracks() {
         if (!this.JitsiMeetJS || !this.conference) return;
 
         try {
             const tracks = await this.JitsiMeetJS.createLocalTracks({
-                devices: ["audio", "video"]
+                devices: ["audio", "video"],
             });
 
-            for (const t of tracks) {
-                await this.conference.addTrack(t);
+            for (const track of tracks) {
+                await this.conference.addTrack(track);
             }
-        } catch {
+        } catch (e) {
+            console.error("createLocalTracks error", e);
             this.callbacks.onError?.("Failed to access camera/microphone");
         }
     }
 
     private handleTrackAdded(track: any) {
-        const type = track.getType?.();
-        const videoType = track.getVideoType?.();
-        const isLocal = track.isLocal?.();
-        const pid = isLocal ? this.localUserId : track.getParticipantId?.();
+        const type = track.getType && track.getType();
+        const videoType = track.getVideoType && track.getVideoType();
+        const isLocal = track.isLocal && track.isLocal();
+        const participantId = isLocal
+            ? this.localUserId
+            : track.getParticipantId
+                ? track.getParticipantId()
+                : null;
 
-        if (!pid) return;
+        if (!participantId) return;
 
-        if (isLocal) this.ensureLocalParticipant("");
-        else this.ensureRemoteParticipant(pid, "Guest");
+        if (isLocal) {
+            this.ensureLocalParticipant("");
+        } else {
+            this.ensureRemoteParticipant(participantId, "Guest");
+        }
 
-        const p = this.participants[pid];
+        const p = this.participants[participantId];
         if (!p) return;
 
         const isDesktop = type === "desktop" || videoType === "desktop";
@@ -406,25 +598,29 @@ export class JitsiEngine {
             p.isScreenSharing = true;
         } else if (type === "audio") {
             p.audioTrack = track;
-            p.audioMuted = track.isMuted?.() ?? false;
+            p.audioMuted = track.isMuted ? track.isMuted() : false;
         } else if (type === "video") {
             p.videoTrack = track;
-            p.videoMuted = track.isMuted?.() ?? false;
+            p.videoMuted = track.isMuted ? track.isMuted() : false;
         }
 
         this.emitParticipants();
     }
 
     private handleTrackRemoved(track: any) {
-        const type = track.getType?.();
-        const videoType = track.getVideoType?.();
+        const type = track.getType && track.getType();
+        const videoType = track.getVideoType && track.getVideoType();
         const isDesktop = type === "desktop" || videoType === "desktop";
-        const pid = track.isLocal?.()
-            ? this.localUserId
-            : track.getParticipantId?.();
 
-        if (!pid) return;
-        const p = this.participants[pid];
+        const isLocal = track.isLocal && track.isLocal();
+        const participantId = isLocal
+            ? this.localUserId
+            : track.getParticipantId
+                ? track.getParticipantId()
+                : null;
+
+        if (!participantId) return;
+        const p = this.participants[participantId];
         if (!p) return;
 
         if (isDesktop) {
@@ -440,45 +636,50 @@ export class JitsiEngine {
     }
 
     private handleTrackMuteChanged(track: any) {
-        const type = track.getType?.();
-        const pid = track.isLocal?.()
+        const type = track.getType && track.getType();
+        const isLocal = track.isLocal && track.isLocal();
+        const participantId = isLocal
             ? this.localUserId
-            : track.getParticipantId?.();
+            : track.getParticipantId
+                ? track.getParticipantId()
+                : null;
 
-        if (!pid) return;
-        const p = this.participants[pid];
+        if (!participantId) return;
+        const p = this.participants[participantId];
         if (!p) return;
 
         if (type === "audio") {
-            p.audioMuted = track.isMuted?.() ?? p.audioMuted;
+            p.audioMuted = track.isMuted ? track.isMuted() : p.audioMuted;
         } else if (type === "video") {
-            p.videoMuted = track.isMuted?.() ?? p.videoMuted;
+            p.videoMuted = track.isMuted ? track.isMuted() : p.videoMuted;
         }
 
         this.emitParticipants();
     }
 
     private emitParticipants() {
-        this.callbacks.onParticipantsUpdate?.(Object.values(this.participants));
+        const arr = Object.values(this.participants);
+        this.callbacks.onParticipantsUpdate?.(arr);
     }
 
-    // ============================================================================
-    // ----------------------------- P2P WEBRTC -----------------------------------
-    // ============================================================================
+    // ========================================================================
+    // P2P WEBRTC (оставлено, но реакции теперь не завязаны ТОЛЬКО на него)
+    // ========================================================================
     private createPeerConnectionFor(id: string) {
         if (this.peerConnections.has(id)) return;
 
         const pc = new RTCPeerConnection({
-            iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+            iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
         });
         this.peerConnections.set(id, pc);
 
         pc.onicecandidate = (ev) => {
-            if (ev.candidate)
+            if (ev.candidate) {
                 this.sendSignal(id, {
                     kind: "ice",
-                    candidate: ev.candidate
+                    candidate: ev.candidate,
                 });
+            }
         };
 
         pc.ondatachannel = (ev) => {
@@ -486,11 +687,11 @@ export class JitsiEngine {
             this.setupDataChannel(dc, id);
         };
 
-        // Create our own outbound channel
+        // создаём свой outbound канал
         const dc = pc.createDataChannel("mysession");
         this.setupDataChannel(dc, id);
 
-        // Make initial offer
+        // создаём offer
         (async () => {
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
@@ -501,35 +702,47 @@ export class JitsiEngine {
     private setupDataChannel(dc: RTCDataChannel, id: string) {
         this.dataChannels.set(id, dc);
 
-        dc.onopen = () => console.log("DC open", id);
-        dc.onerror = (e) => console.error("DC error", e);
+        dc.onopen = () => {
+            console.log("DataChannel open with", id);
+        };
+        dc.onerror = (e) => {
+            console.error("DataChannel error", e);
+        };
+        dc.onclose = () => {
+            this.dataChannels.delete(id);
+        };
 
         dc.onmessage = (msg) => {
             try {
                 const data = JSON.parse(msg.data);
-                if (data.kind === "reaction") {
+                if (data.kind === "reaction" && data.reaction) {
                     this.callbacks.onReactionReceived?.(id, data.reaction);
                 }
             } catch (e) {
                 console.error("Bad DC message", e);
             }
         };
-
-        dc.onclose = () => {
-            this.dataChannels.delete(id);
-        };
     }
 
-    // ============================================================================
+    // ========================================================================
     // SIGNALING THROUGH JITSI ENDPOINT MESSAGES
-    // ============================================================================
+    // ========================================================================
     private sendSignal(targetId: string, payload: any) {
         if (!this.conference) return;
         this.conference.sendEndpointMessage(targetId, payload);
     }
 
     private async handleEndpointMessage(senderId: string, payload: any) {
-        if (!payload?.kind) return;
+        if (!payload) return;
+
+        // 1) реакции (работает даже если P2P не поднялся)
+        if (payload.kind === "reaction" && payload.reaction) {
+            this.callbacks.onReactionReceived?.(senderId, payload.reaction);
+            return;
+        }
+
+        // 2) P2P сигналы
+        if (!payload.kind) return;
 
         const pc = this.peerConnections.get(senderId);
         if (!pc) return;
@@ -537,15 +750,15 @@ export class JitsiEngine {
         switch (payload.kind) {
             case "offer":
                 await pc.setRemoteDescription(payload.sdp);
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-                this.sendSignal(senderId, { kind: "answer", sdp: answer });
+                {
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    this.sendSignal(senderId, { kind: "answer", sdp: answer });
+                }
                 break;
-
             case "answer":
                 await pc.setRemoteDescription(payload.sdp);
                 break;
-
             case "ice":
                 try {
                     await pc.addIceCandidate(payload.candidate);
@@ -556,7 +769,3 @@ export class JitsiEngine {
         }
     }
 }
-
-// ============================================================================
-// END
-// ============================================================================

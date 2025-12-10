@@ -1,5 +1,5 @@
 // src/pages/RoomPage.tsx
-// ROOMPAGE + JITSI ENGINE + VIDEO UI
+// ROOMPAGE + JITSI ENGINE + VIDEO UI (UPDATED)
 
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -29,15 +29,20 @@ export function RoomPage() {
   const [remainingTime, setRemainingTime] = useState<string>("");
 
   const [selectedUser, setSelectedUser] = useState<any>(null);
-  const [userName, setUserName] = useState<string>("");
 
+  const [userName, setUserName] = useState<string>("");
   const [lastErr, setLastErr] = useState<string>("");
 
-  // Jitsi logic
   const engineRef = useRef<JitsiEngine | null>(null);
   const [participants, setParticipants] = useState<JitsiParticipant[]>([]);
 
-  // stage audio
+  // ★ ADDED — track if new participant joined (for sound)
+  const prevCountRef = useRef<number>(0);
+
+  // ★ ADDED — track active screen sharer (to detect frozen share)
+  const [activeScreenSharer, setActiveScreenSharer] = useState<string | null>(null);
+
+  // AUDIO setup -------------
   const prevStageRef = useRef<number>(-1);
   const firstTickDoneRef = useRef<boolean>(false);
   const welcomeLoopRef = useRef<HTMLAudioElement | null>(null);
@@ -66,9 +71,11 @@ export function RoomPage() {
       window.removeEventListener("keydown", unlock, true);
       window.removeEventListener("touchstart", unlock, true);
     };
+
     window.addEventListener("click", unlock, true);
     window.addEventListener("keydown", unlock, true);
     window.addEventListener("touchstart", unlock, true);
+
     return () => {
       window.removeEventListener("click", unlock, true);
       window.removeEventListener("keydown", unlock, true);
@@ -99,17 +106,16 @@ export function RoomPage() {
         welcomeLoopRef.current.currentTime = 0;
         welcomeLoopRef.current = null;
       }
-    } catch {
-      // ignore
-    }
+    } catch { }
   };
 
-  // ==========================
+  // ====================================
   // LOAD SESSION FROM SUPABASE
-  // ==========================
+  // ====================================
   useEffect(() => {
     (async () => {
       if (!id) return;
+
       const { data, error } = await supabase
         .from("sessions")
         .select(
@@ -160,9 +166,7 @@ export function RoomPage() {
             });
 
             setStages(formatted);
-          } catch {
-            // ignore
-          }
+          } catch { }
         }
       }
 
@@ -170,13 +174,14 @@ export function RoomPage() {
     })();
   }, [id]);
 
-  // ====================
+  // ================
   // RESOLVE USER NAME
-  // ====================
+  // ================
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getUser();
       const u = data.user;
+
       let name =
         u?.user_metadata?.full_name ||
         u?.user_metadata?.name ||
@@ -195,9 +200,9 @@ export function RoomPage() {
     })();
   }, []);
 
-  // =========================
-  // REALTIME ATTENDANCE (как было)
-  // =========================
+  // ================================
+  // REALTIME ATTENDANCE
+  // ================================
   useEffect(() => {
     if (!id) return;
 
@@ -239,20 +244,49 @@ export function RoomPage() {
     };
   }, [id]);
 
-  // ====================
-  // JITSI ENGINE INIT
-  // ====================
+  // ====================================
+  // JITSI INIT
+  // ====================================
   useEffect(() => {
     if (!session || !userName) return;
     if (engineRef.current) return;
 
     const engine = new JitsiEngine({
       onParticipantsUpdate: (list) => {
-        setParticipants(list);
+        // ★ ADDED — detect new participant → play join sound
+        if (prevCountRef.current < 2 && list.length === 2) {
+          playOneShot("/sounds/user_joined.mp3", 0.9);
+        }
+        prevCountRef.current = list.length;
+
+        // ★ ADDED — detect screensharing start/stop
+        const sharer = list.find((p) => p.isScreenSharing);
+        if (sharer) {
+          if (activeScreenSharer !== sharer.id) {
+            setActiveScreenSharer(sharer.id);
+          }
+        } else if (activeScreenSharer !== null) {
+          // if screen share ended — reset
+          setActiveScreenSharer(null);
+        }
+
+        // ★ ADDED — fix displayName for remote participant
+        const updated = list.map((p) => {
+          if (!p.isLocal && p.displayName === "Guest") {
+            if (session?.host_profile?.full_name && session.host_profile.id === p.id) {
+              return { ...p, displayName: session.host_profile.full_name };
+            }
+          }
+          return p;
+        });
+
+        setParticipants(updated);
       },
+
       onConferenceJoin: () => {
         console.log("Jitsi conference joined");
       },
+
       onError: (msg) => {
         console.error("Jitsi error:", msg);
         setLastErr(msg);
@@ -261,7 +295,6 @@ export function RoomPage() {
 
     engineRef.current = engine;
 
-    // вычисляем roomName из данных сессии (daily/jitsi)
     const roomNameRaw =
       session.jitsi_room_name ||
       (session.daily_room_url
@@ -276,12 +309,7 @@ export function RoomPage() {
         })()
         : `session-${session.id}`);
 
-    const baseRoomName =
-      roomNameRaw && typeof roomNameRaw === "string" && roomNameRaw.trim().length
-        ? roomNameRaw
-        : `session-${session.id}`;
-
-    const safeRoomName = baseRoomName
+    const safeRoomName = roomNameRaw
       .toLowerCase()
       .replace(/[^a-z0-9-_]/g, "");
 
@@ -303,25 +331,13 @@ export function RoomPage() {
     };
   }, [session, userName]);
 
-  const handleToggleAudio = () => {
-    engineRef.current?.toggleAudioMute();
-  };
+  // BUTTON HANDLERS ----------
+  const handleToggleAudio = () => engineRef.current?.toggleAudioMute();
+  const handleToggleVideo = () => engineRef.current?.toggleVideoMute();
+  const handleToggleScreenShare = () => engineRef.current?.toggleScreenShare();
+  const handleLeave = () => navigate("/sessions", { replace: true });
 
-  const handleToggleVideo = () => {
-    engineRef.current?.toggleVideoMute();
-  };
-
-  const handleToggleScreenShare = () => {
-    engineRef.current?.toggleScreenShare();
-  };
-
-  const handleLeave = () => {
-    navigate("/sessions", { replace: true });
-  };
-
-  // =====================
-  // STAGE LOGIC (как было)
-  // =====================
+  // STAGES ----------
   const getStageWindows = (startISO: string, items: Stage[]) => {
     const startMs = new Date(startISO).getTime();
     let acc = 0;
@@ -330,9 +346,7 @@ export function RoomPage() {
       acc += st.duration;
       return ms;
     });
-    const ends = items.map(
-      (_, i) => starts[i] + items[i].duration * 60 * 1000
-    );
+    const ends = items.map((_, i) => starts[i] + items[i].duration * 60 * 1000);
     return { starts, ends };
   };
 
@@ -406,10 +420,7 @@ export function RoomPage() {
     return () => clearInterval(timer);
   }, [session?.start_time, stages]);
 
-  // =====================
-  // RENDER
-  // =====================
-
+  // RENDER ----------------------
   if (loading)
     return (
       <div className="flex h-screen justify-center items-center text-white bg-[#050F1A]">
@@ -465,7 +476,7 @@ export function RoomPage() {
             </div>
           </div>
 
-          {/* RIGHT TIMER BLOCK */}
+          {/* TIMER */}
           <div className="w-[9%] bg-[#1F2937] rounded-r-2xl flex flex-col items-center justify-center gap-1 border-l border-[#404651]">
             <img
               src="/icons/session_timer.svg"
@@ -488,6 +499,8 @@ export function RoomPage() {
                 onToggleVideo={handleToggleVideo}
                 onToggleScreenShare={handleToggleScreenShare}
                 onLeave={handleLeave}
+                // ★ ADDED — pass active screen sharer to help UI avoid freezes
+                activeScreenSharer={activeScreenSharer}
               />
             </div>
 
@@ -518,3 +531,4 @@ export function RoomPage() {
 }
 
 export default RoomPage;
+
