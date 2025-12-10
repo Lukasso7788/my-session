@@ -1,4 +1,4 @@
-// FULL JITSI SDK ROOMPAGE (multi-video grid, no Daily)
+// FULL JITSI SDK ROOMPAGE (multi-video grid, Daily-like UI)
 
 // =====================
 // Types & React imports
@@ -104,6 +104,7 @@ export function RoomPage() {
   const conferenceRef = useRef<any | null>(null);
   const localTracksRef = useRef<any[]>([]);
   const remoteTracksRef = useRef<Record<string, any[]>>({});
+  const screenShareTrackRef = useRef<any | null>(null);
   const jitsiInitGuardRef = useRef(false);
 
   const [session, setSession] = useState<any>(null);
@@ -117,6 +118,10 @@ export function RoomPage() {
   const [userName, setUserName] = useState<string>("");
 
   const [lastErr, setLastErr] = useState<string>("");
+
+  const [isAudioMuted, setIsAudioMuted] = useState(false);
+  const [isVideoMuted, setIsVideoMuted] = useState(false);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
 
   const prevStageRef = useRef<number>(-1);
   const firstTickDoneRef = useRef<boolean>(false);
@@ -323,6 +328,19 @@ export function RoomPage() {
   // JITSI: helpers
   // ===================
 
+  const layoutVideoGrid = () => {
+    if (!containerRef.current) return;
+    const container = containerRef.current;
+
+    container.style.display = "grid";
+    container.style.gridTemplateColumns =
+      "repeat(auto-fit, minmax(260px, 1fr))";
+    container.style.gridAutoRows = "minmax(180px, auto)";
+    container.style.gap = "6px";
+    container.style.alignItems = "stretch";
+    container.style.justifyItems = "stretch";
+  };
+
   const attachVideoTrack = (
     track: any,
     participantId: string,
@@ -351,26 +369,21 @@ export function RoomPage() {
     video.style.width = "100%";
     video.style.height = "100%";
     video.style.objectFit = "cover";
+    video.style.borderRadius = "18px";
 
     const wrapper = document.createElement("div");
-    wrapper.style.flex = "1 1 0";
-    wrapper.style.minWidth = "0";
-    wrapper.style.minHeight = "0";
-    wrapper.style.display = "flex";
-    wrapper.style.alignItems = "center";
-    wrapper.style.justifyContent = "center";
-    wrapper.style.padding = "2px";
     wrapper.dataset.participantId = participantId;
     wrapper.dataset.trackId = video.dataset.trackId;
+    wrapper.style.position = "relative";
+    wrapper.style.overflow = "hidden";
+    wrapper.style.borderRadius = "18px";
+    wrapper.style.backgroundColor = "#020617";
 
     wrapper.appendChild(video);
     container.appendChild(wrapper);
 
     track.attach(video);
-
-    container.style.display = "flex";
-    container.style.flexWrap = "wrap";
-    container.style.gap = "4px";
+    layoutVideoGrid();
   };
 
   const detachVideoTrack = (track: any) => {
@@ -392,6 +405,7 @@ export function RoomPage() {
         // ignore
       }
       container.removeChild(wrapper);
+      layoutVideoGrid();
     }
   };
 
@@ -399,6 +413,12 @@ export function RoomPage() {
     if (!containerRef.current) return;
     const container = containerRef.current;
     container.innerHTML = "";
+  };
+
+  const getLocalTrack = (type: "audio" | "video" | "desktop") => {
+    return localTracksRef.current.find(
+      (t) => t.getType && t.getType() === type
+    );
   };
 
   // ====================
@@ -598,6 +618,18 @@ export function RoomPage() {
       }
 
       try {
+        if (screenShareTrackRef.current && conferenceRef.current) {
+          conferenceRef.current
+            .removeTrack(screenShareTrackRef.current)
+            .catch(() => { });
+          screenShareTrackRef.current.dispose?.();
+        }
+      } catch {
+        // ignore
+      }
+      screenShareTrackRef.current = null;
+
+      try {
         localTracksRef.current.forEach((t) => {
           try {
             t.dispose();
@@ -628,6 +660,85 @@ export function RoomPage() {
       stopWelcomeLoop();
     };
   }, [session, userName]);
+
+  // =====================
+  // CONTROLS HANDLERS
+  // =====================
+
+  const toggleAudio = async () => {
+    const track = getLocalTrack("audio");
+    if (!track) return;
+    try {
+      if (isAudioMuted) {
+        await track.unmute();
+        setIsAudioMuted(false);
+      } else {
+        await track.mute();
+        setIsAudioMuted(true);
+      }
+    } catch (e) {
+      console.error("toggleAudio error", e);
+    }
+  };
+
+  const toggleVideo = async () => {
+    const track = getLocalTrack("video");
+    if (!track) return;
+    try {
+      if (isVideoMuted) {
+        await track.unmute();
+        setIsVideoMuted(false);
+      } else {
+        await track.mute();
+        setIsVideoMuted(true);
+      }
+    } catch (e) {
+      console.error("toggleVideo error", e);
+    }
+  };
+
+  const toggleScreenShare = async () => {
+    const JitsiMeetJS = (window as any).JitsiMeetJS;
+    if (!conferenceRef.current || !JitsiMeetJS) return;
+
+    try {
+      if (isScreenSharing) {
+        const track = screenShareTrackRef.current;
+        if (track) {
+          await conferenceRef.current.removeTrack(track);
+          try {
+            detachVideoTrack(track);
+          } catch {
+            // ignore
+          }
+          track.dispose?.();
+        }
+        screenShareTrackRef.current = null;
+        setIsScreenSharing(false);
+        return;
+      }
+
+      const tracks = await JitsiMeetJS.createLocalTracks({
+        devices: ["desktop"],
+      });
+
+      const desktopTrack = tracks.find(
+        (t: any) => t.getType && t.getType() === "video"
+      );
+      if (!desktopTrack) return;
+
+      screenShareTrackRef.current = desktopTrack;
+      attachVideoTrack(desktopTrack, "local-screen", true);
+      await conferenceRef.current.addTrack(desktopTrack);
+      setIsScreenSharing(true);
+    } catch (e) {
+      console.error("toggleScreenShare error", e);
+    }
+  };
+
+  const handleLeave = () => {
+    navigate("/sessions");
+  };
 
   // =====================
   // STAGE LOGIC (как было)
@@ -736,27 +847,27 @@ export function RoomPage() {
 
   return (
     <div className="min-h-screen bg-[#050F1A] text-white flex justify-center">
-      <div className="max-w-[1720px] w-full px-5 py-5 space-y-5">
+      <div className="max-w-[1720px] w-full px-3 sm:px-5 py-5 space-y-5">
         {/* ======================
             DOUBLE-CONTAINER TOP BAR
         ====================== */}
         <div className="flex w-full rounded-2xl overflow-hidden">
           {/* LEFT BLOCK (91%) */}
-          <div className="w-[91%] bg-[#1F2937] px-6 py-8 rounded-l-2xl">
+          <div className="w-[83%] sm:w-[88%] lg:w-[91%] bg-[#1F2937] px-4 sm:px-6 py-5 sm:py-8 rounded-l-2xl">
             {/* ROW: SESSION TITLE + HOST BADGE */}
-            <div className="flex items-center justify-between w-full">
-              <p className="font-inter font-medium text-[17px] text-[#F3F4F6]/85">
+            <div className="flex items-center justify-between w-full gap-2">
+              <p className="font-inter font-medium text-[15px] sm:text-[17px] text-[#F3F4F6]/85 truncate">
                 {session.title}
               </p>
 
               {session.host_profile && (
                 <button
                   onClick={() => setSelectedUser(session.host_profile)}
-                  className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-[#DBD8D8] bg-transparent text-[14px] text-[#F3F4F6]/85 hover:bg-[#111827] transition font-inter"
+                  className="flex items-center gap-2 px-3 sm:px-4 py-1.5 rounded-full border border-[#DBD8D8] bg-transparent text-[13px] sm:text-[14px] text-[#F3F4F6]/85 hover:bg-[#111827] transition font-inter whitespace-nowrap"
                 >
                   <img
                     src="/icons/host_session_icon.svg"
-                    className="h-5 w-5 opacity-90"
+                    className="h-4 w-4 sm:h-5 sm:w-5 opacity-90"
                   />
 
                   <span className="flex items-center gap-1">
@@ -780,39 +891,118 @@ export function RoomPage() {
           </div>
 
           {/* RIGHT TIMER BLOCK (9%) */}
-          <div className="w-[9%] bg-[#1F2937] rounded-r-2xl flex flex-col items-center justify-center gap-1 border-l border-[#404651]">
+          <div className="w-[17%] sm:w-[12%] lg:w-[9%] bg-[#1F2937] rounded-r-2xl flex flex-col items-center justify-center gap-1 border-l border-[#404651]">
             <img
               src="/icons/session_timer.svg"
-              className="w-[48px] h-[48px]"
+              className="w-[32px] h-[32px] sm:w-[40px] sm:h-[40px] lg:w-[48px] lg:h-[48px]"
             />
-            <span className="font-inter text-[26px]">
+            <span className="font-inter text-[18px] sm:text-[22px] lg:text-[26px]">
               {remainingTime || "--:--"}
             </span>
           </div>
         </div>
 
         {/* MAIN GRID */}
-        <div className="grid lg:grid-cols-[minmax(0,1fr),420px] gap-5">
-          {/* VIDEO AREA: Jitsi SDK grid */}
-          <div
-            className="rounded-2xl bg-[#1F2937] shadow-lg overflow-hidden relative h-[77vh]"
-            style={{ minHeight: "70vh" }}
-          >
+        <div className="grid lg:grid-cols-[minmax(0,1fr),420px] gap-4 sm:gap-5">
+          {/* VIDEO AREA: Jitsi SDK grid + Daily-like controls */}
+          <div className="rounded-2xl bg-[#020617] shadow-lg overflow-hidden relative h-[70vh] sm:h-[74vh] lg:h-[77vh]">
             <div
               ref={containerRef}
               className="w-full h-full"
-              style={{ minHeight: "70vh" }}
+              style={{ minHeight: "60vh" }}
             />
 
+            {/* Overlay UI (names + controls) */}
+            <div className="pointer-events-none absolute inset-0 flex flex-col justify-between">
+              {/* Top-left name bubble */}
+              <div className="flex items-start justify-between px-3 pt-3">
+                <div className="pointer-events-auto bg-black/50 rounded-full px-3 py-1 text-xs sm:text-sm font-medium">
+                  {userName || "You"}
+                </div>
+              </div>
+
+              {/* Bottom control bar */}
+              <div className="flex justify-center mb-3 sm:mb-4">
+                <div className="pointer-events-auto flex items-center gap-2 sm:gap-3 rounded-full bg-black/60 backdrop-blur px-3 sm:px-4 py-2 text-xs sm:text-sm">
+                  {/* Video */}
+                  <button
+                    onClick={toggleVideo}
+                    className={`flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1 rounded-full font-medium ${isVideoMuted
+                        ? "bg-red-600 text-white"
+                        : "bg-white/90 text-gray-900"
+                      } hover:opacity-90 transition`}
+                  >
+                    <span className="text-lg">
+                      {isVideoMuted ? "📷" : "📸"}
+                    </span>
+                    <span className="hidden sm:inline">
+                      {isVideoMuted ? "Turn on" : "Camera"}
+                    </span>
+                  </button>
+
+                  {/* Audio */}
+                  <button
+                    onClick={toggleAudio}
+                    className={`flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1 rounded-full font-medium ${isAudioMuted
+                        ? "bg-red-600 text-white"
+                        : "bg-white/90 text-gray-900"
+                      } hover:opacity-90 transition`}
+                  >
+                    <span className="text-lg">
+                      {isAudioMuted ? "🔇" : "🎙️"}
+                    </span>
+                    <span className="hidden sm:inline">
+                      {isAudioMuted ? "Unmute" : "Mute"}
+                    </span>
+                  </button>
+
+                  {/* People */}
+                  <button className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-white hover:bg-white/20 transition">
+                    <span className="text-lg">👥</span>
+                    <span>People</span>
+                  </button>
+
+                  {/* React */}
+                  <button className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-white hover:bg-white/20 transition">
+                    <span className="text-lg">😊</span>
+                    <span>React</span>
+                  </button>
+
+                  {/* Share */}
+                  <button
+                    onClick={toggleScreenShare}
+                    className={`flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1 rounded-full font-medium ${isScreenSharing
+                        ? "bg-emerald-500 text-white"
+                        : "bg-white/10 text-white"
+                      } hover:bg-white/20 transition`}
+                  >
+                    <span className="text-lg">🖥️</span>
+                    <span className="hidden sm:inline">
+                      {isScreenSharing ? "Stop" : "Share"}
+                    </span>
+                  </button>
+
+                  {/* Leave */}
+                  <button
+                    onClick={handleLeave}
+                    className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1 rounded-full bg-red-600 text-white font-semibold hover:bg-red-500 transition"
+                  >
+                    <span className="text-lg">🚪</span>
+                    <span className="hidden sm:inline">Leave</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
             {lastErr && (
-              <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow">
+              <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow pointer-events-auto">
                 {lastErr}
               </div>
             )}
           </div>
 
           {/* INTENTIONS */}
-          <div className="rounded-2xl bg-[#1F2937] text-white shadow-lg h-[77vh] overflow-hidden">
+          <div className="rounded-2xl bg-[#1F2937] text-white shadow-lg h-[70vh] sm:h-[74vh] lg:h-[77vh] overflow-hidden">
             <div className="p-4 h-full">
               <IntentionsPanel />
             </div>
