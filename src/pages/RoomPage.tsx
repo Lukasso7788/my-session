@@ -344,7 +344,7 @@ export function RoomPage() {
 
     const video = document.createElement("video");
     video.autoplay = true;
-    video.muted = isLocal; // локальное видео мьютим
+    video.muted = isLocal;
     video.playsInline = true;
     video.dataset.participantId = participantId;
     video.dataset.trackId = track.getId ? String(track.getId()) : "";
@@ -368,7 +368,6 @@ export function RoomPage() {
 
     track.attach(video);
 
-    // Простенький CSS-grid через flexbox:
     container.style.display = "flex";
     container.style.flexWrap = "wrap";
     container.style.gap = "4px";
@@ -460,16 +459,34 @@ export function RoomPage() {
         const onConnectionSuccess = async () => {
           if (disposed) return;
 
-          // *************
-          // HERE CHANGED:
-          // *************
-          const conferenceOptions = {
-            ...(cfg.conference || {}),
-            statisticsId: userName || undefined,
-          };
+          const conferenceOptions: any = { ...(cfg.conference || {}) };
+
+          if (userName) {
+            conferenceOptions.statisticsId = userName.toLowerCase();
+          }
+
+          const baseRoomName =
+            roomName && roomName.trim().length > 0
+              ? roomName
+              : `session-${session.id}`;
+
+          let safeRoomName = baseRoomName
+            .toLowerCase()
+            .replace(/[^a-z0-9-_]/g, "");
+
+          if (!safeRoomName) {
+            safeRoomName = `session-${session.id}`
+              .toLowerCase()
+              .replace(/[^a-z0-9-_]/g, "");
+          }
+
+          console.log("Joining Jitsi room:", {
+            rawRoomName: roomName,
+            safeRoomName,
+          });
 
           const conf = connection.initJitsiConference(
-            roomName,
+            safeRoomName,
             conferenceOptions
           );
           conferenceRef.current = conf;
@@ -516,7 +533,6 @@ export function RoomPage() {
 
           conf.join();
 
-          // Local tracks
           const localTracks = await JitsiMeetJS.createLocalTracks({
             devices: ["audio", "video"],
           });
@@ -528,8 +544,6 @@ export function RoomPage() {
           localTracks.forEach((track: any) => {
             if (track.getType && track.getType() === "video") {
               attachVideoTrack(track, "local", true);
-            } else if (track.getType && track.getType() === "audio") {
-              // локальное аудио не обязательно рендерить
             }
 
             conf.addTrack(track).catch((err: any) => {
@@ -779,7 +793,7 @@ export function RoomPage() {
 
         {/* MAIN GRID */}
         <div className="grid lg:grid-cols-[minmax(0,1fr),420px] gap-5">
-          {/* VIDEO AREA: теперь Jitsi SDK grid */}
+          {/* VIDEO AREA: Jitsi SDK grid */}
           <div
             className="rounded-2xl bg-[#1F2937] shadow-lg overflow-hidden relative h-[77vh]"
             style={{ minHeight: "70vh" }}
