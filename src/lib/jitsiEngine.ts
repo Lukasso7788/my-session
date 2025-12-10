@@ -347,7 +347,24 @@ export class JitsiEngine {
 
         conf.on(events.conference.CONFERENCE_JOINED, () => {
             if (this.disposed) return;
-            this.localUserId = conf.getLocalUserId();
+
+            const anyConf = conf as any;
+            let localId: string | null = null;
+
+            if (typeof anyConf.getLocalUserId === "function") {
+                localId = anyConf.getLocalUserId();
+            } else if (typeof anyConf.myUserId === "function") {
+                localId = anyConf.myUserId();
+            }
+
+            console.log("Jitsi CONFERENCE_JOINED localId:", localId);
+
+            if (!localId) {
+                this.callbacks.onError?.("Failed to resolve local user id");
+                return;
+            }
+
+            this.localUserId = localId;
             this.ensureLocalParticipant(userName);
             this.callbacks.onConferenceJoin?.();
             this.createLocalTracks();
