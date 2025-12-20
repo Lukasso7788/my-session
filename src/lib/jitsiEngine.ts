@@ -147,15 +147,20 @@ export class JitsiEngine {
 
         // ВАЖНО: отключаем P2P на уровне init
         this.JitsiMeetJS.init({
-            ...this.config,
-            disableP2P: DISABLE_P2P,
+            disableP2P: true,
+            // полезные дефолты, не обязательны:
+            disableAudioLevels: true,
         });
+
+        const serviceUrl =
+            this.config.websocket ||
+            this.config.bosh ||
+            `wss://${JITSI_DOMAIN}/xmpp-websocket`;
 
         const options = {
             hosts: this.config.hosts,
-            serviceUrl: this.config.websocket || this.config.bosh,
+            serviceUrl,
             clientNode: this.config.clientNode,
-            // Дублируем запрет P2P на уровне connection options (на практике помогает).
             p2p: { enabled: false },
         };
 
@@ -419,6 +424,11 @@ export class JitsiEngine {
 
         const conf = this.connection.initJitsiConference(safeRoomName, conferenceOptions);
         this.conference = conf;
+        console.log("[JITSI] conf created", {
+            room: safeRoomName,
+            serviceUrl: this.config?.websocket || this.config?.bosh,
+            disableP2P: DISABLE_P2P,
+        });
 
         const events = this.JitsiMeetJS.events;
 
@@ -435,7 +445,7 @@ export class JitsiEngine {
                 localId = anyConf.myUserId();
             }
 
-            console.log("Jitsi CONFERENCE_JOINED localId:", localId);
+            console.log("[JITSI] joined", { localId });
 
             if (!localId) {
                 this.callbacks.onError?.("Failed to resolve local user id");
@@ -591,6 +601,12 @@ export class JitsiEngine {
     }
 
     private handleTrackAdded(track: any) {
+        console.log("[JITSI] track added", {
+            isLocal: track?.isLocal?.(),
+            type: track?.getType?.(),
+            videoType: track?.getVideoType?.(),
+            pid: track?.getParticipantId?.(),
+        });
         const pid = this.resolveTrackParticipantId(track);
         if (!pid) return;
 
