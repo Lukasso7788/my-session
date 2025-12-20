@@ -3,6 +3,7 @@
 // src/lib/jitsiEngine.ts — SFU-only (P2P OFF) + track-based + reactions via endpoint messages
 // Fixes: "3+ participants => everyone sees mostly self / remote audio missing / broken P2P"
 // ============================================================================
+```
 
 declare global {
   interface Window {
@@ -33,8 +34,8 @@ export type JitsiEngineCallbacks = {
 };
 
 const JITSI_DOMAIN = "jitsi.lukassodesign.site";
-const JITSI_CONFIG_URL = `https://${JITSI_DOMAIN}/config.js`;
-const JITSI_LIB_URL = `https://${JITSI_DOMAIN}/libs/lib-jitsi-meet.min.js`;
+const JITSI_CONFIG_URL = "https://" + JITSI_DOMAIN + "/config.js";
+const JITSI_LIB_URL = "https://" + JITSI_DOMAIN + "/libs/lib-jitsi-meet.min.js";
 
 // Жёстко запрещаем P2P. Для продукта 2→100+ это must-have.
 const DISABLE_P2P = true;
