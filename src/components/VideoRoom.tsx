@@ -23,8 +23,7 @@ type VideoRoomProps = {
     onToggleScreenShare: () => void;
     onLeave?: () => void;
 
-    // NEW:
-    incomingReactions?: { id: number; fromId: string; type: ReactionType }[];
+    // опционально: если захочешь наружу прокидывать реакцию в engine
     onSendReaction?: (type: ReactionType) => void;
 };
 
@@ -36,6 +35,15 @@ const reactionEmoji: Record<ReactionType, string> = {
     thumbsUp: "👍",
     thumbsDown: "👎",
 };
+
+function safeTrackId(track?: any): string {
+    if (!track) return "none";
+    try {
+        if (typeof track.getId === "function") return String(track.getId());
+    } catch { }
+    // fallback: чтобы key менялся при смене инстанса
+    return String((track as any)?._id ?? "track");
+}
 
 function attachTrackToMedia(track: JitsiTrack | undefined, element: HTMLMediaElement | null) {
     if (!track || !element) return;
@@ -49,10 +57,13 @@ function attachTrackToMedia(track: JitsiTrack | undefined, element: HTMLMediaEle
     return () => {
         try {
             track.detach(element);
-        } catch { }
+        } catch {
+            // ignore
+        }
     };
 }
 
+// ----------------------- Icons -----------------------
 function MicIcon() {
     return (
         <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
@@ -118,37 +129,70 @@ function LeaveIcon() {
     );
 }
 
-function VideoTile({ participant }: { participant: JitsiParticipant }) {
-    const videoRef = useRef<HTMLVideoElement | null>(null);
+// ----------------------- Audio sink -----------------------
+// ВАЖНО: аудио должно работать даже если участник НЕ отображается на текущей странице.
+function AudioSinkItem({ p }: { p: JitsiParticipant }) {
     const audioRef = useRef<HTMLAudioElement | null>(null);
+    const trackId = useMemo(() => safeTrackId(p.audioTrack), [p.audioTrack]);
 
     useEffect(() => {
-        if (!videoRef.current || !participant.videoTrack || participant.videoMuted) return;
+        if (p.isLocal) return;
+        if (!audioRef.current) return;
+        if (!p.audioTrack) return;
+        return attachTrackToMedia(p.audioTrack, audioRef.current);
+        // критично привязаться к id трека, иначе при пере-создании трека эффект не сработает
+    }, [p.isLocal, trackId]);
+
+    // Скрытый аудио-элемент
+    return <audio ref={audioRef} autoPlay playsInline />;
+}
+
+function AudioSink({ participants }: { participants: JitsiParticipant[] }) {
+    // только remote
+    const remotes = useMemo(() => participants.filter((p) => !p.isLocal), [participants]);
+
+    return (
+        <div className="hidden">
+            {remotes.map((p) => {
+                const key = `${p.id}:${safeTrackId(p.audioTrack)}`;
+                return <AudioSinkItem key={key} p={p} />;
+            })}
+        </div>
+    );
+}
+
+// ----------------------- Tiles -----------------------
+function ParticipantTile({ participant, tileKey }: { participant: JitsiParticipant; tileKey: string }) {
+    const videoRef = useRef<HTMLVideoElement | null>(null);
+
+    const videoTrackId = useMemo(() => safeTrackId(participant.videoTrack), [participant.videoTrack]);
+
+    // attach camera video только если есть трек и он не muted
+    useEffect(() => {
+        if (!videoRef.current) return;
+        if (!participant.videoTrack) return;
+        if (participant.videoMuted) return;
         return attachTrackToMedia(participant.videoTrack, videoRef.current);
-    }, [participant.videoTrack, participant.videoMuted]);
-
-    useEffect(() => {
-        if (participant.isLocal) return;
-        if (!audioRef.current || !participant.audioTrack) return;
-        return attachTrackToMedia(participant.audioTrack, audioRef.current);
-    }, [participant.audioTrack, participant.isLocal]);
+    }, [videoTrackId, participant.videoMuted]);
 
     const showVideo = !!participant.videoTrack && !participant.videoMuted;
 
     return (
-        <div className="relative bg-black rounded-2xl overflow-hidden flex items-center justify-center">
-            {showVideo && (
+        <div
+            className="relative bg-black rounded-2xl overflow-hidden flex items-center justify-center border border-white/5"
+            data-tile-key={tileKey}
+        >
+            {showVideo ? (
                 <video
                     ref={videoRef}
                     autoPlay
                     playsInline
                     muted={participant.isLocal}
-                    className="w-full h-full object-contain"
+                    // ключевое: object-cover + aspect-video, иначе grid будет “плясать”
+                    className="w-full h-full object-cover aspect-video bg-black"
                 />
-            )}
-
-            {!showVideo && (
-                <div className="w-full h-full flex flex-col items-center justify-center bg-[#111827]">
+            ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center bg-[#111827] aspect-video">
                     <div className="w-16 h-16 rounded-full bg-[#374151] flex items-center justify-center text-2xl font-semibold">
                         {participant.displayName?.[0]?.toUpperCase() || "?"}
                     </div>
@@ -158,6 +202,7 @@ function VideoTile({ participant }: { participant: JitsiParticipant }) {
                 </div>
             )}
 
+            {/* name + mic status */}
             <div className="absolute left-3 bottom-3 rounded-md bg-black/55 px-2 py-1 text-[11px] flex items-center gap-2">
                 <span className="text-white/80">
                     {participant.isLocal ? "You" : participant.displayName || "Guest"}
@@ -167,10 +212,71 @@ function VideoTile({ participant }: { participant: JitsiParticipant }) {
                         "w-2 h-2 rounded-full " +
                         (participant.audioMuted ? "bg-red-500" : "bg-green-400")
                     }
-                ></span>
+                />
             </div>
+        </div>
+    );
+}
 
-            <audio ref={audioRef} autoPlay />
+// ----------------------- Layouts -----------------------
+function computeGrid(count: number) {
+    if (count <= 1) return { cols: 1, rows: 1 };
+
+    // square-ish grid
+    const cols = Math.ceil(Math.sqrt(count));
+    const rows = Math.ceil(count / cols);
+    return { cols, rows };
+}
+
+function GridLayout({
+    pageParticipants,
+    layoutVersion,
+}: {
+    pageParticipants: JitsiParticipant[];
+    layoutVersion: number;
+}) {
+    const { cols, rows } = useMemo(() => computeGrid(pageParticipants.length), [pageParticipants.length]);
+
+    return (
+        <div
+            key={`grid:${layoutVersion}:${pageParticipants.length}:${cols}x${rows}`}
+            className="w-full h-full grid gap-2 p-2"
+            style={{
+                gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+                gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
+            }}
+        >
+            {pageParticipants.map((p) => {
+                const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}:${safeTrackId(p.screenTrack)}`;
+                return <ParticipantTile key={tileKey} participant={p} tileKey={tileKey} />;
+            })}
+        </div>
+    );
+}
+
+function P2PLayout({
+    pageParticipants,
+    layoutVersion,
+}: {
+    pageParticipants: JitsiParticipant[];
+    layoutVersion: number;
+}) {
+    // 1 или 2 участника: делаем стабильный split без “пляски”
+    const count = pageParticipants.length;
+
+    return (
+        <div
+            key={`p2p:${layoutVersion}:${count}`}
+            className="w-full h-full grid gap-2 p-2"
+            style={{
+                gridTemplateColumns: count <= 1 ? "1fr" : "1fr 1fr",
+                gridTemplateRows: "1fr",
+            }}
+        >
+            {pageParticipants.map((p) => {
+                const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}`;
+                return <ParticipantTile key={tileKey} participant={p} tileKey={tileKey} />;
+            })}
         </div>
     );
 }
@@ -178,23 +284,32 @@ function VideoTile({ participant }: { participant: JitsiParticipant }) {
 function ScreenShareLayout({
     screenSharer,
     others,
+    layoutVersion,
 }: {
     screenSharer: JitsiParticipant;
     others: JitsiParticipant[];
+    layoutVersion: number;
 }) {
     const screenVideoRef = useRef<HTMLVideoElement | null>(null);
+    const screenTrackId = useMemo(() => safeTrackId(screenSharer.screenTrack), [screenSharer.screenTrack]);
 
     useEffect(() => {
-        if (!screenVideoRef.current || !screenSharer.screenTrack) return;
+        if (!screenVideoRef.current) return;
+        if (!screenSharer.screenTrack) return;
         return attachTrackToMedia(screenSharer.screenTrack, screenVideoRef.current);
-    }, [screenSharer.screenTrack]);
+    }, [screenTrackId]);
 
+    // мини-камера поверх (если у шарера есть камера)
     const cameraParticipant =
         screenSharer.videoTrack && !screenSharer.videoMuted ? screenSharer : undefined;
 
     return (
-        <div className="relative w-full h-full flex flex-col md:flex-row gap-2">
-            <div className="relative flex-1 bg-black rounded-2xl overflow-hidden">
+        <div
+            key={`screen:${layoutVersion}:${screenSharer.id}:${screenTrackId}`}
+            className="relative w-full h-full flex flex-col md:flex-row gap-2 p-2"
+        >
+            {/* main screenshare */}
+            <div className="relative flex-1 bg-black rounded-2xl overflow-hidden border border-white/5">
                 <video
                     ref={screenVideoRef}
                     autoPlay
@@ -211,83 +326,89 @@ function ScreenShareLayout({
                 </div>
 
                 {cameraParticipant && (
-                    <div className="hidden md:block absolute top-3 right-3 w-40 h-24 rounded-xl overflow-hidden border border-white/30 shadow-lg">
-                        <VideoTile participant={cameraParticipant} />
+                    <div className="hidden md:block absolute top-3 right-3 w-44 aspect-video rounded-xl overflow-hidden border border-white/20 shadow-lg bg-black">
+                        <ParticipantTile
+                            participant={cameraParticipant}
+                            tileKey={`${cameraParticipant.id}:${safeTrackId(cameraParticipant.videoTrack)}`}
+                        />
                     </div>
                 )}
             </div>
 
-            <div className="flex md:flex-col gap-2 md:w-52 w-full md:h-full">
-                {others.map((p) => (
-                    <div key={p.id} className="flex-1 min-h-[70px]">
-                        <VideoTile participant={p} />
-                    </div>
-                ))}
+            {/* strip of others */}
+            <div className="flex md:flex-col gap-2 md:w-56 w-full">
+                {others.map((p) => {
+                    const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}`;
+                    return (
+                        <div key={tileKey} className="md:h-[140px] w-full">
+                            <ParticipantTile participant={p} tileKey={tileKey} />
+                        </div>
+                    );
+                })}
             </div>
         </div>
     );
 }
 
+// ----------------------- Main -----------------------
 export function VideoRoom(props: VideoRoomProps) {
-    const {
-        participants,
-        onToggleAudio,
-        onToggleVideo,
-        onToggleScreenShare,
-        onLeave,
-        incomingReactions,
-        onSendReaction,
-    } = props;
+    const { participants, onToggleAudio, onToggleVideo, onToggleScreenShare, onLeave, onSendReaction } = props;
 
+    const PAGE_SIZE = 20;
+
+    // реакции UI
     const [reactions, setReactions] = useState<Reaction[]>([]);
-    const [reactionCounter, setReactionCounter] = useState(0);
     const [showReactionsMenu, setShowReactionsMenu] = useState(false);
+    const [reactionCounter, setReactionCounter] = useState(0);
     const menuRef = useRef<HTMLDivElement | null>(null);
 
-    const addReaction = (type: ReactionType) => {
-        const id = reactionCounter + 1;
-        setReactionCounter(id);
+    // pagination
+    const [page, setPage] = useState(0);
 
-        setReactions((prev) => [...prev, { id, type }]);
-
-        setTimeout(() => {
-            setReactions((prev) => prev.filter((r) => r.id !== id));
-        }, 1600);
-    };
-
-    const handleReactionClick = (type: ReactionType) => {
-        addReaction(type);
-        onSendReaction?.(type);
-    };
-
-    useEffect(() => {
-        if (!incomingReactions || incomingReactions.length === 0) return;
-        incomingReactions.forEach((r) => addReaction(r.type));
-    }, [incomingReactions]);
-
-    useEffect(() => {
-        if (!showReactionsMenu) return;
-
-        const handleClickOutside = (e: MouseEvent) => {
-            if (!menuRef.current) return;
-            if (!menuRef.current.contains(e.target as Node)) {
-                setShowReactionsMenu(false);
-            }
-        };
-
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, [showReactionsMenu]);
+    // layout reset — помогает при SFU ↔ P2P переходах и резких сменах состава
+    const [layoutVersion, setLayoutVersion] = useState(0);
 
     const screenSharer = useMemo(
         () => participants.find((p) => p.isScreenSharing && p.screenTrack),
         [participants]
     );
 
-    const othersForScreen = useMemo(() => {
-        if (!screenSharer) return [];
-        return participants.filter((p) => p.id !== screenSharer.id);
+    const isP2P = useMemo(() => participants.length <= 2, [participants.length]);
+
+    const totalPages = useMemo(() => {
+        const base = screenSharer ? participants.filter((p) => p.id !== screenSharer.id) : participants;
+        return Math.max(1, Math.ceil(base.length / PAGE_SIZE));
     }, [participants, screenSharer]);
+
+    // clamp page when participants change
+    useEffect(() => {
+        setPage((p) => Math.min(p, totalPages - 1));
+    }, [totalPages]);
+
+    // IMPORTANT: при смене количества участников или смене режима (screen share on/off)
+    // пересобираем layout DOM, чтобы не оставались “приаттаченные” старые элементы.
+    useEffect(() => {
+        setLayoutVersion((v) => v + 1);
+    }, [participants.length, !!screenSharer]);
+
+    // page participants (visual only)
+    const pageParticipants = useMemo(() => {
+        // если есть скриншер — он рендерится отдельно, остальным делаем paging
+        const base = screenSharer ? participants.filter((p) => p.id !== screenSharer.id) : participants;
+
+        const start = page * PAGE_SIZE;
+        const end = start + PAGE_SIZE;
+        return base.slice(start, end);
+    }, [participants, screenSharer, page]);
+
+    // others in screenshare layout (тоже paging, потому что может быть 100)
+    const screenOthers = useMemo(() => {
+        if (!screenSharer) return [];
+        const base = participants.filter((p) => p.id !== screenSharer.id);
+        const start = page * PAGE_SIZE;
+        const end = start + PAGE_SIZE;
+        return base.slice(start, end);
+    }, [participants, screenSharer, page]);
 
     const localParticipant = useMemo(
         () => participants.find((p) => p.isLocal) || null,
@@ -298,42 +419,69 @@ export function VideoRoom(props: VideoRoomProps) {
     const isVideoMuted = !!localParticipant?.videoMuted;
     const isScreenSharing = !!localParticipant?.isScreenSharing;
 
-    const count = participants.length;
+    const handleReactionClick = (type: ReactionType) => {
+        const id = reactionCounter + 1;
+        setReactionCounter(id);
+        setReactions((prev) => [...prev, { id, type }]);
 
-    const gridColsClass =
-        count <= 1
-            ? "grid-cols-1 sm:grid-cols-1 md:grid-cols-1"
-            : count === 2
-                ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-2"
-                : count <= 4
-                    ? "grid-cols-2 sm:grid-cols-2 md:grid-cols-2"
-                    : count <= 9
-                        ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-3"
-                        : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4";
+        // наружу (в engine) — если подключишь:
+        onSendReaction?.(type);
+
+        setTimeout(() => {
+            setReactions((prev) => prev.filter((r) => r.id !== id));
+        }, 1500);
+    };
+
+    // закрытие меню реакций при клике вне
+    useEffect(() => {
+        if (!showReactionsMenu) return;
+
+        const handleClickOutside = (e: MouseEvent) => {
+            const target = e.target as Node | null;
+            if (!menuRef.current || !target) return;
+            if (!menuRef.current.contains(target)) {
+                setShowReactionsMenu(false);
+            }
+        };
+
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [showReactionsMenu]);
 
     const baseBtn =
         "w-10 h-10 rounded-full flex items-center justify-center text-white text-sm transition";
 
+    const canPaginate = totalPages > 1;
+
+    const goPrev = () => setPage((p) => Math.max(0, p - 1));
+    const goNext = () => setPage((p) => Math.min(totalPages - 1, p + 1));
+
     return (
         <div className="relative w-full h-full flex flex-col">
+            {/* Always-on audio for all remote participants */}
+            <AudioSink participants={participants} />
+
+            {/* VIDEO AREA */}
             <div className="flex-1 relative overflow-hidden rounded-2xl bg-black/80">
                 {!screenSharer && (
-                    <div className={`w-full h-full grid gap-2 p-2 ${gridColsClass}`}>
-                        {participants.map((p) => (
-                            <VideoTile key={p.id} participant={p} />
-                        ))}
-                    </div>
+                    <>
+                        {isP2P ? (
+                            <P2PLayout pageParticipants={pageParticipants} layoutVersion={layoutVersion} />
+                        ) : (
+                            <GridLayout pageParticipants={pageParticipants} layoutVersion={layoutVersion} />
+                        )}
+                    </>
                 )}
 
                 {screenSharer && (
-                    <div className="w-full h-full p-2">
-                        <ScreenShareLayout
-                            screenSharer={screenSharer}
-                            others={othersForScreen}
-                        />
-                    </div>
+                    <ScreenShareLayout
+                        screenSharer={screenSharer}
+                        others={screenOthers}
+                        layoutVersion={layoutVersion}
+                    />
                 )}
 
+                {/* Reactions floating overlay */}
                 {reactions.length > 0 && (
                     <div className="pointer-events-none absolute inset-0 flex items-end justify-center pb-20">
                         {reactions.map((r) => (
@@ -343,19 +491,48 @@ export function VideoRoom(props: VideoRoomProps) {
                         ))}
                     </div>
                 )}
+
+                {/* Pagination overlay (only if > 20 shown / >1 page) */}
+                {canPaginate && (
+                    <div className="absolute top-3 right-3 flex items-center gap-2">
+                        <button
+                            onClick={goPrev}
+                            disabled={page === 0}
+                            className={
+                                "px-3 h-9 rounded-full bg-black/55 border border-white/10 text-white text-sm " +
+                                (page === 0 ? "opacity-40 cursor-not-allowed" : "hover:bg-black/70")
+                            }
+                            title="Previous participants"
+                        >
+                            ←
+                        </button>
+                        <div className="px-3 h-9 rounded-full bg-black/55 border border-white/10 text-white text-xs flex items-center">
+                            Page {page + 1} / {totalPages}
+                        </div>
+                        <button
+                            onClick={goNext}
+                            disabled={page >= totalPages - 1}
+                            className={
+                                "px-3 h-9 rounded-full bg-black/55 border border-white/10 text-white text-sm " +
+                                (page >= totalPages - 1 ? "opacity-40 cursor-not-allowed" : "hover:bg-black/70")
+                            }
+                            title="Next participants"
+                        >
+                            →
+                        </button>
+                    </div>
+                )}
             </div>
 
+            {/* CONTROLS BAR */}
             <div className="mt-3 flex items-center justify-center">
                 <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-[#020617]/90 border border-white/10 shadow-lg">
-
                     <button
                         onClick={onToggleAudio}
                         className={
                             baseBtn +
                             " " +
-                            (isAudioMuted
-                                ? "bg-red-600 hover:bg-red-700"
-                                : "bg-[#111827] hover:bg-[#1f2937]")
+                            (isAudioMuted ? "bg-red-600 hover:bg-red-700" : "bg-[#111827] hover:bg-[#1f2937]")
                         }
                     >
                         <MicIcon />
@@ -366,9 +543,7 @@ export function VideoRoom(props: VideoRoomProps) {
                         className={
                             baseBtn +
                             " " +
-                            (isVideoMuted
-                                ? "bg-red-600 hover:bg-red-700"
-                                : "bg-[#111827] hover:bg-[#1f2937]")
+                            (isVideoMuted ? "bg-red-600 hover:bg-red-700" : "bg-[#111827] hover:bg-[#1f2937]")
                         }
                     >
                         <CameraIcon />
@@ -379,9 +554,7 @@ export function VideoRoom(props: VideoRoomProps) {
                         className={
                             baseBtn +
                             " " +
-                            (isScreenSharing
-                                ? "bg-blue-600 hover:bg-blue-700"
-                                : "bg-[#111827] hover:bg-[#1f2937]")
+                            (isScreenSharing ? "bg-blue-600 hover:bg-blue-700" : "bg-[#111827] hover:bg-[#1f2937]")
                         }
                     >
                         <ScreenIcon />
@@ -408,6 +581,7 @@ export function VideoRoom(props: VideoRoomProps) {
                         )}
                     </div>
 
+                    {/* leave */}
                     {onLeave && (
                         <button
                             onClick={onLeave}
