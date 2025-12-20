@@ -468,6 +468,24 @@ export class JitsiEngine {
             }
 
             this.callbacks.onConferenceJoin?.();
+            // ======================================================
+            // CRITICAL: explicitly enable receiving remote tracks
+            // ======================================================
+            try {
+                // Сколько remote видео получать (0 = НИЧЕГО)
+                conf.setLastN(100);
+
+                // Минимальное качество для remote video (иначе может быть 0)
+                conf.setReceiverVideoConstraint(180);
+
+                // Аудио всегда включено
+                conf.setReceiverAudioConstraint?.(true);
+
+                console.log("[JITSI] receiver constraints enabled");
+            } catch (e) {
+                console.warn("[JITSI] failed to set receiver constraints", e);
+            }
+
             // ⚠️ ВАЖНО: даём Jitsi микротик, чтобы conference полностью инициализировался
             setTimeout(() => {
                 if (this.disposed) return;
