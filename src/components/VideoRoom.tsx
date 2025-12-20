@@ -159,15 +159,18 @@ function AudioSinkItem({ p }: { p: JitsiParticipant }) {
     const trackId = useMemo(() => safeTrackId(p.audioTrack), [p.audioTrack]);
 
     useEffect(() => {
-        if (p.isLocal) return;
         if (!audioRef.current) return;
         if (!p.audioTrack) return;
+        if (p.isLocal) return;
 
-        // Ключевой момент: attach должен происходить на реально существующий media element,
-        // который НЕ находится в display:none контейнере.
-        return attachTrackToMedia(p.audioTrack, audioRef.current);
-        // критично привязаться к id трека, иначе при пере-создании трека эффект не сработает
-    }, [p.isLocal, trackId]);
+        p.audioTrack.attach(audioRef.current);
+
+        return () => {
+            try {
+                p.audioTrack.detach(audioRef.current!);
+            } catch { }
+        };
+    }, [p.audioTrack]);
 
     // Скрытый (но НЕ display:none) audio-элемент
     return <audio ref={audioRef} autoPlay playsInline preload="auto" />;
@@ -198,9 +201,9 @@ function ParticipantTile({ participant, tileKey }: { participant: JitsiParticipa
     useEffect(() => {
         if (!videoRef.current) return;
         if (!participant.videoTrack) return;
-        if (participant.videoMuted) return;
+
         return attachTrackToMedia(participant.videoTrack, videoRef.current);
-    }, [videoTrackId, participant.videoMuted]);
+    }, [videoTrackId]);
 
     const showVideo = !!participant.videoTrack && !participant.videoMuted;
 
@@ -422,9 +425,17 @@ export function VideoRoom(props: VideoRoomProps) {
 
     // IMPORTANT: при смене количества участников или смене режима (screen share on/off)
     // пересобираем layout DOM, чтобы не оставались “приаттаченные” старые элементы.
+    const tracksSignature = participants
+        .flatMap(p =>
+            [p.videoTrack, p.screenTrack]
+                .filter(Boolean)
+                .map(t => t.getId())
+        )
+        .join("|");
+
     useEffect(() => {
-        setLayoutVersion((v) => v + 1);
-    }, [participants.length, !!screenSharer]);
+        setLayoutVersion(v => v + 1);
+    }, [tracksSignature]);
 
     // “окно” участников на экране (visual only)
     const pageParticipants = useMemo(() => {
