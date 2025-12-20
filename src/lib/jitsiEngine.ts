@@ -1,34 +1,35 @@
+```ts
 // ============================================================================
 // src/lib/jitsiEngine.ts — SFU-only (P2P OFF) + track-based + reactions via endpoint messages
 // Fixes: "3+ participants => everyone sees mostly self / remote audio missing / broken P2P"
 // ============================================================================
 
 declare global {
-    interface Window {
-        JitsiMeetJS?: any;
-        config?: any;
-    }
+  interface Window {
+    JitsiMeetJS?: any;
+    config?: any;
+  }
 }
 
 export type JitsiTrack = any;
 
 export type JitsiParticipant = {
-    id: string;
-    displayName: string;
-    isLocal: boolean;
-    audioMuted: boolean;
-    videoMuted: boolean;
-    isScreenSharing: boolean;
-    audioTrack?: JitsiTrack;
-    videoTrack?: JitsiTrack;
-    screenTrack?: JitsiTrack;
+  id: string;
+  displayName: string;
+  isLocal: boolean;
+  audioMuted: boolean;
+  videoMuted: boolean;
+  isScreenSharing: boolean;
+  audioTrack?: JitsiTrack;
+  videoTrack?: JitsiTrack;
+  screenTrack?: JitsiTrack;
 };
 
 export type JitsiEngineCallbacks = {
-    onParticipantsUpdate?: (participants: JitsiParticipant[]) => void;
-    onConferenceJoin?: () => void;
-    onReactionReceived?: (fromId: string, reaction: string) => void;
-    onError?: (message: string) => void;
+  onParticipantsUpdate?: (participants: JitsiParticipant[]) => void;
+  onConferenceJoin?: () => void;
+  onReactionReceived?: (fromId: string, reaction: string) => void;
+  onError?: (message: string) => void;
 };
 
 const JITSI_DOMAIN = "jitsi.lukassodesign.site";
@@ -37,6 +38,9 @@ const JITSI_LIB_URL = `https://${JITSI_DOMAIN}/libs/lib-jitsi-meet.min.js`;
 
 // Жёстко запрещаем P2P. Для продукта 2→100+ это must-have.
 const DISABLE_P2P = true;
+
+// Сколько remote video подписывать одновременно (аудио не зависит от lastN)
+const LAST_N = 20;
 
 let jitsiLoaderPromise: Promise<void> | null = null;
 
@@ -148,7 +152,6 @@ export class JitsiEngine {
         // ВАЖНО: отключаем P2P на уровне init
         this.JitsiMeetJS.init({
             disableP2P: true,
-            // полезные дефолты, не обязательны:
             disableAudioLevels: true,
         });
 
@@ -180,6 +183,14 @@ export class JitsiEngine {
             () => {
                 if (this.disposed) return;
                 this.callbacks.onError?.("Jitsi connection failed");
+            }
+        );
+
+        connection.addEventListener?.(
+            this.JitsiMeetJS.events.connection.CONNECTION_DISCONNECTED,
+            () => {
+                if (this.disposed) return;
+                this.callbacks.onError?.("Jitsi connection disconnected");
             }
         );
 
@@ -397,7 +408,7 @@ export class JitsiEngine {
 
         const conferenceOptions: any = { ...(this.config.conference || {}) };
 
-        // Дублируем запрет P2P на уровне конференции (практический belt+suspenders)
+        // Дублируем запрет P2P на уровне конференции (belt+suspenders)
         if (DISABLE_P2P) {
             conferenceOptions.p2p = { enabled: false };
             conferenceOptions.disableP2P = true;
@@ -407,8 +418,7 @@ export class JitsiEngine {
             conferenceOptions.statisticsId = userName.toLowerCase();
         }
 
-        const baseRoomName =
-            roomName && roomName.trim().length > 0 ? roomName : "default-room";
+        const baseRoomName = roomName && roomName.trim().length > 0 ? roomName : "default-room";
 
         let safeRoomName = baseRoomName.toLowerCase().replace(/[^a-z0-9-_]/g, "");
 
@@ -424,6 +434,7 @@ export class JitsiEngine {
 
         const conf = this.connection.initJitsiConference(safeRoomName, conferenceOptions);
         this.conference = conf;
+
         console.log("[JITSI] conf created", {
             room: safeRoomName,
             serviceUrl: this.config?.websocket || this.config?.bosh,
@@ -431,6 +442,35 @@ export class JitsiEngine {
         });
 
         const events = this.JitsiMeetJS.events;
+
+        const updateRemoteSubscriptions = () => {
+            if (!this.conference) return;
+
+            try {
+                // 1) lastN: сколько remote VIDEO получать (на аудио не влияет)
+                this.conference.setLastN?.(LAST_N);
+
+                // 2) receiver constraints: просим вообще получать видео (и не в "0")
+                this.conference.setReceiverVideoConstraint?.(180);
+                this.conference.setReceiverAudioConstraint?.(true);
+
+                // 3) selectParticipants: если доступно — жёстко укажем кого хотим получать
+                const remoteIds = Object.keys(this.participants)
+                    .filter((id) => id && id !== this.localUserId)
+                    .slice(0, LAST_N);
+
+                if (typeof this.conference.selectParticipants === "function") {
+                    this.conference.selectParticipants(remoteIds);
+                }
+
+                console.log("[JITSI] subscriptions updated", {
+                    lastN: LAST_N,
+                    remoteSelected: remoteIds.length,
+                });
+            } catch (e) {
+                console.warn("[JITSI] subscriptions update failed", e);
+            }
+        };
 
         // ------------------------ CONFERENCE_JOINED ------------------------
         conf.on(events.conference.CONFERENCE_JOINED, () => {
@@ -468,38 +508,9 @@ export class JitsiEngine {
             }
 
             this.callbacks.onConferenceJoin?.();
-            // ======================================================
-            // CRITICAL: explicitly enable receiving remote tracks
-            // ======================================================
-            try {
-                // Сколько remote видео получать (0 = НИЧЕГО)
-                conf.setLastN(20);
 
-                // ==============================
-                // CRITICAL: enable remote tracks
-                // ==============================
-                try {
-                    // ВАЖНО: без этого remote tracks не подписываются
-                    conf.enableLayerSuspension?.(true);
-
-                    // ВАЖНО: разрешаем приём видео вообще
-                    conf.setLastN(20); // НЕ 100 для начала
-
-                    // Минимальный video constraint
-                    conf.setReceiverVideoConstraint(180);
-
-                    console.log("[JITSI] remote tracks enabled");
-                } catch (e) {
-                    console.warn("[JITSI] failed to enable remote tracks", e);
-                }
-
-                // Минимальное качество для remote video (иначе может быть 0)
-                conf.setReceiverVideoConstraint(180);
-
-                console.log("[JITSI] receiver constraints enabled");
-            } catch (e) {
-                console.warn("[JITSI] failed to set receiver constraints", e);
-            }
+            // CRITICAL: включаем приём remote (после join)
+            updateRemoteSubscriptions();
 
             // ⚠️ ВАЖНО: даём Jitsi микротик, чтобы conference полностью инициализировался
             setTimeout(() => {
@@ -511,6 +522,9 @@ export class JitsiEngine {
         // --------------------------- USER_JOINED ---------------------------
         conf.on(events.conference.USER_JOINED, (id: string, user: any) => {
             if (this.disposed) return;
+
+            console.log("[JITSI] user joined", { id, name: user?._displayName });
+
             this.ensureRemoteParticipant(id, user?._displayName || "Guest");
 
             // Инициализируем store для remote (track events могут прийти чуть позже)
@@ -519,16 +533,23 @@ export class JitsiEngine {
             }
 
             this.emitParticipants();
+
+            // CRITICAL: пересчёт подписок при новом юзере
+            updateRemoteSubscriptions();
         });
 
         // --------------------------- USER_LEFT -----------------------------
         conf.on(events.conference.USER_LEFT, (id: string) => {
             if (this.disposed) return;
 
+            console.log("[JITSI] user left", { id });
+
             delete this.participants[id];
             this.tracksByParticipant.delete(id);
 
             this.emitParticipants();
+
+            updateRemoteSubscriptions();
         });
 
         // ----------------------- DISPLAY_NAME_CHANGED ----------------------
@@ -644,11 +665,10 @@ export class JitsiEngine {
             videoType: track?.getVideoType?.(),
             pid: track?.getParticipantId?.(),
         });
+
         const pid = this.resolveTrackParticipantId(track);
         if (!pid) return;
 
-        // локальные треки мы уже обрабатываем в createLocalTracks,
-        // но TRACK_ADDED может приходить и на local: нормально, переживём.
         const isLocal = track.isLocal?.() === true;
 
         if (isLocal) {
@@ -669,7 +689,6 @@ export class JitsiEngine {
 
         this.tracksByParticipant.set(pid, entry);
 
-        // Обновляем DTO из track-store
         this.rebuildParticipantsFromTracks();
         this.emitParticipants();
     }
@@ -689,9 +708,7 @@ export class JitsiEngine {
             if (type === "video" && entry.video === track) delete entry.video;
         }
 
-        // если вообще всё пусто — можем удалить запись (кроме local, но можно и local оставить)
         if (!entry.audio && !entry.video && !entry.screen) {
-            // оставим local entry, чтобы не мигало, но remote можно удалить
             if (pid !== this.localUserId) {
                 this.tracksByParticipant.delete(pid);
             } else {
@@ -701,7 +718,6 @@ export class JitsiEngine {
             this.tracksByParticipant.set(pid, entry);
         }
 
-        // Если удалили локальный screenshare — синхронизируем флаг
         if (pid === this.localUserId && this.localScreenshareTrack === track) {
             this.localScreenshareTrack = null;
         }
@@ -722,22 +738,18 @@ export class JitsiEngine {
         if (type === "audio") {
             p.audioMuted = track.isMuted ? track.isMuted() : p.audioMuted;
         } else if (type === "video") {
-            // для screen-share track.getType() может быть video, но isDesktopTrack=true
             if (!this.isDesktopTrack(track)) {
                 p.videoMuted = track.isMuted ? track.isMuted() : p.videoMuted;
             }
         }
 
-        // screen-sharing флаг держим по наличию screenTrack
         p.isScreenSharing = !!p.screenTrack;
 
         this.emitParticipants();
     }
 
     private rebuildParticipantsFromTracks() {
-        // Синхронизируем DTO поля audioTrack/videoTrack/screenTrack + isScreenSharing
         for (const [pid, tracks] of this.tracksByParticipant.entries()) {
-            // Убедимся, что participant существует (особенно если track пришёл раньше USER_JOINED)
             if (pid === this.localUserId) {
                 this.ensureLocalParticipant(this.participants[pid]?.displayName || "Me");
             } else {
@@ -752,13 +764,9 @@ export class JitsiEngine {
             p.screenTrack = tracks.screen;
             p.isScreenSharing = !!tracks.screen;
 
-            // mute statuses — если track есть, можно обновить, иначе оставляем как было
             if (tracks.audio?.isMuted) p.audioMuted = !!tracks.audio.isMuted();
             if (tracks.video?.isMuted) p.videoMuted = !!tracks.video.isMuted();
         }
-
-        // Участники без треков тоже могут быть — оставляем их,
-        // но UI сам решит, что показывать.
     }
 
     private resolveTrackParticipantId(track: any): string | null {
@@ -773,10 +781,7 @@ export class JitsiEngine {
         const type = track?.getType?.();
         const videoType = track?.getVideoType?.();
 
-        // Обычно screenshare: type="video", videoType="desktop"
         if (videoType === "desktop") return true;
-
-        // Иногда встречается type="desktop" (зависит от сборки)
         if (type === "desktop") return true;
 
         return false;
@@ -785,7 +790,6 @@ export class JitsiEngine {
     private emitParticipants() {
         const arr = Object.values(this.participants);
 
-        // Стабильный порядок: local first, потом по displayName/id
         arr.sort((a, b) => {
             if (a.isLocal && !b.isLocal) return -1;
             if (!a.isLocal && b.isLocal) return 1;
@@ -811,3 +815,4 @@ export class JitsiEngine {
         }
     }
 }
+```
