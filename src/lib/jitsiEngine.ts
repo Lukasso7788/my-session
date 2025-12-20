@@ -468,7 +468,11 @@ export class JitsiEngine {
             }
 
             this.callbacks.onConferenceJoin?.();
-            this.createLocalTracks();
+            // ⚠️ ВАЖНО: даём Jitsi микротик, чтобы conference полностью инициализировался
+            setTimeout(() => {
+                if (this.disposed) return;
+                this.createLocalTracks();
+            }, 0);
         });
 
         // --------------------------- USER_JOINED ---------------------------
