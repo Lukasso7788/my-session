@@ -816,4 +816,3 @@ export class JitsiEngine {
         }
     }
 }
-```
