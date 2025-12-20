@@ -44,8 +44,7 @@ export function RoomPage() {
   const [activeScreenSharer, setActiveScreenSharer] = useState<string | null>(null);
 
   // ★ REACTIONS RECEIVED FROM OTHER USERS
-  const [incomingReactions, setIncomingReactions] =
-    useState<{ id: number; type: ReactionType }[]>([]);
+  const [incomingReactions, setIncomingReactions] = useState<{ id: number; type: ReactionType }[]>([]);
   const reactionIdRef = useRef<number>(0);
 
   // AUDIO ---------------------------------------------------------
@@ -229,6 +228,7 @@ export function RoomPage() {
     const sub = supabase
       .channel(`session-${id}`)
       .on(
+        "postgres_changes",
         {
           event: "*",
           schema: "public",
@@ -255,11 +255,13 @@ export function RoomPage() {
 
     const engine = new JitsiEngine({
       onParticipantsUpdate: (list) => {
+        // sound on join (only when first participant joins second)
         if (prevCountRef.current < 2 && list.length === 2) {
           playOneShot("/sounds/user_joined.mp3", 0.9);
         }
         prevCountRef.current = list.length;
 
+        // detect screen sharer
         const sharer = list.find((p) => p.isScreenSharing);
         if (sharer) {
           if (activeScreenSharer !== sharer.id) {
@@ -269,6 +271,7 @@ export function RoomPage() {
           setActiveScreenSharer(null);
         }
 
+        // fix displayName for host
         const updated = list.map((p) => {
           if (!p.isLocal && p.displayName === "Guest") {
             if (session?.host_profile?.full_name && session.host_profile.id === p.id) {
@@ -285,9 +288,12 @@ export function RoomPage() {
         console.log("Jitsi conference joined");
       },
 
-      onReactionReceived: (_fromId, reaction) => {
-        const newId = ++reactionIdRef.current;
+      onReactionReceived: (fromId, reaction) => {
+        const newId = reactionIdRef.current + 1;
+        reactionIdRef.current = newId;
+
         setIncomingReactions((prev) => [...prev, { id: newId, type: reaction as ReactionType }]);
+
         setTimeout(() => {
           setIncomingReactions((prev) => prev.filter((r) => r.id !== newId));
         }, 1500);
@@ -301,6 +307,7 @@ export function RoomPage() {
 
     engineRef.current = engine;
 
+    // resolve room name
     const roomNameRaw =
       session.jitsi_room_name ||
       (session.daily_room_url
@@ -317,22 +324,23 @@ export function RoomPage() {
 
     const safeRoomName = roomNameRaw.toLowerCase().replace(/[^a-z0-9-_]/g, "");
 
-    engine.initAndJoin(safeRoomName, userName || "Guest").catch((e) => {
-      setLastErr(String(e));
-    });
+    engine
+      .initAndJoin(safeRoomName || `session-${session.id}`, userName || "Guest")
+      .catch((e) => {
+        console.error("initAndJoin error", e);
+        setLastErr(String(e?.message || e));
+      });
 
     return () => {
-      engine.dispose().finally(() => {
-        engineRef.current = null;
-      });
+      engine
+        .dispose()
+        .catch(() => { })
+        .finally(() => {
+          engineRef.current = null;
+        });
       stopWelcomeLoop();
     };
   }, [session, userName]);
-
-  // ★ ДОБАВЛЕНО: отправка реакции
-  const handleSendReaction = (type: ReactionType) => {
-    engineRef.current?.sendReaction(type);
-  };
 
   // BUTTON HANDLERS
   const handleToggleAudio = () => engineRef.current?.toggleAudioMute();
@@ -357,6 +365,8 @@ export function RoomPage() {
 
   useEffect(() => {
     if (!session?.start_time || !stages.length) return;
+
+    const { starts } = getStageWindows(session.start_time, stages);
 
     const timer = setInterval(() => {
       const now = Date.now();
@@ -442,6 +452,7 @@ export function RoomPage() {
       <div className="max-w-[1720px] w-full px-5 py-5 space-y-5">
         {/* TOP BAR */}
         <div className="flex w-full rounded-2xl overflow-hidden">
+          {/* LEFT BLOCK */}
           <div className="w-[91%] bg-[#1F2937] px-6 py-8 rounded-l-2xl">
             <div className="flex items-center justify-between w-full">
               <p className="font-inter font-medium text-[17px] text-[#F3F4F6]/85">
@@ -451,9 +462,13 @@ export function RoomPage() {
               {session.host_profile && (
                 <button
                   onClick={() => setSelectedUser(session.host_profile)}
-                  className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-[#DBD8D8]"
+                  className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-[#DBD8D8] bg-transparent text-[14px] text-[#F3F4F6]/85 hover:bg-[#111827] transition font-inter"
                 >
-                  Host: {session.host_profile.full_name}
+                  <img src="/icons/host_session_icon.svg" className="h-5 w-5 opacity-90" />
+                  <span className="flex items-center gap-1">
+                    <span className="font-normal">Host:</span>
+                    <span className="font-bold">{session.host_profile.full_name}</span>
+                  </span>
                 </button>
               )}
             </div>
@@ -467,13 +482,17 @@ export function RoomPage() {
             </div>
           </div>
 
-          <div className="w-[9%] bg-[#1F2937] flex flex-col items-center justify-center">
-            <span className="text-[26px]">{remainingTime || "--:--"}</span>
+          {/* TIMER */}
+          <div className="w-[9%] bg-[#1F2937] rounded-r-2xl flex flex-col items-center justify-center gap-1 border-l border-[#404651]">
+            <img src="/icons/session_timer.svg" className="w-[48px] h-[48px]" />
+            <span className="font-inter text-[26px]">{remainingTime || "--:--"}</span>
           </div>
         </div>
 
+        {/* MAIN GRID */}
         <div className="grid lg:grid-cols-[minmax(0,1fr),420px] gap-5">
-          <div className="rounded-2xl bg-[#1F2937] h-[77vh]">
+          {/* VIDEO AREA */}
+          <div className="rounded-2xl bg-[#1F2937] shadow-lg overflow-hidden relative h-[77vh]">
             <div className="w-full h-full p-3">
               <VideoRoom
                 participants={participants}
@@ -481,15 +500,23 @@ export function RoomPage() {
                 onToggleVideo={handleToggleVideo}
                 onToggleScreenShare={handleToggleScreenShare}
                 onLeave={handleLeave}
-                onSendReaction={handleSendReaction}
                 activeScreenSharer={activeScreenSharer}
                 incomingReactions={incomingReactions}
               />
             </div>
+
+            {lastErr && (
+              <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow">
+                {lastErr}
+              </div>
+            )}
           </div>
 
-          <div className="rounded-2xl bg-[#1F2937] h-[77vh]">
-            <IntentionsPanel />
+          {/* INTENTIONS */}
+          <div className="rounded-2xl bg-[#1F2937] text-white shadow-lg h-[77vh] overflow-hidden">
+            <div className="p-4 h-full">
+              <IntentionsPanel />
+            </div>
           </div>
         </div>
       </div>
