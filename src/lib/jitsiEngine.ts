@@ -473,13 +473,28 @@ export class JitsiEngine {
             // ======================================================
             try {
                 // Сколько remote видео получать (0 = НИЧЕГО)
-                conf.setLastN(100);
+                conf.setLastN(20);
+
+                // ==============================
+                // CRITICAL: enable remote tracks
+                // ==============================
+                try {
+                    // ВАЖНО: без этого remote tracks не подписываются
+                    conf.enableLayerSuspension?.(true);
+
+                    // ВАЖНО: разрешаем приём видео вообще
+                    conf.setLastN(20); // НЕ 100 для начала
+
+                    // Минимальный video constraint
+                    conf.setReceiverVideoConstraint(180);
+
+                    console.log("[JITSI] remote tracks enabled");
+                } catch (e) {
+                    console.warn("[JITSI] failed to enable remote tracks", e);
+                }
 
                 // Минимальное качество для remote video (иначе может быть 0)
                 conf.setReceiverVideoConstraint(180);
-
-                // Аудио всегда включено
-                conf.setReceiverAudioConstraint?.(true);
 
                 console.log("[JITSI] receiver constraints enabled");
             } catch (e) {
