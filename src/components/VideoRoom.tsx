@@ -1,5 +1,28 @@
 // src/components/VideoRoom.tsx
 
+/*
+================================================================================
+CHANGELOG (AS CODE)
+================================================================================
+ADD:
+- const SCROLL_STEP = 5;  // шаг “прокрутки” участников (не “страницы”)
+- const [scrollIndex, setScrollIndex] = useState(0); // вместо page/page switching
+- canScroll + goPrev/goNext логика для “scroll-to-rest” поведения (offset window)
+- overlay label: "Showing X–Y of N" вместо "Page A/B"
+
+CHANGE:
+- AudioSink wrapper: БОЛЬШЕ НЕ display:none (className="hidden")
+  -> теперь это невидимый, но РЕАЛЬНО существующий в DOM контейнер (0x0 + opacity-0),
+     чтобы браузер НЕ глушил audio playback.
+- pageParticipants/screenOthers slicing: теперь slice по scrollIndex, а не по page.
+- clamp: scrollIndex теперь clamped под (0..maxStart) когда меняются participants/screenSharer.
+
+REMOVE:
+- УБРАНО только одно: className="hidden" у AudioSink контейнера (т.к. это ломало звук).
+  (Остальная архитектура — P2PLayout/GridLayout/ScreenShareLayout/layoutVersion — сохранена.)
+================================================================================
+*/
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { JitsiParticipant, JitsiTrack } from "../lib/jitsiEngine";
 
@@ -130,7 +153,7 @@ function LeaveIcon() {
 }
 
 // ----------------------- Audio sink -----------------------
-// ВАЖНО: аудио должно работать даже если участник НЕ отображается на текущей странице.
+// ВАЖНО: аудио должно работать даже если участник НЕ отображается на текущем “окне” (20 tiles).
 function AudioSinkItem({ p }: { p: JitsiParticipant }) {
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const trackId = useMemo(() => safeTrackId(p.audioTrack), [p.audioTrack]);
@@ -139,12 +162,15 @@ function AudioSinkItem({ p }: { p: JitsiParticipant }) {
         if (p.isLocal) return;
         if (!audioRef.current) return;
         if (!p.audioTrack) return;
+
+        // Ключевой момент: attach должен происходить на реально существующий media element,
+        // который НЕ находится в display:none контейнере.
         return attachTrackToMedia(p.audioTrack, audioRef.current);
         // критично привязаться к id трека, иначе при пере-создании трека эффект не сработает
     }, [p.isLocal, trackId]);
 
-    // Скрытый аудио-элемент
-    return <audio ref={audioRef} autoPlay playsInline />;
+    // Скрытый (но НЕ display:none) audio-элемент
+    return <audio ref={audioRef} autoPlay playsInline preload="auto" />;
 }
 
 function AudioSink({ participants }: { participants: JitsiParticipant[] }) {
@@ -152,7 +178,8 @@ function AudioSink({ participants }: { participants: JitsiParticipant[] }) {
     const remotes = useMemo(() => participants.filter((p) => !p.isLocal), [participants]);
 
     return (
-        <div className="hidden">
+        // НЕЛЬЗЯ className="hidden" / display:none — браузер может НЕ играть звук.
+        <div className="absolute w-0 h-0 overflow-hidden opacity-0 pointer-events-none">
             {remotes.map((p) => {
                 const key = `${p.id}:${safeTrackId(p.audioTrack)}`;
                 return <AudioSinkItem key={key} p={p} />;
@@ -355,6 +382,7 @@ export function VideoRoom(props: VideoRoomProps) {
     const { participants, onToggleAudio, onToggleVideo, onToggleScreenShare, onLeave, onSendReaction } = props;
 
     const PAGE_SIZE = 20;
+    const SCROLL_STEP = 5; // “скроллится к остатку”, а не “переключает страницу”
 
     // реакции UI
     const [reactions, setReactions] = useState<Reaction[]>([]);
@@ -362,8 +390,8 @@ export function VideoRoom(props: VideoRoomProps) {
     const [reactionCounter, setReactionCounter] = useState(0);
     const menuRef = useRef<HTMLDivElement | null>(null);
 
-    // pagination
-    const [page, setPage] = useState(0);
+    // “scroll window” participants (offset), НЕ page switching
+    const [scrollIndex, setScrollIndex] = useState(0);
 
     // layout reset — помогает при SFU ↔ P2P переходах и резких сменах состава
     const [layoutVersion, setLayoutVersion] = useState(0);
@@ -375,15 +403,22 @@ export function VideoRoom(props: VideoRoomProps) {
 
     const isP2P = useMemo(() => participants.length <= 2, [participants.length]);
 
-    const totalPages = useMemo(() => {
-        const base = screenSharer ? participants.filter((p) => p.id !== screenSharer.id) : participants;
-        return Math.max(1, Math.ceil(base.length / PAGE_SIZE));
+    // базовый список участников для grid (если screen share — шарер отдельно)
+    const baseParticipants = useMemo(() => {
+        return screenSharer ? participants.filter((p) => p.id !== screenSharer.id) : participants;
     }, [participants, screenSharer]);
 
-    // clamp page when participants change
+    const maxStartIndex = useMemo(() => {
+        // сколько максимально можно сдвинуть окно, чтобы влезло PAGE_SIZE
+        return Math.max(0, baseParticipants.length - PAGE_SIZE);
+    }, [baseParticipants.length]);
+
+    const canScroll = useMemo(() => baseParticipants.length > PAGE_SIZE, [baseParticipants.length]);
+
+    // clamp scrollIndex when participants change
     useEffect(() => {
-        setPage((p) => Math.min(p, totalPages - 1));
-    }, [totalPages]);
+        setScrollIndex((i) => Math.min(Math.max(0, i), maxStartIndex));
+    }, [maxStartIndex]);
 
     // IMPORTANT: при смене количества участников или смене режима (screen share on/off)
     // пересобираем layout DOM, чтобы не оставались “приаттаченные” старые элементы.
@@ -391,24 +426,20 @@ export function VideoRoom(props: VideoRoomProps) {
         setLayoutVersion((v) => v + 1);
     }, [participants.length, !!screenSharer]);
 
-    // page participants (visual only)
+    // “окно” участников на экране (visual only)
     const pageParticipants = useMemo(() => {
-        // если есть скриншер — он рендерится отдельно, остальным делаем paging
-        const base = screenSharer ? participants.filter((p) => p.id !== screenSharer.id) : participants;
-
-        const start = page * PAGE_SIZE;
+        const start = scrollIndex;
         const end = start + PAGE_SIZE;
-        return base.slice(start, end);
-    }, [participants, screenSharer, page]);
+        return baseParticipants.slice(start, end);
+    }, [baseParticipants, scrollIndex]);
 
-    // others in screenshare layout (тоже paging, потому что может быть 100)
+    // others in screenshare layout (тоже “окно”, потому что может быть 100)
     const screenOthers = useMemo(() => {
         if (!screenSharer) return [];
-        const base = participants.filter((p) => p.id !== screenSharer.id);
-        const start = page * PAGE_SIZE;
+        const start = scrollIndex;
         const end = start + PAGE_SIZE;
-        return base.slice(start, end);
-    }, [participants, screenSharer, page]);
+        return baseParticipants.slice(start, end);
+    }, [baseParticipants, screenSharer, scrollIndex]);
 
     const localParticipant = useMemo(
         () => participants.find((p) => p.isLocal) || null,
@@ -451,10 +482,11 @@ export function VideoRoom(props: VideoRoomProps) {
     const baseBtn =
         "w-10 h-10 rounded-full flex items-center justify-center text-white text-sm transition";
 
-    const canPaginate = totalPages > 1;
+    const goPrev = () => setScrollIndex((i) => Math.max(0, i - SCROLL_STEP));
+    const goNext = () => setScrollIndex((i) => Math.min(maxStartIndex, i + SCROLL_STEP));
 
-    const goPrev = () => setPage((p) => Math.max(0, p - 1));
-    const goNext = () => setPage((p) => Math.min(totalPages - 1, p + 1));
+    const shownStart = canScroll ? scrollIndex + 1 : Math.min(1, baseParticipants.length);
+    const shownEnd = Math.min(scrollIndex + PAGE_SIZE, baseParticipants.length);
 
     return (
         <div className="relative w-full h-full flex flex-col">
@@ -492,31 +524,33 @@ export function VideoRoom(props: VideoRoomProps) {
                     </div>
                 )}
 
-                {/* Pagination overlay (only if > 20 shown / >1 page) */}
-                {canPaginate && (
+                {/* Scroll overlay (only if > 20 shown) */}
+                {canScroll && (
                     <div className="absolute top-3 right-3 flex items-center gap-2">
                         <button
                             onClick={goPrev}
-                            disabled={page === 0}
+                            disabled={scrollIndex === 0}
                             className={
                                 "px-3 h-9 rounded-full bg-black/55 border border-white/10 text-white text-sm " +
-                                (page === 0 ? "opacity-40 cursor-not-allowed" : "hover:bg-black/70")
+                                (scrollIndex === 0 ? "opacity-40 cursor-not-allowed" : "hover:bg-black/70")
                             }
-                            title="Previous participants"
+                            title="Scroll back"
                         >
                             ←
                         </button>
+
                         <div className="px-3 h-9 rounded-full bg-black/55 border border-white/10 text-white text-xs flex items-center">
-                            Page {page + 1} / {totalPages}
+                            Showing {shownStart}–{shownEnd} of {baseParticipants.length}
                         </div>
+
                         <button
                             onClick={goNext}
-                            disabled={page >= totalPages - 1}
+                            disabled={scrollIndex >= maxStartIndex}
                             className={
                                 "px-3 h-9 rounded-full bg-black/55 border border-white/10 text-white text-sm " +
-                                (page >= totalPages - 1 ? "opacity-40 cursor-not-allowed" : "hover:bg-black/70")
+                                (scrollIndex >= maxStartIndex ? "opacity-40 cursor-not-allowed" : "hover:bg-black/70")
                             }
-                            title="Next participants"
+                            title="Scroll forward"
                         >
                             →
                         </button>
