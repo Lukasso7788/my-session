@@ -573,6 +573,16 @@ export class JitsiEngine {
 
     const events = this.JitsiMeetJS.events;
 
+    const applySubsSoon = () => {
+      if (this.disposed) return;
+      // debounce на микротик, чтобы несколько событий подряд схлопнулись в 1 apply
+      clearTimeout((this as any).__applySubsT);
+      (this as any).__applySubsT = setTimeout(() => {
+        if (this.disposed) return;
+        this.applyVideoSubscriptions();
+      }, 50);
+    };
+
     const updateRemoteSubscriptions = () => {
       if (!this.conference) return;
       this.scheduleApplyVideoSubscriptions(0);
@@ -681,16 +691,19 @@ export class JitsiEngine {
     conf.on(events.conference.TRACK_ADDED, (track: any) => {
       if (this.disposed) return;
       this.handleTrackAdded(track);
+      applySubsSoon();
     });
 
     conf.on(events.conference.TRACK_REMOVED, (track: any) => {
       if (this.disposed) return;
       this.handleTrackRemoved(track);
+      applySubsSoon();
     });
 
     conf.on(events.conference.TRACK_MUTE_CHANGED, (track: any) => {
       if (this.disposed) return;
       this.handleTrackMuteChanged(track);
+      applySubsSoon();
     });
 
     // ------------------- ENDPOINT MESSAGE (reactions) -------------------

@@ -564,7 +564,7 @@ export function VideoRoom(props: VideoRoomProps) {
     useEffect(() => {
         const t = setTimeout(() => onVisibleVideoIdsChange?.(visibleRemoteIds), 150);
         return () => clearTimeout(t);
-    }, [onVisibleVideoIdsChange, visibleRemoteIds]);
+    }, [onVisibleVideoIdsChange, visibleRemoteIds, tracksSignature]);
 
     const isAudioMuted = !!localParticipant?.audioMuted;
     const isVideoMuted = !!localParticipant?.videoMuted;
