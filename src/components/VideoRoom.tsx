@@ -1,715 +1,1047 @@
-// src/components/VideoRoom.tsx
+// ============================================================================
+// src/lib/jitsiEngine.ts — SFU-only (P2P OFF) + track-based + reactions via endpoint messages
+// Fixes: "3+ participants => everyone sees mostly self / remote audio missing / broken P2P"
+// ============================================================================
 
-/*
-================================================================================
-CHANGELOG (AS CODE)
-================================================================================
-FIX (LAYOUT REGRESSION):
-- Revert tile/layout DOM to the previously stable version (aspect-video wrapper, non-absolute video)
-  -> removes "tiles outside frame" glitches
-
-FIX (REMOTE OFF -> FROZEN LAST FRAME):
-- showVideo now uses BOTH:
-    participant.videoMuted
-    AND participant.videoTrack?.isMuted?.()
-- ParticipantTile effect always detach + clear srcObject on mute/unmute and track changes
-
-OPTIMIZE (KEEP STABLE BEHAVIOR):
-- layoutVersion now bumps ONLY on coarse mode changes:
-  join/leave (ids signature), P2P flip, screen share mode change
-- ParticipantTile is memoized with stable compare
-- onVisibleVideoIdsChange fires only when ids signature actually changed (debounced)
-================================================================================
-*/
-
-import { memo, useEffect, useMemo, useRef, useState } from "react";
-import type { JitsiParticipant, JitsiTrack } from "../lib/jitsiEngine";
-
-export type ReactionType =
-    | "fire"
-    | "laugh"
-    | "clap"
-    | "heart"
-    | "thumbsUp"
-    | "thumbsDown";
-
-export type Reaction = {
-    id: number;
-    type: ReactionType;
-};
-
-type VideoRoomProps = {
-    participants: JitsiParticipant[];
-    onToggleAudio: () => void;
-    onToggleVideo: () => void;
-    onToggleScreenShare: () => void;
-    onLeave?: () => void;
-    activeScreenSharer?: string | null;
-    incomingReactions?: { id: number; type: ReactionType }[];
-    onVisibleVideoIdsChange?: (ids: string[]) => void;
-    onSendReaction?: (type: ReactionType) => void;
-};
-
-const reactionEmoji: Record<ReactionType, string> = {
-    fire: "🔥",
-    laugh: "😂",
-    clap: "👏",
-    heart: "❤️",
-    thumbsUp: "👍",
-    thumbsDown: "👎",
-};
-
-function safeTrackId(track?: any): string {
-    if (!track) return "none";
-    try {
-        if (typeof track.getId === "function") return String(track.getId());
-    } catch { }
-    return String((track as any)?._id ?? "track");
+declare global {
+    interface Window {
+        JitsiMeetJS?: any;
+        config?: any;
+    }
 }
 
-function clearMediaEl(el: HTMLMediaElement | null) {
-    if (!el) return;
-    try {
-        (el as any).srcObject = null;
-    } catch { }
-    try {
-        el.load?.();
-    } catch { }
-}
+export type JitsiTrack = any;
 
-function attachTrackToMedia(track: JitsiTrack | undefined, element: HTMLMediaElement | null) {
-    if (!track || !element) return;
+export type JitsiParticipant = {
+    id: string;
+    displayName: string;
+    isLocal: boolean;
+    audioMuted: boolean;
+    videoMuted: boolean;
+    isScreenSharing: boolean;
+    audioTrack?: JitsiTrack;
+    videoTrack?: JitsiTrack;
+    screenTrack?: JitsiTrack;
+};
 
-    try {
-        track.attach(element);
-    } catch (e) {
-        console.error("attach error", e);
+export type JitsiEngineCallbacks = {
+    onParticipantsUpdate?: (participants: JitsiParticipant[]) => void;
+    onConferenceJoin?: () => void;
+    onReactionReceived?: (fromId: string, reaction: string) => void;
+    onError?: (message: string) => void;
+};
+
+const JITSI_DOMAIN = "jitsi.lukassodesign.site";
+const JITSI_CONFIG_URL = "https://" + JITSI_DOMAIN + "/config.js";
+const JITSI_LIB_URL = "https://" + JITSI_DOMAIN + "/libs/lib-jitsi-meet.min.js";
+
+// Жёстко запрещаем P2P. Для продукта 2→100+ это must-have.
+const DISABLE_P2P = true;
+
+// Сколько remote video подписывать одновременно (аудио не зависит от lastN)
+const LAST_N = 20;
+
+let jitsiLoaderPromise: Promise<void> | null = null;
+
+// ============================================================================
+// SCRIPT LOADER
+// ============================================================================
+async function loadJitsiScripts(): Promise<void> {
+    if (typeof window === "undefined") {
+        throw new Error("Jitsi can only be loaded in browser");
     }
 
-    return () => {
+    if (window.JitsiMeetJS && window.config) {
+        return;
+    }
+
+    if (jitsiLoaderPromise) return jitsiLoaderPromise;
+
+    jitsiLoaderPromise = new Promise<void>((resolve, reject) => {
+        let loaded = 0;
+
+        const done = () => {
+            loaded += 1;
+            if (loaded === 2) {
+                if (window.JitsiMeetJS && window.config) {
+                    resolve();
+                } else {
+                    reject(new Error("Jitsi scripts loaded but globals are missing"));
+                }
+            }
+        };
+
+        const onError = (src: string) => {
+            reject(new Error("Failed to load Jitsi script: " + src));
+        };
+
+        if (!document.querySelector('script[src="' + JITSI_CONFIG_URL + '"]')) {
+            const scConfig = document.createElement("script");
+            scConfig.src = JITSI_CONFIG_URL;
+            scConfig.async = true;
+            scConfig.onload = done;
+            scConfig.onerror = () => onError(JITSI_CONFIG_URL);
+            document.head.appendChild(scConfig);
+        } else {
+            done();
+        }
+
+        if (!document.querySelector('script[src="' + JITSI_LIB_URL + '"]')) {
+            const scLib = document.createElement("script");
+            scLib.src = JITSI_LIB_URL;
+            scLib.async = true;
+            scLib.onload = done;
+            scLib.onerror = () => onError(JITSI_LIB_URL);
+            document.head.appendChild(scLib);
+        } else {
+            done();
+        }
+    });
+
+    return jitsiLoaderPromise;
+}
+
+// ============================================================================
+// JITSI ENGINE
+// ============================================================================
+export class JitsiEngine {
+    private callbacks: JitsiEngineCallbacks;
+    private subsWatchdog: any = null;
+    private JitsiMeetJS: any | null = null;
+    private config: any | null = null;
+    private connection: any | null = null;
+    private conference: any | null = null;
+    // DTO participants (UI-friendly). НЕ источник истины для треков.
+    private participants: Record<string, JitsiParticipant> = {};
+    private localUserId: string | null = null;
+
+    // Track store — источник истины для audio/video/screen
+    private tracksByParticipant = new Map<
+        string,
+        { audio?: JitsiTrack; video?: JitsiTrack; screen?: JitsiTrack }
+    >();
+
+    // Локальные треки отдельно (для toggle/dispose)
+    private localAudioTrack: JitsiTrack | null = null;
+    private localVideoTrack: JitsiTrack | null = null;
+    private localScreenshareTrack: JitsiTrack | null = null;
+
+    private disposed = false;
+
+    constructor(callbacks: JitsiEngineCallbacks = {}) {
+        this.callbacks = callbacks;
+    }
+
+    // ========================================================================
+    // PUBLIC API
+    // ========================================================================
+    async initAndJoin(roomName: string, userName: string): Promise<void> {
+        await loadJitsiScripts();
+
+        this.JitsiMeetJS = window.JitsiMeetJS;
+        this.config = window.config;
+
+        if (!this.JitsiMeetJS || !this.config) {
+            throw new Error("Jitsi globals not available");
+        }
+
+        this.JitsiMeetJS.setLogLevel(this.JitsiMeetJS.logLevels.ERROR);
+
+        // ВАЖНО: отключаем P2P на уровне init
+        this.JitsiMeetJS.init({
+            disableP2P: true,
+            disableAudioLevels: true,
+        });
+
+        const serviceUrl =
+            this.config.websocket ||
+            this.config.bosh ||
+            ("wss://" + JITSI_DOMAIN + "/xmpp-websocket");
+
+        const options = {
+            hosts: this.config.hosts,
+            serviceUrl,
+            clientNode: this.config.clientNode,
+            p2p: { enabled: false },
+        };
+
+        const connection = new this.JitsiMeetJS.JitsiConnection(null, undefined, options);
+        this.connection = connection;
+
+        connection.addEventListener(
+            this.JitsiMeetJS.events.connection.CONNECTION_ESTABLISHED,
+            () => {
+                if (this.disposed) return;
+                this.setupConference(roomName, userName);
+            }
+        );
+
+        connection.addEventListener(
+            this.JitsiMeetJS.events.connection.CONNECTION_FAILED,
+            () => {
+                if (this.disposed) return;
+                this.callbacks.onError?.("Jitsi connection failed");
+            }
+        );
+
+        connection.addEventListener?.(
+            this.JitsiMeetJS.events.connection.CONNECTION_DISCONNECTED,
+            () => {
+                if (this.disposed) return;
+                this.callbacks.onError?.("Jitsi connection disconnected");
+            }
+        );
+
+        connection.connect();
+    }
+
+    // локальный юзер кликает реакцию
+    public sendReaction(type: string) {
+        this.broadcastLocalEvent({ kind: "reaction", reaction: type });
+    }
+
+    // ========== VIDEO SUBSCRIPTIONS (UI-aware) ==========
+    private selectedVideoIds: string[] = [];
+    private qualityMode: "auto" | "low" | "medium" | "high" = "auto";
+
+    // верхний потолок, чтобы случайно не подписаться на 100 видеопотоков
+    private readonly MAX_LAST_N = 36;
+
+    // debounce applyVideoSubscriptions
+    private subsApplyTimer: any = null;
+
+    // hard-refresh guard
+    private subsHardResetTimer: any = null;
+    private subsHardResetInFlight = false;
+
+    public setQualityMode(mode: "auto" | "low" | "medium" | "high") {
+        this.qualityMode = mode;
+        this.scheduleApplyVideoSubscriptions();
+    }
+
+    public setVisibleVideoParticipants(ids: string[]) {
+        // ids должны быть REMOTE (можно передать и local — мы отфильтруем ниже)
+        this.selectedVideoIds = Array.isArray(ids) ? ids : [];
+        this.scheduleApplyVideoSubscriptions();
+    }
+
+    private scheduleApplyVideoSubscriptions(delayMs: number = 150) {
+        if (!this.conference) return;
+        if (this.disposed) return;
+
         try {
-            track.detach(element);
+            if (this.subsApplyTimer) clearTimeout(this.subsApplyTimer);
+            this.subsApplyTimer = setTimeout(() => {
+                this.subsApplyTimer = null;
+                this.applyVideoSubscriptions();
+            }, delayMs);
         } catch {
             // ignore
         }
-        clearMediaEl(element);
-    };
-}
-
-// ----------------------- Icons -----------------------
-function MicIcon() {
-    return (
-        <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-            <path
-                d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"
-                fill="currentColor"
-            />
-            <path
-                d="M6 11a1 1 0 0 0-2 0 8 8 0 0 0 7 7.93V21H9a1 1 0 0 0 0 2h6a1 1 0 1 0 0-2h-2v-2.07A8 8 0 0 0 20 11a1 1 0 0 0-2 0 6 6 0 0 1-12 0z"
-                fill="currentColor"
-            />
-        </svg>
-    );
-}
-
-function CameraIcon() {
-    return (
-        <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-            <rect x="4" y="6" width="11" height="12" rx="2" fill="currentColor" />
-            <path d="M17 9.5 21 7v10l-4-2.5z" fill="currentColor" />
-        </svg>
-    );
-}
-
-function ScreenIcon() {
-    return (
-        <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-            <rect x="3" y="4" width="18" height="12" rx="2" fill="currentColor" />
-            <rect x="9" y="18" width="6" height="2" rx="1" fill="currentColor" />
-        </svg>
-    );
-}
-
-function SmileIcon() {
-    return (
-        <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-            <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="1.5" />
-            <circle cx="9" cy="10" r="0.8" fill="currentColor" />
-            <circle cx="15" cy="10" r="0.8" fill="currentColor" />
-            <path
-                d="M9 15c.7.8 1.6 1.2 3 1.2s2.3-.4 3-1.2"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-            />
-        </svg>
-    );
-}
-
-function LeaveIcon() {
-    return (
-        <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true">
-            <path
-                d="M5 5h6a1 1 0 0 1 0 2H7v10h4a1 1 0 0 1 0 2H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"
-                fill="currentColor"
-            />
-            <path
-                d="M13.7 8.3a1 1 0 0 1 1.4 0L19 12l-3.9 3.7a1 1 0 0 1-1.4-1.4L15.6 13H11a1 1 0 0 1 0-2h4.6l-1.3-1.3a1 1 0 0 1 0-1.4z"
-                fill="currentColor"
-            />
-        </svg>
-    );
-}
-
-// ----------------------- Audio sink -----------------------
-function AudioSinkItem({ p }: { p: JitsiParticipant }) {
-    const audioRef = useRef<HTMLAudioElement | null>(null);
-
-    useEffect(() => {
-        if (!audioRef.current) return;
-        if (!p.audioTrack) return;
-        if (p.isLocal) return;
-
-        p.audioTrack.attach(audioRef.current);
-
-        return () => {
-            try {
-                p.audioTrack.detach(audioRef.current!);
-            } catch { }
-        };
-    }, [p.audioTrack, p.isLocal]);
-
-    return <audio ref={audioRef} autoPlay playsInline preload="auto" />;
-}
-
-function AudioSink({ participants }: { participants: JitsiParticipant[] }) {
-    const remotes = useMemo(() => participants.filter((p) => !p.isLocal), [participants]);
-
-    return (
-        <div className="absolute w-0 h-0 overflow-hidden opacity-0 pointer-events-none">
-            {remotes.map((p) => {
-                const key = `${p.id}:${safeTrackId(p.audioTrack)}`;
-                return <AudioSinkItem key={key} p={p} />;
-            })}
-        </div>
-    );
-}
-
-// ----------------------- Tiles -----------------------
-function ParticipantTileBase({
-    participant,
-    tileKey,
-}: {
-    participant: JitsiParticipant;
-    tileKey: string;
-}) {
-    const videoRef = useRef<HTMLVideoElement | null>(null);
-
-    const track = participant.videoTrack;
-    const trackId = useMemo(() => safeTrackId(track), [track]);
-
-    const isTrackMuted = !!track?.isMuted?.();
-    const isMuted = !!participant.videoMuted || isTrackMuted;
-    const showVideo = !!track && !isMuted;
-
-    useEffect(() => {
-        const el = videoRef.current;
-        if (!el) return;
-
-        // ALWAYS detach & clear (prevents frozen frame)
-        try {
-            track?.detach?.(el);
-        } catch { }
-        clearMediaEl(el);
-
-        if (!track || isMuted) {
-            return;
-        }
-
-        try {
-            track.attach(el);
-        } catch (e) {
-            console.error("attach error", e);
-        }
-
-        try {
-            const pr = el.play?.();
-            (pr as any)?.catch?.(() => { });
-        } catch { }
-
-        return () => {
-            try {
-                track.detach?.(el);
-            } catch { }
-            clearMediaEl(el);
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [trackId, isMuted, participant.isLocal]);
-
-    return (
-        <div
-            className="relative bg-black rounded-2xl overflow-hidden flex items-center justify-center border border-white/5"
-            data-tile-key={tileKey}
-        >
-            {/* 16:9 frame inside tile (stable layout) */}
-            <div className="w-full h-full flex items-center justify-center">
-                <div className="w-full max-w-full aspect-video bg-black">
-                    {showVideo ? (
-                        <video
-                            ref={videoRef}
-                            autoPlay
-                            playsInline
-                            muted={participant.isLocal}
-                            className="w-full h-full object-contain bg-black"
-                        />
-                    ) : (
-                        <div className="w-full h-full flex flex-col items-center justify-center bg-[#111827]">
-                            <div className="w-16 h-16 rounded-full bg-[#374151] flex items-center justify-center text-2xl font-semibold">
-                                {participant.displayName?.[0]?.toUpperCase() || "?"}
-                            </div>
-                            <span className="mt-2 text-sm text-white/80">
-                                {participant.isLocal ? "You" : participant.displayName || "Guest"}
-                            </span>
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {/* name + mic status */}
-            <div className="absolute left-3 bottom-3 rounded-md bg-black/55 px-2 py-1 text-[11px] flex items-center gap-2">
-                <span className="text-white/80">
-                    {participant.isLocal ? "You" : participant.displayName || "Guest"}
-                </span>
-                <span className={"w-2 h-2 rounded-full " + (participant.audioMuted ? "bg-red-500" : "bg-green-400")} />
-            </div>
-        </div>
-    );
-}
-
-const ParticipantTile = memo(
-    ParticipantTileBase,
-    (prev, next) => {
-        const a = prev.participant;
-        const b = next.participant;
-
-        if (prev.tileKey !== next.tileKey) return false;
-
-        if (a.id !== b.id) return false;
-        if (a.isLocal !== b.isLocal) return false;
-
-        if ((a.displayName || "") !== (b.displayName || "")) return false;
-        if (!!a.audioMuted !== !!b.audioMuted) return false;
-        if (!!a.videoMuted !== !!b.videoMuted) return false;
-
-        if (safeTrackId(a.videoTrack) !== safeTrackId(b.videoTrack)) return false;
-        if (safeTrackId(a.screenTrack) !== safeTrackId(b.screenTrack)) return false;
-
-        // also account for track internal muted state (rarely differs from DTO)
-        if (!!a.videoTrack?.isMuted?.() !== !!b.videoTrack?.isMuted?.()) return false;
-
-        return true;
     }
-);
 
-// ----------------------- Layouts -----------------------
-function computeGrid(count: number) {
-    if (count <= 1) return { cols: 1, rows: 1 };
-    const cols = Math.ceil(Math.sqrt(count));
-    const rows = Math.ceil(count / cols);
-    return { cols, rows };
-}
+    private scheduleHardResetSubscriptions(delayMs: number = 120) {
+        if (!this.conference) return;
+        if (this.disposed) return;
 
-function GridLayout({
-    pageParticipants,
-    layoutVersion,
-}: {
-    pageParticipants: JitsiParticipant[];
-    layoutVersion: number;
-}) {
-    const { cols, rows } = useMemo(() => computeGrid(pageParticipants.length), [pageParticipants.length]);
+        try {
+            if (this.subsHardResetTimer) clearTimeout(this.subsHardResetTimer);
+            this.subsHardResetTimer = setTimeout(() => {
+                this.subsHardResetTimer = null;
+                this.hardResetAndApplyVideoSubscriptions();
+            }, delayMs);
+        } catch {
+            // ignore
+        }
+    }
 
-    return (
-        <div
-            key={`grid:${layoutVersion}:${pageParticipants.length}:${cols}x${rows}`}
-            className="w-full h-full grid gap-2 p-2"
-            style={{
-                gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-                gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
-            }}
-        >
-            {pageParticipants.map((p) => {
-                const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}:${safeTrackId(p.screenTrack)}`;
-                return <ParticipantTile key={tileKey} participant={p} tileKey={tileKey} />;
-            })}
-        </div>
-    );
-}
+    private pickReceiverConstraintHeight(n: number): number {
+        // глобальный max-height (Jitsi потом сам выберет layer/битрейт, если simulcast включён)
+        if (this.qualityMode === "high") return 720;
+        if (this.qualityMode === "medium") return 360;
+        if (this.qualityMode === "low") return 180;
 
-function P2PLayout({
-    pageParticipants,
-    layoutVersion,
-}: {
-    pageParticipants: JitsiParticipant[];
-    layoutVersion: number;
-}) {
-    const count = pageParticipants.length;
+        // auto:
+        if (n <= 2) return 720;
+        if (n <= 6) return 540;
+        if (n <= 12) return 360;
+        if (n <= 25) return 180;
+        return 180;
+    }
 
-    return (
-        <div
-            key={`p2p:${layoutVersion}:${count}`}
-            className="w-full h-full grid gap-2 p-2"
-            style={{
-                gridTemplateColumns: count <= 1 ? "1fr" : "1fr 1fr",
-                gridTemplateRows: "1fr",
-            }}
-        >
-            {pageParticipants.map((p) => {
-                const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}`;
-                return <ParticipantTile key={tileKey} participant={p} tileKey={tileKey} />;
-            })}
-        </div>
-    );
-}
+    private getRemoteIdsWithAnyVideoOrScreen(): string[] {
+        const localId = this.localUserId;
+        const screens: string[] = [];
+        const videos: string[] = [];
 
-function ScreenShareLayout({
-    screenSharer,
-    others,
-    layoutVersion,
-}: {
-    screenSharer: JitsiParticipant;
-    others: JitsiParticipant[];
-    layoutVersion: number;
-}) {
-    const screenVideoRef = useRef<HTMLVideoElement | null>(null);
-    const screenTrackId = useMemo(() => safeTrackId(screenSharer.screenTrack), [screenSharer.screenTrack]);
+        for (const [pid, tracks] of this.tracksByParticipant.entries()) {
+            if (!pid) continue;
+            if (localId && pid === localId) continue;
 
-    useEffect(() => {
-        if (!screenVideoRef.current) return;
-        if (!screenSharer.screenTrack) return;
-        return attachTrackToMedia(screenSharer.screenTrack, screenVideoRef.current);
-    }, [screenTrackId]);
+            if (tracks?.screen) screens.push(pid);
+            if (tracks?.video) videos.push(pid);
+        }
 
-    const cameraParticipant =
-        screenSharer.videoTrack && !screenSharer.videoMuted && !screenSharer.videoTrack?.isMuted?.()
-            ? screenSharer
-            : undefined;
+        // screens first
+        const out: string[] = [];
+        for (const id of screens) if (!out.includes(id)) out.push(id);
+        for (const id of videos) if (!out.includes(id)) out.push(id);
+        return out;
+    }
 
-    return (
-        <div
-            key={`screen:${layoutVersion}:${screenSharer.id}:${screenTrackId}`}
-            className="relative w-full h-full flex flex-col md:flex-row gap-2 p-2"
-        >
-            <div className="relative flex-1 bg-black rounded-2xl overflow-hidden border border-white/5">
-                <video
-                    ref={screenVideoRef}
-                    autoPlay
-                    playsInline
-                    muted={screenSharer.isLocal}
-                    className="w-full h-full object-contain bg-black"
-                />
-                <div className="absolute left-3 bottom-3 rounded-md bg-black/60 px-2 py-1 text-[11px]">
-                    <span className="text-white/80">
-                        {screenSharer.isLocal ? "You (screen)" : `${screenSharer.displayName || "Guest"} (screen)`}
-                    </span>
-                </div>
+    private computeFinalRemoteIds(): string[] {
+        const localId = this.localUserId;
 
-                {cameraParticipant && (
-                    <div className="hidden md:block absolute top-3 right-3 w-44 aspect-video rounded-xl overflow-hidden border border-white/20 shadow-lg bg-black">
-                        <ParticipantTile
-                            participant={cameraParticipant}
-                            tileKey={`${cameraParticipant.id}:${safeTrackId(cameraParticipant.videoTrack)}`}
-                        />
-                    </div>
-                )}
-            </div>
+        // только remote ids из UI
+        const uiRemoteIds = (this.selectedVideoIds || []).filter((id) => id && id !== localId);
 
-            <div className="flex md:flex-col gap-2 md:w-56 w-full">
-                {others.map((p) => {
-                    const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}`;
-                    return (
-                        <div key={tileKey} className="md:h-[140px] w-full">
-                            <ParticipantTile participant={p} tileKey={tileKey} />
-                        </div>
-                    );
-                })}
-            </div>
-        </div>
-    );
-}
+        // fallback: если UI ещё не успел пересчитать, или треки только что появились
+        const activeRemoteIds = this.getRemoteIdsWithAnyVideoOrScreen();
 
-// ----------------------- Main -----------------------
-export function VideoRoom(props: VideoRoomProps) {
-    const {
-        participants,
-        onToggleAudio,
-        onToggleVideo,
-        onToggleScreenShare,
-        onLeave,
-        onSendReaction,
-        incomingReactions,
-        onVisibleVideoIdsChange,
-    } = props;
+        // финальный приоритетный список:
+        // 1) активные screen/video (чтобы не зависеть от "порядка включения")
+        // 2) UI-visible ids (если есть, но без дублей)
+        const finalRemoteIds: string[] = [];
 
-    const PAGE_SIZE = 20;
-    const SCROLL_STEP = 5;
+        for (const id of activeRemoteIds) {
+            if (id && id !== localId && !finalRemoteIds.includes(id)) finalRemoteIds.push(id);
+        }
+        for (const id of uiRemoteIds) {
+            if (id && id !== localId && !finalRemoteIds.includes(id)) finalRemoteIds.push(id);
+        }
 
-    const [reactions, setReactions] = useState<Reaction[]>([]);
-    const [showReactionsMenu, setShowReactionsMenu] = useState(false);
-    const [reactionCounter, setReactionCounter] = useState(0);
-    const menuRef = useRef<HTMLDivElement | null>(null);
+        return finalRemoteIds;
+    }
 
-    const [scrollIndex, setScrollIndex] = useState(0);
-    const [layoutVersion, setLayoutVersion] = useState(0);
+    private applyVideoSubscriptions() {
+        if (!this.conference) return;
 
-    const screenSharer = useMemo(
-        () => participants.find((p) => p.isScreenSharing && p.screenTrack),
-        [participants]
-    );
+        try {
+            const finalRemoteIds = this.computeFinalRemoteIds();
 
-    const isP2P = useMemo(() => participants.length <= 2, [participants.length]);
+            // lastN = сколько remote video реально хотим
+            const desiredLastN = Math.min(finalRemoteIds.length, this.MAX_LAST_N);
 
-    const localParticipant = useMemo(
-        () => participants.find((p) => p.isLocal) || null,
-        [participants]
-    );
+            this.conference.setLastN?.(desiredLastN);
 
-    const participantIdsSignature = useMemo(() => {
-        const ids = participants.map((p) => p.id).filter(Boolean).sort();
-        return ids.join("|");
-    }, [participants]);
+            const h = this.pickReceiverConstraintHeight(desiredLastN);
+            this.conference.setReceiverVideoConstraint?.(h);
+            this.conference.setReceiverAudioConstraint?.(true);
 
-    const coarseModeSignature = useMemo(() => {
-        const ss = screenSharer ? `${screenSharer.id}:${safeTrackId(screenSharer.screenTrack)}` : "none";
-        return `${participantIdsSignature}::p2p=${isP2P ? 1 : 0}::ss=${ss}`;
-    }, [participantIdsSignature, isP2P, screenSharer]);
+            if (typeof this.conference.selectParticipants === "function") {
+                this.conference.selectParticipants(finalRemoteIds.slice(0, desiredLastN));
+            }
 
-    const lastModeSigRef = useRef<string>("");
-    useEffect(() => {
-        if (!coarseModeSignature) return;
-        if (lastModeSigRef.current === "") {
-            lastModeSigRef.current = coarseModeSignature;
+            // optional debug
+            console.log("[JITSI] applyVideoSubscriptions", {
+                desiredLastN,
+                receiverMaxHeight: h,
+                selected: finalRemoteIds.slice(0, desiredLastN).length,
+            });
+        } catch (e) {
+            console.warn("[JITSI] applyVideoSubscriptions failed", e);
+        }
+    }
+
+    private hardResetAndApplyVideoSubscriptions() {
+        if (!this.conference) return;
+        if (this.subsHardResetInFlight) return;
+
+        this.subsHardResetInFlight = true;
+
+        try {
+            const finalRemoteIds = this.computeFinalRemoteIds();
+            const desiredLastN = Math.min(finalRemoteIds.length, this.MAX_LAST_N);
+            const h = this.pickReceiverConstraintHeight(desiredLastN);
+
+            // STEP 1: hard reset
+            try {
+                if (typeof this.conference.selectParticipants === "function") {
+                    this.conference.selectParticipants([]);
+                }
+            } catch {
+                // ignore
+            }
+
+            try {
+                this.conference.setLastN?.(0);
+            } catch {
+                // ignore
+            }
+
+            // STEP 2: re-apply after a tiny delay (gives Jitsi time to flush subscriptions)
+            setTimeout(() => {
+                if (this.disposed) {
+                    this.subsHardResetInFlight = false;
+                    return;
+                }
+                if (!this.conference) {
+                    this.subsHardResetInFlight = false;
+                    return;
+                }
+
+                try {
+                    this.conference.setLastN?.(desiredLastN);
+                    this.conference.setReceiverVideoConstraint?.(h);
+                    this.conference.setReceiverAudioConstraint?.(true);
+
+                    if (typeof this.conference.selectParticipants === "function") {
+                        this.conference.selectParticipants(finalRemoteIds.slice(0, desiredLastN));
+                    }
+
+                    console.log("[JITSI] hardResetAndApplyVideoSubscriptions", {
+                        desiredLastN,
+                        receiverMaxHeight: h,
+                        selected: finalRemoteIds.slice(0, desiredLastN).length,
+                    });
+                } catch (e) {
+                    console.warn("[JITSI] hardResetAndApplyVideoSubscriptions failed", e);
+                } finally {
+                    this.subsHardResetInFlight = false;
+                }
+            }, 180);
+        } catch (e) {
+            console.warn("[JITSI] hardResetAndApplyVideoSubscriptions outer failed", e);
+            this.subsHardResetInFlight = false;
+        }
+    }
+
+    private broadcastLocalEvent(ev: any) {
+        // Реакции/сигналы: только endpoint messages (надежно и не зависит от P2P)
+        if (!this.conference || !this.localUserId) return;
+
+        const ids = Object.keys(this.participants);
+        for (const id of ids) {
+            if (id === this.localUserId) continue;
+            try {
+                this.conference.sendEndpointMessage(id, ev);
+            } catch {
+                // ignore
+            }
+        }
+    }
+
+    async toggleAudioMute(): Promise<void> {
+        if (!this.localUserId) return;
+        const local = this.participants[this.localUserId];
+        if (!local || !this.localAudioTrack) return;
+
+        const track = this.localAudioTrack;
+        try {
+            if (track.isMuted && track.isMuted()) {
+                await track.unmute();
+                local.audioMuted = false;
+            } else {
+                await track.mute();
+                local.audioMuted = true;
+            }
+            this.emitParticipants();
+        } catch (e) {
+            console.error("toggleAudioMute error", e);
+        }
+    }
+
+    async toggleVideoMute(): Promise<void> {
+        if (!this.localUserId) return;
+        const local = this.participants[this.localUserId];
+        if (!local || !this.localVideoTrack) return;
+
+        const track = this.localVideoTrack;
+        try {
+            if (track.isMuted && track.isMuted()) {
+                await track.unmute();
+                local.videoMuted = false;
+            } else {
+                await track.mute();
+                local.videoMuted = true;
+            }
+            this.emitParticipants();
+            this.scheduleHardResetSubscriptions(0);
+        } catch (e) {
+            console.error("toggleVideoMute error", e);
+        }
+    }
+
+    async toggleScreenShare(): Promise<void> {
+        if (!this.conference || !this.JitsiMeetJS || !this.localUserId) return;
+
+        // stop (через нашу кнопку)
+        if (this.localScreenshareTrack) {
+            await this.handleLocalScreenshareStopped();
             return;
         }
-        if (lastModeSigRef.current !== coarseModeSignature) {
-            lastModeSigRef.current = coarseModeSignature;
-            setLayoutVersion((v) => v + 1);
+
+        // start
+        try {
+            const tracks = await this.JitsiMeetJS.createLocalTracks({
+                devices: ["desktop"],
+            });
+
+            const screenTrack =
+                tracks.find((t: any) => this.isDesktopTrack(t)) ||
+                tracks.find((t: any) => t.getType && t.getType() === "desktop");
+
+            if (!screenTrack) return;
+
+            this.localScreenshareTrack = screenTrack;
+
+            // подписка на локальный STOP (когда юзер жмёт "Stop sharing" в браузере)
+            const trackEvents = this.JitsiMeetJS.events?.track;
+            if (trackEvents?.LOCAL_TRACK_STOPPED) {
+                screenTrack.addEventListener(trackEvents.LOCAL_TRACK_STOPPED, () => {
+                    this.handleLocalScreenshareStopped();
+                });
+            }
+
+            await this.conference.addTrack(screenTrack);
+
+            // обновляем track-store (источник истины)
+            const pid = this.localUserId;
+            const entry = this.tracksByParticipant.get(pid) || {};
+            entry.screen = screenTrack;
+            this.tracksByParticipant.set(pid, entry);
+
+            this.rebuildParticipantsFromTracks();
+            this.emitParticipants();
+            this.scheduleHardResetSubscriptions(0);
+        } catch (e) {
+            console.error("toggleScreenShare error", e);
+            this.callbacks.onError?.("Screen share failed");
         }
-    }, [coarseModeSignature]);
+    }
 
-    const baseParticipants = useMemo(() => {
-        return screenSharer ? participants.filter((p) => p.id !== screenSharer.id) : participants;
-    }, [participants, screenSharer]);
+    private async handleLocalScreenshareStopped() {
+        if (!this.localScreenshareTrack || !this.conference || !this.localUserId) {
+            this.localScreenshareTrack = null;
+            return;
+        }
 
-    const maxStartIndex = useMemo(() => Math.max(0, baseParticipants.length - PAGE_SIZE), [baseParticipants.length]);
-    const canScroll = useMemo(() => baseParticipants.length > PAGE_SIZE, [baseParticipants.length]);
+        try {
+            await this.conference.removeTrack(this.localScreenshareTrack);
+        } catch {
+            // ignore
+        }
+        try {
+            this.localScreenshareTrack.dispose?.();
+        } catch {
+            // ignore
+        }
 
-    useEffect(() => {
-        setScrollIndex((i) => Math.min(Math.max(0, i), maxStartIndex));
-    }, [maxStartIndex]);
+        // чистим store
+        const pid = this.localUserId;
+        const entry = this.tracksByParticipant.get(pid);
+        if (entry?.screen === this.localScreenshareTrack) {
+            delete entry.screen;
+            this.tracksByParticipant.set(pid, entry);
+        }
 
-    const pageParticipants = useMemo(() => {
-        const start = scrollIndex;
-        const end = start + PAGE_SIZE;
-        return baseParticipants.slice(start, end);
-    }, [baseParticipants, scrollIndex]);
+        this.localScreenshareTrack = null;
 
-    const screenOthers = useMemo(() => {
-        if (!screenSharer) return [];
-        const start = scrollIndex;
-        const end = start + PAGE_SIZE;
-        return baseParticipants.slice(start, end);
-    }, [baseParticipants, screenSharer, scrollIndex]);
+        this.rebuildParticipantsFromTracks();
+        this.emitParticipants();
+        this.scheduleHardResetSubscriptions(0);
+    }
 
-    const visibleRemoteIds = useMemo(() => {
-        const visibleList = screenSharer ? [screenSharer, ...screenOthers] : pageParticipants;
-        return visibleList.map((p) => p.id).filter((id) => id && id !== localParticipant?.id);
-    }, [screenSharer, screenOthers, pageParticipants, localParticipant?.id]);
+    async dispose(): Promise<void> {
+        this.disposed = true;
 
-    const lastSentVisibleSigRef = useRef<string>("");
-    useEffect(() => {
-        const sig = (visibleRemoteIds || []).join("|");
-        if (sig === lastSentVisibleSigRef.current) return;
-        lastSentVisibleSigRef.current = sig;
+        if (this.subsApplyTimer) {
+            clearTimeout(this.subsApplyTimer);
+            this.subsApplyTimer = null;
+        }
+        if (this.subsHardResetTimer) {
+            clearTimeout(this.subsHardResetTimer);
+            this.subsHardResetTimer = null;
+        }
 
-        const t = setTimeout(() => onVisibleVideoIdsChange?.(visibleRemoteIds), 120);
-        return () => clearTimeout(t);
-    }, [onVisibleVideoIdsChange, visibleRemoteIds]);
+        // stop watchdog
+        if (this.subsWatchdog) {
+            clearInterval(this.subsWatchdog);
+            this.subsWatchdog = null;
+        }
 
-    const isAudioMuted = !!localParticipant?.audioMuted;
-    const isVideoMuted = !!localParticipant?.videoMuted;
-    const isScreenSharing = !!localParticipant?.isScreenSharing;
+        // Локальный screenshare
+        try {
+            if (this.localScreenshareTrack) {
+                try {
+                    await this.conference?.removeTrack(this.localScreenshareTrack);
+                } catch { }
+                try {
+                    this.localScreenshareTrack.dispose?.();
+                } catch { }
+                this.localScreenshareTrack = null;
+            }
+        } catch {
+            // ignore
+        }
 
-    const handleReactionClick = (type: ReactionType) => {
-        const id = reactionCounter + 1;
-        setReactionCounter(id);
-        setReactions((prev) => [...prev, { id, type }]);
-        onSendReaction?.(type);
+        // Локальные A/V треки
+        try {
+            if (this.localAudioTrack) {
+                try {
+                    await this.conference?.removeTrack(this.localAudioTrack);
+                } catch { }
+                try {
+                    this.localAudioTrack.dispose?.();
+                } catch { }
+                this.localAudioTrack = null;
+            }
+            if (this.localVideoTrack) {
+                try {
+                    await this.conference?.removeTrack(this.localVideoTrack);
+                } catch { }
+                try {
+                    this.localVideoTrack.dispose?.();
+                } catch { }
+                this.localVideoTrack = null;
+            }
+        } catch {
+            // ignore
+        }
 
-        setTimeout(() => {
-            setReactions((prev) => prev.filter((r) => r.id !== id));
-        }, 1500);
-    };
+        // Не пытаемся dispose remote tracks вручную — Jitsi сам управляет их жизненным циклом.
+        this.tracksByParticipant.clear();
 
-    useEffect(() => {
-        if (!showReactionsMenu) return;
+        this.participants = {};
+        this.emitParticipants();
 
-        const handleClickOutside = (e: MouseEvent) => {
-            const target = e.target as Node | null;
-            if (!menuRef.current || !target) return;
-            if (!menuRef.current.contains(target)) setShowReactionsMenu(false);
+        try {
+            await this.conference?.leave();
+        } catch {
+            // ignore
+        }
+
+        try {
+            await this.connection?.disconnect();
+        } catch {
+            // ignore
+        }
+
+        this.conference = null;
+        this.connection = null;
+        this.localUserId = null;
+    }
+
+    // ========================================================================
+    // INTERNAL
+    // ========================================================================
+    private setupConference(roomName: string, userName: string) {
+        if (!this.connection || !this.JitsiMeetJS || !this.config) return;
+
+        const conferenceOptions: any = { ...(this.config.conference || {}) };
+
+        // Дублируем запрет P2P на уровне конференции (belt+suspenders)
+        if (DISABLE_P2P) {
+            conferenceOptions.p2p = { enabled: false };
+            conferenceOptions.disableP2P = true;
+        }
+
+        if (userName) {
+            conferenceOptions.statisticsId = userName.toLowerCase();
+        }
+
+        const baseRoomName = roomName && roomName.trim().length > 0 ? roomName : "default-room";
+
+        let safeRoomName = baseRoomName.toLowerCase().replace(/[^a-z0-9-_]/g, "");
+
+        if (!safeRoomName) {
+            safeRoomName = "session-" + Math.random().toString(36).substring(2, 8);
+        }
+
+        console.log("Joining Jitsi room:", {
+            rawRoomName: roomName,
+            safeRoomName,
+            disableP2P: DISABLE_P2P,
+        });
+
+        const conf = this.connection.initJitsiConference(safeRoomName, conferenceOptions);
+        this.conference = conf;
+
+        console.log("[JITSI] conf created", {
+            room: safeRoomName,
+            serviceUrl: this.config?.websocket || this.config?.bosh,
+            disableP2P: DISABLE_P2P,
+        });
+
+        const events = this.JitsiMeetJS.events;
+
+        const applySubsSoon = () => {
+            if (this.disposed) return;
+            clearTimeout((this as any).__applySubsT);
+            (this as any).__applySubsT = setTimeout(() => {
+                if (this.disposed) return;
+                this.scheduleApplyVideoSubscriptions(0);
+            }, 50);
         };
 
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, [showReactionsMenu]);
+        const updateRemoteSubscriptions = () => {
+            if (!this.conference) return;
+            this.scheduleApplyVideoSubscriptions(0);
+        };
 
-    const baseBtn = "w-10 h-10 rounded-full flex items-center justify-center text-white text-sm transition";
+        // ------------------------ CONFERENCE_JOINED ------------------------
+        conf.on(events.conference.CONFERENCE_JOINED, () => {
+            if (this.disposed) return;
 
-    const goPrev = () => setScrollIndex((i) => Math.max(0, i - SCROLL_STEP));
-    const goNext = () => setScrollIndex((i) => Math.min(maxStartIndex, i + SCROLL_STEP));
+            const anyConf = conf as any;
+            let localId: string | null = null;
 
-    const shownStart = canScroll ? scrollIndex + 1 : Math.min(1, baseParticipants.length);
-    const shownEnd = Math.min(scrollIndex + PAGE_SIZE, baseParticipants.length);
+            if (typeof anyConf.getLocalUserId === "function") {
+                localId = anyConf.getLocalUserId();
+            } else if (typeof anyConf.myUserId === "function") {
+                localId = anyConf.myUserId();
+            }
 
-    return (
-        <div className="relative w-full h-full flex flex-col">
-            <AudioSink participants={participants} />
+            console.log("[JITSI] joined", { localId });
 
-            <div className="flex-1 relative overflow-hidden rounded-2xl bg-black/80">
-                {!screenSharer && (
-                    <>
-                        {isP2P ? (
-                            <P2PLayout pageParticipants={pageParticipants} layoutVersion={layoutVersion} />
-                        ) : (
-                            <GridLayout pageParticipants={pageParticipants} layoutVersion={layoutVersion} />
-                        )}
-                    </>
-                )}
+            if (!localId) {
+                this.callbacks.onError?.("Failed to resolve local user id");
+                return;
+            }
 
-                {screenSharer && (
-                    <ScreenShareLayout
-                        screenSharer={screenSharer}
-                        others={screenOthers}
-                        layoutVersion={layoutVersion}
-                    />
-                )}
+            this.localUserId = localId;
 
-                {((reactions?.length || 0) + (incomingReactions?.length || 0) > 0) && (
-                    <div className="pointer-events-none absolute inset-0 flex items-end justify-center pb-20 gap-2">
-                        {reactions.map((r) => (
-                            <div key={`local-${r.id}`} className="text-4xl drop-shadow-lg animate-bounce">
-                                {reactionEmoji[r.type]}
-                            </div>
-                        ))}
+            // имя из Supabase → в Jitsi
+            if (userName && typeof anyConf.setDisplayName === "function") {
+                anyConf.setDisplayName(userName);
+            }
 
-                        {(incomingReactions || []).map((r) => (
-                            <div key={`in-${r.id}`} className="text-4xl drop-shadow-lg animate-bounce">
-                                {reactionEmoji[r.type]}
-                            </div>
-                        ))}
-                    </div>
-                )}
+            // создаём local participant DTO
+            this.ensureLocalParticipant(userName);
 
-                {canScroll && (
-                    <div className="absolute top-3 right-3 flex items-center gap-2">
-                        <button
-                            onClick={goPrev}
-                            disabled={scrollIndex === 0}
-                            className={
-                                "px-3 h-9 rounded-full bg-black/55 border border-white/10 text-white text-sm " +
-                                (scrollIndex === 0 ? "opacity-40 cursor-not-allowed" : "hover:bg-black/70")
-                            }
-                            title="Scroll back"
-                        >
-                            ←
-                        </button>
+            // создаём пустую запись в track-store для local
+            if (!this.tracksByParticipant.has(localId)) {
+                this.tracksByParticipant.set(localId, {});
+            }
 
-                        <div className="px-3 h-9 rounded-full bg-black/55 border border-white/10 text-white text-xs flex items-center">
-                            Showing {shownStart}–{shownEnd} of {baseParticipants.length}
-                        </div>
+            this.callbacks.onConferenceJoin?.();
 
-                        <button
-                            onClick={goNext}
-                            disabled={scrollIndex >= maxStartIndex}
-                            className={
-                                "px-3 h-9 rounded-full bg-black/55 border border-white/10 text-white text-sm " +
-                                (scrollIndex >= maxStartIndex ? "opacity-40 cursor-not-allowed" : "hover:bg-black/70")
-                            }
-                            title="Scroll forward"
-                        >
-                            →
-                        </button>
-                    </div>
-                )}
-            </div>
+            // CRITICAL: включаем приём remote (после join)
+            updateRemoteSubscriptions();
 
-            <div className="mt-3 flex items-center justify-center">
-                <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-[#020617]/90 border border-white/10 shadow-lg">
-                    <button
-                        onClick={onToggleAudio}
-                        className={
-                            baseBtn +
-                            " " +
-                            (isAudioMuted ? "bg-red-600 hover:bg-red-700" : "bg-[#111827] hover:bg-[#1f2937]")
-                        }
-                    >
-                        <MicIcon />
-                    </button>
+            // watchdog — помогает восстановиться после перегруза/залипания
+            if (this.subsWatchdog) clearInterval(this.subsWatchdog);
+            this.subsWatchdog = setInterval(() => {
+                if (this.disposed) return;
+                this.scheduleApplyVideoSubscriptions(0);
+            }, 3000);
 
-                    <button
-                        onClick={onToggleVideo}
-                        className={
-                            baseBtn +
-                            " " +
-                            (isVideoMuted ? "bg-red-600 hover:bg-red-700" : "bg-[#111827] hover:bg-[#1f2937]")
-                        }
-                    >
-                        <CameraIcon />
-                    </button>
+            // ⚠️ ВАЖНО: даём Jitsi микротик, чтобы conference полностью инициализировался
+            setTimeout(() => {
+                if (this.disposed) return;
+                this.createLocalTracks();
+            }, 0);
+        });
 
-                    <button
-                        onClick={onToggleScreenShare}
-                        className={
-                            baseBtn +
-                            " " +
-                            (isScreenSharing ? "bg-blue-600 hover:bg-blue-700" : "bg-[#111827] hover:bg-[#1f2937]")
-                        }
-                    >
-                        <ScreenIcon />
-                    </button>
+        // --------------------------- USER_JOINED ---------------------------
+        conf.on(events.conference.USER_JOINED, (id: string, user: any) => {
+            if (this.disposed) return;
 
-                    <div className="relative" ref={menuRef}>
-                        <button
-                            onClick={() => setShowReactionsMenu((v) => !v)}
-                            className={baseBtn + " bg-[#111827] hover:bg-[#1f2937]"}
-                        >
-                            <SmileIcon />
-                        </button>
+            console.log("[JITSI] user joined", { id, name: user?._displayName });
 
-                        {showReactionsMenu && (
-                            <div className="absolute bottom-12 left-1/2 -translate-x-1/2 bg-[#020617] border border-white/10 rounded-2xl px-3 py-2 flex gap-2 text-xl">
-                                <button onClick={() => handleReactionClick("fire")}>🔥</button>
-                                <button onClick={() => handleReactionClick("laugh")}>😂</button>
-                                <button onClick={() => handleReactionClick("clap")}>👏</button>
-                                <button onClick={() => handleReactionClick("heart")}>❤️</button>
-                                <button onClick={() => handleReactionClick("thumbsUp")}>👍</button>
-                                <button onClick={() => handleReactionClick("thumbsDown")}>👎</button>
-                            </div>
-                        )}
-                    </div>
+            this.ensureRemoteParticipant(id, user?._displayName || "Guest");
 
-                    {onLeave && (
-                        <button
-                            onClick={onLeave}
-                            className="ml-2 px-3 h-9 rounded-full bg-red-600 text-white text-xs font-medium hover:bg-red-700 inline-flex items-center gap-1"
-                        >
-                            <LeaveIcon />
-                            <span>Leave</span>
-                        </button>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
+            // Инициализируем store для remote (track events могут прийти чуть позже)
+            if (!this.tracksByParticipant.has(id)) {
+                this.tracksByParticipant.set(id, {});
+            }
+
+            this.emitParticipants();
+
+            // CRITICAL: пересчёт подписок при новом юзере
+            updateRemoteSubscriptions();
+        });
+
+        // --------------------------- USER_LEFT -----------------------------
+        conf.on(events.conference.USER_LEFT, (id: string) => {
+            if (this.disposed) return;
+
+            console.log("[JITSI] user left", { id });
+
+            delete this.participants[id];
+            this.tracksByParticipant.delete(id);
+
+            this.emitParticipants();
+
+            updateRemoteSubscriptions();
+        });
+
+        // ----------------------- DISPLAY_NAME_CHANGED ----------------------
+        conf.on(events.conference.DISPLAY_NAME_CHANGED, (id: string, displayName: string) => {
+            if (this.disposed) return;
+            const p = this.participants[id];
+            if (p) {
+                p.displayName = displayName || p.displayName;
+            } else {
+                this.ensureRemoteParticipant(id, displayName || "Guest");
+            }
+            this.emitParticipants();
+        });
+
+        // -------------------------- TRACKS ---------------------------------
+        conf.on(events.conference.TRACK_ADDED, (track: any) => {
+            if (this.disposed) return;
+            this.handleTrackAdded(track);
+            applySubsSoon();
+            this.scheduleHardResetSubscriptions(120);
+        });
+
+        conf.on(events.conference.TRACK_REMOVED, (track: any) => {
+            if (this.disposed) return;
+            this.handleTrackRemoved(track);
+            applySubsSoon();
+            this.scheduleHardResetSubscriptions(120);
+        });
+
+        conf.on(events.conference.TRACK_MUTE_CHANGED, (track: any) => {
+            if (this.disposed) return;
+            this.handleTrackMuteChanged(track);
+            applySubsSoon();
+            this.scheduleHardResetSubscriptions(120);
+        });
+
+        // ------------------- ENDPOINT MESSAGE (reactions) -------------------
+        conf.on(events.conference.ENDPOINT_MESSAGE_RECEIVED, (senderId: string, payload: any) => {
+            this.handleEndpointMessage(senderId, payload);
+        });
+
+        conf.join();
+    }
+
+    // ========================================================================
+    // PARTICIPANTS (DTO layer)
+    // ========================================================================
+    private ensureLocalParticipant(displayName: string) {
+        if (!this.localUserId) return;
+        if (!this.participants[this.localUserId]) {
+            this.participants[this.localUserId] = {
+                id: this.localUserId,
+                displayName: displayName || "Me",
+                isLocal: true,
+                audioMuted: false,
+                videoMuted: false,
+                isScreenSharing: false,
+            };
+        } else {
+            // обновим имя если пришло
+            if (displayName) this.participants[this.localUserId].displayName = displayName;
+        }
+        this.emitParticipants();
+    }
+
+    private ensureRemoteParticipant(id: string, displayName: string) {
+        if (!this.participants[id]) {
+            this.participants[id] = {
+                id,
+                displayName: displayName || "Guest",
+                isLocal: false,
+                audioMuted: false,
+                videoMuted: false,
+                isScreenSharing: false,
+            };
+        }
+    }
+
+    // ========================================================================
+    // TRACKS (source of truth)
+    // ========================================================================
+    private async createLocalTracks() {
+        if (!this.JitsiMeetJS || !this.conference || !this.localUserId) return;
+
+        try {
+            const tracks = await this.JitsiMeetJS.createLocalTracks({
+                devices: ["audio", "video"],
+                // часто работает:
+                resolution: 720,
+                constraints: {
+                    video: {
+                        height: { ideal: 720, max: 720 },
+                        width: { ideal: 1280, max: 1280 },
+                        frameRate: { ideal: 30, max: 30 },
+                    },
+                },
+            });
+
+            for (const track of tracks) {
+                const t = track;
+                const type = t.getType?.();
+
+                await this.conference.addTrack(t);
+
+                // сохраняем ссылки на локальные треки
+                if (type === "audio") this.localAudioTrack = t;
+                if (type === "video") this.localVideoTrack = t;
+            }
+
+            // Обновляем store на локального
+            const entry = this.tracksByParticipant.get(this.localUserId) || {};
+            if (this.localAudioTrack) entry.audio = this.localAudioTrack;
+            if (this.localVideoTrack) entry.video = this.localVideoTrack;
+            this.tracksByParticipant.set(this.localUserId, entry);
+
+            this.rebuildParticipantsFromTracks();
+            this.emitParticipants();
+            this.scheduleHardResetSubscriptions(0);
+        } catch (e) {
+            console.error("createLocalTracks error", e);
+            this.callbacks.onError?.("Failed to access camera/microphone");
+        }
+    }
+
+    private handleTrackAdded(track: any) {
+        console.log("[JITSI] track added", {
+            isLocal: track?.isLocal?.(),
+            type: track?.getType?.(),
+            videoType: track?.getVideoType?.(),
+            pid: track?.getParticipantId?.(),
+        });
+
+        const pid = this.resolveTrackParticipantId(track);
+        if (!pid) return;
+
+        const isLocal = track.isLocal?.() === true;
+
+        if (isLocal) {
+            this.ensureLocalParticipant(this.participants[pid]?.displayName || "");
+        } else {
+            this.ensureRemoteParticipant(pid, this.participants[pid]?.displayName || "Guest");
+        }
+
+        const entry = this.tracksByParticipant.get(pid) || {};
+
+        if (this.isDesktopTrack(track)) {
+            entry.screen = track;
+        } else {
+            const type = track.getType?.();
+            if (type === "audio") entry.audio = track;
+            if (type === "video") entry.video = track;
+        }
+
+        this.tracksByParticipant.set(pid, entry);
+
+        this.rebuildParticipantsFromTracks();
+        this.emitParticipants();
+    }
+
+    private handleTrackRemoved(track: any) {
+        const pid = this.resolveTrackParticipantId(track);
+        if (!pid) return;
+
+        const entry = this.tracksByParticipant.get(pid);
+        if (!entry) return;
+
+        if (this.isDesktopTrack(track)) {
+            if (entry.screen === track) delete entry.screen;
+        } else {
+            const type = track.getType?.();
+            if (type === "audio" && entry.audio === track) delete entry.audio;
+            if (type === "video" && entry.video === track) delete entry.video;
+        }
+
+        if (!entry.audio && !entry.video && !entry.screen) {
+            if (pid !== this.localUserId) {
+                this.tracksByParticipant.delete(pid);
+            } else {
+                this.tracksByParticipant.set(pid, entry);
+            }
+        } else {
+            this.tracksByParticipant.set(pid, entry);
+        }
+
+        if (pid === this.localUserId && this.localScreenshareTrack === track) {
+            this.localScreenshareTrack = null;
+        }
+
+        this.rebuildParticipantsFromTracks();
+        this.emitParticipants();
+    }
+
+    private handleTrackMuteChanged(track: any) {
+        const pid = this.resolveTrackParticipantId(track);
+        if (!pid) return;
+
+        const p = this.participants[pid];
+        if (!p) return;
+
+        const type = track.getType?.();
+
+        if (type === "audio") {
+            p.audioMuted = track.isMuted ? track.isMuted() : p.audioMuted;
+        } else if (type === "video") {
+            if (!this.isDesktopTrack(track)) {
+                p.videoMuted = track.isMuted ? track.isMuted() : p.videoMuted;
+            }
+        }
+
+        p.isScreenSharing = !!p.screenTrack;
+
+        this.emitParticipants();
+    }
+
+    private rebuildParticipantsFromTracks() {
+        for (const [pid, tracks] of this.tracksByParticipant.entries()) {
+            if (pid === this.localUserId) {
+                this.ensureLocalParticipant(this.participants[pid]?.displayName || "Me");
+            } else {
+                this.ensureRemoteParticipant(pid, this.participants[pid]?.displayName || "Guest");
+            }
+
+            const p = this.participants[pid];
+            if (!p) continue;
+
+            p.audioTrack = tracks.audio;
+            p.videoTrack = tracks.video;
+            p.screenTrack = tracks.screen;
+            p.isScreenSharing = !!tracks.screen;
+
+            if (tracks.audio?.isMuted) p.audioMuted = !!tracks.audio.isMuted();
+            if (tracks.video?.isMuted) p.videoMuted = !!tracks.video.isMuted();
+        }
+    }
+
+    private resolveTrackParticipantId(track: any): string | null {
+        const isLocal = track?.isLocal?.() === true;
+        if (isLocal) return this.localUserId;
+
+        const pid = track?.getParticipantId?.();
+        return pid || null;
+    }
+
+    private isDesktopTrack(track: any): boolean {
+        const type = track?.getType?.();
+        const videoType = track?.getVideoType?.();
+
+        if (videoType === "desktop") return true;
+        if (type === "desktop") return true;
+
+        return false;
+    }
+
+    private emitParticipants() {
+        const arr = Object.values(this.participants);
+
+        arr.sort((a, b) => {
+            if (a.isLocal && !b.isLocal) return -1;
+            if (!a.isLocal && b.isLocal) return 1;
+            const an = (a.displayName || "").toLowerCase();
+            const bn = (b.displayName || "").toLowerCase();
+            if (an < bn) return -1;
+            if (an > bn) return 1;
+            return a.id.localeCompare(b.id);
+        });
+
+        this.callbacks.onParticipantsUpdate?.(arr);
+    }
+
+    // ========================================================================
+    // ENDPOINT MESSAGE (reactions only)
+    // ========================================================================
+    private handleEndpointMessage(senderId: string, payload: any) {
+        if (!payload) return;
+
+        if (payload.kind === "reaction" && payload.reaction) {
+            this.callbacks.onReactionReceived?.(senderId, payload.reaction);
+            return;
+        }
+    }
 }
