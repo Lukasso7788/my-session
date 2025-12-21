@@ -207,15 +207,33 @@ export class JitsiEngine {
   // верхний потолок, чтобы случайно не подписаться на 100 видеопотоков
   private readonly MAX_LAST_N = 36;
 
+  // debounce applyVideoSubscriptions
+  private subsApplyTimer: any = null;
+
   public setQualityMode(mode: "auto" | "low" | "medium" | "high") {
     this.qualityMode = mode;
-    this.applyVideoSubscriptions();
+    this.scheduleApplyVideoSubscriptions();
   }
 
   public setVisibleVideoParticipants(ids: string[]) {
     // ids должны быть REMOTE (можно передать и local — мы отфильтруем ниже)
     this.selectedVideoIds = Array.isArray(ids) ? ids : [];
-    this.applyVideoSubscriptions();
+    this.scheduleApplyVideoSubscriptions();
+  }
+
+  private scheduleApplyVideoSubscriptions(delayMs: number = 150) {
+    if (!this.conference) return;
+    if (this.disposed) return;
+
+    try {
+      if (this.subsApplyTimer) clearTimeout(this.subsApplyTimer);
+      this.subsApplyTimer = setTimeout(() => {
+        this.subsApplyTimer = null;
+        this.applyVideoSubscriptions();
+      }, delayMs);
+    } catch {
+      // ignore
+    }
   }
 
   private pickReceiverConstraintHeight(n: number): number {
@@ -232,21 +250,52 @@ export class JitsiEngine {
     return 180;
   }
 
+  private getRemoteIdsWithAnyVideoOrScreen(): string[] {
+    const localId = this.localUserId;
+    const screens: string[] = [];
+    const videos: string[] = [];
+
+    for (const [pid, tracks] of this.tracksByParticipant.entries()) {
+      if (!pid) continue;
+      if (localId && pid === localId) continue;
+
+      if (tracks?.screen) screens.push(pid);
+      if (tracks?.video) videos.push(pid);
+    }
+
+    // screens first
+    const out: string[] = [];
+    for (const id of screens) if (!out.includes(id)) out.push(id);
+    for (const id of videos) if (!out.includes(id)) out.push(id);
+    return out;
+  }
+
   private applyVideoSubscriptions() {
     if (!this.conference) return;
 
     try {
       const localId = this.localUserId;
 
-      // только remote ids
-      const remoteIds = (this.selectedVideoIds || [])
-        .filter((id) => id && id !== localId);
+      // только remote ids из UI
+      const uiRemoteIds = (this.selectedVideoIds || []).filter((id) => id && id !== localId);
+
+      // fallback: если UI ещё не успел пересчитать, или треки только что появились
+      const activeRemoteIds = this.getRemoteIdsWithAnyVideoOrScreen();
+
+      // финальный приоритетный список:
+      // 1) активные screen/video (чтобы не зависеть от "порядка включения")
+      // 2) UI-visible ids (если есть, но без дублей)
+      const finalRemoteIds: string[] = [];
+
+      for (const id of activeRemoteIds) {
+        if (id && id !== localId && !finalRemoteIds.includes(id)) finalRemoteIds.push(id);
+      }
+      for (const id of uiRemoteIds) {
+        if (id && id !== localId && !finalRemoteIds.includes(id)) finalRemoteIds.push(id);
+      }
 
       // lastN = сколько remote video реально хотим
-      const desiredLastN = Math.min(remoteIds.length, this.MAX_LAST_N);
-
-      // ВАЖНО: сначала "обнулим", если список сильно поменялся
-      // Это помогает при зависаниях после перегруза
+      const desiredLastN = Math.min(finalRemoteIds.length, this.MAX_LAST_N);
 
       this.conference.setLastN?.(desiredLastN);
 
@@ -255,20 +304,19 @@ export class JitsiEngine {
       this.conference.setReceiverAudioConstraint?.(true);
 
       if (typeof this.conference.selectParticipants === "function") {
-        this.conference.selectParticipants(remoteIds.slice(0, desiredLastN));
+        this.conference.selectParticipants(finalRemoteIds.slice(0, desiredLastN));
       }
 
       // optional debug
       console.log("[JITSI] applyVideoSubscriptions", {
         desiredLastN,
         receiverMaxHeight: h,
-        selected: remoteIds.slice(0, desiredLastN).length,
+        selected: finalRemoteIds.slice(0, desiredLastN).length,
       });
     } catch (e) {
       console.warn("[JITSI] applyVideoSubscriptions failed", e);
     }
   }
-
 
   private broadcastLocalEvent(ev: any) {
     // Реакции/сигналы: только endpoint messages (надежно и не зависит от P2P)
@@ -320,6 +368,7 @@ export class JitsiEngine {
         local.videoMuted = true;
       }
       this.emitParticipants();
+      this.scheduleApplyVideoSubscriptions(0);
     } catch (e) {
       console.error("toggleVideoMute error", e);
     }
@@ -366,6 +415,7 @@ export class JitsiEngine {
 
       this.rebuildParticipantsFromTracks();
       this.emitParticipants();
+      this.scheduleApplyVideoSubscriptions(0);
     } catch (e) {
       console.error("toggleScreenShare error", e);
       this.callbacks.onError?.("Screen share failed");
@@ -401,10 +451,17 @@ export class JitsiEngine {
 
     this.rebuildParticipantsFromTracks();
     this.emitParticipants();
+    this.scheduleApplyVideoSubscriptions(0);
   }
 
   async dispose(): Promise<void> {
     this.disposed = true;
+
+    if (this.subsApplyTimer) {
+      clearTimeout(this.subsApplyTimer);
+      this.subsApplyTimer = null;
+    }
+
     // stop watchdog
     if (this.subsWatchdog) {
       clearInterval(this.subsWatchdog);
@@ -416,10 +473,10 @@ export class JitsiEngine {
       if (this.localScreenshareTrack) {
         try {
           await this.conference?.removeTrack(this.localScreenshareTrack);
-        } catch {}
+        } catch { }
         try {
           this.localScreenshareTrack.dispose?.();
-        } catch {}
+        } catch { }
         this.localScreenshareTrack = null;
       }
     } catch {
@@ -431,19 +488,19 @@ export class JitsiEngine {
       if (this.localAudioTrack) {
         try {
           await this.conference?.removeTrack(this.localAudioTrack);
-        } catch {}
+        } catch { }
         try {
           this.localAudioTrack.dispose?.();
-        } catch {}
+        } catch { }
         this.localAudioTrack = null;
       }
       if (this.localVideoTrack) {
         try {
           await this.conference?.removeTrack(this.localVideoTrack);
-        } catch {}
+        } catch { }
         try {
           this.localVideoTrack.dispose?.();
-        } catch {}
+        } catch { }
         this.localVideoTrack = null;
       }
     } catch {
@@ -518,7 +575,7 @@ export class JitsiEngine {
 
     const updateRemoteSubscriptions = () => {
       if (!this.conference) return;
-      this.applyVideoSubscriptions();
+      this.scheduleApplyVideoSubscriptions(0);
     };
 
     // ------------------------ CONFERENCE_JOINED ------------------------
@@ -565,7 +622,7 @@ export class JitsiEngine {
       if (this.subsWatchdog) clearInterval(this.subsWatchdog);
       this.subsWatchdog = setInterval(() => {
         if (this.disposed) return;
-        this.applyVideoSubscriptions();
+        this.scheduleApplyVideoSubscriptions(0);
       }, 3000);
 
       // ⚠️ ВАЖНО: даём Jitsi микротик, чтобы conference полностью инициализировался
@@ -717,6 +774,7 @@ export class JitsiEngine {
 
       this.rebuildParticipantsFromTracks();
       this.emitParticipants();
+      this.scheduleApplyVideoSubscriptions(0);
     } catch (e) {
       console.error("createLocalTracks error", e);
       this.callbacks.onError?.("Failed to access camera/microphone");
@@ -756,6 +814,7 @@ export class JitsiEngine {
 
     this.rebuildParticipantsFromTracks();
     this.emitParticipants();
+    this.scheduleApplyVideoSubscriptions(0);
   }
 
   private handleTrackRemoved(track: any) {
@@ -789,6 +848,7 @@ export class JitsiEngine {
 
     this.rebuildParticipantsFromTracks();
     this.emitParticipants();
+    this.scheduleApplyVideoSubscriptions(0);
   }
 
   private handleTrackMuteChanged(track: any) {
@@ -811,6 +871,7 @@ export class JitsiEngine {
     p.isScreenSharing = !!p.screenTrack;
 
     this.emitParticipants();
+    this.scheduleApplyVideoSubscriptions(0);
   }
 
   private rebuildParticipantsFromTracks() {
