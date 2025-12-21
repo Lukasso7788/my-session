@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { CornerUpLeft, X } from "lucide-react";
+
+type Profile = { full_name?: string; avatar_url?: string } | null;
 
 type Msg = {
     id: string;
@@ -9,16 +12,10 @@ type Msg = {
     user_id: string;
     body: string;
     created_at: string;
-    profiles?: { full_name?: string; avatar_url?: string } | null;
+    profiles?: Profile;
 };
 
-function iso30DaysAgo() {
-    const d = new Date();
-    d.setDate(d.getDate() - 30);
-    return d.toISOString();
-}
-
-function avatarFromProfile(profile?: { full_name?: string; avatar_url?: string } | null) {
+function avatarFromProfile(profile?: Profile) {
     return (
         profile?.avatar_url ||
         `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || "User")}`
@@ -31,11 +28,83 @@ function formatTime(iso?: string) {
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function MessageCard({
+    msg,
+    mine,
+    currentUserId,
+    onReply,
+}: {
+    msg: Msg;
+    mine: boolean;
+    currentUserId: string | null;
+    onReply: (m: Msg) => void;
+}) {
+    const name = mine ? "You" : msg.profiles?.full_name || "Participant";
+    const time = formatTime(msg.created_at);
+
+    return (
+        <div className={"flex items-start gap-3 " + (mine ? "justify-end" : "justify-start")}>
+            {/* Left avatar (others) */}
+            {!mine && (
+                <img
+                    src={avatarFromProfile(msg.profiles)}
+                    className="w-9 h-9 rounded-full object-cover"
+                    alt=""
+                />
+            )}
+
+            <div className="max-w-[82%] min-w-0">
+                {/* meta row */}
+                <div className={"flex items-center gap-2 mb-1 " + (mine ? "justify-end" : "justify-start")}>
+                    <div className="text-[11px] text-white/55 truncate">{name}</div>
+                    <div className="text-[11px] text-white/35">{time}</div>
+
+                    {/* reply (на любые сообщения, включая свои — как хочешь, сейчас на любые) */}
+                    <button
+                        type="button"
+                        onClick={() => onReply(msg)}
+                        className="
+              ml-1 inline-flex items-center gap-1
+              text-[11px] text-white/45 hover:text-emerald-300
+              transition
+            "
+                        title="Reply"
+                    >
+                        <CornerUpLeft size={14} />
+                        Reply
+                    </button>
+                </div>
+
+                {/* bubble */}
+                <div
+                    className={
+                        "rounded-2xl px-3 py-2 text-[13px] leading-snug border whitespace-pre-wrap break-words " +
+                        (mine
+                            ? "bg-emerald-500/15 border-emerald-400/20 text-white/90"
+                            : "bg-white/5 border-white/10 text-white/85")
+                    }
+                >
+                    {msg.body}
+                </div>
+            </div>
+
+            {/* Right spacer (to keep alignment) */}
+            {mine && (
+                <div className="w-9 h-9 rounded-full opacity-0" aria-hidden="true" />
+            )}
+        </div>
+    );
+}
+
 export function ChatPanel({ sessionId }: { sessionId: string }) {
     const [userId, setUserId] = useState<string | null>(null);
+
     const [messages, setMessages] = useState<Msg[]>([]);
     const [text, setText] = useState("");
     const [loading, setLoading] = useState(true);
+
+    // reply
+    const [replyTo, setReplyTo] = useState<Msg | null>(null);
 
     const bottomRef = useRef<HTMLDivElement | null>(null);
 
@@ -49,12 +118,16 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
 
         setLoading(true);
 
+        // IMPORTANT:
+        // УБРАЛ gte(last 30 days) — потому что это частая причина "пусто",
+        // если created_at вдруг NULL / тип не совпал / default не сработал.
+        // Старые сообщения всё равно вычищаются scheduled функцией.
         const { data, error } = await supabase
             .from("session_chat_messages")
             .select("id, session_id, user_id, body, created_at, profiles(full_name, avatar_url)")
             .eq("session_id", sessionId)
-            .gte("created_at", iso30DaysAgo())
-            .order("created_at", { ascending: true });
+            .order("created_at", { ascending: true })
+            .limit(300);
 
         if (error) {
             console.error("chat load error:", error);
@@ -115,7 +188,6 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
                 }
             )
             .subscribe((status) => {
-                // чтобы ты видел, подключился ли realtime
                 console.log("chat channel status:", status);
             });
 
@@ -134,19 +206,38 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
         const body = text.trim();
         if (!body || !userId || !sessionId) return;
 
-        const { error } = await supabase.from("session_chat_messages").insert({
+        // optimistic append (чтобы видно было сразу, даже если SELECT/RLS тупит)
+        const optimistic: Msg = {
+            id: `optimistic-${Date.now()}`,
             session_id: sessionId,
             user_id: userId,
-            body, // ВАЖНО: body, НЕ message
-        });
+            body: replyTo ? `↪ Reply: ${replyTo.body}\n\n${body}` : body,
+            created_at: new Date().toISOString(),
+            profiles: { full_name: "You", avatar_url: undefined },
+        };
+
+        setMessages((prev) => [...prev, optimistic]);
+
+        const payload: any = {
+            session_id: sessionId,
+            user_id: userId,
+            body: replyTo ? `↪ Reply: ${replyTo.body}\n\n${body}` : body,
+            // IMPORTANT: created_at чтобы оно точно попало в сортировки/фильтры
+            created_at: new Date().toISOString(),
+        };
+
+        const { error } = await supabase.from("session_chat_messages").insert(payload);
 
         if (error) {
             console.error("chat send error:", error);
+            // rollback optimistic on failure
+            setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
             return;
         }
 
         setText("");
-        // load() не обязателен (realtime поймает), но можно оставить:
+        setReplyTo(null);
+        // load() не обязателен — realtime поймает, но если realtime выключен, можно раскомментить:
         // load();
     };
 
@@ -170,45 +261,14 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
 
                 {uiMessages.map((m) => {
                     const mine = m.user_id === userId;
-                    const name = mine ? "You" : m.profiles?.full_name || "Participant";
-                    const time = formatTime(m.created_at);
-
                     return (
-                        <div key={m.id} className={"flex items-start gap-3 " + (mine ? "justify-end" : "justify-start")}>
-                            {!mine && (
-                                <img
-                                    src={avatarFromProfile(m.profiles)}
-                                    className="w-9 h-9 rounded-full object-cover"
-                                    alt=""
-                                />
-                            )}
-
-                            <div
-                                className={
-                                    "max-w-[82%] rounded-2xl px-3 py-2 text-[13px] leading-snug border " +
-                                    (mine
-                                        ? "bg-emerald-500/15 border-emerald-400/20 text-white/90"
-                                        : "bg-white/5 border-white/10 text-white/85")
-                                }
-                            >
-                                <div className={"flex items-center gap-2 mb-1 " + (mine ? "justify-end" : "justify-start")}>
-                                    <div className="text-[11px] text-white/55">{name}</div>
-                                    <div className="text-[11px] text-white/35">{time}</div>
-                                </div>
-                                <div className="whitespace-pre-wrap break-words">{m.body}</div>
-                            </div>
-
-                            {mine && (
-                                <img
-                                    src={avatarFromProfile({
-                                        full_name: "You",
-                                        avatar_url: null as any,
-                                    })}
-                                    className="w-9 h-9 rounded-full object-cover opacity-0"
-                                    alt=""
-                                />
-                            )}
-                        </div>
+                        <MessageCard
+                            key={m.id}
+                            msg={m}
+                            mine={mine}
+                            currentUserId={userId}
+                            onReply={(msg) => setReplyTo(msg)}
+                        />
                     );
                 })}
 
@@ -217,6 +277,26 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
 
             {/* INPUT */}
             <div className="p-4 border-t border-white/5">
+                {/* Reply bar */}
+                {replyTo && (
+                    <div className="mb-2 flex items-center justify-between gap-2 rounded-xl bg-white/5 border border-white/10 px-3 py-2">
+                        <div className="min-w-0">
+                            <div className="text-[11px] text-emerald-300/90 font-medium">Replying</div>
+                            <div className="text-[11px] text-white/55 truncate">
+                                {replyTo.profiles?.full_name || "Participant"}: {replyTo.body}
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setReplyTo(null)}
+                            className="w-8 h-8 rounded-lg bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center text-white/70"
+                            title="Cancel reply"
+                        >
+                            <X size={16} />
+                        </button>
+                    </div>
+                )}
+
                 <div className="flex items-center gap-2">
                     <input
                         value={text}
@@ -227,7 +307,8 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
               flex-1 h-11 rounded-xl
               bg-[#0B1220]/70 border border-white/10
               px-3 text-[13px]
-              outline-none text-white/85 placeholder:text-white/35
+              text-white/85 placeholder:text-white/35
+              outline-none focus:outline-none
               focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
             "
                     />
