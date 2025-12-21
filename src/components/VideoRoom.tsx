@@ -16,14 +16,13 @@ CHANGE:
      чтобы браузер НЕ глушил audio playback.
 - pageParticipants/screenOthers slicing: теперь slice по scrollIndex, а не по page.
 - clamp: scrollIndex теперь clamped под (0..maxStart) когда меняются participants/screenSharer.
-- Stabilize video attach/detach:
-  - attach effect зависит от (trackId + muted state) и всегда чисто detaches на cleanup
-  - key для tile учитывает muted + track ids (чтобы React реально пересоздавал DOM когда надо)
-  - force relayout on significant track signature change (layoutVersion bump) — уже было, усилено
 
-REMOVE:
-- УБРАНО только одно: className="hidden" у AudioSink контейнера (т.к. это ломало звук).
-  (Остальная архитектура — P2PLayout/GridLayout/ScreenShareLayout/layoutVersion — сохранена.)
+FIX:
+- ParticipantTile video attach: форсим detach/clear/attach при любом toggle videoMuted,
+  чтобы не залипало "чёрным" после off->on у remote.
+
+NOTE:
+- PAGE_SIZE обратно 20 (чтобы скролл появлялся при >20 и совпадал с LAST_N=20).
 ================================================================================
 */
 
@@ -95,6 +94,16 @@ function attachTrackToMedia(
     return () => {
         try {
             track.detach(element);
+        } catch {
+            // ignore
+        }
+        try {
+            (element as any).srcObject = null;
+        } catch {
+            // ignore
+        }
+        try {
+            element.load?.();
         } catch {
             // ignore
         }
@@ -184,21 +193,14 @@ function AudioSinkItem({ p }: { p: JitsiParticipant }) {
         if (!p.audioTrack) return;
         if (p.isLocal) return;
 
-        const el = audioRef.current;
-        let cleanup: (() => void) | undefined;
-
-        try {
-            cleanup = attachTrackToMedia(p.audioTrack, el);
-        } catch {
-            // ignore
-        }
+        p.audioTrack.attach(audioRef.current);
 
         return () => {
             try {
-                cleanup?.();
+                p.audioTrack.detach(audioRef.current!);
             } catch { }
         };
-    }, [safeTrackId(p.audioTrack), p.isLocal]);
+    }, [p.audioTrack, p.isLocal]);
 
     // Скрытый (но НЕ display:none) audio-элемент
     return <audio ref={audioRef} autoPlay playsInline preload="auto" />;
@@ -215,7 +217,7 @@ function AudioSink({ participants }: { participants: JitsiParticipant[] }) {
         // НЕЛЬЗЯ className="hidden" / display:none — браузер может НЕ играть звук.
         <div className="absolute w-0 h-0 overflow-hidden opacity-0 pointer-events-none">
             {remotes.map((p) => {
-                const key = `${p.id}:${safeTrackId(p.audioTrack)}:${p.audioMuted ? "m1" : "m0"}`;
+                const key = `${p.id}:${safeTrackId(p.audioTrack)}`;
                 return <AudioSinkItem key={key} p={p} />;
             })}
         </div>
@@ -232,41 +234,56 @@ function ParticipantTile({
 }) {
     const videoRef = useRef<HTMLVideoElement | null>(null);
 
-    const videoTrackId = useMemo(
-        () => safeTrackId(participant.videoTrack),
-        [participant.videoTrack]
-    );
-
     const showVideo = !!participant.videoTrack && !participant.videoMuted;
 
+    // FIX: форсируем detach/clear/attach при любом toggle videoMuted (и при смене track ref)
     useEffect(() => {
         const el = videoRef.current;
+        if (!el) return;
+
         const track = participant.videoTrack;
 
-        if (!el) return;
-        // если нет трека — нечего attach
-        if (!track) return;
+        // всегда чистим элемент (это помогает от "black stuck")
+        try {
+            (el as any).srcObject = null;
+        } catch { }
+        try {
+            el.load?.();
+        } catch { }
 
-        // если видео замьючено — гарантированно detach (на всякий)
-        if (!showVideo) {
-            try {
-                track.detach?.(el);
-            } catch { }
+        // если нет трека или video muted — просто оставляем placeholder
+        if (!track || participant.videoMuted) {
             return;
         }
 
-        const cleanup = attachTrackToMedia(track, el);
-
-        return () => {
-            try {
-                cleanup?.();
-            } catch { }
+        try {
+            // на всякий случай: detach перед attach (если браузер/track залип)
             try {
                 track.detach?.(el);
             } catch { }
+            track.attach(el);
+        } catch (e) {
+            console.error("attach error", e);
+        }
+
+        // попытка запустить playback (некоторые браузеры залипают после смены srcObject)
+        try {
+            const pr = el.play?.();
+            (pr as any)?.catch?.(() => { });
+        } catch { }
+
+        return () => {
+            try {
+                track.detach?.(el);
+            } catch { }
+            try {
+                (el as any).srcObject = null;
+            } catch { }
+            try {
+                el.load?.();
+            } catch { }
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [videoTrackId, showVideo, participant.isLocal]);
+    }, [participant.videoTrack, participant.videoMuted, participant.isLocal]);
 
     return (
         <div
@@ -345,8 +362,9 @@ function GridLayout({
             }}
         >
             {pageParticipants.map((p) => {
-                const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}:${safeTrackId(p.screenTrack)}:${p.videoMuted ? "vm1" : "vm0"
-                    }:${p.isScreenSharing ? "ss1" : "ss0"}`;
+                const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}:${safeTrackId(
+                    p.screenTrack
+                )}`;
                 return <ParticipantTile key={tileKey} participant={p} tileKey={tileKey} />;
             })}
         </div>
@@ -373,7 +391,7 @@ function P2PLayout({
             }}
         >
             {pageParticipants.map((p) => {
-                const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}:${p.videoMuted ? "vm1" : "vm0"}`;
+                const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}`;
                 return <ParticipantTile key={tileKey} participant={p} tileKey={tileKey} />;
             })}
         </div>
@@ -396,22 +414,10 @@ function ScreenShareLayout({
     );
 
     useEffect(() => {
-        const el = screenVideoRef.current;
-        const track = screenSharer.screenTrack;
-
-        if (!el) return;
-        if (!track) return;
-
-        const cleanup = attachTrackToMedia(track, el);
-        return () => {
-            try {
-                cleanup?.();
-            } catch { }
-            try {
-                track.detach?.(el);
-            } catch { }
-        };
-    }, [screenTrackId, screenSharer.isLocal]);
+        if (!screenVideoRef.current) return;
+        if (!screenSharer.screenTrack) return;
+        return attachTrackToMedia(screenSharer.screenTrack, screenVideoRef.current);
+    }, [screenTrackId]);
 
     // мини-камера поверх (если у шарера есть камера)
     const cameraParticipant =
@@ -443,8 +449,7 @@ function ScreenShareLayout({
                     <div className="hidden md:block absolute top-3 right-3 w-44 aspect-video rounded-xl overflow-hidden border border-white/20 shadow-lg bg-black">
                         <ParticipantTile
                             participant={cameraParticipant}
-                            tileKey={`${cameraParticipant.id}:${safeTrackId(cameraParticipant.videoTrack)}:${cameraParticipant.videoMuted ? "vm1" : "vm0"
-                                }`}
+                            tileKey={`${cameraParticipant.id}:${safeTrackId(cameraParticipant.videoTrack)}`}
                         />
                     </div>
                 )}
@@ -453,7 +458,7 @@ function ScreenShareLayout({
             {/* strip of others */}
             <div className="flex md:flex-col gap-2 md:w-56 w-full">
                 {others.map((p) => {
-                    const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}:${p.videoMuted ? "vm1" : "vm0"}`;
+                    const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}`;
                     return (
                         <div key={tileKey} className="md:h-[140px] w-full">
                             <ParticipantTile participant={p} tileKey={tileKey} />
@@ -478,7 +483,7 @@ export function VideoRoom(props: VideoRoomProps) {
         onVisibleVideoIdsChange,
     } = props;
 
-    const PAGE_SIZE = 25;
+    const PAGE_SIZE = 20;
     const SCROLL_STEP = 5; // “скроллится к остатку”, а не “переключает страницу”
 
     // реакции UI
@@ -514,7 +519,10 @@ export function VideoRoom(props: VideoRoomProps) {
         return Math.max(0, baseParticipants.length - PAGE_SIZE);
     }, [baseParticipants.length]);
 
-    const canScroll = useMemo(() => baseParticipants.length > PAGE_SIZE, [baseParticipants.length]);
+    const canScroll = useMemo(
+        () => baseParticipants.length > PAGE_SIZE,
+        [baseParticipants.length]
+    );
 
     // clamp scrollIndex when participants change
     useEffect(() => {
@@ -524,13 +532,7 @@ export function VideoRoom(props: VideoRoomProps) {
     // IMPORTANT: при смене треков пересобираем layout DOM (стабилизирует attach/detach)
     const tracksSignature = useMemo(() => {
         return participants
-            .flatMap((p) => [
-                p.id,
-                safeTrackId(p.videoTrack),
-                safeTrackId(p.screenTrack),
-                p.videoMuted ? "vm1" : "vm0",
-                p.isScreenSharing ? "ss1" : "ss0",
-            ])
+            .flatMap((p) => [safeTrackId(p.videoTrack), safeTrackId(p.screenTrack)])
             .join("|");
     }, [participants]);
 
@@ -564,7 +566,7 @@ export function VideoRoom(props: VideoRoomProps) {
     useEffect(() => {
         const t = setTimeout(() => onVisibleVideoIdsChange?.(visibleRemoteIds), 150);
         return () => clearTimeout(t);
-    }, [onVisibleVideoIdsChange, visibleRemoteIds, tracksSignature]);
+    }, [onVisibleVideoIdsChange, visibleRemoteIds]);
 
     const isAudioMuted = !!localParticipant?.audioMuted;
     const isVideoMuted = !!localParticipant?.videoMuted;
@@ -714,7 +716,9 @@ export function VideoRoom(props: VideoRoomProps) {
                         className={
                             baseBtn +
                             " " +
-                            (isScreenSharing ? "bg-blue-600 hover:bg-blue-700" : "bg-[#111827] hover:bg-[#1f2937]")
+                            (isScreenSharing
+                                ? "bg-blue-600 hover:bg-blue-700"
+                                : "bg-[#111827] hover:bg-[#1f2937]")
                         }
                     >
                         <ScreenIcon />
