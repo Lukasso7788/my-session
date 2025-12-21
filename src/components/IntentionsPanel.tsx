@@ -19,7 +19,7 @@ interface Intention {
 }
 
 type IntentionsPanelProps = {
-  sessionId?: string; // можно передать явно, иначе возьмём из URL (/room/:id)
+  sessionId?: string;
 };
 
 function IconButton({
@@ -58,7 +58,6 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
   const [newIntention, setNewIntention] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // edit state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState<string>("");
 
@@ -92,7 +91,6 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
 
     loadIntentions();
 
-    // уникальный канал на сессию, чтобы не ловить события со всех комнат
     const channel = supabase.channel(`intentions_realtime_${sessionId}`);
 
     channel.on(
@@ -180,17 +178,13 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
   };
 
   return (
-    // ВАЖНО: здесь нет своего "хедера" и разделителя —
-    // хедер уже рисует RoomPage (как у Participants/Chat).
     <div className="h-full flex flex-col min-h-0">
       <div className="p-4 min-h-0 flex-1 overflow-y-auto custom-scrollbar">
-        {/* MY INTENTIONS */}
         <div className="mb-5">
           <div className="text-white/85 font-inter font-semibold text-[13px] mb-3">
             My intentions
           </div>
 
-          {/* input row */}
           <div className="flex items-center gap-2 mb-3">
             <input
               type="text"
@@ -201,7 +195,7 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
               className="
                 flex-1 bg-[#0B1220]/70 border border-white/10 rounded-xl
                 px-3 py-3 text-[13px] text-white/85 placeholder:text-white/35
-                outline-none focus:ring-1 focus:ring-[#4C9FFF]
+                outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
               "
             />
 
@@ -219,7 +213,6 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
             </button>
           </div>
 
-          {/* list */}
           {loading ? (
             <div className="text-[12px] text-white/45 italic">Loading...</div>
           ) : myIntentions.length === 0 ? (
@@ -238,8 +231,9 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
                       "bg-[#0B1220]/55 hover:bg-[#0B1220]/75 transition cursor-pointer"
                     }
                   >
-                    <div className="flex items-start gap-2">
-                      <div className="pt-[2px] shrink-0">
+                    {/* align icon + text on same baseline */}
+                    <div className="flex items-center gap-2">
+                      <div className="shrink-0">
                         {i.completed ? (
                           <CheckCircle size={18} className="text-emerald-400" />
                         ) : (
@@ -251,7 +245,7 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
                         {!isEditing ? (
                           <div
                             className={
-                              "text-[13px] break-words " +
+                              "text-[13px] break-words leading-5 " +
                               (i.completed ? "text-white/50 line-through" : "text-white/80")
                             }
                           >
@@ -268,7 +262,7 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
                             className="
                               w-full bg-[#0B1220]/80 border border-white/10 rounded-xl
                               px-3 py-2 text-[13px] text-white/85
-                              outline-none focus:ring-1 focus:ring-[#4C9FFF]
+                              outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
                             "
                             autoFocus
                             onClick={(e) => e.stopPropagation()}
@@ -276,7 +270,6 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
                         )}
                       </div>
 
-                      {/* actions (same style as room buttons) */}
                       <div className="flex items-center gap-2 shrink-0">
                         {!isEditing ? (
                           <>
@@ -338,10 +331,8 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
           )}
         </div>
 
-        {/* divider like room */}
         <div className="h-px bg-white/5 my-5" />
 
-        {/* TEAM INTENTIONS (аватары НЕ удаляю) */}
         <div className="text-white/85 font-inter font-semibold text-[13px] mb-3">
           Team intentions
         </div>
@@ -363,7 +354,7 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
                     "bg-[#0B1220]/55 hover:bg-[#0B1220]/75 transition"
                   }
                 >
-                  <div className="flex items-start gap-3">
+                  <div className="flex items-center gap-3">
                     <img
                       src={getAvatar(item.profiles)}
                       className="w-9 h-9 rounded-full object-cover"
@@ -376,7 +367,7 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
                       </div>
                       <div
                         className={
-                          "text-[13px] break-words " +
+                          "text-[13px] break-words leading-5 " +
                           (item.completed ? "text-white/50 line-through" : "text-white/75")
                         }
                       >
@@ -384,8 +375,7 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
                       </div>
                     </div>
 
-                    {/* маленький статус справа (не обязателен, но красиво/читабельно) */}
-                    <div className="pt-[2px]">
+                    <div className="shrink-0">
                       {item.completed ? (
                         <CheckCircle size={16} className="text-emerald-400" />
                       ) : (

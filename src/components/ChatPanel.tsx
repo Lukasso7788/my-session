@@ -7,19 +7,31 @@ type ChatPanelProps = {
     sessionId: string;
 };
 
-type ChatMessage = {
+/**
+ * IMPORTANT:
+ * - поменяй TABLE_NAME на твоё реальное имя таблицы, если отличается.
+ *   (судя по твоим SQL функциям, похоже это session_chat_messages)
+ */
+const TABLE_NAME = "session_chat_messages";
+
+type ChatMessageRow = {
     id: string;
     session_id: string;
     user_id: string;
     message: string;
     created_at?: string;
-    profiles?: {
-        full_name?: string;
-        avatar_url?: string;
-    };
 };
 
-function getAvatar(profile?: any) {
+type Profile = {
+    full_name?: string;
+    avatar_url?: string;
+};
+
+type ChatMessage = ChatMessageRow & {
+    profiles?: Profile | null;
+};
+
+function avatarFromProfile(profile?: Profile | null) {
     return (
         profile?.avatar_url ||
         `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || "User")}`
@@ -34,6 +46,7 @@ function formatTime(iso?: string) {
 
 export function ChatPanel({ sessionId }: ChatPanelProps) {
     const [user, setUser] = useState<any>(null);
+
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -42,19 +55,27 @@ export function ChatPanel({ sessionId }: ChatPanelProps) {
 
     const listRef = useRef<HTMLDivElement | null>(null);
 
-    // 1) load auth user
+    // ---- 1) auth user
     useEffect(() => {
         supabase.auth.getUser().then(({ data }) => setUser(data.user));
     }, []);
 
+    // ---- 2) load messages
     const loadMessages = async () => {
         if (!sessionId) return;
 
         setLoading(true);
 
-        // ВАЖНО: таблица названа так, потому что у тебя была функция purge_old_session_chat_messages()
+        /**
+         * Тут самый частый источник "чат пустой":
+         * 1) table name отличается
+         * 2) column name отличается (message/text/body)
+         * 3) RLS не даёт SELECT
+         *
+         * Мы специально логируем ошибку и данные — чтобы ты увидел в консоли.
+         */
         const { data, error } = await supabase
-            .from("session_chat_messages")
+            .from(TABLE_NAME)
             .select(
                 `id, session_id, user_id, message, created_at,
          profiles ( full_name, avatar_url )`
@@ -62,11 +83,19 @@ export function ChatPanel({ sessionId }: ChatPanelProps) {
             .eq("session_id", sessionId)
             .order("created_at", { ascending: true });
 
-        if (!error) setMessages((data as any) || []);
+        if (error) {
+            console.error("[ChatPanel] loadMessages error:", error);
+            setMessages([]);
+            setLoading(false);
+            return;
+        }
+
+        console.log("[ChatPanel] loadMessages ok, rows:", data?.length ?? 0);
+        setMessages((data as any) || []);
         setLoading(false);
     };
 
-    // 2) initial load + realtime
+    // ---- 3) realtime subscription
     useEffect(() => {
         if (!sessionId) return;
 
@@ -74,68 +103,65 @@ export function ChatPanel({ sessionId }: ChatPanelProps) {
 
         const channel = supabase.channel(`chat_realtime_${sessionId}`);
 
+        // INSERT
         channel.on(
             "postgres_changes",
             {
                 event: "INSERT",
                 schema: "public",
-                table: "session_chat_messages",
+                table: TABLE_NAME,
                 filter: `session_id=eq.${sessionId}`,
             },
             (payload) => {
-                const row = payload.new as any;
-
-                // Быстрое отображение: добавляем в список сразу
-                // (но профиля может не быть в payload.new — тогда просто reload, чтобы подтянуть profiles join)
-                setMessages((prev) => {
-                    const exists = prev.some((m) => m.id === row?.id);
-                    if (exists) return prev;
-
-                    // если нет created_at — всё равно добавим, но лучше перезагрузить
-                    return [...prev, row];
-                });
-
-                // Чтобы гарантированно были name/avatar — перезагрузим (лёгкий, но надёжный способ)
+                console.log("[ChatPanel] realtime INSERT:", payload);
+                // payload.new обычно без join profiles, поэтому просто reload
                 loadMessages();
             }
         );
 
+        // UPDATE
         channel.on(
             "postgres_changes",
             {
                 event: "UPDATE",
                 schema: "public",
-                table: "session_chat_messages",
+                table: TABLE_NAME,
                 filter: `session_id=eq.${sessionId}`,
             },
-            () => {
+            (payload) => {
+                console.log("[ChatPanel] realtime UPDATE:", payload);
                 loadMessages();
             }
         );
 
+        // DELETE
         channel.on(
             "postgres_changes",
             {
                 event: "DELETE",
                 schema: "public",
-                table: "session_chat_messages",
+                table: TABLE_NAME,
                 filter: `session_id=eq.${sessionId}`,
             },
             (payload: any) => {
+                console.log("[ChatPanel] realtime DELETE:", payload);
                 const deletedId = payload?.old?.id;
                 if (!deletedId) return;
                 setMessages((prev) => prev.filter((m) => m.id !== deletedId));
             }
         );
 
-        channel.subscribe();
+        channel.subscribe((status) => {
+            console.log("[ChatPanel] channel status:", status);
+        });
+
         return () => {
             supabase.removeChannel(channel);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionId]);
 
-    // 3) autoscroll when messages grow
+    // ---- autoscroll
     useEffect(() => {
         if (!listRef.current) return;
         listRef.current.scrollTop = listRef.current.scrollHeight;
@@ -152,10 +178,9 @@ export function ChatPanel({ sessionId }: ChatPanelProps) {
         setSending(true);
 
         try {
-            // оптимистично очистим input сразу
             setText("");
 
-            const { error } = await supabase.from("session_chat_messages").insert([
+            const { error } = await supabase.from(TABLE_NAME).insert([
                 {
                     session_id: sessionId,
                     user_id: user.id,
@@ -164,23 +189,22 @@ export function ChatPanel({ sessionId }: ChatPanelProps) {
             ]);
 
             if (error) {
-                console.error("sendMessage error:", error);
-                // если ошибка — вернём текст обратно (чтобы не потерять)
+                console.error("[ChatPanel] sendMessage error:", error);
                 setText(msg);
+                return;
             }
+
+            // на всякий случай сразу reload (если realtime не сработал)
+            loadMessages();
         } finally {
             setSending(false);
         }
     };
 
     return (
-        // Как и IntentionsPanel: без собственного "хедера", RoomPage рисует header сам.
         <div className="h-full flex flex-col min-h-0">
-            {/* messages */}
-            <div
-                ref={listRef}
-                className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4"
-            >
+            {/* MESSAGES */}
+            <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4">
                 {loading ? (
                     <div className="text-[12px] text-white/45 italic">Loading...</div>
                 ) : messages.length === 0 ? (
@@ -203,13 +227,13 @@ export function ChatPanel({ sessionId }: ChatPanelProps) {
                                 >
                                     {!isMine && (
                                         <img
-                                            src={getAvatar(m.profiles)}
+                                            src={avatarFromProfile(m.profiles)}
                                             className="w-9 h-9 rounded-full object-cover"
                                             alt=""
                                         />
                                     )}
 
-                                    <div className={isMine ? "max-w-[78%]" : "max-w-[78%]"}>
+                                    <div className="max-w-[78%]">
                                         <div className={"flex items-center gap-2 " + (isMine ? "justify-end" : "")}>
                                             <div className="text-[12px] text-white/70 font-medium truncate">
                                                 {name}
@@ -225,7 +249,7 @@ export function ChatPanel({ sessionId }: ChatPanelProps) {
                                                     : "bg-[#0B1220]/70 text-white/85")
                                             }
                                         >
-                                            <div className="text-[13px] whitespace-pre-wrap break-words">
+                                            <div className="text-[13px] whitespace-pre-wrap break-words leading-5">
                                                 {m.message}
                                             </div>
                                         </div>
@@ -233,7 +257,12 @@ export function ChatPanel({ sessionId }: ChatPanelProps) {
 
                                     {isMine && (
                                         <img
-                                            src={getAvatar({ full_name: user?.user_metadata?.full_name || "You" })}
+                                            src={avatarFromProfile({
+                                                full_name:
+                                                    user?.user_metadata?.full_name ||
+                                                    user?.user_metadata?.name ||
+                                                    "You",
+                                            })}
                                             className="w-9 h-9 rounded-full object-cover"
                                             alt=""
                                         />
@@ -245,7 +274,7 @@ export function ChatPanel({ sessionId }: ChatPanelProps) {
                 )}
             </div>
 
-            {/* input */}
+            {/* INPUT */}
             <div className="p-4 border-t border-white/5">
                 <div className="flex items-end gap-2">
                     <textarea
@@ -256,11 +285,10 @@ export function ChatPanel({ sessionId }: ChatPanelProps) {
               flex-1 min-h-[44px] max-h-[140px]
               bg-[#0B1220]/70 border border-white/10 rounded-xl
               px-3 py-3 text-[13px] text-white/85 placeholder:text-white/35
-              outline-none focus:ring-1 focus:ring-[#4C9FFF]
+              outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
               resize-none
             "
                         onKeyDown={(e) => {
-                            // Enter = send, Shift+Enter = newline
                             if (e.key === "Enter" && !e.shiftKey) {
                                 e.preventDefault();
                                 sendMessage();
