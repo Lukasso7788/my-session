@@ -1,3 +1,5 @@
+// src/components/IntentionsPanel.tsx
+
 import { useEffect, useState } from "react";
 import { Plus, CheckCircle, Circle, Trash2, Target, MessageCircle } from "lucide-react";
 import { supabase } from "../lib/supabase";
@@ -16,13 +18,23 @@ interface Intention {
   };
 }
 
-export function IntentionsPanel() {
+type IntentionsPanelProps = {
+  defaultTab?: "intentions" | "chat";
+  onTabChange?: (tab: "intentions" | "chat") => void;
+};
+
+export function IntentionsPanel({ defaultTab = "intentions", onTabChange }: IntentionsPanelProps) {
   const { id: sessionId } = useParams<{ id: string }>();
   const [user, setUser] = useState<any>(null);
   const [intentions, setIntentions] = useState<Intention[]>([]);
   const [newIntention, setNewIntention] = useState("");
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"intentions" | "chat">("intentions");
+  const [activeTab, setActiveTab] = useState<"intentions" | "chat">(defaultTab);
+
+  // sync external tab -> internal
+  useEffect(() => {
+    setActiveTab(defaultTab);
+  }, [defaultTab]);
 
   // USER
   useEffect(() => {
@@ -109,8 +121,13 @@ export function IntentionsPanel() {
       profile?.full_name || "User"
     )}`;
 
+  const setTab = (tab: "intentions" | "chat") => {
+    setActiveTab(tab);
+    onTabChange?.(tab);
+  };
+
   return (
-    <div className="flex flex-col w-full h-full bg-[#1F2937] text-[#F3F4F6] font-inter">
+    <div className="flex flex-col w-full h-full bg-[#1F2937] text-[#F3F4F6] font-inter min-h-0">
 
       {/* =========================
           SWITCHER (Intentions / Chat)
@@ -119,7 +136,7 @@ export function IntentionsPanel() {
         <div className="flex gap-0 pb-0">
           {/* Intentions tab */}
           <button
-            onClick={() => setActiveTab("intentions")}
+            onClick={() => setTab("intentions")}
             className={`
               flex flex-1 items-center justify-center gap-2 px-3 py-2
               text-[20px] font-medium rounded-none
@@ -136,7 +153,7 @@ export function IntentionsPanel() {
 
           {/* Chat tab */}
           <button
-            onClick={() => setActiveTab("chat")}
+            onClick={() => setTab("chat")}
             className={`
               flex flex-1 items-center justify-center gap-2 px-3 py-2
               text-[20px] font-medium rounded-none
@@ -159,7 +176,7 @@ export function IntentionsPanel() {
       {/* ============================
             CONTENT
       ============================ */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 custom-scrollbar">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 custom-scrollbar">
 
         {/* === CHAT TAB === */}
         {activeTab === "chat" && (

@@ -1,6 +1,29 @@
 // src/pages/RoomPage.tsx
 // ROOMPAGE + JITSI ENGINE + VIDEO UI (UPDATED WITH REACTIONS)
 
+/*
+================================================================================
+CHANGELOG (AS CODE)
+================================================================================
+ADD:
+- Right drawer state:
+  - const [isRightPanelOpen, setIsRightPanelOpen] = useState(false);
+  - const [rightPanelTab, setRightPanelTab] = useState<"intentions"|"chat">("intentions");
+  - toggleRightPanel(tab) helper
+- Bottom-left overlay buttons (Intentions / Chat) to open/close right drawer.
+- Single "frame" layout (like screenshot): header inside the main card + content below.
+- Participants count shown in header.
+
+CHANGE:
+- SessionStageBar moved into the header (under title) to match screenshot area.
+- Video + Right panel are now inside ONE container (divider + responsive shrink), not 2 separate cards.
+- Timer moved to header pill (keeps remainingTime logic intact).
+
+REMOVE:
+- None (logic kept; only render structure adjusted).
+================================================================================
+*/
+
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { IntentionsPanel } from "../components/IntentionsPanel";
@@ -10,6 +33,7 @@ import { UserProfileModal } from "../components/UserProfileModal";
 import { JitsiEngine, JitsiParticipant } from "../lib/jitsiEngine";
 import { VideoRoom } from "../components/VideoRoom";
 import type { ReactionType } from "../components/VideoRoom";
+import { Target, MessageCircle, X } from "lucide-react";
 
 type Stage = {
   name: string;
@@ -17,8 +41,6 @@ type Stage = {
   color: string;
   type: "intro" | "intentions" | "focus" | "break" | "outro" | string;
 };
-
-type RightPanelMode = "intentions" | "chat" | null;
 
 export function RoomPage() {
   const { id } = useParams<{ id: string }>();
@@ -65,9 +87,20 @@ export function RoomPage() {
   const BREAK_END_SOUND = "/sounds/break_end.mp3";
   const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
 
-  // RIGHT PANEL STATE
-  const [rightPanelMode, setRightPanelMode] = useState<RightPanelMode>("intentions");
-  const [isRightPanelOpen, setIsRightPanelOpen] = useState<boolean>(true);
+  // ============================================================
+  // RIGHT PANEL (DRAWER) STATE
+  // ============================================================
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState<boolean>(false);
+  const [rightPanelTab, setRightPanelTab] = useState<"intentions" | "chat">("intentions");
+
+  const toggleRightPanel = (tab: "intentions" | "chat") => {
+    setRightPanelTab(tab);
+    setIsRightPanelOpen((open) => {
+      if (!open) return true;
+      // if already open -> clicking same tab closes, clicking other tab switches
+      return tab !== rightPanelTab ? true : false;
+    });
+  };
 
   // ============================================================
   // UNLOCK AUDIO
@@ -129,7 +162,9 @@ export function RoomPage() {
 
       const { data, error } = await supabase
         .from("sessions")
-        .select("*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)")
+        .select(
+          "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)"
+        )
         .eq("id", id)
         .single();
 
@@ -138,7 +173,10 @@ export function RoomPage() {
 
         if (data.schedule) {
           try {
-            const parsed = typeof data.schedule === "string" ? JSON.parse(data.schedule) : data.schedule;
+            const parsed =
+              typeof data.schedule === "string"
+                ? JSON.parse(data.schedule)
+                : data.schedule;
 
             const formatted: Stage[] = parsed.map((b: any) => {
               const lower = (b.name || "").toLowerCase();
@@ -189,10 +227,16 @@ export function RoomPage() {
       const u = data.user;
 
       let name =
-        u?.user_metadata?.full_name || u?.user_metadata?.name || (u?.email ? u.email.split("@")[0] : "");
+        u?.user_metadata?.full_name ||
+        u?.user_metadata?.name ||
+        (u?.email ? u.email.split("@")[0] : "");
 
       if (!name && u?.id) {
-        const { data: p } = await supabase.from("profiles").select("full_name").eq("id", u.id).single();
+        const { data: p } = await supabase
+          .from("profiles")
+          .select("full_name")
+          .eq("id", u.id)
+          .single();
         name = p?.full_name || "";
       }
 
@@ -207,7 +251,10 @@ export function RoomPage() {
     if (!id) return;
 
     const fetchAttendance = async () => {
-      const { data, error } = await supabase.from("session_attendance").select("*").eq("session_id", id);
+      const { data, error } = await supabase
+        .from("session_attendance")
+        .select("*")
+        .eq("session_id", id);
 
       if (error) {
         console.error("Attendance fetch error:", error);
@@ -366,7 +413,9 @@ export function RoomPage() {
         if (diffSec < next) {
           active = i;
           const rem = next - diffSec;
-          setRemainingTime(`${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`);
+          setRemainingTime(
+            `${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`
+          );
           break;
         }
         total = next;
@@ -433,83 +482,142 @@ export function RoomPage() {
 
   return (
     <div className="min-h-screen bg-[#050F1A] text-white flex justify-center">
-      <div className="max-w-[1720px] w-full px-5 py-5 space-y-5">
-        {/* TOP BAR */}
-        <div className="flex w-full rounded-2xl overflow-hidden">
-          {/* LEFT BLOCK */}
-          <div className="w-[91%] bg-[#1F2937] px-6 py-6 rounded-l-2xl min-w-0">
-            <div className="flex items-start justify-between w-full gap-4 min-w-0">
-              <div className="flex flex-col min-w-0 flex-1">
-                <p className="font-inter font-medium text-[17px] text-[#F3F4F6]/85 truncate">
+      <div className="max-w-[1720px] w-full px-5 py-5 space-y-5 min-h-0">
+        {/* MAIN FRAME (HEADER + CONTENT) */}
+        <div className="rounded-2xl bg-[#1F2937] shadow-lg overflow-hidden min-h-0">
+          {/* HEADER */}
+          <div className="px-6 pt-5 pb-4 border-b border-[#404651]">
+            <div className="flex items-start justify-between gap-4">
+              {/* LEFT: title + participants */}
+              <div className="min-w-0">
+                <p className="font-inter font-semibold text-[18px] text-[#F3F4F6]/90 truncate">
                   {session.title}
                 </p>
+                <p className="mt-0.5 text-[12px] text-[#F3F4F6]/60 font-inter">
+                  {participants?.length || 0} participants
+                </p>
 
-                <div className="mt-2 w-full min-w-0 overflow-hidden">
-                  <SessionStageBar stages={stages} startTime={session.start_time} onHoverStage={setHoveredStage} />
+                {/* STAGE BAR under title */}
+                <div className="mt-3 max-w-[760px]">
+                  <div className="h-[16px]">
+                    <SessionStageBar
+                      stages={stages as any}
+                      startTime={session.start_time}
+                      onHoverStage={setHoveredStage as any}
+                    />
+                  </div>
                 </div>
               </div>
 
-              {session.host_profile && (
-                <button
-                  onClick={() => setSelectedUser(session.host_profile)}
-                  className="flex-shrink-0 flex items-center gap-2 px-4 py-1.5 rounded-full border border-[#DBD8D8] bg-transparent text-[14px] text-[#F3F4F6]/85 hover:bg-[#111827] transition font-inter"
-                >
-                  <img src="/icons/host_session_icon.svg" className="h-5 w-5 opacity-90" />
-                  <span className="flex items-center gap-1">
-                    <span className="font-normal">Host:</span>
-                    <span className="font-bold">{session.host_profile.full_name}</span>
+              {/* RIGHT: host + recording + timer */}
+              <div className="flex items-center gap-3 flex-shrink-0">
+                {session.host_profile && (
+                  <button
+                    onClick={() => setSelectedUser(session.host_profile)}
+                    className="hidden md:flex items-center gap-2 px-4 py-1.5 rounded-full border border-[#DBD8D8]/60 bg-transparent text-[13px] text-[#F3F4F6]/85 hover:bg-[#111827] transition font-inter"
+                  >
+                    <img src="/icons/host_session_icon.svg" className="h-5 w-5 opacity-90" />
+                    <span className="flex items-center gap-1">
+                      <span className="font-normal">Host:</span>
+                      <span className="font-bold">{session.host_profile.full_name}</span>
+                    </span>
+                  </button>
+                )}
+
+                <div className="px-3 h-9 rounded-full bg-[#111827]/60 border border-white/10 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-red-500" />
+                  <span className="text-[12px] text-[#F3F4F6]/80 font-inter">Recording</span>
+                </div>
+
+                <div className="px-4 h-9 rounded-full bg-[#111827]/60 border border-white/10 flex items-center">
+                  <span className="font-inter text-[14px] text-[#F3F4F6]/90">
+                    {remainingTime || "--:--"}
                   </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* CONTENT */}
+          <div className="relative flex min-h-0 h-[77vh]">
+            {/* LEFT (VIDEO) */}
+            <div className="relative flex-1 min-w-0 min-h-0">
+              <div className="w-full h-full p-3 min-h-0">
+                <VideoRoom
+                  participants={participants}
+                  onToggleAudio={handleToggleAudio}
+                  onToggleVideo={handleToggleVideo}
+                  onToggleScreenShare={handleToggleScreenShare}
+                  onLeave={handleLeave}
+                  activeScreenSharer={activeScreenSharer}
+                  incomingReactions={incomingReactions}
+                  onVisibleVideoIdsChange={(ids) => engineRef.current?.setVisibleVideoParticipants(ids)}
+                />
+              </div>
+
+              {/* Bottom-left overlay buttons (like screenshot) */}
+              <div className="absolute left-5 bottom-5 flex items-center gap-2 z-20">
+                <button
+                  onClick={() => toggleRightPanel("intentions")}
+                  className={
+                    "h-11 w-11 rounded-xl flex items-center justify-center border shadow-lg transition " +
+                    (isRightPanelOpen && rightPanelTab === "intentions"
+                      ? "bg-[#16A34A] border-[#16A34A]/40"
+                      : "bg-[#111827]/80 border-white/10 hover:bg-[#0B1220]/80")
+                  }
+                  title="Intentions"
+                >
+                  <Target className="w-5 h-5 text-white" />
                 </button>
+
+                <button
+                  onClick={() => toggleRightPanel("chat")}
+                  className={
+                    "h-11 w-11 rounded-xl flex items-center justify-center border shadow-lg transition " +
+                    (isRightPanelOpen && rightPanelTab === "chat"
+                      ? "bg-[#16A34A] border-[#16A34A]/40"
+                      : "bg-[#111827]/80 border-white/10 hover:bg-[#0B1220]/80")
+                  }
+                  title="Chat"
+                >
+                  <MessageCircle className="w-5 h-5 text-white" />
+                </button>
+              </div>
+
+              {lastErr && (
+                <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow z-30">
+                  {lastErr}
+                </div>
               )}
             </div>
-          </div>
 
-          {/* TIMER */}
-          <div className="w-[9%] bg-[#1F2937] rounded-r-2xl flex flex-col items-center justify-center gap-1 border-l border-[#404651]">
-            <img src="/icons/session_timer.svg" className="w-[48px] h-[48px]" />
-            <span className="font-inter text-[26px]">{remainingTime || "--:--"}</span>
-          </div>
-        </div>
+            {/* RIGHT DRAWER */}
+            {isRightPanelOpen && (
+              <div className="w-[420px] max-w-[420px] min-h-0 border-l border-[#404651] bg-[#1F2937] relative">
+                {/* close (top-right) */}
+                <button
+                  onClick={() => setIsRightPanelOpen(false)}
+                  className="absolute top-4 right-4 z-10 h-9 w-9 rounded-xl bg-[#111827]/70 border border-white/10 hover:bg-[#0B1220]/70 flex items-center justify-center"
+                  title="Close"
+                >
+                  <X className="w-5 h-5 text-white/80" />
+                </button>
 
-        {/* MAIN GRID */}
-        <div
-          className={`grid gap-5 transition-all duration-300 ${isRightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1"
-            }`}
-        >
-          {/* VIDEO AREA */}
-          <div className="rounded-2xl bg-[#1F2937] shadow-lg overflow-hidden relative min-h-0 h-[77vh]">
-            <div className="w-full h-full p-3 min-h-0">
-              <VideoRoom
-                participants={participants}
-                onToggleAudio={handleToggleAudio}
-                onToggleVideo={handleToggleVideo}
-                onToggleScreenShare={handleToggleScreenShare}
-                onLeave={handleLeave}
-                activeScreenSharer={activeScreenSharer}
-                incomingReactions={incomingReactions}
-                onVisibleVideoIdsChange={(ids) => engineRef.current?.setVisibleVideoParticipants(ids)}
-              />
-            </div>
-
-            {lastErr && (
-              <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow">
-                {lastErr}
+                <div className="p-4 h-full min-h-0">
+                  <IntentionsPanel
+                    defaultTab={rightPanelTab as any}
+                    onTabChange={(tab: any) => setRightPanelTab(tab)}
+                  />
+                </div>
               </div>
             )}
           </div>
-
-          {/* INTENTIONS */}
-          {isRightPanelOpen && (
-            <div className="rounded-2xl bg-[#1F2937] text-white shadow-lg h-[77vh] overflow-hidden min-h-0">
-              <div className="p-4 h-full min-h-0">
-                <IntentionsPanel />
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
-      {selectedUser && <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />}
+      {selectedUser && (
+        <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
+      )}
     </div>
   );
 }
