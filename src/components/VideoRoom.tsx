@@ -45,6 +45,14 @@ type VideoRoomProps = {
     onToggleVideo: () => void;
     onToggleScreenShare: () => void;
     onLeave?: () => void;
+    // приходит из RoomPage (у тебя уже передаётся)
+    activeScreenSharer?: string | null;
+
+    // реакции, которые пришли по сети (у тебя уже передаётся)
+    incomingReactions?: { id: number; type: ReactionType }[];
+
+    // новый коллбек: какие ids сейчас реально видны на экране (для подписок SFU)
+    onVisibleVideoIdsChange?: (ids: string[]) => void;
 
     // опционально: если захочешь наружу прокидывать реакцию в engine
     onSendReaction?: (type: ReactionType) => void;
@@ -212,25 +220,29 @@ function ParticipantTile({ participant, tileKey }: { participant: JitsiParticipa
             className="relative bg-black rounded-2xl overflow-hidden flex items-center justify-center border border-white/5"
             data-tile-key={tileKey}
         >
-            {showVideo ? (
-                <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted={participant.isLocal}
-                    // ключевое: object-cover + aspect-video, иначе grid будет “плясать”
-                    className="w-full h-full object-cover aspect-video bg-black"
-                />
-            ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center bg-[#111827] aspect-video">
-                    <div className="w-16 h-16 rounded-full bg-[#374151] flex items-center justify-center text-2xl font-semibold">
-                        {participant.displayName?.[0]?.toUpperCase() || "?"}
-                    </div>
-                    <span className="mt-2 text-sm text-white/80">
-                        {participant.isLocal ? "You" : participant.displayName || "Guest"}
-                    </span>
+            {/* 16:9 frame внутри ячейки */}
+            <div className="w-full h-full flex items-center justify-center">
+                <div className="w-full max-w-full aspect-video bg-black">
+                    {showVideo ? (
+                        <video
+                            ref={videoRef}
+                            autoPlay
+                            playsInline
+                            muted={participant.isLocal}
+                            className="w-full h-full object-contain bg-black"
+                        />
+                    ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center bg-[#111827]">
+                            <div className="w-16 h-16 rounded-full bg-[#374151] flex items-center justify-center text-2xl font-semibold">
+                                {participant.displayName?.[0]?.toUpperCase() || "?"}
+                            </div>
+                            <span className="mt-2 text-sm text-white/80">
+                                {participant.isLocal ? "You" : participant.displayName || "Guest"}
+                            </span>
+                        </div>
+                    )}
                 </div>
-            )}
+            </div>
 
             {/* name + mic status */}
             <div className="absolute left-3 bottom-3 rounded-md bg-black/55 px-2 py-1 text-[11px] flex items-center gap-2">
@@ -382,9 +394,19 @@ function ScreenShareLayout({
 
 // ----------------------- Main -----------------------
 export function VideoRoom(props: VideoRoomProps) {
-    const { participants, onToggleAudio, onToggleVideo, onToggleScreenShare, onLeave, onSendReaction } = props;
+    const {
+        participants,
+        onToggleAudio,
+        onToggleVideo,
+        onToggleScreenShare,
+        onLeave,
+        onSendReaction,
+        activeScreenSharer,
+        incomingReactions,
+        onVisibleVideoIdsChange,
+    } = props;
 
-    const PAGE_SIZE = 20;
+    const PAGE_SIZE = 25;
     const SCROLL_STEP = 5; // “скроллится к остатку”, а не “переключает страницу”
 
     // реакции UI
@@ -406,6 +428,31 @@ export function VideoRoom(props: VideoRoomProps) {
 
     const isP2P = useMemo(() => participants.length <= 2, [participants.length]);
 
+    const localParticipant = useMemo(
+        () => participants.find((p) => p.isLocal) || null,
+        [participants]
+    );
+
+    useEffect(() => {
+        const visibleList = screenSharer
+            ? [screenSharer, ...screenOthers]
+            : pageParticipants;
+
+        const ids = visibleList
+            .map((p) => p.id)
+            .filter((id) => id && id !== localParticipant?.id);
+
+        const t = setTimeout(() => onVisibleVideoIdsChange?.(ids), 150);
+        return () => clearTimeout(t);
+    }, [
+        onVisibleVideoIdsChange,
+        screenSharer?.id,
+        localParticipant?.id,
+        scrollIndex,
+        pageParticipants.map((p) => p.id).join("|"),
+        screenOthers.map((p) => p.id).join("|"),
+    ]);
+
     // базовый список участников для grid (если screen share — шарер отдельно)
     const baseParticipants = useMemo(() => {
         return screenSharer ? participants.filter((p) => p.id !== screenSharer.id) : participants;
@@ -426,11 +473,7 @@ export function VideoRoom(props: VideoRoomProps) {
     // IMPORTANT: при смене количества участников или смене режима (screen share on/off)
     // пересобираем layout DOM, чтобы не оставались “приаттаченные” старые элементы.
     const tracksSignature = participants
-        .flatMap(p =>
-            [p.videoTrack, p.screenTrack]
-                .filter(Boolean)
-                .map(t => t.getId())
-        )
+        .flatMap((p) => [safeTrackId(p.videoTrack), safeTrackId(p.screenTrack)])
         .join("|");
 
     useEffect(() => {
@@ -452,10 +495,6 @@ export function VideoRoom(props: VideoRoomProps) {
         return baseParticipants.slice(start, end);
     }, [baseParticipants, screenSharer, scrollIndex]);
 
-    const localParticipant = useMemo(
-        () => participants.find((p) => p.isLocal) || null,
-        [participants]
-    );
 
     const isAudioMuted = !!localParticipant?.audioMuted;
     const isVideoMuted = !!localParticipant?.videoMuted;
@@ -524,11 +563,17 @@ export function VideoRoom(props: VideoRoomProps) {
                     />
                 )}
 
-                {/* Reactions floating overlay */}
-                {reactions.length > 0 && (
-                    <div className="pointer-events-none absolute inset-0 flex items-end justify-center pb-20">
+                {/* Reactions floating overlay (local + incoming) */}
+                {((reactions?.length || 0) + (incomingReactions?.length || 0) > 0) && (
+                    <div className="pointer-events-none absolute inset-0 flex items-end justify-center pb-20 gap-2">
                         {reactions.map((r) => (
-                            <div key={r.id} className="text-4xl drop-shadow-lg animate-bounce">
+                            <div key={`local-${r.id}`} className="text-4xl drop-shadow-lg animate-bounce">
+                                {reactionEmoji[r.type]}
+                            </div>
+                        ))}
+
+                        {(incomingReactions || []).map((r) => (
+                            <div key={`in-${r.id}`} className="text-4xl drop-shadow-lg animate-bounce">
                                 {reactionEmoji[r.type]}
                             </div>
                         ))}

@@ -106,12 +106,11 @@ async function loadJitsiScripts(): Promise<void> {
 // ============================================================================
 export class JitsiEngine {
   private callbacks: JitsiEngineCallbacks;
-
+  private subsWatchdog: any = null;
   private JitsiMeetJS: any | null = null;
   private config: any | null = null;
   private connection: any | null = null;
   private conference: any | null = null;
-
   // DTO participants (UI-friendly). НЕ источник истины для треков.
   private participants: Record<string, JitsiParticipant> = {};
   private localUserId: string | null = null;
@@ -200,6 +199,76 @@ export class JitsiEngine {
   public sendReaction(type: string) {
     this.broadcastLocalEvent({ kind: "reaction", reaction: type });
   }
+
+  // ========== VIDEO SUBSCRIPTIONS (UI-aware) ==========
+  private selectedVideoIds: string[] = [];
+  private qualityMode: "auto" | "low" | "medium" | "high" = "auto";
+
+  // верхний потолок, чтобы случайно не подписаться на 100 видеопотоков
+  private readonly MAX_LAST_N = 36;
+
+  public setQualityMode(mode: "auto" | "low" | "medium" | "high") {
+    this.qualityMode = mode;
+    this.applyVideoSubscriptions();
+  }
+
+  public setVisibleVideoParticipants(ids: string[]) {
+    // ids должны быть REMOTE (можно передать и local — мы отфильтруем ниже)
+    this.selectedVideoIds = Array.isArray(ids) ? ids : [];
+    this.applyVideoSubscriptions();
+  }
+
+  private pickReceiverConstraintHeight(n: number): number {
+    // глобальный max-height (Jitsi потом сам выберет layer/битрейт, если simulcast включён)
+    if (this.qualityMode === "high") return 720;
+    if (this.qualityMode === "medium") return 360;
+    if (this.qualityMode === "low") return 180;
+
+    // auto:
+    if (n <= 2) return 720;
+    if (n <= 6) return 540;
+    if (n <= 12) return 360;
+    if (n <= 25) return 180;
+    return 180;
+  }
+
+  private applyVideoSubscriptions() {
+    if (!this.conference) return;
+
+    try {
+      const localId = this.localUserId;
+
+      // только remote ids
+      const remoteIds = (this.selectedVideoIds || [])
+        .filter((id) => id && id !== localId);
+
+      // lastN = сколько remote video реально хотим
+      const desiredLastN = Math.min(remoteIds.length, this.MAX_LAST_N);
+
+      // ВАЖНО: сначала "обнулим", если список сильно поменялся
+      // Это помогает при зависаниях после перегруза
+
+      this.conference.setLastN?.(desiredLastN);
+
+      const h = this.pickReceiverConstraintHeight(desiredLastN);
+      this.conference.setReceiverVideoConstraint?.(h);
+      this.conference.setReceiverAudioConstraint?.(true);
+
+      if (typeof this.conference.selectParticipants === "function") {
+        this.conference.selectParticipants(remoteIds.slice(0, desiredLastN));
+      }
+
+      // optional debug
+      console.log("[JITSI] applyVideoSubscriptions", {
+        desiredLastN,
+        receiverMaxHeight: h,
+        selected: remoteIds.slice(0, desiredLastN).length,
+      });
+    } catch (e) {
+      console.warn("[JITSI] applyVideoSubscriptions failed", e);
+    }
+  }
+
 
   private broadcastLocalEvent(ev: any) {
     // Реакции/сигналы: только endpoint messages (надежно и не зависит от P2P)
@@ -336,6 +405,11 @@ export class JitsiEngine {
 
   async dispose(): Promise<void> {
     this.disposed = true;
+    // stop watchdog
+    if (this.subsWatchdog) {
+      clearInterval(this.subsWatchdog);
+      this.subsWatchdog = null;
+    }
 
     // Локальный screenshare
     try {
@@ -444,31 +518,7 @@ export class JitsiEngine {
 
     const updateRemoteSubscriptions = () => {
       if (!this.conference) return;
-
-      try {
-        // 1) lastN: сколько remote VIDEO получать (на аудио не влияет)
-        this.conference.setLastN?.(LAST_N);
-
-        // 2) receiver constraints: просим вообще получать видео (и не в "0")
-        this.conference.setReceiverVideoConstraint?.(180);
-        this.conference.setReceiverAudioConstraint?.(true);
-
-        // 3) selectParticipants: если доступно — жёстко укажем кого хотим получать
-        const remoteIds = Object.keys(this.participants)
-          .filter((id) => id && id !== this.localUserId)
-          .slice(0, LAST_N);
-
-        if (typeof this.conference.selectParticipants === "function") {
-          this.conference.selectParticipants(remoteIds);
-        }
-
-        console.log("[JITSI] subscriptions updated", {
-          lastN: LAST_N,
-          remoteSelected: remoteIds.length,
-        });
-      } catch (e) {
-        console.warn("[JITSI] subscriptions update failed", e);
-      }
+      this.applyVideoSubscriptions();
     };
 
     // ------------------------ CONFERENCE_JOINED ------------------------
@@ -510,6 +560,13 @@ export class JitsiEngine {
 
       // CRITICAL: включаем приём remote (после join)
       updateRemoteSubscriptions();
+
+      // watchdog — помогает восстановиться после перегруза/залипания
+      if (this.subsWatchdog) clearInterval(this.subsWatchdog);
+      this.subsWatchdog = setInterval(() => {
+        if (this.disposed) return;
+        this.applyVideoSubscriptions();
+      }, 3000);
 
       // ⚠️ ВАЖНО: даём Jitsi микротик, чтобы conference полностью инициализировался
       setTimeout(() => {
@@ -630,6 +687,15 @@ export class JitsiEngine {
     try {
       const tracks = await this.JitsiMeetJS.createLocalTracks({
         devices: ["audio", "video"],
+        // часто работает:
+        resolution: 720,
+        constraints: {
+          video: {
+            height: { ideal: 720, max: 720 },
+            width: { ideal: 1280, max: 1280 },
+            frameRate: { ideal: 30, max: 30 },
+          },
+        },
       });
 
       for (const track of tracks) {

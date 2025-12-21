@@ -263,13 +263,7 @@ export function RoomPage() {
 
         // detect screen sharer
         const sharer = list.find((p) => p.isScreenSharing);
-        if (sharer) {
-          if (activeScreenSharer !== sharer.id) {
-            setActiveScreenSharer(sharer.id);
-          }
-        } else if (activeScreenSharer !== null) {
-          setActiveScreenSharer(null);
-        }
+        setActiveScreenSharer(sharer ? sharer.id : null);
 
         // fix displayName for host
         const updated = list.map((p) => {
@@ -502,6 +496,7 @@ export function RoomPage() {
                 onLeave={handleLeave}
                 activeScreenSharer={activeScreenSharer}
                 incomingReactions={incomingReactions}
+                onVisibleVideoIdsChange={(ids) => engineRef.current?.setVisibleVideoParticipants(ids)}
               />
             </div>
 
