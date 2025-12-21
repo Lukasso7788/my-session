@@ -19,8 +19,35 @@ interface Intention {
 }
 
 type IntentionsPanelProps = {
-  sessionId?: string; // можно передать явно, иначе возьмём из URL
+  sessionId?: string; // можно передать явно, иначе возьмём из URL (/room/:id)
 };
+
+function IconButton({
+  title,
+  onClick,
+  children,
+  className = "",
+}: {
+  title: string;
+  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <button
+      title={title}
+      onClick={onClick}
+      className={
+        "w-9 h-9 rounded-xl flex items-center justify-center transition " +
+        "bg-[#111827] hover:bg-[#1f2937] text-white/80 " +
+        className
+      }
+      type="button"
+    >
+      {children}
+    </button>
+  );
+}
 
 export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelProps) {
   const { id: sessionIdFromUrl } = useParams<{ id: string }>();
@@ -31,19 +58,22 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
   const [newIntention, setNewIntention] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // EDIT STATE
+  // edit state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState<string>("");
 
-  // USER
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
   }, []);
 
-  // LOAD INTENTIONS
+  const getAvatar = (profile?: any) =>
+    profile?.avatar_url ||
+    `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || "User")}`;
+
   const loadIntentions = async () => {
     if (!sessionId) return;
 
+    setLoading(true);
     const { data, error } = await supabase
       .from("intentions")
       .select(
@@ -57,13 +87,12 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
     setLoading(false);
   };
 
-  // REALTIME
   useEffect(() => {
     if (!sessionId) return;
 
     loadIntentions();
 
-    // важно: уникальный канал на сессию, чтобы не ловить события со всех комнат
+    // уникальный канал на сессию, чтобы не ловить события со всех комнат
     const channel = supabase.channel(`intentions_realtime_${sessionId}`);
 
     channel.on(
@@ -88,9 +117,18 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
     );
 
     channel.subscribe();
-    return () => supabase.removeChannel(channel);
+    return () => {
+      supabase.removeChannel(channel);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
+
+  const myIntentions = useMemo(
+    () => intentions.filter((i) => i.user_id === user?.id),
+    [intentions, user?.id]
+  );
+
+  const teamIntentions = useMemo(() => intentions, [intentions]);
 
   const handleAddIntention = async () => {
     if (!newIntention.trim() || !user || !sessionId) return;
@@ -108,7 +146,6 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
   };
 
   const toggleCompleted = async (intention: Intention) => {
-    // если сейчас редактируем этот пункт — клик по строке не должен менять completed
     if (editingId === intention.id) return;
 
     await supabase
@@ -121,10 +158,9 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
     await supabase.from("intentions").delete().eq("id", id);
   };
 
-  // EDIT HANDLERS
-  const startEdit = (intention: Intention) => {
-    setEditingId(intention.id);
-    setEditingText(intention.text || "");
+  const startEdit = (i: Intention) => {
+    setEditingId(i.id);
+    setEditingText(i.text || "");
   };
 
   const cancelEdit = () => {
@@ -134,9 +170,8 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
 
   const saveEdit = async () => {
     if (!editingId) return;
-
     const text = editingText.trim();
-    if (!text) return; // пустое не сохраняем
+    if (!text) return;
 
     await supabase.from("intentions").update({ text }).eq("id", editingId);
 
@@ -144,107 +179,84 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
     setEditingText("");
   };
 
-  const getAvatar = (profile?: any) =>
-    profile?.avatar_url ||
-    `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || "User")}`;
-
-  const myIntentions = useMemo(
-    () => intentions.filter((i) => i.user_id === user?.id),
-    [intentions, user?.id]
-  );
-
-  // оставляем как у тебя: team список включает всех (включая "You"), с аватарами
-  const teamIntentions = useMemo(() => intentions, [intentions]);
-
   return (
-    <div className="flex flex-col w-full h-full bg-[#1F2937] text-[#F3F4F6] font-inter min-h-0">
-      {/* HEADER (без tabs) */}
-      <div className="px-4 pt-4">
-        <div className="text-[16px] font-semibold text-white/90">Intentions</div>
-      </div>
-
-      <div className="h-px bg-[#404651] mt-3"></div>
-
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 custom-scrollbar">
+    // ВАЖНО: здесь нет своего "хедера" и разделителя —
+    // хедер уже рисует RoomPage (как у Participants/Chat).
+    <div className="h-full flex flex-col min-h-0">
+      <div className="p-4 min-h-0 flex-1 overflow-y-auto custom-scrollbar">
         {/* MY INTENTIONS */}
         <div className="mb-5">
-          <h3 className="text-[14px] font-medium text-[#F3F4F6] mb-3">My intentions</h3>
+          <div className="text-white/85 font-inter font-semibold text-[13px] mb-3">
+            My intentions
+          </div>
 
-          <div className="mb-[16px]">
-            <div className="flex items-center gap-2 mb-[12px]">
-              <input
-                type="text"
-                value={newIntention}
-                onChange={(e) => setNewIntention(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleAddIntention()}
-                placeholder="Add an intention"
-                className="
-                  flex-1
-                  bg-[#374151] border border-[#404651]
-                  rounded-[8px]
-                  px-[12px] py-[14px]
-                  text-[14px] text-[#F3F4F6]
-                  placeholder-[#9CA3AF]
-                  focus:outline-none focus:ring-1 focus:ring-[#4C9FFF]
-                "
-              />
+          {/* input row */}
+          <div className="flex items-center gap-2 mb-3">
+            <input
+              type="text"
+              value={newIntention}
+              onChange={(e) => setNewIntention(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAddIntention()}
+              placeholder="Add an intention..."
+              className="
+                flex-1 bg-[#0B1220]/70 border border-white/10 rounded-xl
+                px-3 py-3 text-[13px] text-white/85 placeholder:text-white/35
+                outline-none focus:ring-1 focus:ring-[#4C9FFF]
+              "
+            />
 
-              <button
-                onClick={handleAddIntention}
-                className="
-                  flex items-center justify-center
-                  bg-[#4C9FFF] hover:bg-[#3B89E8]
-                  text-white
-                  rounded-[8px]
-                  px-[8px] py-[10px]
-                  transition
-                  leading-none
-                  text-[32px] font-light
-                "
-                title="Add"
-              >
-                +
-              </button>
-            </div>
+            <button
+              onClick={handleAddIntention}
+              className="
+                h-11 px-4 rounded-xl
+                bg-emerald-500 hover:bg-emerald-600
+                text-[#02140B] font-semibold text-[13px]
+              "
+              type="button"
+              title="Add"
+            >
+              Add
+            </button>
+          </div>
 
-            <div className="flex flex-col gap-1.5">
-              {loading ? (
-                <p className="text-sm text-[#9CA3AF] italic">Loading...</p>
-              ) : myIntentions.length === 0 ? (
-                <p className="text-sm text-[#9CA3AF] italic">No intentions</p>
-              ) : (
-                myIntentions.map((intention) => {
-                  const isMine = intention.user_id === user?.id;
-                  const isEditing = editingId === intention.id;
+          {/* list */}
+          {loading ? (
+            <div className="text-[12px] text-white/45 italic">Loading...</div>
+          ) : myIntentions.length === 0 ? (
+            <div className="text-[12px] text-white/45 italic">No intentions yet</div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {myIntentions.map((i) => {
+                const isEditing = editingId === i.id;
 
-                  return (
-                    <div
-                      key={intention.id}
-                      className={`flex items-center justify-between p-2 rounded group cursor-pointer transition
-                        ${intention.completed
-                          ? "bg-[rgba(0,255,55,0.05)]"
-                          : "hover:bg-[rgba(55,65,81,0.20)]"
-                        }
-                      `}
-                      onClick={() => toggleCompleted(intention)}
-                    >
-                      <div className="flex items-start gap-2 flex-1 min-w-0">
-                        {intention.completed ? (
-                          <CheckCircle size={18} className="text-[#00FF37] mt-0.5 shrink-0" />
+                return (
+                  <div
+                    key={i.id}
+                    onClick={() => toggleCompleted(i)}
+                    className={
+                      "group rounded-xl border border-white/5 px-3 py-2.5 " +
+                      "bg-[#0B1220]/55 hover:bg-[#0B1220]/75 transition cursor-pointer"
+                    }
+                  >
+                    <div className="flex items-start gap-2">
+                      <div className="pt-[2px] shrink-0">
+                        {i.completed ? (
+                          <CheckCircle size={18} className="text-emerald-400" />
                         ) : (
-                          <Circle size={18} className="text-[#9CA3AF] mt-0.5 shrink-0" />
+                          <Circle size={18} className="text-white/45" />
                         )}
+                      </div>
 
-                        {/* TEXT / EDIT INPUT */}
+                      <div className="flex-1 min-w-0">
                         {!isEditing ? (
-                          <span
-                            className={`text-sm break-words ${intention.completed
-                                ? "text-[#F3F4F6]/75 line-through"
-                                : "text-[#F3F4F6]/75"
-                              }`}
+                          <div
+                            className={
+                              "text-[13px] break-words " +
+                              (i.completed ? "text-white/50 line-through" : "text-white/80")
+                            }
                           >
-                            {intention.text}
-                          </span>
+                            {i.text}
+                          </div>
                         ) : (
                           <input
                             value={editingText}
@@ -254,10 +266,8 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
                               if (e.key === "Escape") cancelEdit();
                             }}
                             className="
-                              flex-1
-                              bg-[#111827]/40 border border-white/10
-                              rounded-lg px-3 py-2
-                              text-[14px] text-white/90
+                              w-full bg-[#0B1220]/80 border border-white/10 rounded-xl
+                              px-3 py-2 text-[13px] text-white/85
                               outline-none focus:ring-1 focus:ring-[#4C9FFF]
                             "
                             autoFocus
@@ -266,114 +276,123 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
                         )}
                       </div>
 
-                      {/* ACTIONS: edit/save/cancel/delete */}
-                      {isMine && (
-                        <div className="flex items-center gap-1 pl-2">
-                          {!isEditing ? (
-                            <>
-                              <button
+                      {/* actions (same style as room buttons) */}
+                      <div className="flex items-center gap-2 shrink-0">
+                        {!isEditing ? (
+                          <>
+                            <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                              <IconButton
+                                title="Edit"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  startEdit(intention);
+                                  startEdit(i);
                                 }}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-[#9CA3AF] hover:text-white"
-                                title="Edit"
                               >
                                 <Pencil size={16} />
-                              </button>
+                              </IconButton>
+                            </div>
 
-                              <button
+                            <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                              <IconButton
+                                title="Delete"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleDelete(intention.id);
+                                  handleDelete(i.id);
                                 }}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-[#9CA3AF] hover:text-red-500"
-                                title="Delete"
+                                className="hover:text-red-300"
                               >
                                 <Trash2 size={16} />
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  saveEdit();
-                                }}
-                                className="p-1 text-[#9CA3AF] hover:text-[#00FF37]"
-                                title="Save"
-                              >
-                                <Check size={18} />
-                              </button>
+                              </IconButton>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <IconButton
+                              title="Save"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                saveEdit();
+                              }}
+                              className="hover:text-emerald-300"
+                            >
+                              <Check size={18} />
+                            </IconButton>
 
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  cancelEdit();
-                                }}
-                                className="p-1 text-[#9CA3AF] hover:text-white"
-                                title="Cancel"
-                              >
-                                <X size={18} />
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      )}
+                            <IconButton
+                              title="Cancel"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                cancelEdit();
+                              }}
+                            >
+                              <X size={18} />
+                            </IconButton>
+                          </>
+                        )}
+                      </div>
                     </div>
-                  );
-                })
-              )}
+                  </div>
+                );
+              })}
             </div>
-          </div>
+          )}
         </div>
 
-        <div className="h-px bg-[#404651] my-[20px]"></div>
+        {/* divider like room */}
+        <div className="h-px bg-white/5 my-5" />
 
-        {/* TEAM INTENTIONS (с аватарами — НЕ УДАЛЯЮ) */}
-        <h3 className="text-[14px] font-medium text-[#F3F4F6] mb-[12px]">Team intentions</h3>
+        {/* TEAM INTENTIONS (аватары НЕ удаляю) */}
+        <div className="text-white/85 font-inter font-semibold text-[13px] mb-3">
+          Team intentions
+        </div>
 
         {loading ? (
-          <p className="text-sm text-[#9CA3AF] italic">Loading...</p>
+          <div className="text-[12px] text-white/45 italic">Loading...</div>
         ) : teamIntentions.length === 0 ? (
-          <p className="text-sm text-[#9CA3AF] italic">No team intentions</p>
+          <div className="text-[12px] text-white/45 italic">No team intentions</div>
         ) : (
-          <div className="flex flex-col gap-[6px]">
+          <div className="flex flex-col gap-2">
             {teamIntentions.map((item) => {
               const isMine = item.user_id === user?.id;
 
               return (
                 <div
                   key={item.id}
-                  className={`
-                    flex items-start gap-3 p-2 rounded-lg transition group
-                    ${item.completed
-                      ? "bg-[rgba(0,255,55,0.05)]"
-                      : "hover:bg-[rgba(55,65,81,0.20)]"
-                    }
-                  `}
+                  className={
+                    "rounded-xl border border-white/5 px-3 py-2.5 " +
+                    "bg-[#0B1220]/55 hover:bg-[#0B1220]/75 transition"
+                  }
                 >
-                  <img
-                    src={getAvatar(item.profiles)}
-                    className="w-10 h-10 rounded-full object-cover"
-                    alt=""
-                  />
+                  <div className="flex items-start gap-3">
+                    <img
+                      src={getAvatar(item.profiles)}
+                      className="w-9 h-9 rounded-full object-cover"
+                      alt=""
+                    />
 
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-[#F3F4F6] truncate">
-                      {isMine ? "You" : item.profiles?.full_name || "Participant"}
-                    </p>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] text-white/85 font-medium truncate">
+                        {isMine ? "You" : item.profiles?.full_name || "Participant"}
+                      </div>
+                      <div
+                        className={
+                          "text-[13px] break-words " +
+                          (item.completed ? "text-white/50 line-through" : "text-white/75")
+                        }
+                      >
+                        {item.text}
+                      </div>
+                    </div>
 
-                    <p
-                      className={`text-sm break-words ${item.completed ? "text-[#F3F4F6]/75 line-through" : "text-[#F3F4F6]/80"
-                        }`}
-                    >
-                      {item.text}
-                    </p>
+                    {/* маленький статус справа (не обязателен, но красиво/читабельно) */}
+                    <div className="pt-[2px]">
+                      {item.completed ? (
+                        <CheckCircle size={16} className="text-emerald-400" />
+                      ) : (
+                        <Circle size={16} className="text-white/30" />
+                      )}
+                    </div>
                   </div>
-
-                  {/* (опционально) можно добавить edit/delete и в team list для своих.
-                      Сейчас оставил только в My intentions, чтобы не было дубля UI. */}
                 </div>
               );
             })}

@@ -1,150 +1,295 @@
+// src/components/ChatPanel.tsx
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 
-type Msg = {
+type ChatPanelProps = {
+    sessionId: string;
+};
+
+type ChatMessage = {
     id: string;
     session_id: string;
     user_id: string;
-    body: string;
-    created_at: string;
-    profiles?: { full_name?: string; avatar_url?: string } | null;
+    message: string;
+    created_at?: string;
+    profiles?: {
+        full_name?: string;
+        avatar_url?: string;
+    };
 };
 
-function iso30DaysAgo() {
-    const d = new Date();
-    d.setDate(d.getDate() - 30);
-    return d.toISOString();
+function getAvatar(profile?: any) {
+    return (
+        profile?.avatar_url ||
+        `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || "User")}`
+    );
 }
 
-export function ChatPanel({ sessionId }: { sessionId: string }) {
-    const [userId, setUserId] = useState<string | null>(null);
-    const [messages, setMessages] = useState<Msg[]>([]);
-    const [text, setText] = useState("");
+function formatTime(iso?: string) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+export function ChatPanel({ sessionId }: ChatPanelProps) {
+    const [user, setUser] = useState<any>(null);
+    const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [loading, setLoading] = useState(true);
 
-    const bottomRef = useRef<HTMLDivElement | null>(null);
+    const [text, setText] = useState("");
+    const [sending, setSending] = useState(false);
 
+    const listRef = useRef<HTMLDivElement | null>(null);
+
+    // 1) load auth user
     useEffect(() => {
-        supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
+        supabase.auth.getUser().then(({ data }) => setUser(data.user));
     }, []);
 
-    const load = async () => {
+    const loadMessages = async () => {
+        if (!sessionId) return;
+
         setLoading(true);
 
+        // ВАЖНО: таблица названа так, потому что у тебя была функция purge_old_session_chat_messages()
         const { data, error } = await supabase
             .from("session_chat_messages")
-            .select("id, session_id, user_id, body, created_at, profiles(full_name, avatar_url)")
+            .select(
+                `id, session_id, user_id, message, created_at,
+         profiles ( full_name, avatar_url )`
+            )
             .eq("session_id", sessionId)
-            .gte("created_at", iso30DaysAgo())
             .order("created_at", { ascending: true });
 
-        if (error) console.error("chat load error:", error);
-        setMessages((data as any) || []);
+        if (!error) setMessages((data as any) || []);
         setLoading(false);
     };
 
-    useEffect(() => {
-        if (!sessionId) return;
-        load();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [sessionId]);
-
+    // 2) initial load + realtime
     useEffect(() => {
         if (!sessionId) return;
 
-        const ch = supabase
-            .channel(`chat:${sessionId}`)
-            .on(
-                "postgres_changes",
-                { event: "INSERT", schema: "public", table: "session_chat_messages", filter: `session_id=eq.${sessionId}` },
-                () => load()
-            )
-            .subscribe();
+        loadMessages();
 
+        const channel = supabase.channel(`chat_realtime_${sessionId}`);
+
+        channel.on(
+            "postgres_changes",
+            {
+                event: "INSERT",
+                schema: "public",
+                table: "session_chat_messages",
+                filter: `session_id=eq.${sessionId}`,
+            },
+            (payload) => {
+                const row = payload.new as any;
+
+                // Быстрое отображение: добавляем в список сразу
+                // (но профиля может не быть в payload.new — тогда просто reload, чтобы подтянуть profiles join)
+                setMessages((prev) => {
+                    const exists = prev.some((m) => m.id === row?.id);
+                    if (exists) return prev;
+
+                    // если нет created_at — всё равно добавим, но лучше перезагрузить
+                    return [...prev, row];
+                });
+
+                // Чтобы гарантированно были name/avatar — перезагрузим (лёгкий, но надёжный способ)
+                loadMessages();
+            }
+        );
+
+        channel.on(
+            "postgres_changes",
+            {
+                event: "UPDATE",
+                schema: "public",
+                table: "session_chat_messages",
+                filter: `session_id=eq.${sessionId}`,
+            },
+            () => {
+                loadMessages();
+            }
+        );
+
+        channel.on(
+            "postgres_changes",
+            {
+                event: "DELETE",
+                schema: "public",
+                table: "session_chat_messages",
+                filter: `session_id=eq.${sessionId}`,
+            },
+            (payload: any) => {
+                const deletedId = payload?.old?.id;
+                if (!deletedId) return;
+                setMessages((prev) => prev.filter((m) => m.id !== deletedId));
+            }
+        );
+
+        channel.subscribe();
         return () => {
-            supabase.removeChannel(ch);
+            supabase.removeChannel(channel);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionId]);
 
+    // 3) autoscroll when messages grow
     useEffect(() => {
-        bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+        if (!listRef.current) return;
+        listRef.current.scrollTop = listRef.current.scrollHeight;
     }, [messages.length]);
 
-    const send = async () => {
-        const body = text.trim();
-        if (!body || !userId) return;
+    const canSend = useMemo(() => {
+        return !!sessionId && !!user?.id && text.trim().length > 0 && !sending;
+    }, [sessionId, user?.id, text, sending]);
 
-        const { error } = await supabase.from("session_chat_messages").insert({
-            session_id: sessionId,
-            user_id: userId,
-            body,
-        });
+    const sendMessage = async () => {
+        if (!canSend) return;
 
-        if (error) {
-            console.error("chat send error:", error);
-            return;
+        const msg = text.trim();
+        setSending(true);
+
+        try {
+            // оптимистично очистим input сразу
+            setText("");
+
+            const { error } = await supabase.from("session_chat_messages").insert([
+                {
+                    session_id: sessionId,
+                    user_id: user.id,
+                    message: msg,
+                },
+            ]);
+
+            if (error) {
+                console.error("sendMessage error:", error);
+                // если ошибка — вернём текст обратно (чтобы не потерять)
+                setText(msg);
+            }
+        } finally {
+            setSending(false);
         }
-        setText("");
     };
 
-    const uiMessages = useMemo(() => messages, [messages]);
-
     return (
-        <div className="h-full flex flex-col bg-transparent">
-            <div className="px-5 py-4 border-b border-white/5">
-                <div className="text-white/85 font-inter font-semibold">Chat</div>
-                <div className="text-white/45 text-[12px]">History: last 30 days</div>
-            </div>
+        // Как и IntentionsPanel: без собственного "хедера", RoomPage рисует header сам.
+        <div className="h-full flex flex-col min-h-0">
+            {/* messages */}
+            <div
+                ref={listRef}
+                className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4"
+            >
+                {loading ? (
+                    <div className="text-[12px] text-white/45 italic">Loading...</div>
+                ) : messages.length === 0 ? (
+                    <div className="text-[12px] text-white/45 italic">
+                        No messages yet. Say hi 👋
+                    </div>
+                ) : (
+                    <div className="flex flex-col gap-3">
+                        {messages.map((m) => {
+                            const isMine = m.user_id === user?.id;
+                            const name = isMine ? "You" : m.profiles?.full_name || "Participant";
+                            const time = formatTime(m.created_at);
 
-            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
-                {loading && <div className="text-white/40 text-sm italic">Loading…</div>}
+                            return (
+                                <div
+                                    key={m.id}
+                                    className={
+                                        "flex items-start gap-3 " + (isMine ? "justify-end" : "justify-start")
+                                    }
+                                >
+                                    {!isMine && (
+                                        <img
+                                            src={getAvatar(m.profiles)}
+                                            className="w-9 h-9 rounded-full object-cover"
+                                            alt=""
+                                        />
+                                    )}
 
-                {!loading && uiMessages.length === 0 && (
-                    <div className="text-white/40 text-sm italic">No messages yet</div>
+                                    <div className={isMine ? "max-w-[78%]" : "max-w-[78%]"}>
+                                        <div className={"flex items-center gap-2 " + (isMine ? "justify-end" : "")}>
+                                            <div className="text-[12px] text-white/70 font-medium truncate">
+                                                {name}
+                                            </div>
+                                            <div className="text-[11px] text-white/40">{time}</div>
+                                        </div>
+
+                                        <div
+                                            className={
+                                                "mt-1 rounded-2xl border border-white/5 px-3 py-2.5 " +
+                                                (isMine
+                                                    ? "bg-emerald-500/15 text-white/90"
+                                                    : "bg-[#0B1220]/70 text-white/85")
+                                            }
+                                        >
+                                            <div className="text-[13px] whitespace-pre-wrap break-words">
+                                                {m.message}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {isMine && (
+                                        <img
+                                            src={getAvatar({ full_name: user?.user_metadata?.full_name || "You" })}
+                                            className="w-9 h-9 rounded-full object-cover"
+                                            alt=""
+                                        />
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
                 )}
-
-                {uiMessages.map((m) => {
-                    const mine = m.user_id === userId;
-                    const name = mine ? "You" : m.profiles?.full_name || "Participant";
-
-                    return (
-                        <div key={m.id} className={"flex " + (mine ? "justify-end" : "justify-start")}>
-                            <div
-                                className={
-                                    "max-w-[82%] rounded-2xl px-3 py-2 text-[13px] leading-snug border " +
-                                    (mine
-                                        ? "bg-emerald-500/15 border-emerald-400/20 text-white/90"
-                                        : "bg-white/5 border-white/10 text-white/85")
-                                }
-                            >
-                                <div className="text-[11px] text-white/45 mb-1">{name}</div>
-                                <div className="whitespace-pre-wrap break-words">{m.body}</div>
-                            </div>
-                        </div>
-                    );
-                })}
-
-                <div ref={bottomRef} />
             </div>
 
+            {/* input */}
             <div className="p-4 border-t border-white/5">
-                <div className="flex items-center gap-2">
-                    <input
+                <div className="flex items-end gap-2">
+                    <textarea
                         value={text}
                         onChange={(e) => setText(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && send()}
-                        placeholder="Write a message…"
-                        className="flex-1 h-11 rounded-xl bg-[#0B1220]/70 border border-white/10 px-3 text-[13px] outline-none text-white/85 placeholder:text-white/35 focus:border-emerald-400/40"
+                        placeholder="Write a message..."
+                        className="
+              flex-1 min-h-[44px] max-h-[140px]
+              bg-[#0B1220]/70 border border-white/10 rounded-xl
+              px-3 py-3 text-[13px] text-white/85 placeholder:text-white/35
+              outline-none focus:ring-1 focus:ring-[#4C9FFF]
+              resize-none
+            "
+                        onKeyDown={(e) => {
+                            // Enter = send, Shift+Enter = newline
+                            if (e.key === "Enter" && !e.shiftKey) {
+                                e.preventDefault();
+                                sendMessage();
+                            }
+                        }}
                     />
+
                     <button
-                        onClick={send}
-                        className="h-11 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-[#02140B] font-semibold"
+                        onClick={sendMessage}
+                        disabled={!canSend}
+                        className={
+                            "h-11 px-5 rounded-xl font-semibold text-[13px] transition " +
+                            (canSend
+                                ? "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
+                                : "bg-[#111827] text-white/35 cursor-not-allowed")
+                        }
+                        type="button"
+                        title="Send"
                     >
-                        Send
+                        {sending ? "..." : "Send"}
                     </button>
+                </div>
+
+                <div className="mt-2 text-[11px] text-white/35">
+                    Enter — send • Shift+Enter — new line
                 </div>
             </div>
         </div>
     );
 }
+
+export default ChatPanel;
