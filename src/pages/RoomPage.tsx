@@ -18,6 +18,8 @@ type Stage = {
   type: "intro" | "intentions" | "focus" | "break" | "outro" | string;
 };
 
+type RightPanelMode = "intentions" | "chat" | null;
+
 export function RoomPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -62,6 +64,10 @@ export function RoomPage() {
 
   const BREAK_END_SOUND = "/sounds/break_end.mp3";
   const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
+
+  // RIGHT PANEL STATE
+  const [rightPanelMode, setRightPanelMode] = useState<RightPanelMode>("intentions");
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState<boolean>(true);
 
   // ============================================================
   // UNLOCK AUDIO
@@ -123,9 +129,7 @@ export function RoomPage() {
 
       const { data, error } = await supabase
         .from("sessions")
-        .select(
-          "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)"
-        )
+        .select("*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)")
         .eq("id", id)
         .single();
 
@@ -134,10 +138,7 @@ export function RoomPage() {
 
         if (data.schedule) {
           try {
-            const parsed =
-              typeof data.schedule === "string"
-                ? JSON.parse(data.schedule)
-                : data.schedule;
+            const parsed = typeof data.schedule === "string" ? JSON.parse(data.schedule) : data.schedule;
 
             const formatted: Stage[] = parsed.map((b: any) => {
               const lower = (b.name || "").toLowerCase();
@@ -188,16 +189,10 @@ export function RoomPage() {
       const u = data.user;
 
       let name =
-        u?.user_metadata?.full_name ||
-        u?.user_metadata?.name ||
-        (u?.email ? u.email.split("@")[0] : "");
+        u?.user_metadata?.full_name || u?.user_metadata?.name || (u?.email ? u.email.split("@")[0] : "");
 
       if (!name && u?.id) {
-        const { data: p } = await supabase
-          .from("profiles")
-          .select("full_name")
-          .eq("id", u.id)
-          .single();
+        const { data: p } = await supabase.from("profiles").select("full_name").eq("id", u.id).single();
         name = p?.full_name || "";
       }
 
@@ -212,10 +207,7 @@ export function RoomPage() {
     if (!id) return;
 
     const fetchAttendance = async () => {
-      const { data, error } = await supabase
-        .from("session_attendance")
-        .select("*")
-        .eq("session_id", id);
+      const { data, error } = await supabase.from("session_attendance").select("*").eq("session_id", id);
 
       if (error) {
         console.error("Attendance fetch error:", error);
@@ -374,9 +366,7 @@ export function RoomPage() {
         if (diffSec < next) {
           active = i;
           const rem = next - diffSec;
-          setRemainingTime(
-            `${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`
-          );
+          setRemainingTime(`${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`);
           break;
         }
         total = next;
@@ -447,16 +437,22 @@ export function RoomPage() {
         {/* TOP BAR */}
         <div className="flex w-full rounded-2xl overflow-hidden">
           {/* LEFT BLOCK */}
-          <div className="w-[91%] bg-[#1F2937] px-6 py-8 rounded-l-2xl">
-            <div className="flex items-center justify-between w-full">
-              <p className="font-inter font-medium text-[17px] text-[#F3F4F6]/85">
-                {session.title}
-              </p>
+          <div className="w-[91%] bg-[#1F2937] px-6 py-6 rounded-l-2xl min-w-0">
+            <div className="flex items-start justify-between w-full gap-4 min-w-0">
+              <div className="flex flex-col min-w-0 flex-1">
+                <p className="font-inter font-medium text-[17px] text-[#F3F4F6]/85 truncate">
+                  {session.title}
+                </p>
+
+                <div className="mt-2 w-full min-w-0 overflow-hidden">
+                  <SessionStageBar stages={stages} startTime={session.start_time} onHoverStage={setHoveredStage} />
+                </div>
+              </div>
 
               {session.host_profile && (
                 <button
                   onClick={() => setSelectedUser(session.host_profile)}
-                  className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-[#DBD8D8] bg-transparent text-[14px] text-[#F3F4F6]/85 hover:bg-[#111827] transition font-inter"
+                  className="flex-shrink-0 flex items-center gap-2 px-4 py-1.5 rounded-full border border-[#DBD8D8] bg-transparent text-[14px] text-[#F3F4F6]/85 hover:bg-[#111827] transition font-inter"
                 >
                   <img src="/icons/host_session_icon.svg" className="h-5 w-5 opacity-90" />
                   <span className="flex items-center gap-1">
@@ -465,14 +461,6 @@ export function RoomPage() {
                   </span>
                 </button>
               )}
-            </div>
-
-            <div className="mt-2 max-h-[24px]">
-              <SessionStageBar
-                stages={stages}
-                startTime={session.start_time}
-                onHoverStage={setHoveredStage}
-              />
             </div>
           </div>
 
@@ -484,10 +472,13 @@ export function RoomPage() {
         </div>
 
         {/* MAIN GRID */}
-        <div className="grid lg:grid-cols-[minmax(0,1fr),420px] gap-5">
+        <div
+          className={`grid gap-5 transition-all duration-300 ${isRightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1"
+            }`}
+        >
           {/* VIDEO AREA */}
-          <div className="rounded-2xl bg-[#1F2937] shadow-lg overflow-hidden relative h-[77vh]">
-            <div className="w-full h-full p-3">
+          <div className="rounded-2xl bg-[#1F2937] shadow-lg overflow-hidden relative min-h-0 h-[77vh]">
+            <div className="w-full h-full p-3 min-h-0">
               <VideoRoom
                 participants={participants}
                 onToggleAudio={handleToggleAudio}
@@ -508,17 +499,17 @@ export function RoomPage() {
           </div>
 
           {/* INTENTIONS */}
-          <div className="rounded-2xl bg-[#1F2937] text-white shadow-lg h-[77vh] overflow-hidden">
-            <div className="p-4 h-full">
-              <IntentionsPanel />
+          {isRightPanelOpen && (
+            <div className="rounded-2xl bg-[#1F2937] text-white shadow-lg h-[77vh] overflow-hidden min-h-0">
+              <div className="p-4 h-full min-h-0">
+                <IntentionsPanel />
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
-      {selectedUser && (
-        <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
-      )}
+      {selectedUser && <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />}
     </div>
   );
 }
