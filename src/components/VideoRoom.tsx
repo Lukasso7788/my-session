@@ -5,24 +5,17 @@
 CHANGELOG (AS CODE)
 ================================================================================
 ADD:
-- const SCROLL_STEP = 5;  // шаг “прокрутки” участников (не “страницы”)
-- const [scrollIndex, setScrollIndex] = useState(0); // вместо page/page switching
-- canScroll + goPrev/goNext логика для “scroll-to-rest” поведения (offset window)
-- overlay label: "Showing X–Y of N" вместо "Page A/B"
+- showControls?: boolean (default true)  // allows RoomPage to render one unified bottom bar
+- localReactions?: { id:number; type: ReactionType }[] // overlay reactions driven by parent
 
 CHANGE:
-- AudioSink wrapper: БОЛЬШЕ НЕ display:none (className="hidden")
-  -> теперь это невидимый, но РЕАЛЬНО существующий в DOM контейнер (0x0 + opacity-0),
-     чтобы браузер НЕ глушил audio playback.
-- pageParticipants/screenOthers slicing: теперь slice по scrollIndex, а не по page.
-- clamp: scrollIndex теперь clamped под (0..maxStart) когда меняются participants/screenSharer.
+- Reactions overlay uses (localReactions ?? internal reactions)
+- Controls bar is rendered only if showControls === true
 
-FIX:
-- ParticipantTile video attach: форсим detach/clear/attach при любом toggle videoMuted,
-  чтобы не залипало "чёрным" после off->on у remote.
-
-NOTE:
-- PAGE_SIZE обратно 20 (чтобы скролл появлялся при >20 и совпадал с LAST_N=20).
+KEEP:
+- Existing audio sink behavior
+- Existing scroll behavior
+- Existing attach/detach fixes
 ================================================================================
 */
 
@@ -54,11 +47,17 @@ type VideoRoomProps = {
     // реакции, которые пришли по сети (у тебя уже передаётся)
     incomingReactions?: { id: number; type: ReactionType }[];
 
+    // NEW: local reactions from parent (RoomPage bottom bar)
+    localReactions?: { id: number; type: ReactionType }[];
+
     // новый коллбек: какие ids сейчас реально видны на экране (для подписок SFU)
     onVisibleVideoIdsChange?: (ids: string[]) => void;
 
     // опционально: если захочешь наружу прокидывать реакцию в engine
     onSendReaction?: (type: ReactionType) => void;
+
+    // NEW: allow hiding internal controls (when RoomPage renders unified bottom bar)
+    showControls?: boolean;
 };
 
 const reactionEmoji: Record<ReactionType, string> = {
@@ -480,13 +479,15 @@ export function VideoRoom(props: VideoRoomProps) {
         onLeave,
         onSendReaction,
         incomingReactions,
+        localReactions,
         onVisibleVideoIdsChange,
+        showControls = true,
     } = props;
 
     const PAGE_SIZE = 20;
     const SCROLL_STEP = 5; // “скроллится к остатку”, а не “переключает страницу”
 
-    // реакции UI
+    // реакции UI (internal; used only when showControls=true)
     const [reactions, setReactions] = useState<Reaction[]>([]);
     const [showReactionsMenu, setShowReactionsMenu] = useState(false);
     const [reactionCounter, setReactionCounter] = useState(0);
@@ -610,6 +611,8 @@ export function VideoRoom(props: VideoRoomProps) {
     const shownStart = canScroll ? scrollIndex + 1 : Math.min(1, baseParticipants.length);
     const shownEnd = Math.min(scrollIndex + PAGE_SIZE, baseParticipants.length);
 
+    const overlayLocal = (localReactions as any) ?? reactions;
+
     return (
         <div className="relative w-full h-full flex flex-col">
             {/* Always-on audio for all remote participants */}
@@ -636,9 +639,9 @@ export function VideoRoom(props: VideoRoomProps) {
                 )}
 
                 {/* Reactions floating overlay (local + incoming) */}
-                {((reactions?.length || 0) + (incomingReactions?.length || 0) > 0) && (
+                {(((overlayLocal as any)?.length || 0) + (incomingReactions?.length || 0) > 0) && (
                     <div className="pointer-events-none absolute inset-0 flex items-end justify-center pb-20 gap-2">
-                        {reactions.map((r) => (
+                        {(overlayLocal || []).map((r: any) => (
                             <div key={`local-${r.id}`} className="text-4xl drop-shadow-lg animate-bounce">
                                 {reactionEmoji[r.type]}
                             </div>
@@ -686,77 +689,79 @@ export function VideoRoom(props: VideoRoomProps) {
                 )}
             </div>
 
-            {/* CONTROLS BAR */}
-            <div className="mt-3 flex items-center justify-center">
-                <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-[#020617]/90 border border-white/10 shadow-lg">
-                    <button
-                        onClick={onToggleAudio}
-                        className={
-                            baseBtn +
-                            " " +
-                            (isAudioMuted ? "bg-red-600 hover:bg-red-700" : "bg-[#111827] hover:bg-[#1f2937]")
-                        }
-                    >
-                        <MicIcon />
-                    </button>
-
-                    <button
-                        onClick={onToggleVideo}
-                        className={
-                            baseBtn +
-                            " " +
-                            (isVideoMuted ? "bg-red-600 hover:bg-red-700" : "bg-[#111827] hover:bg-[#1f2937]")
-                        }
-                    >
-                        <CameraIcon />
-                    </button>
-
-                    <button
-                        onClick={onToggleScreenShare}
-                        className={
-                            baseBtn +
-                            " " +
-                            (isScreenSharing
-                                ? "bg-blue-600 hover:bg-blue-700"
-                                : "bg-[#111827] hover:bg-[#1f2937]")
-                        }
-                    >
-                        <ScreenIcon />
-                    </button>
-
-                    {/* reactions */}
-                    <div className="relative" ref={menuRef}>
+            {/* CONTROLS BAR (OPTIONAL; hidden when RoomPage renders unified bottom bar) */}
+            {showControls && (
+                <div className="mt-3 flex items-center justify-center">
+                    <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-[#020617]/90 border border-white/10 shadow-lg">
                         <button
-                            onClick={() => setShowReactionsMenu((v) => !v)}
-                            className={baseBtn + " bg-[#111827] hover:bg-[#1f2937]"}
+                            onClick={onToggleAudio}
+                            className={
+                                baseBtn +
+                                " " +
+                                (isAudioMuted ? "bg-red-600 hover:bg-red-700" : "bg-[#111827] hover:bg-[#1f2937]")
+                            }
                         >
-                            <SmileIcon />
+                            <MicIcon />
                         </button>
 
-                        {showReactionsMenu && (
-                            <div className="absolute bottom-12 left-1/2 -translate-x-1/2 bg-[#020617] border border-white/10 rounded-2xl px-3 py-2 flex gap-2 text-xl">
-                                <button onClick={() => handleReactionClick("fire")}>🔥</button>
-                                <button onClick={() => handleReactionClick("laugh")}>😂</button>
-                                <button onClick={() => handleReactionClick("clap")}>👏</button>
-                                <button onClick={() => handleReactionClick("heart")}>❤️</button>
-                                <button onClick={() => handleReactionClick("thumbsUp")}>👍</button>
-                                <button onClick={() => handleReactionClick("thumbsDown")}>👎</button>
-                            </div>
+                        <button
+                            onClick={onToggleVideo}
+                            className={
+                                baseBtn +
+                                " " +
+                                (isVideoMuted ? "bg-red-600 hover:bg-red-700" : "bg-[#111827] hover:bg-[#1f2937]")
+                            }
+                        >
+                            <CameraIcon />
+                        </button>
+
+                        <button
+                            onClick={onToggleScreenShare}
+                            className={
+                                baseBtn +
+                                " " +
+                                (isScreenSharing
+                                    ? "bg-blue-600 hover:bg-blue-700"
+                                    : "bg-[#111827] hover:bg-[#1f2937]")
+                            }
+                        >
+                            <ScreenIcon />
+                        </button>
+
+                        {/* reactions */}
+                        <div className="relative" ref={menuRef}>
+                            <button
+                                onClick={() => setShowReactionsMenu((v) => !v)}
+                                className={baseBtn + " bg-[#111827] hover:bg-[#1f2937]"}
+                            >
+                                <SmileIcon />
+                            </button>
+
+                            {showReactionsMenu && (
+                                <div className="absolute bottom-12 left-1/2 -translate-x-1/2 bg-[#020617] border border-white/10 rounded-2xl px-3 py-2 flex gap-2 text-xl">
+                                    <button onClick={() => handleReactionClick("fire")}>🔥</button>
+                                    <button onClick={() => handleReactionClick("laugh")}>😂</button>
+                                    <button onClick={() => handleReactionClick("clap")}>👏</button>
+                                    <button onClick={() => handleReactionClick("heart")}>❤️</button>
+                                    <button onClick={() => handleReactionClick("thumbsUp")}>👍</button>
+                                    <button onClick={() => handleReactionClick("thumbsDown")}>👎</button>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* leave */}
+                        {onLeave && (
+                            <button
+                                onClick={onLeave}
+                                className="ml-2 px-3 h-9 rounded-full bg-red-600 text-white text-xs font-medium hover:bg-red-700 inline-flex items-center gap-1"
+                            >
+                                <LeaveIcon />
+                                <span>Leave</span>
+                            </button>
                         )}
                     </div>
-
-                    {/* leave */}
-                    {onLeave && (
-                        <button
-                            onClick={onLeave}
-                            className="ml-2 px-3 h-9 rounded-full bg-red-600 text-white text-xs font-medium hover:bg-red-700 inline-flex items-center gap-1"
-                        >
-                            <LeaveIcon />
-                            <span>Leave</span>
-                        </button>
-                    )}
                 </div>
-            </div>
+            )}
         </div>
     );
 }
