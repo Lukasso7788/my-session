@@ -76,7 +76,10 @@ function safeTrackId(track?: any): string {
     return String((track as any)?._id ?? "track");
 }
 
-function attachTrackToMedia(track: JitsiTrack | undefined, element: HTMLMediaElement | null) {
+function attachTrackToMedia(
+    track: JitsiTrack | undefined,
+    element: HTMLMediaElement | null
+) {
     if (!track || !element) return;
 
     try {
@@ -131,7 +134,14 @@ function ScreenIcon() {
 function SmileIcon() {
     return (
         <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-            <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="1.5" />
+            <circle
+                cx="12"
+                cy="12"
+                r="9"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+            />
             <circle cx="9" cy="10" r="0.8" fill="currentColor" />
             <circle cx="15" cy="10" r="0.8" fill="currentColor" />
             <path
@@ -164,7 +174,6 @@ function LeaveIcon() {
 // ВАЖНО: аудио должно работать даже если участник НЕ отображается на текущем “окне” (20 tiles).
 function AudioSinkItem({ p }: { p: JitsiParticipant }) {
     const audioRef = useRef<HTMLAudioElement | null>(null);
-    const trackId = useMemo(() => safeTrackId(p.audioTrack), [p.audioTrack]);
 
     useEffect(() => {
         if (!audioRef.current) return;
@@ -178,7 +187,7 @@ function AudioSinkItem({ p }: { p: JitsiParticipant }) {
                 p.audioTrack.detach(audioRef.current!);
             } catch { }
         };
-    }, [p.audioTrack]);
+    }, [p.audioTrack, p.isLocal]);
 
     // Скрытый (но НЕ display:none) audio-элемент
     return <audio ref={audioRef} autoPlay playsInline preload="auto" />;
@@ -186,7 +195,10 @@ function AudioSinkItem({ p }: { p: JitsiParticipant }) {
 
 function AudioSink({ participants }: { participants: JitsiParticipant[] }) {
     // только remote
-    const remotes = useMemo(() => participants.filter((p) => !p.isLocal), [participants]);
+    const remotes = useMemo(
+        () => participants.filter((p) => !p.isLocal),
+        [participants]
+    );
 
     return (
         // НЕЛЬЗЯ className="hidden" / display:none — браузер может НЕ играть звук.
@@ -200,10 +212,19 @@ function AudioSink({ participants }: { participants: JitsiParticipant[] }) {
 }
 
 // ----------------------- Tiles -----------------------
-function ParticipantTile({ participant, tileKey }: { participant: JitsiParticipant; tileKey: string }) {
+function ParticipantTile({
+    participant,
+    tileKey,
+}: {
+    participant: JitsiParticipant;
+    tileKey: string;
+}) {
     const videoRef = useRef<HTMLVideoElement | null>(null);
 
-    const videoTrackId = useMemo(() => safeTrackId(participant.videoTrack), [participant.videoTrack]);
+    const videoTrackId = useMemo(
+        () => safeTrackId(participant.videoTrack),
+        [participant.videoTrack]
+    );
 
     // attach camera video только если есть трек и он не muted
     useEffect(() => {
@@ -277,7 +298,10 @@ function GridLayout({
     pageParticipants: JitsiParticipant[];
     layoutVersion: number;
 }) {
-    const { cols, rows } = useMemo(() => computeGrid(pageParticipants.length), [pageParticipants.length]);
+    const { cols, rows } = useMemo(
+        () => computeGrid(pageParticipants.length),
+        [pageParticipants.length]
+    );
 
     return (
         <div
@@ -289,7 +313,9 @@ function GridLayout({
             }}
         >
             {pageParticipants.map((p) => {
-                const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}:${safeTrackId(p.screenTrack)}`;
+                const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}:${safeTrackId(
+                    p.screenTrack
+                )}`;
                 return <ParticipantTile key={tileKey} participant={p} tileKey={tileKey} />;
             })}
         </div>
@@ -333,7 +359,10 @@ function ScreenShareLayout({
     layoutVersion: number;
 }) {
     const screenVideoRef = useRef<HTMLVideoElement | null>(null);
-    const screenTrackId = useMemo(() => safeTrackId(screenSharer.screenTrack), [screenSharer.screenTrack]);
+    const screenTrackId = useMemo(
+        () => safeTrackId(screenSharer.screenTrack),
+        [screenSharer.screenTrack]
+    );
 
     useEffect(() => {
         if (!screenVideoRef.current) return;
@@ -401,7 +430,6 @@ export function VideoRoom(props: VideoRoomProps) {
         onToggleScreenShare,
         onLeave,
         onSendReaction,
-        activeScreenSharer,
         incomingReactions,
         onVisibleVideoIdsChange,
     } = props;
@@ -433,51 +461,34 @@ export function VideoRoom(props: VideoRoomProps) {
         [participants]
     );
 
-    useEffect(() => {
-        const visibleList = screenSharer
-            ? [screenSharer, ...screenOthers]
-            : pageParticipants;
-
-        const ids = visibleList
-            .map((p) => p.id)
-            .filter((id) => id && id !== localParticipant?.id);
-
-        const t = setTimeout(() => onVisibleVideoIdsChange?.(ids), 150);
-        return () => clearTimeout(t);
-    }, [
-        onVisibleVideoIdsChange,
-        screenSharer?.id,
-        localParticipant?.id,
-        scrollIndex,
-        pageParticipants.map((p) => p.id).join("|"),
-        screenOthers.map((p) => p.id).join("|"),
-    ]);
-
     // базовый список участников для grid (если screen share — шарер отдельно)
     const baseParticipants = useMemo(() => {
         return screenSharer ? participants.filter((p) => p.id !== screenSharer.id) : participants;
     }, [participants, screenSharer]);
 
     const maxStartIndex = useMemo(() => {
-        // сколько максимально можно сдвинуть окно, чтобы влезло PAGE_SIZE
         return Math.max(0, baseParticipants.length - PAGE_SIZE);
     }, [baseParticipants.length]);
 
-    const canScroll = useMemo(() => baseParticipants.length > PAGE_SIZE, [baseParticipants.length]);
+    const canScroll = useMemo(
+        () => baseParticipants.length > PAGE_SIZE,
+        [baseParticipants.length]
+    );
 
     // clamp scrollIndex when participants change
     useEffect(() => {
         setScrollIndex((i) => Math.min(Math.max(0, i), maxStartIndex));
     }, [maxStartIndex]);
 
-    // IMPORTANT: при смене количества участников или смене режима (screen share on/off)
-    // пересобираем layout DOM, чтобы не оставались “приаттаченные” старые элементы.
-    const tracksSignature = participants
-        .flatMap((p) => [safeTrackId(p.videoTrack), safeTrackId(p.screenTrack)])
-        .join("|");
+    // IMPORTANT: при смене треков пересобираем layout DOM (стабилизирует attach/detach)
+    const tracksSignature = useMemo(() => {
+        return participants
+            .flatMap((p) => [safeTrackId(p.videoTrack), safeTrackId(p.screenTrack)])
+            .join("|");
+    }, [participants]);
 
     useEffect(() => {
-        setLayoutVersion(v => v + 1);
+        setLayoutVersion((v) => v + 1);
     }, [tracksSignature]);
 
     // “окно” участников на экране (visual only)
@@ -495,6 +506,18 @@ export function VideoRoom(props: VideoRoomProps) {
         return baseParticipants.slice(start, end);
     }, [baseParticipants, screenSharer, scrollIndex]);
 
+    // ids remote участников, которые реально видны (для SFU подписок)
+    const visibleRemoteIds = useMemo(() => {
+        const visibleList = screenSharer ? [screenSharer, ...screenOthers] : pageParticipants;
+        return visibleList
+            .map((p) => p.id)
+            .filter((id) => id && id !== localParticipant?.id);
+    }, [screenSharer, screenOthers, pageParticipants, localParticipant?.id]);
+
+    useEffect(() => {
+        const t = setTimeout(() => onVisibleVideoIdsChange?.(visibleRemoteIds), 150);
+        return () => clearTimeout(t);
+    }, [onVisibleVideoIdsChange, visibleRemoteIds]);
 
     const isAudioMuted = !!localParticipant?.audioMuted;
     const isVideoMuted = !!localParticipant?.videoMuted;
@@ -644,7 +667,9 @@ export function VideoRoom(props: VideoRoomProps) {
                         className={
                             baseBtn +
                             " " +
-                            (isScreenSharing ? "bg-blue-600 hover:bg-blue-700" : "bg-[#111827] hover:bg-[#1f2937]")
+                            (isScreenSharing
+                                ? "bg-blue-600 hover:bg-blue-700"
+                                : "bg-[#111827] hover:bg-[#1f2937]")
                         }
                     >
                         <ScreenIcon />
