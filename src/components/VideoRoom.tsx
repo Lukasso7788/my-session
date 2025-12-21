@@ -4,21 +4,21 @@
 ================================================================================
 CHANGELOG (AS CODE)
 ================================================================================
-FIX (LAYOUT):
-- Wrapper around layouts now has className="w-full h-full min-h-0"
-  (was missing h-full -> grid height became content-driven -> tiles could overflow frame)
+FIX (LAYOUT REGRESSION):
+- Revert tile/layout DOM to the previously stable version (aspect-video wrapper, non-absolute video)
+  -> removes "tiles outside frame" glitches
 
-FIX (REMOTE VIDEO OFF -> FREEZE):
-- ParticipantTile now always renders <video> and overlays placeholder when muted/no track
-- Attach/detach/clear happens on BOTH track change AND videoMuted change
-  -> no “frozen last frame” when someone turns camera off
-  -> still avoids full layout remounts
+FIX (REMOTE OFF -> FROZEN LAST FRAME):
+- showVideo now uses BOTH:
+    participant.videoMuted
+    AND participant.videoTrack?.isMuted?.()
+- ParticipantTile effect always detach + clear srcObject on mute/unmute and track changes
 
-KEEP (NO BEHAVIOR REMOVALS):
-- scroll window logic + overlay label
-- AudioSink not display:none
-- memoized ParticipantTile + visibleRemoteIds diff guard
-- coarse layoutVersion bump (join/leave / p2p flip / screen share mode)
+OPTIMIZE (KEEP STABLE BEHAVIOR):
+- layoutVersion now bumps ONLY on coarse mode changes:
+  join/leave (ids signature), P2P flip, screen share mode change
+- ParticipantTile is memoized with stable compare
+- onVisibleVideoIdsChange fires only when ids signature actually changed (debounced)
 ================================================================================
 */
 
@@ -44,17 +44,9 @@ type VideoRoomProps = {
     onToggleVideo: () => void;
     onToggleScreenShare: () => void;
     onLeave?: () => void;
-
-    // приходит из RoomPage (у тебя уже передаётся)
     activeScreenSharer?: string | null;
-
-    // реакции, которые пришли по сети (у тебя уже передаётся)
     incomingReactions?: { id: number; type: ReactionType }[];
-
-    // новый коллбек: какие ids сейчас реально видны на экране (для подписок SFU)
     onVisibleVideoIdsChange?: (ids: string[]) => void;
-
-    // опционально: если захочешь наружу прокидывать реакцию в engine
     onSendReaction?: (type: ReactionType) => void;
 };
 
@@ -75,6 +67,16 @@ function safeTrackId(track?: any): string {
     return String((track as any)?._id ?? "track");
 }
 
+function clearMediaEl(el: HTMLMediaElement | null) {
+    if (!el) return;
+    try {
+        (el as any).srcObject = null;
+    } catch { }
+    try {
+        el.load?.();
+    } catch { }
+}
+
 function attachTrackToMedia(track: JitsiTrack | undefined, element: HTMLMediaElement | null) {
     if (!track || !element) return;
 
@@ -90,17 +92,8 @@ function attachTrackToMedia(track: JitsiTrack | undefined, element: HTMLMediaEle
         } catch {
             // ignore
         }
+        clearMediaEl(element);
     };
-}
-
-function clearMediaEl(el: HTMLMediaElement | null) {
-    if (!el) return;
-    try {
-        (el as any).srcObject = null;
-    } catch { }
-    try {
-        el.load?.();
-    } catch { }
 }
 
 // ----------------------- Icons -----------------------
@@ -212,23 +205,25 @@ function ParticipantTileBase({
     tileKey: string;
 }) {
     const videoRef = useRef<HTMLVideoElement | null>(null);
-    const videoTrackId = useMemo(() => safeTrackId(participant.videoTrack), [participant.videoTrack]);
 
-    const shouldShowVideo = !!participant.videoTrack && !participant.videoMuted;
+    const track = participant.videoTrack;
+    const trackId = useMemo(() => safeTrackId(track), [track]);
+
+    const isTrackMuted = !!track?.isMuted?.();
+    const isMuted = !!participant.videoMuted || isTrackMuted;
+    const showVideo = !!track && !isMuted;
 
     useEffect(() => {
         const el = videoRef.current;
-        const track = participant.videoTrack;
-
         if (!el) return;
 
-        // always detach/clear before applying new state
+        // ALWAYS detach & clear (prevents frozen frame)
         try {
             track?.detach?.(el);
         } catch { }
         clearMediaEl(el);
 
-        if (!track || participant.videoMuted) {
+        if (!track || isMuted) {
             return;
         }
 
@@ -249,36 +244,37 @@ function ParticipantTileBase({
             } catch { }
             clearMediaEl(el);
         };
-    }, [videoTrackId, participant.videoMuted, participant.isLocal]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [trackId, isMuted, participant.isLocal]);
 
     return (
         <div
-            className="relative w-full h-full bg-black rounded-2xl overflow-hidden flex items-center justify-center border border-white/5"
+            className="relative bg-black rounded-2xl overflow-hidden flex items-center justify-center border border-white/5"
             data-tile-key={tileKey}
         >
-            {/* video always mounted (so we can reliably detach/clear) */}
-            <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted={participant.isLocal}
-                className={
-                    "absolute inset-0 w-full h-full object-contain bg-black transition-opacity " +
-                    (shouldShowVideo ? "opacity-100" : "opacity-0")
-                }
-            />
-
-            {/* placeholder overlay when video hidden */}
-            {!shouldShowVideo && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#111827]">
-                    <div className="w-16 h-16 rounded-full bg-[#374151] flex items-center justify-center text-2xl font-semibold">
-                        {participant.displayName?.[0]?.toUpperCase() || "?"}
-                    </div>
-                    <span className="mt-2 text-sm text-white/80">
-                        {participant.isLocal ? "You" : participant.displayName || "Guest"}
-                    </span>
+            {/* 16:9 frame inside tile (stable layout) */}
+            <div className="w-full h-full flex items-center justify-center">
+                <div className="w-full max-w-full aspect-video bg-black">
+                    {showVideo ? (
+                        <video
+                            ref={videoRef}
+                            autoPlay
+                            playsInline
+                            muted={participant.isLocal}
+                            className="w-full h-full object-contain bg-black"
+                        />
+                    ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center bg-[#111827]">
+                            <div className="w-16 h-16 rounded-full bg-[#374151] flex items-center justify-center text-2xl font-semibold">
+                                {participant.displayName?.[0]?.toUpperCase() || "?"}
+                            </div>
+                            <span className="mt-2 text-sm text-white/80">
+                                {participant.isLocal ? "You" : participant.displayName || "Guest"}
+                            </span>
+                        </div>
+                    )}
                 </div>
-            )}
+            </div>
 
             {/* name + mic status */}
             <div className="absolute left-3 bottom-3 rounded-md bg-black/55 px-2 py-1 text-[11px] flex items-center gap-2">
@@ -309,6 +305,9 @@ const ParticipantTile = memo(
         if (safeTrackId(a.videoTrack) !== safeTrackId(b.videoTrack)) return false;
         if (safeTrackId(a.screenTrack) !== safeTrackId(b.screenTrack)) return false;
 
+        // also account for track internal muted state (rarely differs from DTO)
+        if (!!a.videoTrack?.isMuted?.() !== !!b.videoTrack?.isMuted?.()) return false;
+
         return true;
     }
 );
@@ -321,12 +320,19 @@ function computeGrid(count: number) {
     return { cols, rows };
 }
 
-function GridLayout({ pageParticipants }: { pageParticipants: JitsiParticipant[] }) {
+function GridLayout({
+    pageParticipants,
+    layoutVersion,
+}: {
+    pageParticipants: JitsiParticipant[];
+    layoutVersion: number;
+}) {
     const { cols, rows } = useMemo(() => computeGrid(pageParticipants.length), [pageParticipants.length]);
 
     return (
         <div
-            className="w-full h-full min-h-0 min-w-0 grid gap-2 p-2"
+            key={`grid:${layoutVersion}:${pageParticipants.length}:${cols}x${rows}`}
+            className="w-full h-full grid gap-2 p-2"
             style={{
                 gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
                 gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
@@ -340,12 +346,19 @@ function GridLayout({ pageParticipants }: { pageParticipants: JitsiParticipant[]
     );
 }
 
-function P2PLayout({ pageParticipants }: { pageParticipants: JitsiParticipant[] }) {
+function P2PLayout({
+    pageParticipants,
+    layoutVersion,
+}: {
+    pageParticipants: JitsiParticipant[];
+    layoutVersion: number;
+}) {
     const count = pageParticipants.length;
 
     return (
         <div
-            className="w-full h-full min-h-0 min-w-0 grid gap-2 p-2"
+            key={`p2p:${layoutVersion}:${count}`}
+            className="w-full h-full grid gap-2 p-2"
             style={{
                 gridTemplateColumns: count <= 1 ? "1fr" : "1fr 1fr",
                 gridTemplateRows: "1fr",
@@ -362,9 +375,11 @@ function P2PLayout({ pageParticipants }: { pageParticipants: JitsiParticipant[] 
 function ScreenShareLayout({
     screenSharer,
     others,
+    layoutVersion,
 }: {
     screenSharer: JitsiParticipant;
     others: JitsiParticipant[];
+    layoutVersion: number;
 }) {
     const screenVideoRef = useRef<HTMLVideoElement | null>(null);
     const screenTrackId = useMemo(() => safeTrackId(screenSharer.screenTrack), [screenSharer.screenTrack]);
@@ -376,17 +391,22 @@ function ScreenShareLayout({
     }, [screenTrackId]);
 
     const cameraParticipant =
-        screenSharer.videoTrack && !screenSharer.videoMuted ? screenSharer : undefined;
+        screenSharer.videoTrack && !screenSharer.videoMuted && !screenSharer.videoTrack?.isMuted?.()
+            ? screenSharer
+            : undefined;
 
     return (
-        <div className="relative w-full h-full min-h-0 flex flex-col md:flex-row gap-2 p-2">
-            <div className="relative flex-1 min-h-0 bg-black rounded-2xl overflow-hidden border border-white/5">
+        <div
+            key={`screen:${layoutVersion}:${screenSharer.id}:${screenTrackId}`}
+            className="relative w-full h-full flex flex-col md:flex-row gap-2 p-2"
+        >
+            <div className="relative flex-1 bg-black rounded-2xl overflow-hidden border border-white/5">
                 <video
                     ref={screenVideoRef}
                     autoPlay
                     playsInline
                     muted={screenSharer.isLocal}
-                    className="absolute inset-0 w-full h-full object-contain bg-black"
+                    className="w-full h-full object-contain bg-black"
                 />
                 <div className="absolute left-3 bottom-3 rounded-md bg-black/60 px-2 py-1 text-[11px]">
                     <span className="text-white/80">
@@ -404,11 +424,11 @@ function ScreenShareLayout({
                 )}
             </div>
 
-            <div className="flex md:flex-col gap-2 md:w-56 w-full min-h-0">
+            <div className="flex md:flex-col gap-2 md:w-56 w-full">
                 {others.map((p) => {
                     const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}`;
                     return (
-                        <div key={tileKey} className="md:h-[140px] h-[140px] w-full">
+                        <div key={tileKey} className="md:h-[140px] w-full">
                             <ParticipantTile participant={p} tileKey={tileKey} />
                         </div>
                     );
@@ -440,8 +460,6 @@ export function VideoRoom(props: VideoRoomProps) {
     const menuRef = useRef<HTMLDivElement | null>(null);
 
     const [scrollIndex, setScrollIndex] = useState(0);
-
-    // layoutVersion kept but now bumped only on coarse changes
     const [layoutVersion, setLayoutVersion] = useState(0);
 
     const screenSharer = useMemo(
@@ -456,39 +474,34 @@ export function VideoRoom(props: VideoRoomProps) {
         [participants]
     );
 
-    // Stable id signature for join/leave changes (order-independent)
     const participantIdsSignature = useMemo(() => {
         const ids = participants.map((p) => p.id).filter(Boolean).sort();
         return ids.join("|");
     }, [participants]);
 
-    const modeSignature = useMemo(() => {
+    const coarseModeSignature = useMemo(() => {
         const ss = screenSharer ? `${screenSharer.id}:${safeTrackId(screenSharer.screenTrack)}` : "none";
         return `${participantIdsSignature}::p2p=${isP2P ? 1 : 0}::ss=${ss}`;
     }, [participantIdsSignature, isP2P, screenSharer]);
 
-    // bump layout only on coarse mode change (NOT on every track change)
     const lastModeSigRef = useRef<string>("");
     useEffect(() => {
-        if (!modeSignature) return;
+        if (!coarseModeSignature) return;
         if (lastModeSigRef.current === "") {
-            lastModeSigRef.current = modeSignature;
+            lastModeSigRef.current = coarseModeSignature;
             return;
         }
-        if (lastModeSigRef.current !== modeSignature) {
-            lastModeSigRef.current = modeSignature;
+        if (lastModeSigRef.current !== coarseModeSignature) {
+            lastModeSigRef.current = coarseModeSignature;
             setLayoutVersion((v) => v + 1);
         }
-    }, [modeSignature]);
+    }, [coarseModeSignature]);
 
     const baseParticipants = useMemo(() => {
         return screenSharer ? participants.filter((p) => p.id !== screenSharer.id) : participants;
     }, [participants, screenSharer]);
 
-    const maxStartIndex = useMemo(() => {
-        return Math.max(0, baseParticipants.length - PAGE_SIZE);
-    }, [baseParticipants.length]);
-
+    const maxStartIndex = useMemo(() => Math.max(0, baseParticipants.length - PAGE_SIZE), [baseParticipants.length]);
     const canScroll = useMemo(() => baseParticipants.length > PAGE_SIZE, [baseParticipants.length]);
 
     useEffect(() => {
@@ -513,7 +526,6 @@ export function VideoRoom(props: VideoRoomProps) {
         return visibleList.map((p) => p.id).filter((id) => id && id !== localParticipant?.id);
     }, [screenSharer, screenOthers, pageParticipants, localParticipant?.id]);
 
-    // Only fire if changed
     const lastSentVisibleSigRef = useRef<string>("");
     useEffect(() => {
         const sig = (visibleRemoteIds || []).join("|");
@@ -552,8 +564,7 @@ export function VideoRoom(props: VideoRoomProps) {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, [showReactionsMenu]);
 
-    const baseBtn =
-        "w-10 h-10 rounded-full flex items-center justify-center text-white text-sm transition";
+    const baseBtn = "w-10 h-10 rounded-full flex items-center justify-center text-white text-sm transition";
 
     const goPrev = () => setScrollIndex((i) => Math.max(0, i - SCROLL_STEP));
     const goNext = () => setScrollIndex((i) => Math.min(maxStartIndex, i + SCROLL_STEP));
@@ -562,20 +573,26 @@ export function VideoRoom(props: VideoRoomProps) {
     const shownEnd = Math.min(scrollIndex + PAGE_SIZE, baseParticipants.length);
 
     return (
-        <div className="relative w-full h-full flex flex-col min-h-0">
+        <div className="relative w-full h-full flex flex-col">
             <AudioSink participants={participants} />
 
-            <div className="flex-1 min-h-0 relative overflow-hidden rounded-2xl bg-black/80">
+            <div className="flex-1 relative overflow-hidden rounded-2xl bg-black/80">
                 {!screenSharer && (
-                    <div key={`layout:${layoutVersion}`} className="w-full h-full min-h-0">
-                        {isP2P ? <P2PLayout pageParticipants={pageParticipants} /> : <GridLayout pageParticipants={pageParticipants} />}
-                    </div>
+                    <>
+                        {isP2P ? (
+                            <P2PLayout pageParticipants={pageParticipants} layoutVersion={layoutVersion} />
+                        ) : (
+                            <GridLayout pageParticipants={pageParticipants} layoutVersion={layoutVersion} />
+                        )}
+                    </>
                 )}
 
                 {screenSharer && (
-                    <div key={`layout:${layoutVersion}`} className="w-full h-full min-h-0">
-                        <ScreenShareLayout screenSharer={screenSharer} others={screenOthers} />
-                    </div>
+                    <ScreenShareLayout
+                        screenSharer={screenSharer}
+                        others={screenOthers}
+                        layoutVersion={layoutVersion}
+                    />
                 )}
 
                 {((reactions?.length || 0) + (incomingReactions?.length || 0) > 0) && (
