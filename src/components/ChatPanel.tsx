@@ -4,18 +4,19 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { CornerUpLeft, X } from "lucide-react";
 
-type Profile = { full_name?: string; avatar_url?: string } | null;
+type Profile = { id: string; full_name?: string | null; avatar_url?: string | null };
 
-type Msg = {
+type MsgRow = {
     id: string;
     session_id: string;
     user_id: string;
     body: string;
     created_at: string;
-    profiles?: Profile;
 };
 
-function avatarFromProfile(profile?: Profile) {
+type Msg = MsgRow & { profile?: Profile | null };
+
+function avatarFromProfile(profile?: Profile | null) {
     return (
         profile?.avatar_url ||
         `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || "User")}`
@@ -31,35 +32,31 @@ function formatTime(iso?: string) {
 function MessageCard({
     msg,
     mine,
-    currentUserId,
     onReply,
 }: {
     msg: Msg;
     mine: boolean;
-    currentUserId: string | null;
     onReply: (m: Msg) => void;
 }) {
-    const name = mine ? "You" : msg.profiles?.full_name || "Participant";
+    const name = mine ? "You" : msg.profile?.full_name || "Participant";
     const time = formatTime(msg.created_at);
 
     return (
         <div className={"flex items-start gap-3 " + (mine ? "justify-end" : "justify-start")}>
-            {/* Left avatar (others) */}
+            {/* left avatar (others) */}
             {!mine && (
                 <img
-                    src={avatarFromProfile(msg.profiles)}
+                    src={avatarFromProfile(msg.profile)}
                     className="w-9 h-9 rounded-full object-cover"
                     alt=""
                 />
             )}
 
             <div className="max-w-[82%] min-w-0">
-                {/* meta row */}
                 <div className={"flex items-center gap-2 mb-1 " + (mine ? "justify-end" : "justify-start")}>
                     <div className="text-[11px] text-white/55 truncate">{name}</div>
                     <div className="text-[11px] text-white/35">{time}</div>
 
-                    {/* reply (на любые сообщения, включая свои — как хочешь, сейчас на любые) */}
                     <button
                         type="button"
                         onClick={() => onReply(msg)}
@@ -75,7 +72,6 @@ function MessageCard({
                     </button>
                 </div>
 
-                {/* bubble */}
                 <div
                     className={
                         "rounded-2xl px-3 py-2 text-[13px] leading-snug border whitespace-pre-wrap break-words " +
@@ -88,9 +84,13 @@ function MessageCard({
                 </div>
             </div>
 
-            {/* Right spacer (to keep alignment) */}
+            {/* right avatar (mine) */}
             {mine && (
-                <div className="w-9 h-9 rounded-full opacity-0" aria-hidden="true" />
+                <img
+                    src={avatarFromProfile(msg.profile)}
+                    className="w-9 h-9 rounded-full object-cover"
+                    alt=""
+                />
             )}
         </div>
     );
@@ -99,32 +99,71 @@ function MessageCard({
 export function ChatPanel({ sessionId }: { sessionId: string }) {
     const [userId, setUserId] = useState<string | null>(null);
 
+    const [profilesById, setProfilesById] = useState<Record<string, Profile>>({});
+    const [meProfile, setMeProfile] = useState<Profile | null>(null);
+
     const [messages, setMessages] = useState<Msg[]>([]);
     const [text, setText] = useState("");
     const [loading, setLoading] = useState(true);
 
-    // reply
     const [replyTo, setReplyTo] = useState<Msg | null>(null);
 
     const bottomRef = useRef<HTMLDivElement | null>(null);
 
-    // auth user id
+    // 1) auth user
     useEffect(() => {
-        supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
+        (async () => {
+            const { data } = await supabase.auth.getUser();
+            const uid = data.user?.id ?? null;
+            setUserId(uid);
+
+            if (uid) {
+                // подтянем свой профиль для аватара “You”
+                const { data: p } = await supabase
+                    .from("profiles")
+                    .select("id, full_name, avatar_url")
+                    .eq("id", uid)
+                    .single();
+
+                if (p) {
+                    setMeProfile(p as any);
+                    setProfilesById((prev) => ({ ...prev, [uid]: p as any }));
+                }
+            }
+        })();
     }, []);
+
+    // helper: ensure profiles for userIds
+    const ensureProfiles = async (userIds: string[]) => {
+        const unique = Array.from(new Set(userIds)).filter(Boolean);
+        const missing = unique.filter((id) => !profilesById[id]);
+
+        if (missing.length === 0) return;
+
+        const { data: profs, error } = await supabase
+            .from("profiles")
+            .select("id, full_name, avatar_url")
+            .in("id", missing);
+
+        if (error) {
+            console.error("profiles load error:", error);
+            return;
+        }
+
+        const map: Record<string, Profile> = {};
+        (profs || []).forEach((p: any) => (map[p.id] = p));
+        setProfilesById((prev) => ({ ...prev, ...map }));
+    };
 
     const load = async () => {
         if (!sessionId) return;
 
         setLoading(true);
 
-        // IMPORTANT:
-        // УБРАЛ gte(last 30 days) — потому что это частая причина "пусто",
-        // если created_at вдруг NULL / тип не совпал / default не сработал.
-        // Старые сообщения всё равно вычищаются scheduled функцией.
-        const { data, error } = await supabase
+        // 2) load raw rows (без join profiles — чтобы не ломалось из-за отношений)
+        const { data: rows, error } = await supabase
             .from("session_chat_messages")
-            .select("id, session_id, user_id, body, created_at, profiles(full_name, avatar_url)")
+            .select("id, session_id, user_id, body, created_at")
             .eq("session_id", sessionId)
             .order("created_at", { ascending: true })
             .limit(300);
@@ -136,7 +175,17 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
             return;
         }
 
-        setMessages((data as any) || []);
+        const safeRows = (rows as any as MsgRow[]) || [];
+        await ensureProfiles(safeRows.map((r) => r.user_id));
+
+        // склеиваем row + profile
+        setMessages(
+            safeRows.map((r) => ({
+                ...r,
+                profile: (profilesById[r.user_id] || (r.user_id === userId ? meProfile : null)) ?? null,
+            }))
+        );
+
         setLoading(false);
     };
 
@@ -145,7 +194,17 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
         if (!sessionId) return;
         load();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [sessionId]);
+    }, [sessionId, userId]);
+
+    // when profilesById updates, re-bind profiles into messages (чтобы аватары/имена дорисовывались)
+    useEffect(() => {
+        setMessages((prev) =>
+            prev.map((m) => ({
+                ...m,
+                profile: profilesById[m.user_id] || m.profile || null,
+            }))
+        );
+    }, [profilesById]);
 
     // realtime
     useEffect(() => {
@@ -195,7 +254,7 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
             supabase.removeChannel(ch);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [sessionId]);
+    }, [sessionId, userId]);
 
     // autoscroll
     useEffect(() => {
@@ -203,42 +262,40 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
     }, [messages.length]);
 
     const send = async () => {
-        const body = text.trim();
-        if (!body || !userId || !sessionId) return;
+        const raw = text.trim();
+        if (!raw || !userId || !sessionId) return;
 
-        // optimistic append (чтобы видно было сразу, даже если SELECT/RLS тупит)
+        const composed = replyTo ? `↪ Reply: ${replyTo.body}\n\n${raw}` : raw;
+
+        // optimistic
         const optimistic: Msg = {
             id: `optimistic-${Date.now()}`,
             session_id: sessionId,
             user_id: userId,
-            body: replyTo ? `↪ Reply: ${replyTo.body}\n\n${body}` : body,
+            body: composed,
             created_at: new Date().toISOString(),
-            profiles: { full_name: "You", avatar_url: undefined },
+            profile: profilesById[userId] || meProfile || { id: userId, full_name: "You", avatar_url: null },
         };
 
         setMessages((prev) => [...prev, optimistic]);
 
-        const payload: any = {
+        const { error } = await supabase.from("session_chat_messages").insert({
             session_id: sessionId,
             user_id: userId,
-            body: replyTo ? `↪ Reply: ${replyTo.body}\n\n${body}` : body,
-            // IMPORTANT: created_at чтобы оно точно попало в сортировки/фильтры
+            body: composed,
             created_at: new Date().toISOString(),
-        };
-
-        const { error } = await supabase.from("session_chat_messages").insert(payload);
+        });
 
         if (error) {
             console.error("chat send error:", error);
-            // rollback optimistic on failure
+            // rollback optimistic
             setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
             return;
         }
 
         setText("");
         setReplyTo(null);
-        // load() не обязателен — realtime поймает, но если realtime выключен, можно раскомментить:
-        // load();
+        // realtime/load подхватит
     };
 
     const uiMessages = useMemo(() => messages, [messages]);
@@ -248,7 +305,7 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
             {/* HEADER */}
             <div className="px-5 py-4 border-b border-white/5">
                 <div className="text-white/85 font-inter font-semibold">Chat</div>
-                <div className="text-white/45 text-[12px]">History: last 30 days</div>
+                <div className="text-white/45 text-[12px]">All messages for this session</div>
             </div>
 
             {/* LIST */}
@@ -259,31 +316,26 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
                     <div className="text-white/40 text-sm italic">No messages yet</div>
                 )}
 
-                {uiMessages.map((m) => {
-                    const mine = m.user_id === userId;
-                    return (
-                        <MessageCard
-                            key={m.id}
-                            msg={m}
-                            mine={mine}
-                            currentUserId={userId}
-                            onReply={(msg) => setReplyTo(msg)}
-                        />
-                    );
-                })}
+                {uiMessages.map((m) => (
+                    <MessageCard
+                        key={m.id}
+                        msg={m}
+                        mine={m.user_id === userId}
+                        onReply={(msg) => setReplyTo(msg)}
+                    />
+                ))}
 
                 <div ref={bottomRef} />
             </div>
 
             {/* INPUT */}
             <div className="p-4 border-t border-white/5">
-                {/* Reply bar */}
                 {replyTo && (
                     <div className="mb-2 flex items-center justify-between gap-2 rounded-xl bg-white/5 border border-white/10 px-3 py-2">
                         <div className="min-w-0">
                             <div className="text-[11px] text-emerald-300/90 font-medium">Replying</div>
                             <div className="text-[11px] text-white/55 truncate">
-                                {replyTo.profiles?.full_name || "Participant"}: {replyTo.body}
+                                {(replyTo.profile?.full_name || "Participant") + ": " + replyTo.body}
                             </div>
                         </div>
                         <button
