@@ -164,6 +164,7 @@ export function RoomPage() {
 
   const [userName, setUserName] = useState<string>("");
   const [lastErr, setLastErr] = useState<string>("");
+  const [authUserId, setAuthUserId] = useState<string | null>(null);
 
   const engineRef = useRef<JitsiEngine | null>(null);
   const [participants, setParticipants] = useState<JitsiParticipant[]>([]);
@@ -345,6 +346,7 @@ export function RoomPage() {
     (async () => {
       const { data } = await supabase.auth.getUser();
       const u = data.user;
+      setAuthUserId(u?.id || null);
 
       let name =
         u?.user_metadata?.full_name ||
@@ -381,6 +383,94 @@ export function RoomPage() {
         return;
       }
     };
+
+    // ============================================================
+    // ATTENDANCE WRITE (JOIN / HEARTBEAT / LEAVE)
+    // ============================================================
+    useEffect(() => {
+      if (!session?.id) return;
+      if (!authUserId) return;
+
+      let isCancelled = false;
+
+      const join = async () => {
+        try {
+          const now = new Date().toISOString();
+
+          const { error } = await supabase
+            .from("session_attendance")
+            .upsert(
+              {
+                session_id: session.id,
+                user_id: authUserId,
+                joined_at: now,
+                last_seen_at: now,
+                left_at: null,
+              },
+              { onConflict: "session_id,user_id" }
+            );
+
+          if (error) console.error("attendance join upsert error:", error);
+        } catch (e) {
+          console.error("attendance join exception:", e);
+        }
+      };
+
+      const heartbeat = async () => {
+        try {
+          const now = new Date().toISOString();
+          const { error } = await supabase
+            .from("session_attendance")
+            .update({ last_seen_at: now })
+            .eq("session_id", session.id)
+            .eq("user_id", authUserId);
+
+          if (error) console.error("attendance heartbeat error:", error);
+        } catch (e) {
+          console.error("attendance heartbeat exception:", e);
+        }
+      };
+
+      const leave = async () => {
+        try {
+          const now = new Date().toISOString();
+          const { error } = await supabase
+            .from("session_attendance")
+            .update({ left_at: now, last_seen_at: now })
+            .eq("session_id", session.id)
+            .eq("user_id", authUserId);
+
+          if (error) console.error("attendance leave error:", error);
+        } catch (e) {
+          console.error("attendance leave exception:", e);
+        }
+      };
+
+      // 1) JOIN (upsert)
+      join();
+
+      // 2) HEARTBEAT (каждые 25 секунд)
+      const t = setInterval(() => {
+        if (isCancelled) return;
+        heartbeat();
+      }, 25000);
+
+      // 3) LEAVE best-effort при закрытии вкладки
+      const onBeforeUnload = () => {
+        // нельзя await, поэтому "best effort"
+        leave();
+      };
+      window.addEventListener("beforeunload", onBeforeUnload);
+
+      return () => {
+        isCancelled = true;
+        clearInterval(t);
+        window.removeEventListener("beforeunload", onBeforeUnload);
+
+        // best-effort leave при размонтировании
+        leave();
+      };
+    }, [session?.id, authUserId]);
 
     fetchAttendance();
 
@@ -499,7 +589,22 @@ export function RoomPage() {
   const handleToggleAudio = () => engineRef.current?.toggleAudioMute();
   const handleToggleVideo = () => engineRef.current?.toggleVideoMute();
   const handleToggleScreenShare = () => engineRef.current?.toggleScreenShare();
-  const handleLeave = () => navigate("/sessions", { replace: true });
+  const handleLeave = async () => {
+    try {
+      if (session?.id && authUserId) {
+        const now = new Date().toISOString();
+        await supabase
+          .from("session_attendance")
+          .update({ left_at: now, last_seen_at: now })
+          .eq("session_id", session.id)
+          .eq("user_id", authUserId);
+      }
+    } catch (e) {
+      console.error("attendance leave (button) exception:", e);
+    } finally {
+      navigate("/sessions", { replace: true });
+    }
+  };
 
   // ============================================================
   // STAGES TIMER
