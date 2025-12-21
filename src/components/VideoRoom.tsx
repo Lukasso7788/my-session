@@ -4,29 +4,25 @@
 ================================================================================
 CHANGELOG (AS CODE)
 ================================================================================
-ADD:
-- const SCROLL_STEP = 5;  // шаг “прокрутки” участников (не “страницы”)
-- const [scrollIndex, setScrollIndex] = useState(0); // вместо page/page switching
-- canScroll + goPrev/goNext логика для “scroll-to-rest” поведения (offset window)
-- overlay label: "Showing X–Y of N" вместо "Page A/B"
+OPTIMIZE (NO BEHAVIOR BREAK) + KEEP CRITICAL FIXES:
+- Keep: NO full layout remount on every track toggle (reduces freezes/lags)
+  -> layoutVersion bumps ONLY on coarse changes:
+     1) participants join/leave (ids signature change)
+     2) screen share mode change (on/off, sharer id, screen track id)
+     3) P2P mode change (<=2 ↔ >2)
+- Keep: ParticipantTile is React.memo with stable compare to reduce rerenders
+- Keep: onVisibleVideoIdsChange fires ONLY when ids actually changed (prevents extra SFU apply)
 
-CHANGE:
-- AudioSink wrapper: БОЛЬШЕ НЕ display:none (className="hidden")
-  -> теперь это невидимый, но РЕАЛЬНО существующий в DOM контейнер (0x0 + opacity-0),
-     чтобы браузер НЕ глушил audio playback.
-- pageParticipants/screenOthers slicing: теперь slice по scrollIndex, а не по page.
-- clamp: scrollIndex теперь clamped под (0..maxStart) когда меняются participants/screenSharer.
-
-FIX:
-- ParticipantTile video attach: форсим detach/clear/attach при любом toggle videoMuted,
-  чтобы не залипало "чёрным" после off->on у remote.
-
-NOTE:
-- PAGE_SIZE обратно 20 (чтобы скролл появлялся при >20 и совпадал с LAST_N=20).
+RESTORE (CRITICAL):
+- Restore "black video stuck" FIX:
+  ParticipantTile forces detach/clear/attach + play on ANY toggle of videoMuted
+  and on any change of track ref.
+- Restore cleanup: element.srcObject=null + element.load() where applicable.
+- Restore PAGE_SIZE = 20 (match LAST_N=20 and scroll appears after 20)
 ================================================================================
 */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { JitsiParticipant, JitsiTrack } from "../lib/jitsiEngine";
 
 export type ReactionType =
@@ -48,16 +44,9 @@ type VideoRoomProps = {
     onToggleVideo: () => void;
     onToggleScreenShare: () => void;
     onLeave?: () => void;
-    // приходит из RoomPage (у тебя уже передаётся)
     activeScreenSharer?: string | null;
-
-    // реакции, которые пришли по сети (у тебя уже передаётся)
     incomingReactions?: { id: number; type: ReactionType }[];
-
-    // новый коллбек: какие ids сейчас реально видны на экране (для подписок SFU)
     onVisibleVideoIdsChange?: (ids: string[]) => void;
-
-    // опционально: если захочешь наружу прокидывать реакцию в engine
     onSendReaction?: (type: ReactionType) => void;
 };
 
@@ -75,14 +64,10 @@ function safeTrackId(track?: any): string {
     try {
         if (typeof track.getId === "function") return String(track.getId());
     } catch { }
-    // fallback: чтобы key менялся при смене инстанса
     return String((track as any)?._id ?? "track");
 }
 
-function attachTrackToMedia(
-    track: JitsiTrack | undefined,
-    element: HTMLMediaElement | null
-) {
+function attachTrackToMedia(track: JitsiTrack | undefined, element: HTMLMediaElement | null) {
     if (!track || !element) return;
 
     try {
@@ -147,14 +132,7 @@ function ScreenIcon() {
 function SmileIcon() {
     return (
         <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-            <circle
-                cx="12"
-                cy="12"
-                r="9"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-            />
+            <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="1.5" />
             <circle cx="9" cy="10" r="0.8" fill="currentColor" />
             <circle cx="15" cy="10" r="0.8" fill="currentColor" />
             <path
@@ -184,7 +162,6 @@ function LeaveIcon() {
 }
 
 // ----------------------- Audio sink -----------------------
-// ВАЖНО: аудио должно работать даже если участник НЕ отображается на текущем “окне” (20 tiles).
 function AudioSinkItem({ p }: { p: JitsiParticipant }) {
     const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -202,19 +179,13 @@ function AudioSinkItem({ p }: { p: JitsiParticipant }) {
         };
     }, [p.audioTrack, p.isLocal]);
 
-    // Скрытый (но НЕ display:none) audio-элемент
     return <audio ref={audioRef} autoPlay playsInline preload="auto" />;
 }
 
 function AudioSink({ participants }: { participants: JitsiParticipant[] }) {
-    // только remote
-    const remotes = useMemo(
-        () => participants.filter((p) => !p.isLocal),
-        [participants]
-    );
+    const remotes = useMemo(() => participants.filter((p) => !p.isLocal), [participants]);
 
     return (
-        // НЕЛЬЗЯ className="hidden" / display:none — браузер может НЕ играть звук.
         <div className="absolute w-0 h-0 overflow-hidden opacity-0 pointer-events-none">
             {remotes.map((p) => {
                 const key = `${p.id}:${safeTrackId(p.audioTrack)}`;
@@ -225,25 +196,19 @@ function AudioSink({ participants }: { participants: JitsiParticipant[] }) {
 }
 
 // ----------------------- Tiles -----------------------
-function ParticipantTile({
-    participant,
-    tileKey,
-}: {
-    participant: JitsiParticipant;
-    tileKey: string;
-}) {
+function ParticipantTileBase({ participant, tileKey }: { participant: JitsiParticipant; tileKey: string }) {
     const videoRef = useRef<HTMLVideoElement | null>(null);
 
     const showVideo = !!participant.videoTrack && !participant.videoMuted;
 
-    // FIX: форсируем detach/clear/attach при любом toggle videoMuted (и при смене track ref)
+    // CRITICAL FIX: force detach/clear/attach on any toggle of videoMuted and track change
     useEffect(() => {
         const el = videoRef.current;
         if (!el) return;
 
         const track = participant.videoTrack;
 
-        // всегда чистим элемент (это помогает от "black stuck")
+        // always clear element (helps against "black stuck")
         try {
             (el as any).srcObject = null;
         } catch { }
@@ -251,13 +216,12 @@ function ParticipantTile({
             el.load?.();
         } catch { }
 
-        // если нет трека или video muted — просто оставляем placeholder
         if (!track || participant.videoMuted) {
             return;
         }
 
         try {
-            // на всякий случай: detach перед attach (если браузер/track залип)
+            // detach before attach (some browsers/tracks get stuck)
             try {
                 track.detach?.(el);
             } catch { }
@@ -266,7 +230,7 @@ function ParticipantTile({
             console.error("attach error", e);
         }
 
-        // попытка запустить playback (некоторые браузеры залипают после смены srcObject)
+        // try to start playback
         try {
             const pr = el.play?.();
             (pr as any)?.catch?.(() => { });
@@ -290,7 +254,6 @@ function ParticipantTile({
             className="relative bg-black rounded-2xl overflow-hidden flex items-center justify-center border border-white/5"
             data-tile-key={tileKey}
         >
-            {/* 16:9 frame внутри ячейки */}
             <div className="w-full h-full flex items-center justify-center">
                 <div className="w-full max-w-full aspect-video bg-black">
                     {showVideo ? (
@@ -314,47 +277,51 @@ function ParticipantTile({
                 </div>
             </div>
 
-            {/* name + mic status */}
             <div className="absolute left-3 bottom-3 rounded-md bg-black/55 px-2 py-1 text-[11px] flex items-center gap-2">
                 <span className="text-white/80">
                     {participant.isLocal ? "You" : participant.displayName || "Guest"}
                 </span>
-                <span
-                    className={
-                        "w-2 h-2 rounded-full " +
-                        (participant.audioMuted ? "bg-red-500" : "bg-green-400")
-                    }
-                />
+                <span className={"w-2 h-2 rounded-full " + (participant.audioMuted ? "bg-red-500" : "bg-green-400")} />
             </div>
         </div>
     );
 }
 
+const ParticipantTile = memo(
+    ParticipantTileBase,
+    (prev, next) => {
+        const a = prev.participant;
+        const b = next.participant;
+
+        if (prev.tileKey !== next.tileKey) return false;
+
+        if (a.id !== b.id) return false;
+        if (a.isLocal !== b.isLocal) return false;
+
+        if ((a.displayName || "") !== (b.displayName || "")) return false;
+        if (!!a.audioMuted !== !!b.audioMuted) return false;
+        if (!!a.videoMuted !== !!b.videoMuted) return false;
+
+        if (safeTrackId(a.videoTrack) !== safeTrackId(b.videoTrack)) return false;
+        if (safeTrackId(a.screenTrack) !== safeTrackId(b.screenTrack)) return false;
+
+        return true;
+    }
+);
+
 // ----------------------- Layouts -----------------------
 function computeGrid(count: number) {
     if (count <= 1) return { cols: 1, rows: 1 };
-
-    // square-ish grid
     const cols = Math.ceil(Math.sqrt(count));
     const rows = Math.ceil(count / cols);
     return { cols, rows };
 }
 
-function GridLayout({
-    pageParticipants,
-    layoutVersion,
-}: {
-    pageParticipants: JitsiParticipant[];
-    layoutVersion: number;
-}) {
-    const { cols, rows } = useMemo(
-        () => computeGrid(pageParticipants.length),
-        [pageParticipants.length]
-    );
+function GridLayout({ pageParticipants }: { pageParticipants: JitsiParticipant[] }) {
+    const { cols, rows } = useMemo(() => computeGrid(pageParticipants.length), [pageParticipants.length]);
 
     return (
         <div
-            key={`grid:${layoutVersion}:${pageParticipants.length}:${cols}x${rows}`}
             className="w-full h-full grid gap-2 p-2"
             style={{
                 gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
@@ -362,28 +329,18 @@ function GridLayout({
             }}
         >
             {pageParticipants.map((p) => {
-                const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}:${safeTrackId(
-                    p.screenTrack
-                )}`;
+                const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}:${safeTrackId(p.screenTrack)}`;
                 return <ParticipantTile key={tileKey} participant={p} tileKey={tileKey} />;
             })}
         </div>
     );
 }
 
-function P2PLayout({
-    pageParticipants,
-    layoutVersion,
-}: {
-    pageParticipants: JitsiParticipant[];
-    layoutVersion: number;
-}) {
-    // 1 или 2 участника: делаем стабильный split без “пляски”
+function P2PLayout({ pageParticipants }: { pageParticipants: JitsiParticipant[] }) {
     const count = pageParticipants.length;
 
     return (
         <div
-            key={`p2p:${layoutVersion}:${count}`}
             className="w-full h-full grid gap-2 p-2"
             style={{
                 gridTemplateColumns: count <= 1 ? "1fr" : "1fr 1fr",
@@ -398,20 +355,9 @@ function P2PLayout({
     );
 }
 
-function ScreenShareLayout({
-    screenSharer,
-    others,
-    layoutVersion,
-}: {
-    screenSharer: JitsiParticipant;
-    others: JitsiParticipant[];
-    layoutVersion: number;
-}) {
+function ScreenShareLayout({ screenSharer, others }: { screenSharer: JitsiParticipant; others: JitsiParticipant[] }) {
     const screenVideoRef = useRef<HTMLVideoElement | null>(null);
-    const screenTrackId = useMemo(
-        () => safeTrackId(screenSharer.screenTrack),
-        [screenSharer.screenTrack]
-    );
+    const screenTrackId = useMemo(() => safeTrackId(screenSharer.screenTrack), [screenSharer.screenTrack]);
 
     useEffect(() => {
         if (!screenVideoRef.current) return;
@@ -419,16 +365,11 @@ function ScreenShareLayout({
         return attachTrackToMedia(screenSharer.screenTrack, screenVideoRef.current);
     }, [screenTrackId]);
 
-    // мини-камера поверх (если у шарера есть камера)
     const cameraParticipant =
         screenSharer.videoTrack && !screenSharer.videoMuted ? screenSharer : undefined;
 
     return (
-        <div
-            key={`screen:${layoutVersion}:${screenSharer.id}:${screenTrackId}`}
-            className="relative w-full h-full flex flex-col md:flex-row gap-2 p-2"
-        >
-            {/* main screenshare */}
+        <div className="relative w-full h-full flex flex-col md:flex-row gap-2 p-2">
             <div className="relative flex-1 bg-black rounded-2xl overflow-hidden border border-white/5">
                 <video
                     ref={screenVideoRef}
@@ -455,7 +396,6 @@ function ScreenShareLayout({
                 )}
             </div>
 
-            {/* strip of others */}
             <div className="flex md:flex-col gap-2 md:w-56 w-full">
                 {others.map((p) => {
                     const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}`;
@@ -484,18 +424,16 @@ export function VideoRoom(props: VideoRoomProps) {
     } = props;
 
     const PAGE_SIZE = 20;
-    const SCROLL_STEP = 5; // “скроллится к остатку”, а не “переключает страницу”
+    const SCROLL_STEP = 5;
 
-    // реакции UI
     const [reactions, setReactions] = useState<Reaction[]>([]);
     const [showReactionsMenu, setShowReactionsMenu] = useState(false);
     const [reactionCounter, setReactionCounter] = useState(0);
     const menuRef = useRef<HTMLDivElement | null>(null);
 
-    // “scroll window” participants (offset), НЕ page switching
     const [scrollIndex, setScrollIndex] = useState(0);
 
-    // layout reset — помогает при SFU ↔ P2P переходах и резких сменах состава
+    // layoutVersion bumped only on coarse changes
     const [layoutVersion, setLayoutVersion] = useState(0);
 
     const screenSharer = useMemo(
@@ -510,7 +448,30 @@ export function VideoRoom(props: VideoRoomProps) {
         [participants]
     );
 
-    // базовый список участников для grid (если screen share — шарер отдельно)
+    // Stable id signature for join/leave changes (order-independent)
+    const participantIdsSignature = useMemo(() => {
+        const ids = participants.map((p) => p.id).filter(Boolean).sort();
+        return ids.join("|");
+    }, [participants]);
+
+    const modeSignature = useMemo(() => {
+        const ss = screenSharer ? `${screenSharer.id}:${safeTrackId(screenSharer.screenTrack)}` : "none";
+        return `${participantIdsSignature}::p2p=${isP2P ? 1 : 0}::ss=${ss}`;
+    }, [participantIdsSignature, isP2P, screenSharer]);
+
+    const lastModeSigRef = useRef<string>("");
+    useEffect(() => {
+        if (!modeSignature) return;
+        if (lastModeSigRef.current === "") {
+            lastModeSigRef.current = modeSignature;
+            return;
+        }
+        if (lastModeSigRef.current !== modeSignature) {
+            lastModeSigRef.current = modeSignature;
+            setLayoutVersion((v) => v + 1);
+        }
+    }, [modeSignature]);
+
     const baseParticipants = useMemo(() => {
         return screenSharer ? participants.filter((p) => p.id !== screenSharer.id) : participants;
     }, [participants, screenSharer]);
@@ -519,35 +480,18 @@ export function VideoRoom(props: VideoRoomProps) {
         return Math.max(0, baseParticipants.length - PAGE_SIZE);
     }, [baseParticipants.length]);
 
-    const canScroll = useMemo(
-        () => baseParticipants.length > PAGE_SIZE,
-        [baseParticipants.length]
-    );
+    const canScroll = useMemo(() => baseParticipants.length > PAGE_SIZE, [baseParticipants.length]);
 
-    // clamp scrollIndex when participants change
     useEffect(() => {
         setScrollIndex((i) => Math.min(Math.max(0, i), maxStartIndex));
     }, [maxStartIndex]);
 
-    // IMPORTANT: при смене треков пересобираем layout DOM (стабилизирует attach/detach)
-    const tracksSignature = useMemo(() => {
-        return participants
-            .flatMap((p) => [safeTrackId(p.videoTrack), safeTrackId(p.screenTrack)])
-            .join("|");
-    }, [participants]);
-
-    useEffect(() => {
-        setLayoutVersion((v) => v + 1);
-    }, [tracksSignature]);
-
-    // “окно” участников на экране (visual only)
     const pageParticipants = useMemo(() => {
         const start = scrollIndex;
         const end = start + PAGE_SIZE;
         return baseParticipants.slice(start, end);
     }, [baseParticipants, scrollIndex]);
 
-    // others in screenshare layout (тоже “окно”, потому что может быть 100)
     const screenOthers = useMemo(() => {
         if (!screenSharer) return [];
         const start = scrollIndex;
@@ -555,16 +499,19 @@ export function VideoRoom(props: VideoRoomProps) {
         return baseParticipants.slice(start, end);
     }, [baseParticipants, screenSharer, scrollIndex]);
 
-    // ids remote участников, которые реально видны (для SFU подписок)
     const visibleRemoteIds = useMemo(() => {
         const visibleList = screenSharer ? [screenSharer, ...screenOthers] : pageParticipants;
-        return visibleList
-            .map((p) => p.id)
-            .filter((id) => id && id !== localParticipant?.id);
+        return visibleList.map((p) => p.id).filter((id) => id && id !== localParticipant?.id);
     }, [screenSharer, screenOthers, pageParticipants, localParticipant?.id]);
 
+    // Only fire if changed
+    const lastSentVisibleSigRef = useRef<string>("");
     useEffect(() => {
-        const t = setTimeout(() => onVisibleVideoIdsChange?.(visibleRemoteIds), 150);
+        const sig = (visibleRemoteIds || []).join("|");
+        if (sig === lastSentVisibleSigRef.current) return;
+        lastSentVisibleSigRef.current = sig;
+
+        const t = setTimeout(() => onVisibleVideoIdsChange?.(visibleRemoteIds), 120);
         return () => clearTimeout(t);
     }, [onVisibleVideoIdsChange, visibleRemoteIds]);
 
@@ -576,8 +523,6 @@ export function VideoRoom(props: VideoRoomProps) {
         const id = reactionCounter + 1;
         setReactionCounter(id);
         setReactions((prev) => [...prev, { id, type }]);
-
-        // наружу (в engine) — если подключишь:
         onSendReaction?.(type);
 
         setTimeout(() => {
@@ -585,16 +530,13 @@ export function VideoRoom(props: VideoRoomProps) {
         }, 1500);
     };
 
-    // закрытие меню реакций при клике вне
     useEffect(() => {
         if (!showReactionsMenu) return;
 
         const handleClickOutside = (e: MouseEvent) => {
             const target = e.target as Node | null;
             if (!menuRef.current || !target) return;
-            if (!menuRef.current.contains(target)) {
-                setShowReactionsMenu(false);
-            }
+            if (!menuRef.current.contains(target)) setShowReactionsMenu(false);
         };
 
         document.addEventListener("mousedown", handleClickOutside);
@@ -612,30 +554,21 @@ export function VideoRoom(props: VideoRoomProps) {
 
     return (
         <div className="relative w-full h-full flex flex-col">
-            {/* Always-on audio for all remote participants */}
             <AudioSink participants={participants} />
 
-            {/* VIDEO AREA */}
             <div className="flex-1 relative overflow-hidden rounded-2xl bg-black/80">
                 {!screenSharer && (
-                    <>
-                        {isP2P ? (
-                            <P2PLayout pageParticipants={pageParticipants} layoutVersion={layoutVersion} />
-                        ) : (
-                            <GridLayout pageParticipants={pageParticipants} layoutVersion={layoutVersion} />
-                        )}
-                    </>
+                    <div key={`layout:${layoutVersion}`}>
+                        {isP2P ? <P2PLayout pageParticipants={pageParticipants} /> : <GridLayout pageParticipants={pageParticipants} />}
+                    </div>
                 )}
 
                 {screenSharer && (
-                    <ScreenShareLayout
-                        screenSharer={screenSharer}
-                        others={screenOthers}
-                        layoutVersion={layoutVersion}
-                    />
+                    <div key={`layout:${layoutVersion}`}>
+                        <ScreenShareLayout screenSharer={screenSharer} others={screenOthers} />
+                    </div>
                 )}
 
-                {/* Reactions floating overlay (local + incoming) */}
                 {((reactions?.length || 0) + (incomingReactions?.length || 0) > 0) && (
                     <div className="pointer-events-none absolute inset-0 flex items-end justify-center pb-20 gap-2">
                         {reactions.map((r) => (
@@ -652,7 +585,6 @@ export function VideoRoom(props: VideoRoomProps) {
                     </div>
                 )}
 
-                {/* Scroll overlay (only if > PAGE_SIZE shown) */}
                 {canScroll && (
                     <div className="absolute top-3 right-3 flex items-center gap-2">
                         <button
@@ -686,7 +618,6 @@ export function VideoRoom(props: VideoRoomProps) {
                 )}
             </div>
 
-            {/* CONTROLS BAR */}
             <div className="mt-3 flex items-center justify-center">
                 <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-[#020617]/90 border border-white/10 shadow-lg">
                     <button
@@ -716,15 +647,12 @@ export function VideoRoom(props: VideoRoomProps) {
                         className={
                             baseBtn +
                             " " +
-                            (isScreenSharing
-                                ? "bg-blue-600 hover:bg-blue-700"
-                                : "bg-[#111827] hover:bg-[#1f2937]")
+                            (isScreenSharing ? "bg-blue-600 hover:bg-blue-700" : "bg-[#111827] hover:bg-[#1f2937]")
                         }
                     >
                         <ScreenIcon />
                     </button>
 
-                    {/* reactions */}
                     <div className="relative" ref={menuRef}>
                         <button
                             onClick={() => setShowReactionsMenu((v) => !v)}
@@ -745,7 +673,6 @@ export function VideoRoom(props: VideoRoomProps) {
                         )}
                     </div>
 
-                    {/* leave */}
                     {onLeave && (
                         <button
                             onClick={onLeave}
