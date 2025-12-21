@@ -18,7 +18,7 @@ type Stage = {
   type: "intro" | "intentions" | "focus" | "break" | "outro" | string;
 };
 
-type RightPanelTab = "participants" | "chat" | null;
+type RightPanelTab = "participants" | "chat" | "intentions" | null;
 
 function ParticipantsIcon({ active }: { active?: boolean }) {
   return (
@@ -67,6 +67,32 @@ function ChatIcon({ active }: { active?: boolean }) {
           d="M20 2H4C2.9 2 2 2.9 2 4v13c0 1.1.9 2 2 2h3v3c0 .55.45 1 1 1 .2 0 .4-.06.58-.19L14 19h6c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"
           fill="currentColor"
         />
+      </svg>
+    </div>
+  );
+}
+
+function IntentionsIcon({ active }: { active?: boolean }) {
+  return (
+    <div
+      className={
+        "w-11 h-11 rounded-xl flex items-center justify-center transition " +
+        (active ? "bg-emerald-500/90" : "bg-[#111827] hover:bg-[#1f2937]")
+      }
+      title="Intentions"
+    >
+      <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
+        <path
+          d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 2a8 8 0 1 1-8 8 8 8 0 0 1 8-8z"
+          fill="currentColor"
+          opacity="0.9"
+        />
+        <path
+          d="M12 6.5a5.5 5.5 0 1 0 5.5 5.5A5.51 5.51 0 0 0 12 6.5zm0 2a3.5 3.5 0 1 1-3.5 3.5A3.5 3.5 0 0 1 12 8.5z"
+          fill="currentColor"
+          opacity="0.9"
+        />
+        <circle cx="12" cy="12" r="1.4" fill="currentColor" />
       </svg>
     </div>
   );
@@ -924,10 +950,34 @@ export function RoomPage() {
                     </button>
                   </div>
                   <div className="p-4 h-[calc(100%-64px)]">
+                    import {ChatPanel} from "../components/ChatPanel";
+                    ...
+                    <ChatPanel sessionId={session.id} />
+                  </div>
+                </div>
+              )}
+
+              {rightTab === "intentions" && (
+                <div className="h-full">
+                  <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
+                    <div className="text-white/85 font-inter font-semibold">Intentions</div>
+                    <button
+                      onClick={() => {
+                        setRightPanelOpen(false);
+                        setRightTab(null);
+                      }}
+                      className="w-9 h-9 rounded-xl bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center text-white/80"
+                      title="Close"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div className="h-[calc(100%-64px)]">
                     <IntentionsPanel />
                   </div>
                 </div>
               )}
+
             </div>
           )}
         </div>
@@ -958,6 +1008,21 @@ export function RoomPage() {
               >
                 <ChatIcon active={rightPanelOpen && rightTab === "chat"} />
               </button>
+
+              <button
+                onClick={() => {
+                  if (rightTab === "intentions") {
+                    setRightPanelOpen(!rightPanelOpen);
+                  } else {
+                    setRightTab("intentions");
+                    setRightPanelOpen(true);
+                  }
+                }}
+                className="outline-none"
+              >
+                <IntentionsIcon active={rightPanelOpen && rightTab === "intentions"} />
+              </button>
+
             </div>
 
             {/* CENTER GROUP (mic/cam/screen/reactions) */}

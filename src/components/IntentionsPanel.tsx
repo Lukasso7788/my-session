@@ -1,7 +1,4 @@
-// src/components/IntentionsPanel.tsx
-
-import { useEffect, useState } from "react";
-import { Plus, CheckCircle, Circle, Trash2, Target, MessageCircle } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useParams } from "react-router-dom";
 
@@ -18,32 +15,21 @@ interface Intention {
   };
 }
 
-type IntentionsPanelProps = {
-  defaultTab?: "intentions" | "chat";
-  onTabChange?: (tab: "intentions" | "chat") => void;
-};
-
-export function IntentionsPanel({ defaultTab = "intentions", onTabChange }: IntentionsPanelProps) {
+export function IntentionsPanel() {
   const { id: sessionId } = useParams<{ id: string }>();
   const [user, setUser] = useState<any>(null);
   const [intentions, setIntentions] = useState<Intention[]>([]);
   const [newIntention, setNewIntention] = useState("");
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"intentions" | "chat">(defaultTab);
 
-  // sync external tab -> internal
-  useEffect(() => {
-    setActiveTab(defaultTab);
-  }, [defaultTab]);
-
-  // USER
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
   }, []);
 
-  // LOAD INTENTIONS
   const loadIntentions = async () => {
     if (!sessionId) return;
+    setLoading(true);
+
     const { data, error } = await supabase
       .from("intentions")
       .select(
@@ -53,32 +39,31 @@ export function IntentionsPanel({ defaultTab = "intentions", onTabChange }: Inte
       .eq("session_id", sessionId)
       .order("created_at", { ascending: false });
 
-    if (!error) setIntentions(data || []);
+    if (!error) setIntentions((data as any) || []);
     setLoading(false);
   };
 
-  // REALTIME
   useEffect(() => {
     if (!sessionId) return;
     loadIntentions();
 
-    const channel = supabase.channel("intentions_realtime");
+    const channel = supabase.channel(`intentions:${sessionId}`);
 
     channel.on(
       "postgres_changes",
-      { event: "INSERT", schema: "public", table: "intentions" },
-      (payload) => payload.new?.session_id === sessionId && loadIntentions()
+      { event: "INSERT", schema: "public", table: "intentions", filter: `session_id=eq.${sessionId}` },
+      () => loadIntentions()
     );
 
     channel.on(
       "postgres_changes",
-      { event: "UPDATE", schema: "public", table: "intentions" },
-      (payload) => payload.new?.session_id === sessionId && loadIntentions()
+      { event: "UPDATE", schema: "public", table: "intentions", filter: `session_id=eq.${sessionId}` },
+      () => loadIntentions()
     );
 
     channel.on(
       "postgres_changes",
-      { event: "DELETE", schema: "public", table: "intentions" },
+      { event: "DELETE", schema: "public", table: "intentions", filter: `session_id=eq.${sessionId}` },
       (payload: any) => {
         const deletedId = payload?.old?.id;
         setIntentions((prev) => prev.filter((i) => i.id !== deletedId));
@@ -87,12 +72,13 @@ export function IntentionsPanel({ defaultTab = "intentions", onTabChange }: Inte
 
     channel.subscribe();
     return () => supabase.removeChannel(channel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
   const handleAddIntention = async () => {
     if (!newIntention.trim() || !user || !sessionId) return;
 
-    await supabase.from("intentions").insert([
+    const { error } = await supabase.from("intentions").insert([
       {
         user_id: user.id,
         session_id: sessionId,
@@ -101,7 +87,7 @@ export function IntentionsPanel({ defaultTab = "intentions", onTabChange }: Inte
       },
     ]);
 
-    setNewIntention("");
+    if (!error) setNewIntention("");
   };
 
   const toggleCompleted = async (intention: Intention) => {
@@ -117,234 +103,132 @@ export function IntentionsPanel({ defaultTab = "intentions", onTabChange }: Inte
 
   const getAvatar = (profile?: any) =>
     profile?.avatar_url ||
-    `https://ui-avatars.com/api/?name=${encodeURIComponent(
-      profile?.full_name || "User"
-    )}`;
+    `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || "User")}`;
 
-  const setTab = (tab: "intentions" | "chat") => {
-    setActiveTab(tab);
-    onTabChange?.(tab);
-  };
+  const myIntentions = useMemo(
+    () => intentions.filter((i) => i.user_id === user?.id),
+    [intentions, user?.id]
+  );
+
+  const teamIntentions = useMemo(
+    () => intentions.filter((i) => i.user_id !== user?.id),
+    [intentions, user?.id]
+  );
 
   return (
-    <div className="flex flex-col w-full h-full bg-[#1F2937] text-[#F3F4F6] font-inter min-h-0">
+    <div className="h-full flex flex-col">
+      {/* content */}
+      <div className="flex-1 overflow-y-auto px-4 py-4">
+        {/* My intentions */}
+        <div className="mb-5">
+          <div className="text-[13px] text-white/75 font-medium mb-3">My intentions</div>
 
-      {/* =========================
-          SWITCHER (Intentions / Chat)
-      ========================== */}
-      <div className="px-4 pt-4">
-        <div className="flex gap-0 pb-0">
-          {/* Intentions tab */}
-          <button
-            onClick={() => setTab("intentions")}
-            className={`
-              flex flex-1 items-center justify-center gap-2 px-3 py-2
-              text-[20px] font-medium rounded-none
-              transition 
-              ${activeTab === "intentions"
-                ? "text-[#4C9FFF] bg-[#4C9FFF]/5 border-b-2 border-[#4C9FFF]"
-                : "text-[#9CA3AF] hover:text-[#4C9FFF]"
-              }
-            `}
-          >
-            <Target size={24} />
-            Intentions
-          </button>
+          <div className="flex items-center gap-2 mb-3">
+            <input
+              type="text"
+              value={newIntention}
+              onChange={(e) => setNewIntention(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAddIntention()}
+              placeholder="Add an intention"
+              className="flex-1 h-11 rounded-xl bg-[#0B1220]/70 border border-white/10 px-3 text-[13px] outline-none text-white/85 placeholder:text-white/35 focus:border-emerald-400/40"
+            />
 
-          {/* Chat tab */}
-          <button
-            onClick={() => setTab("chat")}
-            className={`
-              flex flex-1 items-center justify-center gap-2 px-3 py-2
-              text-[20px] font-medium rounded-none
-              transition
-              ${activeTab === "chat"
-                ? "text-[#4C9FFF] bg-[#4C9FFF]/5 border-b-2 border-[#4C9FFF]"
-                : "text-[#9CA3AF] hover:text-[#4C9FFF]"
-              }
-            `}
-          >
-            <MessageCircle size={24} />
-            Chat
-          </button>
-        </div>
-      </div>
+            <button
+              onClick={handleAddIntention}
+              className="h-11 w-11 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-[#02140B] text-[26px] leading-none font-light flex items-center justify-center"
+              title="Add"
+            >
+              +
+            </button>
+          </div>
 
-      {/* Divider under tabs */}
-      <div className="h-px bg-[#404651] mt-3"></div>
-
-      {/* ============================
-            CONTENT
-      ============================ */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 custom-scrollbar">
-
-        {/* === CHAT TAB === */}
-        {activeTab === "chat" && (
-          <div className="text-[#9CA3AF] italic">(Chat coming soon)</div>
-        )}
-
-        {/* === INTENTIONS TAB === */}
-        {activeTab === "intentions" && (
-          <>
-            {/* ===========================================
-                BLOCK: My Intentions
-            ============================================ */}
-            <div className="mb-5">
-              <h3 className="text-[14px] font-medium text-[#F3F4F6] mb-3">
-                My intentions
-              </h3>
-
-              {/* Input + Add intention button */}
-              <div className="mb-[16px]">
-                <div className="flex items-center gap-2 mb-[12px]">
-                  <input
-                    type="text"
-                    value={newIntention}
-                    onChange={(e) => setNewIntention(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleAddIntention()}
-                    placeholder="Add an intention"
-                    className="
-                      flex-1 
-                      bg-[#374151] border border-[#404651] 
-                      rounded-[8px]
-                      px-[12px] py-[14px]
-                      text-[14px] text-[#F3F4F6]
-                      placeholder-[#9CA3AF]
-                      focus:outline-none focus:ring-1 focus:ring-[#4C9FFF]
-                    "
-                  />
-
-                  {/* Add Button "+" */}
-                  <button
-                    onClick={handleAddIntention}
-                    className="
-                      flex items-center justify-center
-                      bg-[#4C9FFF] hover:bg-[#3B89E8]
-                      text-white
-                      rounded-[8px]
-                      px-[8px] py-[10px]
-                      transition
-                      leading-none
-                      text-[32px] font-light
-                    "
-                  >
-                    +
-                  </button>
-                </div>
-
-                {/* USER intentions */}
-                <div className="flex flex-col gap-1.5">
-                  {loading ? (
-                    <p className="text-sm text-[#9CA3AF] italic">Loading...</p>
-                  ) : (
-                    intentions
-                      .filter((i) => i.user_id === user?.id)
-                      .map((intention) => (
-                        <div
-                          key={intention.id}
-                          className={`flex items-center justify-between p-2 rounded group cursor-pointer transition
-                            ${intention.completed
-                              ? "bg-[rgba(0,255,55,0.05)]"
-                              : "hover:bg-[rgba(55,65,81,0.20)]"
-                            }
-                          `}
-                          onClick={() => toggleCompleted(intention)}
-                        >
-                          <div className="flex items-start gap-2">
-                            {intention.completed ? (
-                              <CheckCircle size={18} className="text-[#00FF37] mt-0.5" />
-                            ) : (
-                              <Circle size={18} className="text-[#9CA3AF] mt-0.5" />
-                            )}
-                            <span
-                              className={`
-                                text-sm
-                                ${intention.completed
-                                  ? "text-[#F3F4F6]/75 line-through"
-                                  : "text-[#F3F4F6]/75"
-                                }
-                              `}
-                            >
-                              {intention.text}
-                            </span>
-                          </div>
-
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDelete(intention.id);
-                            }}
-                            className="
-                              opacity-0 group-hover:opacity-100 
-                              transition-opacity p-1 
-                              text-[#9CA3AF] hover:text-red-500
-                            "
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      ))
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Divider */}
-            <div className="h-px bg-[#404651] my-[20px]"></div>
-
-            {/* ===========================================
-                BLOCK: Team Intentions
-            ============================================ */}
-            <h3 className="text-[14px] font-medium text-[#F3F4F6] mb-[12px]">
-              Team intentions
-            </h3>
-
-            {loading ? (
-              <p className="text-sm text-[#9CA3AF] italic">Loading...</p>
-            ) : intentions.length === 0 ? (
-              <p className="text-sm text-[#9CA3AF] italic">No team intentions</p>
-            ) : (
-              <div className="flex flex-col gap-[6px]">
-                {intentions.map((item) => (
-                  <div
-                    key={item.id}
-                    className={`
-                      flex items-start gap-3 p-2 rounded-lg transition
-                      ${item.completed
-                        ? "bg-[rgba(0,255,55,0.05)]"
-                        : "hover:bg-[rgba(55,65,81,0.20)]"
+          {loading ? (
+            <div className="text-white/40 text-sm italic">Loading…</div>
+          ) : myIntentions.length === 0 ? (
+            <div className="text-white/40 text-sm italic">No intentions yet</div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {myIntentions.map((i) => (
+                <div
+                  key={i.id}
+                  onClick={() => toggleCompleted(i)}
+                  className={
+                    "rounded-xl px-3 py-2 border cursor-pointer transition flex items-start justify-between gap-3 " +
+                    (i.completed
+                      ? "bg-emerald-500/10 border-emerald-400/15"
+                      : "bg-white/5 border-white/10 hover:bg-white/7")
+                  }
+                >
+                  <div className="min-w-0">
+                    <div
+                      className={
+                        "text-[13px] leading-snug break-words " +
+                        (i.completed ? "text-white/60 line-through" : "text-white/85")
                       }
-                    `}
-                  >
-                    <img
-                      src={getAvatar(item.profiles)}
-                      className="w-10 h-10 rounded-full object-cover"
-                    />
-
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-[#F3F4F6]">
-                        {item.user_id === user?.id
-                          ? "You"
-                          : item.profiles?.full_name || "Participant"}
-                      </p>
-
-                      <p
-                        className={`
-                          text-sm 
-                          ${item.completed
-                            ? "text-[#F3F4F6]/75 line-through"
-                            : "text-[#F3F4F6]/80"
-                          }
-                        `}
-                      >
-                        {item.text}
-                      </p>
+                    >
+                      {i.text}
                     </div>
                   </div>
-                ))}
+
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(i.id);
+                    }}
+                    className="shrink-0 w-9 h-9 rounded-xl bg-white/5 hover:bg-red-500/15 text-white/55 hover:text-red-200 transition flex items-center justify-center"
+                    title="Delete"
+                  >
+                    🗑
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="h-px bg-white/5 my-5" />
+
+        {/* Team intentions */}
+        <div className="text-[13px] text-white/75 font-medium mb-3">Team intentions</div>
+
+        {loading ? (
+          <div className="text-white/40 text-sm italic">Loading…</div>
+        ) : teamIntentions.length === 0 ? (
+          <div className="text-white/40 text-sm italic">No team intentions</div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {teamIntentions.map((item) => (
+              <div
+                key={item.id}
+                className={
+                  "rounded-xl px-3 py-2 border transition flex items-start gap-3 " +
+                  (item.completed
+                    ? "bg-emerald-500/10 border-emerald-400/15"
+                    : "bg-white/5 border-white/10 hover:bg-white/7")
+                }
+              >
+                <img
+                  src={getAvatar(item.profiles)}
+                  className="w-10 h-10 rounded-full object-cover"
+                  alt=""
+                />
+
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13px] text-white/90 font-medium">
+                    {item.profiles?.full_name || "Participant"}
+                  </div>
+                  <div
+                    className={
+                      "text-[13px] leading-snug break-words " +
+                      (item.completed ? "text-white/60 line-through" : "text-white/80")
+                    }
+                  >
+                    {item.text}
+                  </div>
+                </div>
               </div>
-            )}
-          </>
+            ))}
+          </div>
         )}
       </div>
     </div>
