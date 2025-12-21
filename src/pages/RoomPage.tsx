@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { IntentionsPanel } from "../components/IntentionsPanel";
+import { ChatPanel } from "../components/ChatPanel";
 import { SessionStageBar } from "../components/SessionStageBar";
 import { supabase } from "../lib/supabase";
 import { UserProfileModal } from "../components/UserProfileModal";
@@ -228,6 +229,23 @@ export function RoomPage() {
   // RIGHT PANEL (Participants / Chat)
   const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(false);
   const [rightTab, setRightTab] = useState<RightPanelTab>(null);
+  const openRightTab = (tab: RightPanelTab) => {
+    if (!tab) {
+      setRightPanelOpen(false);
+      setRightTab(null);
+      return;
+    }
+
+    setRightTab((prev) => {
+      const sameTab = prev === tab;
+
+      // если нажали на тот же таб — просто toggle open/close
+      setRightPanelOpen((open) => (sameTab ? !open : true));
+
+      // если таб другой — ставим новый таб и открываем
+      return tab;
+    });
+  };
 
   const toggleRightTab = (tab: RightPanelTab) => {
     if (!tab) {
@@ -950,9 +968,7 @@ export function RoomPage() {
                     </button>
                   </div>
                   <div className="p-4 h-[calc(100%-64px)]">
-                    import {ChatPanel} from "../components/ChatPanel";
-                    ...
-                    <ChatPanel sessionId={session.id} />
+                    {session?.id ? <ChatPanel sessionId={session.id} /> : null}
                   </div>
                 </div>
               )}
@@ -989,13 +1005,7 @@ export function RoomPage() {
           <div className="h-[74px] rounded-2xl bg-[#07101E]/85 border border-white/10 shadow-2xl backdrop-blur flex items-center justify-between px-4">
             {/* LEFT GROUP (participants + chat) */}
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  setRightTab("participants");
-                  setRightPanelOpen((open) => (rightTab === "participants" ? !open : true));
-                }}
-                className="outline-none"
-              >
+              <button onClick={() => openRightTab("participants")} className="outline-none">
                 <ParticipantsIcon active={rightPanelOpen && rightTab === "participants"} />
               </button>
 
