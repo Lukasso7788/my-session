@@ -384,94 +384,6 @@ export function RoomPage() {
       }
     };
 
-    // ============================================================
-    // ATTENDANCE WRITE (JOIN / HEARTBEAT / LEAVE)
-    // ============================================================
-    useEffect(() => {
-      if (!session?.id) return;
-      if (!authUserId) return;
-
-      let isCancelled = false;
-
-      const join = async () => {
-        try {
-          const now = new Date().toISOString();
-
-          const { error } = await supabase
-            .from("session_attendance")
-            .upsert(
-              {
-                session_id: session.id,
-                user_id: authUserId,
-                joined_at: now,
-                last_seen_at: now,
-                left_at: null,
-              },
-              { onConflict: "session_id,user_id" }
-            );
-
-          if (error) console.error("attendance join upsert error:", error);
-        } catch (e) {
-          console.error("attendance join exception:", e);
-        }
-      };
-
-      const heartbeat = async () => {
-        try {
-          const now = new Date().toISOString();
-          const { error } = await supabase
-            .from("session_attendance")
-            .update({ last_seen_at: now })
-            .eq("session_id", session.id)
-            .eq("user_id", authUserId);
-
-          if (error) console.error("attendance heartbeat error:", error);
-        } catch (e) {
-          console.error("attendance heartbeat exception:", e);
-        }
-      };
-
-      const leave = async () => {
-        try {
-          const now = new Date().toISOString();
-          const { error } = await supabase
-            .from("session_attendance")
-            .update({ left_at: now, last_seen_at: now })
-            .eq("session_id", session.id)
-            .eq("user_id", authUserId);
-
-          if (error) console.error("attendance leave error:", error);
-        } catch (e) {
-          console.error("attendance leave exception:", e);
-        }
-      };
-
-      // 1) JOIN (upsert)
-      join();
-
-      // 2) HEARTBEAT (каждые 25 секунд)
-      const t = setInterval(() => {
-        if (isCancelled) return;
-        heartbeat();
-      }, 25000);
-
-      // 3) LEAVE best-effort при закрытии вкладки
-      const onBeforeUnload = () => {
-        // нельзя await, поэтому "best effort"
-        leave();
-      };
-      window.addEventListener("beforeunload", onBeforeUnload);
-
-      return () => {
-        isCancelled = true;
-        clearInterval(t);
-        window.removeEventListener("beforeunload", onBeforeUnload);
-
-        // best-effort leave при размонтировании
-        leave();
-      };
-    }, [session?.id, authUserId]);
-
     fetchAttendance();
 
     const sub = supabase
@@ -494,6 +406,37 @@ export function RoomPage() {
       supabase.removeChannel(sub);
     };
   }, [id]);
+
+  // ============================================================
+  // ATTENDANCE WRITE (JOIN) - minimal for current table schema
+  // ============================================================
+  useEffect(() => {
+    if (!session?.id) return;
+    if (!authUserId) return;
+
+    const join = async () => {
+      try {
+        const now = new Date().toISOString();
+
+        const { error } = await supabase
+          .from("session_attendance")
+          .upsert(
+            {
+              session_id: session.id,
+              user_id: authUserId,
+              joined_at: now,
+            },
+            { onConflict: "session_id,user_id" }
+          );
+
+        if (error) console.error("attendance join upsert error:", error);
+      } catch (e) {
+        console.error("attendance join exception:", e);
+      }
+    };
+
+    join();
+  }, [session?.id, authUserId]);
 
   // ============================================================
   // JITSI INIT + REACTIONS HANDLING
