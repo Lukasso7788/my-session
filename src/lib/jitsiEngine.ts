@@ -106,7 +106,10 @@ export class JitsiEngine {
   private participants: Record<string, JitsiParticipant> = {};
   private localUserId: string | null = null;
 
-  private tracksByParticipant = new Map<string, { audio?: JitsiTrack; video?: JitsiTrack; screen?: JitsiTrack }>();
+  private tracksByParticipant = new Map<
+    string,
+    { audio?: JitsiTrack; video?: JitsiTrack; screen?: JitsiTrack }
+  >();
 
   private localAudioTrack: JitsiTrack | null = null;
   private localVideoTrack: JitsiTrack | null = null;
@@ -126,6 +129,9 @@ export class JitsiEngine {
   // REAL BG EFFECT
   private videoEffect: JitsiStreamEffect | null = null;
 
+  // BG PREFS (persist)
+  private bgPrefs: { mode: BgMode; imageUrl?: string } = { mode: "none" as BgMode };
+
   constructor(callbacks: JitsiEngineCallbacks = {}) {
     this.callbacks = callbacks;
   }
@@ -143,63 +149,75 @@ export class JitsiEngine {
     this.mediaSettings.audioOutputId = deviceId || "default";
   }
 
+  // ========================================================================
+  // BACKGROUND EFFECT (persist + reapply on track changes)
+  // ========================================================================
   public async setBackgroundEffect(opts: { mode: BgMode; imageUrl?: string }) {
+    // persist
+    this.bgPrefs = { mode: opts.mode, imageUrl: opts.imageUrl };
+
+    // keep mirror state
     this.mediaSettings.bgMode = opts.mode;
     this.mediaSettings.bgImageUrl = opts.imageUrl;
 
-    const t = this.localVideoTrack;
+    // apply now (reapply)
+    await this.reapplyBackgroundEffect();
+
+    // subscription reset helps in some SFU builds after track pipeline change
+    this.scheduleHardResetSubscriptions(0);
+  }
+
+  private async reapplyBackgroundEffect() {
+    const mode = this.bgPrefs?.mode || ("none" as BgMode);
+    const imageUrl = this.bgPrefs?.imageUrl;
+
+    console.log("[bg] reapply", mode, "imageUrl", imageUrl);
+    console.log("[bg] has localVideoTrack", !!this.localVideoTrack);
+    console.log("[bg] has setEffect", typeof (this.localVideoTrack as any)?.setEffect);
+    console.log("[bg] has JitsiMeetJS.effects", !!(window as any).JitsiMeetJS?.effects);
+
+    const t: any = this.localVideoTrack;
     if (!t) return;
 
-    // If lib-jitsi-meet supports track.setEffect, use it.
     const hasSetEffect = typeof t.setEffect === "function";
+    if (!hasSetEffect) {
+      console.warn("[JitsiEngine] localVideoTrack.setEffect is not available in this lib-jitsi-meet build");
+      return;
+    }
 
-    // No effect
-    if (opts.mode === "none") {
+    // clear effect
+    if (mode === "none") {
+      try {
+        await t.setEffect(null);
+      } catch { }
       try {
         this.videoEffect?.dispose?.();
       } catch { }
       this.videoEffect = null;
-
-      if (hasSetEffect) {
-        try {
-          await t.setEffect(null);
-        } catch { }
-      }
-      this.scheduleHardResetSubscriptions(0);
       return;
     }
 
-    // Create / update effect
+    // create/update effect instance
     if (!this.videoEffect) {
       this.videoEffect = createBackgroundEffect({
-        mode: opts.mode,
-        imageUrl: opts.imageUrl,
+        mode,
+        imageUrl,
         blurPx: 14,
         maskBlurPx: 6,
         fps: 30,
       });
     } else {
-      this.videoEffect.setConfig?.({
-        mode: opts.mode,
-        imageUrl: opts.imageUrl,
-      });
+      this.videoEffect.setConfig?.({ mode, imageUrl });
     }
 
-    if (hasSetEffect) {
+    try {
+      await t.setEffect(this.videoEffect);
+    } catch (e) {
+      console.warn("[JitsiEngine] setEffect failed, fallback to none:", e);
       try {
-        await t.setEffect(this.videoEffect);
-      } catch (e) {
-        console.warn("[JitsiEngine] setEffect failed, fallback to none:", e);
-        try {
-          await t.setEffect(null);
-        } catch { }
-      }
-    } else {
-      // If setEffect is missing in your lib build — you must update lib-jitsi-meet build.
-      console.warn("[JitsiEngine] localVideoTrack.setEffect is not available in this lib-jitsi-meet build");
+        await t.setEffect(null);
+      } catch { }
     }
-
-    this.scheduleHardResetSubscriptions(0);
   }
 
   // 0) Replace input devices (cam/mic) and re-apply background effect
@@ -260,10 +278,8 @@ export class JitsiEngine {
       this.emitParticipants();
     }
 
-    // re-apply current background effect
-    if (this.mediaSettings.bgMode !== "none") {
-      await this.setBackgroundEffect({ mode: this.mediaSettings.bgMode, imageUrl: this.mediaSettings.bgImageUrl });
-    }
+    // re-apply background effect ALWAYS (none/blur/image) after new localVideoTrack is set
+    await this.reapplyBackgroundEffect();
 
     return { audio: this.localAudioTrack, video: this.localVideoTrack };
   }
@@ -631,10 +647,8 @@ export class JitsiEngine {
       if (this.localVideoTrack) entry.video = this.localVideoTrack;
       this.tracksByParticipant.set(this.localUserId, entry);
 
-      // Apply background effect if selected
-      if (this.localVideoTrack && this.mediaSettings.bgMode !== "none") {
-        await this.setBackgroundEffect({ mode: this.mediaSettings.bgMode, imageUrl: this.mediaSettings.bgImageUrl });
-      }
+      // Apply (or clear) background effect after localVideoTrack is created
+      await this.reapplyBackgroundEffect();
 
       this.rebuildParticipantsFromTracks();
       this.emitParticipants();
@@ -704,8 +718,10 @@ export class JitsiEngine {
     const activeRemoteIds = this.getRemoteIdsWithAnyVideoOrScreen();
 
     const finalRemoteIds: string[] = [];
-    for (const id of activeRemoteIds) if (id && id !== localId && !finalRemoteIds.includes(id)) finalRemoteIds.push(id);
-    for (const id of uiRemoteIds) if (id && id !== localId && !finalRemoteIds.includes(id)) finalRemoteIds.push(id);
+    for (const id of activeRemoteIds)
+      if (id && id !== localId && !finalRemoteIds.includes(id)) finalRemoteIds.push(id);
+    for (const id of uiRemoteIds)
+      if (id && id !== localId && !finalRemoteIds.includes(id)) finalRemoteIds.push(id);
 
     return finalRemoteIds;
   }

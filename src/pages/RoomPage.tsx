@@ -653,22 +653,22 @@ export function RoomPage() {
       const engine = engineRef.current as any;
       if (!engine) return;
 
-      // 1) inputs
+      // inputs (создаёт/меняет local tracks)
       await engine.applyInputDevices?.({
         videoInputId: next.videoInputId,
         audioInputId: next.audioInputId,
       });
 
-      // 2) output
+      // output (sinkId)
       try {
         engine.setAudioOutputDevice?.(next.audioOutputId);
       } catch (e) {
         console.warn("setAudioOutputDevice warning:", e);
       }
 
-      // 3) background effect (if your engine supports)
+      // background (ВАЖНО: await)
       try {
-        engine.setBackgroundEffect?.({
+        await engine.setBackgroundEffect?.({
           mode: next.bgMode,
           imageUrl: next.bgImageUrl,
         });
@@ -682,7 +682,6 @@ export function RoomPage() {
       setSelectedAudioOutputId(next.audioOutputId || "default");
       setBgMode(next.bgMode);
       setBgImageUrl(next.bgImageUrl || "");
-
       setMediaSettings(next);
     } catch (e) {
       console.error("applyMediaSettings error:", e);
