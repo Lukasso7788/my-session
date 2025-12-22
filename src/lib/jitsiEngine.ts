@@ -105,6 +105,20 @@ async function loadJitsiScripts(): Promise<void> {
 // JITSI ENGINE
 // ============================================================================
 export class JitsiEngine {
+  // внутри class JitsiEngine
+  private conference: any; // JitsiConference
+  private localAudioTrack: any | null = null;
+  private localVideoTrack: any | null = null;
+
+  // текущие настройки (чтобы RoomPage мог их читать/писать)
+  public mediaSettings = {
+    videoInputId: "",
+    audioInputId: "",
+    audioOutputId: "default",
+    bgMode: "none" as "none" | "blur" | "image",
+    bgImageUrl: undefined as string | undefined,
+  };
+
   private callbacks: JitsiEngineCallbacks;
   private subsWatchdog: any = null;
   private JitsiMeetJS: any | null = null;
@@ -114,6 +128,18 @@ export class JitsiEngine {
   // DTO participants (UI-friendly). НЕ источник истины для треков.
   private participants: Record<string, JitsiParticipant> = {};
   private localUserId: string | null = null;
+
+  public async listMediaDevices() {
+    // ВАЖНО: названия (label) появятся только после того,
+    // как юзер разрешит доступ к камере/микрофону
+    const devices = await navigator.mediaDevices.enumerateDevices();
+
+    return {
+      videoInputs: devices.filter((d) => d.kind === "videoinput"),
+      audioInputs: devices.filter((d) => d.kind === "audioinput"),
+      audioOutputs: devices.filter((d) => d.kind === "audiooutput"),
+    };
+  }
 
   // Track store — источник истины для audio/video/screen
   private tracksByParticipant = new Map<
@@ -131,6 +157,66 @@ export class JitsiEngine {
   constructor(callbacks: JitsiEngineCallbacks = {}) {
     this.callbacks = callbacks;
   }
+
+  public async applyInputDevices(opts: { videoInputId: string; audioInputId: string }) {
+    const { videoInputId, audioInputId } = opts;
+
+    // 0) (опционально) сохраним выбранные значения
+    this.mediaSettings.videoInputId = videoInputId;
+    this.mediaSettings.audioInputId = audioInputId;
+
+    // 1) снять/удалить старые треки из конференции + освободить ресурсы
+    try {
+      if (this.localAudioTrack) {
+        // removeTrack может быть async
+        await this.conference?.removeTrack?.(this.localAudioTrack);
+        this.localAudioTrack.dispose?.();
+        this.localAudioTrack = null;
+      }
+
+      if (this.localVideoTrack) {
+        await this.conference?.removeTrack?.(this.localVideoTrack);
+        this.localVideoTrack.dispose?.();
+        this.localVideoTrack = null;
+      }
+    } catch (e) {
+      console.warn("[JitsiEngine] remove old tracks warning:", e);
+    }
+
+    // 2) создать новые треки с нужными deviceId
+    const JitsiMeetJS = (window as any).JitsiMeetJS;
+
+    if (!JitsiMeetJS?.createLocalTracks) {
+      throw new Error(
+        "JitsiMeetJS.createLocalTracks not found. Проверь, что lib-jitsi-meet подключён и доступен как window.JitsiMeetJS."
+      );
+    }
+
+    const tracks = await JitsiMeetJS.createLocalTracks({
+      devices: ["audio", "video"],
+      constraints: {
+        audio: audioInputId ? { deviceId: { exact: audioInputId } } : true,
+        video: videoInputId ? { deviceId: { exact: videoInputId } } : true,
+      },
+    });
+
+    // 3) разложить треки по полям
+    for (const t of tracks) {
+      const type = t.getType?.();
+      if (type === "audio") this.localAudioTrack = t;
+      if (type === "video") this.localVideoTrack = t;
+    }
+
+    // 4) добавить новые треки в конференцию
+    if (this.conference) {
+      if (this.localAudioTrack) await this.conference.addTrack(this.localAudioTrack);
+      if (this.localVideoTrack) await this.conference.addTrack(this.localVideoTrack);
+    }
+
+    // 5) вернуть треки (удобно для UI)
+    return { audio: this.localAudioTrack, video: this.localVideoTrack };
+  }
+
 
   // ========================================================================
   // PUBLIC API

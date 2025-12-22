@@ -11,6 +11,11 @@ import { UserProfileModal } from "../components/UserProfileModal";
 import { JitsiEngine, JitsiParticipant } from "../lib/jitsiEngine";
 import { VideoRoom } from "../components/VideoRoom";
 import type { ReactionType } from "../components/VideoRoom";
+import {
+  RoomMediaSettingsModal,
+  RoomMediaSettings,
+} from "../components/RoomMediaSettingsModal";
+import { Settings } from "lucide-react";
 
 type Stage = {
   name: string;
@@ -177,11 +182,40 @@ const reactionEmoji: Record<ReactionType, string> = {
 };
 
 export function RoomPage() {
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  const [devices, setDevices] = useState<{
+    videoInputs: MediaDeviceInfo[];
+    audioInputs: MediaDeviceInfo[];
+    audioOutputs: MediaDeviceInfo[];
+  }>({ videoInputs: [], audioInputs: [], audioOutputs: [] });
+
+  const [mediaSettings, setMediaSettings] = useState<RoomMediaSettings>({
+    videoInputId: "",
+    audioInputId: "",
+    audioOutputId: "default",
+    bgMode: "none",
+    bgImageUrl: undefined,
+  });
+
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  type MediaDevice = MediaDeviceInfo;
+
+  const [videoInputs, setVideoInputs] = useState<MediaDevice[]>([]);
+  const [audioInputs, setAudioInputs] = useState<MediaDevice[]>([]);
+  const [audioOutputs, setAudioOutputs] = useState<MediaDevice[]>([]);
+
+  const [selectedVideoInputId, setSelectedVideoInputId] = useState<string>(""); // camera
+  const [selectedAudioInputId, setSelectedAudioInputId] = useState<string>(""); // mic
+  const [selectedAudioOutputId, setSelectedAudioOutputId] = useState<string>("default"); // speakers
+
+  const [bgMode, setBgMode] = useState<"none" | "blur" | "image">("none");
+  const [bgImageUrl, setBgImageUrl] = useState<string>("");
+
   const [stages, setStages] = useState<Stage[]>([]);
   const [hoveredStage, setHoveredStage] = useState<Stage | null>(null);
   const [currentStage, setCurrentStage] = useState(0);
@@ -203,7 +237,9 @@ export function RoomPage() {
   const [activeScreenSharer, setActiveScreenSharer] = useState<string | null>(null);
 
   // ★ REACTIONS RECEIVED FROM OTHER USERS
-  const [incomingReactions, setIncomingReactions] = useState<{ id: number; type: ReactionType }[]>([]);
+  const [incomingReactions, setIncomingReactions] = useState<{ id: number; type: ReactionType }[]>(
+    []
+  );
   const reactionIdRef = useRef<number>(0);
 
   // ★ LOCAL REACTIONS (FOR OVERLAY)
@@ -319,6 +355,45 @@ export function RoomPage() {
   };
 
   // ============================================================
+  // DEVICES: load from engine, update local lists + defaults
+  // ============================================================
+  const loadDevices = async () => {
+    try {
+      const engine = engineRef.current;
+      if (!engine) return;
+
+      const res = await (engine as any).listMediaDevices?.();
+      if (!res) return;
+
+      const vIn = res.videoInputs || [];
+      const aIn = res.audioInputs || [];
+      const aOut = res.audioOutputs || [];
+
+      setVideoInputs(vIn);
+      setAudioInputs(aIn);
+      setAudioOutputs(aOut);
+
+      // keep mirror state in `devices` for modal compatibility
+      setDevices({ videoInputs: vIn, audioInputs: aIn, audioOutputs: aOut });
+
+      // defaults if empty
+      setSelectedVideoInputId((prev) => prev || vIn?.[0]?.deviceId || "");
+      setSelectedAudioInputId((prev) => prev || aIn?.[0]?.deviceId || "");
+      setSelectedAudioOutputId((prev) => prev || "default");
+
+      // keep mirror state in `mediaSettings` for modal compatibility
+      setMediaSettings((prev) => ({
+        ...prev,
+        videoInputId: prev.videoInputId || vIn?.[0]?.deviceId || "",
+        audioInputId: prev.audioInputId || aIn?.[0]?.deviceId || "",
+        audioOutputId: prev.audioOutputId || "default",
+      }));
+    } catch (e) {
+      console.error("loadDevices error:", e);
+    }
+  };
+
+  // ============================================================
   // LOAD SESSION FROM SUPABASE
   // ============================================================
   useEffect(() => {
@@ -338,10 +413,7 @@ export function RoomPage() {
 
         if (data.schedule) {
           try {
-            const parsed =
-              typeof data.schedule === "string"
-                ? JSON.parse(data.schedule)
-                : data.schedule;
+            const parsed = typeof data.schedule === "string" ? JSON.parse(data.schedule) : data.schedule;
 
             const formatted: Stage[] = parsed.map((b: any) => {
               const lower = (b.name || "").toLowerCase();
@@ -398,11 +470,7 @@ export function RoomPage() {
         (u?.email ? u.email.split("@")[0] : "");
 
       if (!name && u?.id) {
-        const { data: p } = await supabase
-          .from("profiles")
-          .select("full_name")
-          .eq("id", u.id)
-          .single();
+        const { data: p } = await supabase.from("profiles").select("full_name").eq("id", u.id).single();
         name = p?.full_name || "";
       }
 
@@ -417,11 +485,7 @@ export function RoomPage() {
     if (!id) return;
 
     const fetchAttendance = async () => {
-      const { data, error } = await supabase
-        .from("session_attendance")
-        .select("*")
-        .eq("session_id", id);
-
+      const { data, error } = await supabase.from("session_attendance").select("*").eq("session_id", id);
       if (error) {
         console.error("Attendance fetch error:", error);
         return;
@@ -561,6 +625,11 @@ export function RoomPage() {
         setLastErr(String(e?.message || e));
       });
 
+    // After join: load devices with small delay
+    setTimeout(() => {
+      loadDevices();
+    }, 600);
+
     return () => {
       engine
         .dispose()
@@ -571,6 +640,50 @@ export function RoomPage() {
       stopWelcomeLoop();
     };
   }, [session, userName]);
+
+  // ============================================================
+  // APPLY MEDIA SETTINGS (called from modal)
+  // ============================================================
+  const applyMediaSettings = async (next: RoomMediaSettings) => {
+    try {
+      const engine = engineRef.current as any;
+      if (!engine) return;
+
+      // 1) inputs
+      await engine.applyInputDevices?.({
+        videoInputId: next.videoInputId,
+        audioInputId: next.audioInputId,
+      });
+
+      // 2) output
+      try {
+        engine.setAudioOutputDevice?.(next.audioOutputId);
+      } catch (e) {
+        console.warn("setAudioOutputDevice warning:", e);
+      }
+
+      // 3) background effect (if your engine supports)
+      try {
+        engine.setBackgroundEffect?.({
+          mode: next.bgMode,
+          imageUrl: next.bgImageUrl,
+        });
+      } catch (e) {
+        console.warn("setBackgroundEffect warning:", e);
+      }
+
+      // keep local mirrors
+      setSelectedVideoInputId(next.videoInputId || "");
+      setSelectedAudioInputId(next.audioInputId || "");
+      setSelectedAudioOutputId(next.audioOutputId || "default");
+      setBgMode(next.bgMode);
+      setBgImageUrl(next.bgImageUrl || "");
+
+      setMediaSettings(next);
+    } catch (e) {
+      console.error("applyMediaSettings error:", e);
+    }
+  };
 
   // BUTTON HANDLERS
   const handleToggleAudio = () => engineRef.current?.toggleAudioMute();
@@ -826,6 +939,7 @@ export function RoomPage() {
                 localReactions={localReactions}
                 showControls={false}
                 onVisibleVideoIdsChange={(ids) => engineRef.current?.setVisibleVideoParticipants(ids)}
+                audioOutputId={selectedAudioOutputId}
               />
             </div>
 
@@ -904,7 +1018,9 @@ export function RoomPage() {
                               <div
                                 className={
                                   "w-8 h-8 rounded-lg flex items-center justify-center " +
-                                  (p.audioMuted ? "bg-red-500/20 text-red-300" : "bg-white/5 text-white/65")
+                                  (p.audioMuted
+                                    ? "bg-red-500/20 text-red-300"
+                                    : "bg-white/5 text-white/65")
                                 }
                                 title={p.audioMuted ? "Muted" : "Unmuted"}
                               >
@@ -924,13 +1040,19 @@ export function RoomPage() {
                               <div
                                 className={
                                   "w-8 h-8 rounded-lg flex items-center justify-center " +
-                                  (p.videoMuted ? "bg-red-500/20 text-red-300" : "bg-white/5 text-white/65")
+                                  (p.videoMuted
+                                    ? "bg-red-500/20 text-red-300"
+                                    : "bg-white/5 text-white/65")
                                 }
                                 title={p.videoMuted ? "Video off" : "Video on"}
                               >
                                 <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true">
                                   <rect x="4" y="6" width="11" height="12" rx="2" fill="currentColor" />
-                                  <path d="M17 9.5 21 7v10l-4-2.5z" fill="currentColor" opacity="0.85" />
+                                  <path
+                                    d="M17 9.5 21 7v10l-4-2.5z"
+                                    fill="currentColor"
+                                    opacity="0.85"
+                                  />
                                 </svg>
                               </div>
                             </div>
@@ -993,7 +1115,6 @@ export function RoomPage() {
                   </div>
                 </div>
               )}
-
             </div>
           )}
         </div>
@@ -1032,7 +1153,6 @@ export function RoomPage() {
               >
                 <IntentionsIcon active={rightPanelOpen && rightTab === "intentions"} />
               </button>
-
             </div>
 
             {/* CENTER GROUP (mic/cam/screen/reactions) */}
@@ -1105,7 +1225,10 @@ export function RoomPage() {
             {/* RIGHT GROUP (settings + leave) */}
             <div className="flex items-center gap-3">
               <button
-                onClick={() => { }}
+                onClick={() => {
+                  setSettingsOpen(true);
+                  setTimeout(() => loadDevices(), 0);
+                }}
                 className="w-11 h-11 rounded-2xl flex items-center justify-center transition bg-[#111827] hover:bg-[#1f2937] text-white/85"
                 title="Settings"
               >
@@ -1124,9 +1247,28 @@ export function RoomPage() {
         </div>
       </div>
 
-      {selectedUser && (
-        <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
-      )}
+      {/* MEDIA SETTINGS MODAL */}
+      <RoomMediaSettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        devices={devices}
+        value={mediaSettings}
+        onRefreshDevices={loadDevices}
+        onChange={(next) => {
+          setMediaSettings(next);
+          setSelectedVideoInputId(next.videoInputId || "");
+          setSelectedAudioInputId(next.audioInputId || "");
+          setSelectedAudioOutputId(next.audioOutputId || "default");
+          setBgMode(next.bgMode);
+          setBgImageUrl(next.bgImageUrl || "");
+        }}
+        onApply={async (next) => {
+          await applyMediaSettings(next);
+          setSettingsOpen(false);
+        }}
+      />
+
+      {selectedUser && <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />}
     </div>
   );
 }
