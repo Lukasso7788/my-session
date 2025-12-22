@@ -485,16 +485,17 @@ export function RoomPage() {
     if (!id) return;
 
     const fetchAttendance = async () => {
-      const { data, error } = await supabase.from("session_attendance").select("*").eq("session_id", id);
-      if (error) {
-        console.error("Attendance fetch error:", error);
-        return;
-      }
+      const { error } = await supabase
+        .from("session_attendance")
+        .select("*")
+        .eq("session_id", id);
+
+      if (error) console.error("Attendance fetch error:", error);
     };
 
     fetchAttendance();
 
-    const sub = supabase
+    const channel = supabase
       .channel(`session-${id}`)
       .on(
         "postgres_changes",
@@ -507,11 +508,14 @@ export function RoomPage() {
         () => {
           fetchAttendance();
         }
-      )
-      .subscribe();
+      );
+
+    channel.subscribe();
 
     return () => {
-      supabase.removeChannel(sub);
+      try {
+        channel.unsubscribe?.();
+      } catch { }
     };
   }, [id]);
 

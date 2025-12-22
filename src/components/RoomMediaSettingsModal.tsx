@@ -1,5 +1,6 @@
+// src/components/RoomMediaSettingsModal.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { X, RefreshCcw } from "lucide-react";
 
 type BgMode = "none" | "blur" | "image";
 
@@ -11,73 +12,120 @@ export type RoomMediaSettings = {
     bgImageUrl?: string; // objectURL для preview
 };
 
+type DevicesLists = {
+    videoInputs: MediaDeviceInfo[];
+    audioInputs: MediaDeviceInfo[];
+    audioOutputs: MediaDeviceInfo[];
+};
+
 type Props = {
     open: boolean;
     onClose: () => void;
 
     value: RoomMediaSettings;
+    devices: DevicesLists;
 
-    videoInputs: MediaDeviceInfo[];
-    audioInputs: MediaDeviceInfo[];
-    audioOutputs: MediaDeviceInfo[];
+    onRefreshDevices?: () => void | Promise<void>;
+    onChange?: (next: RoomMediaSettings) => void;
 
-    onApply: (next: RoomMediaSettings) => void;
+    onApply: (next: RoomMediaSettings) => void | Promise<void>;
 };
 
 function deviceLabel(d: MediaDeviceInfo, fallback: string) {
-    return d.label?.trim() || `${fallback} (${d.deviceId.slice(0, 6)}…)`;
+    return d.label?.trim() || `${fallback} (${(d.deviceId || "").slice(0, 6)}…)`;
 }
 
 export function RoomMediaSettingsModal({
     open,
     onClose,
     value,
-    videoInputs,
-    audioInputs,
-    audioOutputs,
+    devices,
+    onRefreshDevices,
+    onChange,
     onApply,
 }: Props) {
-    const [draft, setDraft] = useState<RoomMediaSettings>(value);
+    const [draft, setDraft] = useState<RoomMediaSettings>({
+        videoInputId: value?.videoInputId || "",
+        audioInputId: value?.audioInputId || "",
+        audioOutputId: value?.audioOutputId || "default",
+        bgMode: value?.bgMode || "none",
+        bgImageUrl: value?.bgImageUrl,
+    });
 
-    // track current objectURL to revoke later
-    const lastObjectUrlRef = useRef<string | null>(null);
+    const prevObjectUrlRef = useRef<string | null>(null);
 
     useEffect(() => {
-        if (open) setDraft(value);
-    }, [open, value]);
+        if (open) {
+            setDraft({
+                videoInputId: value?.videoInputId || "",
+                audioInputId: value?.audioInputId || "",
+                audioOutputId: value?.audioOutputId || "default",
+                bgMode: value?.bgMode || "none",
+                bgImageUrl: value?.bgImageUrl,
+            });
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open]);
 
-    // revoke objectURL on unmount
+    // push changes to parent (optional)
+    useEffect(() => {
+        if (!open) return;
+        onChange?.(draft);
+    }, [draft, open, onChange]);
+
+    // cleanup old objectURL (preview) when replaced/closed
+    useEffect(() => {
+        if (!open) return;
+
+        const url = draft.bgImageUrl;
+        const prev = prevObjectUrlRef.current;
+
+        const isObjectUrl = (u?: string) => typeof u === "string" && u.startsWith("blob:");
+        if (isObjectUrl(prev) && prev !== url) {
+            try {
+                URL.revokeObjectURL(prev);
+            } catch { }
+        }
+
+        prevObjectUrlRef.current = isObjectUrl(url) ? url : null;
+    }, [draft.bgImageUrl, open]);
+
     useEffect(() => {
         return () => {
-            if (lastObjectUrlRef.current) {
-                URL.revokeObjectURL(lastObjectUrlRef.current);
-                lastObjectUrlRef.current = null;
+            const prev = prevObjectUrlRef.current;
+            if (prev && prev.startsWith("blob:")) {
+                try {
+                    URL.revokeObjectURL(prev);
+                } catch { }
             }
+            prevObjectUrlRef.current = null;
         };
     }, []);
+
+    const videoInputs = devices?.videoInputs ?? [];
+    const audioInputs = devices?.audioInputs ?? [];
+    const audioOutputs = devices?.audioOutputs ?? [];
+
+    // ensure defaults exist when device lists arrive
+    useEffect(() => {
+        if (!open) return;
+
+        setDraft((p) => {
+            let next = { ...p };
+
+            if (!next.videoInputId && videoInputs[0]?.deviceId) next.videoInputId = videoInputs[0].deviceId;
+            if (!next.audioInputId && audioInputs[0]?.deviceId) next.audioInputId = audioInputs[0].deviceId;
+            if (!next.audioOutputId) next.audioOutputId = "default";
+
+            return next;
+        });
+    }, [open, videoInputs, audioInputs]);
 
     const canApply = useMemo(() => {
         return !!draft.videoInputId && !!draft.audioInputId && !!draft.audioOutputId;
     }, [draft]);
 
     if (!open) return null;
-
-    const setBgNone = () => {
-        // if we previously created an objectURL, release it
-        if (lastObjectUrlRef.current) {
-            URL.revokeObjectURL(lastObjectUrlRef.current);
-            lastObjectUrlRef.current = null;
-        }
-        setDraft((p) => ({ ...p, bgMode: "none", bgImageUrl: undefined }));
-    };
-
-    const setBgBlur = () => {
-        if (lastObjectUrlRef.current) {
-            URL.revokeObjectURL(lastObjectUrlRef.current);
-            lastObjectUrlRef.current = null;
-        }
-        setDraft((p) => ({ ...p, bgMode: "blur", bgImageUrl: undefined }));
-    };
 
     return (
         <div className="fixed inset-0 z-[60]">
@@ -88,14 +136,26 @@ export function RoomMediaSettingsModal({
             <div className="absolute left-1/2 top-1/2 w-[92vw] max-w-[560px] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-white/10 bg-[#0B1220] shadow-xl">
                 <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
                     <div className="text-white/90 font-semibold">Media settings</div>
-                    <button
-                        onClick={onClose}
-                        className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/80"
-                        title="Close"
-                        type="button"
-                    >
-                        <X size={18} />
-                    </button>
+
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => onRefreshDevices?.()}
+                            className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/80"
+                            title="Refresh devices"
+                            type="button"
+                        >
+                            <RefreshCcw size={16} />
+                        </button>
+
+                        <button
+                            onClick={onClose}
+                            className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/80"
+                            title="Close"
+                            type="button"
+                        >
+                            <X size={18} />
+                        </button>
+                    </div>
                 </div>
 
                 <div className="px-5 py-4 space-y-4">
@@ -113,9 +173,9 @@ export function RoomMediaSettingsModal({
                 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
               "
                         >
-                            {videoInputs.map((d) => (
-                                <option key={d.deviceId} value={d.deviceId}>
-                                    {deviceLabel(d, "Camera")}
+                            {(videoInputs.length ? videoInputs : [{ deviceId: "", label: "" } as any]).map((d) => (
+                                <option key={d.deviceId || "none"} value={d.deviceId || ""}>
+                                    {d.deviceId ? deviceLabel(d, "Camera") : "No camera devices"}
                                 </option>
                             ))}
                         </select>
@@ -135,9 +195,9 @@ export function RoomMediaSettingsModal({
                 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
               "
                         >
-                            {audioInputs.map((d) => (
-                                <option key={d.deviceId} value={d.deviceId}>
-                                    {deviceLabel(d, "Mic")}
+                            {(audioInputs.length ? audioInputs : [{ deviceId: "", label: "" } as any]).map((d) => (
+                                <option key={d.deviceId || "none"} value={d.deviceId || ""}>
+                                    {d.deviceId ? deviceLabel(d, "Mic") : "No microphone devices"}
                                 </option>
                             ))}
                         </select>
@@ -157,11 +217,14 @@ export function RoomMediaSettingsModal({
                 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
               "
                         >
-                            {audioOutputs.map((d) => (
-                                <option key={d.deviceId} value={d.deviceId}>
-                                    {deviceLabel(d, "Speakers")}
-                                </option>
-                            ))}
+                            <option value="default">Default</option>
+                            {audioOutputs
+                                .filter((d) => d.deviceId && d.deviceId !== "default")
+                                .map((d) => (
+                                    <option key={d.deviceId} value={d.deviceId}>
+                                        {deviceLabel(d, "Speakers")}
+                                    </option>
+                                ))}
                         </select>
                     </div>
 
@@ -172,7 +235,7 @@ export function RoomMediaSettingsModal({
                         <div className="flex items-center gap-2">
                             <button
                                 type="button"
-                                onClick={setBgNone}
+                                onClick={() => setDraft((p) => ({ ...p, bgMode: "none", bgImageUrl: undefined }))}
                                 className={
                                     "h-10 px-3 rounded-xl border text-[13px] transition " +
                                     (draft.bgMode === "none"
@@ -185,7 +248,7 @@ export function RoomMediaSettingsModal({
 
                             <button
                                 type="button"
-                                onClick={setBgBlur}
+                                onClick={() => setDraft((p) => ({ ...p, bgMode: "blur", bgImageUrl: undefined }))}
                                 className={
                                     "h-10 px-3 rounded-xl border text-[13px] transition " +
                                     (draft.bgMode === "blur"
@@ -213,16 +276,7 @@ export function RoomMediaSettingsModal({
                                     onChange={(e) => {
                                         const file = e.target.files?.[0];
                                         if (!file) return;
-
-                                        // revoke previous url
-                                        if (lastObjectUrlRef.current) {
-                                            URL.revokeObjectURL(lastObjectUrlRef.current);
-                                            lastObjectUrlRef.current = null;
-                                        }
-
                                         const url = URL.createObjectURL(file);
-                                        lastObjectUrlRef.current = url;
-
                                         setDraft((p) => ({ ...p, bgMode: "image", bgImageUrl: url }));
                                     }}
                                 />
@@ -236,8 +290,7 @@ export function RoomMediaSettingsModal({
                         )}
 
                         <div className="mt-2 text-[11px] text-white/35">
-                            Сейчас это влияет на <b>превью в UI</b>. “Настоящий” virtual background (чтобы видели другие)
-                            добавим следующим шагом.
+                            Сейчас это влияет на <b>превью в UI</b>. “Настоящий” virtual background (чтобы видели другие) добавим следующим шагом.
                         </div>
                     </div>
                 </div>
@@ -250,13 +303,8 @@ export function RoomMediaSettingsModal({
                     >
                         Cancel
                     </button>
-
                     <button
-                        onClick={() => {
-                            onApply(draft);
-                            // если хочешь, чтобы Apply всегда закрывал модалку — оставь строку:
-                            onClose();
-                        }}
+                        onClick={() => onApply(draft)}
                         disabled={!canApply}
                         className={
                             "h-11 px-5 rounded-xl font-semibold text-[13px] transition " +
