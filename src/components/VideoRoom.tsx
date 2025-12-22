@@ -7,6 +7,7 @@ CHANGELOG (AS CODE)
 ADD:
 - showControls?: boolean (default true)  // allows RoomPage to render one unified bottom bar
 - localReactions?: { id:number; type: ReactionType }[] // overlay reactions driven by parent
+- FIX: re-attach video when lib-jitsi-meet swaps underlying stream (track.setEffect triggers TRACK_STREAM_CHANGED)
 
 CHANGE:
 - Reactions overlay uses (localReactions ?? internal reactions)
@@ -41,19 +42,14 @@ type VideoRoomProps = {
     onToggleVideo: () => void;
     onToggleScreenShare: () => void;
     onLeave?: () => void;
-    // приходит из RoomPage (у тебя уже передаётся)
     activeScreenSharer?: string | null;
 
-    // реакции, которые пришли по сети (у тебя уже передаётся)
     incomingReactions?: { id: number; type: ReactionType }[];
 
     // NEW: local reactions from parent (RoomPage bottom bar)
     localReactions?: { id: number; type: ReactionType }[];
 
-    // новый коллбек: какие ids сейчас реально видны на экране (для подписок SFU)
     onVisibleVideoIdsChange?: (ids: string[]) => void;
-
-    // опционально: если захочешь наружу прокидывать реакцию в engine
     onSendReaction?: (type: ReactionType) => void;
 
     // NEW: allow hiding internal controls (when RoomPage renders unified bottom bar)
@@ -76,7 +72,6 @@ function safeTrackId(track?: any): string {
     try {
         if (typeof track.getId === "function") return String(track.getId());
     } catch { }
-    // fallback: чтобы key менялся при смене инстанса
     return String((track as any)?._id ?? "track");
 }
 
@@ -106,6 +101,59 @@ function attachTrackToMedia(track: JitsiTrack | undefined, element: HTMLMediaEle
             // ignore
         }
     };
+}
+
+/**
+ * IMPORTANT:
+ * lib-jitsi-meet track.setEffect(...) can swap underlying MediaStream without changing track instance.
+ * That means React deps [participant.videoTrack] won't change, but video element MUST be re-attached.
+ * We listen to track events (TRACK_STREAM_CHANGED, etc.) and bump a local version counter.
+ */
+function useTrackStreamVersion(track: any) {
+    const [v, setV] = useState(0);
+
+    useEffect(() => {
+        if (!track || typeof track.addEventListener !== "function") return;
+
+        const jitsiEvents = (window as any).JitsiMeetJS?.events?.track;
+
+        const candidates = [
+            jitsiEvents?.TRACK_STREAM_CHANGED,
+            jitsiEvents?.TRACK_VIDEO_TYPE_CHANGED,
+            jitsiEvents?.TRACK_VIDEOTYPE_CHANGED,
+            jitsiEvents?.TRACK_MUTE_CHANGED,
+            jitsiEvents?.LOCAL_TRACK_STOPPED,
+        ].filter(Boolean);
+
+        // fallback (harmless if your build uses different string constants)
+        const fallback = [
+            "TRACK_STREAM_CHANGED",
+            "TRACK_VIDEO_TYPE_CHANGED",
+            "TRACK_VIDEOTYPE_CHANGED",
+            "TRACK_MUTE_CHANGED",
+            "LOCAL_TRACK_STOPPED",
+        ];
+
+        const eventNames: string[] = Array.from(new Set([...(candidates as string[]), ...fallback]));
+
+        const bump = () => setV((x) => x + 1);
+
+        for (const ev of eventNames) {
+            try {
+                track.addEventListener(ev, bump);
+            } catch { }
+        }
+
+        return () => {
+            for (const ev of eventNames) {
+                try {
+                    track.removeEventListener(ev, bump);
+                } catch { }
+            }
+        };
+    }, [track]);
+
+    return v;
 }
 
 // ----------------------- Icons -----------------------
@@ -175,9 +223,9 @@ function LeaveIcon() {
 }
 
 // ----------------------- Audio sink -----------------------
-// ВАЖНО: аудио должно работать даже если участник НЕ отображается на текущем “окне” (20 tiles).
 function AudioSinkItem({ p }: { p: JitsiParticipant }) {
     const audioRef = useRef<HTMLAudioElement | null>(null);
+    const streamV = useTrackStreamVersion(p.audioTrack);
 
     useEffect(() => {
         if (!audioRef.current) return;
@@ -191,18 +239,16 @@ function AudioSinkItem({ p }: { p: JitsiParticipant }) {
                 p.audioTrack.detach(audioRef.current!);
             } catch { }
         };
-    }, [p.audioTrack, p.isLocal]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [p.audioTrack, p.isLocal, streamV]);
 
-    // Скрытый (но НЕ display:none) audio-элемент
     return <audio ref={audioRef} autoPlay playsInline preload="auto" />;
 }
 
 function AudioSink({ participants }: { participants: JitsiParticipant[] }) {
-    // только remote
     const remotes = useMemo(() => participants.filter((p) => !p.isLocal), [participants]);
 
     return (
-        // НЕЛЬЗЯ className="hidden" / display:none — браузер может НЕ играть звук.
         <div className="absolute w-0 h-0 overflow-hidden opacity-0 pointer-events-none">
             {remotes.map((p) => {
                 const key = `${p.id}:${safeTrackId(p.audioTrack)}`;
@@ -221,17 +267,21 @@ function ParticipantTile({
     tileKey: string;
 }) {
     const videoRef = useRef<HTMLVideoElement | null>(null);
-
     const showVideo = !!participant.videoTrack && !participant.videoMuted;
 
-    // FIX: форсируем detach/clear/attach при любом toggle videoMuted (и при смене track ref)
+    // NEW: bump when setEffect swaps stream under the same track instance
+    const streamV = useTrackStreamVersion(participant.videoTrack);
+
+    // FIX: reattach on:
+    // - track instance change
+    // - videoMuted change
+    // - stream swap (TRACK_STREAM_CHANGED)
     useEffect(() => {
         const el = videoRef.current;
         if (!el) return;
 
         const track = participant.videoTrack;
 
-        // всегда чистим элемент (это помогает от "black stuck")
         try {
             (el as any).srcObject = null;
         } catch { }
@@ -239,13 +289,11 @@ function ParticipantTile({
             el.load?.();
         } catch { }
 
-        // если нет трека или video muted — просто оставляем placeholder
         if (!track || participant.videoMuted) {
             return;
         }
 
         try {
-            // на всякий случай: detach перед attach (если браузер/track залип)
             try {
                 track.detach?.(el);
             } catch { }
@@ -254,7 +302,6 @@ function ParticipantTile({
             console.error("attach error", e);
         }
 
-        // попытка запустить playback (некоторые браузеры залипают после смены srcObject)
         try {
             const pr = el.play?.();
             (pr as any)?.catch?.(() => { });
@@ -271,14 +318,13 @@ function ParticipantTile({
                 el.load?.();
             } catch { }
         };
-    }, [participant.videoTrack, participant.videoMuted, participant.isLocal]);
+    }, [participant.videoTrack, participant.videoMuted, participant.isLocal, streamV]);
 
     return (
         <div
             className="relative bg-black rounded-2xl overflow-hidden flex items-center justify-center border border-white/5"
             data-tile-key={tileKey}
         >
-            {/* 16:9 frame внутри ячейки */}
             <div className="w-full h-full flex items-center justify-center">
                 <div className="w-full max-w-full aspect-video bg-black">
                     {showVideo ? (
@@ -302,7 +348,6 @@ function ParticipantTile({
                 </div>
             </div>
 
-            {/* name + mic status */}
             <div className="absolute left-3 bottom-3 rounded-md bg-black/55 px-2 py-1 text-[11px] flex items-center gap-2">
                 <span className="text-white/80">
                     {participant.isLocal ? "You" : participant.displayName || "Guest"}
@@ -320,8 +365,6 @@ function ParticipantTile({
 // ----------------------- Layouts -----------------------
 function computeGrid(count: number) {
     if (count <= 1) return { cols: 1, rows: 1 };
-
-    // square-ish grid
     const cols = Math.ceil(Math.sqrt(count));
     const rows = Math.ceil(count / cols);
     return { cols, rows };
@@ -360,7 +403,6 @@ function P2PLayout({
     pageParticipants: JitsiParticipant[];
     layoutVersion: number;
 }) {
-    // 1 или 2 участника: делаем стабильный split без “пляски”
     const count = pageParticipants.length;
 
     return (
@@ -391,14 +433,14 @@ function ScreenShareLayout({
 }) {
     const screenVideoRef = useRef<HTMLVideoElement | null>(null);
     const screenTrackId = useMemo(() => safeTrackId(screenSharer.screenTrack), [screenSharer.screenTrack]);
+    const screenStreamV = useTrackStreamVersion(screenSharer.screenTrack);
 
     useEffect(() => {
         if (!screenVideoRef.current) return;
         if (!screenSharer.screenTrack) return;
         return attachTrackToMedia(screenSharer.screenTrack, screenVideoRef.current);
-    }, [screenTrackId]);
+    }, [screenTrackId, screenStreamV]); // <- include streamV too
 
-    // мини-камера поверх (если у шарера есть камера)
     const cameraParticipant = screenSharer.videoTrack && !screenSharer.videoMuted ? screenSharer : undefined;
 
     return (
@@ -406,7 +448,6 @@ function ScreenShareLayout({
             key={`screen:${layoutVersion}:${screenSharer.id}:${screenTrackId}`}
             className="relative w-full h-full flex flex-col md:flex-row gap-2 p-2"
         >
-            {/* main screenshare */}
             <div className="relative flex-1 bg-black rounded-2xl overflow-hidden border border-white/5">
                 <video
                     ref={screenVideoRef}
@@ -431,7 +472,6 @@ function ScreenShareLayout({
                 )}
             </div>
 
-            {/* strip of others */}
             <div className="flex md:flex-col gap-2 md:w-56 w-full">
                 {others.map((p) => {
                     const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}`;
@@ -477,18 +517,14 @@ export function VideoRoom(props: VideoRoomProps) {
     }, [audioOutputId]);
 
     const PAGE_SIZE = 20;
-    const SCROLL_STEP = 5; // “скроллится к остатку”, а не “переключает страницу”
+    const SCROLL_STEP = 5;
 
-    // реакции UI (internal; used only when showControls=true)
     const [reactions, setReactions] = useState<Reaction[]>([]);
     const [showReactionsMenu, setShowReactionsMenu] = useState(false);
     const [reactionCounter, setReactionCounter] = useState(0);
     const menuRef = useRef<HTMLDivElement | null>(null);
 
-    // “scroll window” participants (offset), НЕ page switching
     const [scrollIndex, setScrollIndex] = useState(0);
-
-    // layout reset — помогает при SFU ↔ P2P переходах и резких сменах состава
     const [layoutVersion, setLayoutVersion] = useState(0);
 
     const screenSharer = useMemo(
@@ -497,10 +533,8 @@ export function VideoRoom(props: VideoRoomProps) {
     );
 
     const isP2P = useMemo(() => participants.length <= 2, [participants.length]);
-
     const localParticipant = useMemo(() => participants.find((p) => p.isLocal) || null, [participants]);
 
-    // базовый список участников для grid (если screen share — шарер отдельно)
     const baseParticipants = useMemo(() => {
         return screenSharer ? participants.filter((p) => p.id !== screenSharer.id) : participants;
     }, [participants, screenSharer]);
@@ -511,12 +545,10 @@ export function VideoRoom(props: VideoRoomProps) {
 
     const canScroll = useMemo(() => baseParticipants.length > PAGE_SIZE, [baseParticipants.length]);
 
-    // clamp scrollIndex when participants change
     useEffect(() => {
         setScrollIndex((i) => Math.min(Math.max(0, i), maxStartIndex));
     }, [maxStartIndex]);
 
-    // IMPORTANT: при смене треков пересобираем layout DOM (стабилизирует attach/detach)
     const tracksSignature = useMemo(() => {
         return participants
             .flatMap((p) => [safeTrackId(p.videoTrack), safeTrackId(p.screenTrack)])
@@ -527,14 +559,12 @@ export function VideoRoom(props: VideoRoomProps) {
         setLayoutVersion((v) => v + 1);
     }, [tracksSignature]);
 
-    // “окно” участников на экране (visual only)
     const pageParticipants = useMemo(() => {
         const start = scrollIndex;
         const end = start + PAGE_SIZE;
         return baseParticipants.slice(start, end);
     }, [baseParticipants, scrollIndex]);
 
-    // others in screenshare layout (тоже “окно”, потому что может быть 100)
     const screenOthers = useMemo(() => {
         if (!screenSharer) return [];
         const start = scrollIndex;
@@ -542,7 +572,6 @@ export function VideoRoom(props: VideoRoomProps) {
         return baseParticipants.slice(start, end);
     }, [baseParticipants, screenSharer, scrollIndex]);
 
-    // ids remote участников, которые реально видны (для SFU подписок)
     const visibleRemoteIds = useMemo(() => {
         const visibleList = screenSharer ? [screenSharer, ...screenOthers] : pageParticipants;
         return visibleList.map((p) => p.id).filter((id) => id && id !== localParticipant?.id);
@@ -561,8 +590,6 @@ export function VideoRoom(props: VideoRoomProps) {
         const id = reactionCounter + 1;
         setReactionCounter(id);
         setReactions((prev) => [...prev, { id, type }]);
-
-        // наружу (в engine) — если подключишь:
         onSendReaction?.(type);
 
         setTimeout(() => {
@@ -570,7 +597,6 @@ export function VideoRoom(props: VideoRoomProps) {
         }, 1500);
     };
 
-    // закрытие меню реакций при клике вне
     useEffect(() => {
         if (!showReactionsMenu) return;
 
@@ -598,10 +624,8 @@ export function VideoRoom(props: VideoRoomProps) {
 
     return (
         <div className="relative w-full h-full flex flex-col">
-            {/* Always-on audio for all remote participants */}
             <AudioSink participants={participants} />
 
-            {/* VIDEO AREA */}
             <div className="flex-1 relative overflow-hidden rounded-2xl bg-black/80">
                 {!screenSharer && (
                     <>
@@ -621,7 +645,6 @@ export function VideoRoom(props: VideoRoomProps) {
                     />
                 )}
 
-                {/* Reactions floating overlay (local + incoming) */}
                 {((overlayLocal?.length || 0) + (incomingReactions?.length || 0) > 0) && (
                     <div className="pointer-events-none absolute inset-0 flex items-end justify-center pb-20 gap-2">
                         {(overlayLocal || []).map((r: any) => (
@@ -638,7 +661,6 @@ export function VideoRoom(props: VideoRoomProps) {
                     </div>
                 )}
 
-                {/* Scroll overlay (only if > PAGE_SIZE shown) */}
                 {canScroll && (
                     <div className="absolute top-3 right-3 flex items-center gap-2">
                         <button
@@ -674,7 +696,6 @@ export function VideoRoom(props: VideoRoomProps) {
                 )}
             </div>
 
-            {/* CONTROLS BAR (OPTIONAL; hidden when RoomPage renders unified bottom bar) */}
             {showControls && (
                 <div className="mt-3 flex items-center justify-center">
                     <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-[#020617]/90 border border-white/10 shadow-lg">
@@ -711,7 +732,6 @@ export function VideoRoom(props: VideoRoomProps) {
                             <ScreenIcon />
                         </button>
 
-                        {/* reactions */}
                         <div className="relative" ref={menuRef}>
                             <button
                                 onClick={() => setShowReactionsMenu((v) => !v)}
@@ -732,7 +752,6 @@ export function VideoRoom(props: VideoRoomProps) {
                             )}
                         </div>
 
-                        {/* leave */}
                         {onLeave && (
                             <button
                                 onClick={onLeave}
