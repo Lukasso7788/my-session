@@ -101,7 +101,7 @@ export default function Header() {
                                 ].join(" ")}
                                 aria-hidden
                             >
-                                <img src="/icons/arrow.svg" className="w-5 h-5" />
+                                <img src="/icons/arrow.svg" className="w-3 h-3" />
                             </span>
                         </button>
 
