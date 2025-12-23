@@ -218,29 +218,24 @@ export function SessionsPage() {
     }
   };
 
-  // ✅ REPORT: WHAT I CHANGED / ADDED / REMOVED (as code)
-  // ✅ CHANGED: main padding to match spec:
-  //   <768px => 12px (px-3)
-  //   >=768px => 24px (md:px-6)
-  //   >=1024px => 40px (lg:px-10)
-  //
-  // ✅ CHANGED: switcher wrapper from centered to full width so it can “fill”.
-  //
-  // ✅ CHANGED: calendar wrapper to full width so it can “fill”.
-  //
-  // ✅ CHANGED: sessions container:
-  //   - mobile: no border, only vertical padding 12px (py-3)
-  //   - desktop: border + p-8 preserved (md:border md:p-8)
-  //   - IMPORTANT: removed inner px on mobile to avoid double-padding (page already provides 12px)
-  //
-  // ✅ CHANGED: spacing between cards:
-  //   - mobile: 12px (space-y-3)
-  //   - desktop: 24px (md:space-y-6)
-  //
-  // ❌ REMOVED: nothing functional (only removed inner mobile px that caused double padding)
+  /**
+   * ✅ REPORT (as code) — what I changed this time:
+   *
+   * ✅ CHANGED: SessionTypeSwitcher wrapper -> centered again
+   *   - from: <div className="w-full mb-[55px]">
+   *   - to:   <div className="w-full flex justify-center mb-[55px]">
+   *
+   * ✅ CHANGED: Sessions container (cards wrapper) now has its own mobile inner padding 12px:
+   *   - mobile (<768): px-3 py-3 (12px all around)
+   *   - desktop (>=768): keeps border + p-8 like before
+   *
+   * ❌ REMOVED: nothing
+   */
 
   return (
     <div className="min-h-screen bg-white text-brandBlack font-inter">
+      {/* ✅ responsive horizontal page padding:
+          <768px -> 12px, >=768px -> 24px, >=1024px -> 40px */}
       <main className="w-full px-3 md:px-6 lg:px-10 pb-12">
         <div className="pt-[100px] pb-[50px] text-center">
           <h1 className="text-[24px] md:text-[28px] xl:text-[36px] font-normal leading-tight mx-auto">
@@ -249,8 +244,8 @@ export function SessionsPage() {
         </div>
 
         <div className="w-full">
-          {/* ✅ CHANGED: full width wrapper (so switcher fills inside page padding) */}
-          <div className="w-full mb-[55px]">
+          {/* ✅ CHANGED: switcher centered again */}
+          <div className="w-full flex justify-center mb-[55px]">
             <SessionTypeSwitcher
               value={sessionTypeTab}
               onChange={(v) => {
@@ -260,7 +255,7 @@ export function SessionsPage() {
             />
           </div>
 
-          {/* ✅ Calendar filter fills width naturally */}
+          {/* Calendar filter fills width naturally */}
           <div className="mb-6 w-full">
             <SessionsDateFilter
               value={dateFilter}
@@ -272,8 +267,8 @@ export function SessionsPage() {
             />
           </div>
 
-          {/* ✅ CHANGED: mobile container no border + py=12px, desktop keeps border+p-8 */}
-          <div className="rounded-[24px] py-3 md:border md:border-[#DBD8D8] md:p-8">
+          {/* ✅ CHANGED: container now has its own inner padding on mobile (12px), and keeps old desktop styling */}
+          <div className="rounded-[24px] px-3 py-3 md:border md:border-[#DBD8D8] md:p-8">
             {isLoading ? (
               <div className="text-center py-12">
                 <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-brandBlack" />
