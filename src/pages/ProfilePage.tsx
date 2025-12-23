@@ -11,8 +11,6 @@ export default function ProfilePage() {
   const [fullName, setFullName] = useState("");
   const [bio, setBio] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-
-  // ✅ Since: Month + Year
   const [createdAt, setCreatedAt] = useState<string>("—");
 
   const [editMode, setEditMode] = useState(false);
@@ -21,7 +19,7 @@ export default function ProfilePage() {
 
   const [editButtonHover, setEditButtonHover] = useState(false);
 
-  // Sessions hosted by this user
+  // Sessions of host
   const [sessions, setSessions] = useState<any[]>([]);
 
   // ✅ Sessions attended (joined) by this user
@@ -89,20 +87,21 @@ export default function ProfilePage() {
     if (!loading && !user) navigate("/login", { replace: true });
   }, [loading, user, navigate]);
 
-  // Load profile (full_name/bio/avatar + created_at)
+  // Load profile (restore "loadBio" pattern like in your старый код)
   useEffect(() => {
     if (!user) return;
 
+    // keep fast prefill from context if exists
     if (profile) {
       setFullName(profile.full_name || "");
       setAvatarUrl(profile.avatar_url || null);
-      // bio in profile context might not exist, we still fetch below
     }
 
-    const loadProfileFields = async () => {
+    // ✅ explicit loadBio from supabase (как ты требуешь)
+    const loadBio = async () => {
       const { data, error } = await supabase
         .from("profiles")
-        .select("full_name, bio, avatar_url, created_at")
+        .select("full_name, bio, avatar_url")
         .eq("id", user.id)
         .single();
 
@@ -110,12 +109,30 @@ export default function ProfilePage() {
         setFullName(data.full_name || "");
         setBio(data.bio || "");
         setAvatarUrl(data.avatar_url || null);
-        if (data.created_at) setCreatedAt(formatSince(data.created_at));
       }
     };
 
-    loadProfileFields();
+    loadBio();
   }, [user, profile]);
+
+  // Load created_at (restore separate effect, but format Month Year)
+  useEffect(() => {
+    if (!user) return;
+
+    const loadCreatedAt = async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("created_at")
+        .eq("id", user.id)
+        .single();
+
+      if (!error && data?.created_at) {
+        setCreatedAt(formatSince(data.created_at));
+      }
+    };
+
+    loadCreatedAt();
+  }, [user]);
 
   // Load hosted sessions
   useEffect(() => {
@@ -151,13 +168,12 @@ export default function ProfilePage() {
           return;
         }
 
-        // count unique sessions where joined_at exists
-        const set = new Set<string>();
+        const uniq = new Set<string>();
         (data || []).forEach((row: any) => {
-          if (row?.session_id && row?.joined_at) set.add(row.session_id);
+          if (row?.session_id && row?.joined_at) uniq.add(row.session_id);
         });
 
-        setAttendedCount(set.size);
+        setAttendedCount(uniq.size);
       } finally {
         setLoadingStats(false);
       }
@@ -165,7 +181,7 @@ export default function ProfilePage() {
 
     loadAttendedCount();
 
-    // ✅ Optional: realtime updates for this user's attendance (auto-refresh)
+    // realtime subscription for auto-update
     const channel = supabase
       .channel(`profile-attendance-${user.id}`)
       .on(
@@ -177,7 +193,6 @@ export default function ProfilePage() {
           filter: `user_id=eq.${user.id}`,
         },
         () => {
-          // any join/leave update -> refresh count
           loadAttendedCount();
         }
       )
