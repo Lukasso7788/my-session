@@ -251,26 +251,37 @@ export class JitsiEngine {
     this.mediaSettings.videoInputId = videoInputId;
     this.mediaSettings.audioInputId = audioInputId;
 
+    // 1) AUDIO: try setDevice (best)
     try {
-      if (this.localAudioTrack) {
-        await this.conference?.removeTrack?.(this.localAudioTrack);
-        this.localAudioTrack.dispose?.();
-        this.localAudioTrack = null;
+      if (this.localAudioTrack && typeof this.localAudioTrack.setDevice === "function" && audioInputId) {
+        await this.localAudioTrack.setDevice(audioInputId);
       }
-      if (this.localVideoTrack) {
-        await this.clearBgEffectOnTrack(this.localVideoTrack);
-        await this.conference?.removeTrack?.(this.localVideoTrack);
-        this.localVideoTrack.dispose?.();
-        this.localVideoTrack = null;
-      }
-    } catch { }
-
-    const JitsiMeetJS = (window as any).JitsiMeetJS;
-    if (!JitsiMeetJS?.createLocalTracks) {
-      throw new Error("JitsiMeetJS.createLocalTracks not found");
+    } catch (e) {
+      console.warn("[applyInputDevices] audio setDevice failed:", e);
     }
 
-    const tracks = await JitsiMeetJS.createLocalTracks({
+    // 2) VIDEO: try setDevice (best)
+    try {
+      if (this.localVideoTrack && typeof this.localVideoTrack.setDevice === "function" && videoInputId) {
+        // если эффекты включены — сначала прибери (чтобы пайплайн не залипал)
+        await this.clearBgEffectOnTrack(this.localVideoTrack);
+        await this.localVideoTrack.setDevice(videoInputId);
+
+        // иногда Jitsi “заменяет” инстанс трека — тогда TRACK_ADDED обновит this.localVideoTrack
+        // но на всякий случай попробуем переапплаить эффект чуть позже
+        setTimeout(() => this.reapplyBgIfNeeded(), 0);
+        return { audio: this.localAudioTrack, video: this.localVideoTrack };
+      }
+    } catch (e) {
+      console.warn("[applyInputDevices] video setDevice failed:", e);
+    }
+
+    // 3) Fallback: recreate tracks (если setDevice нет)
+    // ВАЖНО: здесь используем replaceTrack, чтобы не было "second video track"
+    const JitsiMeetJS = (window as any).JitsiMeetJS;
+    if (!JitsiMeetJS?.createLocalTracks) throw new Error("JitsiMeetJS.createLocalTracks not found");
+
+    const newTracks = await JitsiMeetJS.createLocalTracks({
       devices: ["audio", "video"],
       constraints: {
         audio: audioInputId ? { deviceId: { exact: audioInputId } } : true,
@@ -278,18 +289,31 @@ export class JitsiEngine {
       },
     });
 
-    for (const t of tracks) {
-      const type = t.getType?.();
-      if (type === "audio") this.localAudioTrack = t;
-      if (type === "video") this.localVideoTrack = t;
-    }
+    const newAudio = newTracks.find((t: any) => t.getType?.() === "audio") || null;
+    const newVideo = newTracks.find((t: any) => t.getType?.() === "video") || null;
 
     if (this.conference) {
-      if (this.localAudioTrack) await this.conference.addTrack(this.localAudioTrack);
-      if (this.localVideoTrack) await this.conference.addTrack(this.localVideoTrack);
+      if (newAudio && this.localAudioTrack && typeof this.conference.replaceTrack === "function") {
+        await this.conference.replaceTrack(this.localAudioTrack, newAudio);
+        this.localAudioTrack.dispose?.();
+        this.localAudioTrack = newAudio;
+      } else if (newAudio && !this.localAudioTrack) {
+        await this.conference.addTrack(newAudio);
+        this.localAudioTrack = newAudio;
+      }
+
+      if (newVideo && this.localVideoTrack && typeof this.conference.replaceTrack === "function") {
+        await this.clearBgEffectOnTrack(this.localVideoTrack);
+        await this.conference.replaceTrack(this.localVideoTrack, newVideo);
+        this.localVideoTrack.dispose?.();
+        this.localVideoTrack = newVideo;
+      } else if (newVideo && !this.localVideoTrack) {
+        await this.conference.addTrack(newVideo);
+        this.localVideoTrack = newVideo;
+      }
     }
 
-    // update store
+    // store + UI update
     if (this.localUserId) {
       const entry = this.tracksByParticipant.get(this.localUserId) || {};
       if (this.localAudioTrack) entry.audio = this.localAudioTrack;
@@ -299,7 +323,7 @@ export class JitsiEngine {
       this.emitParticipants();
     }
 
-    // re-apply persisted background effect (IMPORTANT)
+    // re-apply persisted bg effect (если оно вообще возможно)
     await this.reapplyBgIfNeeded();
 
     return { audio: this.localAudioTrack, video: this.localVideoTrack };
@@ -707,6 +731,12 @@ export class JitsiEngine {
         await this.conference.addTrack(t);
         if (type === "audio") this.localAudioTrack = t;
         if (type === "video") this.localVideoTrack = t;
+        console.log(
+          "[dbg] localVideoTrack setEffect:",
+          typeof (this.localVideoTrack as any)?.setEffect,
+          "keys:",
+          this.localVideoTrack ? Object.keys(this.localVideoTrack) : null
+        );
       }
 
       const entry = this.tracksByParticipant.get(this.localUserId) || {};
