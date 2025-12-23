@@ -131,6 +131,9 @@ export class JitsiEngine {
   // Persisted bg prefs (to re-apply on track replacement)
   private bgPrefs: { mode: BgMode; imageUrl?: string } = { mode: "none" };
 
+  // Guard: some builds fire TRACK_MUTE_CHANGED during setEffect and UI thinks "camera off"
+  private bgApplying = false;
+
   constructor(callbacks: JitsiEngineCallbacks = {}) {
     this.callbacks = callbacks;
   }
@@ -154,7 +157,6 @@ export class JitsiEngine {
 
     try {
       if (typeof track.setEffect === "function") {
-        // Jitsi/Sariska example uses undefined to clear
         await track.setEffect(undefined);
       }
     } catch { }
@@ -170,17 +172,21 @@ export class JitsiEngine {
 
     const hasSetEffect = typeof track.setEffect === "function";
     if (!hasSetEffect) {
-      console.warn("[bg] localVideoTrack.setEffect is not available in this lib build");
+      console.warn("[bg] track.setEffect is not available in this lib build");
       return;
     }
 
-    // If user is muted, don't try to start heavy pipelines right now.
-    // We'll re-apply when unmuted (TRACK_MUTE_CHANGED).
-    try {
-      if (typeof track.isMuted === "function" && track.isMuted()) {
-        return;
+    const wasMuted = (() => {
+      try {
+        return track.isMuted?.() === true;
+      } catch {
+        return false;
       }
-    } catch { }
+    })();
+
+    // If user is muted right now — don't start heavy pipeline.
+    // We'll apply after unmute (TRACK_MUTE_CHANGED handler already calls reapplyBgIfNeeded).
+    if (wasMuted) return;
 
     if (this.bgPrefs.mode === "none") {
       await this.clearBgEffectOnTrack(track);
@@ -201,9 +207,18 @@ export class JitsiEngine {
       return;
     }
 
+    this.bgApplying = true;
     try {
       await track.setEffect(effect);
       this.videoEffect = effect;
+
+      // ✅ FIX: some builds "mute" track transiently during setEffect — restore
+      try {
+        const nowMuted = track.isMuted?.() === true;
+        if (!wasMuted && nowMuted && typeof track.unmute === "function") {
+          await track.unmute();
+        }
+      } catch { }
     } catch (e) {
       console.warn("[bg] setEffect failed, clearing:", e);
       try {
@@ -213,6 +228,11 @@ export class JitsiEngine {
         effect.dispose?.();
       } catch { }
       this.videoEffect = undefined;
+    } finally {
+      // give some time for TRACK_MUTE_CHANGED spam to settle
+      setTimeout(() => {
+        this.bgApplying = false;
+      }, 250);
     }
   }
 
@@ -224,10 +244,9 @@ export class JitsiEngine {
 
   // Public API: set bg prefs + apply now
   public async setBackgroundEffect(opts: { mode: BgMode; imageUrl?: string }) {
-    // persist prefs
     this.bgPrefs = { mode: opts.mode, imageUrl: opts.imageUrl };
 
-    // also reflect in settings (UI)
+    // reflect in settings (UI)
     this.mediaSettings.bgMode = opts.mode;
     this.mediaSettings.bgImageUrl = opts.imageUrl;
 
@@ -349,16 +368,10 @@ export class JitsiEngine {
     this.JitsiMeetJS.init({
       disableP2P: true,
       disableAudioLevels: true,
-
       effects: {
-        // segmentation model
         tfliteModel: "/libs/selfie_segmentation_landscape.tflite",
-
-        // tflite runtime
         tfliteWasm: "/libs/tflite.wasm",
         tfliteSimdWasm: "/libs/tflite-simd.wasm",
-
-        // tfjs wasm backend (some builds use it)
         tfjsWasm: "/libs/tfjs-backend-wasm.wasm",
         tfjsSimdWasm: "/libs/tfjs-backend-wasm-simd.wasm",
         tfjsThreadedSimdWasm: "/libs/tfjs-backend-wasm-threaded-simd.wasm",
@@ -372,8 +385,7 @@ export class JitsiEngine {
       console.log("[Jitsi] effects:", hasEffects, "createVirtualBackgroundEffect:", hasCreate);
     } catch { }
 
-    const serviceUrl =
-      this.config.websocket || this.config.bosh || `wss://${JITSI_DOMAIN}/xmpp-websocket`;
+    const serviceUrl = this.config.websocket || this.config.bosh || `wss://${JITSI_DOMAIN}/xmpp-websocket`;
 
     const options = {
       hosts: this.config.hosts,
@@ -385,29 +397,20 @@ export class JitsiEngine {
     const connection = new this.JitsiMeetJS.JitsiConnection(null, undefined, options);
     this.connection = connection;
 
-    connection.addEventListener(
-      this.JitsiMeetJS.events.connection.CONNECTION_ESTABLISHED,
-      () => {
-        if (this.disposed) return;
-        this.setupConference(roomName, userName);
-      }
-    );
+    connection.addEventListener(this.JitsiMeetJS.events.connection.CONNECTION_ESTABLISHED, () => {
+      if (this.disposed) return;
+      this.setupConference(roomName, userName);
+    });
 
-    connection.addEventListener(
-      this.JitsiMeetJS.events.connection.CONNECTION_FAILED,
-      () => {
-        if (this.disposed) return;
-        this.callbacks.onError?.("Jitsi connection failed");
-      }
-    );
+    connection.addEventListener(this.JitsiMeetJS.events.connection.CONNECTION_FAILED, () => {
+      if (this.disposed) return;
+      this.callbacks.onError?.("Jitsi connection failed");
+    });
 
-    connection.addEventListener?.(
-      this.JitsiMeetJS.events.connection.CONNECTION_DISCONNECTED,
-      () => {
-        if (this.disposed) return;
-        this.callbacks.onError?.("Jitsi connection disconnected");
-      }
-    );
+    connection.addEventListener?.(this.JitsiMeetJS.events.connection.CONNECTION_DISCONNECTED, () => {
+      if (this.disposed) return;
+      this.callbacks.onError?.("Jitsi connection disconnected");
+    });
 
     connection.connect();
   }
@@ -713,9 +716,7 @@ export class JitsiEngine {
         devices: ["audio", "video"],
         resolution: 720,
         constraints: {
-          audio: this.mediaSettings.audioInputId
-            ? { deviceId: { exact: this.mediaSettings.audioInputId } }
-            : true,
+          audio: this.mediaSettings.audioInputId ? { deviceId: { exact: this.mediaSettings.audioInputId } } : true,
           video: this.mediaSettings.videoInputId
             ? { deviceId: { exact: this.mediaSettings.videoInputId } }
             : {
@@ -731,13 +732,17 @@ export class JitsiEngine {
         await this.conference.addTrack(t);
         if (type === "audio") this.localAudioTrack = t;
         if (type === "video") this.localVideoTrack = t;
+      }
+
+      // debug (optional)
+      try {
         console.log(
           "[dbg] localVideoTrack setEffect:",
           typeof (this.localVideoTrack as any)?.setEffect,
-          "keys:",
-          this.localVideoTrack ? Object.keys(this.localVideoTrack) : null
+          "protoSetEffect:",
+          typeof (window as any)?.JitsiMeetJS?.JitsiLocalTrack?.prototype?.setEffect
         );
-      }
+      } catch { }
 
       const entry = this.tracksByParticipant.get(this.localUserId) || {};
       if (this.localAudioTrack) entry.audio = this.localAudioTrack;
@@ -815,7 +820,8 @@ export class JitsiEngine {
     const activeRemoteIds = this.getRemoteIdsWithAnyVideoOrScreen();
 
     const finalRemoteIds: string[] = [];
-    for (const id of activeRemoteIds) if (id && id !== localId && !finalRemoteIds.includes(id)) finalRemoteIds.push(id);
+    for (const id of activeRemoteIds)
+      if (id && id !== localId && !finalRemoteIds.includes(id)) finalRemoteIds.push(id);
     for (const id of uiRemoteIds) if (id && id !== localId && !finalRemoteIds.includes(id)) finalRemoteIds.push(id);
 
     return finalRemoteIds;
@@ -974,7 +980,6 @@ export class JitsiEngine {
       if (type === "video" && entry.video === track) delete entry.video;
 
       if (pid === this.localUserId && type === "video" && this.localVideoTrack === track) {
-        // best-effort cleanup
         this.clearBgEffectOnTrack(track);
         this.localVideoTrack = null;
       }
@@ -1008,7 +1013,10 @@ export class JitsiEngine {
       p.audioMuted = track.isMuted ? track.isMuted() : p.audioMuted;
     } else if (type === "video") {
       if (!this.isDesktopTrack(track)) {
-        p.videoMuted = track.isMuted ? track.isMuted() : p.videoMuted;
+        // ✅ ignore transient mute events during setEffect
+        if (!(pid === this.localUserId && this.bgApplying)) {
+          p.videoMuted = track.isMuted ? track.isMuted() : p.videoMuted;
+        }
 
         if (pid === this.localUserId) {
           try {
