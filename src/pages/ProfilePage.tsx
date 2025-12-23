@@ -1,5 +1,5 @@
 // src/pages/ProfilePage.tsx
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
@@ -11,6 +11,8 @@ export default function ProfilePage() {
   const [fullName, setFullName] = useState("");
   const [bio, setBio] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
+  // ✅ Since: Month + Year
   const [createdAt, setCreatedAt] = useState<string>("—");
 
   const [editMode, setEditMode] = useState(false);
@@ -19,8 +21,18 @@ export default function ProfilePage() {
 
   const [editButtonHover, setEditButtonHover] = useState(false);
 
-  // Sessions of host
+  // Sessions hosted by this user
   const [sessions, setSessions] = useState<any[]>([]);
+
+  // ✅ Sessions attended (joined) by this user
+  const [attendedCount, setAttendedCount] = useState<number>(0);
+  const [loadingStats, setLoadingStats] = useState(false);
+
+  const displayName = useMemo(() => fullName || "User", [fullName]);
+
+  const avatarFallback = useMemo(() => {
+    return `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}`;
+  }, [displayName]);
 
   // === STATUS BADGES ===
   const getSessionStatus = (session: any) => {
@@ -65,24 +77,32 @@ export default function ProfilePage() {
     }
   };
 
+  // ✅ Month Year formatter (English UI)
+  const formatSince = (iso: string) => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "—";
+    return new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(d);
+  };
+
   // Redirect
   useEffect(() => {
     if (!loading && !user) navigate("/login", { replace: true });
   }, [loading, user, navigate]);
 
-  // Load profile
+  // Load profile (full_name/bio/avatar + created_at)
   useEffect(() => {
     if (!user) return;
 
     if (profile) {
       setFullName(profile.full_name || "");
       setAvatarUrl(profile.avatar_url || null);
+      // bio in profile context might not exist, we still fetch below
     }
 
-    const loadBio = async () => {
+    const loadProfileFields = async () => {
       const { data, error } = await supabase
         .from("profiles")
-        .select("full_name, bio, avatar_url")
+        .select("full_name, bio, avatar_url, created_at")
         .eq("id", user.id)
         .single();
 
@@ -90,30 +110,12 @@ export default function ProfilePage() {
         setFullName(data.full_name || "");
         setBio(data.bio || "");
         setAvatarUrl(data.avatar_url || null);
+        if (data.created_at) setCreatedAt(formatSince(data.created_at));
       }
     };
 
-    loadBio();
+    loadProfileFields();
   }, [user, profile]);
-
-  // Load created_at
-  useEffect(() => {
-    if (!user) return;
-
-    const loadCreatedAt = async () => {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("created_at")
-        .eq("id", user.id)
-        .single();
-
-      if (!error && data?.created_at) {
-        setCreatedAt(new Date(data.created_at).toLocaleDateString());
-      }
-    };
-
-    loadCreatedAt();
-  }, [user]);
 
   // Load hosted sessions
   useEffect(() => {
@@ -130,6 +132,60 @@ export default function ProfilePage() {
     };
 
     loadSessions();
+  }, [user?.id]);
+
+  // ✅ Load attended sessions count (unique session_id from session_attendance)
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const loadAttendedCount = async () => {
+      setLoadingStats(true);
+      try {
+        const { data, error } = await supabase
+          .from("session_attendance")
+          .select("session_id, joined_at")
+          .eq("user_id", user.id);
+
+        if (error) {
+          console.warn("Failed to load attendance stats:", error);
+          return;
+        }
+
+        // count unique sessions where joined_at exists
+        const set = new Set<string>();
+        (data || []).forEach((row: any) => {
+          if (row?.session_id && row?.joined_at) set.add(row.session_id);
+        });
+
+        setAttendedCount(set.size);
+      } finally {
+        setLoadingStats(false);
+      }
+    };
+
+    loadAttendedCount();
+
+    // ✅ Optional: realtime updates for this user's attendance (auto-refresh)
+    const channel = supabase
+      .channel(`profile-attendance-${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "session_attendance",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          // any join/leave update -> refresh count
+          loadAttendedCount();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user?.id]);
 
   // Upload avatar
@@ -214,9 +270,6 @@ export default function ProfilePage() {
 
   if (!user) return null;
 
-  const displayName = fullName || "User";
-  const totalSessions = profile?.total_sessions ?? 0;
-
   const actionIconSrc = !editMode
     ? editButtonHover
       ? "/icons/edit_profile_hover.svg"
@@ -265,10 +318,7 @@ export default function ProfilePage() {
       <div className="flex flex-col items-center">
         <div className="relative">
           <img
-            src={
-              avatarUrl ||
-              `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}`
-            }
+            src={avatarUrl || avatarFallback}
             className="w-28 h-28 rounded-full object-cover border border-gray-200 shadow-sm"
           />
 
@@ -304,15 +354,15 @@ export default function ProfilePage() {
             </span>
           </span>
 
-          {/* Session count */}
+          {/* Sessions attended */}
           <span className="flex items-center gap-2">
             <img
               src="/icons/session_count.svg"
-              alt="Total hosted sessions"
+              alt="Total sessions attended"
               className="w-[24px] h-[24px]"
             />
             <span className="text-[14px] font-medium text-[#2F2F2F]">
-              {totalSessions} sessions
+              {loadingStats ? "…" : attendedCount} sessions
             </span>
           </span>
         </div>
