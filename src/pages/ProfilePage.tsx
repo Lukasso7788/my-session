@@ -4,8 +4,6 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 
-const DEBUG = true;
-
 export default function ProfilePage() {
   const navigate = useNavigate();
   const { user, profile, loading, reloadProfile } = useAuth();
@@ -13,6 +11,8 @@ export default function ProfilePage() {
   const [fullName, setFullName] = useState("");
   const [bio, setBio] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
+  // ✅ Since: Month + Year
   const [createdAt, setCreatedAt] = useState<string>("—");
 
   const [editMode, setEditMode] = useState(false);
@@ -24,7 +24,7 @@ export default function ProfilePage() {
   // Sessions hosted by this user
   const [sessions, setSessions] = useState<any[]>([]);
 
-  // ✅ sessions attended count comes from profiles.attended_session_count (fallback: profiles.sessions_attended)
+  // ✅ comes from `profiles.attended_sessions_count`
   const [attendedCount, setAttendedCount] = useState<number>(0);
 
   const displayName = useMemo(() => fullName || "User", [fullName]);
@@ -32,15 +32,6 @@ export default function ProfilePage() {
   const avatarFallback = useMemo(() => {
     return `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}`;
   }, [displayName]);
-
-  // ✅ Универсальный выбор счётчика из профиля (поддержка обоих имён колонки)
-  const pickAttendedCount = (row: any): number => {
-    const v1 = row?.attended_session_count;
-    const v2 = row?.sessions_attended;
-    if (typeof v1 === "number") return v1;
-    if (typeof v2 === "number") return v2;
-    return 0;
-  };
 
   // === STATUS BADGES ===
   const getSessionStatus = (session: any) => {
@@ -89,7 +80,10 @@ export default function ProfilePage() {
   const formatSince = (iso: string) => {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return "—";
-    return new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(d);
+    return new Intl.DateTimeFormat("en-US", {
+      month: "long",
+      year: "numeric",
+    }).format(d);
   };
 
   // Redirect
@@ -101,111 +95,57 @@ export default function ProfilePage() {
   useEffect(() => {
     if (!profile) return;
 
-    const anyProfile: any = profile as any;
+    setFullName(profile.full_name || "");
+    setAvatarUrl(profile.avatar_url || null);
 
-    setFullName(anyProfile.full_name || "");
-    setAvatarUrl(anyProfile.avatar_url || null);
+    const p: any = profile as any;
 
-    // ⚠️ важно: поддерживаем оба возможных имени поля
-    setAttendedCount(pickAttendedCount(anyProfile));
+    // ✅ correct column name
+    if (typeof p.attended_sessions_count === "number") {
+      setAttendedCount(p.attended_sessions_count);
+    }
 
-    if (DEBUG) {
-      console.log("[DEBUG ProfilePage] Prefill from context profile:", {
-        full_name: anyProfile.full_name,
-        attended_session_count: anyProfile.attended_session_count,
-        sessions_attended: anyProfile.sessions_attended,
-      });
+    // optional: if your context already has created_at
+    if (typeof p.created_at === "string" && p.created_at) {
+      setCreatedAt(formatSince(p.created_at));
     }
   }, [profile]);
 
-  // ✅ Load profile fields from supabase (BIO + attendedCount from profiles)
+  // ✅ Load profile fields from supabase (BIO + attendedCount + created_at)
   useEffect(() => {
     if (!user) return;
 
     const loadProfile = async () => {
-      // 1) Сначала пробуем attended_session_count (то, что ты хочешь)
-      const first = await supabase
+      const { data, error } = await supabase
         .from("profiles")
-        .select("full_name, bio, avatar_url, attended_session_count")
+        .select("full_name, bio, avatar_url, created_at, attended_sessions_count")
         .eq("id", user.id)
         .single();
 
-      if (!first.error && first.data) {
-        const row: any = first.data;
-
-        setFullName(row.full_name || "");
-        setBio(row.bio || "");
-        setAvatarUrl(row.avatar_url || null);
-        setAttendedCount(pickAttendedCount(row));
-
-        if (DEBUG) console.log("[DEBUG ProfilePage] Loaded profile (attended_session_count):", row);
+      if (error) {
+        console.warn("Failed to load profile:", error);
         return;
       }
 
-      // 2) Фоллбек: если колонки attended_session_count ещё нет — пробуем sessions_attended
-      const second = await supabase
-        .from("profiles")
-        .select("full_name, bio, avatar_url, sessions_attended")
-        .eq("id", user.id)
-        .single();
+      if (!data) return;
 
-      if (!second.error && second.data) {
-        const row: any = second.data;
+      setFullName(data.full_name || "");
+      setBio(data.bio || "");
+      setAvatarUrl(data.avatar_url || null);
 
-        setFullName(row.full_name || "");
-        setBio(row.bio || "");
-        setAvatarUrl(row.avatar_url || null);
-        setAttendedCount(pickAttendedCount(row));
-
-        if (DEBUG) console.log("[DEBUG ProfilePage] Loaded profile (sessions_attended fallback):", row);
-        return;
-      }
-
-      // 3) Последний фоллбек: хотя бы bio/name/avatar
-      const third = await supabase
-        .from("profiles")
-        .select("full_name, bio, avatar_url")
-        .eq("id", user.id)
-        .single();
-
-      if (!third.error && third.data) {
-        const row: any = third.data;
-        setFullName(row.full_name || "");
-        setBio(row.bio || "");
-        setAvatarUrl(row.avatar_url || null);
+      // ✅ attended_sessions_count from profiles
+      if (typeof (data as any).attended_sessions_count === "number") {
+        setAttendedCount((data as any).attended_sessions_count);
+      } else {
         setAttendedCount(0);
-
-        if (DEBUG) console.log("[DEBUG ProfilePage] Loaded profile (no attended columns):", row);
-        return;
       }
 
-      console.warn("[DEBUG ProfilePage] Failed to load profile:", {
-        firstError: first.error,
-        secondError: second.error,
-        thirdError: third.error,
-      });
+      // ✅ created_at from profiles -> Month Year
+      if (data.created_at) setCreatedAt(formatSince(data.created_at));
+      else setCreatedAt("—");
     };
 
     loadProfile();
-  }, [user]);
-
-  // Load created_at (Month Year)
-  useEffect(() => {
-    if (!user) return;
-
-    const loadCreatedAt = async () => {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("created_at")
-        .eq("id", user.id)
-        .single();
-
-      if (!error && data?.created_at) {
-        setCreatedAt(formatSince(data.created_at));
-      }
-    };
-
-    loadCreatedAt();
   }, [user]);
 
   // Load hosted sessions
@@ -266,7 +206,7 @@ export default function ProfilePage() {
     }
   };
 
-  // Save profile (НЕ трогаем attended_session_count / sessions_attended)
+  // Save profile (НЕ трогаем attended_sessions_count и created_at)
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
@@ -315,7 +255,11 @@ export default function ProfilePage() {
       ? "/icons/save_changes_hover.svg"
       : "/icons/save_changes.svg";
 
-  const actionLabel = editMode ? (saving ? "Saving..." : "Save changes") : "Edit profile";
+  const actionLabel = editMode
+    ? saving
+      ? "Saving..."
+      : "Save changes"
+    : "Edit profile";
 
   return (
     <main className="w-full px-8 pt-10 pb-24 font-inter text-gray-900">
@@ -391,7 +335,7 @@ export default function ProfilePage() {
             </span>
           </span>
 
-          {/* Sessions attended (from profiles) */}
+          {/* Sessions attended (from profiles.attended_sessions_count) */}
           <span className="flex items-center gap-2">
             <img
               src="/icons/session_count.svg"
