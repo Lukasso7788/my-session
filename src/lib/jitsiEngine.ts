@@ -1,5 +1,5 @@
 // ============================================================================
-// src/lib/jitsiEngine.ts — SFU-only (P2P OFF) + track-based + reactions + REAL background effects
+// src/lib/jitsiEngine.ts — SFU-only (P2P OFF) + track-based + reactions + SAFE background effects
 // ============================================================================
 
 import { createBackgroundEffect, BgMode, JitsiStreamEffect } from "./backgroundEffect";
@@ -134,6 +134,9 @@ export class JitsiEngine {
   // Guard: some builds fire TRACK_MUTE_CHANGED during setEffect and UI thinks "camera off"
   private bgApplying = false;
 
+  // IMPORTANT: detect if current lib supports creating VB effects
+  private effectsSupported = false;
+
   constructor(callbacks: JitsiEngineCallbacks = {}) {
     this.callbacks = callbacks;
   }
@@ -151,9 +154,92 @@ export class JitsiEngine {
     this.mediaSettings.audioOutputId = deviceId || "default";
   }
 
-  // ---------------- BG EFFECT CORE ----------------
+  // ========================================================================
+  // EFFECT SUPPORT DETECTION
+  // ========================================================================
+  private refreshEffectsSupport() {
+    const hasFactory = typeof this.JitsiMeetJS?.effects?.createVirtualBackgroundEffect === "function";
+    const hasSetEffect = typeof (this.localVideoTrack as any)?.setEffect === "function";
+    this.effectsSupported = !!(hasFactory && hasSetEffect);
+    return this.effectsSupported;
+  }
+
+  // ========================================================================
+  // LOCAL VIDEO RECOVERY (prevents "camera stuck off")
+  // ========================================================================
+  private async ensureLocalVideoTrack(): Promise<void> {
+    if (this.disposed || !this.JitsiMeetJS || !this.conference) return;
+
+    // if we already have a live video track -> ok
+    try {
+      const ms = this.localVideoTrack?.getOriginalStream?.();
+      const vt = ms?.getVideoTracks?.()?.[0];
+      if (this.localVideoTrack && vt && vt.readyState !== "ended") return;
+    } catch { }
+
+    // create new video track
+    const tracks = await this.JitsiMeetJS.createLocalTracks({
+      devices: ["video"],
+      constraints: {
+        video: this.mediaSettings.videoInputId
+          ? { deviceId: { exact: this.mediaSettings.videoInputId } }
+          : true,
+      },
+    });
+
+    const newVideo = tracks.find((t: any) => t.getType?.() === "video");
+    if (!newVideo) return;
+
+    // replace safely (no "second video track")
+    if (this.localVideoTrack) {
+      if (typeof this.conference.replaceTrack === "function") {
+        try { await this.clearBgEffectOnTrack(this.localVideoTrack); } catch { }
+        await this.conference.replaceTrack(this.localVideoTrack, newVideo);
+        try { this.localVideoTrack.dispose?.(); } catch { }
+      } else {
+        // fallback: remove old then add new
+        try { await this.clearBgEffectOnTrack(this.localVideoTrack); } catch { }
+        try { await this.conference.removeTrack?.(this.localVideoTrack); } catch { }
+        try { this.localVideoTrack.dispose?.(); } catch { }
+        await this.conference.addTrack(newVideo);
+      }
+    } else {
+      await this.conference.addTrack(newVideo);
+    }
+
+    this.localVideoTrack = newVideo;
+
+    // update store + UI
+    if (this.localUserId) {
+      const entry = this.tracksByParticipant.get(this.localUserId) || {};
+      entry.video = newVideo;
+      this.tracksByParticipant.set(this.localUserId, entry);
+
+      this.rebuildParticipantsFromTracks();
+      // force "video on" in local DTO (since we just recreated it)
+      const p = this.participants[this.localUserId];
+      if (p) p.videoMuted = newVideo?.isMuted?.() === true;
+      this.emitParticipants();
+    }
+
+    // refresh effect support & reapply if needed
+    this.refreshEffectsSupport();
+    await this.reapplyBgIfNeeded();
+  }
+
+  // ========================================================================
+  // BG EFFECT CORE
+  // ========================================================================
   private async clearBgEffectOnTrack(track: any) {
     if (!track) return;
+
+    // IMPORTANT: do not touch setEffect if lib doesn't support effect factory (avoid breaking track)
+    if (!this.effectsSupported) {
+      // still dispose local reference
+      try { this.videoEffect?.dispose?.(); } catch { }
+      this.videoEffect = undefined;
+      return;
+    }
 
     try {
       if (typeof track.setEffect === "function") {
@@ -161,14 +247,18 @@ export class JitsiEngine {
       }
     } catch { }
 
-    try {
-      this.videoEffect?.dispose?.();
-    } catch { }
+    try { this.videoEffect?.dispose?.(); } catch { }
     this.videoEffect = undefined;
   }
 
   private async applyBgEffectToTrack(track: any) {
     if (!track) return;
+
+    // if effects are not supported -> NO-OP (do not kill camera)
+    if (!this.effectsSupported) {
+      console.warn("[bg] effects are NOT supported by current lib build (no createVirtualBackgroundEffect)");
+      return;
+    }
 
     const hasSetEffect = typeof track.setEffect === "function";
     if (!hasSetEffect) {
@@ -177,15 +267,10 @@ export class JitsiEngine {
     }
 
     const wasMuted = (() => {
-      try {
-        return track.isMuted?.() === true;
-      } catch {
-        return false;
-      }
+      try { return track.isMuted?.() === true; } catch { return false; }
     })();
 
     // If user is muted right now — don't start heavy pipeline.
-    // We'll apply after unmute (TRACK_MUTE_CHANGED handler already calls reapplyBgIfNeeded).
     if (wasMuted) return;
 
     if (this.bgPrefs.mode === "none") {
@@ -203,7 +288,7 @@ export class JitsiEngine {
     });
 
     if (!effect) {
-      console.warn("[bg] createBackgroundEffect returned empty");
+      console.warn("[bg] createBackgroundEffect returned empty (factory missing or error)");
       return;
     }
 
@@ -212,7 +297,7 @@ export class JitsiEngine {
       await track.setEffect(effect);
       this.videoEffect = effect;
 
-      // ✅ FIX: some builds "mute" track transiently during setEffect — restore
+      // restore mute if lib toggles it transiently
       try {
         const nowMuted = track.isMuted?.() === true;
         if (!wasMuted && nowMuted && typeof track.unmute === "function") {
@@ -221,18 +306,11 @@ export class JitsiEngine {
       } catch { }
     } catch (e) {
       console.warn("[bg] setEffect failed, clearing:", e);
-      try {
-        await track.setEffect(undefined);
-      } catch { }
-      try {
-        effect.dispose?.();
-      } catch { }
+      try { await track.setEffect(undefined); } catch { }
+      try { effect.dispose?.(); } catch { }
       this.videoEffect = undefined;
     } finally {
-      // give some time for TRACK_MUTE_CHANGED spam to settle
-      setTimeout(() => {
-        this.bgApplying = false;
-      }, 250);
+      setTimeout(() => { this.bgApplying = false; }, 250);
     }
   }
 
@@ -250,8 +328,21 @@ export class JitsiEngine {
     this.mediaSettings.bgMode = opts.mode;
     this.mediaSettings.bgImageUrl = opts.imageUrl;
 
+    // Ensure we have a track (prevents "stuck off")
+    await this.ensureLocalVideoTrack();
+
     const t = this.localVideoTrack;
     if (!t) return;
+
+    // refresh support before doing anything
+    this.refreshEffectsSupport();
+
+    // If lib doesn't support effects -> do NOT touch video track
+    if (!this.effectsSupported) {
+      console.warn("[bg] Requested", opts.mode, "but effects not supported by lib. Keeping video as-is.");
+      this.scheduleHardResetSubscriptions(0);
+      return;
+    }
 
     if (opts.mode === "none") {
       await this.clearBgEffectOnTrack(t);
@@ -260,43 +351,72 @@ export class JitsiEngine {
     }
 
     await this.applyBgEffectToTrack(t);
+
+    // make sure local DTO isn't stuck at "videoMuted=true"
+    try {
+      if (this.localUserId && this.participants[this.localUserId]) {
+        this.participants[this.localUserId].videoMuted = t.isMuted?.() === true;
+        this.emitParticipants();
+      }
+    } catch { }
+
     this.scheduleHardResetSubscriptions(0);
   }
 
-  // 0) Replace input devices (cam/mic) and re-apply background effect
+  // ========================================================================
+  // INPUT DEVICES
+  // ========================================================================
   public async applyInputDevices(opts: { videoInputId: string; audioInputId: string }) {
     const { videoInputId, audioInputId } = opts;
+
+    const prevVideo = this.mediaSettings.videoInputId || "";
+    const prevAudio = this.mediaSettings.audioInputId || "";
 
     this.mediaSettings.videoInputId = videoInputId;
     this.mediaSettings.audioInputId = audioInputId;
 
+    const videoChanged = !!videoInputId && videoInputId !== prevVideo;
+    const audioChanged = !!audioInputId && audioInputId !== prevAudio;
+
+    // If nothing changed -> do nothing (prevents unnecessary track reset)
+    if (!videoChanged && !audioChanged) {
+      return { audio: this.localAudioTrack, video: this.localVideoTrack };
+    }
+
     // 1) AUDIO: try setDevice (best)
-    try {
-      if (this.localAudioTrack && typeof this.localAudioTrack.setDevice === "function" && audioInputId) {
-        await this.localAudioTrack.setDevice(audioInputId);
+    if (audioChanged) {
+      try {
+        if (this.localAudioTrack && typeof this.localAudioTrack.setDevice === "function") {
+          await this.localAudioTrack.setDevice(audioInputId);
+        }
+      } catch (e) {
+        console.warn("[applyInputDevices] audio setDevice failed:", e);
       }
-    } catch (e) {
-      console.warn("[applyInputDevices] audio setDevice failed:", e);
     }
 
     // 2) VIDEO: try setDevice (best)
-    try {
-      if (this.localVideoTrack && typeof this.localVideoTrack.setDevice === "function" && videoInputId) {
-        // если эффекты включены — сначала прибери (чтобы пайплайн не залипал)
-        await this.clearBgEffectOnTrack(this.localVideoTrack);
-        await this.localVideoTrack.setDevice(videoInputId);
+    if (videoChanged) {
+      try {
+        if (this.localVideoTrack && typeof this.localVideoTrack.setDevice === "function") {
+          // clear effects ONLY if supported + active (avoid killing camera on unsupported builds)
+          this.refreshEffectsSupport();
+          if (this.effectsSupported && this.bgPrefs.mode !== "none") {
+            await this.clearBgEffectOnTrack(this.localVideoTrack);
+          }
 
-        // иногда Jitsi “заменяет” инстанс трека — тогда TRACK_ADDED обновит this.localVideoTrack
-        // но на всякий случай попробуем переапплаить эффект чуть позже
-        setTimeout(() => this.reapplyBgIfNeeded(), 0);
-        return { audio: this.localAudioTrack, video: this.localVideoTrack };
+          await this.localVideoTrack.setDevice(videoInputId);
+
+          // sometimes Jitsi replaces the track instance; TRACK_ADDED will resync pointers
+          setTimeout(() => this.reapplyBgIfNeeded(), 0);
+          return { audio: this.localAudioTrack, video: this.localVideoTrack };
+        }
+      } catch (e) {
+        console.warn("[applyInputDevices] video setDevice failed:", e);
       }
-    } catch (e) {
-      console.warn("[applyInputDevices] video setDevice failed:", e);
     }
 
     // 3) Fallback: recreate tracks (если setDevice нет)
-    // ВАЖНО: здесь используем replaceTrack, чтобы не было "second video track"
+    // ВАЖНО: replaceTrack / remove+add (чтобы не было "second video track")
     const JitsiMeetJS = (window as any).JitsiMeetJS;
     if (!JitsiMeetJS?.createLocalTracks) throw new Error("JitsiMeetJS.createLocalTracks not found");
 
@@ -312,23 +432,46 @@ export class JitsiEngine {
     const newVideo = newTracks.find((t: any) => t.getType?.() === "video") || null;
 
     if (this.conference) {
-      if (newAudio && this.localAudioTrack && typeof this.conference.replaceTrack === "function") {
-        await this.conference.replaceTrack(this.localAudioTrack, newAudio);
-        this.localAudioTrack.dispose?.();
-        this.localAudioTrack = newAudio;
-      } else if (newAudio && !this.localAudioTrack) {
-        await this.conference.addTrack(newAudio);
-        this.localAudioTrack = newAudio;
+      if (newAudio) {
+        if (this.localAudioTrack && typeof this.conference.replaceTrack === "function") {
+          await this.conference.replaceTrack(this.localAudioTrack, newAudio);
+          this.localAudioTrack.dispose?.();
+          this.localAudioTrack = newAudio;
+        } else if (this.localAudioTrack) {
+          // fallback remove+add
+          try { await this.conference.removeTrack?.(this.localAudioTrack); } catch { }
+          try { this.localAudioTrack.dispose?.(); } catch { }
+          await this.conference.addTrack(newAudio);
+          this.localAudioTrack = newAudio;
+        } else {
+          await this.conference.addTrack(newAudio);
+          this.localAudioTrack = newAudio;
+        }
       }
 
-      if (newVideo && this.localVideoTrack && typeof this.conference.replaceTrack === "function") {
-        await this.clearBgEffectOnTrack(this.localVideoTrack);
-        await this.conference.replaceTrack(this.localVideoTrack, newVideo);
-        this.localVideoTrack.dispose?.();
-        this.localVideoTrack = newVideo;
-      } else if (newVideo && !this.localVideoTrack) {
-        await this.conference.addTrack(newVideo);
-        this.localVideoTrack = newVideo;
+      if (newVideo) {
+        if (this.localVideoTrack && typeof this.conference.replaceTrack === "function") {
+          this.refreshEffectsSupport();
+          if (this.effectsSupported && this.bgPrefs.mode !== "none") {
+            await this.clearBgEffectOnTrack(this.localVideoTrack);
+          }
+          await this.conference.replaceTrack(this.localVideoTrack, newVideo);
+          this.localVideoTrack.dispose?.();
+          this.localVideoTrack = newVideo;
+        } else if (this.localVideoTrack) {
+          // fallback remove+add
+          this.refreshEffectsSupport();
+          if (this.effectsSupported && this.bgPrefs.mode !== "none") {
+            await this.clearBgEffectOnTrack(this.localVideoTrack);
+          }
+          try { await this.conference.removeTrack?.(this.localVideoTrack); } catch { }
+          try { this.localVideoTrack.dispose?.(); } catch { }
+          await this.conference.addTrack(newVideo);
+          this.localVideoTrack = newVideo;
+        } else {
+          await this.conference.addTrack(newVideo);
+          this.localVideoTrack = newVideo;
+        }
       }
     }
 
@@ -342,7 +485,8 @@ export class JitsiEngine {
       this.emitParticipants();
     }
 
-    // re-apply persisted bg effect (если оно вообще возможно)
+    // refresh support + re-apply effect if possible
+    this.refreshEffectsSupport();
     await this.reapplyBgIfNeeded();
 
     return { audio: this.localAudioTrack, video: this.localVideoTrack };
@@ -364,7 +508,7 @@ export class JitsiEngine {
       if (typeof lvl !== "undefined") this.JitsiMeetJS.setLogLevel(lvl);
     } catch { }
 
-    // ✅ IMPORTANT: point Jitsi effects to your /libs assets
+    // init
     this.JitsiMeetJS.init({
       disableP2P: true,
       disableAudioLevels: true,
@@ -378,7 +522,7 @@ export class JitsiEngine {
       },
     });
 
-    // quick sanity logs
+    // sanity logs
     try {
       const hasEffects = !!this.JitsiMeetJS?.effects;
       const hasCreate = typeof this.JitsiMeetJS?.effects?.createVirtualBackgroundEffect === "function";
@@ -449,6 +593,10 @@ export class JitsiEngine {
 
   async toggleVideoMute(): Promise<void> {
     if (!this.localUserId) return;
+
+    // IMPORTANT: recover track if it died/stuck
+    try { await this.ensureLocalVideoTrack(); } catch { }
+
     const local = this.participants[this.localUserId];
     if (!local || !this.localVideoTrack) return;
 
@@ -458,7 +606,7 @@ export class JitsiEngine {
         await track.unmute();
         local.videoMuted = false;
 
-        // IMPORTANT: re-apply effect after unmute
+        // re-apply effect after unmute (if supported)
         await this.reapplyBgIfNeeded();
       } else {
         await track.mute();
@@ -521,43 +669,27 @@ export class JitsiEngine {
     if (this.subsWatchdog) clearInterval(this.subsWatchdog);
     this.subsWatchdog = null;
 
-    try {
-      this.videoEffect?.dispose?.();
-    } catch { }
+    try { this.videoEffect?.dispose?.(); } catch { }
     this.videoEffect = undefined;
 
     try {
       if (this.localScreenshareTrack) {
-        try {
-          await this.conference?.removeTrack?.(this.localScreenshareTrack);
-        } catch { }
-        try {
-          this.localScreenshareTrack.dispose?.();
-        } catch { }
+        try { await this.conference?.removeTrack?.(this.localScreenshareTrack); } catch { }
+        try { this.localScreenshareTrack.dispose?.(); } catch { }
         this.localScreenshareTrack = null;
       }
     } catch { }
 
     try {
       if (this.localAudioTrack) {
-        try {
-          await this.conference?.removeTrack?.(this.localAudioTrack);
-        } catch { }
-        try {
-          this.localAudioTrack.dispose?.();
-        } catch { }
+        try { await this.conference?.removeTrack?.(this.localAudioTrack); } catch { }
+        try { this.localAudioTrack.dispose?.(); } catch { }
         this.localAudioTrack = null;
       }
       if (this.localVideoTrack) {
-        try {
-          await this.clearBgEffectOnTrack(this.localVideoTrack);
-        } catch { }
-        try {
-          await this.conference?.removeTrack?.(this.localVideoTrack);
-        } catch { }
-        try {
-          this.localVideoTrack.dispose?.();
-        } catch { }
+        try { await this.clearBgEffectOnTrack(this.localVideoTrack); } catch { }
+        try { await this.conference?.removeTrack?.(this.localVideoTrack); } catch { }
+        try { this.localVideoTrack.dispose?.(); } catch { }
         this.localVideoTrack = null;
       }
     } catch { }
@@ -566,12 +698,8 @@ export class JitsiEngine {
     this.participants = {};
     this.emitParticipants();
 
-    try {
-      await this.conference?.leave?.();
-    } catch { }
-    try {
-      await this.connection?.disconnect?.();
-    } catch { }
+    try { await this.conference?.leave?.(); } catch { }
+    try { await this.connection?.disconnect?.(); } catch { }
 
     this.conference = null;
     this.connection = null;
@@ -734,13 +862,16 @@ export class JitsiEngine {
         if (type === "video") this.localVideoTrack = t;
       }
 
-      // debug (optional)
+      // detect effects support after we have a real video track
+      this.refreshEffectsSupport();
+
+      // debug
       try {
         console.log(
           "[dbg] localVideoTrack setEffect:",
           typeof (this.localVideoTrack as any)?.setEffect,
-          "protoSetEffect:",
-          typeof (window as any)?.JitsiMeetJS?.JitsiLocalTrack?.prototype?.setEffect
+          "effectsFactory:",
+          typeof (this.JitsiMeetJS as any)?.effects?.createVirtualBackgroundEffect
         );
       } catch { }
 
@@ -749,7 +880,7 @@ export class JitsiEngine {
       if (this.localVideoTrack) entry.video = this.localVideoTrack;
       this.tracksByParticipant.set(this.localUserId, entry);
 
-      // IMPORTANT: re-apply persisted background effect (if any)
+      // re-apply persisted background effect (if any & supported)
       await this.reapplyBgIfNeeded();
 
       this.rebuildParticipantsFromTracks();
@@ -820,8 +951,7 @@ export class JitsiEngine {
     const activeRemoteIds = this.getRemoteIdsWithAnyVideoOrScreen();
 
     const finalRemoteIds: string[] = [];
-    for (const id of activeRemoteIds)
-      if (id && id !== localId && !finalRemoteIds.includes(id)) finalRemoteIds.push(id);
+    for (const id of activeRemoteIds) if (id && id !== localId && !finalRemoteIds.includes(id)) finalRemoteIds.push(id);
     for (const id of uiRemoteIds) if (id && id !== localId && !finalRemoteIds.includes(id)) finalRemoteIds.push(id);
 
     return finalRemoteIds;
@@ -856,12 +986,8 @@ export class JitsiEngine {
       const desiredLastN = Math.min(finalRemoteIds.length, this.MAX_LAST_N);
       const h = this.pickReceiverConstraintHeight(desiredLastN);
 
-      try {
-        this.conference.selectParticipants?.([]);
-      } catch { }
-      try {
-        this.conference.setLastN?.(0);
-      } catch { }
+      try { this.conference.selectParticipants?.([]); } catch { }
+      try { this.conference.setLastN?.(0); } catch { }
 
       setTimeout(() => {
         if (this.disposed || !this.conference) {
@@ -891,9 +1017,7 @@ export class JitsiEngine {
     const ids = Object.keys(this.participants);
     for (const id of ids) {
       if (id === this.localUserId) continue;
-      try {
-        this.conference.sendEndpointMessage(id, ev);
-      } catch { }
+      try { this.conference.sendEndpointMessage(id, ev); } catch { }
     }
   }
 
@@ -950,9 +1074,10 @@ export class JitsiEngine {
       if (type === "audio") entry.audio = track;
       if (type === "video") entry.video = track;
 
-      // IMPORTANT: keep local pointers in sync if Jitsi replaces tracks
+      // keep local pointers in sync if Jitsi replaces tracks
       if (isLocal && type === "video") {
         this.localVideoTrack = track;
+        this.refreshEffectsSupport();
         this.reapplyBgIfNeeded();
       }
       if (isLocal && type === "audio") {
@@ -1013,7 +1138,7 @@ export class JitsiEngine {
       p.audioMuted = track.isMuted ? track.isMuted() : p.audioMuted;
     } else if (type === "video") {
       if (!this.isDesktopTrack(track)) {
-        // ✅ ignore transient mute events during setEffect
+        // ignore transient mute events during setEffect
         if (!(pid === this.localUserId && this.bgApplying)) {
           p.videoMuted = track.isMuted ? track.isMuted() : p.videoMuted;
         }
@@ -1067,12 +1192,8 @@ export class JitsiEngine {
       return;
     }
 
-    try {
-      await this.conference.removeTrack(this.localScreenshareTrack);
-    } catch { }
-    try {
-      this.localScreenshareTrack.dispose?.();
-    } catch { }
+    try { await this.conference.removeTrack(this.localScreenshareTrack); } catch { }
+    try { this.localScreenshareTrack.dispose?.(); } catch { }
 
     const pid = this.localUserId;
     const entry = this.tracksByParticipant.get(pid);

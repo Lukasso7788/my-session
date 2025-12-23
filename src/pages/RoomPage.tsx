@@ -15,7 +15,6 @@ import {
   RoomMediaSettingsModal,
   RoomMediaSettings,
 } from "../components/RoomMediaSettingsModal";
-import { Settings } from "lucide-react";
 
 type Stage = {
   name: string;
@@ -209,9 +208,9 @@ export function RoomPage() {
   const [audioInputs, setAudioInputs] = useState<MediaDevice[]>([]);
   const [audioOutputs, setAudioOutputs] = useState<MediaDevice[]>([]);
 
-  const [selectedVideoInputId, setSelectedVideoInputId] = useState<string>(""); // camera
-  const [selectedAudioInputId, setSelectedAudioInputId] = useState<string>(""); // mic
-  const [selectedAudioOutputId, setSelectedAudioOutputId] = useState<string>("default"); // speakers
+  const [selectedVideoInputId, setSelectedVideoInputId] = useState<string>("");
+  const [selectedAudioInputId, setSelectedAudioInputId] = useState<string>("");
+  const [selectedAudioOutputId, setSelectedAudioOutputId] = useState<string>("default");
 
   const [bgMode, setBgMode] = useState<"none" | "blur" | "image">("none");
   const [bgImageUrl, setBgImageUrl] = useState<string>("");
@@ -262,9 +261,10 @@ export function RoomPage() {
   const BREAK_END_SOUND = "/sounds/break_end.mp3";
   const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
 
-  // RIGHT PANEL (Participants / Chat)
+  // RIGHT PANEL
   const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(false);
   const [rightTab, setRightTab] = useState<RightPanelTab>(null);
+
   const openRightTab = (tab: RightPanelTab) => {
     if (!tab) {
       setRightPanelOpen(false);
@@ -272,35 +272,12 @@ export function RoomPage() {
       return;
     }
 
-    setRightTab((prev) => {
-      const sameTab = prev === tab;
-
-      // если нажали на тот же таб — просто toggle open/close
-      setRightPanelOpen((open) => (sameTab ? !open : true));
-
-      // если таб другой — ставим новый таб и открываем
+    // single source of truth (no stale rightTab usage)
+    setRightTab((prevTab) => {
+      const same = prevTab === tab;
+      setRightPanelOpen((prevOpen) => (same ? !prevOpen : true));
       return tab;
     });
-  };
-
-  const toggleRightTab = (tab: RightPanelTab) => {
-    if (!tab) {
-      setRightPanelOpen(false);
-      setRightTab(null);
-      return;
-    }
-    setRightTab((prev) => {
-      const next = prev === tab ? prev : tab;
-      return next;
-    });
-    setRightPanelOpen((open) => {
-      // if switching to another tab -> open
-      if (!open) return true;
-      // if same tab -> toggle
-      return rightTab === tab ? !open : true;
-    });
-    // ensure open when switching tab
-    setRightPanelOpen((open) => (rightTab !== tab ? true : open));
   };
 
   // ============================================================
@@ -355,7 +332,7 @@ export function RoomPage() {
   };
 
   // ============================================================
-  // DEVICES: load from engine, update local lists + defaults
+  // DEVICES
   // ============================================================
   const loadDevices = async () => {
     try {
@@ -373,15 +350,12 @@ export function RoomPage() {
       setAudioInputs(aIn);
       setAudioOutputs(aOut);
 
-      // keep mirror state in `devices` for modal compatibility
       setDevices({ videoInputs: vIn, audioInputs: aIn, audioOutputs: aOut });
 
-      // defaults if empty
       setSelectedVideoInputId((prev) => prev || vIn?.[0]?.deviceId || "");
       setSelectedAudioInputId((prev) => prev || aIn?.[0]?.deviceId || "");
       setSelectedAudioOutputId((prev) => prev || "default");
 
-      // keep mirror state in `mediaSettings` for modal compatibility
       setMediaSettings((prev) => ({
         ...prev,
         videoInputId: prev.videoInputId || vIn?.[0]?.deviceId || "",
@@ -394,7 +368,7 @@ export function RoomPage() {
   };
 
   // ============================================================
-  // LOAD SESSION FROM SUPABASE
+  // LOAD SESSION
   // ============================================================
   useEffect(() => {
     (async () => {
@@ -413,7 +387,8 @@ export function RoomPage() {
 
         if (data.schedule) {
           try {
-            const parsed = typeof data.schedule === "string" ? JSON.parse(data.schedule) : data.schedule;
+            const parsed =
+              typeof data.schedule === "string" ? JSON.parse(data.schedule) : data.schedule;
 
             const formatted: Stage[] = parsed.map((b: any) => {
               const lower = (b.name || "").toLowerCase();
@@ -470,7 +445,11 @@ export function RoomPage() {
         (u?.email ? u.email.split("@")[0] : "");
 
       if (!name && u?.id) {
-        const { data: p } = await supabase.from("profiles").select("full_name").eq("id", u.id).single();
+        const { data: p } = await supabase
+          .from("profiles")
+          .select("full_name")
+          .eq("id", u.id)
+          .single();
         name = p?.full_name || "";
       }
 
@@ -485,11 +464,7 @@ export function RoomPage() {
     if (!id) return;
 
     const fetchAttendance = async () => {
-      const { error } = await supabase
-        .from("session_attendance")
-        .select("*")
-        .eq("session_id", id);
-
+      const { error } = await supabase.from("session_attendance").select("*").eq("session_id", id);
       if (error) console.error("Attendance fetch error:", error);
     };
 
@@ -505,9 +480,7 @@ export function RoomPage() {
           table: "session_attendance",
           filter: `session_id=eq.${id}`,
         },
-        () => {
-          fetchAttendance();
-        }
+        () => fetchAttendance()
       );
 
     channel.subscribe();
@@ -520,7 +493,7 @@ export function RoomPage() {
   }, [id]);
 
   // ============================================================
-  // ATTENDANCE WRITE (JOIN) - minimal for current table schema
+  // ATTENDANCE WRITE (JOIN)
   // ============================================================
   useEffect(() => {
     if (!session?.id) return;
@@ -551,7 +524,7 @@ export function RoomPage() {
   }, [session?.id, authUserId]);
 
   // ============================================================
-  // JITSI INIT + REACTIONS HANDLING
+  // JITSI INIT + REACTIONS
   // ============================================================
   useEffect(() => {
     if (!session || !userName) return;
@@ -559,17 +532,14 @@ export function RoomPage() {
 
     const engine = new JitsiEngine({
       onParticipantsUpdate: (list) => {
-        // sound on join (only when first participant joins second)
         if (prevCountRef.current < 2 && list.length === 2) {
           playOneShot("/sounds/user_joined.mp3", 0.9);
         }
         prevCountRef.current = list.length;
 
-        // detect screen sharer
         const sharer = list.find((p) => p.isScreenSharing);
         setActiveScreenSharer(sharer ? sharer.id : null);
 
-        // fix displayName for host
         const updated = list.map((p) => {
           if (!p.isLocal && p.displayName === "Guest") {
             if (session?.host_profile?.full_name && session.host_profile.id === p.id) {
@@ -584,6 +554,8 @@ export function RoomPage() {
 
       onConferenceJoin: () => {
         console.log("Jitsi conference joined");
+        // IMPORTANT: load devices right after join
+        setTimeout(() => loadDevices(), 0);
       },
 
       onReactionReceived: (fromId, reaction) => {
@@ -605,7 +577,9 @@ export function RoomPage() {
 
     engineRef.current = engine;
 
-    // resolve room name
+    // ✅ DEBUG: allow console access (so engine?.localVideoTrack works)
+    (window as any).engine = engine;
+
     const roomNameRaw =
       session.jitsi_room_name ||
       (session.daily_room_url
@@ -629,44 +603,33 @@ export function RoomPage() {
         setLastErr(String(e?.message || e));
       });
 
-    // After join: load devices with small delay
-    setTimeout(() => {
-      loadDevices();
-    }, 600);
-
     return () => {
       engine
         .dispose()
         .catch(() => { })
         .finally(() => {
           engineRef.current = null;
+          try {
+            delete (window as any).engine;
+          } catch { }
         });
       stopWelcomeLoop();
     };
   }, [session, userName]);
 
   // ============================================================
-  // APPLY MEDIA SETTINGS (called from modal)
+  // APPLY MEDIA SETTINGS
   // ============================================================
   const applyMediaSettings = async (next: RoomMediaSettings) => {
     try {
       const engine = engineRef.current as any;
       if (!engine) return;
 
-      // inputs (создаёт/меняет local tracks)
       await engine.applyInputDevices?.({
         videoInputId: next.videoInputId,
         audioInputId: next.audioInputId,
       });
 
-      // output (sinkId)
-      try {
-        engine.setAudioOutputDevice?.(next.audioOutputId);
-      } catch (e) {
-        console.warn("setAudioOutputDevice warning:", e);
-      }
-
-      // background (ВАЖНО: await)
       try {
         await engine.setBackgroundEffect?.({
           mode: next.bgMode,
@@ -676,7 +639,12 @@ export function RoomPage() {
         console.warn("setBackgroundEffect warning:", e);
       }
 
-      // keep local mirrors
+      try {
+        engine.setAudioOutputDevice?.(next.audioOutputId);
+      } catch (e) {
+        console.warn("setAudioOutputDevice warning:", e);
+      }
+
       setSelectedVideoInputId(next.videoInputId || "");
       setSelectedAudioInputId(next.audioInputId || "");
       setSelectedAudioOutputId(next.audioOutputId || "default");
@@ -792,19 +760,16 @@ export function RoomPage() {
   }, [session?.start_time, stages]);
 
   // ============================================================
-  // DERIVED (BOTTOM BAR STATE)
+  // DERIVED
   // ============================================================
-  const localParticipant = useMemo(
-    () => participants.find((p) => p.isLocal) || null,
-    [participants]
-  );
+  const localParticipant = useMemo(() => participants.find((p) => p.isLocal) || null, [participants]);
 
   const isAudioMuted = !!localParticipant?.audioMuted;
   const isVideoMuted = !!localParticipant?.videoMuted;
   const isScreenSharing = !!localParticipant?.isScreenSharing;
 
   // ============================================================
-  // REACTIONS (BOTTOM BAR)
+  // REACTIONS MENU
   // ============================================================
   const [showReactionsMenu, setShowReactionsMenu] = useState(false);
   const reactionsMenuRef = useRef<HTMLDivElement | null>(null);
@@ -823,18 +788,17 @@ export function RoomPage() {
   }, [showReactionsMenu]);
 
   const handleSendReaction = (type: ReactionType) => {
-    const id = localReactionIdRef.current + 1;
-    localReactionIdRef.current = id;
+    const rid = localReactionIdRef.current + 1;
+    localReactionIdRef.current = rid;
 
-    setLocalReactions((prev) => [...prev, { id, type }]);
+    setLocalReactions((prev) => [...prev, { id: rid, type }]);
 
-    // optional: if engine exposes sendReaction
     try {
       (engineRef.current as any)?.sendReaction?.(type);
     } catch { }
 
     setTimeout(() => {
-      setLocalReactions((prev) => prev.filter((r) => r.id !== id));
+      setLocalReactions((prev) => prev.filter((r) => r.id !== rid));
     }, 1500);
   };
 
@@ -873,7 +837,7 @@ export function RoomPage() {
   return (
     <div className="min-h-screen bg-[#050F1A] text-white flex justify-center">
       <div className="max-w-[1720px] w-full px-5 pt-5 pb-[110px] flex flex-col gap-5 min-h-screen">
-        {/* TOP BAR (NO RECORDING LABEL) */}
+        {/* TOP BAR */}
         <div className="flex w-full rounded-2xl overflow-hidden bg-[#111827]/40 border border-white/5">
           <div className="flex-1 px-6 py-4">
             <div className="flex items-start justify-between gap-4">
@@ -881,9 +845,7 @@ export function RoomPage() {
                 <p className="font-inter font-semibold text-[18px] text-[#F3F4F6]/90 truncate">
                   {session.title}
                 </p>
-                <p className="font-inter text-[13px] text-[#9CA3AF]">
-                  {participantsCount} participants
-                </p>
+                <p className="font-inter text-[13px] text-[#9CA3AF]">{participantsCount} participants</p>
 
                 <div className="mt-2 max-h-[14px] overflow-hidden">
                   <div className="origin-left scale-y-[0.72]">
@@ -899,9 +861,7 @@ export function RoomPage() {
               <div className="flex items-center gap-2 shrink-0">
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#0B1220]/70 border border-white/5">
                   <span className="text-[12px] text-white/70">⏱</span>
-                  <span className="font-inter text-[14px] text-white/90">
-                    {remainingTime || "--:--"}
-                  </span>
+                  <span className="font-inter text-[14px] text-white/90">{remainingTime || "--:--"}</span>
                 </div>
 
                 {session.host_profile && (
@@ -964,10 +924,7 @@ export function RoomPage() {
                       <span className="text-white/55 text-sm">({participantsCount})</span>
                     </div>
                     <button
-                      onClick={() => {
-                        setRightPanelOpen(false);
-                        setRightTab(null);
-                      }}
+                      onClick={() => openRightTab(null)}
                       className="w-9 h-9 rounded-xl bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center text-white/80"
                       title="Close"
                     >
@@ -1008,9 +965,7 @@ export function RoomPage() {
                                 {initials}
                               </div>
                               <div className="min-w-0">
-                                <div className="text-[13px] text-white/90 font-medium truncate">
-                                  {name}
-                                </div>
+                                <div className="text-[13px] text-white/90 font-medium truncate">{name}</div>
                                 <div className="text-[11px] text-white/45 truncate">
                                   {p.isLocal ? "Team member" : "Participant"}
                                 </div>
@@ -1021,9 +976,7 @@ export function RoomPage() {
                               <div
                                 className={
                                   "w-8 h-8 rounded-lg flex items-center justify-center " +
-                                  (p.audioMuted
-                                    ? "bg-red-500/20 text-red-300"
-                                    : "bg-white/5 text-white/65")
+                                  (p.audioMuted ? "bg-red-500/20 text-red-300" : "bg-white/5 text-white/65")
                                 }
                                 title={p.audioMuted ? "Muted" : "Unmuted"}
                               >
@@ -1043,19 +996,13 @@ export function RoomPage() {
                               <div
                                 className={
                                   "w-8 h-8 rounded-lg flex items-center justify-center " +
-                                  (p.videoMuted
-                                    ? "bg-red-500/20 text-red-300"
-                                    : "bg-white/5 text-white/65")
+                                  (p.videoMuted ? "bg-red-500/20 text-red-300" : "bg-white/5 text-white/65")
                                 }
                                 title={p.videoMuted ? "Video off" : "Video on"}
                               >
                                 <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true">
                                   <rect x="4" y="6" width="11" height="12" rx="2" fill="currentColor" />
-                                  <path
-                                    d="M17 9.5 21 7v10l-4-2.5z"
-                                    fill="currentColor"
-                                    opacity="0.85"
-                                  />
+                                  <path d="M17 9.5 21 7v10l-4-2.5z" fill="currentColor" opacity="0.85" />
                                 </svg>
                               </div>
                             </div>
@@ -1082,19 +1029,14 @@ export function RoomPage() {
                   <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
                     <div className="text-white/85 font-inter font-semibold">Chat</div>
                     <button
-                      onClick={() => {
-                        setRightPanelOpen(false);
-                        setRightTab(null);
-                      }}
+                      onClick={() => openRightTab(null)}
                       className="w-9 h-9 rounded-xl bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center text-white/80"
                       title="Close"
                     >
                       ✕
                     </button>
                   </div>
-                  <div className="p-4 h-[calc(100%-64px)]">
-                    {session?.id ? <ChatPanel sessionId={session.id} /> : null}
-                  </div>
+                  <div className="p-4 h-[calc(100%-64px)]">{session?.id ? <ChatPanel sessionId={session.id} /> : null}</div>
                 </div>
               )}
 
@@ -1103,10 +1045,7 @@ export function RoomPage() {
                   <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
                     <div className="text-white/85 font-inter font-semibold">Intentions</div>
                     <button
-                      onClick={() => {
-                        setRightPanelOpen(false);
-                        setRightTab(null);
-                      }}
+                      onClick={() => openRightTab(null)}
                       className="w-9 h-9 rounded-xl bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center text-white/80"
                       title="Close"
                     >
@@ -1123,42 +1062,26 @@ export function RoomPage() {
         </div>
       </div>
 
-      {/* FIXED BOTTOM CONTROLS (ONE LINE, PINNED) */}
+      {/* FIXED BOTTOM CONTROLS */}
       <div className="fixed inset-x-0 bottom-0 z-50">
         <div className="max-w-[1720px] mx-auto px-5 pb-5">
           <div className="h-[74px] rounded-2xl bg-[#07101E]/85 border border-white/10 shadow-2xl backdrop-blur flex items-center justify-between px-4">
-            {/* LEFT GROUP (participants + chat) */}
+            {/* LEFT GROUP */}
             <div className="flex items-center gap-2">
               <button onClick={() => openRightTab("participants")} className="outline-none">
                 <ParticipantsIcon active={rightPanelOpen && rightTab === "participants"} />
               </button>
 
-              <button
-                onClick={() => {
-                  setRightTab("chat");
-                  setRightPanelOpen((open) => (rightTab === "chat" ? !open : true));
-                }}
-                className="outline-none"
-              >
+              <button onClick={() => openRightTab("chat")} className="outline-none">
                 <ChatIcon active={rightPanelOpen && rightTab === "chat"} />
               </button>
 
-              <button
-                onClick={() => {
-                  if (rightTab === "intentions") {
-                    setRightPanelOpen(!rightPanelOpen);
-                  } else {
-                    setRightTab("intentions");
-                    setRightPanelOpen(true);
-                  }
-                }}
-                className="outline-none"
-              >
+              <button onClick={() => openRightTab("intentions")} className="outline-none">
                 <IntentionsIcon active={rightPanelOpen && rightTab === "intentions"} />
               </button>
             </div>
 
-            {/* CENTER GROUP (mic/cam/screen/reactions) */}
+            {/* CENTER GROUP */}
             <div className="flex items-center gap-3">
               <button
                 onClick={handleToggleAudio}
@@ -1225,7 +1148,7 @@ export function RoomPage() {
               </div>
             </div>
 
-            {/* RIGHT GROUP (settings + leave) */}
+            {/* RIGHT GROUP */}
             <div className="flex items-center gap-3">
               <button
                 onClick={() => {
