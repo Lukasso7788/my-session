@@ -1,111 +1,149 @@
 import { useMemo, useState } from "react";
 
 type Props = {
-    value: string | null;              // YYYY-MM-DD (local)
-    onChange: (v: string | null) => void;
-    weeksForward?: number;             // default 3
+    /**
+     * Selected date in "YYYY-MM-DD" (local date), or null = all dates
+     */
+    value: string | null;
+    onChange: (next: string | null) => void;
+
+    /**
+     * How many weeks вперед можно листать (default 3)
+     */
+    weeksAhead?: number;
 };
 
-const BRAND = "#2F2F2F";
-
-function startOfWeek(d: Date) {
-    const copy = new Date(d);
-    const day = copy.getDay(); // 0..6 (Sun..Sat)
-    const diff = (day + 6) % 7; // make Monday=0
-    copy.setDate(copy.getDate() - diff);
-    copy.setHours(0, 0, 0, 0);
-    return copy;
+function startOfDayLocal(d: Date) {
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
 }
 
-function addDays(d: Date, days: number) {
-    const copy = new Date(d);
-    copy.setDate(copy.getDate() + days);
-    return copy;
+function toYmdLocal(d: Date) {
+    const yyyy = String(d.getFullYear());
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
 }
 
-function toLocalYMD(d: Date) {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`;
-}
+export function SessionsDateFilter({ value, onChange, weeksAhead = 3 }: Props) {
+    const [page, setPage] = useState(0); // 0..weeksAhead-1
 
-export function SessionsDateFilter({ value, onChange, weeksForward = 3 }: Props) {
-    const [weekOffset, setWeekOffset] = useState(0); // 0..weeksForward-1
-
-    const today = useMemo(() => {
-        const t = new Date();
-        t.setHours(0, 0, 0, 0);
-        return t;
-    }, []);
-
-    const baseWeekStart = useMemo(() => startOfWeek(today), [today]);
-
-    const maxOffset = Math.max(0, weeksForward - 1);
+    const today = useMemo(() => startOfDayLocal(new Date()), []);
+    const maxPage = Math.max(0, weeksAhead - 1);
 
     const days = useMemo(() => {
-        const weekStart = addDays(baseWeekStart, weekOffset * 7);
-        return Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
-    }, [baseWeekStart, weekOffset]);
+        const start = new Date(today);
+        start.setDate(start.getDate() + page * 7);
 
-    const monthLabel = useMemo(() => {
-        const fmt = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" });
-        const labelDate = addDays(baseWeekStart, weekOffset * 7);
-        return fmt.format(labelDate);
-    }, [baseWeekStart, weekOffset]);
+        return Array.from({ length: 7 }, (_, i) => {
+            const d = new Date(start);
+            d.setDate(start.getDate() + i);
+
+            const ymd = toYmdLocal(d);
+            const weekday = new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(d);
+            const dayNum = new Intl.DateTimeFormat("en-US", { day: "2-digit" }).format(d);
+            const month = new Intl.DateTimeFormat("en-US", { month: "short" }).format(d);
+
+            return { date: d, ymd, weekday, dayNum, month };
+        });
+    }, [today, page]);
+
+    const canPrev = page > 0;
+    const canNext = page < maxPage;
 
     return (
         <div className="w-full">
-            <div className="flex items-center justify-between mb-3">
-                <div className="text-sm text-[#2E2E2E] font-light">
-                    {monthLabel}
-                </div>
-
+            <div
+                className="
+          border border-[#DBD8D8] rounded-[24px]
+          px-4 py-3
+          flex items-center justify-between gap-3
+        "
+            >
+                {/* Left controls */}
                 <div className="flex items-center gap-2">
                     <button
-                        onClick={() => setWeekOffset((w) => Math.max(0, w - 1))}
-                        disabled={weekOffset === 0}
-                        className={[
-                            "px-3 py-1 rounded-full border text-sm transition",
-                            weekOffset === 0
-                                ? "border-[#DBD8D8] text-slate-300 cursor-not-allowed"
-                                : "border-[#DBD8D8] text-[#2F2F2F] hover:bg-black/5",
-                        ].join(" ")}
+                        type="button"
+                        onClick={() => canPrev && setPage((p) => p - 1)}
+                        disabled={!canPrev}
+                        className="
+              w-9 h-9 rounded-full border border-[#DBD8D8]
+              flex items-center justify-center
+              hover:bg-black/5 transition
+              disabled:opacity-40 disabled:cursor-not-allowed
+            "
+                        aria-label="Previous week"
+                        title="Previous week"
                     >
-                        ←
+                        ‹
                     </button>
 
                     <button
-                        onClick={() => setWeekOffset((w) => Math.min(maxOffset, w + 1))}
-                        disabled={weekOffset === maxOffset}
-                        className={[
-                            "px-3 py-1 rounded-full border text-sm transition",
-                            weekOffset === maxOffset
-                                ? "border-[#DBD8D8] text-slate-300 cursor-not-allowed"
-                                : "border-[#DBD8D8] text-[#2F2F2F] hover:bg-black/5",
-                        ].join(" ")}
+                        type="button"
+                        onClick={() => canNext && setPage((p) => p + 1)}
+                        disabled={!canNext}
+                        className="
+              w-9 h-9 rounded-full border border-[#DBD8D8]
+              flex items-center justify-center
+              hover:bg-black/5 transition
+              disabled:opacity-40 disabled:cursor-not-allowed
+            "
+                        aria-label="Next week"
+                        title="Next week"
                     >
-                        →
+                        ›
                     </button>
                 </div>
+
+                {/* Days */}
+                <div className="flex-1 overflow-x-auto">
+                    <div className="min-w-max flex items-center gap-2 justify-center">
+                        {/* All */}
+                        <button
+                            type="button"
+                            onClick={() => onChange(null)}
+                            className={[
+                                "px-4 py-2 rounded-full border text-sm transition whitespace-nowrap",
+                                value === null
+                                    ? "bg-[#2F2F2F] text-white border-[#2F2F2F]"
+                                    : "bg-white text-[#2F2F2F] border-[#DBD8D8] hover:bg-black/5",
+                            ].join(" ")}
+                        >
+                            All
+                        </button>
+
+                        {days.map((d) => {
+                            const isSelected = value === d.ymd;
+
+                            return (
+                                <button
+                                    key={d.ymd}
+                                    type="button"
+                                    onClick={() => onChange(d.ymd)}
+                                    className={[
+                                        "px-4 py-2 rounded-full border text-sm transition whitespace-nowrap",
+                                        isSelected
+                                            ? "bg-[#2F2F2F] text-white border-[#2F2F2F]"
+                                            : "bg-white text-[#2F2F2F] border-[#DBD8D8] hover:bg-black/5",
+                                    ].join(" ")}
+                                    title={d.ymd}
+                                >
+                                    <span className="mr-2 opacity-70">{d.weekday}</span>
+                                    <span className="font-medium">
+                                        {d.dayNum} {d.month}
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* Right hint */}
+                <div className="hidden md:block text-xs text-[#2E2E2E] opacity-70 whitespace-nowrap">
+                    Up to {weeksAhead} weeks ahead
+                </div>
             </div>
+        </div>
+    );
+}
 
-            <div className="flex items-center gap-2 flex-wrap">
-                <button
-                    onClick={() => onChange(null)}
-                    className={[
-                        "px-4 py-2 rounded-full border text-sm transition",
-                        value === null
-                            ? "bg-[#2F2F2F] text-white border-[#2F2F2F]"
-                            : "bg-white text-[#2F2F2F] border-[#DBD8D8] hover:bg-black/5",
-                    ].join(" ")}
-                >
-                    All dates
-                </button>
-
-                {days.map((d) => {
-                    const ymd = toLocalYMD(d);
-                    const isSelected = value === ymd;
-                    const isToday = ymd === toLocalYMD(today);
-
-                    const weekday = new Intl.Dat
+export default SessionsDateFilter;

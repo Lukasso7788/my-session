@@ -42,7 +42,7 @@ export function SessionsPage() {
 
   const [sessionTypeTab, setSessionTypeTab] = useState<"group" | "infinite" | "body">("group");
 
-  // ✅ New: date filter (YYYY-MM-DD local)
+  // ✅ Date filter (YYYY-MM-DD local) or null = All
   const [dateFilter, setDateFilter] = useState<string | null>(null);
 
   // Sync tab from querystring: /sessions?tab=group|infinite|body
@@ -84,7 +84,6 @@ export function SessionsPage() {
 
       if (DEBUG) console.log("[DEBUG Sessions] Loaded:", data);
       setSessions(data || []);
-
     } catch (err) {
       console.error("[DEBUG Sessions] FAILED LOADING:", err);
     } finally {
@@ -171,7 +170,6 @@ export function SessionsPage() {
       if (DEBUG) console.log("[DEBUG Sessions] Join -> no user, redirect");
       return navigate("/login");
     }
-
     if (DEBUG) console.log("[DEBUG Sessions] Join session:", id);
     navigate(`/room/${id}`);
   };
@@ -197,12 +195,10 @@ export function SessionsPage() {
 
   const cancel = async (id: string) => {
     if (!user) return navigate("/login");
-
     if (DEBUG) console.log("[DEBUG Sessions] Cancel booking:", id);
 
     try {
       await supabase.from("session_bookings").delete().eq("session_id", id).eq("user_id", user.id);
-
       fetchSessions();
     } catch (err) {
       console.error("[DEBUG Sessions] Cancel error:", err);
@@ -211,7 +207,6 @@ export function SessionsPage() {
 
   const remove = async (id: string) => {
     if (!user) return navigate("/login");
-
     if (DEBUG) console.log("[DEBUG Sessions] Delete session:", id);
 
     try {
@@ -244,14 +239,14 @@ export function SessionsPage() {
           </div>
 
           {/* ✅ Calendar filter (3 weeks forward, week-by-week scroll) */}
-          <div className="border border-[#DBD8D8] rounded-[24px] p-6 mb-6">
+          <div className="mb-6">
             <SessionsDateFilter
               value={dateFilter}
               onChange={(v) => {
                 if (DEBUG) console.log("[DEBUG Sessions] Date filter:", v);
                 setDateFilter(v);
               }}
-              weeksForward={3}
+              weeksAhead={3}
             />
           </div>
 
