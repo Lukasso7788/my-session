@@ -153,7 +153,7 @@ export default function SessionCard({
         w-full xl:w-auto
         ${isHoveringCancel
                     ? "px-6 border border-[#F65252] bg-[#F65252]/5 text-[#F65252]"
-                    : "w-12 border border-[#65D46C] bg-[#65D46C]/10 text-[#65D46C]"
+                    : "px-6 border border-[#65D46C] bg-[#65D46C]/10 text-[#65D46C]"
                 }
       `}
             style={{ willChange: "width, padding" }}
