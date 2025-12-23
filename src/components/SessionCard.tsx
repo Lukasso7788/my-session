@@ -71,7 +71,7 @@ export default function SessionCard({
         icon: "/icons/deepwork.svg",
     };
 
-    // ✅ ADDED: hover bg for Join session by type (exact colors you gave)
+    // ✅ hover bg for Join session by type (exact colors you gave)
     const JOIN_HOVER_BG: Record<string, string> = {
         "Deep work": "#5286F6",
         Pomodoro: "#F65252",
@@ -112,11 +112,11 @@ export default function SessionCard({
             className={`
         rounded-full px-6 py-3 text-[14px] font-semibold
         flex items-center justify-center gap-2
-        transition-all duration-150
+        transition-colors duration-200 ease-in-out
         w-full xl:w-auto
         ${isHoveringBook
                     ? "text-[#65D46C] border border-[#65D46C] bg-[#65D46C]/10"
-                    : "border border-brandBlack text-brandBlack bg-white"
+                    : "border border-brandBlack text-brandBlack bg-white hover:bg-black/5"
                 }
       `}
         >
@@ -132,7 +132,7 @@ export default function SessionCard({
         </button>
     );
 
-    // ✅ CHANGED: stable size + padding (fix “fat” look)
+    // ✅ CHANGED: smoother hover + cancel icon 12x12
     const confirmedBookingButton = (
         <button
             onClick={isHoveringCancel ? handleCancelBooking : undefined}
@@ -141,17 +141,18 @@ export default function SessionCard({
             className={`
         h-12 rounded-full text-[14px] font-semibold
         flex items-center justify-center
-        transition-all duration-150 ease-in-out
+        transition-colors duration-200 ease-in-out
         w-full xl:w-auto
         ${isHoveringCancel
-                    ? "px-6 border border-[#F65252] bg-[#F65252]/5 text-[#F65252]"
-                    : "px-6 border border-[#65D46C] bg-[#65D46C]/10 text-[#65D46C]"
+                    ? "px-6 border border-[#F65252] bg-[#F65252]/5 text-[#F65252] hover:bg-[#F65252]/10"
+                    : "px-6 border border-[#65D46C] bg-[#65D46C]/10 text-[#65D46C] hover:bg-[#65D46C]/15"
                 }
       `}
         >
             {isHoveringCancel ? (
                 <>
-                    <img src="/icons/cross-cancel.svg" className="w-4 h-4 mr-2" />
+                    {/* ✅ 12x12 */}
+                    <img src="/icons/cross-cancel.svg" className="w-3 h-3 mr-2" />
                     Cancel booking
                 </>
             ) : (
@@ -262,7 +263,6 @@ export default function SessionCard({
             >
                 {isBookingConfirmed ? confirmedBookingButton : bookSessionButton}
 
-                {/* ✅ CHANGED: Join hover color depends on session type */}
                 <button
                     onClick={() => onJoin(session.id)}
                     onMouseEnter={() => setIsHoveringJoin(true)}
@@ -270,7 +270,7 @@ export default function SessionCard({
                     className="
             rounded-full px-6 py-3 text-[14px] font-semibold
             flex items-center justify-center
-            transition-colors duration-150
+            transition-colors duration-200 ease-in-out
             w-full xl:w-auto
             text-white
           "
