@@ -1,7 +1,6 @@
-import React from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 const GAP_PX = 8;
-const PAD_X_PX = 24; // container px-3 + px-3 = 12*2
 const BUTTON_HEIGHT_PX = 48;
 
 const tabs = [
@@ -34,16 +33,45 @@ type Props = {
 };
 
 export function SessionTypeSwitcher({ value, onChange, className = "" }: Props) {
-  const activeIndexRaw = tabs.findIndex((t) => t.id === value);
-  const activeIndex = activeIndexRaw >= 0 ? activeIndexRaw : 0;
+  // ✅ NEW: measure real button geometry instead of calc() in translateX
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const btnRefs = useRef<Record<TabId, HTMLButtonElement | null>>({
+    group: null,
+    infinite: null,
+    body: null,
+  });
 
-  // ✅ Responsive бегунок без фикс-ширины (работает и на w-full, и на md:w-fit + md:w-[197px])
-  const sliderWidth = `calc((100% - ${PAD_X_PX}px - ${GAP_PX * 2}px) / 3)`;
-  const sliderX = `calc(${PAD_X_PX / 2}px + ${activeIndex} * ((100% - ${PAD_X_PX}px - ${GAP_PX * 2
-    }px) / 3 + ${GAP_PX}px))`;
+  const [slider, setSlider] = useState<{ left: number; width: number } | null>(null);
+
+  const updateSlider = useCallback(() => {
+    const root = rootRef.current;
+    const btn = btnRefs.current[value];
+    if (!root || !btn) return;
+
+    setSlider({
+      left: btn.offsetLeft,
+      width: btn.offsetWidth,
+    });
+  }, [value]);
+
+  useLayoutEffect(() => {
+    updateSlider();
+  }, [updateSlider]);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+
+    const ro = new ResizeObserver(() => updateSlider());
+    ro.observe(root);
+    Object.values(btnRefs.current).forEach((el) => el && ro.observe(el));
+
+    return () => ro.disconnect();
+  }, [updateSlider]);
 
   return (
     <div
+      ref={rootRef}
       className={[
         "relative bg-white border border-borderGray rounded-full",
         "px-3 py-2",
@@ -55,13 +83,15 @@ export function SessionTypeSwitcher({ value, onChange, className = "" }: Props) 
       ].join(" ")}
       style={{ gap: `${GAP_PX}px` }}
     >
-      {/* бегунок */}
+      {/* ✅ FIXED SLIDER: uses real left/width of active button */}
       <div
-        className="absolute top-2 bottom-2 left-0 bg-brandBlack rounded-full transition-transform duration-300 ease-in-out"
+        className="absolute top-2 bottom-2 bg-brandBlack rounded-full duration-300 ease-in-out"
         style={{
-          width: sliderWidth,
+          left: slider?.left ?? 0,
+          width: slider?.width ?? 0,
           height: BUTTON_HEIGHT_PX,
-          transform: `translateX(${sliderX})`,
+          transitionProperty: "left, width",
+          willChange: "left, width",
         }}
       />
 
@@ -71,6 +101,9 @@ export function SessionTypeSwitcher({ value, onChange, className = "" }: Props) 
         return (
           <button
             key={t.id}
+            ref={(el) => {
+              btnRefs.current[t.id] = el;
+            }}
             onClick={() => onChange(t.id)}
             className={[
               "relative z-10",
@@ -80,26 +113,22 @@ export function SessionTypeSwitcher({ value, onChange, className = "" }: Props) 
               "transition-colors duration-200 ease-in-out",
               "h-12",
               "min-w-0",
-              // ✅ mobile: equal-width columns
+              // mobile: equal-width columns
               "flex-1",
-              // ✅ desktop (>=768): fixed width by макету
+              // desktop: fixed width by mock
               "md:flex-none md:w-[197px]",
-              // ✅ padding responsive
+              // padding responsive
               "px-3 min-[480px]:px-4 md:px-6",
               isActive ? "text-white" : "text-brandBlack",
             ].join(" ")}
             type="button"
           >
-            <img
-              src={isActive ? t.iconActive : t.iconInactive}
-              className="w-6 h-6 shrink-0"
-              alt=""
-            />
+            <img src={isActive ? t.iconActive : t.iconInactive} className="w-6 h-6 shrink-0" alt="" />
 
-            {/* ✅ Text rules:
-                <480: hidden for all
-                480..767: only active shows
-                >=768: all show
+            {/* Text rules:
+               <480: hidden for all
+               480..767: only active shows
+               >=768: all show
             */}
             <span
               className={[
