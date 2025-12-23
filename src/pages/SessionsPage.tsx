@@ -250,7 +250,14 @@ export function SessionsPage() {
             />
           </div>
 
-          <div className="border border-[#DBD8D8] rounded-[24px] p-8">
+          {/* ✅ CHANGED: mobile container has NO border, py-3 (=12px), gap 12px; desktop keeps old styles */}
+          <div
+            className="
+              rounded-[24px]
+              py-3 px-3
+              md:border md:border-[#DBD8D8] md:p-8
+            "
+          >
             {isLoading ? (
               <div className="text-center py-12">
                 <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-brandBlack" />
@@ -274,7 +281,7 @@ export function SessionsPage() {
                 )}
               </div>
             ) : (
-              <div className="space-y-6">
+              <div className="space-y-3 md:space-y-6">
                 {visibleSessions.map((s) => (
                   <SessionCard
                     key={s.id}
