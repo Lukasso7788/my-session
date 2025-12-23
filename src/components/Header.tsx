@@ -1,4 +1,4 @@
-// src/components/Header.tsx (or wherever your Header lives)
+// src/components/Header.tsx
 const DEBUG = true;
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -6,12 +6,14 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useCreateSessionModal } from "../context/CreateSessionModalContext";
 import { useAuth } from "../context/AuthContext";
 
+const BRAND_BLACK = "#2F2F2F";
+
 const tabs = [
     {
         id: "group",
         label: "Group sessions",
         iconActive: "/icons/group-active-black.svg",
-        iconInactive: "/icons/body-inactive.svg",
+        iconInactive: "/icons/group-inactive.svg",
     },
     {
         id: "infinite",
@@ -22,10 +24,12 @@ const tabs = [
     {
         id: "body",
         label: "Body tripling",
-        iconActive: "/icons/group-active-black.svg",
+        iconActive: "/icons/body-active-black.svg",
         iconInactive: "/icons/body-inactive.svg",
     },
-];
+] as const;
+
+type SessionTabId = (typeof tabs)[number]["id"];
 
 export default function Header() {
     const navigate = useNavigate();
@@ -37,21 +41,23 @@ export default function Header() {
     const [mobileMenu, setMobileMenu] = useState(false);
     const [hoverCreate, setHoverCreate] = useState(false);
 
-    // NEW: Sessions dropdown (desktop)
+    // Sessions dropdown (desktop)
     const [sessionsOpen, setSessionsOpen] = useState(false);
-    const [hoveredSessionTab, setHoveredSessionTab] = useState<string | null>(null);
+    const [hoveredSessionTab, setHoveredSessionTab] = useState<SessionTabId | null>(null);
     const dropdownRef = useRef<HTMLDivElement | null>(null);
 
     const avatarSrc =
         profile?.avatar_url ||
         `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || "User")}`;
 
-    const activeSessionsTab = useMemo(() => {
-        const p = location.pathname.toLowerCase();
-        if (p.includes("infinite")) return "infinite";
-        if (p.includes("body")) return "body";
+    // ✅ FIX: determine active tab by querystring (?tab=...)
+    const activeSessionsTab: SessionTabId = useMemo(() => {
+        const params = new URLSearchParams(location.search);
+        const tab = (params.get("tab") || "group").toLowerCase();
+
+        if (tab === "infinite" || tab === "body" || tab === "group") return tab;
         return "group";
-    }, [location.pathname]);
+    }, [location.search]);
 
     useEffect(() => {
         function onDocClick(e: MouseEvent) {
@@ -69,9 +75,7 @@ export default function Header() {
         };
     }, []);
 
-    const goToSessions = (tabId: string) => {
-        // If you already have dedicated routes later, swap these paths.
-        // For now, route to /sessions and pass desired tab via querystring.
+    const goToSessions = (tabId: SessionTabId) => {
         navigate(`/sessions?tab=${tabId}`);
         setSessionsOpen(false);
         setMobileMenu(false);
@@ -106,7 +110,6 @@ export default function Header() {
                                 className="absolute left-0 top-9 w-[240px] bg-white rounded-2xl shadow-lg border border-borderGray z-40 p-2"
                                 onMouseLeave={() => {
                                     setHoveredSessionTab(null);
-                                    // keep open on hover-out if you want; otherwise close:
                                     setSessionsOpen(false);
                                 }}
                             >
@@ -134,8 +137,9 @@ export default function Header() {
                                             <span
                                                 className={[
                                                     "text-sm",
-                                                    isHover || isActive ? "text-[#2F2F2F]" : "text-[#2E2E2E]",
+                                                    isHover || isActive ? `text-[${BRAND_BLACK}]` : "text-[#2E2E2E]",
                                                 ].join(" ")}
+                                                style={isHover || isActive ? { color: BRAND_BLACK } : undefined}
                                             >
                                                 {t.label}
                                             </span>
@@ -146,7 +150,7 @@ export default function Header() {
                         )}
                     </div>
 
-                    {/* NEW: Pricing + Updates links */}
+                    {/* Pricing + Updates */}
                     <button onClick={() => navigate("/pricing")} className="hover:text-[#2F2F2F]">
                         Pricing
                     </button>
@@ -187,7 +191,7 @@ export default function Header() {
                         </div>
                     ) : (
                         <>
-                            {/* CREATE SESSION: only from ≥768px */}
+                            {/* CREATE SESSION */}
                             <button
                                 onClick={() => modal.open()}
                                 onMouseEnter={() => setHoverCreate(true)}
@@ -291,7 +295,7 @@ export default function Header() {
                             </div>
                         </div>
 
-                        {/* NEW links */}
+                        {/* Pricing + Updates */}
                         <button
                             onClick={() => {
                                 navigate("/pricing");
