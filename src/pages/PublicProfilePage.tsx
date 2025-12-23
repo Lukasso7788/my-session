@@ -1,164 +1,252 @@
-import { useParams, useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
-import { ArrowLeft } from "lucide-react";
+// src/pages/PublicProfilePage.tsx
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 
-type PublicProfile = {
+type PublicProfileRow = {
   id: string;
-  full_name: string;
-  avatar_url: string;
-  bio: string;
-  updated_at: string;
+  full_name: string | null;
+  bio: string | null;
+  avatar_url: string | null;
+  created_at: string | null;
+  attended_sessions_count: number | null;
 };
 
-type HostedSession = {
+type HostedSessionRow = {
   id: string;
   title: string;
+  start_time: string | null;
+  schedule: any | null;
   created_at: string;
 };
 
 export default function PublicProfilePage() {
-  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { id } = useParams<{ id: string }>();
 
-  const [profile, setProfile] = useState<PublicProfile | null>(null);
-  const [sessions, setSessions] = useState<HostedSession[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // profile fields (same shape as ProfilePage view)
+  const [fullName, setFullName] = useState("");
+  const [bio, setBio] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [createdAt, setCreatedAt] = useState<string>("—");
+  const [attendedCount, setAttendedCount] = useState<number>(0);
+
+  const [sessions, setSessions] = useState<HostedSessionRow[]>([]);
+  const [notFound, setNotFound] = useState(false);
+
+  const displayName = useMemo(() => fullName || "User", [fullName]);
+
+  const avatarFallback = useMemo(() => {
+    return `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}`;
+  }, [displayName]);
+
+  // Month Year formatter (English UI)
+  const formatSince = (iso: string) => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "—";
+    return new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(d);
+  };
+
+  // === STATUS BADGES (same logic as ProfilePage) ===
+  const getSessionStatus = (session: HostedSessionRow) => {
+    if (!session.start_time) return null;
+
+    const now = Date.now();
+    const start = new Date(session.start_time).getTime();
+
+    let durationMinutes = 0;
+
+    if (session.schedule) {
+      try {
+        const parsed = typeof session.schedule === "string" ? JSON.parse(session.schedule) : session.schedule;
+        durationMinutes = (parsed || []).reduce((sum: number, block: any) => sum + (block?.minutes || 0), 0);
+      } catch { }
+    }
+
+    const end = start + durationMinutes * 60 * 1000;
+
+    if (now < start) return "Upcoming";
+    if (now >= start && now <= end) return "Live";
+    return "Finished";
+  };
+
+  const getBadgeClass = (status: string) => {
+    switch (status) {
+      case "Upcoming":
+        return "px-2 py-0.5 text-[11px] rounded-full bg-[#DBEAFE] text-[#1D4ED8]";
+      case "Live":
+        return "px-2 py-0.5 text-[11px] rounded-full bg-[#DCFCE7] text-[#15803D]";
+      case "Finished":
+        return "px-2 py-0.5 text-[11px] rounded-full bg-[#E5E7EB] text-[#374151]";
+      default:
+        return "";
+    }
+  };
+
   useEffect(() => {
-    async function loadProfile() {
+    const load = async () => {
       if (!id) return;
 
       setLoading(true);
-      try {
-        const [{ data: profileData, error: profileError }, { data: sessionData }] =
-          await Promise.all([
-            supabase
-              .from("profiles")
-              .select("id, full_name, avatar_url, bio, updated_at")
-              .eq("id", id)
-              .single(),
-            supabase
-              .from("sessions")
-              .select("id, title, created_at")
-              .eq("host_id", id)
-              .order("created_at", { ascending: false }),
-          ]);
+      setNotFound(false);
 
-        if (profileError) {
-          console.error("Error loading profile:", profileError);
-          setProfile(null);
-        } else {
-          setProfile(profileData);
+      try {
+        const [{ data: p, error: pErr }, { data: s, error: sErr }] = await Promise.all([
+          supabase
+            .from("profiles")
+            .select("id, full_name, bio, avatar_url, created_at, attended_sessions_count")
+            .eq("id", id)
+            .single(),
+          supabase
+            .from("sessions")
+            .select("id, title, start_time, schedule, created_at")
+            .eq("host_id", id)
+            .order("created_at", { ascending: false }),
+        ]);
+
+        if (pErr || !p) {
+          setNotFound(true);
+          setLoading(false);
+          return;
         }
 
-        setSessions(sessionData || []);
-      } catch (err) {
-        console.error("Public profile fetch error:", err);
+        const profile = p as PublicProfileRow;
+
+        setFullName(profile.full_name || "");
+        setBio(profile.bio || "");
+        setAvatarUrl(profile.avatar_url || null);
+
+        if (typeof profile.attended_sessions_count === "number") setAttendedCount(profile.attended_sessions_count);
+        else setAttendedCount(0);
+
+        if (profile.created_at) setCreatedAt(formatSince(profile.created_at));
+        else setCreatedAt("—");
+
+        if (sErr) setSessions([]);
+        else setSessions((s as any) || []);
+      } catch (e) {
+        console.error("Public profile fetch error:", e);
+        setNotFound(true);
       } finally {
         setLoading(false);
       }
-    }
+    };
 
-    loadProfile();
+    load();
   }, [id]);
 
-  if (loading)
+  if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center text-white bg-slate-900">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white" />
+      <div className="flex justify-center pt-20 bg-white min-h-screen">
+        <div className="animate-spin h-8 w-8 rounded-full border-b-2 border-black" />
       </div>
     );
+  }
 
-  if (!profile)
+  if (notFound) {
     return (
-      <div className="flex h-screen items-center justify-center text-white bg-slate-900">
+      <div className="min-h-screen bg-white flex items-center justify-center px-6 font-inter text-[#2F2F2F]">
         <div className="text-center">
           <p className="text-lg font-medium mb-3">User not found.</p>
           <button
             onClick={() => navigate("/sessions")}
-            className="text-blue-400 hover:text-blue-300 underline text-sm"
+            className="text-[#2F2F2F] underline underline-offset-4 text-sm hover:opacity-80"
           >
             Back to sessions
           </button>
         </div>
       </div>
     );
-
-  const avatar =
-    profile.avatar_url ||
-    `https://ui-avatars.com/api/?name=${encodeURIComponent(
-      profile.full_name || "User"
-    )}`;
+  }
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white flex justify-center py-16 px-4 font-inter">
-      <div className="w-full max-w-[720px] space-y-10">
-        {/* 🔙 Back button */}
-        <div>
-          <button
-            onClick={() => navigate(-1)}
-            className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors mb-6"
-          >
-            <ArrowLeft size={18} />
-            <span className="text-sm font-medium">Back</span>
-          </button>
+    <main className="w-full px-8 pt-10 pb-24 font-inter text-gray-900 bg-white min-h-screen">
+      {/* Header (same as ProfilePage, but no edit) */}
+      <div className="flex items-center justify-between mb-10">
+        <button
+          onClick={() => navigate(-1)}
+          className="text-[16px] text-[#2F2F2F] hover:text-black flex items-center gap-2"
+        >
+          ← Back
+        </button>
+
+        <div className="text-[14px] text-[#2F2F2F] opacity-70">Public profile</div>
+      </div>
+
+      {/* Avatar + Name (same look) */}
+      <div className="flex flex-col items-center">
+        <div className="relative">
+          <img
+            src={avatarUrl || avatarFallback}
+            className="w-28 h-28 rounded-full object-cover border border-gray-200 shadow-sm"
+            alt="avatar"
+          />
         </div>
 
-        {/* ==== Profile Card ==== */}
-        <div className="bg-slate-800 rounded-2xl p-10 shadow-lg space-y-10">
-          {/* Header */}
-          <div className="text-center space-y-5">
-            <img
-              src={avatar}
-              alt="avatar"
-              className="w-28 h-28 rounded-full mx-auto border border-slate-600 object-cover"
-            />
-            <h1 className="text-3xl font-bold">{profile.full_name}</h1>
-            <p className="text-slate-400 text-sm max-w-md mx-auto whitespace-pre-wrap">
-              {profile.bio || "This user has not added a bio yet."}
-            </p>
-            {profile.updated_at && (
-              <p className="text-xs text-slate-500">
-                Last updated:{" "}
-                {new Date(profile.updated_at).toLocaleDateString(undefined, {
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                })}
-              </p>
-            )}
-          </div>
+        <h1 className="font-inter font-bold text-[32px] text-[#2F2F2F] mt-4">{displayName}</h1>
 
-          {/* ==== Hosted Sessions ==== */}
-          <div>
-            <h2 className="text-lg font-semibold text-slate-300 mb-4">
-              Hosted Sessions
-            </h2>
+        <div className="flex items-center gap-6 mt-2 text-sm">
+          <span className="flex items-center gap-2">
+            <img src="/icons/date_profile.svg" alt="Account creation date" className="w-[24px] h-[24px]" />
+            <span className="text-[14px] font-light text-[#2F2F2F]">Since: {createdAt}</span>
+          </span>
 
-            {sessions.length === 0 ? (
-              <p className="text-slate-500 text-sm text-center">
-                No sessions hosted yet.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {sessions.map((s) => (
-                  <div
-                    key={s.id}
-                    onClick={() => navigate(`/room/${s.id}`)}
-                    className="flex justify-between items-center bg-slate-700/50 hover:bg-slate-700 transition p-3 rounded-xl cursor-pointer"
-                  >
-                    <span>{s.title}</span>
-                    <span className="text-xs text-slate-400">
-                      {new Date(s.created_at).toLocaleDateString()}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <span className="flex items-center gap-2">
+            <img src="/icons/session_count.svg" alt="Total sessions attended" className="w-[24px] h-[24px]" />
+            <span className="text-[14px] font-medium text-[#2F2F2F]">{attendedCount} sessions</span>
+          </span>
         </div>
       </div>
-    </div>
+
+      {/* Divider */}
+      <div className="mt-10 border-t border-gray-200" />
+
+      {/* BIO */}
+      <section className="mt-8">
+        <h2 className="font-semibold mb-2">Bio:</h2>
+        <p className="text-gray-800 text-lg whitespace-pre-wrap">
+          {bio || <span className="text-gray-400 italic">No bio added yet.</span>}
+        </p>
+      </section>
+
+      {/* Divider */}
+      <div className="mt-16 border-t border-gray-200" />
+
+      {/* Hosted Sessions */}
+      <section className="mt-10">
+        <h2 className="text-xl font-bold mb-6 text-[#2F2F2F]">Hosted Sessions</h2>
+
+        {sessions.length === 0 ? (
+          <p className="text-slate-500 text-sm text-center">No sessions hosted yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {sessions.map((s) => {
+              const status = getSessionStatus(s);
+
+              return (
+                <div
+                  key={s.id}
+                  onClick={() => navigate(`/room/${s.id}`)}
+                  className="
+                    bg-gray-50 rounded-xl px-5 py-3
+                    flex items-center justify-between
+                    hover:bg-gray-100 transition cursor-pointer
+                  "
+                >
+                  <span className="text-[14px] text-gray-800">{s.title}</span>
+
+                  <div className="flex items-center gap-3">
+                    <span className="text-[12px] text-gray-500">{new Date(s.created_at).toLocaleDateString()}</span>
+                    {status && <span className={getBadgeClass(status)}>{status}</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </main>
   );
 }

@@ -110,7 +110,7 @@ export default function SessionCard({
         setIsHoveringCancel(false);
     };
 
-    // ✅ Book button: stable height + min width => looks “normal” next to other buttons
+    // ✅ Book button
     const bookSessionButton = (
         <button
             onClick={handleBookSession}
@@ -130,17 +130,13 @@ export default function SessionCard({
             <img
                 src={isHoveringBook ? "/icons/book-session-green.svg" : "/icons/book-session.svg"}
                 className="w-4 h-4"
+                alt=""
             />
             <span>Book session</span>
         </button>
     );
 
-    /**
-     * ✅ THIS IS THE ACTUAL “HOVER IS BACK” FIX:
-     * - Not hovering: 48x48 green circle (w-12 h-12)
-     * - Hovering: wide red cancel (px-6 h-12)
-     * So you get the obvious expanding animation again.
-     */
+    // ✅ Confirmed booking button
     const confirmedBookingButton = (
         <button
             onClick={isHoveringCancel ? handleCancelBooking : undefined}
@@ -153,20 +149,18 @@ export default function SessionCard({
         w-full xl:w-auto
         ${isHoveringCancel
                     ? "px-6 border border-[#F65252] bg-[#F65252]/5 text-[#F65252]"
-                    : "px-5 border border-[#65D46C] bg-[#65D46C]/10 text-[#65D46C]"
-        }
-
+                    : "w-12 border border-[#65D46C] bg-[#65D46C]/10 text-[#65D46C]"
+                }
       `}
             style={{ willChange: "width, padding" }}
         >
             {isHoveringCancel ? (
                 <>
-                    {/* ✅ 24x24 cancel icon */}
-                    <img src="/icons/cross-cancel.svg" className="w-6 h-6 mr-2" />
+                    <img src="/icons/cross-cancel.svg" className="w-6 h-6 mr-2" alt="" />
                     Cancel booking
                 </>
             ) : (
-                <img src="/icons/book-session-green.svg" className="w-6 h-6" />
+                <img src="/icons/book-session-green.svg" className="w-6 h-6" alt="" />
             )}
         </button>
     );
@@ -197,19 +191,23 @@ export default function SessionCard({
                     <h3 className="text-[24px] md:text-[29px] font-bold leading-tight">{session.title}</h3>
 
                     <div className="flex flex-wrap items-center gap-4 text-[12px] text-[#606060]">
-                        <Link to={`/profile/${session.host_id}`} className="flex items-center gap-1 hover:opacity-70">
-                            <img src="/icons/host.svg" className="w-4 h-4 opacity-70" />
+                        {/* ✅ CHANGED: public profile link */}
+                        <Link
+                            to={`/public-profile/${session.host_id}`}
+                            className="flex items-center gap-1 hover:opacity-70"
+                        >
+                            <img src="/icons/host.svg" className="w-4 h-4 opacity-70" alt="" />
                             <span>Host</span>
                             <span className="underline underline-offset-2">{session.host_name}</span>
                         </Link>
 
                         <div className="flex items-center gap-1">
-                            <img src="/icons/duration.svg" className="w-4 h-4 opacity-70" />
+                            <img src="/icons/duration.svg" className="w-4 h-4 opacity-70" alt="" />
                             <span>{session.duration_minutes} min</span>
                         </div>
 
                         <div className="flex items-center gap-1">
-                            <img src="/icons/date.svg" className="w-4 h-4 opacity-70" />
+                            <img src="/icons/date.svg" className="w-4 h-4 opacity-70" alt="" />
                             <span>{startDateString}</span>
                         </div>
 
@@ -223,10 +221,7 @@ export default function SessionCard({
                                 fontWeight: 500,
                             }}
                         >
-                            <img
-                                src={isHoveringCard ? t.icon.replace(".svg", "-white.svg") : t.icon}
-                                className="w-4 h-4"
-                            />
+                            <img src={isHoveringCard ? t.icon.replace(".svg", "-white.svg") : t.icon} className="w-4 h-4" alt="" />
                             {resolvedType}
                         </div>
                     </div>
@@ -281,7 +276,7 @@ export default function SessionCard({
               hover:bg-[#FECACA]
             "
                     >
-                        <img src="/icons/cross-cancel.svg" className="w-6 h-6" />
+                        <img src="/icons/cross-cancel.svg" className="w-6 h-6" alt="" />
                     </button>
                 )}
             </div>
