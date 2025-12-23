@@ -110,7 +110,7 @@ export default function SessionCard({
         setIsHoveringCancel(false);
     };
 
-    // ✅ Book button
+    // ✅ Book button: stable height + min width => looks “normal” next to other buttons
     const bookSessionButton = (
         <button
             onClick={handleBookSession}
@@ -136,7 +136,11 @@ export default function SessionCard({
         </button>
     );
 
-    // ✅ Confirmed booking button
+    /**
+     * ✅ THIS IS THE ACTUAL “HOVER IS BACK” FIX:
+     * - Not hovering: green button (px-5)
+     * - Hovering: wide red cancel (px-6)
+     */
     const confirmedBookingButton = (
         <button
             onClick={isHoveringCancel ? handleCancelBooking : undefined}
@@ -149,7 +153,7 @@ export default function SessionCard({
         w-full xl:w-auto
         ${isHoveringCancel
                     ? "px-6 border border-[#F65252] bg-[#F65252]/5 text-[#F65252]"
-                    : "w-12 border border-[#65D46C] bg-[#65D46C]/10 text-[#65D46C]"
+                    : "px-5 border border-[#65D46C] bg-[#65D46C]/10 text-[#65D46C]"
                 }
       `}
             style={{ willChange: "width, padding" }}
@@ -221,7 +225,11 @@ export default function SessionCard({
                                 fontWeight: 500,
                             }}
                         >
-                            <img src={isHoveringCard ? t.icon.replace(".svg", "-white.svg") : t.icon} className="w-4 h-4" alt="" />
+                            <img
+                                src={isHoveringCard ? t.icon.replace(".svg", "-white.svg") : t.icon}
+                                className="w-4 h-4"
+                                alt=""
+                            />
                             {resolvedType}
                         </div>
                     </div>
