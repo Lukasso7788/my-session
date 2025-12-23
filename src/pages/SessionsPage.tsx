@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { SessionTypeSwitcher } from "../components/SessionTypeSwitcher";
 import SessionCard from "../components/SessionCard";
+import { SessionsDateFilter } from "../components/SessionsDateFilter";
 import { supabase } from "../lib/supabase";
 import { useCreateSessionModal } from "../context/CreateSessionModalContext";
 import { useAuth } from "../context/AuthContext";
@@ -20,6 +21,15 @@ type SessionWithRelations = Session & {
   session_attendance?: { id: string; session_id: string; user_id: string }[];
 };
 
+function toLocalYMDFromISO(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export function SessionsPage() {
   const navigate = useNavigate();
   const modal = useCreateSessionModal();
@@ -30,9 +40,10 @@ export function SessionsPage() {
   const [sessions, setSessions] = useState<SessionWithRelations[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const [sessionTypeTab, setSessionTypeTab] = useState<
-    "group" | "infinite" | "body"
-  >("group");
+  const [sessionTypeTab, setSessionTypeTab] = useState<"group" | "infinite" | "body">("group");
+
+  // ✅ New: date filter (YYYY-MM-DD local)
+  const [dateFilter, setDateFilter] = useState<string | null>(null);
 
   // Sync tab from querystring: /sessions?tab=group|infinite|body
   useEffect(() => {
@@ -71,7 +82,7 @@ export function SessionsPage() {
         throw error;
       }
 
-      if (DEBUG) console.log("[DEBUG Sessions] Loaded:", data);
+      if (DEBUG) console noted console.log("[DEBUG Sessions] Loaded:", data);
 
       setSessions(data || []);
     } catch (err) {
@@ -97,37 +108,31 @@ export function SessionsPage() {
 
     const channel = supabase
       .channel("session-attendance")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "session_attendance" },
-        (payload) => {
-          if (DEBUG) console.log("[DEBUG Sessions] Realtime event:", payload);
+      .on("postgres_changes", { event: "*", schema: "public", table: "session_attendance" }, (payload) => {
+        if (DEBUG) console.log("[DEBUG Sessions] Realtime event:", payload);
 
-          setSessions((prev) => {
-            // @ts-ignore
-            const sessionId = payload.new?.session_id || payload.old?.session_id;
-            if (!sessionId) return prev;
+        setSessions((prev) => {
+          // @ts-ignore
+          const sessionId = payload.new?.session_id || payload.old?.session_id;
+          if (!sessionId) return prev;
 
-            return prev.map((s) => {
-              if (s.id !== sessionId) return s;
+          return prev.map((s) => {
+            if (s.id !== sessionId) return s;
 
-              let attendance = s.session_attendance || [];
+            let attendance = s.session_attendance || [];
 
-              if (payload.eventType === "INSERT") {
-                attendance = [...attendance, payload.new];
-              } else if (payload.eventType === "DELETE") {
-                attendance = attendance.filter((a) => a.id !== payload.old.id);
-              } else if (payload.eventType === "UPDATE") {
-                attendance = attendance.map((a) =>
-                  a.id === payload.new.id ? payload.new : a
-                );
-              }
+            if (payload.eventType === "INSERT") {
+              attendance = [...attendance, payload.new as any];
+            } else if (payload.eventType === "DELETE") {
+              attendance = attendance.filter((a) => a.id !== (payload.old as any).id);
+            } else if (payload.eventType === "UPDATE") {
+              attendance = attendance.map((a) => (a.id === (payload.new as any).id ? (payload.new as any) : a));
+            }
 
-              return { ...s, session_attendance: attendance };
-            });
+            return { ...s, session_attendance: attendance };
           });
-        }
-      )
+        });
+      })
       .subscribe();
 
     return () => {
@@ -139,19 +144,26 @@ export function SessionsPage() {
   // --- HELPERS ---
   const isExpired = (s: SessionWithRelations) => {
     if (!s.start_time) return false;
-    return (
-      Date.now() >
-      new Date(s.start_time).getTime() + s.duration_minutes * 60_000
-    );
+    return Date.now() > new Date(s.start_time).getTime() + s.duration_minutes * 60_000;
   };
 
-  const activeSessions = useMemo(
-    () => sessions.filter((s) => !isExpired(s)),
-    [sessions]
-  );
+  const activeSessions = useMemo(() => sessions.filter((s) => !isExpired(s)), [sessions]);
 
   // TODO: when you implement infinite/body formats, switch here
-  const visibleSessions = sessionTypeTab === "group" ? activeSessions : [];
+  const typeFilteredSessions = useMemo(() => {
+    return sessionTypeTab === "group" ? activeSessions : [];
+  }, [sessionTypeTab, activeSessions]);
+
+  // ✅ Date filtering (by start_time local day)
+  const visibleSessions = useMemo(() => {
+    if (!dateFilter) return typeFilteredSessions;
+
+    return typeFilteredSessions.filter((s) => {
+      if (!s.start_time) return false;
+      const ymd = toLocalYMDFromISO(s.start_time);
+      return ymd === dateFilter;
+    });
+  }, [typeFilteredSessions, dateFilter]);
 
   // --- ACTIONS ---
   const join = (id: string) => {
@@ -189,11 +201,7 @@ export function SessionsPage() {
     if (DEBUG) console.log("[DEBUG Sessions] Cancel booking:", id);
 
     try {
-      await supabase
-        .from("session_bookings")
-        .delete()
-        .eq("session_id", id)
-        .eq("user_id", user.id);
+      await supabase.from("session_bookings").delete().eq("session_id", id).eq("user_id", user.id);
 
       fetchSessions();
     } catch (err) {
@@ -235,6 +243,18 @@ export function SessionsPage() {
             />
           </div>
 
+          {/* ✅ Calendar filter (3 weeks forward, week-by-week scroll) */}
+          <div className="border border-[#DBD8D8] rounded-[24px] p-6 mb-6">
+            <SessionsDateFilter
+              value={dateFilter}
+              onChange={(v) => {
+                if (DEBUG) console.log("[DEBUG Sessions] Date filter:", v);
+                setDateFilter(v);
+              }}
+              weeksForward={3}
+            />
+          </div>
+
           <div className="border border-[#DBD8D8] rounded-[24px] p-8">
             {isLoading ? (
               <div className="text-center py-12">
@@ -243,7 +263,7 @@ export function SessionsPage() {
             ) : visibleSessions.length === 0 ? (
               <div className="p-2 text-center">
                 <p className="text-sm text-slate-600 mb-4">
-                  No active sessions available
+                  No active sessions {dateFilter ? "for this date" : "available"}
                 </p>
 
                 {user && (

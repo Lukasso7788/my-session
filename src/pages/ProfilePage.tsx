@@ -19,12 +19,11 @@ export default function ProfilePage() {
 
   const [editButtonHover, setEditButtonHover] = useState(false);
 
-  // Sessions of host
+  // Sessions hosted by this user
   const [sessions, setSessions] = useState<any[]>([]);
 
-  // ✅ Sessions attended (joined) by this user
+  // ✅ sessions attended count comes from `profiles.sessions_attended`
   const [attendedCount, setAttendedCount] = useState<number>(0);
-  const [loadingStats, setLoadingStats] = useState(false);
 
   const displayName = useMemo(() => fullName || "User", [fullName]);
 
@@ -87,35 +86,63 @@ export default function ProfilePage() {
     if (!loading && !user) navigate("/login", { replace: true });
   }, [loading, user, navigate]);
 
-  // Load profile (restore "loadBio" pattern like in your старый код)
+  // ✅ Prefill quickly from context (if exists)
+  useEffect(() => {
+    if (!profile) return;
+    setFullName(profile.full_name || "");
+    setAvatarUrl(profile.avatar_url || null);
+
+    // если ты уже кладёшь это в profile context — подхватим мгновенно
+    const anyProfile: any = profile as any;
+    if (typeof anyProfile.sessions_attended === "number") {
+      setAttendedCount(anyProfile.sessions_attended);
+    }
+  }, [profile]);
+
+  // ✅ Load profile fields from supabase (BIO + attendedCount from profiles)
   useEffect(() => {
     if (!user) return;
 
-    // keep fast prefill from context if exists
-    if (profile) {
-      setFullName(profile.full_name || "");
-      setAvatarUrl(profile.avatar_url || null);
-    }
-
-    // ✅ explicit loadBio from supabase (как ты требуешь)
     const loadBio = async () => {
+      // 1) Пытаемся тянуть sessions_attended тоже
       const { data, error } = await supabase
         .from("profiles")
-        .select("full_name, bio, avatar_url")
+        .select("full_name, bio, avatar_url, sessions_attended")
         .eq("id", user.id)
         .single();
 
-      if (!error && data) {
+      if (error) {
+        // 2) Фоллбек если колонки sessions_attended ещё нет в базе
+        const fallback = await supabase
+          .from("profiles")
+          .select("full_name, bio, avatar_url")
+          .eq("id", user.id)
+          .single();
+
+        if (!fallback.error && fallback.data) {
+          setFullName(fallback.data.full_name || "");
+          setBio(fallback.data.bio || "");
+          setAvatarUrl(fallback.data.avatar_url || null);
+        }
+
+        return;
+      }
+
+      if (data) {
         setFullName(data.full_name || "");
         setBio(data.bio || "");
         setAvatarUrl(data.avatar_url || null);
+
+        const count = (data as any).sessions_attended;
+        if (typeof count === "number") setAttendedCount(count);
+        else setAttendedCount(0);
       }
     };
 
     loadBio();
-  }, [user, profile]);
+  }, [user]);
 
-  // Load created_at (restore separate effect, but format Month Year)
+  // Load created_at (Month Year)
   useEffect(() => {
     if (!user) return;
 
@@ -149,58 +176,6 @@ export default function ProfilePage() {
     };
 
     loadSessions();
-  }, [user?.id]);
-
-  // ✅ Load attended sessions count (unique session_id from session_attendance)
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const loadAttendedCount = async () => {
-      setLoadingStats(true);
-      try {
-        const { data, error } = await supabase
-          .from("session_attendance")
-          .select("session_id, joined_at")
-          .eq("user_id", user.id);
-
-        if (error) {
-          console.warn("Failed to load attendance stats:", error);
-          return;
-        }
-
-        const uniq = new Set<string>();
-        (data || []).forEach((row: any) => {
-          if (row?.session_id && row?.joined_at) uniq.add(row.session_id);
-        });
-
-        setAttendedCount(uniq.size);
-      } finally {
-        setLoadingStats(false);
-      }
-    };
-
-    loadAttendedCount();
-
-    // realtime subscription for auto-update
-    const channel = supabase
-      .channel(`profile-attendance-${user.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "session_attendance",
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => {
-          loadAttendedCount();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
   }, [user?.id]);
 
   // Upload avatar
@@ -244,7 +219,7 @@ export default function ProfilePage() {
     }
   };
 
-  // Save profile
+  // Save profile (НЕ трогаем sessions_attended)
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
@@ -369,7 +344,7 @@ export default function ProfilePage() {
             </span>
           </span>
 
-          {/* Sessions attended */}
+          {/* Sessions attended (from profiles) */}
           <span className="flex items-center gap-2">
             <img
               src="/icons/session_count.svg"
@@ -377,7 +352,7 @@ export default function ProfilePage() {
               className="w-[24px] h-[24px]"
             />
             <span className="text-[14px] font-medium text-[#2F2F2F]">
-              {loadingStats ? "…" : attendedCount} sessions
+              {attendedCount} sessions
             </span>
           </span>
         </div>
