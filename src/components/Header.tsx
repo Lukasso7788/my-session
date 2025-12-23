@@ -116,7 +116,7 @@ export default function Header() {
                                 className={["transition-transform", sessionsOpen ? "rotate-180" : "rotate-0"].join(" ")}
                                 aria-hidden
                             >
-                                <img src="/icons/arrow.svg" className="w-3 h-3" />
+                                <img src="/icons/arrow.svg" className="w-3 h-3" alt="" />
                             </span>
                         </button>
 
@@ -144,9 +144,16 @@ export default function Header() {
                                                 isHover ? "bg-black/5" : "bg-transparent",
                                             ].join(" ")}
                                         >
-                                            <img src={showActiveIcon ? t.iconActive : t.iconInactive} className="w-5 h-5" alt="" />
+                                            <img
+                                                src={showActiveIcon ? t.iconActive : t.iconInactive}
+                                                className="w-5 h-5"
+                                                alt=""
+                                            />
                                             <span
-                                                className={["text-sm", isHover || isActive ? `text-[${BRAND_BLACK}]` : "text-[#2E2E2E]"].join(" ")}
+                                                className={[
+                                                    "text-sm",
+                                                    isHover || isActive ? `text-[${BRAND_BLACK}]` : "text-[#2E2E2E]",
+                                                ].join(" ")}
                                                 style={isHover || isActive ? { color: BRAND_BLACK } : undefined}
                                             >
                                                 {t.label}
@@ -211,11 +218,11 @@ export default function Header() {
                                         onMouseEnter={() => setHoverCreate(true)}
                                         onMouseLeave={() => setHoverCreate(false)}
                                         className={`
-                      hidden md:inline-flex items-center gap-2 px-6 py-3 rounded-full
-                      border text-base font-medium transition-colors duration-200
-                      border-[#2F2F2F]
-                      ${hoverCreate ? "bg-[#2F2F2F] text-white" : "hover:bg-slate-50"}
-                    `}
+                                            hidden md:inline-flex items-center gap-2 px-6 py-3 rounded-full
+                                            border text-base font-medium transition-colors duration-200
+                                            border-[#2F2F2F]
+                                            ${hoverCreate ? "bg-[#2F2F2F] text-white" : "hover:bg-slate-50"}
+                                        `}
                                     >
                                         <img
                                             src={hoverCreate ? "/icons/create-session-white.svg" : "/icons/create-session.svg"}
@@ -262,7 +269,7 @@ export default function Header() {
                                 </>
                             )}
 
-                            {/* ✅ CHANGED: BURGER always available on <lg (so mobile header is always adaptive) */}
+                            {/* ✅ BURGER always available on <lg */}
                             <button onClick={() => setMobileMenu(true)} className="lg:hidden flex items-center p-2">
                                 <img src="/icons/burger-menu.svg" className="w-7 h-7" alt="Menu" />
                             </button>
@@ -271,130 +278,134 @@ export default function Header() {
                 </div>
             </div>
 
-            {/* FULL-SCREEN MENU */}
+            {/* ✅ FULL-SCREEN MENU (fixed: never exceeds mobile viewport width) */}
             {mobileMenu && (
-                <div className="fixed inset-0 z-50 bg-white w-full max-w-full h-screen overflow-y-auto animate-fadeIn">
-                    <div className="flex justify-between items-center px-5 py-4 border-b border-borderGray">
-                        <span className="text-xl font-bold">Menu</span>
-                        <button onClick={() => setMobileMenu(false)} className="p-2">
-                            <img src="/icons/close.svg" className="w-6 h-6" alt="Close" />
-                        </button>
-                    </div>
-
-                    <div className="flex flex-col gap-6 p-6 text-lg text-brandBlack">
-                        {/* Sessions section in mobile */}
-                        <div className="flex flex-col gap-3">
-                            <button
-                                onClick={() => {
-                                    navigate("/sessions");
-                                    setMobileMenu(false);
-                                }}
-                                className="text-left"
-                            >
-                                Sessions
+                <div className="fixed inset-0 z-50 bg-white w-screen h-[100dvh] overflow-x-hidden overflow-y-auto animate-fadeIn">
+                    {/* ✅ ADDED: prevents children from expanding beyond viewport */}
+                    <div className="w-full min-w-0">
+                        <div className="flex justify-between items-center px-5 py-4 border-b border-borderGray">
+                            <span className="text-xl font-bold">Menu</span>
+                            <button onClick={() => setMobileMenu(false)} className="p-2">
+                                <img src="/icons/close.svg" className="w-6 h-6" alt="Close" />
                             </button>
-
-                            <div className="pl-2 flex flex-col gap-2">
-                                {tabs.map((t) => (
-                                    <button
-                                        key={t.id}
-                                        onClick={() => goToSessions(t.id)}
-                                        className={[
-                                            "flex items-center gap-3 px-3 py-2 rounded-xl border border-borderGray hover:bg-black/5 text-left",
-                                            activeSessionsTab === t.id ? "bg-black/5" : "",
-                                        ].join(" ")}
-                                    >
-                                        <img
-                                            src={activeSessionsTab === t.id ? t.iconActive : t.iconInactive}
-                                            className="w-5 h-5"
-                                            alt=""
-                                        />
-                                        <span className="text-base">{t.label}</span>
-                                    </button>
-                                ))}
-                            </div>
                         </div>
 
-                        {/* Pricing + Updates */}
-                        <button
-                            onClick={() => {
-                                navigate("/pricing");
-                                setMobileMenu(false);
-                            }}
-                            className="text-left"
-                        >
-                            Pricing
-                        </button>
-
-                        <button
-                            onClick={() => {
-                                navigate("/updates");
-                                setMobileMenu(false);
-                            }}
-                            className="text-left"
-                        >
-                            Latest updates
-                        </button>
-
-                        {user && (
-                            <>
+                        <div className="flex flex-col gap-6 p-6 text-lg text-brandBlack w-full min-w-0">
+                            {/* Sessions section in mobile */}
+                            <div className="flex flex-col gap-3 w-full min-w-0">
                                 <button
                                     onClick={() => {
-                                        modal.open();
-                                        setMobileMenu(false);
-                                    }}
-                                    className="inline-flex items-center gap-2 px-5 py-3 rounded-full border border-brandBlack text-base hover:bg-slate-100"
-                                >
-                                    <img src="/icons/create-session.svg" className="w-5 h-5" alt="" />
-                                    Create session
-                                </button>
-
-                                <button
-                                    onClick={() => {
-                                        navigate("/profile");
+                                        navigate("/sessions");
                                         setMobileMenu(false);
                                     }}
                                     className="text-left"
                                 >
-                                    Profile
+                                    Sessions
                                 </button>
 
-                                <button
-                                    onClick={async () => {
-                                        await signOut();
-                                        navigate("/login");
-                                        setMobileMenu(false);
-                                    }}
-                                    className="text-red-600 text-left"
-                                >
-                                    Log out
-                                </button>
-                            </>
-                        )}
+                                <div className="pl-2 flex flex-col gap-2 w-full min-w-0">
+                                    {tabs.map((t) => (
+                                        <button
+                                            key={t.id}
+                                            onClick={() => goToSessions(t.id)}
+                                            className={[
+                                                "flex items-center gap-3 px-3 py-2 rounded-xl border border-borderGray hover:bg-black/5 text-left w-full",
+                                                activeSessionsTab === t.id ? "bg-black/5" : "",
+                                            ].join(" ")}
+                                        >
+                                            <img
+                                                src={activeSessionsTab === t.id ? t.iconActive : t.iconInactive}
+                                                className="w-5 h-5 shrink-0"
+                                                alt=""
+                                            />
+                                            {/* ✅ ADDED: break-words avoids text forcing overflow */}
+                                            <span className="text-base break-words">{t.label}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
 
-                        {!user && (
-                            <>
-                                <button
-                                    onClick={() => {
-                                        navigate("/login");
-                                        setMobileMenu(false);
-                                    }}
-                                    className="px-4 py-3 rounded-full border border-gray-300"
-                                >
-                                    Log in
-                                </button>
+                            {/* Pricing + Updates */}
+                            <button
+                                onClick={() => {
+                                    navigate("/pricing");
+                                    setMobileMenu(false);
+                                }}
+                                className="text-left"
+                            >
+                                Pricing
+                            </button>
 
-                                <button
-                                    onClick={() => {
-                                        navigate("/register");
-                                        setMobileMenu(false);
-                                    }}
-                                    className="px-4 py-3 rounded-full bg-brandBlack text-white"
-                                >
-                                    Sign up
-                                </button>
-                            </>
-                        )}
+                            <button
+                                onClick={() => {
+                                    navigate("/updates");
+                                    setMobileMenu(false);
+                                }}
+                                className="text-left"
+                            >
+                                Latest updates
+                            </button>
+
+                            {user && (
+                                <>
+                                    <button
+                                        onClick={() => {
+                                            modal.open();
+                                            setMobileMenu(false);
+                                        }}
+                                        className="inline-flex items-center gap-2 px-5 py-3 rounded-full border border-brandBlack text-base hover:bg-slate-100 w-full justify-center"
+                                    >
+                                        <img src="/icons/create-session.svg" className="w-5 h-5" alt="" />
+                                        Create session
+                                    </button>
+
+                                    <button
+                                        onClick={() => {
+                                            navigate("/profile");
+                                            setMobileMenu(false);
+                                        }}
+                                        className="text-left"
+                                    >
+                                        Profile
+                                    </button>
+
+                                    <button
+                                        onClick={async () => {
+                                            await signOut();
+                                            navigate("/login");
+                                            setMobileMenu(false);
+                                        }}
+                                        className="text-red-600 text-left"
+                                    >
+                                        Log out
+                                    </button>
+                                </>
+                            )}
+
+                            {!user && (
+                                <>
+                                    <button
+                                        onClick={() => {
+                                            navigate("/login");
+                                            setMobileMenu(false);
+                                        }}
+                                        className="px-4 py-3 rounded-full border border-gray-300 w-full"
+                                    >
+                                        Log in
+                                    </button>
+
+                                    <button
+                                        onClick={() => {
+                                            navigate("/register");
+                                            setMobileMenu(false);
+                                        }}
+                                        className="px-4 py-3 rounded-full bg-brandBlack text-white w-full"
+                                    >
+                                        Sign up
+                                    </button>
+                                </>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}
