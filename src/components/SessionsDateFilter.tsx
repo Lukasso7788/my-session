@@ -11,6 +11,13 @@ type Props = {
      * How many weeks вперед можно листать (default 3)
      */
     weeksAhead?: number;
+
+    /**
+     * UI style:
+     * - "boxed": with outer border + rounded (default)
+     * - "flat": no outer border (useful when page already has a container)
+     */
+    variant?: "flat" | "boxed";
 };
 
 function startOfDayLocal(d: Date) {
@@ -24,7 +31,12 @@ function toYmdLocal(d: Date) {
     return `${yyyy}-${mm}-${dd}`;
 }
 
-export function SessionsDateFilter({ value, onChange, weeksAhead = 3 }: Props) {
+export function SessionsDateFilter({
+    value,
+    onChange,
+    weeksAhead = 3,
+    variant = "boxed",
+}: Props) {
     const [page, setPage] = useState(0); // 0..weeksAhead-1
 
     const today = useMemo(() => startOfDayLocal(new Date()), []);
@@ -50,15 +62,21 @@ export function SessionsDateFilter({ value, onChange, weeksAhead = 3 }: Props) {
     const canPrev = page > 0;
     const canNext = page < maxPage;
 
+    const containerClass =
+        variant === "boxed"
+            ? `
+        border border-[#DBD8D8] rounded-[24px]
+        px-4 py-3
+        flex items-center justify-between gap-3
+      `
+            : `
+        px-0 py-0
+        flex items-center justify-between gap-3
+      `;
+
     return (
         <div className="w-full">
-            <div
-                className="
-          border border-[#DBD8D8] rounded-[24px]
-          px-4 py-3
-          flex items-center justify-between gap-3
-        "
-            >
+            <div className={containerClass}>
                 {/* Left controls */}
                 <div className="flex items-center gap-2">
                     <button

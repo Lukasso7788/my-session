@@ -4,6 +4,8 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 
+const DEBUG = true;
+
 export default function ProfilePage() {
   const navigate = useNavigate();
   const { user, profile, loading, reloadProfile } = useAuth();
@@ -22,7 +24,7 @@ export default function ProfilePage() {
   // Sessions hosted by this user
   const [sessions, setSessions] = useState<any[]>([]);
 
-  // ✅ sessions attended count comes from `profiles.sessions_attended`
+  // ✅ sessions attended count comes from profiles.attended_session_count (fallback: profiles.sessions_attended)
   const [attendedCount, setAttendedCount] = useState<number>(0);
 
   const displayName = useMemo(() => fullName || "User", [fullName]);
@@ -30,6 +32,15 @@ export default function ProfilePage() {
   const avatarFallback = useMemo(() => {
     return `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}`;
   }, [displayName]);
+
+  // ✅ Универсальный выбор счётчика из профиля (поддержка обоих имён колонки)
+  const pickAttendedCount = (row: any): number => {
+    const v1 = row?.attended_session_count;
+    const v2 = row?.sessions_attended;
+    if (typeof v1 === "number") return v1;
+    if (typeof v2 === "number") return v2;
+    return 0;
+  };
 
   // === STATUS BADGES ===
   const getSessionStatus = (session: any) => {
@@ -89,13 +100,21 @@ export default function ProfilePage() {
   // ✅ Prefill quickly from context (if exists)
   useEffect(() => {
     if (!profile) return;
-    setFullName(profile.full_name || "");
-    setAvatarUrl(profile.avatar_url || null);
 
-    // если ты уже кладёшь это в profile context — подхватим мгновенно
     const anyProfile: any = profile as any;
-    if (typeof anyProfile.sessions_attended === "number") {
-      setAttendedCount(anyProfile.sessions_attended);
+
+    setFullName(anyProfile.full_name || "");
+    setAvatarUrl(anyProfile.avatar_url || null);
+
+    // ⚠️ важно: поддерживаем оба возможных имени поля
+    setAttendedCount(pickAttendedCount(anyProfile));
+
+    if (DEBUG) {
+      console.log("[DEBUG ProfilePage] Prefill from context profile:", {
+        full_name: anyProfile.full_name,
+        attended_session_count: anyProfile.attended_session_count,
+        sessions_attended: anyProfile.sessions_attended,
+      });
     }
   }, [profile]);
 
@@ -103,43 +122,71 @@ export default function ProfilePage() {
   useEffect(() => {
     if (!user) return;
 
-    const loadBio = async () => {
-      // 1) Пытаемся тянуть sessions_attended тоже
-      const { data, error } = await supabase
+    const loadProfile = async () => {
+      // 1) Сначала пробуем attended_session_count (то, что ты хочешь)
+      const first = await supabase
+        .from("profiles")
+        .select("full_name, bio, avatar_url, attended_session_count")
+        .eq("id", user.id)
+        .single();
+
+      if (!first.error && first.data) {
+        const row: any = first.data;
+
+        setFullName(row.full_name || "");
+        setBio(row.bio || "");
+        setAvatarUrl(row.avatar_url || null);
+        setAttendedCount(pickAttendedCount(row));
+
+        if (DEBUG) console.log("[DEBUG ProfilePage] Loaded profile (attended_session_count):", row);
+        return;
+      }
+
+      // 2) Фоллбек: если колонки attended_session_count ещё нет — пробуем sessions_attended
+      const second = await supabase
         .from("profiles")
         .select("full_name, bio, avatar_url, sessions_attended")
         .eq("id", user.id)
         .single();
 
-      if (error) {
-        // 2) Фоллбек если колонки sessions_attended ещё нет в базе
-        const fallback = await supabase
-          .from("profiles")
-          .select("full_name, bio, avatar_url")
-          .eq("id", user.id)
-          .single();
+      if (!second.error && second.data) {
+        const row: any = second.data;
 
-        if (!fallback.error && fallback.data) {
-          setFullName(fallback.data.full_name || "");
-          setBio(fallback.data.bio || "");
-          setAvatarUrl(fallback.data.avatar_url || null);
-        }
+        setFullName(row.full_name || "");
+        setBio(row.bio || "");
+        setAvatarUrl(row.avatar_url || null);
+        setAttendedCount(pickAttendedCount(row));
 
+        if (DEBUG) console.log("[DEBUG ProfilePage] Loaded profile (sessions_attended fallback):", row);
         return;
       }
 
-      if (data) {
-        setFullName(data.full_name || "");
-        setBio(data.bio || "");
-        setAvatarUrl(data.avatar_url || null);
+      // 3) Последний фоллбек: хотя бы bio/name/avatar
+      const third = await supabase
+        .from("profiles")
+        .select("full_name, bio, avatar_url")
+        .eq("id", user.id)
+        .single();
 
-        const count = (data as any).sessions_attended;
-        if (typeof count === "number") setAttendedCount(count);
-        else setAttendedCount(0);
+      if (!third.error && third.data) {
+        const row: any = third.data;
+        setFullName(row.full_name || "");
+        setBio(row.bio || "");
+        setAvatarUrl(row.avatar_url || null);
+        setAttendedCount(0);
+
+        if (DEBUG) console.log("[DEBUG ProfilePage] Loaded profile (no attended columns):", row);
+        return;
       }
+
+      console.warn("[DEBUG ProfilePage] Failed to load profile:", {
+        firstError: first.error,
+        secondError: second.error,
+        thirdError: third.error,
+      });
     };
 
-    loadBio();
+    loadProfile();
   }, [user]);
 
   // Load created_at (Month Year)
@@ -219,7 +266,7 @@ export default function ProfilePage() {
     }
   };
 
-  // Save profile (НЕ трогаем sessions_attended)
+  // Save profile (НЕ трогаем attended_session_count / sessions_attended)
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
