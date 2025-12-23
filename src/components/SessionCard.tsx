@@ -29,7 +29,7 @@ export default function SessionCard({
     const [isHoveringJoin, setIsHoveringJoin] = useState(false);
     const [isHoveringCard, setIsHoveringCard] = useState(false);
 
-    // ✅ ADDED: delay hover like Figma
+    // ✅ Figma-like hover delay
     const CANCEL_HOVER_DELAY_MS = 120;
     const [cancelHoverTimer, setCancelHoverTimer] = useState<number | null>(null);
 
@@ -37,7 +37,6 @@ export default function SessionCard({
         setIsBookingConfirmed(initialIsBooked);
     }, [session.id, initialIsBooked]);
 
-    // ✅ ADDED: cleanup timer
     useEffect(() => {
         return () => {
             if (cancelHoverTimer) window.clearTimeout(cancelHoverTimer);
@@ -67,7 +66,7 @@ export default function SessionCard({
         icon: "/icons/deepwork.svg",
     };
 
-    // ✅ hover bg for Join session by type (exact colors you gave)
+    // ✅ Join hover bg by type (your exact colors)
     const JOIN_HOVER_BG: Record<string, string> = {
         "Deep work": "#5286F6",
         Pomodoro: "#F65252",
@@ -98,7 +97,7 @@ export default function SessionCard({
         setIsHoveringCancel(false);
     };
 
-    // ✅ ADDED: delayed hover handlers for booked button
+    // ✅ delayed hover -> makes it feel like Figma
     const onEnterBooked = () => {
         if (cancelHoverTimer) window.clearTimeout(cancelHoverTimer);
         const t = window.setTimeout(() => setIsHoveringCancel(true), CANCEL_HOVER_DELAY_MS);
@@ -111,13 +110,14 @@ export default function SessionCard({
         setIsHoveringCancel(false);
     };
 
+    // ✅ Book button: stable height + min width => looks “normal” next to other buttons
     const bookSessionButton = (
         <button
             onClick={handleBookSession}
             onMouseEnter={() => setIsHoveringBook(true)}
             onMouseLeave={() => setIsHoveringBook(false)}
             className={`
-        rounded-full px-6 py-3 text-[14px] font-semibold
+        h-12 min-w-[160px] rounded-full px-6 text-[14px] font-semibold
         flex items-center justify-center gap-2
         transition-all duration-200 ease-in-out
         w-full xl:w-auto
@@ -135,7 +135,12 @@ export default function SessionCard({
         </button>
     );
 
-    // ✅ CHANGED: smooth width/contents transitions + delay hover like Figma
+    /**
+     * ✅ THIS IS THE ACTUAL “HOVER IS BACK” FIX:
+     * - Not hovering: 48x48 green circle (w-12 h-12)
+     * - Hovering: wide red cancel (px-6 h-12)
+     * So you get the obvious expanding animation again.
+     */
     const confirmedBookingButton = (
         <button
             onClick={isHoveringCancel ? handleCancelBooking : undefined}
@@ -148,17 +153,14 @@ export default function SessionCard({
         w-full xl:w-auto
         ${isHoveringCancel
                     ? "px-6 border border-[#F65252] bg-[#F65252]/5 text-[#F65252]"
-                    : "px-6 border border-[#65D46C] bg-[#65D46C]/10 text-[#65D46C]"
+                    : "w-12 border border-[#65D46C] bg-[#65D46C]/10 text-[#65D46C]"
                 }
       `}
-            style={{
-                // ✅ ADDED: helps avoid tiny “jump” when content changes
-                willChange: "padding, width",
-            }}
+            style={{ willChange: "width, padding" }}
         >
             {isHoveringCancel ? (
                 <>
-                    {/* ✅ CHANGED: icon 24x24 */}
+                    {/* ✅ 24x24 cancel icon */}
                     <img src="/icons/cross-cancel.svg" className="w-6 h-6 mr-2" />
                     Cancel booking
                 </>
@@ -255,7 +257,7 @@ export default function SessionCard({
                     onMouseEnter={() => setIsHoveringJoin(true)}
                     onMouseLeave={() => setIsHoveringJoin(false)}
                     className="
-            rounded-full px-6 py-3 text-[14px] font-semibold
+            h-12 rounded-full px-6 text-[14px] font-semibold
             flex items-center justify-center
             transition-colors duration-200 ease-in-out
             w-full xl:w-auto
