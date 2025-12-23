@@ -91,7 +91,7 @@ export default function Header() {
                         <button
                             onClick={() => setSessionsOpen((v) => !v)}
                             onMouseEnter={() => setSessionsOpen(true)}
-                            className="hover:text-[#2F2F2F] inline-flex items-center gap-2"
+                            className="hover:text-[#2F2F2F] inline-flex items-center gap-1"
                         >
                             Sessions
                             <span
