@@ -33,9 +33,9 @@ export type JitsiEngineCallbacks = {
 };
 
 const JITSI_DOMAIN = "jitsi.lukassodesign.site";
-const JITSI_CONFIG_URL = "https://" + JITSI_DOMAIN + "/config.js";
 
-// ✅ IMPORTANT: load lib-jitsi-meet from YOUR origin so effects can load /libs/*.wasm/*.tflite correctly
+// грузим assets с ТВОЕГО домена приложения
+const JITSI_CONFIG_URL = "/config.js";
 const JITSI_LIB_URL = "/libs/lib-jitsi-meet.min.js";
 
 const DISABLE_P2P = true;
@@ -316,7 +316,10 @@ export class JitsiEngine {
 
     if (!this.JitsiMeetJS || !this.config) throw new Error("Jitsi globals not available");
 
-    this.JitsiMeetJS.setLogLevel(this.JitsiMeetJS.logLevels.ERROR);
+    try {
+      const lvl = this.JitsiMeetJS?.logLevels?.ERROR;
+      if (typeof lvl !== "undefined") this.JitsiMeetJS.setLogLevel(lvl);
+    } catch { }
 
     // ✅ IMPORTANT: point Jitsi effects to your /libs assets
     this.JitsiMeetJS.init({
