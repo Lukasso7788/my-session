@@ -343,7 +343,7 @@ export default function ProfilePage() {
               className="w-[24px] h-[24px]"
             />
             <span className="text-[14px] font-medium text-[#2F2F2F]">
-              {attendedCount}: sessions
+              {attendedCount} sessions
             </span>
           </span>
         </div>
