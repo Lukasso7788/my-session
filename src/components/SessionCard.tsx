@@ -195,9 +195,9 @@ export default function SessionCard({
                     <h3 className="text-[24px] md:text-[29px] font-bold leading-tight">{session.title}</h3>
 
                     <div className="flex flex-wrap items-center gap-4 text-[12px] text-[#606060]">
-                        {/* ✅ CHANGED: public profile link */}
+                        {/* ✅ CHANGED: public profile link (ONLY this line changed) */}
                         <Link
-                            to={`/public-profile/${session.host_id}`}
+                            to={`/profile/${session.host_id}`}
                             className="flex items-center gap-1 hover:opacity-70"
                         >
                             <img src="/icons/host.svg" className="w-4 h-4 opacity-70" alt="" />

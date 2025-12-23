@@ -272,12 +272,45 @@ export default function ProfilePage() {
           ← Back
         </button>
 
-        <button
-          onClick={editMode ? handleSave : () => setEditMode(true)}
-          onMouseEnter={() => setEditButtonHover(true)}
-          onMouseLeave={() => setEditButtonHover(false)}
-          disabled={saving}
-          className="
+        {/* ✅ CHANGED: right side actions (preview icon + edit button) */}
+        <div className="flex items-center gap-3">
+          {/* ✅ ADDED: Profile preview icon (public) */}
+          <button
+            type="button"
+            onClick={() => navigate(`/profile/${user.id}`)}
+            className="
+              h-10 w-10 rounded-full
+              border border-[#2F2F2F]
+              flex items-center justify-center
+              text-[#2F2F2F]
+              hover:bg-[#2F2F2F] hover:text-white
+              transition
+            "
+            aria-label="Profile preview"
+            title="Profile preview"
+          >
+            {/* inline eye icon */}
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+                stroke="currentColor"
+                strokeWidth="2"
+              />
+            </svg>
+          </button>
+
+          <button
+            onClick={editMode ? handleSave : () => setEditMode(true)}
+            onMouseEnter={() => setEditButtonHover(true)}
+            onMouseLeave={() => setEditButtonHover(false)}
+            disabled={saving}
+            className="
               inline-flex items-center gap-2 px-6 py-2 rounded-full
               border border-[#2F2F2F]
               text-[16px] font-normal text-[#2F2F2F]
@@ -285,14 +318,15 @@ export default function ProfilePage() {
               hover:border-[#2F2F2F]
               transition disabled:opacity-60 disabled:cursor-not-allowed
             "
-        >
-          <img
-            src={actionIconSrc}
-            alt={editMode ? "Save changes" : "Edit profile"}
-            className="w-6 h-6"
-          />
-          <span>{actionLabel}</span>
-        </button>
+          >
+            <img
+              src={actionIconSrc}
+              alt={editMode ? "Save changes" : "Edit profile"}
+              className="w-6 h-6"
+            />
+            <span>{actionLabel}</span>
+          </button>
+        </div>
       </div>
 
       {/* Avatar + Name */}
@@ -301,6 +335,7 @@ export default function ProfilePage() {
           <img
             src={avatarUrl || avatarFallback}
             className="w-28 h-28 rounded-full object-cover border border-gray-200 shadow-sm"
+            alt="avatar"
           />
 
           {editMode && (
