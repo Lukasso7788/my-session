@@ -1,7 +1,7 @@
+// src/pages/ProfilePage.tsx
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
-import Header from "../components/Header";
 import { useAuth } from "../context/AuthContext";
 
 export default function ProfilePage() {
@@ -21,8 +21,6 @@ export default function ProfilePage() {
 
   // Sessions of host
   const [sessions, setSessions] = useState<any[]>([]);
-
-  const brandBlack = "#2F2F2F";
 
   // === STATUS BADGES ===
   const getSessionStatus = (session: any) => {
@@ -208,12 +206,9 @@ export default function ProfilePage() {
   // Loading state
   if (loading) {
     return (
-      <>
-        <Header />
-        <div className="flex justify-center pt-20">
-          <div className="animate-spin h-8 w-8 rounded-full border-b-2 border-black" />
-        </div>
-      </>
+      <div className="flex justify-center pt-20">
+        <div className="animate-spin h-8 w-8 rounded-full border-b-2 border-black" />
+      </div>
     );
   }
 
@@ -230,32 +225,25 @@ export default function ProfilePage() {
       ? "/icons/save_changes_hover.svg"
       : "/icons/save_changes.svg";
 
-  const actionLabel = editMode
-    ? saving
-      ? "Saving..."
-      : "Save changes"
-    : "Edit profile";
+  const actionLabel = editMode ? (saving ? "Saving..." : "Save changes") : "Edit profile";
 
   return (
-    <>
-      <Header />
+    <main className="w-full px-8 pt-10 pb-24 font-inter text-gray-900">
+      {/* Header buttons */}
+      <div className="flex items-center justify-between mb-10">
+        <button
+          onClick={() => navigate(-1)}
+          className="text-[16px] text-[#2F2F2F] hover:text-black flex items-center gap-2"
+        >
+          ← Back
+        </button>
 
-      <main className="w-full px-8 pt-10 pb-24 font-inter text-gray-900">
-        {/* Header buttons */}
-        <div className="flex items-center justify-between mb-10">
-          <button
-            onClick={() => navigate(-1)}
-            className="text-[16px] text-[#2F2F2F] hover:text-black flex items-center gap-2"
-          >
-            ← Back
-          </button>
-
-          <button
-            onClick={editMode ? handleSave : () => setEditMode(true)}
-            onMouseEnter={() => setEditButtonHover(true)}
-            onMouseLeave={() => setEditButtonHover(false)}
-            disabled={saving}
-            className="
+        <button
+          onClick={editMode ? handleSave : () => setEditMode(true)}
+          onMouseEnter={() => setEditButtonHover(true)}
+          onMouseLeave={() => setEditButtonHover(false)}
+          disabled={saving}
+          className="
               inline-flex items-center gap-2 px-6 py-2 rounded-full
               border border-[#2F2F2F]
               text-[16px] font-normal text-[#2F2F2F]
@@ -263,152 +251,137 @@ export default function ProfilePage() {
               hover:border-[#2F2F2F]
               transition disabled:opacity-60 disabled:cursor-not-allowed
             "
-          >
-            <img
-              src={actionIconSrc}
-              alt={editMode ? "Save changes" : "Edit profile"}
-              className="w-6 h-6"
-            />
-            <span>{actionLabel}</span>
-          </button>
+        >
+          <img
+            src={actionIconSrc}
+            alt={editMode ? "Save changes" : "Edit profile"}
+            className="w-6 h-6"
+          />
+          <span>{actionLabel}</span>
+        </button>
+      </div>
+
+      {/* Avatar + Name */}
+      <div className="flex flex-col items-center">
+        <div className="relative">
+          <img
+            src={
+              avatarUrl ||
+              `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}`
+            }
+            className="w-28 h-28 rounded-full object-cover border border-gray-200 shadow-sm"
+          />
+
+          {editMode && (
+            <label className="absolute -bottom-2 right-0 bg-white px-3 py-1 border rounded-full text-xs cursor-pointer shadow-sm hover:bg-gray-50">
+              Change
+              <input
+                type="file"
+                className="hidden"
+                onChange={handleAvatarUpload}
+                accept="image/*"
+                disabled={uploading}
+              />
+            </label>
+          )}
         </div>
 
-        {/* Avatar + Name */}
-        <div className="flex flex-col items-center">
-          <div className="relative">
+        {/* NAME */}
+        <h1 className="font-inter font-bold text-[32px] text-[#2F2F2F] mt-4">
+          {displayName}
+        </h1>
+
+        <div className="flex items-center gap-6 mt-2 text-sm">
+          {/* Created date */}
+          <span className="flex items-center gap-2">
             <img
-              src={
-                avatarUrl ||
-                `https://ui-avatars.com/api/?name=${encodeURIComponent(
-                  displayName
-                )}`
-              }
-              className="w-28 h-28 rounded-full object-cover border border-gray-200 shadow-sm"
+              src="/icons/date_profile.svg"
+              alt="Account creation date"
+              className="w-[24px] h-[24px]"
             />
-
-            {editMode && (
-              <label className="absolute -bottom-2 right-0 bg-white px-3 py-1 border rounded-full text-xs cursor-pointer shadow-sm hover:bg-gray-50">
-                Change
-                <input
-                  type="file"
-                  className="hidden"
-                  onChange={handleAvatarUpload}
-                  accept="image/*"
-                  disabled={uploading}
-                />
-              </label>
-            )}
-          </div>
-
-          {/* NAME */}
-          <h1 className="font-inter font-bold text-[32px] text-[#2F2F2F] mt-4">
-            {displayName}
-          </h1>
-
-          <div className="flex items-center gap-6 mt-2 text-sm">
-            {/* Created date */}
-            <span className="flex items-center gap-2">
-              <img
-                src="/icons/date_profile.svg"
-                alt="Account creation date"
-                className="w-[24px] h-[24px]"
-              />
-              <span className="text-[14px] font-light text-[#2F2F2F]">
-                Since {createdAt}
-              </span>
+            <span className="text-[14px] font-light text-[#2F2F2F]">
+              Since {createdAt}
             </span>
+          </span>
 
-            {/* Session count */}
-            <span className="flex items-center gap-2">
-              <img
-                src="/icons/session_count.svg"
-                alt="Total hosted sessions"
-                className="w-[24px] h-[24px]"
-              />
-              <span className="text-[14px] font-medium text-[#2F2F2F]">
-                {totalSessions} sessions
-              </span>
+          {/* Session count */}
+          <span className="flex items-center gap-2">
+            <img
+              src="/icons/session_count.svg"
+              alt="Total hosted sessions"
+              className="w-[24px] h-[24px]"
+            />
+            <span className="text-[14px] font-medium text-[#2F2F2F]">
+              {totalSessions} sessions
             </span>
-          </div>
+          </span>
         </div>
+      </div>
 
-        {/* Divider */}
-        <div className="mt-10 border-t border-gray-200" />
+      {/* Divider */}
+      <div className="mt-10 border-t border-gray-200" />
 
-        {/* BIO */}
-        <section className="mt-8">
-          <h2 className="font-semibold mb-2">Bio:</h2>
+      {/* BIO */}
+      <section className="mt-8">
+        <h2 className="font-semibold mb-2">Bio:</h2>
 
-          {editMode ? (
-            <textarea
-              value={bio}
-              onChange={(e) => setBio(e.target.value)}
-              className="
+        {editMode ? (
+          <textarea
+            value={bio}
+            onChange={(e) => setBio(e.target.value)}
+            className="
                 w-full border border-gray-300 p-4 rounded-xl
                 focus:ring-2 focus:ring-black outline-none transition
               "
-              rows={4}
-              placeholder="Tell us about yourself..."
-            />
-          ) : (
-            <p className="text-gray-800 text-lg">
-              {bio || (
-                <span className="text-gray-400 italic">No bio added yet.</span>
-              )}
-            </p>
-          )}
-        </section>
+            rows={4}
+            placeholder="Tell us about yourself..."
+          />
+        ) : (
+          <p className="text-gray-800 text-lg">
+            {bio || <span className="text-gray-400 italic">No bio added yet.</span>}
+          </p>
+        )}
+      </section>
 
-        {/* Divider */}
-        <div className="mt-16 border-t border-gray-200" />
+      {/* Divider */}
+      <div className="mt-16 border-t border-gray-200" />
 
-        {/* ==== Hosted Sessions ==== */}
-        <section className="mt-10">
-          <h2 className="text-xl font-bold mb-6 text-[#2F2F2F]">
-            Hosted Sessions
-          </h2>
+      {/* ==== Hosted Sessions ==== */}
+      <section className="mt-10">
+        <h2 className="text-xl font-bold mb-6 text-[#2F2F2F]">Hosted Sessions</h2>
 
-          {sessions.length === 0 ? (
-            <p className="text-slate-500 text-sm text-center">
-              No sessions hosted yet.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {sessions.map((s) => {
-                const status = getSessionStatus(s);
+        {sessions.length === 0 ? (
+          <p className="text-slate-500 text-sm text-center">No sessions hosted yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {sessions.map((s) => {
+              const status = getSessionStatus(s);
 
-                return (
-                  <div
-                    key={s.id}
-                    onClick={() => navigate(`/room/${s.id}`)}
-                    className="
+              return (
+                <div
+                  key={s.id}
+                  onClick={() => navigate(`/room/${s.id}`)}
+                  className="
                       bg-gray-50 rounded-xl px-5 py-3
                       flex items-center justify-between
                       hover:bg-gray-100 transition cursor-pointer
                     "
-                  >
-                    <span className="text-[14px] text-gray-800">
-                      {s.title}
+                >
+                  <span className="text-[14px] text-gray-800">{s.title}</span>
+
+                  <div className="flex items-center gap-3">
+                    <span className="text-[12px] text-gray-500">
+                      {new Date(s.created_at).toLocaleDateString()}
                     </span>
 
-                    <div className="flex items-center gap-3">
-                      <span className="text-[12px] text-gray-500">
-                        {new Date(s.created_at).toLocaleDateString()}
-                      </span>
-
-                      {status && (
-                        <span className={getBadgeClass(status)}>
-                          {status}
-                        </span>
-                      )}
-                    </div>
+                    {status && <span className={getBadgeClass(status)}>{status}</span>}
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-      </main>
-    </>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </main>
   );
 }

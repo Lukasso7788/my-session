@@ -1,10 +1,9 @@
 const DEBUG = true;
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { SessionTypeSwitcher } from "../components/SessionTypeSwitcher";
 import SessionCard from "../components/SessionCard";
-import Header from "../components/Header";
 import { supabase } from "../lib/supabase";
 import { useCreateSessionModal } from "../context/CreateSessionModalContext";
 import { useAuth } from "../context/AuthContext";
@@ -26,12 +25,23 @@ export function SessionsPage() {
   const modal = useCreateSessionModal();
   const { user } = useAuth();
 
+  const [searchParams] = useSearchParams();
+
   const [sessions, setSessions] = useState<SessionWithRelations[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const [sessionTypeTab, setSessionTypeTab] = useState<
     "group" | "infinite" | "body"
   >("group");
+
+  // Sync tab from querystring: /sessions?tab=group|infinite|body
+  useEffect(() => {
+    const tab = (searchParams.get("tab") || "").toLowerCase();
+    if (tab === "group" || tab === "infinite" || tab === "body") {
+      setSessionTypeTab(tab);
+      if (DEBUG) console.log("[DEBUG Sessions] Tab from query:", tab);
+    }
+  }, [searchParams]);
 
   // --- LOAD SESSIONS ---
   const fetchSessions = useCallback(async () => {
@@ -140,8 +150,8 @@ export function SessionsPage() {
     [sessions]
   );
 
-  const visibleSessions =
-    sessionTypeTab === "group" ? activeSessions : [];
+  // TODO: when you implement infinite/body formats, switch here
+  const visibleSessions = sessionTypeTab === "group" ? activeSessions : [];
 
   // --- ACTIONS ---
   const join = (id: string) => {
@@ -207,8 +217,6 @@ export function SessionsPage() {
   // --- RENDER ---
   return (
     <div className="min-h-screen bg-white text-brandBlack font-inter">
-      <Header />
-
       <main className="w-full px-8 pb-12">
         <div className="pt-[100px] pb-[50px] text-center">
           <h1 className="text-[24px] md:text-[28px] xl:text-[36px] font-normal leading-tight mx-auto">
@@ -241,8 +249,7 @@ export function SessionsPage() {
                 {user && (
                   <button
                     onClick={() => {
-                      if (DEBUG)
-                        console.log("[DEBUG Sessions] Create first session");
+                      if (DEBUG) console.log("[DEBUG Sessions] Create first session");
                       modal.open();
                     }}
                     className="text-sm underline underline-offset-4"

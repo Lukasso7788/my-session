@@ -9,10 +9,10 @@ import ProfilePage from "./pages/ProfilePage";
 import PublicProfilePage from "./pages/PublicProfilePage";
 import AuthCallback from "./pages/AuthCallback";
 
-// NEW
 import PricingPage from "./pages/PricingPage";
 import UpdatesPage from "./pages/UpdatesPage";
 
+import AppLayout from "./layouts/AppLayout";
 import { CreateSessionModalProvider } from "./context/CreateSessionModalContext";
 
 export default function App() {
@@ -21,19 +21,20 @@ export default function App() {
   return (
     <CreateSessionModalProvider>
       <Routes>
-        <Route path="/" element={<Navigate to="/sessions" replace />} />
+        {/* Routes WITH header */}
+        <Route element={<AppLayout />}>
+          <Route path="/" element={<Navigate to="/sessions" replace />} />
+          <Route path="/sessions" element={<SessionsPage />} />
+          <Route path="/pricing" element={<PricingPage />} />
+          <Route path="/updates" element={<UpdatesPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/profile/:id" element={<PublicProfilePage />} />
+        </Route>
 
-        <Route path="/sessions" element={<SessionsPage />} />
+        {/* Routes WITHOUT header (обычно так лучше) */}
         <Route path="/room/:id" element={<RoomPage />} />
-
-        {/* NEW */}
-        <Route path="/pricing" element={<PricingPage />} />
-        <Route path="/updates" element={<UpdatesPage />} />
-
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
-        <Route path="/profile" element={<ProfilePage />} />
-        <Route path="/profile/:id" element={<PublicProfilePage />} />
 
         {/* OAuth */}
         <Route

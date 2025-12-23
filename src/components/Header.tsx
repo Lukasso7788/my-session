@@ -10,13 +10,13 @@ const tabs = [
     {
         id: "group",
         label: "Group sessions",
-        iconActive: "/icons/group-active.svg",
+        iconActive: "/icons/group-active-black.svg",
         iconInactive: "/icons/group-inactive.svg",
     },
     {
         id: "infinite",
         label: "Infinite rooms",
-        iconActive: "/icons/infinite-active.svg",
+        iconActive: "/icons/infinite-active-black.svg",
         iconInactive: "/icons/infinite-inactive.svg",
     },
     {
