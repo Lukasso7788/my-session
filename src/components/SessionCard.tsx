@@ -20,21 +20,29 @@ export default function SessionCard({
     onDelete,
 }: SessionCardProps) {
     const isHost = session.host_id === userId;
-    const initialIsBooked = session.session_bookings?.some(
-        (b: any) => b.user_id === userId
-    );
+    const initialIsBooked = session.session_bookings?.some((b: any) => b.user_id === userId);
 
-    const [isBookingConfirmed, setIsBookingConfirmed] =
-        useState<boolean>(initialIsBooked);
+    const [isBookingConfirmed, setIsBookingConfirmed] = useState<boolean>(initialIsBooked);
 
     const [isHoveringCancel, setIsHoveringCancel] = useState(false);
     const [isHoveringBook, setIsHoveringBook] = useState(false);
     const [isHoveringJoin, setIsHoveringJoin] = useState(false);
     const [isHoveringCard, setIsHoveringCard] = useState(false);
 
+    // ✅ ADDED: delay hover like Figma
+    const CANCEL_HOVER_DELAY_MS = 120;
+    const [cancelHoverTimer, setCancelHoverTimer] = useState<number | null>(null);
+
     useEffect(() => {
         setIsBookingConfirmed(initialIsBooked);
     }, [session.id, initialIsBooked]);
+
+    // ✅ ADDED: cleanup timer
+    useEffect(() => {
+        return () => {
+            if (cancelHoverTimer) window.clearTimeout(cancelHoverTimer);
+        };
+    }, [cancelHoverTimer]);
 
     const nameToTypeMap: Record<string, string> = {
         "1 Hour — Pomodoro 15/3": "Short sprints",
@@ -48,21 +56,9 @@ export default function SessionCard({
     const resolvedType = nameToTypeMap[session.title] || session.type;
 
     const typeMap: Record<string, { color: string; bg: string; icon: string }> = {
-        "Deep work": {
-            color: "#3B82F6",
-            bg: "#E4EDFF",
-            icon: "/icons/deepwork.svg",
-        },
-        Pomodoro: {
-            color: "#EF4444",
-            bg: "#FFE4E4",
-            icon: "/icons/pomodoro.svg",
-        },
-        "Short sprints": {
-            color: "#22C55E",
-            bg: "#E5FFE9",
-            icon: "/icons/sprints.svg",
-        },
+        "Deep work": { color: "#3B82F6", bg: "#E4EDFF", icon: "/icons/deepwork.svg" },
+        Pomodoro: { color: "#EF4444", bg: "#FFE4E4", icon: "/icons/pomodoro.svg" },
+        "Short sprints": { color: "#22C55E", bg: "#E5FFE9", icon: "/icons/sprints.svg" },
     };
 
     const t = typeMap[resolvedType] || {
@@ -88,9 +84,7 @@ export default function SessionCard({
         })
         : "";
 
-    const attendanceCount = new Set(
-        (session.session_attendance || []).map((a: any) => a.user_id)
-    ).size;
+    const attendanceCount = new Set((session.session_attendance || []).map((a: any) => a.user_id)).size;
 
     const handleBookSession = () => {
         onBook(session.id);
@@ -104,6 +98,19 @@ export default function SessionCard({
         setIsHoveringCancel(false);
     };
 
+    // ✅ ADDED: delayed hover handlers for booked button
+    const onEnterBooked = () => {
+        if (cancelHoverTimer) window.clearTimeout(cancelHoverTimer);
+        const t = window.setTimeout(() => setIsHoveringCancel(true), CANCEL_HOVER_DELAY_MS);
+        setCancelHoverTimer(t);
+    };
+
+    const onLeaveBooked = () => {
+        if (cancelHoverTimer) window.clearTimeout(cancelHoverTimer);
+        setCancelHoverTimer(null);
+        setIsHoveringCancel(false);
+    };
+
     const bookSessionButton = (
         <button
             onClick={handleBookSession}
@@ -112,47 +119,47 @@ export default function SessionCard({
             className={`
         rounded-full px-6 py-3 text-[14px] font-semibold
         flex items-center justify-center gap-2
-        transition-colors duration-200 ease-in-out
+        transition-all duration-200 ease-in-out
         w-full xl:w-auto
         ${isHoveringBook
                     ? "text-[#65D46C] border border-[#65D46C] bg-[#65D46C]/10"
-                    : "border border-brandBlack text-brandBlack bg-white hover:bg-black/5"
+                    : "border border-brandBlack text-brandBlack bg-white"
                 }
       `}
         >
             <img
-                src={
-                    isHoveringBook
-                        ? "/icons/book-session-green.svg"
-                        : "/icons/book-session.svg"
-                }
+                src={isHoveringBook ? "/icons/book-session-green.svg" : "/icons/book-session.svg"}
                 className="w-4 h-4"
             />
             <span>Book session</span>
         </button>
     );
 
-    // ✅ CHANGED: smoother hover + cancel icon 12x12
+    // ✅ CHANGED: smooth width/contents transitions + delay hover like Figma
     const confirmedBookingButton = (
         <button
             onClick={isHoveringCancel ? handleCancelBooking : undefined}
-            onMouseEnter={() => setIsHoveringCancel(true)}
-            onMouseLeave={() => setIsHoveringCancel(false)}
+            onMouseEnter={onEnterBooked}
+            onMouseLeave={onLeaveBooked}
             className={`
         h-12 rounded-full text-[14px] font-semibold
         flex items-center justify-center
-        transition-colors duration-200 ease-in-out
+        transition-all duration-300 ease-in-out
         w-full xl:w-auto
         ${isHoveringCancel
-                    ? "px-6 border border-[#F65252] bg-[#F65252]/5 text-[#F65252] hover:bg-[#F65252]/10"
-                    : "px-6 border border-[#65D46C] bg-[#65D46C]/10 text-[#65D46C] hover:bg-[#65D46C]/15"
+                    ? "px-6 border border-[#F65252] bg-[#F65252]/5 text-[#F65252]"
+                    : "px-6 border border-[#65D46C] bg-[#65D46C]/10 text-[#65D46C]"
                 }
       `}
+            style={{
+                // ✅ ADDED: helps avoid tiny “jump” when content changes
+                willChange: "padding, width",
+            }}
         >
             {isHoveringCancel ? (
                 <>
-                    {/* ✅ 12x12 */}
-                    <img src="/icons/cross-cancel.svg" className="w-3 h-3 mr-2" />
+                    {/* ✅ CHANGED: icon 24x24 */}
+                    <img src="/icons/cross-cancel.svg" className="w-6 h-6 mr-2" />
                     Cancel booking
                 </>
             ) : (
@@ -184,25 +191,13 @@ export default function SessionCard({
         "
             >
                 <div className="flex flex-col gap-3">
-                    <h3 className="text-[24px] md:text-[29px] font-bold leading-tight">
-                        {session.title}
-                    </h3>
+                    <h3 className="text-[24px] md:text-[29px] font-bold leading-tight">{session.title}</h3>
 
-                    <div
-                        className="
-              flex flex-wrap items-center gap-4
-              text-[12px] text-[#606060]
-            "
-                    >
-                        <Link
-                            to={`/profile/${session.host_id}`}
-                            className="flex items-center gap-1 hover:opacity-70"
-                        >
+                    <div className="flex flex-wrap items-center gap-4 text-[12px] text-[#606060]">
+                        <Link to={`/profile/${session.host_id}`} className="flex items-center gap-1 hover:opacity-70">
                             <img src="/icons/host.svg" className="w-4 h-4 opacity-70" />
                             <span>Host</span>
-                            <span className="underline underline-offset-2">
-                                {session.host_name}
-                            </span>
+                            <span className="underline underline-offset-2">{session.host_name}</span>
                         </Link>
 
                         <div className="flex items-center gap-1">
@@ -226,11 +221,7 @@ export default function SessionCard({
                             }}
                         >
                             <img
-                                src={
-                                    isHoveringCard
-                                        ? t.icon.replace(".svg", "-white.svg")
-                                        : t.icon
-                                }
+                                src={isHoveringCard ? t.icon.replace(".svg", "-white.svg") : t.icon}
                                 className="w-4 h-4"
                             />
                             {resolvedType}
@@ -242,12 +233,8 @@ export default function SessionCard({
                 <div className="hidden xl:flex items-center gap-6">
                     <div className="w-px h-10 bg-[#D9D9D9]" />
                     <div className="text-center">
-                        <div className="text-[32px] font-bold text-brandBlack">
-                            {attendanceCount}
-                        </div>
-                        <div className="text-[10px] text-[#606060] font-light -mt-1">
-                            in the session
-                        </div>
+                        <div className="text-[32px] font-bold text-brandBlack">{attendanceCount}</div>
+                        <div className="text-[10px] text-[#606060] font-light -mt-1">in the session</div>
                     </div>
                 </div>
             </div>
