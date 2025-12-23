@@ -11,7 +11,7 @@ const tabs = [
         id: "group",
         label: "Group sessions",
         iconActive: "/icons/group-active-black.svg",
-        iconInactive: "/icons/group-inactive.svg",
+        iconInactive: "/icons/body-inactive.svg",
     },
     {
         id: "infinite",
@@ -22,7 +22,7 @@ const tabs = [
     {
         id: "body",
         label: "Body tripling",
-        iconActive: "/icons/body-active.svg",
+        iconActive: "/icons/group-active-black.svg",
         iconInactive: "/icons/body-inactive.svg",
     },
 ];
