@@ -82,9 +82,9 @@ export function SessionsPage() {
         throw error;
       }
 
-      if (DEBUG) console noted console.log("[DEBUG Sessions] Loaded:", data);
-
+      if (DEBUG) console.log("[DEBUG Sessions] Loaded:", data);
       setSessions(data || []);
+
     } catch (err) {
       console.error("[DEBUG Sessions] FAILED LOADING:", err);
     } finally {
