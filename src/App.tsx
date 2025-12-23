@@ -9,6 +9,10 @@ import ProfilePage from "./pages/ProfilePage";
 import PublicProfilePage from "./pages/PublicProfilePage";
 import AuthCallback from "./pages/AuthCallback";
 
+// NEW
+import PricingPage from "./pages/PricingPage";
+import UpdatesPage from "./pages/UpdatesPage";
+
 import { CreateSessionModalProvider } from "./context/CreateSessionModalContext";
 
 export default function App() {
@@ -21,6 +25,11 @@ export default function App() {
 
         <Route path="/sessions" element={<SessionsPage />} />
         <Route path="/room/:id" element={<RoomPage />} />
+
+        {/* NEW */}
+        <Route path="/pricing" element={<PricingPage />} />
+        <Route path="/updates" element={<UpdatesPage />} />
+
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/profile" element={<ProfilePage />} />
