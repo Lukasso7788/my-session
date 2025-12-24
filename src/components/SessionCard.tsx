@@ -1,5 +1,5 @@
 // src/components/SessionCard.tsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 interface SessionCardProps {
@@ -56,7 +56,7 @@ export default function SessionCard({
 }: SessionCardProps) {
     const isHost = session.host_id === userId;
 
-    // ✅ booking status from sessions.session_bookings (works as before)
+    // ✅ booking status from sessions.session_bookings
     const initialIsBooked = session.session_bookings?.some(
         (b: any) => b.user_id === userId
     );
@@ -73,16 +73,6 @@ export default function SessionCard({
     const CANCEL_HOVER_DELAY_MS = 120;
     const [cancelHoverTimer, setCancelHoverTimer] = useState<number | null>(null);
 
-    // ✅ LIVE ATTENDANCE (updates automatically when SessionsPage updates session.session_attendance via realtime)
-    const attendanceCount = useMemo(() => {
-        const rows = session.session_attendance || [];
-        const uniq = new Set<string>();
-        for (const r of rows) {
-            if (r?.user_id) uniq.add(r.user_id);
-        }
-        return uniq.size;
-    }, [session.session_attendance]);
-
     useEffect(() => {
         setIsBookingConfirmed(initialIsBooked);
     }, [session.id, initialIsBooked]);
@@ -96,7 +86,13 @@ export default function SessionCard({
     const sessionType = resolveSessionType(session);
     const isInfinite = sessionType === "infinite";
 
-    // your old “title -> type” mapping (OK)
+    // ✅ REAL live count must come from presence aggregation in SessionsPage.
+    // We support it here if SessionsPage passes it as session.live_count.
+    // If it's not provided, we DO NOT show "live" numbers to avoid lying.
+    const liveCount: number | null =
+        typeof session?.live_count === "number" ? session.live_count : null;
+
+    // your “title -> type” mapping (OK)
     const nameToTypeMap: Record<string, string> = {
         "1 Hour — Pomodoro 15/3": "Short sprints",
         "2 Hours — Pomodoro 15/3": "Short sprints",
@@ -120,7 +116,6 @@ export default function SessionCard({
         icon: "/icons/deepwork.svg",
     };
 
-    // ✅ Join hover bg by type (your exact colors)
     const JOIN_HOVER_BG: Record<string, string> = {
         "Deep work": "#5286F6",
         Pomodoro: "#F65252",
@@ -149,7 +144,6 @@ export default function SessionCard({
         setIsHoveringCancel(false);
     };
 
-    // ✅ delayed hover -> makes it feel like Figma
     const onEnterBooked = () => {
         if (cancelHoverTimer) window.clearTimeout(cancelHoverTimer);
         const t = window.setTimeout(
@@ -165,7 +159,6 @@ export default function SessionCard({
         setIsHoveringCancel(false);
     };
 
-    // ✅ Book button
     const bookSessionButton = (
         <button
             onClick={handleBookSession}
@@ -183,11 +176,7 @@ export default function SessionCard({
       `}
         >
             <img
-                src={
-                    isHoveringBook
-                        ? "/icons/book-session-green.svg"
-                        : "/icons/book-session.svg"
-                }
+                src={isHoveringBook ? "/icons/book-session-green.svg" : "/icons/book-session.svg"}
                 className="w-4 h-4"
                 alt=""
             />
@@ -195,7 +184,6 @@ export default function SessionCard({
         </button>
     );
 
-    // ✅ Confirmed booking button with hover cancel
     const confirmedBookingButton = (
         <button
             onClick={isHoveringCancel ? handleCancelBooking : undefined}
@@ -264,26 +252,16 @@ export default function SessionCard({
                             </span>
                         </Link>
 
-                        {/* Duration: for infinite you may still keep it; or hide */}
+                        {/* Duration */}
                         <div className="flex items-center gap-1">
-                            <img
-                                src="/icons/duration.svg"
-                                className="w-4 h-4 opacity-70"
-                                alt=""
-                            />
-                            <span>
-                                {isInfinite ? "Infinite" : `${session.duration_minutes} min`}
-                            </span>
+                            <img src="/icons/duration.svg" className="w-4 h-4 opacity-70" alt="" />
+                            <span>{isInfinite ? "Infinite" : `${session.duration_minutes} min`}</span>
                         </div>
 
-                        {/* Date: makes no sense for infinite -> hide */}
+                        {/* Date */}
                         {!isInfinite && (
                             <div className="flex items-center gap-1">
-                                <img
-                                    src="/icons/date.svg"
-                                    className="w-4 h-4 opacity-70"
-                                    alt=""
-                                />
+                                <img src="/icons/date.svg" className="w-4 h-4 opacity-70" alt="" />
                                 <span>{startDateString}</span>
                             </div>
                         )}
@@ -306,37 +284,18 @@ export default function SessionCard({
                             />
                             {resolvedType}
                         </div>
-
-                        {/* ✅ LIVE attendance chip (visible on all sizes) */}
-                        <div
-                            className="inline-flex items-center gap-2 px-3 py-1 rounded-full border"
-                            style={{
-                                borderColor: "#D1D5DB",
-                                background: "#F9FAFB",
-                                color: "#111827",
-                                fontSize: 10,
-                                fontWeight: 500,
-                            }}
-                            title="Live attendance (updates in real-time)"
-                        >
-                            <span
-                                className="inline-block w-2 h-2 rounded-full"
-                                style={{ backgroundColor: "#22C55E" }}
-                            />
-                            <span>{attendanceCount} in session</span>
-                        </div>
                     </div>
                 </div>
 
-                {/* ATTENDANCE big (desktop) */}
+                {/* ✅ ONLY ONE participants indicator (desktop). No duplicate chip. */}
                 <div className="hidden xl:flex items-center gap-6">
                     <div className="w-px h-10 bg-[#D9D9D9]" />
                     <div className="text-center">
                         <div className="text-[32px] font-bold text-brandBlack">
-                            {attendanceCount}
+                            {liveCount ?? "—"}
                         </div>
                         <div className="text-[10px] text-[#606060] font-light -mt-1">
-                            in the session
+                            {liveCount == null ? "live count soon" : "in the session now"}
                         </div>
                     </div>
                 </div>
@@ -364,9 +323,7 @@ export default function SessionCard({
             w-full xl:w-auto
             text-white
           "
-                    style={{
-                        backgroundColor: isHoveringJoin ? joinHoverBg : "#111827",
-                    }}
+                    style={{ backgroundColor: isHoveringJoin ? joinHoverBg : "#111827" }}
                 >
                     Join session
                 </button>
