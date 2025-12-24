@@ -16,12 +16,12 @@ import {
   RoomMediaSettings,
 } from "../components/RoomMediaSettingsModal";
 
-// ✅ presence hook
+// ✅ NEW: presence hook
 import { useAttendancePresence } from "../hooks/useAttendancePresence";
 
 type Stage = {
   name: string;
-  duration: number; // minutes
+  duration: number; // minutes (for display / legacy)
   color: string;
   type: "intro" | "intentions" | "focus" | "break" | "outro" | string;
 };
@@ -167,7 +167,7 @@ function SettingsIcon() {
   return (
     <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
       <path
-        d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.2 7.2 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 1h-3.8a.5.5 0 0 0-.49.42l-.36 2.54c-.58.23-1.12.54-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 7.48a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94L2.83 14.52a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.6.22l2.39-.96c.51.4 1.05.71 1.63.94l.36 2.54c.04.24.25.42.49.42h3.8c.24 0 .45-.18.49-.42l.36-2.54c.58-.23 1.12-.54 1.63-.94l2.39.96c.21.08.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5z"
+        d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.2 7.2 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 1h-3.8a.5.5 0 0 0-.49.42l-.36 2.54c-.58.23-1.12.54-1.63.94l-2.39-.96a.5 0 0 0-.6.22L2.71 7.48a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94L2.83 14.52a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.6.22l2.39-.96c.51.4 1.05.71 1.63.94l.36 2.54c.04.24.25.42.49.42h3.8c.24 0 .45-.18.49-.42l.36-2.54c.58-.23 1.12-.54 1.63-.94l2.39.96c.21.08.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5z"
         fill="currentColor"
       />
     </svg>
@@ -181,6 +181,76 @@ const reactionEmoji: Record<ReactionType, string> = {
   heart: "❤️",
   thumbsUp: "👍",
   thumbsDown: "👎",
+};
+
+// ✅ helpers for infinite schedule parsing
+function safeParseJson(raw: any) {
+  if (!raw) return null;
+  if (typeof raw === "string") {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  return raw;
+}
+
+function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: number }[] {
+  if (!anyPhases) return [];
+
+  // case A: already array [{name,seconds}, ...]
+  if (Array.isArray(anyPhases)) {
+    return anyPhases
+      .map((p: any) => {
+        const name = String(p?.name || p?.key || p?.type || "");
+        const seconds =
+          Number(p?.seconds) ||
+          Number(p?.duration_seconds) ||
+          Number(p?.durationSeconds) ||
+          Number(p?.duration) ||
+          0;
+        return { name, seconds };
+      })
+      .filter((x) => x.seconds > 0);
+  }
+
+  // case B: object map { focus: 3000, break: 300, intentions: 300 }
+  if (typeof anyPhases === "object") {
+    return Object.entries(anyPhases)
+      .map(([k, v]: any) => {
+        const name = String(k || "");
+        const seconds =
+          typeof v === "number"
+            ? Number(v)
+            : Number(v?.seconds) ||
+            Number(v?.duration_seconds) ||
+            Number(v?.durationSeconds) ||
+            Number(v?.duration) ||
+            0;
+        return { name, seconds };
+      })
+      .filter((x) => x.seconds > 0);
+  }
+
+  return [];
+}
+
+function phaseToStageType(phaseNameLower: string): Stage["type"] {
+  if (phaseNameLower.includes("focus")) return "focus";
+  if (phaseNameLower.includes("checkin") || phaseNameLower.includes("intention"))
+    return "intentions";
+  if (phaseNameLower.includes("break") || phaseNameLower.includes("rest"))
+    return "break";
+  return "focus";
+}
+
+const STAGE_COLORS: Record<string, string> = {
+  intro: "#80DF86",
+  intentions: "#ADD3FF",
+  focus: "#4CA0FF",
+  break: "#F9ADA2",
+  outro: "#80DF86",
 };
 
 export function RoomPage() {
@@ -223,7 +293,7 @@ export function RoomPage() {
   const [currentStage, setCurrentStage] = useState(0);
   const [remainingTime, setRemainingTime] = useState<string>("");
 
-  // ✅ NEW: stagebar start time + infinite cycle seconds
+  // ✅ stagebar start + infinite cycle
   const [stagebarStartTime, setStagebarStartTime] = useState<string>("");
   const [stagebarCycleSeconds, setStagebarCycleSeconds] = useState<number | undefined>(undefined);
 
@@ -286,21 +356,13 @@ export function RoomPage() {
     });
   };
 
-  // ✅ detect schedule kind (infinite room)
+  // ✅ detect infinite room by schedule.kind
   const isInfiniteRoom = useMemo(() => {
-    const raw = session?.schedule;
-    let parsed: any = raw;
-    if (typeof raw === "string") {
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        parsed = null;
-      }
-    }
+    const parsed = safeParseJson(session?.schedule);
     return !!(parsed && typeof parsed === "object" && !Array.isArray(parsed) && parsed.kind === "infinite_room");
   }, [session]);
 
-  // ✅ SILENT ROOM DETECTION (only to hide StageBar/timer/sounds)
+  // ✅ SILENT ROOM DETECTION
   const isSilentRoom = useMemo(() => {
     const fmt = String(session?.format || "").toLowerCase();
     const title = String(session?.title || "").toLowerCase();
@@ -411,7 +473,7 @@ export function RoomPage() {
   };
 
   // ============================================================
-  // LOAD SESSION + BUILD STAGES (scheduled OR infinite)
+  // LOAD SESSION + BUILD STAGES
   // ============================================================
   useEffect(() => {
     (async () => {
@@ -428,117 +490,104 @@ export function RoomPage() {
       if (data && !error) {
         setSession(data);
 
-        // reset
+        // reset stagebar state
         setStages([]);
         setStagebarCycleSeconds(undefined);
         setStagebarStartTime("");
 
-        // ✅ pick best startTime for StageBar:
-        // - scheduled: session.start_time
-        // - infinite: anchor_ts (preferred) else session.start_time else created_at
-        const fallbackStart =
-          data?.start_time ||
-          data?.created_at ||
-          new Date().toISOString();
+        const fallbackStart = String(data?.start_time || data?.created_at || new Date().toISOString());
+        const parsed = safeParseJson(data.schedule);
 
-        if (data.schedule) {
-          try {
-            const parsed =
-              typeof data.schedule === "string" ? JSON.parse(data.schedule) : data.schedule;
-
-            // ✅ SCHEDULED: array [{name, minutes}, ...]
-            if (Array.isArray(parsed)) {
-              const formatted: Stage[] = parsed.map((b: any) => {
-                const lower = (b.name || "").toLowerCase();
-                const type: Stage["type"] =
-                  b.type ||
-                  (lower.includes("welcome") || lower.includes("intro")
-                    ? "intro"
-                    : lower.includes("intention")
-                      ? "intentions"
-                      : lower.includes("focus")
-                        ? "focus"
-                        : lower.includes("break") || lower.includes("pause")
-                          ? "break"
-                          : lower.includes("farewell") || lower.includes("celebrat")
-                            ? "outro"
-                            : "focus");
-
-                return {
-                  name: b.name,
-                  duration: Number(b.minutes) || 0,
-                  color:
-                    {
-                      intro: "#80DF86",
-                      intentions: "#ADD3FF",
-                      focus: "#4CA0FF",
-                      break: "#F9ADA2",
-                      outro: "#80DF86",
-                    }[type] || "#F63135",
-                  type,
-                };
-              });
-
-              setStages(formatted);
-              setStagebarStartTime(String(data.start_time || fallbackStart));
-              setStagebarCycleSeconds(undefined);
-            }
-
-            // ✅ INFINITE: object { kind:"infinite_room", timer:{ phases:[{name,seconds}], cycle_seconds }, anchor_ts }
-            if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && parsed.kind === "infinite_room") {
-              const phases = parsed?.timer?.phases || [];
-              const cycleSeconds = Number(parsed?.timer?.cycle_seconds) || 0;
-
-              const formatted: Stage[] = (phases as any[]).map((p) => {
-                const phaseName = String(p?.name || "").toLowerCase();
-
-                const type: Stage["type"] =
-                  phaseName.includes("focus")
+        // ✅ scheduled: array [{name, minutes}, ...]
+        if (Array.isArray(parsed)) {
+          const formatted: Stage[] = parsed.map((b: any) => {
+            const lower = (b.name || "").toLowerCase();
+            const type: Stage["type"] =
+              b.type ||
+              (lower.includes("welcome") || lower.includes("intro")
+                ? "intro"
+                : lower.includes("intention")
+                  ? "intentions"
+                  : lower.includes("focus")
                     ? "focus"
-                    : phaseName.includes("checkin") || phaseName.includes("intention")
-                      ? "intentions"
-                      : phaseName.includes("break")
-                        ? "break"
-                        : "focus";
+                    : lower.includes("break") || lower.includes("pause")
+                      ? "break"
+                      : lower.includes("farewell") || lower.includes("celebrat")
+                        ? "outro"
+                        : "focus");
 
-                const displayName =
-                  type === "focus"
-                    ? "Focus"
-                    : type === "intentions"
-                      ? "Intentions (spoken)"
-                      : type === "break"
-                        ? "Break"
-                        : String(p?.name || "Stage");
+            return {
+              name: b.name,
+              duration: Number(b.minutes) || 0,
+              color: STAGE_COLORS[type] || "#F63135",
+              type,
+            };
+          });
 
-                return {
-                  name: displayName,
-                  duration: Math.max(0, Math.round((Number(p?.seconds) || 0) / 60)),
-                  color:
-                    {
-                      intro: "#80DF86",
-                      intentions: "#ADD3FF",
-                      focus: "#4CA0FF",
-                      break: "#F9ADA2",
-                      outro: "#80DF86",
-                    }[type] || "#F63135",
-                  type,
-                };
-              });
+          setStages(formatted);
+          setStagebarStartTime(String(data.start_time || fallbackStart));
+          setStagebarCycleSeconds(undefined);
+        }
 
-              // if phases are in seconds, rounding could slightly drift: keep cycleSeconds for looping anyway
-              setStages(formatted);
+        // ✅ infinite: object kind=infinite_room
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && parsed.kind === "infinite_room") {
+          // phases can be in many shapes
+          const phasesRaw =
+            parsed?.timer?.phases ||
+            parsed?.timer?.segments ||
+            parsed?.phases ||
+            parsed?.segments ||
+            null;
 
-              const anchor = String(parsed?.anchor_ts || fallbackStart);
-              setStagebarStartTime(anchor);
+          const phases = normalizeInfinitePhases(phasesRaw);
 
-              const sumStageSeconds = formatted.reduce((acc, s) => acc + (Number(s.duration) || 0) * 60, 0);
-              const loop = cycleSeconds > 0 ? cycleSeconds : Math.max(1, sumStageSeconds);
-              setStagebarCycleSeconds(loop);
-            }
-          } catch { }
-        } else {
-          // no schedule: still set start time (won't render bar due to stages empty)
-          setStagebarStartTime(String(fallbackStart));
+          const formatted: Stage[] = phases.map((p) => {
+            const lower = String(p.name || "").toLowerCase();
+            const type = phaseToStageType(lower);
+
+            const displayName =
+              type === "focus"
+                ? "Focus"
+                : type === "intentions"
+                  ? "Intentions (spoken)"
+                  : type === "break"
+                    ? "Break"
+                    : String(p.name || "Stage");
+
+            const seconds = Number(p.seconds) || 0;
+            const minutes = Math.max(1, Math.round(seconds / 60));
+
+            // 👇 attach seconds for StageBar (even if Stage type is minutes)
+            return ({
+              name: displayName,
+              duration: minutes,
+              color: STAGE_COLORS[type] || "#F63135",
+              type,
+              durationSeconds: seconds,
+            } as any) as Stage;
+          });
+
+          setStages(formatted);
+
+          const anchor = String(parsed?.anchor_ts || parsed?.anchorTs || data?.start_time || fallbackStart);
+          setStagebarStartTime(anchor);
+
+          const sumSeconds = phases.reduce((acc, p) => acc + (Number(p.seconds) || 0), 0);
+
+          const cycleSeconds =
+            Number(parsed?.timer?.cycle_seconds) ||
+            Number(parsed?.timer?.cycleSeconds) ||
+            Number(parsed?.cycle_seconds) ||
+            Number(parsed?.cycleSeconds) ||
+            0;
+
+          // if cycle not provided -> use sum
+          setStagebarCycleSeconds(Math.max(1, cycleSeconds > 0 ? cycleSeconds : sumSeconds));
+        }
+
+        // if no schedule or failed parse -> do nothing (no stagebar)
+        if (!parsed) {
+          setStagebarStartTime(fallbackStart);
         }
       }
 
@@ -616,7 +665,10 @@ export function RoomPage() {
         const newId = reactionIdRef.current + 1;
         reactionIdRef.current = newId;
 
-        setIncomingReactions((prev) => [...prev, { id: newId, type: reaction as ReactionType }]);
+        setIncomingReactions((prev) => [
+          ...prev,
+          { id: newId, type: reaction as ReactionType },
+        ]);
 
         setTimeout(() => {
           setIncomingReactions((prev) => prev.filter((r) => r.id !== newId));
@@ -726,10 +778,9 @@ export function RoomPage() {
   };
 
   // ============================================================
-  // TIMER (scheduled OR infinite)
+  // STAGES TIMER (scheduled OR infinite)
   // ============================================================
   useEffect(() => {
-    // ✅ silent room: no stages/timer/sounds
     if (isSilentRoom) {
       setRemainingTime("");
       setCurrentStage(0);
@@ -744,26 +795,42 @@ export function RoomPage() {
     const startMs = new Date(stagebarStartTime).getTime();
     if (Number.isNaN(startMs)) return;
 
+    const stageSeconds = stages.map((s: any) => {
+      const sec =
+        Number(s?.durationSeconds) ||
+        Number(s?.duration_seconds) ||
+        Number(s?.seconds) ||
+        0;
+      if (sec > 0) return sec;
+      const mins = Number(s?.duration) || 0;
+      return mins > 0 ? mins * 60 : 0;
+    });
+
+    const sumStageSeconds = stageSeconds.reduce((acc, v) => acc + v, 0);
     const loopSeconds =
       (Number(stagebarCycleSeconds) || 0) > 0
         ? Number(stagebarCycleSeconds)
-        : stages.reduce((acc, s) => acc + (Number(s.duration) || 0) * 60, 0);
+        : Math.max(1, sumStageSeconds);
 
     const timer = window.setInterval(() => {
       const now = Date.now();
       const diffSecRaw = (now - startMs) / 1000;
 
-      // ✅ normalize for infinite rooms
+      // normalize for infinite rooms
       const diffSec =
         loopSeconds > 0 && isInfiniteRoom
           ? ((diffSecRaw % loopSeconds) + loopSeconds) % loopSeconds
           : diffSecRaw;
 
       let total = 0;
-      let active = stages.length - 1;
+      let active = 0;
 
       for (let i = 0; i < stages.length; i++) {
-        const next = total + (Number(stages[i].duration) || 0) * 60;
+        const dur = stageSeconds[i] || 0;
+        const next = total + dur;
+
+        if (dur <= 0) continue;
+
         if (diffSec < next) {
           active = i;
           const rem = next - diffSec;
@@ -773,19 +840,21 @@ export function RoomPage() {
           break;
         }
         total = next;
+        active = i;
       }
 
-      const stage = stages[active];
+      setCurrentStage(active);
 
-      // ✅ Sounds only for scheduled sessions (avoid infinite loop spam)
+      // Sounds only for scheduled sessions (avoid looping spam)
       if (!isInfiniteRoom) {
+        const stage = stages[active];
+
         if (!firstTickDoneRef.current) {
           if (stage.type === "intro") startWelcomeLoop();
           else stopWelcomeLoop();
 
           prevStageRef.current = active;
           firstTickDoneRef.current = true;
-          setCurrentStage(active);
           return;
         }
 
@@ -813,8 +882,6 @@ export function RoomPage() {
           stopWelcomeLoop();
         }
       }
-
-      setCurrentStage(active);
     }, 1000);
 
     return () => window.clearInterval(timer);
@@ -823,7 +890,10 @@ export function RoomPage() {
   // ============================================================
   // DERIVED
   // ============================================================
-  const localParticipant = useMemo(() => participants.find((p) => p.isLocal) || null, [participants]);
+  const localParticipant = useMemo(
+    () => participants.find((p) => p.isLocal) || null,
+    [participants]
+  );
 
   const isAudioMuted = !!localParticipant?.audioMuted;
   const isVideoMuted = !!localParticipant?.videoMuted;
@@ -841,7 +911,8 @@ export function RoomPage() {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node | null;
       if (!reactionsMenuRef.current || !target) return;
-      if (!reactionsMenuRef.current.contains(target)) setShowReactionsMenu(false);
+      if (!reactionsMenuRef.current.contains(target))
+        setShowReactionsMenu(false);
     };
 
     document.addEventListener("mousedown", handleClickOutside);
@@ -872,7 +943,9 @@ export function RoomPage() {
     const q = participantsSearch.trim().toLowerCase();
     if (!q) return participants;
     return participants.filter((p) =>
-      (p.isLocal ? "you" : p.displayName || "guest").toLowerCase().includes(q)
+      (p.isLocal ? "you" : p.displayName || "guest")
+        .toLowerCase()
+        .includes(q)
     );
   }, [participants, participantsSearch]);
 
@@ -901,6 +974,7 @@ export function RoomPage() {
         {/* TOP BAR */}
         <div className="flex w-full rounded-2xl overflow-hidden bg-[#111827]/40 border border-white/5">
           <div className="flex-1 px-6 py-4">
+            {/* row 1: title + right controls */}
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="font-inter font-semibold text-[18px] text-[#F3F4F6]/90 truncate">
@@ -909,27 +983,10 @@ export function RoomPage() {
                 <p className="font-inter text-[13px] text-[#9CA3AF]">
                   {participantsCount} participants
                 </p>
-
-                {/* ✅ StageBar:
-                    - hide for silent rooms
-                    - works for scheduled (cycleSeconds undefined)
-                    - works for infinite (cycleSeconds = stagebarCycleSeconds) */}
-                {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
-                  <div className="mt-2 max-h-[14px] overflow-hidden">
-                    <div className="origin-left scale-y-[0.72]">
-                      <SessionStageBar
-                        stages={stages as any}
-                        startTime={stagebarStartTime}
-                        cycleSeconds={stagebarCycleSeconds}
-                        onHoverStage={setHoveredStage as any}
-                      />
-                    </div>
-                  </div>
-                )}
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
-                {/* ✅ timer (remaining in current stage) */}
+                {/* timer */}
                 {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
                   <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#0B1220]/70 border border-white/5">
                     <span className="text-[12px] text-white/70">⏱</span>
@@ -944,15 +1001,32 @@ export function RoomPage() {
                     onClick={() => setSelectedUser(session.host_profile)}
                     className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/10 bg-[#0B1220]/60 text-[13px] text-[#F3F4F6]/85 hover:bg-[#0B1220]/80 transition font-inter"
                   >
-                    <img src="/icons/host_session_icon.svg" className="h-5 w-5 opacity-90" />
+                    <img
+                      src="/icons/host_session_icon.svg"
+                      className="h-5 w-5 opacity-90"
+                    />
                     <span className="flex items-center gap-1">
                       <span className="font-normal text-white/70">Host:</span>
-                      <span className="font-semibold">{session.host_profile.full_name}</span>
+                      <span className="font-semibold">
+                        {session.host_profile.full_name}
+                      </span>
                     </span>
                   </button>
                 )}
               </div>
             </div>
+
+            {/* ✅ row 2: StageBar FULL WIDTH */}
+            {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
+              <div className="mt-3 w-full">
+                <SessionStageBar
+                  stages={stages as any}
+                  startTime={stagebarStartTime}
+                  cycleSeconds={stagebarCycleSeconds}
+                  onHoverStage={setHoveredStage as any}
+                />
+              </div>
+            )}
           </div>
         </div>
 
@@ -960,7 +1034,9 @@ export function RoomPage() {
         <div
           className={
             "grid gap-5 flex-1 min-h-0 " +
-            (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
+            (rightPanelOpen
+              ? "lg:grid-cols-[minmax(0,1fr),420px]"
+              : "grid-cols-1")
           }
         >
           {/* VIDEO AREA */}
@@ -997,8 +1073,12 @@ export function RoomPage() {
                 <div className="h-full flex flex-col">
                   <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="text-white/85 font-inter font-semibold">Participants</span>
-                      <span className="text-white/55 text-sm">({participantsCount})</span>
+                      <span className="text-white/85 font-inter font-semibold">
+                        Participants
+                      </span>
+                      <span className="text-white/55 text-sm">
+                        ({participantsCount})
+                      </span>
                     </div>
                     <button
                       onClick={() => openRightTab(null)}
@@ -1061,7 +1141,11 @@ export function RoomPage() {
                                 }
                                 title={p.audioMuted ? "Muted" : "Unmuted"}
                               >
-                                <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true">
+                                <svg
+                                  viewBox="0 0 24 24"
+                                  className="w-4 h-4"
+                                  aria-hidden="true"
+                                >
                                   <path
                                     d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"
                                     fill="currentColor"
@@ -1083,8 +1167,19 @@ export function RoomPage() {
                                 }
                                 title={p.videoMuted ? "Video off" : "Video on"}
                               >
-                                <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true">
-                                  <rect x="4" y="6" width="11" height="12" rx="2" fill="currentColor" />
+                                <svg
+                                  viewBox="0 0 24 24"
+                                  className="w-4 h-4"
+                                  aria-hidden="true"
+                                >
+                                  <rect
+                                    x="4"
+                                    y="6"
+                                    width="11"
+                                    height="12"
+                                    rx="2"
+                                    fill="currentColor"
+                                  />
                                   <path
                                     d="M17 9.5 21 7v10l-4-2.5z"
                                     fill="currentColor"
@@ -1114,7 +1209,9 @@ export function RoomPage() {
               {rightTab === "chat" && (
                 <div className="h-full">
                   <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
-                    <div className="text-white/85 font-inter font-semibold">Chat</div>
+                    <div className="text-white/85 font-inter font-semibold">
+                      Chat
+                    </div>
                     <button
                       onClick={() => openRightTab(null)}
                       className="w-9 h-9 rounded-xl bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center text-white/80"
@@ -1132,7 +1229,9 @@ export function RoomPage() {
               {rightTab === "intentions" && (
                 <div className="h-full">
                   <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
-                    <div className="text-white/85 font-inter font-semibold">Intentions</div>
+                    <div className="text-white/85 font-inter font-semibold">
+                      Intentions
+                    </div>
                     <button
                       onClick={() => openRightTab(null)}
                       className="w-9 h-9 rounded-xl bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center text-white/80"
@@ -1157,26 +1256,38 @@ export function RoomPage() {
           <div className="h-[74px] rounded-2xl bg-[#07101E]/85 border border-white/10 shadow-2xl backdrop-blur flex items-center justify-between px-4">
             {/* LEFT GROUP */}
             <div className="flex items-center gap-2">
-              <button onClick={() => openRightTab("participants")} className="outline-none">
-                <ParticipantsIcon active={rightPanelOpen && rightTab === "participants"} />
+              <button
+                onClick={() => openRightTab("participants")}
+                className="outline-none"
+              >
+                <ParticipantsIcon
+                  active={rightPanelOpen && rightTab === "participants"}
+                />
               </button>
 
               <button onClick={() => openRightTab("chat")} className="outline-none">
                 <ChatIcon active={rightPanelOpen && rightTab === "chat"} />
               </button>
 
-              <button onClick={() => openRightTab("intentions")} className="outline-none">
-                <IntentionsIcon active={rightPanelOpen && rightTab === "intentions"} />
+              <button
+                onClick={() => openRightTab("intentions")}
+                className="outline-none"
+              >
+                <IntentionsIcon
+                  active={rightPanelOpen && rightTab === "intentions"}
+                />
               </button>
             </div>
 
             {/* CENTER GROUP */}
             <div className="flex items-center gap-3">
               <button
-                onClick={handleToggleAudio}
+                onClick={() => engineRef.current?.toggleAudioMute()}
                 className={
                   "w-11 h-11 rounded-2xl flex items-center justify-center transition " +
-                  (isAudioMuted ? "bg-red-600 hover:bg-red-700" : "bg-[#111827] hover:bg-[#1f2937]")
+                  (isAudioMuted
+                    ? "bg-red-600 hover:bg-red-700"
+                    : "bg-[#111827] hover:bg-[#1f2937]")
                 }
                 title="Toggle mic"
               >
@@ -1184,10 +1295,12 @@ export function RoomPage() {
               </button>
 
               <button
-                onClick={handleToggleVideo}
+                onClick={() => engineRef.current?.toggleVideoMute()}
                 className={
                   "w-11 h-11 rounded-2xl flex items-center justify-center transition " +
-                  (isVideoMuted ? "bg-red-600 hover:bg-red-700" : "bg-[#111827] hover:bg-[#1f2937]")
+                  (isVideoMuted
+                    ? "bg-red-600 hover:bg-red-700"
+                    : "bg-[#111827] hover:bg-[#1f2937]")
                 }
                 title="Toggle camera"
               >
@@ -1195,10 +1308,12 @@ export function RoomPage() {
               </button>
 
               <button
-                onClick={handleToggleScreenShare}
+                onClick={() => engineRef.current?.toggleScreenShare()}
                 className={
                   "w-11 h-11 rounded-2xl flex items-center justify-center transition " +
-                  (isScreenSharing ? "bg-blue-600 hover:bg-blue-700" : "bg-[#111827] hover:bg-[#1f2937]")
+                  (isScreenSharing
+                    ? "bg-blue-600 hover:bg-blue-700"
+                    : "bg-[#111827] hover:bg-[#1f2937]")
                 }
                 title="Share screen"
               >
@@ -1217,21 +1332,21 @@ export function RoomPage() {
 
                 {showReactionsMenu && (
                   <div className="absolute bottom-[58px] left-1/2 -translate-x-1/2 bg-[#020617] border border-white/10 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl">
-                    {(["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown"] as ReactionType[]).map(
-                      (t) => (
-                        <button
-                          key={t}
-                          onClick={() => {
-                            handleSendReaction(t);
-                            setShowReactionsMenu(false);
-                          }}
-                          className="hover:scale-[1.06] transition"
-                          title={t}
-                        >
-                          {reactionEmoji[t]}
-                        </button>
-                      )
-                    )}
+                    {(
+                      ["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown"] as ReactionType[]
+                    ).map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => {
+                          handleSendReaction(t);
+                          setShowReactionsMenu(false);
+                        }}
+                        className="hover:scale-[1.06] transition"
+                        title={t}
+                      >
+                        {reactionEmoji[t]}
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>
@@ -1283,7 +1398,12 @@ export function RoomPage() {
         }}
       />
 
-      {selectedUser && <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />}
+      {selectedUser && (
+        <UserProfileModal
+          user={selectedUser}
+          onClose={() => setSelectedUser(null)}
+        />
+      )}
     </div>
   );
 }
