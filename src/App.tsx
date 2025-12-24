@@ -2,6 +2,7 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 
 import { SessionsPage } from "./pages/SessionsPage";
+import LandingPage from "./pages/LandingPage"; // ✅ NEW
 import RoomPage from "./pages/RoomPage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
@@ -21,9 +22,11 @@ export default function App() {
   return (
     <CreateSessionModalProvider>
       <Routes>
-        {/* Routes WITH header */}
+        {/* Routes WITH header (и с футером, если он внутри AppLayout) */}
         <Route element={<AppLayout />}>
-          <Route path="/" element={<Navigate to="/sessions" replace />} />
+          {/* ✅ CHANGED: root is Landing */}
+          <Route path="/" element={<LandingPage />} />
+
           <Route path="/sessions" element={<SessionsPage />} />
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/updates" element={<UpdatesPage />} />
@@ -57,7 +60,7 @@ export default function App() {
         />
 
         {/* Fallback */}
-        <Route path="*" element={<Navigate to="/sessions" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </CreateSessionModalProvider>
   );
