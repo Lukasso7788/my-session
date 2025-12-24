@@ -183,6 +183,88 @@ const reactionEmoji: Record<ReactionType, string> = {
   thumbsDown: "👎",
 };
 
+function safeParseJSON(v: any) {
+  if (v == null) return null;
+  if (typeof v === "string") {
+    try {
+      return JSON.parse(v);
+    } catch {
+      return null;
+    }
+  }
+  return v;
+}
+
+function inferStageType(name: string, providedType?: string) {
+  if (providedType) return providedType;
+  const lower = (name || "").toLowerCase();
+  if (lower.includes("welcome") || lower.includes("intro")) return "intro";
+  if (lower.includes("intention")) return "intentions";
+  if (lower.includes("focus")) return "focus";
+  if (lower.includes("break") || lower.includes("pause")) return "break";
+  if (lower.includes("farewell") || lower.includes("celebrat") || lower.includes("outro"))
+    return "outro";
+  return "focus";
+}
+
+function toStages(raw: any): Stage[] {
+  const parsed = safeParseJSON(raw);
+  if (!parsed) return [];
+
+  let arr: any[] | null = null;
+
+  if (Array.isArray(parsed)) {
+    arr = parsed;
+  } else if (typeof parsed === "object") {
+    // try common keys for template payloads
+    const candidates = [
+      (parsed as any).schedule,
+      (parsed as any).stages,
+      (parsed as any).blocks,
+      (parsed as any).phases,
+      (parsed as any).steps,
+      (parsed as any).items,
+      (parsed as any).plan,
+    ];
+    for (const c of candidates) {
+      const cParsed = safeParseJSON(c);
+      if (Array.isArray(cParsed)) {
+        arr = cParsed;
+        break;
+      }
+    }
+  }
+
+  if (!arr || !Array.isArray(arr)) return [];
+
+  const formatted: Stage[] = arr
+    .map((b: any) => {
+      const name = String(b?.name ?? b?.title ?? "");
+      const minutes = Number(b?.minutes ?? b?.duration ?? b?.mins ?? 0);
+      if (!name || !Number.isFinite(minutes) || minutes <= 0) return null;
+
+      const type = inferStageType(name, b?.type);
+      const color =
+        {
+          intro: "#80DF86",
+          intentions: "#ADD3FF",
+          focus: "#4CA0FF",
+          break: "#F9ADA2",
+          outro: "#80DF86",
+        }[(type as any) || "focus"] || "#F63135";
+
+      return {
+        name,
+        duration: minutes,
+        color,
+        type,
+      };
+    })
+    .filter(Boolean) as Stage[];
+
+  return formatted;
+}
+
 export function RoomPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -282,6 +364,47 @@ export function RoomPage() {
       return tab;
     });
   };
+
+  // ============================================================
+  // INFINITE: CYCLE START (for cyclic stage bar)
+  // ============================================================
+  const infiniteStartRef = useRef<number>(0);
+  const [barStartTime, setBarStartTime] = useState<string | null>(null);
+
+  const isInfinite = useMemo(() => {
+    const f = String(session?.format || session?.session_type || "").toLowerCase();
+    return f === "infinite";
+  }, [session?.format, session?.session_type]);
+
+  const isSilentInfinite = useMemo(() => {
+    if (!session) return false;
+    if (!isInfinite) return false;
+
+    const t = session?.session_templates;
+    const hay = [
+      String(session?.title || ""),
+      String(session?.slug || ""),
+      String(t?.title || ""),
+      String(t?.slug || ""),
+      String(t?.name || ""),
+      String(t?.template_key || ""),
+      String(t?.code || ""),
+      String(t?.type || ""),
+      String(t?.format || ""),
+    ]
+      .join(" ")
+      .toLowerCase();
+
+    return hay.includes("silent");
+  }, [session, isInfinite]);
+
+  const showStageUI = useMemo(() => {
+    if (!session) return false;
+    if (isSilentInfinite) return false;
+    if (!stages?.length) return false;
+    if (!barStartTime) return false;
+    return true;
+  }, [session, isSilentInfinite, stages?.length, barStartTime]);
 
   // ============================================================
   // UNLOCK AUDIO
@@ -388,49 +511,56 @@ export function RoomPage() {
       if (data && !error) {
         setSession(data);
 
-        if (data.schedule) {
-          try {
-            const parsed =
-              typeof data.schedule === "string" ? JSON.parse(data.schedule) : data.schedule;
+        // reset infinite cycle anchor on session switch
+        infiniteStartRef.current = 0;
+        setBarStartTime(null);
 
-            // parsed может быть array (обычные сессии) или object (infinite rooms).
-            // для infinite rooms просто не трогаем stages на этом этапе.
-            if (Array.isArray(parsed)) {
-              const formatted: Stage[] = parsed.map((b: any) => {
-                const lower = (b.name || "").toLowerCase();
-                const type: Stage["type"] =
-                  b.type ||
-                  (lower.includes("welcome") || lower.includes("intro")
-                    ? "intro"
-                    : lower.includes("intention")
-                      ? "intentions"
-                      : lower.includes("focus")
-                        ? "focus"
-                        : lower.includes("break") || lower.includes("pause")
-                          ? "break"
-                          : lower.includes("farewell") || lower.includes("celebrat")
-                            ? "outro"
-                            : "focus");
+        // stages source:
+        // - group: sessions.schedule (array)
+        // - infinite: session_templates.* (stages/schedule/blocks/etc.)
+        const fmt = String(data?.format || data?.session_type || "").toLowerCase();
+        const isInf = fmt === "infinite";
 
-                return {
-                  name: b.name,
-                  duration: b.minutes,
-                  color:
-                    {
-                      intro: "#80DF86",
-                      intentions: "#ADD3FF",
-                      focus: "#4CA0FF",
-                      break: "#F9ADA2",
-                      outro: "#80DF86",
-                    }[type] || "#F63135",
-                  type,
-                };
-              });
+        let nextStages: Stage[] = [];
+        if (!isInf) {
+          nextStages = toStages(data?.schedule);
+          if (data?.start_time) setBarStartTime(String(data.start_time));
+        } else {
+          const tpl = data?.session_templates || null;
+          // Try direct template payload first
+          nextStages =
+            toStages(tpl) ||
+            toStages(tpl?.schedule) ||
+            toStages(tpl?.stages) ||
+            toStages(tpl?.blocks) ||
+            toStages(tpl?.plan);
 
-              setStages(formatted);
+          // fallback: sometimes template stores JSON in one field
+          if (!nextStages.length) {
+            const keys = ["schedule", "stages", "blocks", "plan", "data", "payload", "config"];
+            for (const k of keys) {
+              const v = tpl?.[k];
+              const s = toStages(v);
+              if (s.length) {
+                nextStages = s;
+                break;
+              }
             }
-          } catch { }
+          }
+
+          // if still empty, we don't crash; stage UI simply won't show
+          // barStartTime for infinite will be computed by timer effect
         }
+
+        setStages(nextStages);
+        setHoveredStage(null);
+        setCurrentStage(0);
+        setRemainingTime("");
+
+        // reset stage sound state (important on session switch)
+        prevStageRef.current = -1;
+        firstTickDoneRef.current = false;
+        stopWelcomeLoop();
       }
 
       setLoading(false);
@@ -622,7 +752,7 @@ export function RoomPage() {
   };
 
   // ============================================================
-  // STAGES TIMER (для обычных scheduled-сессий)
+  // STAGES TIMER (для scheduled-сессий + infinite циклических румов)
   // ============================================================
   const getStageWindows = (startISO: string, items: Stage[]) => {
     const startMs = new Date(startISO).getTime();
@@ -637,11 +767,48 @@ export function RoomPage() {
   };
 
   useEffect(() => {
-    if (!session?.start_time || !stages.length) return;
+    if (!session) return;
+
+    // Silent infinite: no stage UI / no timer / no sounds
+    if (isSilentInfinite) {
+      stopWelcomeLoop();
+      setRemainingTime("");
+      setCurrentStage(0);
+      setBarStartTime(null);
+      prevStageRef.current = -1;
+      firstTickDoneRef.current = false;
+      return;
+    }
+
+    if (!stages.length) return;
+
+    const totalSec = stages.reduce((acc, s) => acc + s.duration * 60, 0);
+    if (totalSec <= 0) return;
 
     const timer = setInterval(() => {
-      const now = Date.now();
-      const diffSec = (now - new Date(session.start_time).getTime()) / 1000;
+      const nowMs = Date.now();
+
+      // diffSec:
+      // - group: from session.start_time
+      // - infinite: from join time, cycling over totalSec
+      let diffSec = 0;
+
+      if (!isInfinite) {
+        if (!session?.start_time) return;
+        diffSec = (nowMs - new Date(session.start_time).getTime()) / 1000;
+        if (diffSec < 0) diffSec = 0;
+        setBarStartTime(String(session.start_time));
+      } else {
+        if (!infiniteStartRef.current) infiniteStartRef.current = nowMs;
+
+        const elapsedSec = (nowMs - infiniteStartRef.current) / 1000;
+        const cycleIndex = Math.floor(elapsedSec / totalSec);
+        const cycleStartMs = infiniteStartRef.current + cycleIndex * totalSec * 1000;
+        const cycleStartISO = new Date(cycleStartMs).toISOString();
+
+        diffSec = elapsedSec % totalSec;
+        setBarStartTime(cycleStartISO);
+      }
 
       let total = 0;
       let active = stages.length - 1;
@@ -699,7 +866,7 @@ export function RoomPage() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [session?.start_time, stages]);
+  }, [session?.id, session?.start_time, session?.format, isInfinite, isSilentInfinite, stages]);
 
   // ============================================================
   // DERIVED
@@ -791,24 +958,28 @@ export function RoomPage() {
                   {participantsCount} participants
                 </p>
 
-                <div className="mt-2 max-h-[14px] overflow-hidden">
-                  <div className="origin-left scale-y-[0.72]">
-                    <SessionStageBar
-                      stages={stages}
-                      startTime={session.start_time}
-                      onHoverStage={setHoveredStage}
-                    />
+                {!isSilentInfinite && stages.length > 0 && barStartTime ? (
+                  <div className="mt-2 max-h-[14px] overflow-hidden">
+                    <div className="origin-left scale-y-[0.72]">
+                      <SessionStageBar
+                        stages={stages}
+                        startTime={barStartTime}
+                        onHoverStage={setHoveredStage}
+                      />
+                    </div>
                   </div>
-                </div>
+                ) : null}
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#0B1220]/70 border border-white/5">
-                  <span className="text-[12px] text-white/70">⏱</span>
-                  <span className="font-inter text-[14px] text-white/90">
-                    {remainingTime || "--:--"}
-                  </span>
-                </div>
+                {!isSilentInfinite && stages.length > 0 ? (
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#0B1220]/70 border border-white/5">
+                    <span className="text-[12px] text-white/70">⏱</span>
+                    <span className="font-inter text-[14px] text-white/90">
+                      {remainingTime || "--:--"}
+                    </span>
+                  </div>
+                ) : null}
 
                 {session.host_profile && (
                   <button
@@ -847,9 +1018,7 @@ export function RoomPage() {
                 incomingReactions={incomingReactions}
                 localReactions={localReactions}
                 showControls={false}
-                onVisibleVideoIdsChange={(ids) =>
-                  engineRef.current?.setVisibleVideoParticipants(ids)
-                }
+                onVisibleVideoIdsChange={(ids) => engineRef.current?.setVisibleVideoParticipants(ids)}
                 audioOutputId={selectedAudioOutputId}
               />
             </div>
@@ -955,7 +1124,14 @@ export function RoomPage() {
                                 title={p.videoMuted ? "Video off" : "Video on"}
                               >
                                 <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true">
-                                  <rect x="4" y="6" width="11" height="12" rx="2" fill="currentColor" />
+                                  <rect
+                                    x="4"
+                                    y="6"
+                                    width="11"
+                                    height="12"
+                                    rx="2"
+                                    fill="currentColor"
+                                  />
                                   <path
                                     d="M17 9.5 21 7v10l-4-2.5z"
                                     fill="currentColor"
