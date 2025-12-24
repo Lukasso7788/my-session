@@ -11,7 +11,12 @@ import { UserProfileModal } from "../components/UserProfileModal";
 import { JitsiEngine, JitsiParticipant } from "../lib/jitsiEngine";
 import { VideoRoom } from "../components/VideoRoom";
 import type { ReactionType } from "../components/VideoRoom";
-import { RoomMediaSettingsModal, RoomMediaSettings } from "../components/RoomMediaSettingsModal";
+import {
+  RoomMediaSettingsModal,
+  RoomMediaSettings,
+} from "../components/RoomMediaSettingsModal";
+
+// ✅ presence hook
 import { useAttendancePresence } from "../hooks/useAttendancePresence";
 
 type Stage = {
@@ -42,7 +47,10 @@ function ParticipantsIcon({ active }: { active?: boolean }) {
           d="M8 11c1.66 0 3-1.57 3-3.5S9.66 4 8 4 5 5.57 5 7.5 6.34 11 8 11z"
           fill="currentColor"
         />
-        <path d="M8 13c-2.67 0-8 1.34-8 4v2h12v-2c0-2.66-5.33-4-4-4z" fill="currentColor" />
+        <path
+          d="M8 13c-2.67 0-8 1.34-8 4v2h12v-2c0-2.66-5.33-4-4-4z"
+          fill="currentColor"
+        />
         <path
           d="M16 13c-.33 0-.71.02-1.11.06C16.92 14.1 19 15.55 19 17v2h5v-2c0-2.66-5.33-4-8-4z"
           fill="currentColor"
@@ -101,7 +109,10 @@ function IntentionsIcon({ active }: { active?: boolean }) {
 function MicIcon() {
   return (
     <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-      <path d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z" fill="currentColor" />
+      <path
+        d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"
+        fill="currentColor"
+      />
       <path
         d="M6 11a1 1 0 0 0-2 0 8 8 0 0 0 7 7.93V21H9a1 1 0 0 0 0 2h6a1 1 0 1 0 0-2h-2v-2.07A8 8 0 0 0 20 11a1 1 0 0 0-2 0 6 6 0 0 1-12 0z"
         fill="currentColor"
@@ -131,7 +142,14 @@ function ScreenIcon() {
 function SmileIcon() {
   return (
     <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <circle
+        cx="12"
+        cy="12"
+        r="9"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
       <circle cx="9" cy="10" r="0.8" fill="currentColor" />
       <circle cx="15" cy="10" r="0.8" fill="currentColor" />
       <path
@@ -164,96 +182,6 @@ const reactionEmoji: Record<ReactionType, string> = {
   thumbsUp: "👍",
   thumbsDown: "👎",
 };
-
-function stageMetaFromName(name: string): { type: Stage["type"]; color: string } {
-  const lower = (name || "").toLowerCase();
-
-  const type: Stage["type"] =
-    lower.includes("welcome") || lower.includes("intro")
-      ? "intro"
-      : lower.includes("intention") || lower.includes("checkin")
-        ? "intentions"
-        : lower.includes("focus")
-          ? "focus"
-          : lower.includes("break") || lower.includes("pause")
-            ? "break"
-            : lower.includes("farewell") || lower.includes("celebrat") || lower.includes("outro")
-              ? "outro"
-              : "focus";
-
-  const color =
-    (
-      {
-        intro: "#80DF86",
-        intentions: "#ADD3FF",
-        focus: "#4CA0FF",
-        break: "#F9ADA2",
-        outro: "#80DF86",
-      } as Record<string, string>
-    )[type] || "#F63135";
-
-  return { type, color };
-}
-
-// ✅ parse schedule: supports BOTH formats
-function parseScheduleToStages(schedule: any): { stages: Stage[]; anchorISO: string | null } {
-  if (!schedule) return { stages: [], anchorISO: null };
-
-  try {
-    const parsed = typeof schedule === "string" ? JSON.parse(schedule) : schedule;
-
-    // 1) NEW preferred format: array [{name, minutes}]
-    if (Array.isArray(parsed)) {
-      const stages: Stage[] = parsed
-        .map((b: any) => {
-          const name = String(b?.name || "").trim();
-          const minutes = Number(b?.minutes);
-          if (!name || !Number.isFinite(minutes) || minutes <= 0) return null;
-
-          const meta = stageMetaFromName(name);
-          return { name, duration: minutes, color: meta.color, type: meta.type };
-        })
-        .filter(Boolean) as Stage[];
-
-      return { stages, anchorISO: null };
-    }
-
-    // 2) OLD infinite format: { kind: "infinite_room", timer: { phases }, anchor_ts }
-    if (parsed && typeof parsed === "object" && parsed.kind === "infinite_room" && parsed.timer?.phases) {
-      const phases = Array.isArray(parsed.timer.phases) ? parsed.timer.phases : [];
-      const anchorISO = parsed.anchor_ts ? String(parsed.anchor_ts) : null;
-
-      const stages: Stage[] = phases
-        .map((p: any) => {
-          const phaseNameRaw = String(p?.name || "").toLowerCase();
-          const seconds = Number(p?.seconds);
-
-          if (!phaseNameRaw || !Number.isFinite(seconds) || seconds <= 0) return null;
-
-          // map phase names -> human names
-          const niceName =
-            phaseNameRaw === "focus"
-              ? "Focus"
-              : phaseNameRaw === "checkin"
-                ? "Intentions (spoken)"
-                : phaseNameRaw === "break"
-                  ? "Break"
-                  : phaseNameRaw;
-
-          const minutes = Math.round(seconds / 60);
-          const meta = stageMetaFromName(niceName);
-          return { name: niceName, duration: minutes, color: meta.color, type: meta.type };
-        })
-        .filter(Boolean) as Stage[];
-
-      return { stages, anchorISO };
-    }
-
-    return { stages: [], anchorISO: null };
-  } catch {
-    return { stages: [], anchorISO: null };
-  }
-}
 
 export function RoomPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -295,6 +223,10 @@ export function RoomPage() {
   const [currentStage, setCurrentStage] = useState(0);
   const [remainingTime, setRemainingTime] = useState<string>("");
 
+  // ✅ NEW: stagebar start time + infinite cycle seconds
+  const [stagebarStartTime, setStagebarStartTime] = useState<string>("");
+  const [stagebarCycleSeconds, setStagebarCycleSeconds] = useState<number | undefined>(undefined);
+
   const [selectedUser, setSelectedUser] = useState<any>(null);
 
   const [userName, setUserName] = useState<string>("");
@@ -311,7 +243,9 @@ export function RoomPage() {
   const [activeScreenSharer, setActiveScreenSharer] = useState<string | null>(null);
 
   // ★ REACTIONS RECEIVED FROM OTHER USERS
-  const [incomingReactions, setIncomingReactions] = useState<{ id: number; type: ReactionType }[]>([]);
+  const [incomingReactions, setIncomingReactions] = useState<{ id: number; type: ReactionType }[]>(
+    []
+  );
   const reactionIdRef = useRef<number>(0);
 
   // ★ LOCAL REACTIONS (FOR OVERLAY)
@@ -352,27 +286,38 @@ export function RoomPage() {
     });
   };
 
-  // ✅ session type helpers
-  const sessionFormatType = useMemo(() => String(session?.session_format_type || "group").toLowerCase(), [session]);
-  const isInfiniteRoom = sessionFormatType === "infinite";
+  // ✅ detect schedule kind (infinite room)
+  const isInfiniteRoom = useMemo(() => {
+    const raw = session?.schedule;
+    let parsed: any = raw;
+    if (typeof raw === "string") {
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        parsed = null;
+      }
+    }
+    return !!(parsed && typeof parsed === "object" && !Array.isArray(parsed) && parsed.kind === "infinite_room");
+  }, [session]);
 
-  // ✅ SILENT ROOM DETECTION
+  // ✅ SILENT ROOM DETECTION (only to hide StageBar/timer/sounds)
   const isSilentRoom = useMemo(() => {
-    // 1) explicit flag (best)
-    if (session?.is_silent === true) return true;
-
-    // 2) fallback: name/format/template contains "silent"
     const fmt = String(session?.format || "").toLowerCase();
     const title = String(session?.title || "").toLowerCase();
 
     const tpl = session?.session_templates;
-    const tplName = Array.isArray(tpl)
-      ? String(tpl?.[0]?.name || tpl?.[0]?.title || "")
-      : String(tpl?.name || tpl?.title || "");
-    const tplKey = Array.isArray(tpl)
-      ? String(tpl?.[0]?.key || tpl?.[0]?.slug || tpl?.[0]?.type || "")
-      : String(tpl?.key || tpl?.slug || tpl?.type || "");
-    const tplFmt = Array.isArray(tpl) ? String(tpl?.[0]?.format || "") : String(tpl?.format || "");
+    const tplName =
+      Array.isArray(tpl)
+        ? String(tpl?.[0]?.name || tpl?.[0]?.title || "")
+        : String(tpl?.name || tpl?.title || "");
+    const tplKey =
+      Array.isArray(tpl)
+        ? String(tpl?.[0]?.key || tpl?.[0]?.slug || tpl?.[0]?.type || "")
+        : String(tpl?.key || tpl?.slug || tpl?.type || "");
+    const tplFmt =
+      Array.isArray(tpl)
+        ? String(tpl?.[0]?.format || "")
+        : String(tpl?.format || "");
 
     const hay = `${fmt} ${title} ${tplName} ${tplKey} ${tplFmt}`.toLowerCase();
     return hay.includes("silent");
@@ -466,38 +411,135 @@ export function RoomPage() {
   };
 
   // ============================================================
-  // LOAD SESSION
+  // LOAD SESSION + BUILD STAGES (scheduled OR infinite)
   // ============================================================
-  const [stageAnchorISO, setStageAnchorISO] = useState<string>("");
-
   useEffect(() => {
     (async () => {
       if (!id) return;
 
       const { data, error } = await supabase
         .from("sessions")
-        .select("*, created_at, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)")
+        .select(
+          "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)"
+        )
         .eq("id", id)
         .single();
 
       if (data && !error) {
         setSession(data);
 
-        const { stages: parsedStages, anchorISO } = parseScheduleToStages(data.schedule);
-        if (parsedStages?.length) setStages(parsedStages);
+        // reset
+        setStages([]);
+        setStagebarCycleSeconds(undefined);
+        setStagebarStartTime("");
 
-        // ✅ anchor time priority:
-        // 1) schedule.anchor_ts (old infinite)
-        // 2) session.start_time
-        // 3) created_at
-        // 4) now
-        const anchor =
-          anchorISO ||
-          (data.start_time ? String(data.start_time) : null) ||
-          (data.created_at ? String(data.created_at) : null) ||
+        // ✅ pick best startTime for StageBar:
+        // - scheduled: session.start_time
+        // - infinite: anchor_ts (preferred) else session.start_time else created_at
+        const fallbackStart =
+          data?.start_time ||
+          data?.created_at ||
           new Date().toISOString();
 
-        setStageAnchorISO(anchor);
+        if (data.schedule) {
+          try {
+            const parsed =
+              typeof data.schedule === "string" ? JSON.parse(data.schedule) : data.schedule;
+
+            // ✅ SCHEDULED: array [{name, minutes}, ...]
+            if (Array.isArray(parsed)) {
+              const formatted: Stage[] = parsed.map((b: any) => {
+                const lower = (b.name || "").toLowerCase();
+                const type: Stage["type"] =
+                  b.type ||
+                  (lower.includes("welcome") || lower.includes("intro")
+                    ? "intro"
+                    : lower.includes("intention")
+                      ? "intentions"
+                      : lower.includes("focus")
+                        ? "focus"
+                        : lower.includes("break") || lower.includes("pause")
+                          ? "break"
+                          : lower.includes("farewell") || lower.includes("celebrat")
+                            ? "outro"
+                            : "focus");
+
+                return {
+                  name: b.name,
+                  duration: Number(b.minutes) || 0,
+                  color:
+                    {
+                      intro: "#80DF86",
+                      intentions: "#ADD3FF",
+                      focus: "#4CA0FF",
+                      break: "#F9ADA2",
+                      outro: "#80DF86",
+                    }[type] || "#F63135",
+                  type,
+                };
+              });
+
+              setStages(formatted);
+              setStagebarStartTime(String(data.start_time || fallbackStart));
+              setStagebarCycleSeconds(undefined);
+            }
+
+            // ✅ INFINITE: object { kind:"infinite_room", timer:{ phases:[{name,seconds}], cycle_seconds }, anchor_ts }
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && parsed.kind === "infinite_room") {
+              const phases = parsed?.timer?.phases || [];
+              const cycleSeconds = Number(parsed?.timer?.cycle_seconds) || 0;
+
+              const formatted: Stage[] = (phases as any[]).map((p) => {
+                const phaseName = String(p?.name || "").toLowerCase();
+
+                const type: Stage["type"] =
+                  phaseName.includes("focus")
+                    ? "focus"
+                    : phaseName.includes("checkin") || phaseName.includes("intention")
+                      ? "intentions"
+                      : phaseName.includes("break")
+                        ? "break"
+                        : "focus";
+
+                const displayName =
+                  type === "focus"
+                    ? "Focus"
+                    : type === "intentions"
+                      ? "Intentions (spoken)"
+                      : type === "break"
+                        ? "Break"
+                        : String(p?.name || "Stage");
+
+                return {
+                  name: displayName,
+                  duration: Math.max(0, Math.round((Number(p?.seconds) || 0) / 60)),
+                  color:
+                    {
+                      intro: "#80DF86",
+                      intentions: "#ADD3FF",
+                      focus: "#4CA0FF",
+                      break: "#F9ADA2",
+                      outro: "#80DF86",
+                    }[type] || "#F63135",
+                  type,
+                };
+              });
+
+              // if phases are in seconds, rounding could slightly drift: keep cycleSeconds for looping anyway
+              setStages(formatted);
+
+              const anchor = String(parsed?.anchor_ts || fallbackStart);
+              setStagebarStartTime(anchor);
+
+              const sumStageSeconds = formatted.reduce((acc, s) => acc + (Number(s.duration) || 0) * 60, 0);
+              const loop = cycleSeconds > 0 ? cycleSeconds : Math.max(1, sumStageSeconds);
+              setStagebarCycleSeconds(loop);
+            }
+          } catch { }
+        } else {
+          // no schedule: still set start time (won't render bar due to stages empty)
+          setStagebarStartTime(String(fallbackStart));
+        }
       }
 
       setLoading(false);
@@ -519,7 +561,11 @@ export function RoomPage() {
         (u?.email ? u.email.split("@")[0] : "");
 
       if (!name && u?.id) {
-        const { data: p } = await supabase.from("profiles").select("full_name").eq("id", u.id).single();
+        const { data: p } = await supabase
+          .from("profiles")
+          .select("full_name")
+          .eq("id", u.id)
+          .single();
         name = p?.full_name || "";
       }
 
@@ -602,10 +648,12 @@ export function RoomPage() {
 
     const safeRoomName = roomNameRaw.toLowerCase().replace(/[^a-z0-9-_]/g, "");
 
-    engine.initAndJoin(safeRoomName || `session-${session.id}`, userName || "Guest").catch((e) => {
-      console.error("initAndJoin error", e);
-      setLastErr(String(e?.message || e));
-    });
+    engine
+      .initAndJoin(safeRoomName || `session-${session.id}`, userName || "Guest")
+      .catch((e) => {
+        console.error("initAndJoin error", e);
+        setLastErr(String(e?.message || e));
+      });
 
     return () => {
       engine
@@ -678,10 +726,10 @@ export function RoomPage() {
   };
 
   // ============================================================
-  // STAGES TIMER (group linear, infinite loops)
+  // TIMER (scheduled OR infinite)
   // ============================================================
   useEffect(() => {
-    // silent rooms: no stage timer & no sounds
+    // ✅ silent room: no stages/timer/sounds
     if (isSilentRoom) {
       setRemainingTime("");
       setCurrentStage(0);
@@ -691,27 +739,37 @@ export function RoomPage() {
       return;
     }
 
-    if (!stageAnchorISO || !stages.length) return;
+    if (!stagebarStartTime || !stages.length) return;
 
-    const totalSec = stages.reduce((sum, s) => sum + s.duration * 60, 0);
-    const totalSecSafe = Math.max(1, totalSec);
+    const startMs = new Date(stagebarStartTime).getTime();
+    if (Number.isNaN(startMs)) return;
 
-    const tick = () => {
+    const loopSeconds =
+      (Number(stagebarCycleSeconds) || 0) > 0
+        ? Number(stagebarCycleSeconds)
+        : stages.reduce((acc, s) => acc + (Number(s.duration) || 0) * 60, 0);
+
+    const timer = window.setInterval(() => {
       const now = Date.now();
-      const anchorMs = new Date(stageAnchorISO).getTime();
-      const rawElapsedSec = Math.max(0, Math.floor((now - anchorMs) / 1000));
+      const diffSecRaw = (now - startMs) / 1000;
 
-      const elapsedSec = isInfiniteRoom ? rawElapsedSec % totalSecSafe : rawElapsedSec;
+      // ✅ normalize for infinite rooms
+      const diffSec =
+        loopSeconds > 0 && isInfiniteRoom
+          ? ((diffSecRaw % loopSeconds) + loopSeconds) % loopSeconds
+          : diffSecRaw;
 
       let total = 0;
       let active = stages.length - 1;
 
       for (let i = 0; i < stages.length; i++) {
-        const next = total + stages[i].duration * 60;
-        if (elapsedSec < next) {
+        const next = total + (Number(stages[i].duration) || 0) * 60;
+        if (diffSec < next) {
           active = i;
-          const rem = next - elapsedSec;
-          setRemainingTime(`${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`);
+          const rem = next - diffSec;
+          setRemainingTime(
+            `${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`
+          );
           break;
         }
         total = next;
@@ -719,49 +777,48 @@ export function RoomPage() {
 
       const stage = stages[active];
 
-      if (!firstTickDoneRef.current) {
-        if (stage.type === "intro") startWelcomeLoop();
-        else stopWelcomeLoop();
+      // ✅ Sounds only for scheduled sessions (avoid infinite loop spam)
+      if (!isInfiniteRoom) {
+        if (!firstTickDoneRef.current) {
+          if (stage.type === "intro") startWelcomeLoop();
+          else stopWelcomeLoop();
 
-        prevStageRef.current = active;
-        firstTickDoneRef.current = true;
-        setCurrentStage(active);
-        return;
-      }
-
-      if (prevStageRef.current !== active) {
-        const prev = stages[prevStageRef.current];
-        const prevType = prev?.type;
-        const newType = stage.type;
-
-        if (prevType === "break" && newType !== "break") {
-          playOneShot(BREAK_END_SOUND);
+          prevStageRef.current = active;
+          firstTickDoneRef.current = true;
+          setCurrentStage(active);
+          return;
         }
 
-        if (newType === "intro") {
-          startWelcomeLoop();
-        } else {
+        if (prevStageRef.current !== active) {
+          const prev = stages[prevStageRef.current];
+          const prevType = prev?.type;
+          const newType = stage.type;
+
+          if (prevType === "break" && newType !== "break") {
+            playOneShot(BREAK_END_SOUND);
+          }
+
+          if (newType === "intro") {
+            startWelcomeLoop();
+          } else {
+            stopWelcomeLoop();
+            const sound = STAGE_SOUND_MAP[newType];
+            if (sound) playOneShot(sound);
+          }
+
+          prevStageRef.current = active;
+        }
+
+        if (stage.type !== "intro" && welcomeLoopRef.current) {
           stopWelcomeLoop();
-          const sound = STAGE_SOUND_MAP[newType];
-          if (sound) playOneShot(sound);
         }
-
-        prevStageRef.current = active;
-      }
-
-      if (stage.type !== "intro" && welcomeLoopRef.current) {
-        stopWelcomeLoop();
       }
 
       setCurrentStage(active);
-    };
+    }, 1000);
 
-    // initial tick immediately
-    tick();
-
-    const timer = setInterval(tick, 1000);
-    return () => clearInterval(timer);
-  }, [stageAnchorISO, stages, isSilentRoom, isInfiniteRoom]);
+    return () => window.clearInterval(timer);
+  }, [stagebarStartTime, stages, isSilentRoom, isInfiniteRoom, stagebarCycleSeconds]);
 
   // ============================================================
   // DERIVED
@@ -814,7 +871,9 @@ export function RoomPage() {
   const filteredParticipants = useMemo(() => {
     const q = participantsSearch.trim().toLowerCase();
     if (!q) return participants;
-    return participants.filter((p) => (p.isLocal ? "you" : p.displayName || "guest").toLowerCase().includes(q));
+    return participants.filter((p) =>
+      (p.isLocal ? "you" : p.displayName || "guest").toLowerCase().includes(q)
+    );
   }, [participants, participantsSearch]);
 
   const participantsCount = participants.length;
@@ -847,17 +906,22 @@ export function RoomPage() {
                 <p className="font-inter font-semibold text-[18px] text-[#F3F4F6]/90 truncate">
                   {session.title}
                 </p>
-                <p className="font-inter text-[13px] text-[#9CA3AF]">{participantsCount} participants</p>
+                <p className="font-inter text-[13px] text-[#9CA3AF]">
+                  {participantsCount} participants
+                </p>
 
-                {/* ✅ StageBar: render for infinite + group; hide for silent */}
-                {!isSilentRoom && stages.length > 0 && stageAnchorISO && (
+                {/* ✅ StageBar:
+                    - hide for silent rooms
+                    - works for scheduled (cycleSeconds undefined)
+                    - works for infinite (cycleSeconds = stagebarCycleSeconds) */}
+                {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
                   <div className="mt-2 max-h-[14px] overflow-hidden">
                     <div className="origin-left scale-y-[0.72]">
                       <SessionStageBar
-                        stages={stages}
-                        startTime={stageAnchorISO}
-                        cycle={isInfiniteRoom}
-                        onHoverStage={setHoveredStage}
+                        stages={stages as any}
+                        startTime={stagebarStartTime}
+                        cycleSeconds={stagebarCycleSeconds}
+                        onHoverStage={setHoveredStage as any}
                       />
                     </div>
                   </div>
@@ -865,11 +929,13 @@ export function RoomPage() {
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
-                {/* ✅ Timer: hide for silent */}
-                {!isSilentRoom && stages.length > 0 && stageAnchorISO && (
+                {/* ✅ timer (remaining in current stage) */}
+                {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
                   <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#0B1220]/70 border border-white/5">
                     <span className="text-[12px] text-white/70">⏱</span>
-                    <span className="font-inter text-[14px] text-white/90">{remainingTime || "--:--"}</span>
+                    <span className="font-inter text-[14px] text-white/90">
+                      {remainingTime || "--:--"}
+                    </span>
                   </div>
                 )}
 
@@ -891,7 +957,12 @@ export function RoomPage() {
         </div>
 
         {/* MAIN AREA */}
-        <div className={"grid gap-5 flex-1 min-h-0 " + (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")}>
+        <div
+          className={
+            "grid gap-5 flex-1 min-h-0 " +
+            (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
+          }
+        >
           {/* VIDEO AREA */}
           <div className="rounded-2xl bg-[#0B1220]/55 border border-white/5 shadow-lg overflow-hidden relative min-h-0">
             <div className="w-full h-full p-3 min-h-0">
@@ -905,7 +976,9 @@ export function RoomPage() {
                 incomingReactions={incomingReactions}
                 localReactions={localReactions}
                 showControls={false}
-                onVisibleVideoIdsChange={(ids) => engineRef.current?.setVisibleVideoParticipants(ids)}
+                onVisibleVideoIdsChange={(ids) =>
+                  engineRef.current?.setVisibleVideoParticipants(ids)
+                }
                 audioOutputId={selectedAudioOutputId}
               />
             </div>
@@ -969,7 +1042,9 @@ export function RoomPage() {
                                 {initials}
                               </div>
                               <div className="min-w-0">
-                                <div className="text-[13px] text-white/90 font-medium truncate">{name}</div>
+                                <div className="text-[13px] text-white/90 font-medium truncate">
+                                  {name}
+                                </div>
                                 <div className="text-[11px] text-white/45 truncate">
                                   {p.isLocal ? "Team member" : "Participant"}
                                 </div>
@@ -980,7 +1055,9 @@ export function RoomPage() {
                               <div
                                 className={
                                   "w-8 h-8 rounded-lg flex items-center justify-center " +
-                                  (p.audioMuted ? "bg-red-500/20 text-red-300" : "bg-white/5 text-white/65")
+                                  (p.audioMuted
+                                    ? "bg-red-500/20 text-red-300"
+                                    : "bg-white/5 text-white/65")
                                 }
                                 title={p.audioMuted ? "Muted" : "Unmuted"}
                               >
@@ -1000,13 +1077,19 @@ export function RoomPage() {
                               <div
                                 className={
                                   "w-8 h-8 rounded-lg flex items-center justify-center " +
-                                  (p.videoMuted ? "bg-red-500/20 text-red-300" : "bg-white/5 text-white/65")
+                                  (p.videoMuted
+                                    ? "bg-red-500/20 text-red-300"
+                                    : "bg-white/5 text-white/65")
                                 }
                                 title={p.videoMuted ? "Video off" : "Video on"}
                               >
                                 <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true">
                                   <rect x="4" y="6" width="11" height="12" rx="2" fill="currentColor" />
-                                  <path d="M17 9.5 21 7v10l-4-2.5z" fill="currentColor" opacity="0.85" />
+                                  <path
+                                    d="M17 9.5 21 7v10l-4-2.5z"
+                                    fill="currentColor"
+                                    opacity="0.85"
+                                  />
                                 </svg>
                               </div>
                             </div>
@@ -1040,7 +1123,9 @@ export function RoomPage() {
                       ✕
                     </button>
                   </div>
-                  <div className="p-4 h-[calc(100%-64px)]">{session?.id ? <ChatPanel sessionId={session.id} /> : null}</div>
+                  <div className="p-4 h-[calc(100%-64px)]">
+                    {session?.id ? <ChatPanel sessionId={session.id} /> : null}
+                  </div>
                 </div>
               )}
 
@@ -1132,19 +1217,21 @@ export function RoomPage() {
 
                 {showReactionsMenu && (
                   <div className="absolute bottom-[58px] left-1/2 -translate-x-1/2 bg-[#020617] border border-white/10 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl">
-                    {(["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown"] as ReactionType[]).map((t) => (
-                      <button
-                        key={t}
-                        onClick={() => {
-                          handleSendReaction(t);
-                          setShowReactionsMenu(false);
-                        }}
-                        className="hover:scale-[1.06] transition"
-                        title={t}
-                      >
-                        {reactionEmoji[t]}
-                      </button>
-                    ))}
+                    {(["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown"] as ReactionType[]).map(
+                      (t) => (
+                        <button
+                          key={t}
+                          onClick={() => {
+                            handleSendReaction(t);
+                            setShowReactionsMenu(false);
+                          }}
+                          className="hover:scale-[1.06] transition"
+                          title={t}
+                        >
+                          {reactionEmoji[t]}
+                        </button>
+                      )
+                    )}
                   </div>
                 )}
               </div>

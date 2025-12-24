@@ -1,63 +1,61 @@
+// src/components/SessionStageBar.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { differenceInSeconds } from "date-fns";
-
-export type SessionStage = {
-  name: string;
-  duration: number; // minutes
-  color: string;
-  type?: string;
-};
+import { SessionStage } from "../SessionConfig";
 
 interface Props {
   stages: SessionStage[];
-  startTime: string; // ISO string (anchor)
+  startTime: string; // ISO string
   onHoverStage?: (stage: SessionStage | null) => void;
 
   /**
    * ✅ NEW:
-   * cycle=true  -> infinite rooms (progress loops forever)
-   * cycle=false -> normal scheduled session (linear)
+   * If provided (>0), the bar becomes "infinite" and loops every cycleSeconds.
+   * Example: 50/5/5 => 3600 seconds.
    */
-  cycle?: boolean;
+  cycleSeconds?: number;
 }
 
-export function SessionStageBar({ stages, startTime, onHoverStage, cycle = false }: Props) {
+export function SessionStageBar({ stages, startTime, onHoverStage, cycleSeconds }: Props) {
   const [elapsed, setElapsed] = useState(0);
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
   const [progress, setProgress] = useState(0);
 
-  const totalDurationSec = useMemo(() => {
-    const totalMin = stages.reduce((sum, s) => sum + (Number(s.duration) || 0), 0);
-    return Math.max(1, totalMin * 60);
+  const totalStagesSeconds = useMemo(() => {
+    const sum = stages.reduce((acc, s) => acc + (Number(s.duration) || 0) * 60, 0);
+    return Math.max(1, sum);
   }, [stages]);
 
-  // 🔁 Обновляем прошедшее время каждую секунду
+  const loopSeconds = useMemo(() => {
+    const cs = Number(cycleSeconds) || 0;
+    // Looping uses cycleSeconds when present, otherwise uses the sum of stages.
+    return cs > 0 ? cs : totalStagesSeconds;
+  }, [cycleSeconds, totalStagesSeconds]);
+
+  // 🔁 Update elapsed every second
   useEffect(() => {
     if (!startTime) return;
 
-    const timer = setInterval(() => {
+    const timer = window.setInterval(() => {
       const diff = differenceInSeconds(new Date(), new Date(startTime));
-      // если startTime в будущем — не уходим в минус
-      setElapsed(Math.max(0, diff));
+      setElapsed(diff);
     }, 1000);
 
-    return () => clearInterval(timer);
+    return () => window.clearInterval(timer);
   }, [startTime]);
 
-  const effectiveElapsed = useMemo(() => {
-    if (!cycle) return elapsed;
-    // модуль по totalDurationSec, чтобы бар крутился по кругу
-    const mod = elapsed % totalDurationSec;
-    return (mod + totalDurationSec) % totalDurationSec;
-  }, [elapsed, cycle, totalDurationSec]);
-
-  // 🧮 Вычисляем текущую стадию и прогресс
+  // 🧮 Current stage + progress (supports infinite loop)
   useEffect(() => {
     if (!stages?.length) {
       setCurrentStageIndex(0);
       setProgress(0);
       return;
     }
+
+    // normalize elapsed into [0..loopSeconds)
+    const raw = elapsed;
+    const normalized =
+      loopSeconds > 0 ? ((raw % loopSeconds) + loopSeconds) % loopSeconds : raw;
 
     let total = 0;
     let stageIndex = stages.length - 1;
@@ -67,9 +65,9 @@ export function SessionStageBar({ stages, startTime, onHoverStage, cycle = false
       const durSec = (Number(stages[i].duration) || 0) * 60;
       const nextTotal = total + durSec;
 
-      if (effectiveElapsed < nextTotal) {
+      if (normalized < nextTotal) {
         stageIndex = i;
-        const stageElapsed = effectiveElapsed - total;
+        const stageElapsed = normalized - total;
         stageProgress = durSec > 0 ? Math.max(0, Math.min(stageElapsed / durSec, 1)) : 0;
         break;
       }
@@ -79,21 +77,22 @@ export function SessionStageBar({ stages, startTime, onHoverStage, cycle = false
 
     setCurrentStageIndex(stageIndex);
     setProgress(stageProgress);
-  }, [effectiveElapsed, stages]);
-
-  // guard
-  if (!stages?.length) {
-    return <div className="flex w-full h-5 rounded-2xl overflow-hidden bg-slate-200 shadow-inner" />;
-  }
+  }, [elapsed, stages, loopSeconds]);
 
   return (
     <div className="flex w-full h-5 rounded-2xl overflow-hidden bg-slate-200 shadow-inner">
       {stages.map((stage, index) => {
-        const stageSec = (Number(stage.duration) || 0) * 60;
-        const width = (stageSec / totalDurationSec) * 100;
-        const isActive = index === currentStageIndex;
+        const durSec = (Number(stage.duration) || 0) * 60;
 
-        const progressWidth = isActive ? `${progress * 100}%` : index < currentStageIndex ? "100%" : "0%";
+        // ✅ widths are always based on stages sum -> no "white gap" when cycleSeconds differs
+        const width = (durSec / totalStagesSeconds) * 100;
+
+        const isActive = index === currentStageIndex;
+        const progressWidth = isActive
+          ? `${progress * 100}%`
+          : index < currentStageIndex
+            ? "100%"
+            : "0%";
 
         return (
           <div
@@ -101,19 +100,17 @@ export function SessionStageBar({ stages, startTime, onHoverStage, cycle = false
             className="relative h-full group cursor-pointer transition-all duration-300"
             style={{
               width: `${width}%`,
-              backgroundColor: stage.color,
+              backgroundColor: (stage as any).color,
               opacity: isActive ? 1 : 0.8,
             }}
             onMouseEnter={() => onHoverStage?.(stage)}
             onMouseLeave={() => onHoverStage?.(null)}
           >
-            {/* Прогресс активной стадии */}
             <div
               className="absolute left-0 top-0 bottom-0 bg-black/15 transition-all"
               style={{ width: progressWidth }}
             />
 
-            {/* Tooltip */}
             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center">
               <div className="bg-slate-900 text-white text-[11px] px-2 py-1 rounded-md shadow-lg whitespace-nowrap">
                 {stage.name} • {stage.duration} min
