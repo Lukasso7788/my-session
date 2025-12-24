@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { supabase } from "@/lib/supabaseClient"; // поправь импорт под свой проект
+import { supabase } from "../lib/supabase"; // поправь импорт под свой проект
 
 type Options = {
     heartbeatMs?: number;   // как часто пингуем
