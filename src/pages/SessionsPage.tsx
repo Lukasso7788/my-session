@@ -1,4 +1,5 @@
 // src/pages/SessionsPage.tsx
+const DEBUG = true;
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -9,8 +10,6 @@ import { supabase } from "../lib/supabase";
 import { useCreateSessionModal } from "../context/CreateSessionModalContext";
 import { useAuth } from "../context/AuthContext";
 import type { Session } from "../types/session";
-
-const DEBUG = true;
 
 type SessionWithRelations = Session & {
   host_id?: string;
@@ -24,11 +23,14 @@ type SessionWithRelations = Session & {
   session_format_type?: "group" | "infinite" | "body" | string;
   is_silent?: boolean;
 
-  // ✅ fallback (для старых записей/пока не везде проставили session_format_type)
+  // ✅ fallback for older rows
   schedule?: any;
 
+  // ✅ booking UI
   session_bookings?: { user_id: string }[];
-  session_attendance?: { id: string; session_id: string; user_id: string }[];
+
+  // ✅ ONLINE NOW (from DB, not history)
+  live_count?: number;
 };
 
 function toLocalYMDFromISO(iso: string) {
@@ -60,7 +62,7 @@ function isInfiniteBySchedule(s: SessionWithRelations) {
   // самый надёжный маркер старого infinite
   if ((sch as any)?.kind === "infinite_room") return true;
 
-  // если раньше ты хранил infinite как объект (а group как массив)
+  // если раньше infinite был объектом (а group — массивом)
   if (!Array.isArray(sch) && (sch as any)?.timer?.phases) return true;
 
   return false;
@@ -91,8 +93,6 @@ export function SessionsPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   const [sessionTypeTab, setSessionTypeTab] = useState<"group" | "infinite" | "body">("group");
-
-  // ✅ Date filter (YYYY-MM-DD local) or null = All
   const [dateFilter, setDateFilter] = useState<string | null>(null);
 
   // Sync tab from querystring: /sessions?tab=group|infinite|body
@@ -104,6 +104,34 @@ export function SessionsPage() {
     }
   }, [searchParams]);
 
+  // ✅ ONLINE NOW: fetch live counts from DB (cheap)
+  const fetchLiveCounts = useCallback(async (sessionIds: string[]) => {
+    if (!sessionIds.length) return;
+
+    try {
+      const { data, error } = await supabase.rpc("get_live_counts", {
+        p_session_ids: sessionIds,
+        // p_ttl_seconds: 40, // optional
+      });
+
+      if (error) throw error;
+
+      const map = new Map<string, number>();
+      for (const row of data || []) {
+        map.set(row.session_id, row.live_count);
+      }
+
+      setSessions((prev) =>
+        prev.map((s) => ({
+          ...s,
+          live_count: map.get(s.id) ?? 0,
+        }))
+      );
+    } catch (e) {
+      if (DEBUG) console.warn("[DEBUG Sessions] live counts error:", e);
+    }
+  }, []);
+
   // --- LOAD SESSIONS ---
   const fetchSessions = useCallback(async () => {
     if (DEBUG) console.log("[DEBUG Sessions] Fetch sessions…");
@@ -111,11 +139,12 @@ export function SessionsPage() {
     try {
       setIsLoading(true);
 
-      // ✅ ВАЖНО: выбираем и session_format_type, и schedule (для fallback)
+      // ✅ ВАЖНО:
+      // - НЕ выбираем session_attendance (это история, даёт "максимум за всё время")
+      // - выбираем schedule (fallback для старых infinite)
       const { data, error } = await supabase
         .from("sessions")
-        .select(
-          `
+        .select(`
           id,
           title,
           host_id,
@@ -127,10 +156,8 @@ export function SessionsPage() {
           schedule,
           session_format_type,
           is_silent,
-          session_bookings ( user_id ),
-          session_attendance ( id, session_id, user_id )
-        `
-        )
+          session_bookings ( user_id )
+        `)
         .order("start_time", { ascending: true });
 
       if (error) {
@@ -138,14 +165,22 @@ export function SessionsPage() {
         throw error;
       }
 
-      if (DEBUG) console.log("[DEBUG Sessions] Loaded:", data);
-      setSessions((data || []) as any);
+      const rows = (data || []) as SessionWithRelations[];
+
+      if (DEBUG) console.log("[DEBUG Sessions] Loaded:", rows);
+
+      // set base sessions first
+      setSessions(rows);
+
+      // then fetch live counts (online now)
+      const ids = rows.map((s) => s.id).filter(Boolean);
+      await fetchLiveCounts(ids);
     } catch (err) {
       console.error("[DEBUG Sessions] FAILED LOADING:", err);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [fetchLiveCounts]);
 
   useEffect(() => {
     fetchSessions();
@@ -157,44 +192,16 @@ export function SessionsPage() {
     if (DEBUG) console.log("[DEBUG Sessions] Modal callback set");
   }, [modal, fetchSessions]);
 
-  // --- REALTIME ATTENDANCE ---
+  // ✅ Poll ONLY live counts every 10s (cheap)
+  const sessionIds = useMemo(() => sessions.map((s) => s.id).filter(Boolean), [sessions]);
+
   useEffect(() => {
-    if (DEBUG) console.log("[DEBUG Sessions] Subscribe to realtime attendance");
+    const t = window.setInterval(() => {
+      fetchLiveCounts(sessionIds);
+    }, 10_000);
 
-    const channel = supabase
-      .channel("session-attendance")
-      .on("postgres_changes", { event: "*", schema: "public", table: "session_attendance" }, (payload) => {
-        if (DEBUG) console.log("[DEBUG Sessions] Realtime event:", payload);
-
-        setSessions((prev) => {
-          // @ts-ignore
-          const sessionId = payload.new?.session_id || payload.old?.session_id;
-          if (!sessionId) return prev;
-
-          return prev.map((s) => {
-            if (s.id !== sessionId) return s;
-
-            let attendance = s.session_attendance || [];
-
-            if (payload.eventType === "INSERT") {
-              attendance = [...attendance, payload.new as any];
-            } else if (payload.eventType === "DELETE") {
-              attendance = attendance.filter((a) => a.id !== (payload.old as any).id);
-            } else if (payload.eventType === "UPDATE") {
-              attendance = attendance.map((a) => (a.id === (payload.new as any).id ? (payload.new as any) : a));
-            }
-
-            return { ...s, session_attendance: attendance };
-          });
-        });
-      })
-      .subscribe();
-
-    return () => {
-      if (DEBUG) console.log("[DEBUG Sessions] Remove realtime channel");
-      supabase.removeChannel(channel);
-    };
-  }, []);
+    return () => window.clearInterval(t);
+  }, [sessionIds, fetchLiveCounts]);
 
   // --- HELPERS ---
   const isExpired = (s: SessionWithRelations) => {
@@ -231,21 +238,12 @@ export function SessionsPage() {
 
   // --- ACTIONS ---
   const join = (id: string) => {
-    if (!user) {
-      if (DEBUG) console.log("[DEBUG Sessions] Join -> no user, redirect");
-      return navigate("/login");
-    }
-    if (DEBUG) console.log("[DEBUG Sessions] Join session:", id);
+    if (!user) return navigate("/login");
     navigate(`/room/${id}`);
   };
 
   const book = async (id: string) => {
-    if (!user) {
-      if (DEBUG) console.log("[DEBUG Sessions] Book -> no user, redirect");
-      return navigate("/login");
-    }
-
-    if (DEBUG) console.log("[DEBUG Sessions] Booking:", id);
+    if (!user) return navigate("/login");
 
     try {
       await supabase.from("session_bookings").insert({
@@ -260,10 +258,14 @@ export function SessionsPage() {
 
   const cancel = async (id: string) => {
     if (!user) return navigate("/login");
-    if (DEBUG) console.log("[DEBUG Sessions] Cancel booking:", id);
 
     try {
-      await supabase.from("session_bookings").delete().eq("session_id", id).eq("user_id", user.id);
+      await supabase
+        .from("session_bookings")
+        .delete()
+        .eq("session_id", id)
+        .eq("user_id", user.id);
+
       fetchSessions();
     } catch (err) {
       console.error("[DEBUG Sessions] Cancel error:", err);
@@ -272,7 +274,6 @@ export function SessionsPage() {
 
   const remove = async (id: string) => {
     if (!user) return navigate("/login");
-    if (DEBUG) console.log("[DEBUG Sessions] Delete session:", id);
 
     try {
       await supabase.from("sessions").delete().eq("id", id);
@@ -296,24 +297,19 @@ export function SessionsPage() {
             <SessionTypeSwitcher
               value={sessionTypeTab}
               onChange={(v) => {
-                if (DEBUG) console.log("[DEBUG Sessions] Tab changed:", v);
                 setSessionTypeTab(v);
 
-                // чтобы не было "почему всё пропало" после infinite -> group
+                // чтобы не было "почему всё пропало" из-за старого dateFilter
                 if (v === "infinite") setDateFilter(null);
               }}
             />
           </div>
 
-          {/* Calendar filter: hide for infinite (doesn't make sense) */}
           {sessionTypeTab !== "infinite" && (
             <div className="mb-6 w-full">
               <SessionsDateFilter
                 value={dateFilter}
-                onChange={(v) => {
-                  if (DEBUG) console.log("[DEBUG Sessions] Date filter:", v);
-                  setDateFilter(v);
-                }}
+                onChange={setDateFilter}
                 weeksAhead={3}
               />
             </div>
@@ -327,15 +323,13 @@ export function SessionsPage() {
             ) : visibleSessions.length === 0 ? (
               <div className="p-2 text-center">
                 <p className="text-sm text-slate-600 mb-4">
-                  No active sessions {dateFilter && sessionTypeTab !== "infinite" ? "for this date" : "available"}
+                  No active sessions{" "}
+                  {dateFilter && sessionTypeTab !== "infinite" ? "for this date" : "available"}
                 </p>
 
                 {user && (
                   <button
-                    onClick={() => {
-                      if (DEBUG) console.log("[DEBUG Sessions] Create first session");
-                      modal.open();
-                    }}
+                    onClick={() => modal.open()}
                     className="text-sm underline underline-offset-4"
                   >
                     Create the first session
