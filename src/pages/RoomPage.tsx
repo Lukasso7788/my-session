@@ -187,13 +187,39 @@ const reactionEmoji: Record<ReactionType, string> = {
 function safeParseJson(raw: any) {
   if (!raw) return null;
   if (typeof raw === "string") {
+    const s = raw.trim();
+    if (!s || s === "undefined" || s === "null") return null;
     try {
-      return JSON.parse(raw);
+      return JSON.parse(s);
     } catch {
       return null;
     }
   }
   return raw;
+}
+
+/**
+ * ✅ NEW: parse "50/5/5" (or "50-5-5") schedule stored as a string.
+ * Returns minutes.
+ */
+function parse50505(raw: any): { focus: number; break: number; intentions: number } | null {
+  if (typeof raw !== "string") return null;
+  const s = raw.trim();
+
+  const m1 = s.match(/^(\d+)\s*\/\s*(\d+)\s*\/\s*(\d+)$/);
+  const m2 = s.match(/^(\d+)\s*-\s*(\d+)\s*-\s*(\d+)$/);
+  const m = m1 || m2;
+
+  if (!m) return null;
+
+  const focus = Number(m[1]);
+  const br = Number(m[2]);
+  const intentions = Number(m[3]);
+
+  if (!Number.isFinite(focus) || !Number.isFinite(br) || !Number.isFinite(intentions)) return null;
+  if (focus <= 0 || br <= 0 || intentions <= 0) return null;
+
+  return { focus, break: br, intentions };
 }
 
 function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: number }[] {
@@ -382,13 +408,17 @@ export function RoomPage() {
     });
   };
 
-  // ✅ detect infinite room by schedule (robust)
+  // ✅ detect infinite room by schedule (robust + supports "50/5/5")
   const isInfiniteRoom = useMemo(() => {
-    const parsed = safeParseJson(session?.schedule);
+    const raw = session?.schedule;
+
+    // support plain string "50/5/5"
+    if (parse50505(raw)) return true;
+
+    const parsed = safeParseJson(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
 
     const kind = String((parsed as any)?.kind || "").toLowerCase();
-
     if (kind === "infinite_room") return true;
     if (kind.includes("infinite")) return true;
 
@@ -537,7 +567,26 @@ export function RoomPage() {
           data?.start_time || data?.created_at || new Date().toISOString()
         );
 
-        const parsed = safeParseJson(data.schedule);
+        // ✅ parse schedule robustly + support "50/5/5"
+        let parsed: any = safeParseJson(data.schedule);
+
+        // if schedule is like "50/5/5" string -> turn it into infinite schedule object
+        if (!parsed) {
+          const t = parse50505(data.schedule);
+          if (t) {
+            parsed = {
+              kind: "infinite_room",
+              timer: {
+                phases: {
+                  focus: t.focus, // minutes
+                  break: t.break, // minutes
+                  intentions: t.intentions, // minutes
+                },
+              },
+              anchor_ts: data?.start_time || data?.created_at || fallbackStart,
+            };
+          }
+        }
 
         // ✅ scheduled: array [{name, minutes}, ...]
         if (Array.isArray(parsed)) {
@@ -575,9 +624,7 @@ export function RoomPage() {
           parsed &&
           typeof parsed === "object" &&
           !Array.isArray(parsed) &&
-          (String((parsed as any)?.kind || "")
-            .toLowerCase()
-            .includes("infinite") ||
+          (String((parsed as any)?.kind || "").toLowerCase().includes("infinite") ||
             (parsed as any)?.timer?.phases ||
             (parsed as any)?.timer?.segments ||
             (parsed as any)?.phases ||
@@ -609,7 +656,6 @@ export function RoomPage() {
             const seconds = Number(p.seconds) || 0;
             const minutes = Math.max(1, Math.round(seconds / 60));
 
-            // 👇 attach seconds for StageBar (even if Stage type is minutes)
             return ({
               name: displayName,
               duration: minutes,
@@ -641,14 +687,13 @@ export function RoomPage() {
             Number((parsed as any)?.cycleSeconds) ||
             0;
 
-          // if cycle not provided -> use sum; if smaller than sum -> clamp
           if (!cycleSeconds || cycleSeconds <= 0) cycleSeconds = sumSeconds;
           if (cycleSeconds < sumSeconds) cycleSeconds = sumSeconds;
 
           setStagebarCycleSeconds(Math.max(1, cycleSeconds));
         }
 
-        // if no schedule or failed parse -> do nothing (no stagebar)
+        // if no schedule or failed parse -> just set start (no stages)
         if (!parsed) {
           setStagebarStartTime(fallbackStart);
         }
@@ -727,7 +772,7 @@ export function RoomPage() {
         setTimeout(() => loadDevices(), 0);
       },
 
-      onReactionReceived: (fromId, reaction) => {
+      onReactionReceived: (_fromId, reaction) => {
         const newId = reactionIdRef.current + 1;
         reactionIdRef.current = newId;
 
@@ -954,7 +999,13 @@ export function RoomPage() {
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [stagebarStartTime, stages, isSilentRoom, isInfiniteRoom, stagebarCycleSeconds]);
+  }, [
+    stagebarStartTime,
+    stages,
+    isSilentRoom,
+    isInfiniteRoom,
+    stagebarCycleSeconds,
+  ]);
 
   // ============================================================
   // DERIVED
@@ -1073,6 +1124,7 @@ export function RoomPage() {
                     <img
                       src="/icons/host_session_icon.svg"
                       className="h-5 w-5 opacity-90"
+                      alt=""
                     />
                     <span className="flex items-center gap-1">
                       <span className="font-normal text-white/70">Host:</span>
@@ -1468,7 +1520,10 @@ export function RoomPage() {
       />
 
       {selectedUser && (
-        <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
+        <UserProfileModal
+          user={selectedUser}
+          onClose={() => setSelectedUser(null)}
+        />
       )}
     </div>
   );
