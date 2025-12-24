@@ -1,5 +1,4 @@
 // src/pages/SessionsPage.tsx
-const DEBUG = true;
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -11,14 +10,23 @@ import { useCreateSessionModal } from "../context/CreateSessionModalContext";
 import { useAuth } from "../context/AuthContext";
 import type { Session } from "../types/session";
 
+const DEBUG = true;
+
 type SessionWithRelations = Session & {
   host_id?: string;
   host_name?: string;
-  duration_minutes: number;
+  duration_minutes?: number;
   format?: string;
   start_time?: string;
   status?: string;
-  schedule?: any; // ✅ added (needed to detect infinite rooms)
+
+  // ✅ NEW columns (идеальный способ маршрутизации)
+  session_format_type?: "group" | "infinite" | "body" | string;
+  is_silent?: boolean;
+
+  // ✅ fallback (для старых записей/пока не везде проставили session_format_type)
+  schedule?: any;
+
   session_bookings?: { user_id: string }[];
   session_attendance?: { id: string; session_id: string; user_id: string }[];
 };
@@ -32,9 +40,6 @@ function toLocalYMDFromISO(iso: string) {
   return `${y}-${m}-${day}`;
 }
 
-// ✅ NEW: schedule helpers (same logic as RoomPage)
-// - group sessions: schedule is Array
-// - infinite rooms: schedule is Object (not Array)
 function safeParseSchedule(raw: any) {
   if (!raw) return null;
   if (typeof raw === "string") {
@@ -47,16 +52,39 @@ function safeParseSchedule(raw: any) {
   return raw;
 }
 
-function isInfiniteRoom(s: SessionWithRelations) {
+// ✅ fallback-детектор infinite по schedule (старый формат)
+function isInfiniteBySchedule(s: SessionWithRelations) {
   const sch = safeParseSchedule((s as any)?.schedule);
-  return !!(sch && typeof sch === "object" && !Array.isArray(sch));
+  if (!sch || typeof sch !== "object") return false;
+
+  // самый надёжный маркер старого infinite
+  if ((sch as any)?.kind === "infinite_room") return true;
+
+  // если раньше ты хранил infinite как объект (а group как массив)
+  if (!Array.isArray(sch) && (sch as any)?.timer?.phases) return true;
+
+  return false;
+}
+
+// ✅ главный резолвер типа (с fallback)
+function resolveSessionType(s: SessionWithRelations): "group" | "infinite" | "body" {
+  const t = String(s.session_format_type || "").toLowerCase();
+
+  if (t === "infinite") return "infinite";
+  if (t === "body") return "body";
+  if (t === "group") return "group";
+
+  // fallback: если колонка ещё не проставлена
+  if (isInfiniteBySchedule(s)) return "infinite";
+  if (String(s.format || "").toLowerCase() === "body") return "body";
+
+  return "group";
 }
 
 export function SessionsPage() {
   const navigate = useNavigate();
   const modal = useCreateSessionModal();
   const { user } = useAuth();
-
   const [searchParams] = useSearchParams();
 
   const [sessions, setSessions] = useState<SessionWithRelations[]>([]);
@@ -83,9 +111,11 @@ export function SessionsPage() {
     try {
       setIsLoading(true);
 
+      // ✅ ВАЖНО: выбираем и session_format_type, и schedule (для fallback)
       const { data, error } = await supabase
         .from("sessions")
-        .select(`
+        .select(
+          `
           id,
           title,
           host_id,
@@ -95,9 +125,12 @@ export function SessionsPage() {
           start_time,
           status,
           schedule,
+          session_format_type,
+          is_silent,
           session_bookings ( user_id ),
           session_attendance ( id, session_id, user_id )
-        `)
+        `
+        )
         .order("start_time", { ascending: true });
 
       if (error) {
@@ -165,38 +198,28 @@ export function SessionsPage() {
 
   // --- HELPERS ---
   const isExpired = (s: SessionWithRelations) => {
-    // infinite rooms are not time-bound -> never "expire"
-    if (isInfiniteRoom(s)) return false;
+    const type = resolveSessionType(s);
+
+    // ✅ Infinite rooms never expire
+    if (type === "infinite") return false;
+
     if (!s.start_time) return false;
-    return Date.now() > new Date(s.start_time).getTime() + s.duration_minutes * 60_000;
+    const dur = Number(s.duration_minutes) || 0;
+    if (dur <= 0) return false;
+
+    return Date.now() > new Date(s.start_time).getTime() + dur * 60_000;
   };
 
   const activeSessions = useMemo(() => sessions.filter((s) => !isExpired(s)), [sessions]);
 
-  // ✅ FIX: real separation by actual "infinite room" detection via schedule shape
   const typeFilteredSessions = useMemo(() => {
-    if (sessionTypeTab === "group") {
-      // group sessions = everything that is NOT infinite (and not body, if you ever start using format="body")
-      return activeSessions.filter((s) => !isInfiniteRoom(s) && s.format !== "body");
-    }
-
-    if (sessionTypeTab === "infinite") {
-      return activeSessions.filter((s) => isInfiniteRoom(s));
-    }
-
-    if (sessionTypeTab === "body") {
-      // placeholder for your future "body" sessions logic:
-      // either by format or by schedule shape if you invent it later
-      return activeSessions.filter((s) => s.format === "body");
-    }
-
-    return activeSessions;
+    return activeSessions.filter((s) => resolveSessionType(s) === sessionTypeTab);
   }, [sessionTypeTab, activeSessions]);
 
-  // ✅ Date filtering (by start_time local day)
-  // - for infinite rooms: date filter is irrelevant -> do not apply it
+  // ✅ Date filtering (only for group/body; infinite ignores date filter)
   const visibleSessions = useMemo(() => {
     if (sessionTypeTab === "infinite") return typeFilteredSessions;
+
     if (!dateFilter) return typeFilteredSessions;
 
     return typeFilteredSessions.filter((s) => {
@@ -259,26 +282,16 @@ export function SessionsPage() {
     }
   };
 
-  const headline =
-    sessionTypeTab === "group"
-      ? "Join a group focus session to stay accountable"
-      : sessionTypeTab === "infinite"
-        ? "Join an infinite focus room anytime"
-        : "Join a body-doubling session";
-
   return (
     <div className="min-h-screen bg-white text-brandBlack font-inter">
-      {/* ✅ responsive horizontal page padding:
-          <768px -> 12px, >=768px -> 24px, >=1024px -> 40px */}
       <main className="w-full px-3 md:px-6 lg:px-10 pb-12">
         <div className="pt-[100px] pb-[50px] text-center">
           <h1 className="text-[24px] md:text-[28px] xl:text-[36px] font-normal leading-tight mx-auto">
-            {headline}
+            Join a focus session to stay accountable
           </h1>
         </div>
 
         <div className="w-full">
-          {/* ✅ switcher centered */}
           <div className="w-full flex justify-center mb-[55px]">
             <SessionTypeSwitcher
               value={sessionTypeTab}
@@ -286,14 +299,14 @@ export function SessionsPage() {
                 if (DEBUG) console.log("[DEBUG Sessions] Tab changed:", v);
                 setSessionTypeTab(v);
 
-                // optional: reset date filter when leaving group tab (so you don't "hide" group sessions later)
-                if (v !== "group") setDateFilter(null);
+                // чтобы не было "почему всё пропало" после infinite -> group
+                if (v === "infinite") setDateFilter(null);
               }}
             />
           </div>
 
-          {/* Calendar filter only makes sense for scheduled sessions */}
-          {sessionTypeTab === "group" && (
+          {/* Calendar filter: hide for infinite (doesn't make sense) */}
+          {sessionTypeTab !== "infinite" && (
             <div className="mb-6 w-full">
               <SessionsDateFilter
                 value={dateFilter}
@@ -306,7 +319,6 @@ export function SessionsPage() {
             </div>
           )}
 
-          {/* container */}
           <div className="rounded-[24px] px-3 py-3 md:border md:border-[#DBD8D8] md:p-8">
             {isLoading ? (
               <div className="text-center py-12">
@@ -315,11 +327,7 @@ export function SessionsPage() {
             ) : visibleSessions.length === 0 ? (
               <div className="p-2 text-center">
                 <p className="text-sm text-slate-600 mb-4">
-                  {sessionTypeTab === "group"
-                    ? `No active sessions ${dateFilter ? "for this date" : "available"}`
-                    : sessionTypeTab === "infinite"
-                      ? "No infinite rooms available"
-                      : "No sessions available"}
+                  No active sessions {dateFilter && sessionTypeTab !== "infinite" ? "for this date" : "available"}
                 </p>
 
                 {user && (

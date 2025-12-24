@@ -1,5 +1,5 @@
 // src/components/SessionCard.tsx
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 interface SessionCardProps {
@@ -11,6 +11,41 @@ interface SessionCardProps {
     onDelete: (sessionId: string) => void;
 }
 
+function safeLower(x: any) {
+    return String(x || "").toLowerCase();
+}
+
+// ✅ single place to resolve session type (matches SessionsPage logic)
+function resolveSessionType(session: any): "group" | "infinite" | "body" {
+    const t = safeLower(session?.session_format_type);
+
+    if (t === "infinite") return "infinite";
+    if (t === "body") return "body";
+    if (t === "group") return "group";
+
+    // fallback: older infinite (schedule object or kind)
+    const sch = (() => {
+        const raw = session?.schedule;
+        if (!raw) return null;
+        if (typeof raw === "string") {
+            try {
+                return JSON.parse(raw);
+            } catch {
+                return null;
+            }
+        }
+        return raw;
+    })();
+
+    if (sch && typeof sch === "object" && !Array.isArray(sch)) {
+        if (sch.kind === "infinite_room") return "infinite";
+        if (sch?.timer?.phases) return "infinite";
+    }
+
+    if (safeLower(session?.format) === "body") return "body";
+    return "group";
+}
+
 export default function SessionCard({
     session,
     userId,
@@ -20,9 +55,14 @@ export default function SessionCard({
     onDelete,
 }: SessionCardProps) {
     const isHost = session.host_id === userId;
-    const initialIsBooked = session.session_bookings?.some((b: any) => b.user_id === userId);
 
-    const [isBookingConfirmed, setIsBookingConfirmed] = useState<boolean>(initialIsBooked);
+    // ✅ booking status from sessions.session_bookings (works as before)
+    const initialIsBooked = session.session_bookings?.some(
+        (b: any) => b.user_id === userId
+    );
+
+    const [isBookingConfirmed, setIsBookingConfirmed] =
+        useState<boolean>(initialIsBooked);
 
     const [isHoveringCancel, setIsHoveringCancel] = useState(false);
     const [isHoveringBook, setIsHoveringBook] = useState(false);
@@ -32,6 +72,16 @@ export default function SessionCard({
     // ✅ Figma-like hover delay
     const CANCEL_HOVER_DELAY_MS = 120;
     const [cancelHoverTimer, setCancelHoverTimer] = useState<number | null>(null);
+
+    // ✅ LIVE ATTENDANCE (updates automatically when SessionsPage updates session.session_attendance via realtime)
+    const attendanceCount = useMemo(() => {
+        const rows = session.session_attendance || [];
+        const uniq = new Set<string>();
+        for (const r of rows) {
+            if (r?.user_id) uniq.add(r.user_id);
+        }
+        return uniq.size;
+    }, [session.session_attendance]);
 
     useEffect(() => {
         setIsBookingConfirmed(initialIsBooked);
@@ -43,6 +93,10 @@ export default function SessionCard({
         };
     }, [cancelHoverTimer]);
 
+    const sessionType = resolveSessionType(session);
+    const isInfinite = sessionType === "infinite";
+
+    // your old “title -> type” mapping (OK)
     const nameToTypeMap: Record<string, string> = {
         "1 Hour — Pomodoro 15/3": "Short sprints",
         "2 Hours — Pomodoro 15/3": "Short sprints",
@@ -83,8 +137,6 @@ export default function SessionCard({
         })
         : "";
 
-    const attendanceCount = new Set((session.session_attendance || []).map((a: any) => a.user_id)).size;
-
     const handleBookSession = () => {
         onBook(session.id);
         setIsBookingConfirmed(true);
@@ -100,7 +152,10 @@ export default function SessionCard({
     // ✅ delayed hover -> makes it feel like Figma
     const onEnterBooked = () => {
         if (cancelHoverTimer) window.clearTimeout(cancelHoverTimer);
-        const t = window.setTimeout(() => setIsHoveringCancel(true), CANCEL_HOVER_DELAY_MS);
+        const t = window.setTimeout(
+            () => setIsHoveringCancel(true),
+            CANCEL_HOVER_DELAY_MS
+        );
         setCancelHoverTimer(t);
     };
 
@@ -110,7 +165,7 @@ export default function SessionCard({
         setIsHoveringCancel(false);
     };
 
-    // ✅ Book button: stable height + min width => looks “normal” next to other buttons
+    // ✅ Book button
     const bookSessionButton = (
         <button
             onClick={handleBookSession}
@@ -128,7 +183,11 @@ export default function SessionCard({
       `}
         >
             <img
-                src={isHoveringBook ? "/icons/book-session-green.svg" : "/icons/book-session.svg"}
+                src={
+                    isHoveringBook
+                        ? "/icons/book-session-green.svg"
+                        : "/icons/book-session.svg"
+                }
                 className="w-4 h-4"
                 alt=""
             />
@@ -136,11 +195,7 @@ export default function SessionCard({
         </button>
     );
 
-    /**
-     * ✅ THIS IS THE ACTUAL “HOVER IS BACK” FIX:
-     * - Not hovering: green button (px-5)
-     * - Hovering: wide red cancel (px-6)
-     */
+    // ✅ Confirmed booking button with hover cancel
     const confirmedBookingButton = (
         <button
             onClick={isHoveringCancel ? handleCancelBooking : undefined}
@@ -192,29 +247,48 @@ export default function SessionCard({
         "
             >
                 <div className="flex flex-col gap-3">
-                    <h3 className="text-[24px] md:text-[29px] font-bold leading-tight">{session.title}</h3>
+                    <h3 className="text-[24px] md:text-[29px] font-bold leading-tight">
+                        {session.title}
+                    </h3>
 
                     <div className="flex flex-wrap items-center gap-4 text-[12px] text-[#606060]">
-                        {/* ✅ CHANGED: public profile link (ONLY this line changed) */}
+                        {/* Host link */}
                         <Link
                             to={`/profile/${session.host_id}`}
                             className="flex items-center gap-1 hover:opacity-70"
                         >
                             <img src="/icons/host.svg" className="w-4 h-4 opacity-70" alt="" />
                             <span>Host</span>
-                            <span className="underline underline-offset-2">{session.host_name}</span>
+                            <span className="underline underline-offset-2">
+                                {session.host_name}
+                            </span>
                         </Link>
 
+                        {/* Duration: for infinite you may still keep it; or hide */}
                         <div className="flex items-center gap-1">
-                            <img src="/icons/duration.svg" className="w-4 h-4 opacity-70" alt="" />
-                            <span>{session.duration_minutes} min</span>
+                            <img
+                                src="/icons/duration.svg"
+                                className="w-4 h-4 opacity-70"
+                                alt=""
+                            />
+                            <span>
+                                {isInfinite ? "Infinite" : `${session.duration_minutes} min`}
+                            </span>
                         </div>
 
-                        <div className="flex items-center gap-1">
-                            <img src="/icons/date.svg" className="w-4 h-4 opacity-70" alt="" />
-                            <span>{startDateString}</span>
-                        </div>
+                        {/* Date: makes no sense for infinite -> hide */}
+                        {!isInfinite && (
+                            <div className="flex items-center gap-1">
+                                <img
+                                    src="/icons/date.svg"
+                                    className="w-4 h-4 opacity-70"
+                                    alt=""
+                                />
+                                <span>{startDateString}</span>
+                            </div>
+                        )}
 
+                        {/* Type pill */}
                         <div
                             className="inline-flex items-center gap-1 px-3 py-1 rounded-full border"
                             style={{
@@ -232,15 +306,38 @@ export default function SessionCard({
                             />
                             {resolvedType}
                         </div>
+
+                        {/* ✅ LIVE attendance chip (visible on all sizes) */}
+                        <div
+                            className="inline-flex items-center gap-2 px-3 py-1 rounded-full border"
+                            style={{
+                                borderColor: "#D1D5DB",
+                                background: "#F9FAFB",
+                                color: "#111827",
+                                fontSize: 10,
+                                fontWeight: 500,
+                            }}
+                            title="Live attendance (updates in real-time)"
+                        >
+                            <span
+                                className="inline-block w-2 h-2 rounded-full"
+                                style={{ backgroundColor: "#22C55E" }}
+                            />
+                            <span>{attendanceCount} in session</span>
+                        </div>
                     </div>
                 </div>
 
-                {/* ATTENDANCE ONLY ≥1280px */}
+                {/* ATTENDANCE big (desktop) */}
                 <div className="hidden xl:flex items-center gap-6">
                     <div className="w-px h-10 bg-[#D9D9D9]" />
                     <div className="text-center">
-                        <div className="text-[32px] font-bold text-brandBlack">{attendanceCount}</div>
-                        <div className="text-[10px] text-[#606060] font-light -mt-1">in the session</div>
+                        <div className="text-[32px] font-bold text-brandBlack">
+                            {attendanceCount}
+                        </div>
+                        <div className="text-[10px] text-[#606060] font-light -mt-1">
+                            in the session
+                        </div>
                     </div>
                 </div>
             </div>
@@ -283,6 +380,7 @@ export default function SessionCard({
               flex items-center justify-center
               hover:bg-[#FECACA]
             "
+                        title="Delete session"
                     >
                         <img src="/icons/cross-cancel.svg" className="w-6 h-6" alt="" />
                     </button>

@@ -11,17 +11,12 @@ import { UserProfileModal } from "../components/UserProfileModal";
 import { JitsiEngine, JitsiParticipant } from "../lib/jitsiEngine";
 import { VideoRoom } from "../components/VideoRoom";
 import type { ReactionType } from "../components/VideoRoom";
-import {
-  RoomMediaSettingsModal,
-  RoomMediaSettings,
-} from "../components/RoomMediaSettingsModal";
-
-// ✅ NEW: presence hook (создай файл src/hooks/useAttendancePresence.ts)
+import { RoomMediaSettingsModal, RoomMediaSettings } from "../components/RoomMediaSettingsModal";
 import { useAttendancePresence } from "../hooks/useAttendancePresence";
 
 type Stage = {
   name: string;
-  duration: number;
+  duration: number; // minutes
   color: string;
   type: "intro" | "intentions" | "focus" | "break" | "outro" | string;
 };
@@ -47,10 +42,7 @@ function ParticipantsIcon({ active }: { active?: boolean }) {
           d="M8 11c1.66 0 3-1.57 3-3.5S9.66 4 8 4 5 5.57 5 7.5 6.34 11 8 11z"
           fill="currentColor"
         />
-        <path
-          d="M8 13c-2.67 0-8 1.34-8 4v2h12v-2c0-2.66-5.33-4-4-4z"
-          fill="currentColor"
-        />
+        <path d="M8 13c-2.67 0-8 1.34-8 4v2h12v-2c0-2.66-5.33-4-4-4z" fill="currentColor" />
         <path
           d="M16 13c-.33 0-.71.02-1.11.06C16.92 14.1 19 15.55 19 17v2h5v-2c0-2.66-5.33-4-8-4z"
           fill="currentColor"
@@ -109,10 +101,7 @@ function IntentionsIcon({ active }: { active?: boolean }) {
 function MicIcon() {
   return (
     <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-      <path
-        d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"
-        fill="currentColor"
-      />
+      <path d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z" fill="currentColor" />
       <path
         d="M6 11a1 1 0 0 0-2 0 8 8 0 0 0 7 7.93V21H9a1 1 0 0 0 0 2h6a1 1 0 1 0 0-2h-2v-2.07A8 8 0 0 0 20 11a1 1 0 0 0-2 0 6 6 0 0 1-12 0z"
         fill="currentColor"
@@ -142,14 +131,7 @@ function ScreenIcon() {
 function SmileIcon() {
   return (
     <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-      <circle
-        cx="12"
-        cy="12"
-        r="9"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-      />
+      <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="1.5" />
       <circle cx="9" cy="10" r="0.8" fill="currentColor" />
       <circle cx="15" cy="10" r="0.8" fill="currentColor" />
       <path
@@ -167,7 +149,7 @@ function SettingsIcon() {
   return (
     <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
       <path
-        d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.2 7.2 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 1h-3.8a.5.5 0 0 0-.49.42l-.36 2.54c-.58.23-1.12.54-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 7.48a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94L2.83 14.52a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.6.22l2.39-.96c.51.4 1.05.71 1.63.94l.36 2.54c.04.24.25.42.49.42h3.8c.24 0 .45-.18.49-.42l.36-2.54c.58-.23 1.12-.54 1.63-.94l2.39.96c.21.08.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5A3.5 3.0 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5z"
+        d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.2 7.2 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 1h-3.8a.5.5 0 0 0-.49.42l-.36 2.54c-.58.23-1.12.54-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 7.48a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94L2.83 14.52a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.6.22l2.39-.96c.51.4 1.05.71 1.63.94l.36 2.54c.04.24.25.42.49.42h3.8c.24 0 .45-.18.49-.42l.36-2.54c.58-.23 1.12-.54 1.63-.94l2.39.96c.21.08.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5z"
         fill="currentColor"
       />
     </svg>
@@ -182,6 +164,96 @@ const reactionEmoji: Record<ReactionType, string> = {
   thumbsUp: "👍",
   thumbsDown: "👎",
 };
+
+function stageMetaFromName(name: string): { type: Stage["type"]; color: string } {
+  const lower = (name || "").toLowerCase();
+
+  const type: Stage["type"] =
+    lower.includes("welcome") || lower.includes("intro")
+      ? "intro"
+      : lower.includes("intention") || lower.includes("checkin")
+        ? "intentions"
+        : lower.includes("focus")
+          ? "focus"
+          : lower.includes("break") || lower.includes("pause")
+            ? "break"
+            : lower.includes("farewell") || lower.includes("celebrat") || lower.includes("outro")
+              ? "outro"
+              : "focus";
+
+  const color =
+    (
+      {
+        intro: "#80DF86",
+        intentions: "#ADD3FF",
+        focus: "#4CA0FF",
+        break: "#F9ADA2",
+        outro: "#80DF86",
+      } as Record<string, string>
+    )[type] || "#F63135";
+
+  return { type, color };
+}
+
+// ✅ parse schedule: supports BOTH formats
+function parseScheduleToStages(schedule: any): { stages: Stage[]; anchorISO: string | null } {
+  if (!schedule) return { stages: [], anchorISO: null };
+
+  try {
+    const parsed = typeof schedule === "string" ? JSON.parse(schedule) : schedule;
+
+    // 1) NEW preferred format: array [{name, minutes}]
+    if (Array.isArray(parsed)) {
+      const stages: Stage[] = parsed
+        .map((b: any) => {
+          const name = String(b?.name || "").trim();
+          const minutes = Number(b?.minutes);
+          if (!name || !Number.isFinite(minutes) || minutes <= 0) return null;
+
+          const meta = stageMetaFromName(name);
+          return { name, duration: minutes, color: meta.color, type: meta.type };
+        })
+        .filter(Boolean) as Stage[];
+
+      return { stages, anchorISO: null };
+    }
+
+    // 2) OLD infinite format: { kind: "infinite_room", timer: { phases }, anchor_ts }
+    if (parsed && typeof parsed === "object" && parsed.kind === "infinite_room" && parsed.timer?.phases) {
+      const phases = Array.isArray(parsed.timer.phases) ? parsed.timer.phases : [];
+      const anchorISO = parsed.anchor_ts ? String(parsed.anchor_ts) : null;
+
+      const stages: Stage[] = phases
+        .map((p: any) => {
+          const phaseNameRaw = String(p?.name || "").toLowerCase();
+          const seconds = Number(p?.seconds);
+
+          if (!phaseNameRaw || !Number.isFinite(seconds) || seconds <= 0) return null;
+
+          // map phase names -> human names
+          const niceName =
+            phaseNameRaw === "focus"
+              ? "Focus"
+              : phaseNameRaw === "checkin"
+                ? "Intentions (spoken)"
+                : phaseNameRaw === "break"
+                  ? "Break"
+                  : phaseNameRaw;
+
+          const minutes = Math.round(seconds / 60);
+          const meta = stageMetaFromName(niceName);
+          return { name: niceName, duration: minutes, color: meta.color, type: meta.type };
+        })
+        .filter(Boolean) as Stage[];
+
+      return { stages, anchorISO };
+    }
+
+    return { stages: [], anchorISO: null };
+  } catch {
+    return { stages: [], anchorISO: null };
+  }
+}
 
 export function RoomPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -213,8 +285,7 @@ export function RoomPage() {
 
   const [selectedVideoInputId, setSelectedVideoInputId] = useState<string>("");
   const [selectedAudioInputId, setSelectedAudioInputId] = useState<string>("");
-  const [selectedAudioOutputId, setSelectedAudioOutputId] =
-    useState<string>("default");
+  const [selectedAudioOutputId, setSelectedAudioOutputId] = useState<string>("default");
 
   const [bgMode, setBgMode] = useState<"none" | "blur" | "image">("none");
   const [bgImageUrl, setBgImageUrl] = useState<string>("");
@@ -237,20 +308,14 @@ export function RoomPage() {
   const prevCountRef = useRef<number>(0);
 
   // ★ TRACK SCREEN SHARER
-  const [activeScreenSharer, setActiveScreenSharer] = useState<string | null>(
-    null
-  );
+  const [activeScreenSharer, setActiveScreenSharer] = useState<string | null>(null);
 
   // ★ REACTIONS RECEIVED FROM OTHER USERS
-  const [incomingReactions, setIncomingReactions] = useState<
-    { id: number; type: ReactionType }[]
-  >([]);
+  const [incomingReactions, setIncomingReactions] = useState<{ id: number; type: ReactionType }[]>([]);
   const reactionIdRef = useRef<number>(0);
 
   // ★ LOCAL REACTIONS (FOR OVERLAY)
-  const [localReactions, setLocalReactions] = useState<
-    { id: number; type: ReactionType }[]
-  >([]);
+  const [localReactions, setLocalReactions] = useState<{ id: number; type: ReactionType }[]>([]);
   const localReactionIdRef = useRef<number>(0);
 
   // AUDIO ---------------------------------------------------------
@@ -280,7 +345,6 @@ export function RoomPage() {
       return;
     }
 
-    // single source of truth (no stale rightTab usage)
     setRightTab((prevTab) => {
       const same = prevTab === tab;
       setRightPanelOpen((prevOpen) => (same ? !prevOpen : true));
@@ -288,26 +352,27 @@ export function RoomPage() {
     });
   };
 
-  // ✅ SILENT ROOM DETECTION (только для того, чтобы НЕ рендерить StageBar/таймер/звуки)
+  // ✅ session type helpers
+  const sessionFormatType = useMemo(() => String(session?.session_format_type || "group").toLowerCase(), [session]);
+  const isInfiniteRoom = sessionFormatType === "infinite";
+
+  // ✅ SILENT ROOM DETECTION
   const isSilentRoom = useMemo(() => {
+    // 1) explicit flag (best)
+    if (session?.is_silent === true) return true;
+
+    // 2) fallback: name/format/template contains "silent"
     const fmt = String(session?.format || "").toLowerCase();
     const title = String(session?.title || "").toLowerCase();
 
-    // session_templates может быть объектом или массивом
     const tpl = session?.session_templates;
-    const tplName =
-      Array.isArray(tpl)
-        ? String(tpl?.[0]?.name || tpl?.[0]?.title || "")
-        : String(tpl?.name || tpl?.title || "");
-    const tplKey =
-      Array.isArray(tpl)
-        ? String(tpl?.[0]?.key || tpl?.[0]?.slug || tpl?.[0]?.type || "")
-        : String(tpl?.key || tpl?.slug || tpl?.type || "");
-
-    const tplFmt =
-      Array.isArray(tpl)
-        ? String(tpl?.[0]?.format || "")
-        : String(tpl?.format || "");
+    const tplName = Array.isArray(tpl)
+      ? String(tpl?.[0]?.name || tpl?.[0]?.title || "")
+      : String(tpl?.name || tpl?.title || "");
+    const tplKey = Array.isArray(tpl)
+      ? String(tpl?.[0]?.key || tpl?.[0]?.slug || tpl?.[0]?.type || "")
+      : String(tpl?.key || tpl?.slug || tpl?.type || "");
+    const tplFmt = Array.isArray(tpl) ? String(tpl?.[0]?.format || "") : String(tpl?.format || "");
 
     const hay = `${fmt} ${title} ${tplName} ${tplKey} ${tplFmt}`.toLowerCase();
     return hay.includes("silent");
@@ -403,65 +468,36 @@ export function RoomPage() {
   // ============================================================
   // LOAD SESSION
   // ============================================================
+  const [stageAnchorISO, setStageAnchorISO] = useState<string>("");
+
   useEffect(() => {
     (async () => {
       if (!id) return;
 
       const { data, error } = await supabase
         .from("sessions")
-        .select(
-          "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)"
-        )
+        .select("*, created_at, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)")
         .eq("id", id)
         .single();
 
       if (data && !error) {
         setSession(data);
 
-        if (data.schedule) {
-          try {
-            const parsed =
-              typeof data.schedule === "string"
-                ? JSON.parse(data.schedule)
-                : data.schedule;
+        const { stages: parsedStages, anchorISO } = parseScheduleToStages(data.schedule);
+        if (parsedStages?.length) setStages(parsedStages);
 
-            // schedule ожидается array вида [{name, minutes}, ...]
-            if (Array.isArray(parsed)) {
-              const formatted: Stage[] = parsed.map((b: any) => {
-                const lower = (b.name || "").toLowerCase();
-                const type: Stage["type"] =
-                  b.type ||
-                  (lower.includes("welcome") || lower.includes("intro")
-                    ? "intro"
-                    : lower.includes("intention")
-                      ? "intentions"
-                      : lower.includes("focus")
-                        ? "focus"
-                        : lower.includes("break") || lower.includes("pause")
-                          ? "break"
-                          : lower.includes("farewell") || lower.includes("celebrat")
-                            ? "outro"
-                            : "focus");
+        // ✅ anchor time priority:
+        // 1) schedule.anchor_ts (old infinite)
+        // 2) session.start_time
+        // 3) created_at
+        // 4) now
+        const anchor =
+          anchorISO ||
+          (data.start_time ? String(data.start_time) : null) ||
+          (data.created_at ? String(data.created_at) : null) ||
+          new Date().toISOString();
 
-                return {
-                  name: b.name,
-                  duration: b.minutes,
-                  color:
-                    {
-                      intro: "#80DF86",
-                      intentions: "#ADD3FF",
-                      focus: "#4CA0FF",
-                      break: "#F9ADA2",
-                      outro: "#80DF86",
-                    }[type] || "#F63135",
-                  type,
-                };
-              });
-
-              setStages(formatted);
-            }
-          } catch { }
-        }
+        setStageAnchorISO(anchor);
       }
 
       setLoading(false);
@@ -483,11 +519,7 @@ export function RoomPage() {
         (u?.email ? u.email.split("@")[0] : "");
 
       if (!name && u?.id) {
-        const { data: p } = await supabase
-          .from("profiles")
-          .select("full_name")
-          .eq("id", u.id)
-          .single();
+        const { data: p } = await supabase.from("profiles").select("full_name").eq("id", u.id).single();
         name = p?.full_name || "";
       }
 
@@ -519,10 +551,7 @@ export function RoomPage() {
 
         const updated = list.map((p) => {
           if (!p.isLocal && p.displayName === "Guest") {
-            if (
-              session?.host_profile?.full_name &&
-              session.host_profile.id === p.id
-            ) {
+            if (session?.host_profile?.full_name && session.host_profile.id === p.id) {
               return { ...p, displayName: session.host_profile.full_name };
             }
           }
@@ -541,10 +570,7 @@ export function RoomPage() {
         const newId = reactionIdRef.current + 1;
         reactionIdRef.current = newId;
 
-        setIncomingReactions((prev) => [
-          ...prev,
-          { id: newId, type: reaction as ReactionType },
-        ]);
+        setIncomingReactions((prev) => [...prev, { id: newId, type: reaction as ReactionType }]);
 
         setTimeout(() => {
           setIncomingReactions((prev) => prev.filter((r) => r.id !== newId));
@@ -576,12 +602,10 @@ export function RoomPage() {
 
     const safeRoomName = roomNameRaw.toLowerCase().replace(/[^a-z0-9-_]/g, "");
 
-    engine
-      .initAndJoin(safeRoomName || `session-${session.id}`, userName || "Guest")
-      .catch((e) => {
-        console.error("initAndJoin error", e);
-        setLastErr(String(e?.message || e));
-      });
+    engine.initAndJoin(safeRoomName || `session-${session.id}`, userName || "Guest").catch((e) => {
+      console.error("initAndJoin error", e);
+      setLastErr(String(e?.message || e));
+    });
 
     return () => {
       engine
@@ -654,10 +678,10 @@ export function RoomPage() {
   };
 
   // ============================================================
-  // STAGES TIMER (для scheduled-сессий)
+  // STAGES TIMER (group linear, infinite loops)
   // ============================================================
   useEffect(() => {
-    // ✅ silent room: никаких стадий/таймера/звуков
+    // silent rooms: no stage timer & no sounds
     if (isSilentRoom) {
       setRemainingTime("");
       setCurrentStage(0);
@@ -667,26 +691,27 @@ export function RoomPage() {
       return;
     }
 
-    if (!session?.start_time || !stages.length) return;
+    if (!stageAnchorISO || !stages.length) return;
 
-    const timer = setInterval(() => {
+    const totalSec = stages.reduce((sum, s) => sum + s.duration * 60, 0);
+    const totalSecSafe = Math.max(1, totalSec);
+
+    const tick = () => {
       const now = Date.now();
-      const diffSec = (now - new Date(session.start_time).getTime()) / 1000;
+      const anchorMs = new Date(stageAnchorISO).getTime();
+      const rawElapsedSec = Math.max(0, Math.floor((now - anchorMs) / 1000));
+
+      const elapsedSec = isInfiniteRoom ? rawElapsedSec % totalSecSafe : rawElapsedSec;
 
       let total = 0;
       let active = stages.length - 1;
 
       for (let i = 0; i < stages.length; i++) {
         const next = total + stages[i].duration * 60;
-        if (diffSec < next) {
+        if (elapsedSec < next) {
           active = i;
-          const rem = next - diffSec;
-          setRemainingTime(
-            `${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(
-              2,
-              "0"
-            )}`
-          );
+          const rem = next - elapsedSec;
+          setRemainingTime(`${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`);
           break;
         }
         total = next;
@@ -729,18 +754,19 @@ export function RoomPage() {
       }
 
       setCurrentStage(active);
-    }, 1000);
+    };
 
+    // initial tick immediately
+    tick();
+
+    const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [session?.start_time, stages, isSilentRoom]);
+  }, [stageAnchorISO, stages, isSilentRoom, isInfiniteRoom]);
 
   // ============================================================
   // DERIVED
   // ============================================================
-  const localParticipant = useMemo(
-    () => participants.find((p) => p.isLocal) || null,
-    [participants]
-  );
+  const localParticipant = useMemo(() => participants.find((p) => p.isLocal) || null, [participants]);
 
   const isAudioMuted = !!localParticipant?.audioMuted;
   const isVideoMuted = !!localParticipant?.videoMuted;
@@ -758,8 +784,7 @@ export function RoomPage() {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node | null;
       if (!reactionsMenuRef.current || !target) return;
-      if (!reactionsMenuRef.current.contains(target))
-        setShowReactionsMenu(false);
+      if (!reactionsMenuRef.current.contains(target)) setShowReactionsMenu(false);
     };
 
     document.addEventListener("mousedown", handleClickOutside);
@@ -789,9 +814,7 @@ export function RoomPage() {
   const filteredParticipants = useMemo(() => {
     const q = participantsSearch.trim().toLowerCase();
     if (!q) return participants;
-    return participants.filter((p) =>
-      (p.isLocal ? "you" : p.displayName || "guest").toLowerCase().includes(q)
-    );
+    return participants.filter((p) => (p.isLocal ? "you" : p.displayName || "guest").toLowerCase().includes(q));
   }, [participants, participantsSearch]);
 
   const participantsCount = participants.length;
@@ -824,17 +847,16 @@ export function RoomPage() {
                 <p className="font-inter font-semibold text-[18px] text-[#F3F4F6]/90 truncate">
                   {session.title}
                 </p>
-                <p className="font-inter text-[13px] text-[#9CA3AF]">
-                  {participantsCount} participants
-                </p>
+                <p className="font-inter text-[13px] text-[#9CA3AF]">{participantsCount} participants</p>
 
-                {/* ✅ StageBar НЕ рендерим для silent rooms */}
-                {!isSilentRoom && stages.length > 0 && session.start_time && (
+                {/* ✅ StageBar: render for infinite + group; hide for silent */}
+                {!isSilentRoom && stages.length > 0 && stageAnchorISO && (
                   <div className="mt-2 max-h-[14px] overflow-hidden">
                     <div className="origin-left scale-y-[0.72]">
                       <SessionStageBar
                         stages={stages}
-                        startTime={session.start_time}
+                        startTime={stageAnchorISO}
+                        cycle={isInfiniteRoom}
                         onHoverStage={setHoveredStage}
                       />
                     </div>
@@ -843,13 +865,11 @@ export function RoomPage() {
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
-                {/* ✅ таймер тоже НЕ показываем для silent rooms */}
-                {!isSilentRoom && stages.length > 0 && session.start_time && (
+                {/* ✅ Timer: hide for silent */}
+                {!isSilentRoom && stages.length > 0 && stageAnchorISO && (
                   <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#0B1220]/70 border border-white/5">
                     <span className="text-[12px] text-white/70">⏱</span>
-                    <span className="font-inter text-[14px] text-white/90">
-                      {remainingTime || "--:--"}
-                    </span>
+                    <span className="font-inter text-[14px] text-white/90">{remainingTime || "--:--"}</span>
                   </div>
                 )}
 
@@ -858,15 +878,10 @@ export function RoomPage() {
                     onClick={() => setSelectedUser(session.host_profile)}
                     className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/10 bg-[#0B1220]/60 text-[13px] text-[#F3F4F6]/85 hover:bg-[#0B1220]/80 transition font-inter"
                   >
-                    <img
-                      src="/icons/host_session_icon.svg"
-                      className="h-5 w-5 opacity-90"
-                    />
+                    <img src="/icons/host_session_icon.svg" className="h-5 w-5 opacity-90" />
                     <span className="flex items-center gap-1">
                       <span className="font-normal text-white/70">Host:</span>
-                      <span className="font-semibold">
-                        {session.host_profile.full_name}
-                      </span>
+                      <span className="font-semibold">{session.host_profile.full_name}</span>
                     </span>
                   </button>
                 )}
@@ -876,14 +891,7 @@ export function RoomPage() {
         </div>
 
         {/* MAIN AREA */}
-        <div
-          className={
-            "grid gap-5 flex-1 min-h-0 " +
-            (rightPanelOpen
-              ? "lg:grid-cols-[minmax(0,1fr),420px]"
-              : "grid-cols-1")
-          }
-        >
+        <div className={"grid gap-5 flex-1 min-h-0 " + (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")}>
           {/* VIDEO AREA */}
           <div className="rounded-2xl bg-[#0B1220]/55 border border-white/5 shadow-lg overflow-hidden relative min-h-0">
             <div className="w-full h-full p-3 min-h-0">
@@ -897,9 +905,7 @@ export function RoomPage() {
                 incomingReactions={incomingReactions}
                 localReactions={localReactions}
                 showControls={false}
-                onVisibleVideoIdsChange={(ids) =>
-                  engineRef.current?.setVisibleVideoParticipants(ids)
-                }
+                onVisibleVideoIdsChange={(ids) => engineRef.current?.setVisibleVideoParticipants(ids)}
                 audioOutputId={selectedAudioOutputId}
               />
             </div>
@@ -918,12 +924,8 @@ export function RoomPage() {
                 <div className="h-full flex flex-col">
                   <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="text-white/85 font-inter font-semibold">
-                        Participants
-                      </span>
-                      <span className="text-white/55 text-sm">
-                        ({participantsCount})
-                      </span>
+                      <span className="text-white/85 font-inter font-semibold">Participants</span>
+                      <span className="text-white/55 text-sm">({participantsCount})</span>
                     </div>
                     <button
                       onClick={() => openRightTab(null)}
@@ -967,9 +969,7 @@ export function RoomPage() {
                                 {initials}
                               </div>
                               <div className="min-w-0">
-                                <div className="text-[13px] text-white/90 font-medium truncate">
-                                  {name}
-                                </div>
+                                <div className="text-[13px] text-white/90 font-medium truncate">{name}</div>
                                 <div className="text-[11px] text-white/45 truncate">
                                   {p.isLocal ? "Team member" : "Participant"}
                                 </div>
@@ -980,17 +980,11 @@ export function RoomPage() {
                               <div
                                 className={
                                   "w-8 h-8 rounded-lg flex items-center justify-center " +
-                                  (p.audioMuted
-                                    ? "bg-red-500/20 text-red-300"
-                                    : "bg-white/5 text-white/65")
+                                  (p.audioMuted ? "bg-red-500/20 text-red-300" : "bg-white/5 text-white/65")
                                 }
                                 title={p.audioMuted ? "Muted" : "Unmuted"}
                               >
-                                <svg
-                                  viewBox="0 0 24 24"
-                                  className="w-4 h-4"
-                                  aria-hidden="true"
-                                >
+                                <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true">
                                   <path
                                     d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"
                                     fill="currentColor"
@@ -1006,30 +1000,13 @@ export function RoomPage() {
                               <div
                                 className={
                                   "w-8 h-8 rounded-lg flex items-center justify-center " +
-                                  (p.videoMuted
-                                    ? "bg-red-500/20 text-red-300"
-                                    : "bg-white/5 text-white/65")
+                                  (p.videoMuted ? "bg-red-500/20 text-red-300" : "bg-white/5 text-white/65")
                                 }
                                 title={p.videoMuted ? "Video off" : "Video on"}
                               >
-                                <svg
-                                  viewBox="0 0 24 24"
-                                  className="w-4 h-4"
-                                  aria-hidden="true"
-                                >
-                                  <rect
-                                    x="4"
-                                    y="6"
-                                    width="11"
-                                    height="12"
-                                    rx="2"
-                                    fill="currentColor"
-                                  />
-                                  <path
-                                    d="M17 9.5 21 7v10l-4-2.5z"
-                                    fill="currentColor"
-                                    opacity="0.85"
-                                  />
+                                <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true">
+                                  <rect x="4" y="6" width="11" height="12" rx="2" fill="currentColor" />
+                                  <path d="M17 9.5 21 7v10l-4-2.5z" fill="currentColor" opacity="0.85" />
                                 </svg>
                               </div>
                             </div>
@@ -1054,9 +1031,7 @@ export function RoomPage() {
               {rightTab === "chat" && (
                 <div className="h-full">
                   <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
-                    <div className="text-white/85 font-inter font-semibold">
-                      Chat
-                    </div>
+                    <div className="text-white/85 font-inter font-semibold">Chat</div>
                     <button
                       onClick={() => openRightTab(null)}
                       className="w-9 h-9 rounded-xl bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center text-white/80"
@@ -1065,18 +1040,14 @@ export function RoomPage() {
                       ✕
                     </button>
                   </div>
-                  <div className="p-4 h-[calc(100%-64px)]">
-                    {session?.id ? <ChatPanel sessionId={session.id} /> : null}
-                  </div>
+                  <div className="p-4 h-[calc(100%-64px)]">{session?.id ? <ChatPanel sessionId={session.id} /> : null}</div>
                 </div>
               )}
 
               {rightTab === "intentions" && (
                 <div className="h-full">
                   <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
-                    <div className="text-white/85 font-inter font-semibold">
-                      Intentions
-                    </div>
+                    <div className="text-white/85 font-inter font-semibold">Intentions</div>
                     <button
                       onClick={() => openRightTab(null)}
                       className="w-9 h-9 rounded-xl bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center text-white/80"
@@ -1161,9 +1132,7 @@ export function RoomPage() {
 
                 {showReactionsMenu && (
                   <div className="absolute bottom-[58px] left-1/2 -translate-x-1/2 bg-[#020617] border border-white/10 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl">
-                    {(
-                      ["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown"] as ReactionType[]
-                    ).map((t) => (
+                    {(["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown"] as ReactionType[]).map((t) => (
                       <button
                         key={t}
                         onClick={() => {
@@ -1227,9 +1196,7 @@ export function RoomPage() {
         }}
       />
 
-      {selectedUser && (
-        <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
-      )}
+      {selectedUser && <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />}
     </div>
   );
 }
