@@ -1,25 +1,4 @@
 // src/components/VideoRoom.tsx
-
-/*
-================================================================================
-CHANGELOG (AS CODE)
-================================================================================
-ADD:
-- showControls?: boolean (default true)  // allows RoomPage to render one unified bottom bar
-- localReactions?: { id:number; type: ReactionType }[] // overlay reactions driven by parent
-- FIX: re-attach video when lib-jitsi-meet swaps underlying stream (track.setEffect triggers TRACK_STREAM_CHANGED)
-
-CHANGE:
-- Reactions overlay uses (localReactions ?? internal reactions)
-- Controls bar is rendered only if showControls === true
-
-KEEP:
-- Existing audio sink behavior
-- Existing scroll behavior
-- Existing attach/detach fixes
-================================================================================
-*/
-
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { JitsiParticipant, JitsiTrack } from "../lib/jitsiEngine";
 
@@ -45,16 +24,12 @@ type VideoRoomProps = {
     activeScreenSharer?: string | null;
 
     incomingReactions?: { id: number; type: ReactionType }[];
-
-    // NEW: local reactions from parent (RoomPage bottom bar)
     localReactions?: { id: number; type: ReactionType }[];
 
     onVisibleVideoIdsChange?: (ids: string[]) => void;
     onSendReaction?: (type: ReactionType) => void;
 
-    // NEW: allow hiding internal controls (when RoomPage renders unified bottom bar)
     showControls?: boolean;
-
     audioOutputId?: string;
 };
 
@@ -75,7 +50,10 @@ function safeTrackId(track?: any): string {
     return String((track as any)?._id ?? "track");
 }
 
-function attachTrackToMedia(track: JitsiTrack | undefined, element: HTMLMediaElement | null) {
+function attachTrackToMedia(
+    track: JitsiTrack | undefined,
+    element: HTMLMediaElement | null
+) {
     if (!track || !element) return;
 
     try {
@@ -87,28 +65,16 @@ function attachTrackToMedia(track: JitsiTrack | undefined, element: HTMLMediaEle
     return () => {
         try {
             track.detach(element);
-        } catch {
-            // ignore
-        }
+        } catch { }
         try {
             (element as any).srcObject = null;
-        } catch {
-            // ignore
-        }
+        } catch { }
         try {
             element.load?.();
-        } catch {
-            // ignore
-        }
+        } catch { }
     };
 }
 
-/**
- * IMPORTANT:
- * lib-jitsi-meet track.setEffect(...) can swap underlying MediaStream without changing track instance.
- * That means React deps [participant.videoTrack] won't change, but video element MUST be re-attached.
- * We listen to track events (TRACK_STREAM_CHANGED, etc.) and bump a local version counter.
- */
 function useTrackStreamVersion(track: any) {
     const [v, setV] = useState(0);
 
@@ -125,7 +91,6 @@ function useTrackStreamVersion(track: any) {
             jitsiEvents?.LOCAL_TRACK_STOPPED,
         ].filter(Boolean);
 
-        // fallback (harmless if your build uses different string constants)
         const fallback = [
             "TRACK_STREAM_CHANGED",
             "TRACK_VIDEO_TYPE_CHANGED",
@@ -134,7 +99,9 @@ function useTrackStreamVersion(track: any) {
             "LOCAL_TRACK_STOPPED",
         ];
 
-        const eventNames: string[] = Array.from(new Set([...(candidates as string[]), ...fallback]));
+        const eventNames: string[] = Array.from(
+            new Set([...(candidates as string[]), ...fallback])
+        );
 
         const bump = () => setV((x) => x + 1);
 
@@ -154,6 +121,29 @@ function useTrackStreamVersion(track: any) {
     }, [track]);
 
     return v;
+}
+
+/** small helper: responsive bool without extra deps */
+function useMediaQuery(query: string) {
+    const [matches, setMatches] = useState(false);
+
+    useEffect(() => {
+        if (typeof window === "undefined" || !window.matchMedia) return;
+        const mql = window.matchMedia(query);
+        const onChange = () => setMatches(!!mql.matches);
+        onChange();
+
+        // safari old/new compat
+        try {
+            mql.addEventListener("change", onChange);
+            return () => mql.removeEventListener("change", onChange);
+        } catch {
+            mql.addListener(onChange);
+            return () => mql.removeListener(onChange);
+        }
+    }, [query]);
+
+    return matches;
 }
 
 // ----------------------- Icons -----------------------
@@ -193,7 +183,14 @@ function ScreenIcon() {
 function SmileIcon() {
     return (
         <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-            <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="1.5" />
+            <circle
+                cx="12"
+                cy="12"
+                r="9"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+            />
             <circle cx="9" cy="10" r="0.8" fill="currentColor" />
             <circle cx="15" cy="10" r="0.8" fill="currentColor" />
             <path
@@ -246,7 +243,10 @@ function AudioSinkItem({ p }: { p: JitsiParticipant }) {
 }
 
 function AudioSink({ participants }: { participants: JitsiParticipant[] }) {
-    const remotes = useMemo(() => participants.filter((p) => !p.isLocal), [participants]);
+    const remotes = useMemo(
+        () => participants.filter((p) => !p.isLocal),
+        [participants]
+    );
 
     return (
         <div className="absolute w-0 h-0 overflow-hidden opacity-0 pointer-events-none">
@@ -262,20 +262,19 @@ function AudioSink({ participants }: { participants: JitsiParticipant[] }) {
 function ParticipantTile({
     participant,
     tileKey,
+    forceAspect = false,
+    fit = "contain",
 }: {
     participant: JitsiParticipant;
     tileKey: string;
+    forceAspect?: boolean; // mobile stack uses aspect-video
+    fit?: "contain" | "cover"; // "layout-ish" control
 }) {
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const showVideo = !!participant.videoTrack && !participant.videoMuted;
 
-    // NEW: bump when setEffect swaps stream under the same track instance
     const streamV = useTrackStreamVersion(participant.videoTrack);
 
-    // FIX: reattach on:
-    // - track instance change
-    // - videoMuted change
-    // - stream swap (TRACK_STREAM_CHANGED)
     useEffect(() => {
         const el = videoRef.current;
         if (!el) return;
@@ -289,9 +288,7 @@ function ParticipantTile({
             el.load?.();
         } catch { }
 
-        if (!track || participant.videoMuted) {
-            return;
-        }
+        if (!track || participant.videoMuted) return;
 
         try {
             try {
@@ -320,33 +317,34 @@ function ParticipantTile({
         };
     }, [participant.videoTrack, participant.videoMuted, participant.isLocal, streamV]);
 
+    const objectClass = fit === "cover" ? "object-cover" : "object-contain";
+
     return (
         <div
-            className="relative bg-black rounded-2xl overflow-hidden flex items-center justify-center border border-white/5"
+            className={
+                "relative bg-black rounded-2xl overflow-hidden flex items-center justify-center border border-white/5 " +
+                (forceAspect ? "w-full aspect-video" : "w-full h-full")
+            }
             data-tile-key={tileKey}
         >
-            <div className="w-full h-full flex items-center justify-center">
-                <div className="w-full max-w-full aspect-video bg-black">
-                    {showVideo ? (
-                        <video
-                            ref={videoRef}
-                            autoPlay
-                            playsInline
-                            muted={participant.isLocal}
-                            className="w-full h-full object-contain bg-black"
-                        />
-                    ) : (
-                        <div className="w-full h-full flex flex-col items-center justify-center bg-[#111827]">
-                            <div className="w-16 h-16 rounded-full bg-[#374151] flex items-center justify-center text-2xl font-semibold">
-                                {participant.displayName?.[0]?.toUpperCase() || "?"}
-                            </div>
-                            <span className="mt-2 text-sm text-white/80">
-                                {participant.isLocal ? "You" : participant.displayName || "Guest"}
-                            </span>
-                        </div>
-                    )}
+            {showVideo ? (
+                <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted={participant.isLocal}
+                    className={`absolute inset-0 w-full h-full ${objectClass} bg-black`}
+                />
+            ) : (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#111827]">
+                    <div className="w-16 h-16 rounded-full bg-[#374151] flex items-center justify-center text-2xl font-semibold">
+                        {participant.displayName?.[0]?.toUpperCase() || "?"}
+                    </div>
+                    <span className="mt-2 text-sm text-white/80">
+                        {participant.isLocal ? "You" : participant.displayName || "Guest"}
+                    </span>
                 </div>
-            </div>
+            )}
 
             <div className="absolute left-3 bottom-3 rounded-md bg-black/55 px-2 py-1 text-[11px] flex items-center gap-2">
                 <span className="text-white/80">
@@ -354,7 +352,8 @@ function ParticipantTile({
                 </span>
                 <span
                     className={
-                        "w-2 h-2 rounded-full " + (participant.audioMuted ? "bg-red-500" : "bg-green-400")
+                        "w-2 h-2 rounded-full " +
+                        (participant.audioMuted ? "bg-red-500" : "bg-green-400")
                     }
                 />
             </div>
@@ -365,7 +364,8 @@ function ParticipantTile({
 // ----------------------- Layouts -----------------------
 function computeGrid(count: number) {
     if (count <= 1) return { cols: 1, rows: 1 };
-    const cols = Math.ceil(Math.sqrt(count));
+    // небольшая защита от "слишком много колонок"
+    const cols = Math.min(4, Math.ceil(Math.sqrt(count)));
     const rows = Math.ceil(count / cols);
     return { cols, rows };
 }
@@ -377,20 +377,33 @@ function GridLayout({
     pageParticipants: JitsiParticipant[];
     layoutVersion: number;
 }) {
-    const { cols, rows } = useMemo(() => computeGrid(pageParticipants.length), [pageParticipants.length]);
+    const { cols, rows } = useMemo(
+        () => computeGrid(pageParticipants.length),
+        [pageParticipants.length]
+    );
 
     return (
         <div
             key={`grid:${layoutVersion}:${pageParticipants.length}:${cols}x${rows}`}
-            className="w-full h-full grid gap-2 p-2"
+            className="w-full h-full grid gap-2 p-2 min-h-0"
             style={{
                 gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
                 gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
             }}
         >
             {pageParticipants.map((p) => {
-                const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}:${safeTrackId(p.screenTrack)}`;
-                return <ParticipantTile key={tileKey} participant={p} tileKey={tileKey} />;
+                const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}:${safeTrackId(
+                    p.screenTrack
+                )}`;
+                return (
+                    <ParticipantTile
+                        key={tileKey}
+                        participant={p}
+                        tileKey={tileKey}
+                        forceAspect={false}
+                        fit="contain"
+                    />
+                );
             })}
         </div>
     );
@@ -408,7 +421,7 @@ function P2PLayout({
     return (
         <div
             key={`p2p:${layoutVersion}:${count}`}
-            className="w-full h-full grid gap-2 p-2"
+            className="w-full h-full grid gap-2 p-2 min-h-0"
             style={{
                 gridTemplateColumns: count <= 1 ? "1fr" : "1fr 1fr",
                 gridTemplateRows: "1fr",
@@ -416,13 +429,55 @@ function P2PLayout({
         >
             {pageParticipants.map((p) => {
                 const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}`;
-                return <ParticipantTile key={tileKey} participant={p} tileKey={tileKey} />;
+                return (
+                    <ParticipantTile
+                        key={tileKey}
+                        participant={p}
+                        tileKey={tileKey}
+                        forceAspect={false}
+                        fit="contain"
+                    />
+                );
             })}
         </div>
     );
 }
 
-function ScreenShareLayout({
+/** ✅ Mobile-first: vertical stack like your screenshot (layout only) */
+function MobileStackLayout({
+    pageParticipants,
+    layoutVersion,
+    paddingBottomPx = 96, // чтобы нижняя фикс-панель не перекрывала последний tile
+}: {
+    pageParticipants: JitsiParticipant[];
+    layoutVersion: number;
+    paddingBottomPx?: number;
+}) {
+    return (
+        <div
+            key={`mstack:${layoutVersion}:${pageParticipants.length}`}
+            className="w-full h-full overflow-y-auto p-2 flex flex-col gap-2"
+            style={{ paddingBottom: paddingBottomPx }}
+        >
+            {pageParticipants.map((p) => {
+                const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}:${safeTrackId(
+                    p.screenTrack
+                )}`;
+                return (
+                    <ParticipantTile
+                        key={tileKey}
+                        participant={p}
+                        tileKey={tileKey}
+                        forceAspect={true}
+                        fit="cover"
+                    />
+                );
+            })}
+        </div>
+    );
+}
+
+function ScreenShareLayoutDesktop({
     screenSharer,
     others,
     layoutVersion,
@@ -432,23 +487,27 @@ function ScreenShareLayout({
     layoutVersion: number;
 }) {
     const screenVideoRef = useRef<HTMLVideoElement | null>(null);
-    const screenTrackId = useMemo(() => safeTrackId(screenSharer.screenTrack), [screenSharer.screenTrack]);
+    const screenTrackId = useMemo(
+        () => safeTrackId(screenSharer.screenTrack),
+        [screenSharer.screenTrack]
+    );
     const screenStreamV = useTrackStreamVersion(screenSharer.screenTrack);
 
     useEffect(() => {
         if (!screenVideoRef.current) return;
         if (!screenSharer.screenTrack) return;
         return attachTrackToMedia(screenSharer.screenTrack, screenVideoRef.current);
-    }, [screenTrackId, screenStreamV]); // <- include streamV too
+    }, [screenTrackId, screenStreamV]); // include streamV
 
-    const cameraParticipant = screenSharer.videoTrack && !screenSharer.videoMuted ? screenSharer : undefined;
+    const cameraParticipant =
+        screenSharer.videoTrack && !screenSharer.videoMuted ? screenSharer : undefined;
 
     return (
         <div
-            key={`screen:${layoutVersion}:${screenSharer.id}:${screenTrackId}`}
-            className="relative w-full h-full flex flex-col md:flex-row gap-2 p-2"
+            key={`screen:desk:${layoutVersion}:${screenSharer.id}:${screenTrackId}`}
+            className="relative w-full h-full flex flex-row gap-2 p-2 min-h-0"
         >
-            <div className="relative flex-1 bg-black rounded-2xl overflow-hidden border border-white/5">
+            <div className="relative flex-1 bg-black rounded-2xl overflow-hidden border border-white/5 min-h-0">
                 <video
                     ref={screenVideoRef}
                     autoPlay
@@ -458,30 +517,106 @@ function ScreenShareLayout({
                 />
                 <div className="absolute left-3 bottom-3 rounded-md bg-black/60 px-2 py-1 text-[11px]">
                     <span className="text-white/80">
-                        {screenSharer.isLocal ? "You (screen)" : `${screenSharer.displayName || "Guest"} (screen)`}
+                        {screenSharer.isLocal
+                            ? "You (screen)"
+                            : `${screenSharer.displayName || "Guest"} (screen)`}
                     </span>
                 </div>
 
                 {cameraParticipant && (
-                    <div className="hidden md:block absolute top-3 right-3 w-44 aspect-video rounded-xl overflow-hidden border border-white/20 shadow-lg bg-black">
+                    <div className="absolute top-3 right-3 w-44 aspect-video rounded-xl overflow-hidden border border-white/20 shadow-lg bg-black">
                         <ParticipantTile
                             participant={cameraParticipant}
-                            tileKey={`${cameraParticipant.id}:${safeTrackId(cameraParticipant.videoTrack)}`}
+                            tileKey={`${cameraParticipant.id}:${safeTrackId(
+                                cameraParticipant.videoTrack
+                            )}`}
+                            forceAspect={true}
+                            fit="cover"
                         />
                     </div>
                 )}
             </div>
 
-            <div className="flex md:flex-col gap-2 md:w-56 w-full">
+            <div className="flex flex-col gap-2 w-56 min-h-0">
                 {others.map((p) => {
                     const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}`;
                     return (
-                        <div key={tileKey} className="md:h-[140px] w-full">
-                            <ParticipantTile participant={p} tileKey={tileKey} />
+                        <div key={tileKey} className="h-[140px] w-full">
+                            <ParticipantTile
+                                participant={p}
+                                tileKey={tileKey}
+                                forceAspect={false}
+                                fit="cover"
+                            />
                         </div>
                     );
                 })}
             </div>
+        </div>
+    );
+}
+
+function ScreenShareLayoutMobile({
+    screenSharer,
+    others,
+    layoutVersion,
+    paddingBottomPx = 96,
+}: {
+    screenSharer: JitsiParticipant;
+    others: JitsiParticipant[];
+    layoutVersion: number;
+    paddingBottomPx?: number;
+}) {
+    const screenVideoRef = useRef<HTMLVideoElement | null>(null);
+    const screenTrackId = useMemo(
+        () => safeTrackId(screenSharer.screenTrack),
+        [screenSharer.screenTrack]
+    );
+    const screenStreamV = useTrackStreamVersion(screenSharer.screenTrack);
+
+    useEffect(() => {
+        if (!screenVideoRef.current) return;
+        if (!screenSharer.screenTrack) return;
+        return attachTrackToMedia(screenSharer.screenTrack, screenVideoRef.current);
+    }, [screenTrackId, screenStreamV]);
+
+    return (
+        <div
+            key={`screen:mob:${layoutVersion}:${screenSharer.id}:${screenTrackId}`}
+            className="w-full h-full overflow-y-auto p-2 flex flex-col gap-2"
+            style={{ paddingBottom: paddingBottomPx }}
+        >
+            {/* screen on top */}
+            <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden border border-white/5 relative">
+                <video
+                    ref={screenVideoRef}
+                    autoPlay
+                    playsInline
+                    muted={screenSharer.isLocal}
+                    className="absolute inset-0 w-full h-full object-contain bg-black"
+                />
+                <div className="absolute left-3 bottom-3 rounded-md bg-black/60 px-2 py-1 text-[11px]">
+                    <span className="text-white/80">
+                        {screenSharer.isLocal
+                            ? "You (screen)"
+                            : `${screenSharer.displayName || "Guest"} (screen)`}
+                    </span>
+                </div>
+            </div>
+
+            {/* others stacked below */}
+            {others.map((p) => {
+                const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}`;
+                return (
+                    <ParticipantTile
+                        key={tileKey}
+                        participant={p}
+                        tileKey={tileKey}
+                        forceAspect={true}
+                        fit="cover"
+                    />
+                );
+            })}
         </div>
     );
 }
@@ -501,6 +636,9 @@ export function VideoRoom(props: VideoRoomProps) {
         showControls = true,
         audioOutputId,
     } = props;
+
+    // ✅ mobile breakpoint: below md
+    const isMobile = useMediaQuery("(max-width: 767px)");
 
     // ----------------------- Audio sinkId apply -----------------------
     useEffect(() => {
@@ -533,7 +671,10 @@ export function VideoRoom(props: VideoRoomProps) {
     );
 
     const isP2P = useMemo(() => participants.length <= 2, [participants.length]);
-    const localParticipant = useMemo(() => participants.find((p) => p.isLocal) || null, [participants]);
+    const localParticipant = useMemo(
+        () => participants.find((p) => p.isLocal) || null,
+        [participants]
+    );
 
     const baseParticipants = useMemo(() => {
         return screenSharer ? participants.filter((p) => p.id !== screenSharer.id) : participants;
@@ -603,16 +744,15 @@ export function VideoRoom(props: VideoRoomProps) {
         const handleClickOutside = (e: MouseEvent) => {
             const target = e.target as Node | null;
             if (!menuRef.current || !target) return;
-            if (!menuRef.current.contains(target)) {
-                setShowReactionsMenu(false);
-            }
+            if (!menuRef.current.contains(target)) setShowReactionsMenu(false);
         };
 
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, [showReactionsMenu]);
 
-    const baseBtn = "w-10 h-10 rounded-full flex items-center justify-center text-white text-sm transition";
+    const baseBtn =
+        "w-10 h-10 rounded-full flex items-center justify-center text-white text-sm transition";
 
     const goPrev = () => setScrollIndex((i) => Math.max(0, i - SCROLL_STEP));
     const goNext = () => setScrollIndex((i) => Math.min(maxStartIndex, i + SCROLL_STEP));
@@ -623,13 +763,17 @@ export function VideoRoom(props: VideoRoomProps) {
     const overlayLocal = localReactions ?? reactions;
 
     return (
-        <div className="relative w-full h-full flex flex-col">
+        <div className="relative w-full h-full flex flex-col min-h-0">
             <AudioSink participants={participants} />
 
-            <div className="flex-1 relative overflow-hidden rounded-2xl bg-black/80">
+            <div className="flex-1 relative overflow-hidden rounded-2xl bg-black/80 min-h-0">
+                {/* ✅ NO SCREEN SHARE */}
                 {!screenSharer && (
                     <>
-                        {isP2P ? (
+                        {/* Mobile: stack list like screenshot */}
+                        {isMobile ? (
+                            <MobileStackLayout pageParticipants={pageParticipants} layoutVersion={layoutVersion} />
+                        ) : isP2P ? (
                             <P2PLayout pageParticipants={pageParticipants} layoutVersion={layoutVersion} />
                         ) : (
                             <GridLayout pageParticipants={pageParticipants} layoutVersion={layoutVersion} />
@@ -637,12 +781,23 @@ export function VideoRoom(props: VideoRoomProps) {
                     </>
                 )}
 
+                {/* ✅ SCREEN SHARE */}
                 {screenSharer && (
-                    <ScreenShareLayout
-                        screenSharer={screenSharer}
-                        others={screenOthers}
-                        layoutVersion={layoutVersion}
-                    />
+                    <>
+                        {isMobile ? (
+                            <ScreenShareLayoutMobile
+                                screenSharer={screenSharer}
+                                others={screenOthers}
+                                layoutVersion={layoutVersion}
+                            />
+                        ) : (
+                            <ScreenShareLayoutDesktop
+                                screenSharer={screenSharer}
+                                others={screenOthers}
+                                layoutVersion={layoutVersion}
+                            />
+                        )}
+                    </>
                 )}
 
                 {((overlayLocal?.length || 0) + (incomingReactions?.length || 0) > 0) && (
@@ -652,7 +807,6 @@ export function VideoRoom(props: VideoRoomProps) {
                                 {reactionEmoji[r.type]}
                             </div>
                         ))}
-
                         {(incomingReactions || []).map((r) => (
                             <div key={`in-${r.id}`} className="text-4xl drop-shadow-lg animate-bounce">
                                 {reactionEmoji[r.type]}
@@ -661,7 +815,8 @@ export function VideoRoom(props: VideoRoomProps) {
                     </div>
                 )}
 
-                {canScroll && (
+                {/* ✅ keep your paging buttons (desktop-only; on mobile better to just scroll list) */}
+                {canScroll && !isMobile && (
                     <div className="absolute top-3 right-3 flex items-center gap-2">
                         <button
                             onClick={goPrev}
@@ -684,9 +839,7 @@ export function VideoRoom(props: VideoRoomProps) {
                             disabled={scrollIndex >= maxStartIndex}
                             className={
                                 "px-3 h-9 rounded-full bg-black/55 border border-white/10 text-white text-sm " +
-                                (scrollIndex >= maxStartIndex
-                                    ? "opacity-40 cursor-not-allowed"
-                                    : "hover:bg-black/70")
+                                (scrollIndex >= maxStartIndex ? "opacity-40 cursor-not-allowed" : "hover:bg-black/70")
                             }
                             title="Scroll forward"
                         >
@@ -696,6 +849,7 @@ export function VideoRoom(props: VideoRoomProps) {
                 )}
             </div>
 
+            {/* Internal controls (you обычно выключаешь showControls и рисуешь в RoomPage) */}
             {showControls && (
                 <div className="mt-3 flex items-center justify-center">
                     <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-[#020617]/90 border border-white/10 shadow-lg">

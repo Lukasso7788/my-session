@@ -1,21 +1,58 @@
 // src/components/SessionStageBar.tsx
 import React, { useEffect, useMemo, useState } from "react";
-import { differenceInSeconds } from "date-fns";
 import { SessionStage } from "../SessionConfig";
 
 interface Props {
   stages: SessionStage[];
-  startTime: string; // ISO string
+  startTime: string; // ISO or unix (sec/ms) as string
   onHoverStage?: (stage: SessionStage | null) => void;
-
-  /**
-   * If provided (>0), the bar becomes "infinite" and loops every cycleSeconds.
-   */
   cycleSeconds?: number;
 }
 
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
+}
+
+/**
+ * ✅ Parse ISO / unix seconds / unix ms (number-like strings).
+ * Returns ms timestamp or null.
+ */
+function parseTimeMs(input: any): number | null {
+  if (input == null) return null;
+
+  // if already Date
+  if (input instanceof Date) {
+    const t = input.getTime();
+    return Number.isFinite(t) ? t : null;
+  }
+
+  // if numeric
+  if (typeof input === "number") {
+    if (!Number.isFinite(input)) return null;
+    // heuristic: < 1e12 -> seconds, else ms
+    const ms = input < 1e12 ? input * 1000 : input;
+    return Number.isFinite(ms) ? ms : null;
+  }
+
+  // if string
+  if (typeof input === "string") {
+    const s = input.trim();
+    if (!s) return null;
+
+    // numeric string?
+    if (/^\d+$/.test(s)) {
+      const n = Number(s);
+      if (!Number.isFinite(n)) return null;
+      const ms = n < 1e12 ? n * 1000 : n;
+      return Number.isFinite(ms) ? ms : null;
+    }
+
+    // try Date.parse
+    const t = Date.parse(s);
+    return Number.isFinite(t) ? t : null;
+  }
+
+  return null;
 }
 
 /**
@@ -72,15 +109,23 @@ export function SessionStageBar({
     return cs > 0 ? cs : totalStagesSeconds;
   }, [cycleSeconds, totalStagesSeconds]);
 
-  // 🔁 Update elapsed every second
+  // 🔁 Update elapsed every second (robust time parsing)
   useEffect(() => {
-    if (!startTime) return;
+    const startMs = parseTimeMs(startTime);
+    if (!startMs) {
+      // protect from NaN: just freeze at 0 if time is invalid
+      setElapsed(0);
+      return;
+    }
 
-    const timer = window.setInterval(() => {
-      const diff = differenceInSeconds(new Date(), new Date(startTime));
-      setElapsed(diff);
-    }, 1000);
+    const tick = () => {
+      const nowMs = Date.now();
+      const diff = Math.floor((nowMs - startMs) / 1000);
+      setElapsed(Number.isFinite(diff) ? diff : 0);
+    };
 
+    tick();
+    const timer = window.setInterval(tick, 1000);
     return () => window.clearInterval(timer);
   }, [startTime]);
 
@@ -92,8 +137,7 @@ export function SessionStageBar({
       return;
     }
 
-    // normalize elapsed into [0..loopSeconds)
-    const raw = elapsed;
+    const raw = Number.isFinite(elapsed) ? elapsed : 0;
     const normalized =
       loopSeconds > 0 ? ((raw % loopSeconds) + loopSeconds) % loopSeconds : raw;
 
@@ -101,53 +145,47 @@ export function SessionStageBar({
     let stageIndex = 0;
     let stageProgress = 0;
 
-    // If some stages have 0 seconds, we still want stable behavior.
-    // We'll skip zero durations for progress calc, but widths will handle it too.
+    // choose first non-zero stage by default (prevents "stuck at 0" if stage 0 is 0s)
+    const firstNonZero = stageSecondsList.findIndex((x) => x > 0);
+    if (firstNonZero >= 0) stageIndex = firstNonZero;
+
     for (let i = 0; i < stages.length; i++) {
       const durSec = stageSecondsList[i] || 0;
       const nextTotal = total + durSec;
 
-      if (durSec <= 0) {
-        // zero-length stage -> just skip it in time accounting
-        // (still can be rendered with 0 width)
-        continue;
-      }
+      if (durSec <= 0) continue;
 
       if (normalized < nextTotal) {
         stageIndex = i;
         const stageElapsed = normalized - total;
-        stageProgress = durSec > 0 ? clamp(stageElapsed / durSec, 0, 1) : 0;
+        stageProgress = clamp(stageElapsed / durSec, 0, 1);
         break;
       }
 
       total = nextTotal;
-      stageIndex = i; // fallback: last non-zero stage
+      stageIndex = i;
     }
 
     setCurrentStageIndex(stageIndex);
-    setProgress(stageProgress);
+    setProgress(Number.isFinite(stageProgress) ? stageProgress : 0);
   }, [elapsed, stages, loopSeconds, stageSecondsList]);
 
   return (
     <div className="w-full flex h-4 rounded-2xl overflow-hidden bg-white/10 shadow-inner">
       {stages.map((stage, index) => {
         const durSec = stageSecondsList[index] || 0;
-
-        // ✅ widths are always based on stages sum (not cycleSeconds)
         const width = durSec > 0 ? (durSec / totalStagesSeconds) * 100 : 0;
+
+        if (width <= 0) return null;
 
         const isActive = index === currentStageIndex;
         const progressWidth = isActive
-          ? `${progress * 100}%`
+          ? `${clamp(progress, 0, 1) * 100}%`
           : index < currentStageIndex
             ? "100%"
             : "0%";
 
         const bg = (stage as any).color || "#4CA0FF";
-
-        // If stage has 0 duration -> don't render it (prevents "thin white separators")
-        if (width <= 0) return null;
-
         const labelMins = getStageLabelMinutes(stage);
 
         return (
@@ -162,13 +200,11 @@ export function SessionStageBar({
             onMouseEnter={() => onHoverStage?.(stage)}
             onMouseLeave={() => onHoverStage?.(null)}
           >
-            {/* progress shade */}
             <div
               className="absolute left-0 top-0 bottom-0 bg-black/15 transition-all"
               style={{ width: progressWidth }}
             />
 
-            {/* tooltip */}
             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center z-50">
               <div className="bg-slate-900 text-white text-[11px] px-2 py-1 rounded-md shadow-lg whitespace-nowrap">
                 {stage.name}
