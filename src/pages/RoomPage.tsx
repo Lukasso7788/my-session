@@ -16,6 +16,9 @@ import {
   RoomMediaSettings,
 } from "../components/RoomMediaSettingsModal";
 
+// ✅ NEW: presence hook (создай файл src/hooks/useAttendancePresence.ts)
+import { useAttendancePresence } from "../hooks/useAttendancePresence";
+
 type Stage = {
   name: string;
   duration: number;
@@ -390,38 +393,42 @@ export function RoomPage() {
             const parsed =
               typeof data.schedule === "string" ? JSON.parse(data.schedule) : data.schedule;
 
-            const formatted: Stage[] = parsed.map((b: any) => {
-              const lower = (b.name || "").toLowerCase();
-              const type: Stage["type"] =
-                b.type ||
-                (lower.includes("welcome") || lower.includes("intro")
-                  ? "intro"
-                  : lower.includes("intention")
-                    ? "intentions"
-                    : lower.includes("focus")
-                      ? "focus"
-                      : lower.includes("break") || lower.includes("pause")
-                        ? "break"
-                        : lower.includes("farewell") || lower.includes("celebrat")
-                          ? "outro"
-                          : "focus");
+            // parsed может быть array (обычные сессии) или object (infinite rooms).
+            // для infinite rooms просто не трогаем stages на этом этапе.
+            if (Array.isArray(parsed)) {
+              const formatted: Stage[] = parsed.map((b: any) => {
+                const lower = (b.name || "").toLowerCase();
+                const type: Stage["type"] =
+                  b.type ||
+                  (lower.includes("welcome") || lower.includes("intro")
+                    ? "intro"
+                    : lower.includes("intention")
+                      ? "intentions"
+                      : lower.includes("focus")
+                        ? "focus"
+                        : lower.includes("break") || lower.includes("pause")
+                          ? "break"
+                          : lower.includes("farewell") || lower.includes("celebrat")
+                            ? "outro"
+                            : "focus");
 
-              return {
-                name: b.name,
-                duration: b.minutes,
-                color:
-                  {
-                    intro: "#80DF86",
-                    intentions: "#ADD3FF",
-                    focus: "#4CA0FF",
-                    break: "#F9ADA2",
-                    outro: "#80DF86",
-                  }[type] || "#F63135",
-                type,
-              };
-            });
+                return {
+                  name: b.name,
+                  duration: b.minutes,
+                  color:
+                    {
+                      intro: "#80DF86",
+                      intentions: "#ADD3FF",
+                      focus: "#4CA0FF",
+                      break: "#F9ADA2",
+                      outro: "#80DF86",
+                    }[type] || "#F63135",
+                  type,
+                };
+              });
 
-            setStages(formatted);
+              setStages(formatted);
+            }
           } catch { }
         }
       }
@@ -458,70 +465,10 @@ export function RoomPage() {
   }, []);
 
   // ============================================================
-  // REALTIME ATTENDANCE
+  // ✅ PRESENCE (LIVE ATTENDANCE) — ВОТ ЗДЕСЬ ПОДКЛЮЧАЕМ
   // ============================================================
-  useEffect(() => {
-    if (!id) return;
-
-    const fetchAttendance = async () => {
-      const { error } = await supabase.from("session_attendance").select("*").eq("session_id", id);
-      if (error) console.error("Attendance fetch error:", error);
-    };
-
-    fetchAttendance();
-
-    const channel = supabase
-      .channel(`session-${id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "session_attendance",
-          filter: `session_id=eq.${id}`,
-        },
-        () => fetchAttendance()
-      );
-
-    channel.subscribe();
-
-    return () => {
-      try {
-        channel.unsubscribe?.();
-      } catch { }
-    };
-  }, [id]);
-
-  // ============================================================
-  // ATTENDANCE WRITE (JOIN)
-  // ============================================================
-  useEffect(() => {
-    if (!session?.id) return;
-    if (!authUserId) return;
-
-    const join = async () => {
-      try {
-        const now = new Date().toISOString();
-
-        const { error } = await supabase
-          .from("session_attendance")
-          .upsert(
-            {
-              session_id: session.id,
-              user_id: authUserId,
-              joined_at: now,
-            },
-            { onConflict: "session_id,user_id" }
-          );
-
-        if (error) console.error("attendance join upsert error:", error);
-      } catch (e) {
-        console.error("attendance join exception:", e);
-      }
-    };
-
-    join();
-  }, [session?.id, authUserId]);
+  // Запускаем heartbeat только если есть session id и пользователь авторизован.
+  useAttendancePresence(id && authUserId ? id : null, { heartbeatMs: 10_000 });
 
   // ============================================================
   // JITSI INIT + REACTIONS
@@ -660,25 +607,22 @@ export function RoomPage() {
   const handleToggleAudio = () => engineRef.current?.toggleAudioMute();
   const handleToggleVideo = () => engineRef.current?.toggleVideoMute();
   const handleToggleScreenShare = () => engineRef.current?.toggleScreenShare();
+
   const handleLeave = async () => {
     try {
-      if (session?.id && authUserId) {
-        const now = new Date().toISOString();
-        await supabase
-          .from("session_attendance")
-          .update({ left_at: now, last_seen_at: now })
-          .eq("session_id", session.id)
-          .eq("user_id", authUserId);
+      if (id && authUserId) {
+        // ✅ делаем "чистый выход" (если не успеет — TTL всё равно почистит)
+        await supabase.rpc("attendance_leave", { p_session_id: id });
       }
     } catch (e) {
-      console.error("attendance leave (button) exception:", e);
+      console.error("attendance_leave (button) exception:", e);
     } finally {
       navigate("/sessions", { replace: true });
     }
   };
 
   // ============================================================
-  // STAGES TIMER
+  // STAGES TIMER (для обычных scheduled-сессий)
   // ============================================================
   const getStageWindows = (startISO: string, items: Stage[]) => {
     const startMs = new Date(startISO).getTime();
@@ -694,8 +638,6 @@ export function RoomPage() {
 
   useEffect(() => {
     if (!session?.start_time || !stages.length) return;
-
-    const { starts } = getStageWindows(session.start_time, stages);
 
     const timer = setInterval(() => {
       const now = Date.now();
@@ -845,7 +787,9 @@ export function RoomPage() {
                 <p className="font-inter font-semibold text-[18px] text-[#F3F4F6]/90 truncate">
                   {session.title}
                 </p>
-                <p className="font-inter text-[13px] text-[#9CA3AF]">{participantsCount} participants</p>
+                <p className="font-inter text-[13px] text-[#9CA3AF]">
+                  {participantsCount} participants
+                </p>
 
                 <div className="mt-2 max-h-[14px] overflow-hidden">
                   <div className="origin-left scale-y-[0.72]">
@@ -861,7 +805,9 @@ export function RoomPage() {
               <div className="flex items-center gap-2 shrink-0">
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#0B1220]/70 border border-white/5">
                   <span className="text-[12px] text-white/70">⏱</span>
-                  <span className="font-inter text-[14px] text-white/90">{remainingTime || "--:--"}</span>
+                  <span className="font-inter text-[14px] text-white/90">
+                    {remainingTime || "--:--"}
+                  </span>
                 </div>
 
                 {session.host_profile && (
@@ -901,7 +847,9 @@ export function RoomPage() {
                 incomingReactions={incomingReactions}
                 localReactions={localReactions}
                 showControls={false}
-                onVisibleVideoIdsChange={(ids) => engineRef.current?.setVisibleVideoParticipants(ids)}
+                onVisibleVideoIdsChange={(ids) =>
+                  engineRef.current?.setVisibleVideoParticipants(ids)
+                }
                 audioOutputId={selectedAudioOutputId}
               />
             </div>
@@ -965,7 +913,9 @@ export function RoomPage() {
                                 {initials}
                               </div>
                               <div className="min-w-0">
-                                <div className="text-[13px] text-white/90 font-medium truncate">{name}</div>
+                                <div className="text-[13px] text-white/90 font-medium truncate">
+                                  {name}
+                                </div>
                                 <div className="text-[11px] text-white/45 truncate">
                                   {p.isLocal ? "Team member" : "Participant"}
                                 </div>
@@ -976,7 +926,9 @@ export function RoomPage() {
                               <div
                                 className={
                                   "w-8 h-8 rounded-lg flex items-center justify-center " +
-                                  (p.audioMuted ? "bg-red-500/20 text-red-300" : "bg-white/5 text-white/65")
+                                  (p.audioMuted
+                                    ? "bg-red-500/20 text-red-300"
+                                    : "bg-white/5 text-white/65")
                                 }
                                 title={p.audioMuted ? "Muted" : "Unmuted"}
                               >
@@ -996,13 +948,19 @@ export function RoomPage() {
                               <div
                                 className={
                                   "w-8 h-8 rounded-lg flex items-center justify-center " +
-                                  (p.videoMuted ? "bg-red-500/20 text-red-300" : "bg-white/5 text-white/65")
+                                  (p.videoMuted
+                                    ? "bg-red-500/20 text-red-300"
+                                    : "bg-white/5 text-white/65")
                                 }
                                 title={p.videoMuted ? "Video off" : "Video on"}
                               >
                                 <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true">
                                   <rect x="4" y="6" width="11" height="12" rx="2" fill="currentColor" />
-                                  <path d="M17 9.5 21 7v10l-4-2.5z" fill="currentColor" opacity="0.85" />
+                                  <path
+                                    d="M17 9.5 21 7v10l-4-2.5z"
+                                    fill="currentColor"
+                                    opacity="0.85"
+                                  />
                                 </svg>
                               </div>
                             </div>
@@ -1036,7 +994,9 @@ export function RoomPage() {
                       ✕
                     </button>
                   </div>
-                  <div className="p-4 h-[calc(100%-64px)]">{session?.id ? <ChatPanel sessionId={session.id} /> : null}</div>
+                  <div className="p-4 h-[calc(100%-64px)]">
+                    {session?.id ? <ChatPanel sessionId={session.id} /> : null}
+                  </div>
                 </div>
               )}
 
