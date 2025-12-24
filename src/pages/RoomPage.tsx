@@ -199,35 +199,54 @@ function safeParseJson(raw: any) {
 function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: number }[] {
   if (!anyPhases) return [];
 
-  // case A: already array [{name,seconds}, ...]
+  const toSeconds = (raw: any): number => {
+    const explicitSeconds =
+      Number(raw?.seconds) ||
+      Number(raw?.duration_seconds) ||
+      Number(raw?.durationSeconds);
+    if (explicitSeconds > 0) return explicitSeconds;
+
+    const explicitMinutes =
+      Number(raw?.minutes) ||
+      Number(raw?.mins) ||
+      Number(raw?.duration_minutes) ||
+      Number(raw?.durationMinutes);
+    if (explicitMinutes > 0) return explicitMinutes * 60;
+
+    const n =
+      typeof raw === "number"
+        ? raw
+        : Number(raw?.duration ?? raw?.value ?? raw ?? 0);
+
+    if (!Number.isFinite(n) || n <= 0) return 0;
+
+    // ✅ heuristic: 50/5/5 часто лежит как "минуты"
+    if (n <= 180) return n * 60;
+
+    // иначе считаем секундами
+    return n;
+  };
+
+  // case A: array [{name,seconds|minutes|duration}, ...]
   if (Array.isArray(anyPhases)) {
     return anyPhases
       .map((p: any) => {
         const name = String(p?.name || p?.key || p?.type || "");
-        const seconds =
-          Number(p?.seconds) ||
-          Number(p?.duration_seconds) ||
-          Number(p?.durationSeconds) ||
-          Number(p?.duration) ||
-          0;
+        const seconds = toSeconds(p);
         return { name, seconds };
       })
       .filter((x) => x.seconds > 0);
   }
 
-  // case B: object map { focus: 3000, break: 300, intentions: 300 }
+  // case B: object map { focus: 3000, break: 300 } OR { focus: 50, break: 5 } (minutes)
   if (typeof anyPhases === "object") {
     return Object.entries(anyPhases)
       .map(([k, v]: any) => {
         const name = String(k || "");
         const seconds =
           typeof v === "number"
-            ? Number(v)
-            : Number(v?.seconds) ||
-            Number(v?.duration_seconds) ||
-            Number(v?.durationSeconds) ||
-            Number(v?.duration) ||
-            0;
+            ? (v <= 180 ? Number(v) * 60 : Number(v))
+            : toSeconds(v);
         return { name, seconds };
       })
       .filter((x) => x.seconds > 0);
@@ -283,7 +302,8 @@ export function RoomPage() {
 
   const [selectedVideoInputId, setSelectedVideoInputId] = useState<string>("");
   const [selectedAudioInputId, setSelectedAudioInputId] = useState<string>("");
-  const [selectedAudioOutputId, setSelectedAudioOutputId] = useState<string>("default");
+  const [selectedAudioOutputId, setSelectedAudioOutputId] =
+    useState<string>("default");
 
   const [bgMode, setBgMode] = useState<"none" | "blur" | "image">("none");
   const [bgImageUrl, setBgImageUrl] = useState<string>("");
@@ -295,7 +315,9 @@ export function RoomPage() {
 
   // ✅ stagebar start + infinite cycle
   const [stagebarStartTime, setStagebarStartTime] = useState<string>("");
-  const [stagebarCycleSeconds, setStagebarCycleSeconds] = useState<number | undefined>(undefined);
+  const [stagebarCycleSeconds, setStagebarCycleSeconds] = useState<
+    number | undefined
+  >(undefined);
 
   const [selectedUser, setSelectedUser] = useState<any>(null);
 
@@ -310,16 +332,20 @@ export function RoomPage() {
   const prevCountRef = useRef<number>(0);
 
   // ★ TRACK SCREEN SHARER
-  const [activeScreenSharer, setActiveScreenSharer] = useState<string | null>(null);
+  const [activeScreenSharer, setActiveScreenSharer] = useState<string | null>(
+    null
+  );
 
   // ★ REACTIONS RECEIVED FROM OTHER USERS
-  const [incomingReactions, setIncomingReactions] = useState<{ id: number; type: ReactionType }[]>(
-    []
-  );
+  const [incomingReactions, setIncomingReactions] = useState<
+    { id: number; type: ReactionType }[]
+  >([]);
   const reactionIdRef = useRef<number>(0);
 
   // ★ LOCAL REACTIONS (FOR OVERLAY)
-  const [localReactions, setLocalReactions] = useState<{ id: number; type: ReactionType }[]>([]);
+  const [localReactions, setLocalReactions] = useState<
+    { id: number; type: ReactionType }[]
+  >([]);
   const localReactionIdRef = useRef<number>(0);
 
   // AUDIO ---------------------------------------------------------
@@ -356,10 +382,22 @@ export function RoomPage() {
     });
   };
 
-  // ✅ detect infinite room by schedule.kind
+  // ✅ detect infinite room by schedule (robust)
   const isInfiniteRoom = useMemo(() => {
     const parsed = safeParseJson(session?.schedule);
-    return !!(parsed && typeof parsed === "object" && !Array.isArray(parsed) && parsed.kind === "infinite_room");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+
+    const kind = String((parsed as any)?.kind || "").toLowerCase();
+
+    if (kind === "infinite_room") return true;
+    if (kind.includes("infinite")) return true;
+
+    if ((parsed as any)?.timer?.phases) return true;
+    if ((parsed as any)?.timer?.segments) return true;
+    if ((parsed as any)?.phases) return true;
+    if ((parsed as any)?.segments) return true;
+
+    return false;
   }, [session]);
 
   // ✅ SILENT ROOM DETECTION
@@ -495,7 +533,10 @@ export function RoomPage() {
         setStagebarCycleSeconds(undefined);
         setStagebarStartTime("");
 
-        const fallbackStart = String(data?.start_time || data?.created_at || new Date().toISOString());
+        const fallbackStart = String(
+          data?.start_time || data?.created_at || new Date().toISOString()
+        );
+
         const parsed = safeParseJson(data.schedule);
 
         // ✅ scheduled: array [{name, minutes}, ...]
@@ -529,14 +570,25 @@ export function RoomPage() {
           setStagebarCycleSeconds(undefined);
         }
 
-        // ✅ infinite: object kind=infinite_room
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && parsed.kind === "infinite_room") {
-          // phases can be in many shapes
+        // ✅ infinite: object (robust)
+        const isInfiniteScheduleObject =
+          parsed &&
+          typeof parsed === "object" &&
+          !Array.isArray(parsed) &&
+          (String((parsed as any)?.kind || "")
+            .toLowerCase()
+            .includes("infinite") ||
+            (parsed as any)?.timer?.phases ||
+            (parsed as any)?.timer?.segments ||
+            (parsed as any)?.phases ||
+            (parsed as any)?.segments);
+
+        if (isInfiniteScheduleObject) {
           const phasesRaw =
-            parsed?.timer?.phases ||
-            parsed?.timer?.segments ||
-            parsed?.phases ||
-            parsed?.segments ||
+            (parsed as any)?.timer?.phases ||
+            (parsed as any)?.timer?.segments ||
+            (parsed as any)?.phases ||
+            (parsed as any)?.segments ||
             null;
 
           const phases = normalizeInfinitePhases(phasesRaw);
@@ -569,20 +621,31 @@ export function RoomPage() {
 
           setStages(formatted);
 
-          const anchor = String(parsed?.anchor_ts || parsed?.anchorTs || data?.start_time || fallbackStart);
+          const anchor = String(
+            (parsed as any)?.anchor_ts ||
+            (parsed as any)?.anchorTs ||
+            data?.start_time ||
+            fallbackStart
+          );
           setStagebarStartTime(anchor);
 
-          const sumSeconds = phases.reduce((acc, p) => acc + (Number(p.seconds) || 0), 0);
+          const sumSeconds = phases.reduce(
+            (acc, p) => acc + (Number(p.seconds) || 0),
+            0
+          );
 
-          const cycleSeconds =
-            Number(parsed?.timer?.cycle_seconds) ||
-            Number(parsed?.timer?.cycleSeconds) ||
-            Number(parsed?.cycle_seconds) ||
-            Number(parsed?.cycleSeconds) ||
+          let cycleSeconds =
+            Number((parsed as any)?.timer?.cycle_seconds) ||
+            Number((parsed as any)?.timer?.cycleSeconds) ||
+            Number((parsed as any)?.cycle_seconds) ||
+            Number((parsed as any)?.cycleSeconds) ||
             0;
 
-          // if cycle not provided -> use sum
-          setStagebarCycleSeconds(Math.max(1, cycleSeconds > 0 ? cycleSeconds : sumSeconds));
+          // if cycle not provided -> use sum; if smaller than sum -> clamp
+          if (!cycleSeconds || cycleSeconds <= 0) cycleSeconds = sumSeconds;
+          if (cycleSeconds < sumSeconds) cycleSeconds = sumSeconds;
+
+          setStagebarCycleSeconds(Math.max(1, cycleSeconds));
         }
 
         // if no schedule or failed parse -> do nothing (no stagebar)
@@ -646,7 +709,10 @@ export function RoomPage() {
 
         const updated = list.map((p) => {
           if (!p.isLocal && p.displayName === "Guest") {
-            if (session?.host_profile?.full_name && session.host_profile.id === p.id) {
+            if (
+              session?.host_profile?.full_name &&
+              session.host_profile.id === p.id
+            ) {
               return { ...p, displayName: session.host_profile.full_name };
             }
           }
@@ -835,7 +901,10 @@ export function RoomPage() {
           active = i;
           const rem = next - diffSec;
           setRemainingTime(
-            `${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`
+            `${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(
+              2,
+              "0"
+            )}`
           );
           break;
         }
@@ -1399,10 +1468,7 @@ export function RoomPage() {
       />
 
       {selectedUser && (
-        <UserProfileModal
-          user={selectedUser}
-          onClose={() => setSelectedUser(null)}
-        />
+        <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
       )}
     </div>
   );
