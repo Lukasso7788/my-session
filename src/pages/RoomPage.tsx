@@ -167,7 +167,7 @@ function SettingsIcon() {
   return (
     <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
       <path
-        d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.2 7.2 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 1h-3.8a.5.5 0 0 0-.49.42l-.36 2.54c-.58.23-1.12.54-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 7.48a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94L2.83 14.52a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.6.22l2.39-.96c.51.4 1.05.71 1.63.94l.36 2.54c.04.24.25.42.49.42h3.8c.24 0 .45-.18.49-.42l.36-2.54c.58-.23 1.12-.54 1.63-.94l2.39.96c.21.08.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5z"
+        d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.2 7.2 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 1h-3.8a.5.5 0 0 0-.49.42l-.36 2.54c-.58.23-1.12.54-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 7.48a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94L2.83 14.52a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.6.22l2.39-.96c.51.4 1.05.71 1.63.94l.36 2.54c.04.24.25.42.49.42h3.8c.24 0 .45-.18.49-.42l.36-2.54c.58-.23 1.12-.54 1.63-.94l2.39.96c.21.08.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5A3.5 3.0 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5z"
         fill="currentColor"
       />
     </svg>
@@ -182,88 +182,6 @@ const reactionEmoji: Record<ReactionType, string> = {
   thumbsUp: "👍",
   thumbsDown: "👎",
 };
-
-function safeParseJSON(v: any) {
-  if (v == null) return null;
-  if (typeof v === "string") {
-    try {
-      return JSON.parse(v);
-    } catch {
-      return null;
-    }
-  }
-  return v;
-}
-
-function inferStageType(name: string, providedType?: string) {
-  if (providedType) return providedType;
-  const lower = (name || "").toLowerCase();
-  if (lower.includes("welcome") || lower.includes("intro")) return "intro";
-  if (lower.includes("intention")) return "intentions";
-  if (lower.includes("focus")) return "focus";
-  if (lower.includes("break") || lower.includes("pause")) return "break";
-  if (lower.includes("farewell") || lower.includes("celebrat") || lower.includes("outro"))
-    return "outro";
-  return "focus";
-}
-
-function toStages(raw: any): Stage[] {
-  const parsed = safeParseJSON(raw);
-  if (!parsed) return [];
-
-  let arr: any[] | null = null;
-
-  if (Array.isArray(parsed)) {
-    arr = parsed;
-  } else if (typeof parsed === "object") {
-    // try common keys for template payloads
-    const candidates = [
-      (parsed as any).schedule,
-      (parsed as any).stages,
-      (parsed as any).blocks,
-      (parsed as any).phases,
-      (parsed as any).steps,
-      (parsed as any).items,
-      (parsed as any).plan,
-    ];
-    for (const c of candidates) {
-      const cParsed = safeParseJSON(c);
-      if (Array.isArray(cParsed)) {
-        arr = cParsed;
-        break;
-      }
-    }
-  }
-
-  if (!arr || !Array.isArray(arr)) return [];
-
-  const formatted: Stage[] = arr
-    .map((b: any) => {
-      const name = String(b?.name ?? b?.title ?? "");
-      const minutes = Number(b?.minutes ?? b?.duration ?? b?.mins ?? 0);
-      if (!name || !Number.isFinite(minutes) || minutes <= 0) return null;
-
-      const type = inferStageType(name, b?.type);
-      const color =
-        {
-          intro: "#80DF86",
-          intentions: "#ADD3FF",
-          focus: "#4CA0FF",
-          break: "#F9ADA2",
-          outro: "#80DF86",
-        }[(type as any) || "focus"] || "#F63135";
-
-      return {
-        name,
-        duration: minutes,
-        color,
-        type,
-      };
-    })
-    .filter(Boolean) as Stage[];
-
-  return formatted;
-}
 
 export function RoomPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -295,7 +213,8 @@ export function RoomPage() {
 
   const [selectedVideoInputId, setSelectedVideoInputId] = useState<string>("");
   const [selectedAudioInputId, setSelectedAudioInputId] = useState<string>("");
-  const [selectedAudioOutputId, setSelectedAudioOutputId] = useState<string>("default");
+  const [selectedAudioOutputId, setSelectedAudioOutputId] =
+    useState<string>("default");
 
   const [bgMode, setBgMode] = useState<"none" | "blur" | "image">("none");
   const [bgImageUrl, setBgImageUrl] = useState<string>("");
@@ -318,16 +237,20 @@ export function RoomPage() {
   const prevCountRef = useRef<number>(0);
 
   // ★ TRACK SCREEN SHARER
-  const [activeScreenSharer, setActiveScreenSharer] = useState<string | null>(null);
+  const [activeScreenSharer, setActiveScreenSharer] = useState<string | null>(
+    null
+  );
 
   // ★ REACTIONS RECEIVED FROM OTHER USERS
-  const [incomingReactions, setIncomingReactions] = useState<{ id: number; type: ReactionType }[]>(
-    []
-  );
+  const [incomingReactions, setIncomingReactions] = useState<
+    { id: number; type: ReactionType }[]
+  >([]);
   const reactionIdRef = useRef<number>(0);
 
   // ★ LOCAL REACTIONS (FOR OVERLAY)
-  const [localReactions, setLocalReactions] = useState<{ id: number; type: ReactionType }[]>([]);
+  const [localReactions, setLocalReactions] = useState<
+    { id: number; type: ReactionType }[]
+  >([]);
   const localReactionIdRef = useRef<number>(0);
 
   // AUDIO ---------------------------------------------------------
@@ -365,46 +288,30 @@ export function RoomPage() {
     });
   };
 
-  // ============================================================
-  // INFINITE: CYCLE START (for cyclic stage bar)
-  // ============================================================
-  const infiniteStartRef = useRef<number>(0);
-  const [barStartTime, setBarStartTime] = useState<string | null>(null);
+  // ✅ SILENT ROOM DETECTION (только для того, чтобы НЕ рендерить StageBar/таймер/звуки)
+  const isSilentRoom = useMemo(() => {
+    const fmt = String(session?.format || "").toLowerCase();
+    const title = String(session?.title || "").toLowerCase();
 
-  const isInfinite = useMemo(() => {
-    const f = String(session?.format || session?.session_type || "").toLowerCase();
-    return f === "infinite";
-  }, [session?.format, session?.session_type]);
+    // session_templates может быть объектом или массивом
+    const tpl = session?.session_templates;
+    const tplName =
+      Array.isArray(tpl)
+        ? String(tpl?.[0]?.name || tpl?.[0]?.title || "")
+        : String(tpl?.name || tpl?.title || "");
+    const tplKey =
+      Array.isArray(tpl)
+        ? String(tpl?.[0]?.key || tpl?.[0]?.slug || tpl?.[0]?.type || "")
+        : String(tpl?.key || tpl?.slug || tpl?.type || "");
 
-  const isSilentInfinite = useMemo(() => {
-    if (!session) return false;
-    if (!isInfinite) return false;
+    const tplFmt =
+      Array.isArray(tpl)
+        ? String(tpl?.[0]?.format || "")
+        : String(tpl?.format || "");
 
-    const t = session?.session_templates;
-    const hay = [
-      String(session?.title || ""),
-      String(session?.slug || ""),
-      String(t?.title || ""),
-      String(t?.slug || ""),
-      String(t?.name || ""),
-      String(t?.template_key || ""),
-      String(t?.code || ""),
-      String(t?.type || ""),
-      String(t?.format || ""),
-    ]
-      .join(" ")
-      .toLowerCase();
-
+    const hay = `${fmt} ${title} ${tplName} ${tplKey} ${tplFmt}`.toLowerCase();
     return hay.includes("silent");
-  }, [session, isInfinite]);
-
-  const showStageUI = useMemo(() => {
-    if (!session) return false;
-    if (isSilentInfinite) return false;
-    if (!stages?.length) return false;
-    if (!barStartTime) return false;
-    return true;
-  }, [session, isSilentInfinite, stages?.length, barStartTime]);
+  }, [session]);
 
   // ============================================================
   // UNLOCK AUDIO
@@ -511,56 +418,50 @@ export function RoomPage() {
       if (data && !error) {
         setSession(data);
 
-        // reset infinite cycle anchor on session switch
-        infiniteStartRef.current = 0;
-        setBarStartTime(null);
+        if (data.schedule) {
+          try {
+            const parsed =
+              typeof data.schedule === "string"
+                ? JSON.parse(data.schedule)
+                : data.schedule;
 
-        // stages source:
-        // - group: sessions.schedule (array)
-        // - infinite: session_templates.* (stages/schedule/blocks/etc.)
-        const fmt = String(data?.format || data?.session_type || "").toLowerCase();
-        const isInf = fmt === "infinite";
+            // schedule ожидается array вида [{name, minutes}, ...]
+            if (Array.isArray(parsed)) {
+              const formatted: Stage[] = parsed.map((b: any) => {
+                const lower = (b.name || "").toLowerCase();
+                const type: Stage["type"] =
+                  b.type ||
+                  (lower.includes("welcome") || lower.includes("intro")
+                    ? "intro"
+                    : lower.includes("intention")
+                      ? "intentions"
+                      : lower.includes("focus")
+                        ? "focus"
+                        : lower.includes("break") || lower.includes("pause")
+                          ? "break"
+                          : lower.includes("farewell") || lower.includes("celebrat")
+                            ? "outro"
+                            : "focus");
 
-        let nextStages: Stage[] = [];
-        if (!isInf) {
-          nextStages = toStages(data?.schedule);
-          if (data?.start_time) setBarStartTime(String(data.start_time));
-        } else {
-          const tpl = data?.session_templates || null;
-          // Try direct template payload first
-          nextStages =
-            toStages(tpl) ||
-            toStages(tpl?.schedule) ||
-            toStages(tpl?.stages) ||
-            toStages(tpl?.blocks) ||
-            toStages(tpl?.plan);
+                return {
+                  name: b.name,
+                  duration: b.minutes,
+                  color:
+                    {
+                      intro: "#80DF86",
+                      intentions: "#ADD3FF",
+                      focus: "#4CA0FF",
+                      break: "#F9ADA2",
+                      outro: "#80DF86",
+                    }[type] || "#F63135",
+                  type,
+                };
+              });
 
-          // fallback: sometimes template stores JSON in one field
-          if (!nextStages.length) {
-            const keys = ["schedule", "stages", "blocks", "plan", "data", "payload", "config"];
-            for (const k of keys) {
-              const v = tpl?.[k];
-              const s = toStages(v);
-              if (s.length) {
-                nextStages = s;
-                break;
-              }
+              setStages(formatted);
             }
-          }
-
-          // if still empty, we don't crash; stage UI simply won't show
-          // barStartTime for infinite will be computed by timer effect
+          } catch { }
         }
-
-        setStages(nextStages);
-        setHoveredStage(null);
-        setCurrentStage(0);
-        setRemainingTime("");
-
-        // reset stage sound state (important on session switch)
-        prevStageRef.current = -1;
-        firstTickDoneRef.current = false;
-        stopWelcomeLoop();
       }
 
       setLoading(false);
@@ -595,9 +496,8 @@ export function RoomPage() {
   }, []);
 
   // ============================================================
-  // ✅ PRESENCE (LIVE ATTENDANCE) — ВОТ ЗДЕСЬ ПОДКЛЮЧАЕМ
+  // ✅ PRESENCE (LIVE ATTENDANCE)
   // ============================================================
-  // Запускаем heartbeat только если есть session id и пользователь авторизован.
   useAttendancePresence(id && authUserId ? id : null, { heartbeatMs: 10_000 });
 
   // ============================================================
@@ -619,7 +519,10 @@ export function RoomPage() {
 
         const updated = list.map((p) => {
           if (!p.isLocal && p.displayName === "Guest") {
-            if (session?.host_profile?.full_name && session.host_profile.id === p.id) {
+            if (
+              session?.host_profile?.full_name &&
+              session.host_profile.id === p.id
+            ) {
               return { ...p, displayName: session.host_profile.full_name };
             }
           }
@@ -631,7 +534,6 @@ export function RoomPage() {
 
       onConferenceJoin: () => {
         console.log("Jitsi conference joined");
-        // IMPORTANT: load devices right after join
         setTimeout(() => loadDevices(), 0);
       },
 
@@ -639,7 +541,10 @@ export function RoomPage() {
         const newId = reactionIdRef.current + 1;
         reactionIdRef.current = newId;
 
-        setIncomingReactions((prev) => [...prev, { id: newId, type: reaction as ReactionType }]);
+        setIncomingReactions((prev) => [
+          ...prev,
+          { id: newId, type: reaction as ReactionType },
+        ]);
 
         setTimeout(() => {
           setIncomingReactions((prev) => prev.filter((r) => r.id !== newId));
@@ -653,8 +558,6 @@ export function RoomPage() {
     });
 
     engineRef.current = engine;
-
-    // ✅ DEBUG: allow console access (so engine?.localVideoTrack works)
     (window as any).engine = engine;
 
     const roomNameRaw =
@@ -741,7 +644,6 @@ export function RoomPage() {
   const handleLeave = async () => {
     try {
       if (id && authUserId) {
-        // ✅ делаем "чистый выход" (если не успеет — TTL всё равно почистит)
         await supabase.rpc("attendance_leave", { p_session_id: id });
       }
     } catch (e) {
@@ -752,63 +654,24 @@ export function RoomPage() {
   };
 
   // ============================================================
-  // STAGES TIMER (для scheduled-сессий + infinite циклических румов)
+  // STAGES TIMER (для scheduled-сессий)
   // ============================================================
-  const getStageWindows = (startISO: string, items: Stage[]) => {
-    const startMs = new Date(startISO).getTime();
-    let acc = 0;
-    const starts = items.map((st) => {
-      const ms = startMs + acc * 60 * 1000;
-      acc += st.duration;
-      return ms;
-    });
-    const ends = items.map((_, i) => starts[i] + items[i].duration * 60 * 1000);
-    return { starts, ends };
-  };
-
   useEffect(() => {
-    if (!session) return;
-
-    // Silent infinite: no stage UI / no timer / no sounds
-    if (isSilentInfinite) {
-      stopWelcomeLoop();
+    // ✅ silent room: никаких стадий/таймера/звуков
+    if (isSilentRoom) {
       setRemainingTime("");
       setCurrentStage(0);
-      setBarStartTime(null);
-      prevStageRef.current = -1;
       firstTickDoneRef.current = false;
+      prevStageRef.current = -1;
+      stopWelcomeLoop();
       return;
     }
 
-    if (!stages.length) return;
-
-    const totalSec = stages.reduce((acc, s) => acc + s.duration * 60, 0);
-    if (totalSec <= 0) return;
+    if (!session?.start_time || !stages.length) return;
 
     const timer = setInterval(() => {
-      const nowMs = Date.now();
-
-      // diffSec:
-      // - group: from session.start_time
-      // - infinite: from join time, cycling over totalSec
-      let diffSec = 0;
-
-      if (!isInfinite) {
-        if (!session?.start_time) return;
-        diffSec = (nowMs - new Date(session.start_time).getTime()) / 1000;
-        if (diffSec < 0) diffSec = 0;
-        setBarStartTime(String(session.start_time));
-      } else {
-        if (!infiniteStartRef.current) infiniteStartRef.current = nowMs;
-
-        const elapsedSec = (nowMs - infiniteStartRef.current) / 1000;
-        const cycleIndex = Math.floor(elapsedSec / totalSec);
-        const cycleStartMs = infiniteStartRef.current + cycleIndex * totalSec * 1000;
-        const cycleStartISO = new Date(cycleStartMs).toISOString();
-
-        diffSec = elapsedSec % totalSec;
-        setBarStartTime(cycleStartISO);
-      }
+      const now = Date.now();
+      const diffSec = (now - new Date(session.start_time).getTime()) / 1000;
 
       let total = 0;
       let active = stages.length - 1;
@@ -819,7 +682,10 @@ export function RoomPage() {
           active = i;
           const rem = next - diffSec;
           setRemainingTime(
-            `${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`
+            `${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(
+              2,
+              "0"
+            )}`
           );
           break;
         }
@@ -866,12 +732,15 @@ export function RoomPage() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [session?.id, session?.start_time, session?.format, isInfinite, isSilentInfinite, stages]);
+  }, [session?.start_time, stages, isSilentRoom]);
 
   // ============================================================
   // DERIVED
   // ============================================================
-  const localParticipant = useMemo(() => participants.find((p) => p.isLocal) || null, [participants]);
+  const localParticipant = useMemo(
+    () => participants.find((p) => p.isLocal) || null,
+    [participants]
+  );
 
   const isAudioMuted = !!localParticipant?.audioMuted;
   const isVideoMuted = !!localParticipant?.videoMuted;
@@ -889,7 +758,8 @@ export function RoomPage() {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node | null;
       if (!reactionsMenuRef.current || !target) return;
-      if (!reactionsMenuRef.current.contains(target)) setShowReactionsMenu(false);
+      if (!reactionsMenuRef.current.contains(target))
+        setShowReactionsMenu(false);
     };
 
     document.addEventListener("mousedown", handleClickOutside);
@@ -958,38 +828,45 @@ export function RoomPage() {
                   {participantsCount} participants
                 </p>
 
-                {!isSilentInfinite && stages.length > 0 && barStartTime ? (
+                {/* ✅ StageBar НЕ рендерим для silent rooms */}
+                {!isSilentRoom && stages.length > 0 && session.start_time && (
                   <div className="mt-2 max-h-[14px] overflow-hidden">
                     <div className="origin-left scale-y-[0.72]">
                       <SessionStageBar
                         stages={stages}
-                        startTime={barStartTime}
+                        startTime={session.start_time}
                         onHoverStage={setHoveredStage}
                       />
                     </div>
                   </div>
-                ) : null}
+                )}
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
-                {!isSilentInfinite && stages.length > 0 ? (
+                {/* ✅ таймер тоже НЕ показываем для silent rooms */}
+                {!isSilentRoom && stages.length > 0 && session.start_time && (
                   <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#0B1220]/70 border border-white/5">
                     <span className="text-[12px] text-white/70">⏱</span>
                     <span className="font-inter text-[14px] text-white/90">
                       {remainingTime || "--:--"}
                     </span>
                   </div>
-                ) : null}
+                )}
 
                 {session.host_profile && (
                   <button
                     onClick={() => setSelectedUser(session.host_profile)}
                     className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/10 bg-[#0B1220]/60 text-[13px] text-[#F3F4F6]/85 hover:bg-[#0B1220]/80 transition font-inter"
                   >
-                    <img src="/icons/host_session_icon.svg" className="h-5 w-5 opacity-90" />
+                    <img
+                      src="/icons/host_session_icon.svg"
+                      className="h-5 w-5 opacity-90"
+                    />
                     <span className="flex items-center gap-1">
                       <span className="font-normal text-white/70">Host:</span>
-                      <span className="font-semibold">{session.host_profile.full_name}</span>
+                      <span className="font-semibold">
+                        {session.host_profile.full_name}
+                      </span>
                     </span>
                   </button>
                 )}
@@ -1002,7 +879,9 @@ export function RoomPage() {
         <div
           className={
             "grid gap-5 flex-1 min-h-0 " +
-            (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
+            (rightPanelOpen
+              ? "lg:grid-cols-[minmax(0,1fr),420px]"
+              : "grid-cols-1")
           }
         >
           {/* VIDEO AREA */}
@@ -1018,7 +897,9 @@ export function RoomPage() {
                 incomingReactions={incomingReactions}
                 localReactions={localReactions}
                 showControls={false}
-                onVisibleVideoIdsChange={(ids) => engineRef.current?.setVisibleVideoParticipants(ids)}
+                onVisibleVideoIdsChange={(ids) =>
+                  engineRef.current?.setVisibleVideoParticipants(ids)
+                }
                 audioOutputId={selectedAudioOutputId}
               />
             </div>
@@ -1037,8 +918,12 @@ export function RoomPage() {
                 <div className="h-full flex flex-col">
                   <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="text-white/85 font-inter font-semibold">Participants</span>
-                      <span className="text-white/55 text-sm">({participantsCount})</span>
+                      <span className="text-white/85 font-inter font-semibold">
+                        Participants
+                      </span>
+                      <span className="text-white/55 text-sm">
+                        ({participantsCount})
+                      </span>
                     </div>
                     <button
                       onClick={() => openRightTab(null)}
@@ -1101,7 +986,11 @@ export function RoomPage() {
                                 }
                                 title={p.audioMuted ? "Muted" : "Unmuted"}
                               >
-                                <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true">
+                                <svg
+                                  viewBox="0 0 24 24"
+                                  className="w-4 h-4"
+                                  aria-hidden="true"
+                                >
                                   <path
                                     d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"
                                     fill="currentColor"
@@ -1123,7 +1012,11 @@ export function RoomPage() {
                                 }
                                 title={p.videoMuted ? "Video off" : "Video on"}
                               >
-                                <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true">
+                                <svg
+                                  viewBox="0 0 24 24"
+                                  className="w-4 h-4"
+                                  aria-hidden="true"
+                                >
                                   <rect
                                     x="4"
                                     y="6"
@@ -1161,7 +1054,9 @@ export function RoomPage() {
               {rightTab === "chat" && (
                 <div className="h-full">
                   <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
-                    <div className="text-white/85 font-inter font-semibold">Chat</div>
+                    <div className="text-white/85 font-inter font-semibold">
+                      Chat
+                    </div>
                     <button
                       onClick={() => openRightTab(null)}
                       className="w-9 h-9 rounded-xl bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center text-white/80"
@@ -1179,7 +1074,9 @@ export function RoomPage() {
               {rightTab === "intentions" && (
                 <div className="h-full">
                   <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
-                    <div className="text-white/85 font-inter font-semibold">Intentions</div>
+                    <div className="text-white/85 font-inter font-semibold">
+                      Intentions
+                    </div>
                     <button
                       onClick={() => openRightTab(null)}
                       className="w-9 h-9 rounded-xl bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center text-white/80"
@@ -1330,7 +1227,9 @@ export function RoomPage() {
         }}
       />
 
-      {selectedUser && <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />}
+      {selectedUser && (
+        <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
+      )}
     </div>
   );
 }
