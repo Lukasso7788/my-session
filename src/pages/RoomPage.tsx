@@ -90,7 +90,7 @@ function SettingsIcon() {
   return (
     <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
       <path
-        d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.2 7.2 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 1h-3.8a.5.5 0 0 0-.49.42l-.36 2.54c-.58.23-1.12.54-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 7.48a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94L2.83 14.52a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.6.22l2.39-.96c.51.4 1.05.71 1.63.94l.36 2.54c.04.24.25.42.49.42h3.8c.24 0 .45-.18.49-.42l.36-2.54c.58-.23 1.12-.54 1.63-.94l2.39.96c.21.08.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5z"
+        d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.2 7.2 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 1h-3.8a.5.5 0 0 0-.49.42l-.36 2.54c-.58.23-1.12.54-1.63.94l-2.39-.96a.5 0 0 0-.6.22L2.71 7.48a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94L2.83 14.52a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.6.22l2.39-.96c.51.4 1.05.71 1.63.94l.36 2.54c.04.24.25.42.49.42h3.8c.24 0 .45-.18.49-.42l.36-2.54c.58-.23 1.12-.54 1.63-.94l2.39.96c.21.08.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5z"
         fill="currentColor"
       />
     </svg>
@@ -122,53 +122,56 @@ function LeaveIcon() {
   );
 }
 
-// ✅ Desktop direct buttons icons (>=768px)
-function UsersIcon() {
+/** ✅ OLD ICONS (restored): Participants + Chat */
+function ParticipantsIcon() {
   return (
     <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
       <path
-        d="M9 12.5a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"
+        d="M12 12c2.21 0 4-1.79 4-4S14.21 4 12 4 8 5.79 8 8s1.79 4 4 4z"
         fill="currentColor"
         opacity="0.95"
       />
       <path
-        d="M17 11.5a3 3 0 1 1 0-6 3 3 0 0 1 0 6z"
+        d="M4 20c0-3.31 3.58-6 8-6s8 2.69 8 6v1H4v-1z"
         fill="currentColor"
-        opacity="0.8"
-      />
-      <path
-        d="M3.5 20a5.5 5.5 0 0 1 11 0v.5H3.5V20z"
-        fill="currentColor"
-        opacity="0.95"
-      />
-      <path
-        d="M14.5 20a4.5 4.5 0 0 1 7.5 0v.5h-7.5V20z"
-        fill="currentColor"
-        opacity="0.7"
+        opacity="0.9"
       />
     </svg>
   );
 }
 
-function ChatIcon() {
+function OldChatIcon() {
   return (
     <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
       <path
-        d="M6 5h12a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H11l-4.5 3.2A.9.9 0 0 1 5 20.5V18H6a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3z"
+        d="M4 4h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 3v-3H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"
         fill="currentColor"
       />
-      <circle cx="9" cy="11" r="1" fill="#050F1A" opacity="0.9" />
-      <circle cx="12" cy="11" r="1" fill="#050F1A" opacity="0.9" />
-      <circle cx="15" cy="11" r="1" fill="#050F1A" opacity="0.9" />
     </svg>
   );
 }
 
+/** ✅ Intentions icon kept */
 function TargetIcon() {
   return (
     <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-      <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="2" />
-      <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.9" />
+      <circle
+        cx="12"
+        cy="12"
+        r="8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+      />
+      <circle
+        cx="12"
+        cy="12"
+        r="4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        opacity="0.9"
+      />
       <circle cx="12" cy="12" r="1.6" fill="currentColor" />
     </svg>
   );
@@ -1433,27 +1436,38 @@ export function RoomPage() {
                           openRightTab("participants");
                           setShowMoreMenu(false);
                         }}
-                        className="w-full px-4 py-3 text-left text-[13px] text-white/85 hover:bg-white/5 transition"
+                        className="w-full px-4 py-3 text-left text-[13px] text-white/85 hover:bg-white/5 transition flex items-center gap-2"
                       >
-                        Participants
+                        <span className="opacity-90">
+                          <ParticipantsIcon />
+                        </span>
+                        <span>Participants</span>
                       </button>
+
                       <button
                         onClick={() => {
                           openRightTab("chat");
                           setShowMoreMenu(false);
                         }}
-                        className="w-full px-4 py-3 text-left text-[13px] text-white/85 hover:bg-white/5 transition"
+                        className="w-full px-4 py-3 text-left text-[13px] text-white/85 hover:bg-white/5 transition flex items-center gap-2"
                       >
-                        Chat
+                        <span className="opacity-90">
+                          <OldChatIcon />
+                        </span>
+                        <span>Chat</span>
                       </button>
+
                       <button
                         onClick={() => {
                           openRightTab("intentions");
                           setShowMoreMenu(false);
                         }}
-                        className="w-full px-4 py-3 text-left text-[13px] text-white/85 hover:bg-white/5 transition"
+                        className="w-full px-4 py-3 text-left text-[13px] text-white/85 hover:bg-white/5 transition flex items-center gap-2"
                       >
-                        Intentions
+                        <span className="opacity-90">
+                          <TargetIcon />
+                        </span>
+                        <span>Intentions</span>
                       </button>
 
                       <div className="h-px bg-white/10" />
@@ -1483,7 +1497,7 @@ export function RoomPage() {
                   className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition bg-[#111827] hover:bg-[#1f2937] text-white/85"
                   title="Participants"
                 >
-                  <UsersIcon />
+                  <ParticipantsIcon />
                 </button>
 
                 <button
@@ -1491,7 +1505,7 @@ export function RoomPage() {
                   className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition bg-[#111827] hover:bg-[#1f2937] text-white/85"
                   title="Chat"
                 >
-                  <ChatIcon />
+                  <OldChatIcon />
                 </button>
 
                 <button
