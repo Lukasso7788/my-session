@@ -1,4 +1,13 @@
-// src/lib/backgroundEffect.ts
+// ============================================================================
+// src/lib/backgroundEffect.ts — Canvas + MediaPipe SelfieSegmentation
+// Notes:
+// - Waits for video metadata so canvas sizes correctly
+// - Throttles segmentation to `fps` (default 20)
+// - Guards against overlapping `segmentation.send()` calls (inFlight)
+// - Cancels RAF on stop/dispose
+// - Safe cleanup even if Jitsi calls dispose multiple times
+// ============================================================================
+
 import { SelfieSegmentation } from "@mediapipe/selfie_segmentation";
 
 export type BgMode = "none" | "blur" | "image";
@@ -8,12 +17,14 @@ type CreateOpts = {
     mode: BgMode;
     imageUrl?: string;
     blurValue?: number; // like 8/25 in Jitsi
+    fps?: number; // throttle segmentation loop; default 20
 };
 
 class CanvasVirtualBgEffect {
     private mode: BgMode;
     private imageUrl?: string;
     private blurValue: number;
+    private fps: number;
 
     private videoEl?: HTMLVideoElement;
     private canvas?: HTMLCanvasElement;
@@ -24,10 +35,15 @@ class CanvasVirtualBgEffect {
 
     private bgImg?: HTMLImageElement;
 
+    private rafId: number | null = null;
+    private inFlight = false;
+    private lastSentAt = 0;
+
     constructor(opts: CreateOpts) {
         this.mode = opts.mode;
         this.imageUrl = opts.imageUrl;
         this.blurValue = opts.blurValue ?? 25;
+        this.fps = Math.max(5, Math.min(30, opts.fps ?? 20));
     }
 
     isEnabled() {
@@ -39,6 +55,37 @@ class CanvasVirtualBgEffect {
         await this.stopEffect();
     }
 
+    private async waitVideoReady(v: HTMLVideoElement): Promise<void> {
+        // If video already has metadata
+        if ((v.videoWidth || 0) > 0 && (v.videoHeight || 0) > 0) return;
+
+        await new Promise<void>((resolve) => {
+            const done = () => {
+                v.removeEventListener("loadedmetadata", done);
+                v.removeEventListener("loadeddata", done);
+                resolve();
+            };
+            v.addEventListener("loadedmetadata", done, { once: true });
+            v.addEventListener("loadeddata", done, { once: true });
+
+            // Safety: sometimes metadata event already fired but sizes still 0 for a tick
+            setTimeout(done, 250);
+        });
+    }
+
+    private async preloadBgImage(url: string): Promise<HTMLImageElement> {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.src = url;
+
+        await new Promise<void>((res, rej) => {
+            img.onload = () => res();
+            img.onerror = () => rej(new Error("Failed to load background image"));
+        });
+
+        return img;
+    }
+
     async startEffect(stream: MediaStream): Promise<MediaStream> {
         // create hidden video
         const v = document.createElement("video");
@@ -46,10 +93,17 @@ class CanvasVirtualBgEffect {
         v.muted = true;
         v.playsInline = true;
         v.srcObject = stream;
-        await v.play();
+
+        // In most cases this works because stream comes from getUserMedia
+        try {
+            await v.play();
+        } catch {
+            // ignore; metadata may still load and frames may still render
+        }
+
+        await this.waitVideoReady(v);
 
         const c = document.createElement("canvas");
-        // initial size; will be synced in loop
         c.width = v.videoWidth || 1280;
         c.height = v.videoHeight || 720;
 
@@ -62,14 +116,12 @@ class CanvasVirtualBgEffect {
 
         // preload bg image if needed
         if (this.mode === "image" && this.imageUrl) {
-            const img = new Image();
-            img.crossOrigin = "anonymous";
-            img.src = this.imageUrl;
-            await new Promise<void>((res, rej) => {
-                img.onload = () => res();
-                img.onerror = () => rej(new Error("Failed to load background image"));
-            });
-            this.bgImg = img;
+            try {
+                this.bgImg = await this.preloadBgImage(this.imageUrl);
+            } catch {
+                // If image fails, fall back to original background
+                this.bgImg = undefined;
+            }
         }
 
         // init MediaPipe
@@ -119,10 +171,20 @@ class CanvasVirtualBgEffect {
 
         this.segmentation = seg;
         this.running = true;
+        this.inFlight = false;
+        this.lastSentAt = 0;
+
+        const frameIntervalMs = Math.max(1, Math.round(1000 / this.fps));
 
         // pump frames
-        const loop = async () => {
+        const loop = async (ts: number) => {
             if (!this.running || !this.videoEl || !this.segmentation) return;
+
+            this.rafId = requestAnimationFrame(loop);
+
+            // throttle
+            if (ts - this.lastSentAt < frameIntervalMs) return;
+            this.lastSentAt = ts;
 
             // keep canvas size synced
             const vw = this.videoEl.videoWidth || 1280;
@@ -132,15 +194,19 @@ class CanvasVirtualBgEffect {
                 this.canvas.height = vh;
             }
 
+            if (this.inFlight) return;
+            this.inFlight = true;
+
             try {
                 await this.segmentation.send({ image: this.videoEl });
             } catch {
                 // ignore frame errors
+            } finally {
+                this.inFlight = false;
             }
-
-            requestAnimationFrame(loop);
         };
-        requestAnimationFrame(loop);
+
+        this.rafId = requestAnimationFrame(loop);
 
         // output stream
         return c.captureStream(30);
@@ -149,15 +215,37 @@ class CanvasVirtualBgEffect {
     async stopEffect() {
         this.running = false;
 
-        try { this.segmentation?.close?.(); } catch { }
+        try {
+            if (this.rafId != null) cancelAnimationFrame(this.rafId);
+        } catch {
+            // ignore
+        }
+        this.rafId = null;
+        this.inFlight = false;
+
+        try {
+            this.segmentation?.close?.();
+        } catch {
+            // ignore
+        }
         this.segmentation = undefined;
 
         try {
             if (this.videoEl) {
-                this.videoEl.pause();
-                (this.videoEl.srcObject as any) = null;
+                try {
+                    this.videoEl.pause();
+                } catch {
+                    // ignore
+                }
+                try {
+                    (this.videoEl.srcObject as any) = null;
+                } catch {
+                    // ignore
+                }
             }
-        } catch { }
+        } catch {
+            // ignore
+        }
 
         this.videoEl = undefined;
         this.canvas = undefined;
@@ -166,7 +254,9 @@ class CanvasVirtualBgEffect {
     }
 }
 
-export async function createBackgroundEffect(opts: CreateOpts): Promise<JitsiStreamEffect | undefined> {
+export async function createBackgroundEffect(
+    opts: CreateOpts
+): Promise<JitsiStreamEffect | undefined> {
     if (opts.mode === "none") return undefined;
     if (opts.mode === "image" && !opts.imageUrl) return undefined;
 
