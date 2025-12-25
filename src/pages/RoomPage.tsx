@@ -174,6 +174,21 @@ function SettingsIcon() {
   );
 }
 
+function LeaveIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
+      <path
+        d="M5 5h6a1 1 0 0 1 0 2H7v10h4a1 1 0 0 1 0 2H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"
+        fill="currentColor"
+      />
+      <path
+        d="M13.7 8.3a1 1 0 0 1 1.4 0L19 12l-3.9 3.7a1 1 0 0 1-1.4-1.4L15.6 13H11a1 1 0 0 1 0-2h4.6l-1.3-1.3a1 1 0 0 1 0-1.4z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
 const reactionEmoji: Record<ReactionType, string> = {
   fire: "🔥",
   laugh: "😂",
@@ -202,7 +217,9 @@ function safeParseJson(raw: any) {
  * ✅ NEW: parse "50/5/5" (or "50-5-5") schedule stored as a string.
  * Returns minutes.
  */
-function parse50505(raw: any): { focus: number; break: number; intentions: number } | null {
+function parse50505(
+  raw: any
+): { focus: number; break: number; intentions: number } | null {
   if (typeof raw !== "string") return null;
   const s = raw.trim();
 
@@ -216,7 +233,12 @@ function parse50505(raw: any): { focus: number; break: number; intentions: numbe
   const br = Number(m[2]);
   const intentions = Number(m[3]);
 
-  if (!Number.isFinite(focus) || !Number.isFinite(br) || !Number.isFinite(intentions)) return null;
+  if (
+    !Number.isFinite(focus) ||
+    !Number.isFinite(br) ||
+    !Number.isFinite(intentions)
+  )
+    return null;
   if (focus <= 0 || br <= 0 || intentions <= 0) return null;
 
   return { focus, break: br, intentions };
@@ -271,7 +293,9 @@ function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: numbe
         const name = String(k || "");
         const seconds =
           typeof v === "number"
-            ? (v <= 180 ? Number(v) * 60 : Number(v))
+            ? v <= 180
+              ? Number(v) * 60
+              : Number(v)
             : toSeconds(v);
         return { name, seconds };
       })
@@ -436,18 +460,15 @@ export function RoomPage() {
     const title = String(session?.title || "").toLowerCase();
 
     const tpl = session?.session_templates;
-    const tplName =
-      Array.isArray(tpl)
-        ? String(tpl?.[0]?.name || tpl?.[0]?.title || "")
-        : String(tpl?.name || tpl?.title || "");
-    const tplKey =
-      Array.isArray(tpl)
-        ? String(tpl?.[0]?.key || tpl?.[0]?.slug || tpl?.[0]?.type || "")
-        : String(tpl?.key || tpl?.slug || tpl?.type || "");
-    const tplFmt =
-      Array.isArray(tpl)
-        ? String(tpl?.[0]?.format || "")
-        : String(tpl?.format || "");
+    const tplName = Array.isArray(tpl)
+      ? String(tpl?.[0]?.name || tpl?.[0]?.title || "")
+      : String(tpl?.name || tpl?.title || "");
+    const tplKey = Array.isArray(tpl)
+      ? String(tpl?.[0]?.key || tpl?.[0]?.slug || tpl?.[0]?.type || "")
+      : String(tpl?.key || tpl?.slug || tpl?.type || "");
+    const tplFmt = Array.isArray(tpl)
+      ? String(tpl?.[0]?.format || "")
+      : String(tpl?.format || "");
 
     const hay = `${fmt} ${title} ${tplName} ${tplKey} ${tplFmt}`.toLowerCase();
     return hay.includes("silent");
@@ -999,13 +1020,7 @@ export function RoomPage() {
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [
-    stagebarStartTime,
-    stages,
-    isSilentRoom,
-    isInfiniteRoom,
-    stagebarCycleSeconds,
-  ]);
+  }, [stagebarStartTime, stages, isSilentRoom, isInfiniteRoom, stagebarCycleSeconds]);
 
   // ============================================================
   // DERIVED
@@ -1031,8 +1046,7 @@ export function RoomPage() {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node | null;
       if (!reactionsMenuRef.current || !target) return;
-      if (!reactionsMenuRef.current.contains(target))
-        setShowReactionsMenu(false);
+      if (!reactionsMenuRef.current.contains(target)) setShowReactionsMenu(false);
     };
 
     document.addEventListener("mousedown", handleClickOutside);
@@ -1063,9 +1077,7 @@ export function RoomPage() {
     const q = participantsSearch.trim().toLowerCase();
     if (!q) return participants;
     return participants.filter((p) =>
-      (p.isLocal ? "you" : p.displayName || "guest")
-        .toLowerCase()
-        .includes(q)
+      (p.isLocal ? "you" : p.displayName || "guest").toLowerCase().includes(q)
     );
   }, [participants, participantsSearch]);
 
@@ -1090,7 +1102,8 @@ export function RoomPage() {
 
   return (
     <div className="min-h-screen bg-[#050F1A] text-white flex justify-center">
-      <div className="max-w-[1720px] w-full px-5 pt-5 pb-[110px] flex flex-col gap-5 min-h-screen">
+      {/* ✅ pb учитывает safe-area */}
+      <div className="max-w-[1720px] w-full px-5 pt-5 pb-[calc(110px+env(safe-area-inset-bottom))] flex flex-col gap-5 min-h-screen">
         {/* TOP BAR */}
         <div className="flex w-full rounded-2xl overflow-hidden bg-[#111827]/40 border border-white/5">
           <div className="flex-1 px-6 py-4">
@@ -1262,11 +1275,7 @@ export function RoomPage() {
                                 }
                                 title={p.audioMuted ? "Muted" : "Unmuted"}
                               >
-                                <svg
-                                  viewBox="0 0 24 24"
-                                  className="w-4 h-4"
-                                  aria-hidden="true"
-                                >
+                                <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true">
                                   <path
                                     d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"
                                     fill="currentColor"
@@ -1288,24 +1297,9 @@ export function RoomPage() {
                                 }
                                 title={p.videoMuted ? "Video off" : "Video on"}
                               >
-                                <svg
-                                  viewBox="0 0 24 24"
-                                  className="w-4 h-4"
-                                  aria-hidden="true"
-                                >
-                                  <rect
-                                    x="4"
-                                    y="6"
-                                    width="11"
-                                    height="12"
-                                    rx="2"
-                                    fill="currentColor"
-                                  />
-                                  <path
-                                    d="M17 9.5 21 7v10l-4-2.5z"
-                                    fill="currentColor"
-                                    opacity="0.85"
-                                  />
+                                <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true">
+                                  <rect x="4" y="6" width="11" height="12" rx="2" fill="currentColor" />
+                                  <path d="M17 9.5 21 7v10l-4-2.5z" fill="currentColor" opacity="0.85" />
                                 </svg>
                               </div>
                             </div>
@@ -1330,9 +1324,7 @@ export function RoomPage() {
               {rightTab === "chat" && (
                 <div className="h-full">
                   <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
-                    <div className="text-white/85 font-inter font-semibold">
-                      Chat
-                    </div>
+                    <div className="text-white/85 font-inter font-semibold">Chat</div>
                     <button
                       onClick={() => openRightTab(null)}
                       className="w-9 h-9 rounded-xl bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center text-white/80"
@@ -1350,9 +1342,7 @@ export function RoomPage() {
               {rightTab === "intentions" && (
                 <div className="h-full">
                   <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
-                    <div className="text-white/85 font-inter font-semibold">
-                      Intentions
-                    </div>
+                    <div className="text-white/85 font-inter font-semibold">Intentions</div>
                     <button
                       onClick={() => openRightTab(null)}
                       className="w-9 h-9 rounded-xl bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center text-white/80"
@@ -1371,41 +1361,37 @@ export function RoomPage() {
         </div>
       </div>
 
-      {/* FIXED BOTTOM CONTROLS */}
+      {/* ✅ FIXED BOTTOM CONTROLS (RESPONSIVE, NO OVERFLOW) */}
       <div className="fixed inset-x-0 bottom-0 z-50">
-        <div className="max-w-[1720px] mx-auto px-5 pb-5">
-          <div className="h-[74px] rounded-2xl bg-[#07101E]/85 border border-white/10 shadow-2xl backdrop-blur flex items-center justify-between px-4">
+        <div className="max-w-[1720px] mx-auto px-3 sm:px-5 pb-[calc(12px+env(safe-area-inset-bottom))]">
+          <div className="h-[64px] sm:h-[74px] rounded-2xl bg-[#07101E]/85 border border-white/10 shadow-2xl backdrop-blur grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4">
             {/* LEFT GROUP */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => openRightTab("participants")}
-                className="outline-none"
-              >
-                <ParticipantsIcon
-                  active={rightPanelOpen && rightTab === "participants"}
-                />
+            <div className="flex items-center gap-1 sm:gap-2">
+              <button onClick={() => openRightTab("participants")} className="outline-none">
+                <div className="w-10 h-10 sm:w-11 sm:h-11">
+                  <ParticipantsIcon active={rightPanelOpen && rightTab === "participants"} />
+                </div>
               </button>
 
               <button onClick={() => openRightTab("chat")} className="outline-none">
-                <ChatIcon active={rightPanelOpen && rightTab === "chat"} />
+                <div className="w-10 h-10 sm:w-11 sm:h-11">
+                  <ChatIcon active={rightPanelOpen && rightTab === "chat"} />
+                </div>
               </button>
 
-              <button
-                onClick={() => openRightTab("intentions")}
-                className="outline-none"
-              >
-                <IntentionsIcon
-                  active={rightPanelOpen && rightTab === "intentions"}
-                />
+              <button onClick={() => openRightTab("intentions")} className="outline-none">
+                <div className="w-10 h-10 sm:w-11 sm:h-11">
+                  <IntentionsIcon active={rightPanelOpen && rightTab === "intentions"} />
+                </div>
               </button>
             </div>
 
             {/* CENTER GROUP */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center gap-2 sm:gap-3">
               <button
                 onClick={() => engineRef.current?.toggleAudioMute()}
                 className={
-                  "w-11 h-11 rounded-2xl flex items-center justify-center transition " +
+                  "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
                   (isAudioMuted
                     ? "bg-red-600 hover:bg-red-700"
                     : "bg-[#111827] hover:bg-[#1f2937]")
@@ -1418,7 +1404,7 @@ export function RoomPage() {
               <button
                 onClick={() => engineRef.current?.toggleVideoMute()}
                 className={
-                  "w-11 h-11 rounded-2xl flex items-center justify-center transition " +
+                  "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
                   (isVideoMuted
                     ? "bg-red-600 hover:bg-red-700"
                     : "bg-[#111827] hover:bg-[#1f2937]")
@@ -1431,7 +1417,7 @@ export function RoomPage() {
               <button
                 onClick={() => engineRef.current?.toggleScreenShare()}
                 className={
-                  "w-11 h-11 rounded-2xl flex items-center justify-center transition " +
+                  "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
                   (isScreenSharing
                     ? "bg-blue-600 hover:bg-blue-700"
                     : "bg-[#111827] hover:bg-[#1f2937]")
@@ -1445,14 +1431,14 @@ export function RoomPage() {
               <div className="relative" ref={reactionsMenuRef}>
                 <button
                   onClick={() => setShowReactionsMenu((v) => !v)}
-                  className="w-11 h-11 rounded-2xl flex items-center justify-center transition bg-[#111827] hover:bg-[#1f2937]"
+                  className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition bg-[#111827] hover:bg-[#1f2937]"
                   title="Reactions"
                 >
                   <SmileIcon />
                 </button>
 
                 {showReactionsMenu && (
-                  <div className="absolute bottom-[58px] left-1/2 -translate-x-1/2 bg-[#020617] border border-white/10 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl">
+                  <div className="absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 bg-[#020617] border border-white/10 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl">
                     {(
                       ["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown"] as ReactionType[]
                     ).map((t) => (
@@ -1474,24 +1460,34 @@ export function RoomPage() {
             </div>
 
             {/* RIGHT GROUP */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center justify-end gap-2 sm:gap-3">
               <button
                 onClick={() => {
                   setSettingsOpen(true);
                   setTimeout(() => loadDevices(), 0);
                 }}
-                className="w-11 h-11 rounded-2xl flex items-center justify-center transition bg-[#111827] hover:bg-[#1f2937] text-white/85"
+                className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition bg-[#111827] hover:bg-[#1f2937] text-white/85"
                 title="Settings"
               >
                 <SettingsIcon />
               </button>
 
+              {/* Desktop leave */}
               <button
                 onClick={handleLeave}
-                className="h-11 px-6 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-semibold flex items-center justify-center gap-2"
+                className="hidden sm:flex h-11 px-6 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-semibold items-center justify-center gap-2"
                 title="Leave"
               >
                 <span className="text-[14px]">Leave</span>
+              </button>
+
+              {/* Mobile leave icon-only */}
+              <button
+                onClick={handleLeave}
+                className="sm:hidden w-10 h-10 rounded-2xl bg-red-600 hover:bg-red-700 text-white flex items-center justify-center"
+                title="Leave"
+              >
+                <LeaveIcon />
               </button>
             </div>
           </div>
@@ -1520,10 +1516,7 @@ export function RoomPage() {
       />
 
       {selectedUser && (
-        <UserProfileModal
-          user={selectedUser}
-          onClose={() => setSelectedUser(null)}
-        />
+        <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
       )}
     </div>
   );
