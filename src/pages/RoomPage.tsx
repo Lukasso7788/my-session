@@ -1,5 +1,6 @@
 // src/pages/RoomPage.tsx
 // ROOMPAGE + JITSI ENGINE + VIDEO UI (UPDATED WITH REACTIONS)
+// ✅ Updated: bottom "more" menu, stagebar full width + clipped, hide host indicator <= 480px
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -27,84 +28,6 @@ type Stage = {
 };
 
 type RightPanelTab = "participants" | "chat" | "intentions" | null;
-
-function ParticipantsIcon({ active }: { active?: boolean }) {
-  return (
-    <div
-      className={
-        "w-11 h-11 rounded-xl flex items-center justify-center transition " +
-        (active ? "bg-emerald-500/90" : "bg-[#111827] hover:bg-[#1f2937]")
-      }
-      title="Participants"
-    >
-      <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-        <path
-          d="M16 11c1.66 0 3-1.57 3-3.5S17.66 4 16 4s-3 1.57-3 3.5S14.34 11 16 11z"
-          fill="currentColor"
-          opacity="0.9"
-        />
-        <path
-          d="M8 11c1.66 0 3-1.57 3-3.5S9.66 4 8 4 5 5.57 5 7.5 6.34 11 8 11z"
-          fill="currentColor"
-        />
-        <path
-          d="M8 13c-2.67 0-8 1.34-8 4v2h12v-2c0-2.66-5.33-4-4-4z"
-          fill="currentColor"
-        />
-        <path
-          d="M16 13c-.33 0-.71.02-1.11.06C16.92 14.1 19 15.55 19 17v2h5v-2c0-2.66-5.33-4-8-4z"
-          fill="currentColor"
-          opacity="0.9"
-        />
-      </svg>
-    </div>
-  );
-}
-
-function ChatIcon({ active }: { active?: boolean }) {
-  return (
-    <div
-      className={
-        "w-11 h-11 rounded-xl flex items-center justify-center transition " +
-        (active ? "bg-emerald-500/90" : "bg-[#111827] hover:bg-[#1f2937]")
-      }
-      title="Chat"
-    >
-      <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-        <path
-          d="M20 2H4C2.9 2 2 2.9 2 4v13c0 1.1.9 2 2 2h3v3c0 .55.45 1 1 1 .2 0 .4-.06.58-.19L14 19h6c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"
-          fill="currentColor"
-        />
-      </svg>
-    </div>
-  );
-}
-
-function IntentionsIcon({ active }: { active?: boolean }) {
-  return (
-    <div
-      className={
-        "w-11 h-11 rounded-xl flex items-center justify-center transition " +
-        (active ? "bg-emerald-500/90" : "bg-[#111827] hover:bg-[#1f2937]")
-      }
-      title="Intentions"
-    >
-      <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-        <path
-          d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 2a8 8 0 1 1-8 8 8 8 0 0 1 8-8z"
-          fill="currentColor"
-          opacity="0.9"
-        />
-        <path
-          d="M12 6.5a5.5 5.5 0 1 0 5.5 5.5A5.51 5.51 0 0 0 12 6.5zm0 2a3.5 3.5 0 1 1-3.5 3.5A3.5 3.5 0 0 1 12 8.5z"
-          fill="currentColor"
-          opacity="0.9"
-        />
-        <circle cx="12" cy="12" r="1.4" fill="currentColor" />
-      </svg>
-    </div>
-  );
-}
 
 function MicIcon() {
   return (
@@ -170,6 +93,16 @@ function SettingsIcon() {
         d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.2 7.2 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 1h-3.8a.5.5 0 0 0-.49.42l-.36 2.54c-.58.23-1.12.54-1.63.94l-2.39-.96a.5 0 0 0-.6.22L2.71 7.48a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94L2.83 14.52a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.6.22l2.39-.96c.51.4 1.05.71 1.63.94l.36 2.54c.04.24.25.42.49.42h3.8c.24 0 .45-.18.49-.42l.36-2.54c.58-.23 1.12-.54 1.63-.94l2.39.96c.21.08.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5z"
         fill="currentColor"
       />
+    </svg>
+  );
+}
+
+function MoreIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
+      <circle cx="6" cy="12" r="1.8" fill="currentColor" />
+      <circle cx="12" cy="12" r="1.8" fill="currentColor" />
+      <circle cx="18" cy="12" r="1.8" fill="currentColor" />
     </svg>
   );
 }
@@ -436,7 +369,6 @@ export function RoomPage() {
   const isInfiniteRoom = useMemo(() => {
     const raw = session?.schedule;
 
-    // support plain string "50/5/5"
     if (parse50505(raw)) return true;
 
     const parsed = safeParseJson(raw);
@@ -460,15 +392,18 @@ export function RoomPage() {
     const title = String(session?.title || "").toLowerCase();
 
     const tpl = session?.session_templates;
-    const tplName = Array.isArray(tpl)
-      ? String(tpl?.[0]?.name || tpl?.[0]?.title || "")
-      : String(tpl?.name || tpl?.title || "");
-    const tplKey = Array.isArray(tpl)
-      ? String(tpl?.[0]?.key || tpl?.[0]?.slug || tpl?.[0]?.type || "")
-      : String(tpl?.key || tpl?.slug || tpl?.type || "");
-    const tplFmt = Array.isArray(tpl)
-      ? String(tpl?.[0]?.format || "")
-      : String(tpl?.format || "");
+    const tplName =
+      Array.isArray(tpl)
+        ? String(tpl?.[0]?.name || tpl?.[0]?.title || "")
+        : String(tpl?.name || tpl?.title || "");
+    const tplKey =
+      Array.isArray(tpl)
+        ? String(tpl?.[0]?.key || tpl?.[0]?.slug || tpl?.[0]?.type || "")
+        : String(tpl?.key || tpl?.slug || tpl?.type || "");
+    const tplFmt =
+      Array.isArray(tpl)
+        ? String(tpl?.[0]?.format || "")
+        : String(tpl?.format || "");
 
     const hay = `${fmt} ${title} ${tplName} ${tplKey} ${tplFmt}`.toLowerCase();
     return hay.includes("silent");
@@ -579,7 +514,6 @@ export function RoomPage() {
       if (data && !error) {
         setSession(data);
 
-        // reset stagebar state
         setStages([]);
         setStagebarCycleSeconds(undefined);
         setStagebarStartTime("");
@@ -588,10 +522,8 @@ export function RoomPage() {
           data?.start_time || data?.created_at || new Date().toISOString()
         );
 
-        // ✅ parse schedule robustly + support "50/5/5"
         let parsed: any = safeParseJson(data.schedule);
 
-        // if schedule is like "50/5/5" string -> turn it into infinite schedule object
         if (!parsed) {
           const t = parse50505(data.schedule);
           if (t) {
@@ -599,9 +531,9 @@ export function RoomPage() {
               kind: "infinite_room",
               timer: {
                 phases: {
-                  focus: t.focus, // minutes
-                  break: t.break, // minutes
-                  intentions: t.intentions, // minutes
+                  focus: t.focus,
+                  break: t.break,
+                  intentions: t.intentions,
                 },
               },
               anchor_ts: data?.start_time || data?.created_at || fallbackStart,
@@ -609,7 +541,6 @@ export function RoomPage() {
           }
         }
 
-        // ✅ scheduled: array [{name, minutes}, ...]
         if (Array.isArray(parsed)) {
           const formatted: Stage[] = parsed.map((b: any) => {
             const lower = (b.name || "").toLowerCase();
@@ -640,7 +571,6 @@ export function RoomPage() {
           setStagebarCycleSeconds(undefined);
         }
 
-        // ✅ infinite: object (robust)
         const isInfiniteScheduleObject =
           parsed &&
           typeof parsed === "object" &&
@@ -714,7 +644,6 @@ export function RoomPage() {
           setStagebarCycleSeconds(Math.max(1, cycleSeconds));
         }
 
-        // if no schedule or failed parse -> just set start (no stages)
         if (!parsed) {
           setStagebarStartTime(fallbackStart);
         }
@@ -948,7 +877,6 @@ export function RoomPage() {
       const now = Date.now();
       const diffSecRaw = (now - startMs) / 1000;
 
-      // normalize for infinite rooms
       const diffSec =
         loopSeconds > 0 && isInfiniteRoom
           ? ((diffSecRaw % loopSeconds) + loopSeconds) % loopSeconds
@@ -980,7 +908,6 @@ export function RoomPage() {
 
       setCurrentStage(active);
 
-      // Sounds only for scheduled sessions (avoid looping spam)
       if (!isInfiniteRoom) {
         const stage = stages[active];
 
@@ -1020,7 +947,13 @@ export function RoomPage() {
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [stagebarStartTime, stages, isSilentRoom, isInfiniteRoom, stagebarCycleSeconds]);
+  }, [
+    stagebarStartTime,
+    stages,
+    isSilentRoom,
+    isInfiniteRoom,
+    stagebarCycleSeconds,
+  ]);
 
   // ============================================================
   // DERIVED
@@ -1046,7 +979,8 @@ export function RoomPage() {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node | null;
       if (!reactionsMenuRef.current || !target) return;
-      if (!reactionsMenuRef.current.contains(target)) setShowReactionsMenu(false);
+      if (!reactionsMenuRef.current.contains(target))
+        setShowReactionsMenu(false);
     };
 
     document.addEventListener("mousedown", handleClickOutside);
@@ -1069,6 +1003,25 @@ export function RoomPage() {
   };
 
   // ============================================================
+  // ✅ MORE MENU (bottom)
+  // ============================================================
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!showMoreMenu) return;
+
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node | null;
+      if (!moreMenuRef.current || !t) return;
+      if (!moreMenuRef.current.contains(t)) setShowMoreMenu(false);
+    };
+
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [showMoreMenu]);
+
+  // ============================================================
   // RIGHT PANEL CONTENT
   // ============================================================
   const [participantsSearch, setParticipantsSearch] = useState("");
@@ -1077,7 +1030,9 @@ export function RoomPage() {
     const q = participantsSearch.trim().toLowerCase();
     if (!q) return participants;
     return participants.filter((p) =>
-      (p.isLocal ? "you" : p.displayName || "guest").toLowerCase().includes(q)
+      (p.isLocal ? "you" : p.displayName || "guest")
+        .toLowerCase()
+        .includes(q)
     );
   }, [participants, participantsSearch]);
 
@@ -1102,12 +1057,10 @@ export function RoomPage() {
 
   return (
     <div className="min-h-screen bg-[#050F1A] text-white flex justify-center">
-      {/* ✅ pb учитывает safe-area */}
       <div className="max-w-[1720px] w-full px-5 pt-5 pb-[calc(110px+env(safe-area-inset-bottom))] flex flex-col gap-5 min-h-screen">
         {/* TOP BAR */}
         <div className="flex w-full rounded-2xl overflow-hidden bg-[#111827]/40 border border-white/5">
           <div className="flex-1 px-6 py-4">
-            {/* row 1: title + right controls */}
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="font-inter font-semibold text-[18px] text-[#F3F4F6]/90 truncate">
@@ -1119,7 +1072,6 @@ export function RoomPage() {
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
-                {/* timer */}
                 {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
                   <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#0B1220]/70 border border-white/5">
                     <span className="text-[12px] text-white/70">⏱</span>
@@ -1129,10 +1081,11 @@ export function RoomPage() {
                   </div>
                 )}
 
+                {/* ✅ HIDE host indicator <= 480px */}
                 {session.host_profile && (
                   <button
                     onClick={() => setSelectedUser(session.host_profile)}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/10 bg-[#0B1220]/60 text-[13px] text-[#F3F4F6]/85 hover:bg-[#0B1220]/80 transition font-inter"
+                    className="max-[480px]:hidden flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/10 bg-[#0B1220]/60 text-[13px] text-[#F3F4F6]/85 hover:bg-[#0B1220]/80 transition font-inter"
                   >
                     <img
                       src="/icons/host_session_icon.svg"
@@ -1150,15 +1103,17 @@ export function RoomPage() {
               </div>
             </div>
 
-            {/* ✅ row 2: StageBar FULL WIDTH */}
+            {/* ✅ StageBar FULL WIDTH + clip overflow */}
             {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
-              <div className="mt-3 w-full">
-                <SessionStageBar
-                  stages={stages as any}
-                  startTime={stagebarStartTime}
-                  cycleSeconds={stagebarCycleSeconds}
-                  onHoverStage={setHoveredStage as any}
-                />
+              <div className="mt-3 w-full overflow-hidden">
+                <div className="w-full overflow-hidden">
+                  <SessionStageBar
+                    stages={stages as any}
+                    startTime={stagebarStartTime}
+                    cycleSeconds={stagebarCycleSeconds}
+                    onHoverStage={setHoveredStage as any}
+                  />
+                </div>
               </div>
             )}
           </div>
@@ -1275,7 +1230,11 @@ export function RoomPage() {
                                 }
                                 title={p.audioMuted ? "Muted" : "Unmuted"}
                               >
-                                <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true">
+                                <svg
+                                  viewBox="0 0 24 24"
+                                  className="w-4 h-4"
+                                  aria-hidden="true"
+                                >
                                   <path
                                     d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"
                                     fill="currentColor"
@@ -1297,9 +1256,24 @@ export function RoomPage() {
                                 }
                                 title={p.videoMuted ? "Video off" : "Video on"}
                               >
-                                <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true">
-                                  <rect x="4" y="6" width="11" height="12" rx="2" fill="currentColor" />
-                                  <path d="M17 9.5 21 7v10l-4-2.5z" fill="currentColor" opacity="0.85" />
+                                <svg
+                                  viewBox="0 0 24 24"
+                                  className="w-4 h-4"
+                                  aria-hidden="true"
+                                >
+                                  <rect
+                                    x="4"
+                                    y="6"
+                                    width="11"
+                                    height="12"
+                                    rx="2"
+                                    fill="currentColor"
+                                  />
+                                  <path
+                                    d="M17 9.5 21 7v10l-4-2.5z"
+                                    fill="currentColor"
+                                    opacity="0.85"
+                                  />
                                 </svg>
                               </div>
                             </div>
@@ -1324,7 +1298,9 @@ export function RoomPage() {
               {rightTab === "chat" && (
                 <div className="h-full">
                   <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
-                    <div className="text-white/85 font-inter font-semibold">Chat</div>
+                    <div className="text-white/85 font-inter font-semibold">
+                      Chat
+                    </div>
                     <button
                       onClick={() => openRightTab(null)}
                       className="w-9 h-9 rounded-xl bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center text-white/80"
@@ -1342,7 +1318,9 @@ export function RoomPage() {
               {rightTab === "intentions" && (
                 <div className="h-full">
                   <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
-                    <div className="text-white/85 font-inter font-semibold">Intentions</div>
+                    <div className="text-white/85 font-inter font-semibold">
+                      Intentions
+                    </div>
                     <button
                       onClick={() => openRightTab(null)}
                       className="w-9 h-9 rounded-xl bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center text-white/80"
@@ -1361,29 +1339,69 @@ export function RoomPage() {
         </div>
       </div>
 
-      {/* ✅ FIXED BOTTOM CONTROLS (RESPONSIVE, NO OVERFLOW) */}
+      {/* FIXED BOTTOM CONTROLS */}
       <div className="fixed inset-x-0 bottom-0 z-50">
         <div className="max-w-[1720px] mx-auto px-3 sm:px-5 pb-[calc(12px+env(safe-area-inset-bottom))]">
           <div className="h-[64px] sm:h-[74px] rounded-2xl bg-[#07101E]/85 border border-white/10 shadow-2xl backdrop-blur grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4">
-            {/* LEFT GROUP */}
-            <div className="flex items-center gap-1 sm:gap-2">
-              <button onClick={() => openRightTab("participants")} className="outline-none">
-                <div className="w-10 h-10 sm:w-11 sm:h-11">
-                  <ParticipantsIcon active={rightPanelOpen && rightTab === "participants"} />
-                </div>
+            {/* LEFT GROUP: ✅ More menu */}
+            <div className="flex items-center gap-2" ref={moreMenuRef}>
+              <button
+                onClick={() => setShowMoreMenu((v) => !v)}
+                className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition bg-[#111827] hover:bg-[#1f2937] text-white/85"
+                title="Menu"
+              >
+                <MoreIcon />
               </button>
 
-              <button onClick={() => openRightTab("chat")} className="outline-none">
-                <div className="w-10 h-10 sm:w-11 sm:h-11">
-                  <ChatIcon active={rightPanelOpen && rightTab === "chat"} />
-                </div>
-              </button>
+              {showMoreMenu && (
+                <div className="absolute bottom-[76px] sm:bottom-[86px] left-3 sm:left-5">
+                  <div className="w-[240px] rounded-2xl bg-[#020617] border border-white/10 shadow-2xl overflow-hidden">
+                    <button
+                      onClick={() => {
+                        openRightTab("participants");
+                        setShowMoreMenu(false);
+                      }}
+                      className="w-full px-4 py-3 text-left text-[13px] text-white/85 hover:bg-white/5 transition"
+                    >
+                      Participants
+                    </button>
+                    <button
+                      onClick={() => {
+                        openRightTab("chat");
+                        setShowMoreMenu(false);
+                      }}
+                      className="w-full px-4 py-3 text-left text-[13px] text-white/85 hover:bg-white/5 transition"
+                    >
+                      Chat
+                    </button>
+                    <button
+                      onClick={() => {
+                        openRightTab("intentions");
+                        setShowMoreMenu(false);
+                      }}
+                      className="w-full px-4 py-3 text-left text-[13px] text-white/85 hover:bg-white/5 transition"
+                    >
+                      Intentions
+                    </button>
 
-              <button onClick={() => openRightTab("intentions")} className="outline-none">
-                <div className="w-10 h-10 sm:w-11 sm:h-11">
-                  <IntentionsIcon active={rightPanelOpen && rightTab === "intentions"} />
+                    <div className="h-px bg-white/10" />
+
+                    <button
+                      onClick={() => {
+                        setSettingsOpen(true);
+                        setTimeout(() => loadDevices(), 0);
+                        setShowMoreMenu(false);
+                      }}
+                      className="w-full px-4 py-3 text-left text-[13px] text-white/85 hover:bg-white/5 transition flex items-center gap-2"
+                    >
+                      <span className="opacity-90">
+                        <SettingsIcon />
+                      </span>
+                      <span>Video settings</span>
+                    </button>
+                  </div>
                 </div>
-              </button>
+              )}
             </div>
 
             {/* CENTER GROUP */}
@@ -1461,17 +1479,6 @@ export function RoomPage() {
 
             {/* RIGHT GROUP */}
             <div className="flex items-center justify-end gap-2 sm:gap-3">
-              <button
-                onClick={() => {
-                  setSettingsOpen(true);
-                  setTimeout(() => loadDevices(), 0);
-                }}
-                className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition bg-[#111827] hover:bg-[#1f2937] text-white/85"
-                title="Settings"
-              >
-                <SettingsIcon />
-              </button>
-
               {/* Desktop leave */}
               <button
                 onClick={handleLeave}
@@ -1516,7 +1523,10 @@ export function RoomPage() {
       />
 
       {selectedUser && (
-        <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
+        <UserProfileModal
+          user={selectedUser}
+          onClose={() => setSelectedUser(null)}
+        />
       )}
     </div>
   );
