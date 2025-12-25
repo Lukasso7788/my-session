@@ -1,6 +1,7 @@
 // src/pages/RoomPage.tsx
 // ROOMPAGE + JITSI ENGINE + VIDEO UI (UPDATED WITH REACTIONS)
 // ✅ Updated: bottom "more" menu, stagebar full width + clipped, hide host indicator <= 480px
+// ✅ Updated (THIS CHANGE): "More" menu ONLY on mobile (<768). On md+ show separate buttons (Participants/Chat/Intentions/Video settings)
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -1343,65 +1344,109 @@ export function RoomPage() {
       <div className="fixed inset-x-0 bottom-0 z-50">
         <div className="max-w-[1720px] mx-auto px-3 sm:px-5 pb-[calc(12px+env(safe-area-inset-bottom))]">
           <div className="h-[64px] sm:h-[74px] rounded-2xl bg-[#07101E]/85 border border-white/10 shadow-2xl backdrop-blur grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4">
-            {/* LEFT GROUP: ✅ More menu */}
-            <div className="flex items-center gap-2" ref={moreMenuRef}>
-              <button
-                onClick={() => setShowMoreMenu((v) => !v)}
-                className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition bg-[#111827] hover:bg-[#1f2937] text-white/85"
-                title="Menu"
-              >
-                <MoreIcon />
-              </button>
+            {/* LEFT GROUP: ✅ mobile "More", ✅ desktop separate buttons */}
+            <div className="relative flex items-center gap-2" ref={moreMenuRef}>
+              {/* ✅ DESKTOP (>=768): separate buttons, no "..." */}
+              <div className="hidden md:flex items-center gap-2">
+                <button
+                  onClick={() => openRightTab("participants")}
+                  className="h-11 px-4 rounded-2xl bg-[#111827] hover:bg-[#1f2937] text-white/85 text-[13px] font-medium transition"
+                  title="Participants"
+                >
+                  Participants
+                </button>
 
-              {showMoreMenu && (
-                <div className="absolute bottom-[76px] sm:bottom-[86px] left-3 sm:left-5">
-                  <div className="w-[240px] rounded-2xl bg-[#020617] border border-white/10 shadow-2xl overflow-hidden">
-                    <button
-                      onClick={() => {
-                        openRightTab("participants");
-                        setShowMoreMenu(false);
-                      }}
-                      className="w-full px-4 py-3 text-left text-[13px] text-white/85 hover:bg-white/5 transition"
-                    >
-                      Participants
-                    </button>
-                    <button
-                      onClick={() => {
-                        openRightTab("chat");
-                        setShowMoreMenu(false);
-                      }}
-                      className="w-full px-4 py-3 text-left text-[13px] text-white/85 hover:bg-white/5 transition"
-                    >
-                      Chat
-                    </button>
-                    <button
-                      onClick={() => {
-                        openRightTab("intentions");
-                        setShowMoreMenu(false);
-                      }}
-                      className="w-full px-4 py-3 text-left text-[13px] text-white/85 hover:bg-white/5 transition"
-                    >
-                      Intentions
-                    </button>
+                <button
+                  onClick={() => openRightTab("chat")}
+                  className="h-11 px-4 rounded-2xl bg-[#111827] hover:bg-[#1f2937] text-white/85 text-[13px] font-medium transition"
+                  title="Chat"
+                >
+                  Chat
+                </button>
 
-                    <div className="h-px bg-white/10" />
+                <button
+                  onClick={() => openRightTab("intentions")}
+                  className="h-11 px-4 rounded-2xl bg-[#111827] hover:bg-[#1f2937] text-white/85 text-[13px] font-medium transition"
+                  title="Intentions"
+                >
+                  Intentions
+                </button>
 
-                    <button
-                      onClick={() => {
-                        setSettingsOpen(true);
-                        setTimeout(() => loadDevices(), 0);
-                        setShowMoreMenu(false);
-                      }}
-                      className="w-full px-4 py-3 text-left text-[13px] text-white/85 hover:bg-white/5 transition flex items-center gap-2"
-                    >
-                      <span className="opacity-90">
-                        <SettingsIcon />
-                      </span>
-                      <span>Video settings</span>
-                    </button>
+                <button
+                  onClick={() => {
+                    setSettingsOpen(true);
+                    setTimeout(() => loadDevices(), 0);
+                  }}
+                  className="h-11 px-4 rounded-2xl bg-[#111827] hover:bg-[#1f2937] text-white/85 text-[13px] font-medium transition inline-flex items-center gap-2"
+                  title="Video settings"
+                >
+                  <span className="opacity-90">
+                    <SettingsIcon />
+                  </span>
+                  <span className="hidden lg:inline">Video settings</span>
+                </button>
+              </div>
+
+              {/* ✅ MOBILE (<768): only "..." + dropdown */}
+              <div className="md:hidden">
+                <button
+                  onClick={() => setShowMoreMenu((v) => !v)}
+                  className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition bg-[#111827] hover:bg-[#1f2937] text-white/85"
+                  title="Menu"
+                >
+                  <MoreIcon />
+                </button>
+
+                {showMoreMenu && (
+                  <div className="absolute bottom-[76px] sm:bottom-[86px] left-0">
+                    <div className="w-[240px] rounded-2xl bg-[#020617] border border-white/10 shadow-2xl overflow-hidden">
+                      <button
+                        onClick={() => {
+                          openRightTab("participants");
+                          setShowMoreMenu(false);
+                        }}
+                        className="w-full px-4 py-3 text-left text-[13px] text-white/85 hover:bg-white/5 transition"
+                      >
+                        Participants
+                      </button>
+                      <button
+                        onClick={() => {
+                          openRightTab("chat");
+                          setShowMoreMenu(false);
+                        }}
+                        className="w-full px-4 py-3 text-left text-[13px] text-white/85 hover:bg-white/5 transition"
+                      >
+                        Chat
+                      </button>
+                      <button
+                        onClick={() => {
+                          openRightTab("intentions");
+                          setShowMoreMenu(false);
+                        }}
+                        className="w-full px-4 py-3 text-left text-[13px] text-white/85 hover:bg-white/5 transition"
+                      >
+                        Intentions
+                      </button>
+
+                      <div className="h-px bg-white/10" />
+
+                      <button
+                        onClick={() => {
+                          setSettingsOpen(true);
+                          setTimeout(() => loadDevices(), 0);
+                          setShowMoreMenu(false);
+                        }}
+                        className="w-full px-4 py-3 text-left text-[13px] text-white/85 hover:bg-white/5 transition flex items-center gap-2"
+                      >
+                        <span className="opacity-90">
+                          <SettingsIcon />
+                        </span>
+                        <span>Video settings</span>
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
             {/* CENTER GROUP */}
