@@ -1,7 +1,6 @@
 // src/pages/RoomPage.tsx
 // ROOMPAGE + JITSI ENGINE + VIDEO UI (UPDATED WITH REACTIONS)
-// ✅ Updated: bottom "more" menu, stagebar full width + clipped, hide host indicator <= 480px
-// ✅ Updated (THIS CHANGE): "More" menu ONLY on mobile (<768). On md+ show separate buttons (Participants/Chat/Intentions/Video settings)
+// ✅ Updated: bottom "more" menu (mobile-only), desktop direct buttons, stagebar full width + clipped, hide host indicator <= 480px
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -91,7 +90,7 @@ function SettingsIcon() {
   return (
     <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
       <path
-        d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.2 7.2 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 1h-3.8a.5.5 0 0 0-.49.42l-.36 2.54c-.58.23-1.12.54-1.63.94l-2.39-.96a.5 0 0 0-.6.22L2.71 7.48a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94L2.83 14.52a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.6.22l2.39-.96c.51.4 1.05.71 1.63.94l.36 2.54c.04.24.25.42.49.42h3.8c.24 0 .45-.18.49-.42l.36-2.54c.58-.23 1.12-.54 1.63-.94l2.39.96c.21.08.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5z"
+        d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.2 7.2 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 1h-3.8a.5.5 0 0 0-.49.42l-.36 2.54c-.58.23-1.12.54-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 7.48a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94L2.83 14.52a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.6.22l2.39-.96c.51.4 1.05.71 1.63.94l.36 2.54c.04.24.25.42.49.42h3.8c.24 0 .45-.18.49-.42l.36-2.54c.58-.23 1.12-.54 1.63-.94l2.39.96c.21.08.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5z"
         fill="currentColor"
       />
     </svg>
@@ -119,6 +118,58 @@ function LeaveIcon() {
         d="M13.7 8.3a1 1 0 0 1 1.4 0L19 12l-3.9 3.7a1 1 0 0 1-1.4-1.4L15.6 13H11a1 1 0 0 1 0-2h4.6l-1.3-1.3a1 1 0 0 1 0-1.4z"
         fill="currentColor"
       />
+    </svg>
+  );
+}
+
+// ✅ Desktop direct buttons icons (>=768px)
+function UsersIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
+      <path
+        d="M9 12.5a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"
+        fill="currentColor"
+        opacity="0.95"
+      />
+      <path
+        d="M17 11.5a3 3 0 1 1 0-6 3 3 0 0 1 0 6z"
+        fill="currentColor"
+        opacity="0.8"
+      />
+      <path
+        d="M3.5 20a5.5 5.5 0 0 1 11 0v.5H3.5V20z"
+        fill="currentColor"
+        opacity="0.95"
+      />
+      <path
+        d="M14.5 20a4.5 4.5 0 0 1 7.5 0v.5h-7.5V20z"
+        fill="currentColor"
+        opacity="0.7"
+      />
+    </svg>
+  );
+}
+
+function ChatIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
+      <path
+        d="M6 5h12a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H11l-4.5 3.2A.9.9 0 0 1 5 20.5V18H6a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3z"
+        fill="currentColor"
+      />
+      <circle cx="9" cy="11" r="1" fill="#050F1A" opacity="0.9" />
+      <circle cx="12" cy="11" r="1" fill="#050F1A" opacity="0.9" />
+      <circle cx="15" cy="11" r="1" fill="#050F1A" opacity="0.9" />
+    </svg>
+  );
+}
+
+function TargetIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
+      <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="2" />
+      <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.9" />
+      <circle cx="12" cy="12" r="1.6" fill="currentColor" />
     </svg>
   );
 }
@@ -1004,7 +1055,7 @@ export function RoomPage() {
   };
 
   // ============================================================
-  // ✅ MORE MENU (bottom)
+  // ✅ MORE MENU (bottom, mobile-only)
   // ============================================================
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement | null>(null);
@@ -1021,6 +1072,24 @@ export function RoomPage() {
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [showMoreMenu]);
+
+  // ✅ Auto-close more menu when switching to >=768px (so state doesn't linger)
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mql = window.matchMedia("(min-width: 768px)");
+    const onChange = () => {
+      if (mql.matches) setShowMoreMenu(false);
+    };
+    onChange();
+    try {
+      mql.addEventListener("change", onChange);
+      return () => mql.removeEventListener("change", onChange);
+    } catch {
+      // safari fallback
+      mql.addListener(onChange);
+      return () => mql.removeListener(onChange);
+    }
+  }, []);
 
   // ============================================================
   // RIGHT PANEL CONTENT
@@ -1344,50 +1413,9 @@ export function RoomPage() {
       <div className="fixed inset-x-0 bottom-0 z-50">
         <div className="max-w-[1720px] mx-auto px-3 sm:px-5 pb-[calc(12px+env(safe-area-inset-bottom))]">
           <div className="h-[64px] sm:h-[74px] rounded-2xl bg-[#07101E]/85 border border-white/10 shadow-2xl backdrop-blur grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4">
-            {/* LEFT GROUP: ✅ mobile "More", ✅ desktop separate buttons */}
-            <div className="relative flex items-center gap-2" ref={moreMenuRef}>
-              {/* ✅ DESKTOP (>=768): separate buttons, no "..." */}
-              <div className="hidden md:flex items-center gap-2">
-                <button
-                  onClick={() => openRightTab("participants")}
-                  className="h-11 px-4 rounded-2xl bg-[#111827] hover:bg-[#1f2937] text-white/85 text-[13px] font-medium transition"
-                  title="Participants"
-                >
-                  Participants
-                </button>
-
-                <button
-                  onClick={() => openRightTab("chat")}
-                  className="h-11 px-4 rounded-2xl bg-[#111827] hover:bg-[#1f2937] text-white/85 text-[13px] font-medium transition"
-                  title="Chat"
-                >
-                  Chat
-                </button>
-
-                <button
-                  onClick={() => openRightTab("intentions")}
-                  className="h-11 px-4 rounded-2xl bg-[#111827] hover:bg-[#1f2937] text-white/85 text-[13px] font-medium transition"
-                  title="Intentions"
-                >
-                  Intentions
-                </button>
-
-                <button
-                  onClick={() => {
-                    setSettingsOpen(true);
-                    setTimeout(() => loadDevices(), 0);
-                  }}
-                  className="h-11 px-4 rounded-2xl bg-[#111827] hover:bg-[#1f2937] text-white/85 text-[13px] font-medium transition inline-flex items-center gap-2"
-                  title="Video settings"
-                >
-                  <span className="opacity-90">
-                    <SettingsIcon />
-                  </span>
-                  <span className="hidden lg:inline">Video settings</span>
-                </button>
-              </div>
-
-              {/* ✅ MOBILE (<768): only "..." + dropdown */}
+            {/* LEFT GROUP: ✅ mobile menu (<768), desktop direct buttons (>=768) */}
+            <div className="flex items-center gap-2" ref={moreMenuRef}>
+              {/* ✅ MOBILE (<768): three-dots + dropdown */}
               <div className="md:hidden">
                 <button
                   onClick={() => setShowMoreMenu((v) => !v)}
@@ -1398,7 +1426,7 @@ export function RoomPage() {
                 </button>
 
                 {showMoreMenu && (
-                  <div className="absolute bottom-[76px] sm:bottom-[86px] left-0">
+                  <div className="absolute bottom-[76px] sm:bottom-[86px] left-3 sm:left-5">
                     <div className="w-[240px] rounded-2xl bg-[#020617] border border-white/10 shadow-2xl overflow-hidden">
                       <button
                         onClick={() => {
@@ -1446,6 +1474,44 @@ export function RoomPage() {
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* ✅ DESKTOP/TABLET (>=768): 4 direct buttons, no three-dots */}
+              <div className="hidden md:flex items-center gap-2">
+                <button
+                  onClick={() => openRightTab("participants")}
+                  className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition bg-[#111827] hover:bg-[#1f2937] text-white/85"
+                  title="Participants"
+                >
+                  <UsersIcon />
+                </button>
+
+                <button
+                  onClick={() => openRightTab("chat")}
+                  className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition bg-[#111827] hover:bg-[#1f2937] text-white/85"
+                  title="Chat"
+                >
+                  <ChatIcon />
+                </button>
+
+                <button
+                  onClick={() => openRightTab("intentions")}
+                  className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition bg-[#111827] hover:bg-[#1f2937] text-white/85"
+                  title="Intentions"
+                >
+                  <TargetIcon />
+                </button>
+
+                <button
+                  onClick={() => {
+                    setSettingsOpen(true);
+                    setTimeout(() => loadDevices(), 0);
+                  }}
+                  className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition bg-[#111827] hover:bg-[#1f2937] text-white/85"
+                  title="Video settings"
+                >
+                  <SettingsIcon />
+                </button>
               </div>
             </div>
 
