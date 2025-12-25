@@ -34,6 +34,11 @@ class CanvasVirtualBgEffect {
         return this.mode !== "none";
     }
 
+    // IMPORTANT: engine calls dispose() sometimes; make it available.
+    async dispose() {
+        await this.stopEffect();
+    }
+
     async startEffect(stream: MediaStream): Promise<MediaStream> {
         // create hidden video
         const v = document.createElement("video");
@@ -44,6 +49,7 @@ class CanvasVirtualBgEffect {
         await v.play();
 
         const c = document.createElement("canvas");
+        // initial size; will be synced in loop
         c.width = v.videoWidth || 1280;
         c.height = v.videoHeight || 720;
 
@@ -72,7 +78,7 @@ class CanvasVirtualBgEffect {
                 `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`,
         });
 
-        // modelSelection: 0 (general) / 1 (landscape) — попробуй 1 для “как в Jitsi”
+        // modelSelection: 0 (general) / 1 (landscape)
         seg.setOptions({ modelSelection: 1 });
 
         seg.onResults((results: any) => {

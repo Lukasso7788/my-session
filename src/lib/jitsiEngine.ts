@@ -108,7 +108,10 @@ export class JitsiEngine {
   private participants: Record<string, JitsiParticipant> = {};
   private localUserId: string | null = null;
 
-  private tracksByParticipant = new Map<string, { audio?: JitsiTrack; video?: JitsiTrack; screen?: JitsiTrack }>();
+  private tracksByParticipant = new Map<
+    string,
+    { audio?: JitsiTrack; video?: JitsiTrack; screen?: JitsiTrack }
+  >();
 
   private localAudioTrack: JitsiTrack | null = null;
   private localVideoTrack: JitsiTrack | null = null;
@@ -125,7 +128,7 @@ export class JitsiEngine {
   private subsHardResetInFlight = false;
   private subsWatchdog: any = null;
 
-  // REAL BG EFFECT (Jitsi virtual background effect object)
+  // REAL BG EFFECT (Your custom effect object)
   private videoEffect: JitsiStreamEffect | undefined = undefined;
 
   // Persisted bg prefs (to re-apply on track replacement)
@@ -134,7 +137,7 @@ export class JitsiEngine {
   // Guard: some builds fire TRACK_MUTE_CHANGED during setEffect and UI thinks "camera off"
   private bgApplying = false;
 
-  // IMPORTANT: detect if current lib supports creating VB effects
+  // IMPORTANT: for YOUR custom effect, we only need track.setEffect
   private effectsSupported = false;
 
   constructor(callbacks: JitsiEngineCallbacks = {}) {
@@ -157,10 +160,29 @@ export class JitsiEngine {
   // ========================================================================
   // EFFECT SUPPORT DETECTION
   // ========================================================================
-  private refreshEffectsSupport() {
-    const hasFactory = typeof this.JitsiMeetJS?.effects?.createVirtualBackgroundEffect === "function";
-    const hasSetEffect = typeof (this.localVideoTrack as any)?.setEffect === "function";
-    this.effectsSupported = !!(hasFactory && hasSetEffect);
+  private refreshEffectsSupport(track?: any) {
+    const t = track ?? this.localVideoTrack;
+    const hasSetEffect = typeof (t as any)?.setEffect === "function";
+
+    // For custom Canvas/MediaPipe effect -> factory is NOT required
+    this.effectsSupported = !!hasSetEffect;
+
+    // Sanity logs (quiet but informative)
+    try {
+      const hasEffectsModule = !!this.JitsiMeetJS?.effects;
+      const hasFactory = typeof this.JitsiMeetJS?.effects?.createVirtualBackgroundEffect === "function";
+      console.log(
+        "[Jitsi][effects] module:",
+        hasEffectsModule,
+        "createVB:",
+        hasFactory,
+        "track.setEffect:",
+        typeof (t as any)?.setEffect,
+        "=> supportedForCustom:",
+        this.effectsSupported
+      );
+    } catch { }
+
     return this.effectsSupported;
   }
 
@@ -223,7 +245,7 @@ export class JitsiEngine {
     }
 
     // refresh effect support & reapply if needed
-    this.refreshEffectsSupport();
+    this.refreshEffectsSupport(newVideo);
     await this.reapplyBgIfNeeded();
   }
 
@@ -233,30 +255,31 @@ export class JitsiEngine {
   private async clearBgEffectOnTrack(track: any) {
     if (!track) return;
 
-    // IMPORTANT: do not touch setEffect if lib doesn't support effect factory (avoid breaking track)
-    if (!this.effectsSupported) {
-      // still dispose local reference
-      try { this.videoEffect?.dispose?.(); } catch { }
-      this.videoEffect = undefined;
-      return;
+    const hasSetEffect = typeof track.setEffect === "function";
+
+    // Try to clear effect if possible (safe)
+    if (hasSetEffect) {
+      try {
+        await track.setEffect(undefined);
+      } catch (e) {
+        console.warn("[bg] clear setEffect(undefined) failed:", e);
+      }
     }
 
-    try {
-      if (typeof track.setEffect === "function") {
-        await track.setEffect(undefined);
-      }
-    } catch { }
-
-    try { this.videoEffect?.dispose?.(); } catch { }
+    // Always dispose our local effect reference/resources
+    try { await this.videoEffect?.dispose?.(); } catch { }
+    try { await (this.videoEffect as any)?.stopEffect?.(); } catch { }
     this.videoEffect = undefined;
   }
 
   private async applyBgEffectToTrack(track: any) {
     if (!track) return;
 
-    // if effects are not supported -> NO-OP (do not kill camera)
+    // For custom effect, only need setEffect
+    this.refreshEffectsSupport(track);
+
     if (!this.effectsSupported) {
-      console.warn("[bg] effects are NOT supported by current lib build (no createVirtualBackgroundEffect)");
+      console.warn("[bg] effects are NOT supported by current lib build (track.setEffect missing)");
       return;
     }
 
@@ -288,7 +311,7 @@ export class JitsiEngine {
     });
 
     if (!effect) {
-      console.warn("[bg] createBackgroundEffect returned empty (factory missing or error)");
+      console.warn("[bg] createBackgroundEffect returned empty (missing imageUrl or error)");
       return;
     }
 
@@ -307,7 +330,8 @@ export class JitsiEngine {
     } catch (e) {
       console.warn("[bg] setEffect failed, clearing:", e);
       try { await track.setEffect(undefined); } catch { }
-      try { effect.dispose?.(); } catch { }
+      try { await effect.dispose?.(); } catch { }
+      try { await (effect as any)?.stopEffect?.(); } catch { }
       this.videoEffect = undefined;
     } finally {
       setTimeout(() => { this.bgApplying = false; }, 250);
@@ -335,11 +359,11 @@ export class JitsiEngine {
     if (!t) return;
 
     // refresh support before doing anything
-    this.refreshEffectsSupport();
+    this.refreshEffectsSupport(t);
 
-    // If lib doesn't support effects -> do NOT touch video track
+    // If lib doesn't support setEffect -> do NOT touch video track
     if (!this.effectsSupported) {
-      console.warn("[bg] Requested", opts.mode, "but effects not supported by lib. Keeping video as-is.");
+      console.warn("[bg] Requested", opts.mode, "but track.setEffect not supported. Keeping video as-is.");
       this.scheduleHardResetSubscriptions(0);
       return;
     }
@@ -398,16 +422,16 @@ export class JitsiEngine {
     if (videoChanged) {
       try {
         if (this.localVideoTrack && typeof this.localVideoTrack.setDevice === "function") {
-          // clear effects ONLY if supported + active (avoid killing camera on unsupported builds)
-          this.refreshEffectsSupport();
-          if (this.effectsSupported && this.bgPrefs.mode !== "none") {
+          // clear effects ONLY if setEffect exists (custom effect needs only setEffect)
+          const hasSetEffect = typeof (this.localVideoTrack as any)?.setEffect === "function";
+          if (hasSetEffect && this.bgPrefs.mode !== "none") {
             await this.clearBgEffectOnTrack(this.localVideoTrack);
           }
 
           await this.localVideoTrack.setDevice(videoInputId);
 
           // sometimes Jitsi replaces the track instance; TRACK_ADDED will resync pointers
-          setTimeout(() => this.reapplyBgIfNeeded(), 0);
+          setTimeout(() => { void this.reapplyBgIfNeeded(); }, 0);
           return { audio: this.localAudioTrack, video: this.localVideoTrack };
         }
       } catch (e) {
@@ -450,9 +474,9 @@ export class JitsiEngine {
       }
 
       if (newVideo) {
+        const hasSetEffect = typeof (this.localVideoTrack as any)?.setEffect === "function";
         if (this.localVideoTrack && typeof this.conference.replaceTrack === "function") {
-          this.refreshEffectsSupport();
-          if (this.effectsSupported && this.bgPrefs.mode !== "none") {
+          if (hasSetEffect && this.bgPrefs.mode !== "none") {
             await this.clearBgEffectOnTrack(this.localVideoTrack);
           }
           await this.conference.replaceTrack(this.localVideoTrack, newVideo);
@@ -460,8 +484,7 @@ export class JitsiEngine {
           this.localVideoTrack = newVideo;
         } else if (this.localVideoTrack) {
           // fallback remove+add
-          this.refreshEffectsSupport();
-          if (this.effectsSupported && this.bgPrefs.mode !== "none") {
+          if (hasSetEffect && this.bgPrefs.mode !== "none") {
             await this.clearBgEffectOnTrack(this.localVideoTrack);
           }
           try { await this.conference.removeTrack?.(this.localVideoTrack); } catch { }
@@ -486,7 +509,7 @@ export class JitsiEngine {
     }
 
     // refresh support + re-apply effect if possible
-    this.refreshEffectsSupport();
+    this.refreshEffectsSupport(this.localVideoTrack);
     await this.reapplyBgIfNeeded();
 
     return { audio: this.localAudioTrack, video: this.localVideoTrack };
@@ -526,7 +549,7 @@ export class JitsiEngine {
     try {
       const hasEffects = !!this.JitsiMeetJS?.effects;
       const hasCreate = typeof this.JitsiMeetJS?.effects?.createVirtualBackgroundEffect === "function";
-      console.log("[Jitsi] effects:", hasEffects, "createVirtualBackgroundEffect:", hasCreate);
+      console.log("[Jitsi] effectsModule:", hasEffects, "createVirtualBackgroundEffect:", hasCreate);
     } catch { }
 
     const serviceUrl = this.config.websocket || this.config.bosh || `wss://${JITSI_DOMAIN}/xmpp-websocket`;
@@ -669,7 +692,8 @@ export class JitsiEngine {
     if (this.subsWatchdog) clearInterval(this.subsWatchdog);
     this.subsWatchdog = null;
 
-    try { this.videoEffect?.dispose?.(); } catch { }
+    try { await this.videoEffect?.dispose?.(); } catch { }
+    try { await (this.videoEffect as any)?.stopEffect?.(); } catch { }
     this.videoEffect = undefined;
 
     try {
@@ -844,7 +868,9 @@ export class JitsiEngine {
         devices: ["audio", "video"],
         resolution: 720,
         constraints: {
-          audio: this.mediaSettings.audioInputId ? { deviceId: { exact: this.mediaSettings.audioInputId } } : true,
+          audio: this.mediaSettings.audioInputId
+            ? { deviceId: { exact: this.mediaSettings.audioInputId } }
+            : true,
           video: this.mediaSettings.videoInputId
             ? { deviceId: { exact: this.mediaSettings.videoInputId } }
             : {
@@ -862,8 +888,8 @@ export class JitsiEngine {
         if (type === "video") this.localVideoTrack = t;
       }
 
-      // detect effects support after we have a real video track
-      this.refreshEffectsSupport();
+      // detect support after we have a real video track
+      this.refreshEffectsSupport(this.localVideoTrack);
 
       // debug
       try {
@@ -1077,8 +1103,9 @@ export class JitsiEngine {
       // keep local pointers in sync if Jitsi replaces tracks
       if (isLocal && type === "video") {
         this.localVideoTrack = track;
-        this.refreshEffectsSupport();
-        this.reapplyBgIfNeeded();
+        this.refreshEffectsSupport(track);
+        // avoid unhandled promise
+        void this.reapplyBgIfNeeded();
       }
       if (isLocal && type === "audio") {
         this.localAudioTrack = track;
@@ -1146,7 +1173,7 @@ export class JitsiEngine {
         if (pid === this.localUserId) {
           try {
             const nowMuted = track.isMuted?.() === true;
-            if (!nowMuted) this.reapplyBgIfNeeded();
+            if (!nowMuted) void this.reapplyBgIfNeeded();
           } catch { }
         }
       }
