@@ -1,8 +1,9 @@
 // src/pages/RoomPage.tsx
 // ROOMPAGE + JITSI ENGINE + VIDEO UI (UPDATED WITH REACTIONS)
-// ✅ Updated: full-width layout (no max-w container), unified control icons (stroke style),
-// ✅ mic/cam slashed icons when muted/off, new icons for reactions/screen/leave,
-// ✅ bottom "more" menu (mobile-only), desktop direct buttons, stagebar full width + clipped, hide host indicator <= 480px
+// ✅ Updated: full-width layout (no max-w clamp), unified FILLED icons,
+// ✅ Video area border removed, keep tiny page gutters (24-40px),
+// ✅ BottomControls full width,
+// ✅ Video tiles reset fix is in VideoRoom (no unmount of <video> on mute)
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -19,7 +20,6 @@ import {
   RoomMediaSettings,
 } from "../components/RoomMediaSettingsModal";
 
-// ✅ NEW: presence hook
 import { useAttendancePresence } from "../hooks/useAttendancePresence";
 
 type Stage = {
@@ -32,177 +32,218 @@ type Stage = {
 type RightPanelTab = "participants" | "chat" | "intentions" | null;
 
 /* ============================================================
-   ✅ UNIFIED ICONS (stroke style, consistent sizes)
+   ✅ FILLED ICON SET (unified style)
    ============================================================ */
 
-type IconProps = { className?: string };
-
-function IconBase({
-  children,
-  className = "w-5 h-5",
-  viewBox = "0 0 24 24",
-}: {
-  children: React.ReactNode;
-  className?: string;
-  viewBox?: string;
-}) {
+function IconMic({ off }: { off?: boolean }) {
+  // filled mic + slash when off
   return (
-    <svg
-      viewBox={viewBox}
-      className={className}
-      aria-hidden="true"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.9"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      {children}
+    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
+      {!off ? (
+        <>
+          <path
+            d="M12 3a3.25 3.25 0 0 1 3.25 3.25v5.5A3.25 3.25 0 0 1 12 15a3.25 3.25 0 0 1-3.25-3.25v-5.5A3.25 3.25 0 0 1 12 3Z"
+            fill="currentColor"
+          />
+          <path
+            d="M6.25 11a.95.95 0 0 0-1.9 0 7.65 7.65 0 0 0 6.7 7.6V20H9.25a.95.95 0 0 0 0 1.9h5.5a.95.95 0 0 0 0-1.9H13v-1.4a7.65 7.65 0 0 0 6.7-7.6.95.95 0 0 0-1.9 0 5.8 5.8 0 0 1-11.6 0Z"
+            fill="currentColor"
+            opacity="0.92"
+          />
+        </>
+      ) : (
+        <>
+          <path
+            d="M12 3a3.25 3.25 0 0 1 3.25 3.25v4.2c0 .35-.03.68-.1 1l-6.3-6.3A3.25 3.25 0 0 1 12 3Z"
+            fill="currentColor"
+          />
+          <path
+            d="M7.4 6.2 6.06 4.86a.95.95 0 0 0-1.35 1.35l1.38 1.38v4.16A3.25 3.25 0 0 0 9.34 15c.4.05.8.06 1.2.04l1.92 1.92c-.15.01-.31.02-.46.02a5.8 5.8 0 0 1-5.8-5.8.95.95 0 0 0-1.9 0 7.65 7.65 0 0 0 6.7 7.6V20H9.25a.95.95 0 0 0 0 1.9h5.5a.95.95 0 0 0 0-1.9H13v-1.44c.45-.07.9-.18 1.32-.32l2.62 2.62a.95.95 0 1 0 1.35-1.35L7.4 6.2Z"
+            fill="currentColor"
+            opacity="0.92"
+          />
+        </>
+      )}
     </svg>
   );
 }
 
-function MicOnIcon({ className }: IconProps) {
+function IconCamera({ off }: { off?: boolean }) {
+  // filled camera + slash when off
   return (
-    <IconBase className={className}>
-      <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z" />
-      <path d="M19 11a7 7 0 0 1-14 0" />
-      <path d="M12 18v3" />
-      <path d="M9 21h6" />
-    </IconBase>
+    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
+      {!off ? (
+        <>
+          <path
+            d="M8 6.25h5.6c.35 0 .68.14.93.39l1.02 1.02H18.3c1.1 0 2 .9 2 2v6.2c0 1.1-.9 2-2 2H8c-1.1 0-2-.9-2-2V8.25c0-1.1.9-2 2-2Z"
+            fill="currentColor"
+          />
+          <path
+            d="M15.85 12.2 21 9.3v5.4l-5.15-2.9a.8.8 0 0 1 0-1.6Z"
+            fill="currentColor"
+            opacity="0.9"
+          />
+        </>
+      ) : (
+        <>
+          <path
+            d="M8 6.25h5.2c.35 0 .68.14.93.39l1.02 1.02H18.3c1.1 0 2 .9 2 2v4.5l-3.2-3.2 3.2-1.8v-. -"
+            fill="none"
+          />
+          <path
+            d="M6.12 4.86a.95.95 0 1 0-1.35 1.35l1.28 1.28A1.98 1.98 0 0 0 6 8.25v7.6c0 1.1.9 2 2 2h10.3c.3 0 .59-.07.85-.19l1.08 1.08a.95.95 0 1 0 1.35-1.35L6.12 4.86Zm8.26 8.26L8.01 6.75H13.2c.35 0 .68.14.93.39l1.02 1.02H18.3c1.1 0 2 .9 2 2v5.08l-5.23-5.23-.7.4a.8.8 0 0 0-.39.7.8.8 0 0 0 .39.7Z"
+            fill="currentColor"
+          />
+          <path
+            d="M21 9.3v5.4l-2.46-1.39-3.65-3.65L21 9.3Z"
+            fill="currentColor"
+            opacity="0.9"
+          />
+        </>
+      )}
+    </svg>
   );
 }
 
-function MicOffIcon({ className }: IconProps) {
+function IconScreenShare({ active }: { active?: boolean }) {
+  // filled monitor + arrow
   return (
-    <IconBase className={className}>
-      <path d="M10 9V6a2 2 0 0 1 4 0v5a2 2 0 0 1-.2.9" />
-      <path d="M9 13a3 3 0 0 0 5.2 1.9" />
-      <path d="M19 11a7 7 0 0 1-1.2 3.9" />
-      <path d="M5 11a7 7 0 0 0 9.8 6.4" />
-      <path d="M12 18v3" />
-      <path d="M9 21h6" />
-      <path d="M4 4l16 16" />
-    </IconBase>
+    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
+      <path
+        d="M4.2 4.8h15.6c1.1 0 2 .9 2 2v8.6c0 1.1-.9 2-2 2H4.2c-1.1 0-2-.9-2-2V6.8c0-1.1.9-2 2-2Z"
+        fill="currentColor"
+        opacity={active ? 1 : 0.95}
+      />
+      <path
+        d="M9 20.2h6a.95.95 0 0 0 0-1.9H9a.95.95 0 0 0 0 1.9Z"
+        fill="currentColor"
+        opacity="0.9"
+      />
+      <path
+        d="M12.2 9.2a.9.9 0 0 1 1.27 0l2.2 2.2a.9.9 0 0 1-1.27 1.27l-.65-.65v2.35a.9.9 0 1 1-1.8 0v-2.35l-.65.65A.9.9 0 1 1 10.05 11l2.15-2.2Z"
+        fill="currentColor"
+      />
+    </svg>
   );
 }
 
-function CameraOnIcon({ className }: IconProps) {
+function IconSmile() {
+  // filled smile
   return (
-    <IconBase className={className}>
-      <path d="M14.5 7H7.5A2.5 2.5 0 0 0 5 9.5v5A2.5 2.5 0 0 0 7.5 17h7A2.5 2.5 0 0 0 17 14.5v-5A2.5 2.5 0 0 0 14.5 7Z" />
-      <path d="M17 10l3-2v8l-3-2" />
-    </IconBase>
+    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
+      <path
+        d="M12 2.75c-5.1 0-9.25 4.15-9.25 9.25S6.9 21.25 12 21.25 21.25 17.1 21.25 12 17.1 2.75 12 2.75Z"
+        fill="currentColor"
+        opacity="0.95"
+      />
+      <path
+        d="M8.7 11.05a1.05 1.05 0 1 0 0-2.1 1.05 1.05 0 0 0 0 2.1Zm6.6 0a1.05 1.05 0 1 0 0-2.1 1.05 1.05 0 0 0 0 2.1Z"
+        fill="#050F1A"
+        opacity="0.95"
+      />
+      <path
+        d="M8.75 13.45a.95.95 0 0 1 1.32.18c.45.58 1.07.92 1.93.92.86 0 1.48-.34 1.93-.92a.95.95 0 0 1 1.5 1.14c-.8 1.05-1.95 1.68-3.43 1.68s-2.63-.63-3.43-1.68a.95.95 0 0 1 .18-1.32Z"
+        fill="#050F1A"
+        opacity="0.95"
+      />
+    </svg>
   );
 }
 
-function CameraOffIcon({ className }: IconProps) {
+function IconSettings() {
+  // filled gear
   return (
-    <IconBase className={className}>
-      <path d="M14.5 7H9.2" />
-      <path d="M7.5 7A2.5 2.5 0 0 0 5 9.5v5A2.5 2.5 0 0 0 7.5 17h7A2.5 2.5 0 0 0 17 14.5v-1.9" />
-      <path d="M17 10l3-2v8l-3-2" />
-      <path d="M4 4l16 16" />
-    </IconBase>
+    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
+      <path
+        d="M19.6 13.25c.05-.41.08-.83.08-1.25s-.03-.84-.08-1.25l1.93-1.5a.9.9 0 0 0 .22-1.15l-1.85-3.2a.9.9 0 0 0-1.08-.4l-2.28.92c-.5-.37-1.05-.68-1.64-.9l-.35-2.44a.9.9 0 0 0-.89-.77h-3.6a.9.9 0 0 0-.89.77l-.35 2.44c-.6.22-1.14.53-1.64.9l-2.28-.92a.9.9 0 0 0-1.08.4L2.25 7.1a.9.9 0 0 0 .22 1.15l1.93 1.5c-.05.41-.08.83-.08 1.25s.03.84.08 1.25l-1.93 1.5a.9.9 0 0 0-.22 1.15l1.85 3.2a.9.9 0 0 0 1.08.4l2.28-.92c.5.37 1.05.68 1.64.9l.35 2.44a.9.9 0 0 0 .89.77h3.6a.9.9 0 0 0 .89-.77l.35-2.44c.6-.22 1.14-.53 1.64-.9l2.28.92a.9.9 0 0 0 1.08-.4l1.85-3.2a.9.9 0 0 0-.22-1.15l-1.93-1.5ZM12 15.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2Z"
+        fill="currentColor"
+      />
+    </svg>
   );
 }
 
-function ScreenShareOnIcon({ className }: IconProps) {
+function IconMore() {
+  // filled 3-dots
   return (
-    <IconBase className={className}>
-      <rect x="3.5" y="5" width="17" height="11.5" rx="2.2" />
-      <path d="M12 19h0" />
-      <path d="M9.5 19h5" />
-      {/* arrow */}
-      <path d="M12 8.2v5.2" />
-      <path d="M9.8 10.4 12 8.2l2.2 2.2" />
-    </IconBase>
+    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
+      <circle cx="6" cy="12" r="2" fill="currentColor" />
+      <circle cx="12" cy="12" r="2" fill="currentColor" />
+      <circle cx="18" cy="12" r="2" fill="currentColor" />
+    </svg>
   );
 }
 
-function ScreenShareOffIcon({ className }: IconProps) {
+function IconLeave() {
+  // filled leave/exit
   return (
-    <IconBase className={className}>
-      <rect x="3.5" y="5" width="17" height="11.5" rx="2.2" />
-      <path d="M9.5 19h5" />
-      <path d="M4 4l16 16" />
-    </IconBase>
+    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
+      <path
+        d="M5.2 5.2h7.2a1 1 0 1 1 0 2H7.2v9.6h5.2a1 1 0 1 1 0 2H5.2a1.2 1.2 0 0 1-1.2-1.2V6.4a1.2 1.2 0 0 1 1.2-1.2Z"
+        fill="currentColor"
+        opacity="0.95"
+      />
+      <path
+        d="M13.65 8.35a1 1 0 0 1 1.4 0L19.2 12l-4.15 3.65a1 1 0 0 1-1.4-1.4L15.3 13H11a1 1 0 1 1 0-2h4.3l-1.65-1.25a1 1 0 0 1 0-1.4Z"
+        fill="currentColor"
+      />
+    </svg>
   );
 }
 
-function ReactionsIcon({ className }: IconProps) {
+function ParticipantsIcon() {
+  // filled people
   return (
-    <IconBase className={className}>
-      <path d="M12 21a9 9 0 1 0-9-9c0 1.8.5 3.4 1.4 4.9L3.5 20l3.3-.8c1.5 1 3.2 1.6 5.2 1.6Z" />
-      <path d="M9.2 11h.01" />
-      <path d="M14.8 11h.01" />
-      <path d="M8.8 14.2c.9 1.1 2.1 1.7 3.2 1.7s2.3-.6 3.2-1.7" />
-      {/* small plus corner */}
-      <path d="M18.3 6.8v3.4" />
-      <path d="M16.6 8.5h3.4" />
-    </IconBase>
+    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
+      <path
+        d="M12 11.6a3.7 3.7 0 1 0-3.7-3.7 3.7 3.7 0 0 0 3.7 3.7Z"
+        fill="currentColor"
+      />
+      <path
+        d="M4.2 20.2c0-3.55 3.55-6.4 7.8-6.4s7.8 2.85 7.8 6.4v.55H4.2v-.55Z"
+        fill="currentColor"
+        opacity="0.92"
+      />
+    </svg>
   );
 }
 
-function SettingsIcon({ className }: IconProps) {
+function ChatIcon() {
+  // filled chat bubble
   return (
-    <IconBase className={className}>
-      <path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z" />
-      <path d="M19.4 12a7.7 7.7 0 0 0-.1-1l2-1.6-2-3.4-2.4 1a8.1 8.1 0 0 0-1.7-1l-.4-2.6H10l-.4 2.6a8.1 8.1 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7.7 7.7 0 0 0 0 2l-2 1.6 2 3.4 2.4-1c.5.4 1.1.7 1.7 1l.4 2.6h4l.4-2.6c.6-.2 1.2-.6 1.7-1l2.4 1 2-3.4-2-1.6c.1-.3.1-.6.1-1Z" />
-    </IconBase>
+    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
+      <path
+        d="M6.2 4.6h11.6a2.2 2.2 0 0 1 2.2 2.2v8.2a2.2 2.2 0 0 1-2.2 2.2H10l-4.4 2.65v-2.65H6.2A2.2 2.2 0 0 1 4 15V6.8a2.2 2.2 0 0 1 2.2-2.2Z"
+        fill="currentColor"
+      />
+    </svg>
   );
 }
 
-function MoreIcon({ className }: IconProps) {
+function TargetIcon() {
+  // filled target
   return (
-    <IconBase className={className}>
-      <circle cx="6" cy="12" r="1.2" fill="currentColor" stroke="none" />
-      <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
-      <circle cx="18" cy="12" r="1.2" fill="currentColor" stroke="none" />
-    </IconBase>
+    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
+      <path
+        d="M12 2.75c-5.1 0-9.25 4.15-9.25 9.25S6.9 21.25 12 21.25 21.25 17.1 21.25 12 17.1 2.75 12 2.75Z"
+        fill="currentColor"
+        opacity="0.35"
+      />
+      <path
+        d="M12 6.1a5.9 5.9 0 1 0 0 11.8 5.9 5.9 0 0 0 0-11.8Z"
+        fill="currentColor"
+        opacity="0.55"
+      />
+      <path
+        d="M12 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z"
+        fill="currentColor"
+      />
+    </svg>
   );
 }
 
-function LeaveIcon({ className }: IconProps) {
-  return (
-    <IconBase className={className}>
-      <path d="M10 7V6a2 2 0 0 1 2-2h7v16h-7a2 2 0 0 1-2-2v-1" />
-      <path d="M4 12h9" />
-      <path d="M7 9l-3 3 3 3" />
-    </IconBase>
-  );
-}
-
-function ParticipantsIcon({ className }: IconProps) {
-  return (
-    <IconBase className={className}>
-      <path d="M16 11a3 3 0 1 0-3-3 3 3 0 0 0 3 3Z" />
-      <path d="M8 12a2.5 2.5 0 1 0-2.5-2.5A2.5 2.5 0 0 0 8 12Z" />
-      <path d="M5 20a4 4 0 0 1 6-3.5" />
-      <path d="M13 20a5 5 0 0 1 10 0" />
-    </IconBase>
-  );
-}
-
-function ChatIcon({ className }: IconProps) {
-  return (
-    <IconBase className={className}>
-      <path d="M20 12a7 7 0 0 1-7 7H8l-4 3v-3a7 7 0 0 1-1-4 7 7 0 0 1 7-7h3a7 7 0 0 1 7 7Z" />
-      <path d="M8 12h7" />
-      <path d="M8 15h5" />
-    </IconBase>
-  );
-}
-
-function TargetIcon({ className }: IconProps) {
-  return (
-    <IconBase className={className}>
-      <circle cx="12" cy="12" r="7.5" />
-      <circle cx="12" cy="12" r="3.5" />
-      <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" />
-    </IconBase>
-  );
-}
+/* ============================================================
+   helpers
+   ============================================================ */
 
 const reactionEmoji: Record<ReactionType, string> = {
   fire: "🔥",
@@ -213,7 +254,6 @@ const reactionEmoji: Record<ReactionType, string> = {
   thumbsDown: "👎",
 };
 
-// ✅ helpers for infinite schedule parsing
 function safeParseJson(raw: any) {
   if (!raw) return null;
   if (typeof raw === "string") {
@@ -228,10 +268,6 @@ function safeParseJson(raw: any) {
   return raw;
 }
 
-/**
- * ✅ NEW: parse "50/5/5" (or "50-5-5") schedule stored as a string.
- * Returns minutes.
- */
 function parse50505(
   raw: any
 ): { focus: number; break: number; intentions: number } | null {
@@ -259,7 +295,9 @@ function parse50505(
   return { focus, break: br, intentions };
 }
 
-function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: number }[] {
+function normalizeInfinitePhases(
+  anyPhases: any
+): { name: string; seconds: number }[] {
   if (!anyPhases) return [];
 
   const toSeconds = (raw: any): number => {
@@ -283,14 +321,12 @@ function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: numbe
 
     if (!Number.isFinite(n) || n <= 0) return 0;
 
-    // ✅ heuristic: 50/5/5 часто лежит как "минуты"
+    // heuristic: 50/5/5 often stored as minutes
     if (n <= 180) return n * 60;
 
-    // иначе считаем секундами
     return n;
   };
 
-  // case A: array [{name,seconds|minutes|duration}, ...]
   if (Array.isArray(anyPhases)) {
     return anyPhases
       .map((p: any) => {
@@ -301,7 +337,6 @@ function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: numbe
       .filter((x) => x.seconds > 0);
   }
 
-  // case B: object map { focus: 3000, break: 300 } OR { focus: 50, break: 5 } (minutes)
   if (typeof anyPhases === "object") {
     return Object.entries(anyPhases)
       .map(([k, v]: any) => {
@@ -378,7 +413,6 @@ export function RoomPage() {
   const [currentStage, setCurrentStage] = useState(0);
   const [remainingTime, setRemainingTime] = useState<string>("");
 
-  // ✅ stagebar start + infinite cycle
   const [stagebarStartTime, setStagebarStartTime] = useState<string>("");
   const [stagebarCycleSeconds, setStagebarCycleSeconds] = useState<
     number | undefined
@@ -393,27 +427,22 @@ export function RoomPage() {
   const engineRef = useRef<JitsiEngine | null>(null);
   const [participants, setParticipants] = useState<JitsiParticipant[]>([]);
 
-  // ★ SOUND WHEN USER JOINS
   const prevCountRef = useRef<number>(0);
 
-  // ★ TRACK SCREEN SHARER
   const [activeScreenSharer, setActiveScreenSharer] = useState<string | null>(
     null
   );
 
-  // ★ REACTIONS RECEIVED FROM OTHER USERS
   const [incomingReactions, setIncomingReactions] = useState<
     { id: number; type: ReactionType }[]
   >([]);
   const reactionIdRef = useRef<number>(0);
 
-  // ★ LOCAL REACTIONS (FOR OVERLAY)
   const [localReactions, setLocalReactions] = useState<
     { id: number; type: ReactionType }[]
   >([]);
   const localReactionIdRef = useRef<number>(0);
 
-  // AUDIO ---------------------------------------------------------
   const prevStageRef = useRef<number>(-1);
   const firstTickDoneRef = useRef<boolean>(false);
   const welcomeLoopRef = useRef<HTMLAudioElement | null>(null);
@@ -429,7 +458,6 @@ export function RoomPage() {
   const BREAK_END_SOUND = "/sounds/break_end.mp3";
   const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
 
-  // RIGHT PANEL
   const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(false);
   const [rightTab, setRightTab] = useState<RightPanelTab>(null);
 
@@ -447,14 +475,14 @@ export function RoomPage() {
     });
   };
 
-  // ✅ detect infinite room by schedule (robust + supports "50/5/5")
   const isInfiniteRoom = useMemo(() => {
     const raw = session?.schedule;
 
     if (parse50505(raw)) return true;
 
     const parsed = safeParseJson(raw);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      return false;
 
     const kind = String((parsed as any)?.kind || "").toLowerCase();
     if (kind === "infinite_room") return true;
@@ -468,7 +496,6 @@ export function RoomPage() {
     return false;
   }, [session]);
 
-  // ✅ SILENT ROOM DETECTION
   const isSilentRoom = useMemo(() => {
     const fmt = String(session?.format || "").toLowerCase();
     const title = String(session?.title || "").toLowerCase();
@@ -491,9 +518,6 @@ export function RoomPage() {
     return hay.includes("silent");
   }, [session]);
 
-  // ============================================================
-  // UNLOCK AUDIO
-  // ============================================================
   useEffect(() => {
     const unlock = () => {
       if (audioUnlockedRef.current) return;
@@ -542,9 +566,6 @@ export function RoomPage() {
     } catch { }
   };
 
-  // ============================================================
-  // DEVICES
-  // ============================================================
   const loadDevices = async () => {
     try {
       const engine = engineRef.current;
@@ -578,9 +599,6 @@ export function RoomPage() {
     }
   };
 
-  // ============================================================
-  // LOAD SESSION + BUILD STAGES
-  // ============================================================
   useEffect(() => {
     (async () => {
       if (!id) return;
@@ -657,7 +675,9 @@ export function RoomPage() {
           parsed &&
           typeof parsed === "object" &&
           !Array.isArray(parsed) &&
-          (String((parsed as any)?.kind || "").toLowerCase().includes("infinite") ||
+          (String((parsed as any)?.kind || "")
+            .toLowerCase()
+            .includes("infinite") ||
             (parsed as any)?.timer?.phases ||
             (parsed as any)?.timer?.segments ||
             (parsed as any)?.phases ||
@@ -735,9 +755,6 @@ export function RoomPage() {
     })();
   }, [id]);
 
-  // ============================================================
-  // RESOLVE USER NAME
-  // ============================================================
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getUser();
@@ -762,14 +779,8 @@ export function RoomPage() {
     })();
   }, []);
 
-  // ============================================================
-  // ✅ PRESENCE (LIVE ATTENDANCE)
-  // ============================================================
   useAttendancePresence(id && authUserId ? id : null, { heartbeatMs: 10_000 });
 
-  // ============================================================
-  // JITSI INIT + REACTIONS
-  // ============================================================
   useEffect(() => {
     if (!session || !userName) return;
     if (engineRef.current) return;
@@ -864,9 +875,6 @@ export function RoomPage() {
     };
   }, [session, userName]);
 
-  // ============================================================
-  // APPLY MEDIA SETTINGS
-  // ============================================================
   const applyMediaSettings = async (next: RoomMediaSettings) => {
     try {
       const engine = engineRef.current as any;
@@ -903,7 +911,6 @@ export function RoomPage() {
     }
   };
 
-  // BUTTON HANDLERS
   const handleToggleAudio = () => engineRef.current?.toggleAudioMute();
   const handleToggleVideo = () => engineRef.current?.toggleVideoMute();
   const handleToggleScreenShare = () => engineRef.current?.toggleScreenShare();
@@ -920,9 +927,6 @@ export function RoomPage() {
     }
   };
 
-  // ============================================================
-  // STAGES TIMER (scheduled OR infinite)
-  // ============================================================
   useEffect(() => {
     if (isSilentRoom) {
       setRemainingTime("");
@@ -1037,9 +1041,6 @@ export function RoomPage() {
     stagebarCycleSeconds,
   ]);
 
-  // ============================================================
-  // DERIVED
-  // ============================================================
   const localParticipant = useMemo(
     () => participants.find((p) => p.isLocal) || null,
     [participants]
@@ -1049,9 +1050,6 @@ export function RoomPage() {
   const isVideoMuted = !!localParticipant?.videoMuted;
   const isScreenSharing = !!localParticipant?.isScreenSharing;
 
-  // ============================================================
-  // REACTIONS MENU
-  // ============================================================
   const [showReactionsMenu, setShowReactionsMenu] = useState(false);
   const reactionsMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -1084,9 +1082,6 @@ export function RoomPage() {
     }, 1500);
   };
 
-  // ============================================================
-  // ✅ MORE MENU (bottom, mobile-only)
-  // ============================================================
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -1103,7 +1098,6 @@ export function RoomPage() {
     return () => document.removeEventListener("mousedown", onDown);
   }, [showMoreMenu]);
 
-  // ✅ Auto-close more menu when switching to >=768px (so state doesn't linger)
   useEffect(() => {
     if (typeof window === "undefined" || !window.matchMedia) return;
     const mql = window.matchMedia("(min-width: 768px)");
@@ -1115,15 +1109,11 @@ export function RoomPage() {
       mql.addEventListener("change", onChange);
       return () => mql.removeEventListener("change", onChange);
     } catch {
-      // safari fallback
       mql.addListener(onChange);
       return () => mql.removeListener(onChange);
     }
   }, []);
 
-  // ============================================================
-  // RIGHT PANEL CONTENT
-  // ============================================================
   const [participantsSearch, setParticipantsSearch] = useState("");
 
   const filteredParticipants = useMemo(() => {
@@ -1138,9 +1128,6 @@ export function RoomPage() {
 
   const participantsCount = participants.length;
 
-  // ============================================================
-  // RENDER
-  // ============================================================
   if (loading)
     return (
       <div className="flex h-screen justify-center items-center text-white bg-[#050F1A]">
@@ -1157,8 +1144,8 @@ export function RoomPage() {
 
   return (
     <div className="min-h-screen bg-[#050F1A] text-white">
-      {/* ✅ FULL-WIDTH CONTAINER WITH RESPONSIVE EDGE PADDING (≈32–40px on desktop) */}
-      <div className="w-full px-4 sm:px-6 md:px-8 xl:px-10 pt-5 pb-[calc(110px+env(safe-area-inset-bottom))] flex flex-col gap-5 min-h-screen">
+      {/* ✅ Full-width container, small gutters (24-40px) */}
+      <div className="w-full px-6 sm:px-8 lg:px-10 pt-5 pb-[calc(110px+env(safe-area-inset-bottom))] flex flex-col gap-5 min-h-screen">
         {/* TOP BAR */}
         <div className="flex w-full rounded-2xl overflow-hidden bg-[#111827]/40 border border-white/5">
           <div className="flex-1 px-6 py-4">
@@ -1182,7 +1169,6 @@ export function RoomPage() {
                   </div>
                 )}
 
-                {/* ✅ HIDE host indicator <= 480px */}
                 {session.host_profile && (
                   <button
                     onClick={() => setSelectedUser(session.host_profile)}
@@ -1204,7 +1190,7 @@ export function RoomPage() {
               </div>
             </div>
 
-            {/* ✅ StageBar FULL WIDTH + clip overflow */}
+            {/* StageBar */}
             {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
               <div className="mt-3 w-full overflow-hidden">
                 <div className="w-full overflow-hidden">
@@ -1229,8 +1215,8 @@ export function RoomPage() {
               : "grid-cols-1")
           }
         >
-          {/* VIDEO AREA */}
-          <div className="rounded-2xl bg-[#0B1220]/55 border border-white/5 shadow-lg overflow-hidden relative min-h-0">
+          {/* VIDEO AREA (✅ border removed) */}
+          <div className="rounded-2xl bg-[#0B1220]/45 shadow-lg overflow-hidden relative min-h-0">
             <div className="w-full h-full p-3 min-h-0">
               <VideoRoom
                 participants={participants}
@@ -1246,7 +1232,6 @@ export function RoomPage() {
                   engineRef.current?.setVisibleVideoParticipants(ids)
                 }
                 audioOutputId={selectedAudioOutputId}
-                // ✅ NEW: give engine the actual <video> elements (black-video recovery)
                 onRegisterVideoElement={(pid, el, kind) => {
                   try {
                     (engineRef.current as any)?.registerVideoElement?.(
@@ -1341,21 +1326,7 @@ export function RoomPage() {
                                 }
                                 title={p.audioMuted ? "Muted" : "Unmuted"}
                               >
-                                <svg
-                                  viewBox="0 0 24 24"
-                                  className="w-4 h-4"
-                                  aria-hidden="true"
-                                >
-                                  <path
-                                    d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"
-                                    fill="currentColor"
-                                  />
-                                  <path
-                                    d="M6 11a1 1 0 0 0-2 0 8 8 0 0 0 7 7.93V21H9a1 1 0 0 0 0 2h6a1 1 0 1 0 0-2h-2v-2.07A8 8 0 0 0 20 11a1 1 0 0 0-2 0 6 6 0 0 1-12 0z"
-                                    fill="currentColor"
-                                    opacity="0.85"
-                                  />
-                                </svg>
+                                <IconMic off={!!p.audioMuted} />
                               </div>
 
                               <div
@@ -1367,25 +1338,7 @@ export function RoomPage() {
                                 }
                                 title={p.videoMuted ? "Video off" : "Video on"}
                               >
-                                <svg
-                                  viewBox="0 0 24 24"
-                                  className="w-4 h-4"
-                                  aria-hidden="true"
-                                >
-                                  <rect
-                                    x="4"
-                                    y="6"
-                                    width="11"
-                                    height="12"
-                                    rx="2"
-                                    fill="currentColor"
-                                  />
-                                  <path
-                                    d="M17 9.5 21 7v10l-4-2.5z"
-                                    fill="currentColor"
-                                    opacity="0.85"
-                                  />
-                                </svg>
+                                <IconCamera off={!!p.videoMuted} />
                               </div>
                             </div>
                           </div>
@@ -1450,25 +1403,24 @@ export function RoomPage() {
         </div>
       </div>
 
-      {/* FIXED BOTTOM CONTROLS */}
+      {/* FIXED BOTTOM CONTROLS (✅ full width, no max-w clamp) */}
       <div className="fixed inset-x-0 bottom-0 z-50">
-        {/* ✅ FULL-WIDTH BOTTOM CONTROLS WRAPPER */}
-        <div className="w-full px-3 sm:px-6 md:px-8 xl:px-10 pb-[calc(12px+env(safe-area-inset-bottom))]">
+        <div className="w-full px-6 sm:px-8 lg:px-10 pb-[calc(12px+env(safe-area-inset-bottom))]">
           <div className="h-[64px] sm:h-[74px] rounded-2xl bg-[#07101E]/85 border border-white/10 shadow-2xl backdrop-blur grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4">
-            {/* LEFT GROUP: ✅ mobile menu (<768), desktop direct buttons (>=768) */}
+            {/* LEFT GROUP */}
             <div className="flex items-center gap-2" ref={moreMenuRef}>
-              {/* ✅ MOBILE (<768): three-dots + dropdown */}
+              {/* MOBILE (<768): menu */}
               <div className="md:hidden">
                 <button
                   onClick={() => setShowMoreMenu((v) => !v)}
                   className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition bg-[#111827] hover:bg-[#1f2937] text-white/85"
                   title="Menu"
                 >
-                  <MoreIcon className="w-5 h-5" />
+                  <IconMore />
                 </button>
 
                 {showMoreMenu && (
-                  <div className="absolute bottom-[76px] sm:bottom-[86px] left-3 sm:left-6 md:left-8 xl:left-10">
+                  <div className="absolute bottom-[76px] sm:bottom-[86px] left-6 sm:left-8 lg:left-10">
                     <div className="w-[240px] rounded-2xl bg-[#020617] border border-white/10 shadow-2xl overflow-hidden">
                       <button
                         onClick={() => {
@@ -1478,7 +1430,7 @@ export function RoomPage() {
                         className="w-full px-4 py-3 text-left text-[13px] text-white/85 hover:bg-white/5 transition flex items-center gap-2"
                       >
                         <span className="opacity-90">
-                          <ParticipantsIcon className="w-5 h-5" />
+                          <ParticipantsIcon />
                         </span>
                         <span>Participants</span>
                       </button>
@@ -1491,7 +1443,7 @@ export function RoomPage() {
                         className="w-full px-4 py-3 text-left text-[13px] text-white/85 hover:bg-white/5 transition flex items-center gap-2"
                       >
                         <span className="opacity-90">
-                          <ChatIcon className="w-5 h-5" />
+                          <ChatIcon />
                         </span>
                         <span>Chat</span>
                       </button>
@@ -1504,7 +1456,7 @@ export function RoomPage() {
                         className="w-full px-4 py-3 text-left text-[13px] text-white/85 hover:bg-white/5 transition flex items-center gap-2"
                       >
                         <span className="opacity-90">
-                          <TargetIcon className="w-5 h-5" />
+                          <TargetIcon />
                         </span>
                         <span>Intentions</span>
                       </button>
@@ -1520,7 +1472,7 @@ export function RoomPage() {
                         className="w-full px-4 py-3 text-left text-[13px] text-white/85 hover:bg-white/5 transition flex items-center gap-2"
                       >
                         <span className="opacity-90">
-                          <SettingsIcon className="w-5 h-5" />
+                          <IconSettings />
                         </span>
                         <span>Video settings</span>
                       </button>
@@ -1529,14 +1481,14 @@ export function RoomPage() {
                 )}
               </div>
 
-              {/* ✅ DESKTOP/TABLET (>=768): 4 direct buttons, no three-dots */}
+              {/* DESKTOP/TABLET (>=768) */}
               <div className="hidden md:flex items-center gap-2">
                 <button
                   onClick={() => openRightTab("participants")}
                   className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition bg-[#111827] hover:bg-[#1f2937] text-white/85"
                   title="Participants"
                 >
-                  <ParticipantsIcon className="w-5 h-5" />
+                  <ParticipantsIcon />
                 </button>
 
                 <button
@@ -1544,7 +1496,7 @@ export function RoomPage() {
                   className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition bg-[#111827] hover:bg-[#1f2937] text-white/85"
                   title="Chat"
                 >
-                  <ChatIcon className="w-5 h-5" />
+                  <ChatIcon />
                 </button>
 
                 <button
@@ -1552,7 +1504,7 @@ export function RoomPage() {
                   className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition bg-[#111827] hover:bg-[#1f2937] text-white/85"
                   title="Intentions"
                 >
-                  <TargetIcon className="w-5 h-5" />
+                  <TargetIcon />
                 </button>
 
                 <button
@@ -1563,7 +1515,7 @@ export function RoomPage() {
                   className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition bg-[#111827] hover:bg-[#1f2937] text-white/85"
                   title="Video settings"
                 >
-                  <SettingsIcon className="w-5 h-5" />
+                  <IconSettings />
                 </button>
               </div>
             </div>
@@ -1580,11 +1532,7 @@ export function RoomPage() {
                 }
                 title="Toggle mic"
               >
-                {isAudioMuted ? (
-                  <MicOffIcon className="w-5 h-5" />
-                ) : (
-                  <MicOnIcon className="w-5 h-5" />
-                )}
+                <IconMic off={isAudioMuted} />
               </button>
 
               <button
@@ -1597,11 +1545,7 @@ export function RoomPage() {
                 }
                 title="Toggle camera"
               >
-                {isVideoMuted ? (
-                  <CameraOffIcon className="w-5 h-5" />
-                ) : (
-                  <CameraOnIcon className="w-5 h-5" />
-                )}
+                <IconCamera off={isVideoMuted} />
               </button>
 
               <button
@@ -1614,11 +1558,7 @@ export function RoomPage() {
                 }
                 title="Share screen"
               >
-                {isScreenSharing ? (
-                  <ScreenShareOffIcon className="w-5 h-5" />
-                ) : (
-                  <ScreenShareOnIcon className="w-5 h-5" />
-                )}
+                <IconScreenShare active={isScreenSharing} />
               </button>
 
               {/* reactions */}
@@ -1628,20 +1568,13 @@ export function RoomPage() {
                   className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition bg-[#111827] hover:bg-[#1f2937]"
                   title="Reactions"
                 >
-                  <ReactionsIcon className="w-5 h-5" />
+                  <IconSmile />
                 </button>
 
                 {showReactionsMenu && (
                   <div className="absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 bg-[#020617] border border-white/10 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl">
                     {(
-                      [
-                        "fire",
-                        "laugh",
-                        "clap",
-                        "heart",
-                        "thumbsUp",
-                        "thumbsDown",
-                      ] as ReactionType[]
+                      ["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown"] as ReactionType[]
                     ).map((t) => (
                       <button
                         key={t}
@@ -1662,13 +1595,13 @@ export function RoomPage() {
 
             {/* RIGHT GROUP */}
             <div className="flex items-center justify-end gap-2 sm:gap-3">
-              {/* Desktop leave */}
+              {/* Desktop leave (✅ with icon) */}
               <button
                 onClick={handleLeave}
                 className="hidden sm:flex h-11 px-6 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-semibold items-center justify-center gap-2"
                 title="Leave"
               >
-                <LeaveIcon className="w-5 h-5" />
+                <IconLeave />
                 <span className="text-[14px]">Leave</span>
               </button>
 
@@ -1678,7 +1611,7 @@ export function RoomPage() {
                 className="sm:hidden w-10 h-10 rounded-2xl bg-red-600 hover:bg-red-700 text-white flex items-center justify-center"
                 title="Leave"
               >
-                <LeaveIcon className="w-5 h-5" />
+                <IconLeave />
               </button>
             </div>
           </div>

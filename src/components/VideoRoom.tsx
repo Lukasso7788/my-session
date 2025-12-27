@@ -52,7 +52,6 @@ const reactionEmoji: Record<ReactionType, string> = {
     thumbsDown: "👎",
 };
 
-// optional: put your placeholder image into /public/alatar.png
 const PLACEHOLDER_AVATAR_URL = "/alatar.png";
 
 function safeTrackId(track?: any): string {
@@ -75,7 +74,6 @@ function attachTrackToMedia(
         console.error("attach error", e);
     }
 
-    // ✅ make sure playback starts (helps after reattach)
     try {
         const pr = (element as any).play?.();
         (pr as any)?.catch?.(() => { });
@@ -94,6 +92,10 @@ function attachTrackToMedia(
     };
 }
 
+/**
+ * ✅ Track stream version bump hook
+ * Used to re-attach track when underlying stream changes without hard-remounting <video>.
+ */
 function useTrackStreamVersion(track: any) {
     const [v, setV] = useState(0);
 
@@ -108,6 +110,9 @@ function useTrackStreamVersion(track: any) {
             jitsiEvents?.TRACK_VIDEOTYPE_CHANGED,
             jitsiEvents?.TRACK_MUTE_CHANGED,
             jitsiEvents?.LOCAL_TRACK_STOPPED,
+            jitsiEvents?.LOCAL_TRACK_STARTED,
+            jitsiEvents?.TRACK_ADDED,
+            jitsiEvents?.TRACK_REMOVED,
         ].filter(Boolean);
 
         const fallback = [
@@ -116,6 +121,9 @@ function useTrackStreamVersion(track: any) {
             "TRACK_VIDEOTYPE_CHANGED",
             "TRACK_MUTE_CHANGED",
             "LOCAL_TRACK_STOPPED",
+            "LOCAL_TRACK_STARTED",
+            "TRACK_ADDED",
+            "TRACK_REMOVED",
         ];
 
         const eventNames: string[] = Array.from(
@@ -152,7 +160,6 @@ function useMediaQuery(query: string) {
         const onChange = () => setMatches(!!mql.matches);
         onChange();
 
-        // safari old/new compat
         try {
             mql.addEventListener("change", onChange);
             return () => mql.removeEventListener("change", onChange);
@@ -165,36 +172,88 @@ function useMediaQuery(query: string) {
     return matches;
 }
 
-// ----------------------- Icons -----------------------
-function MicIcon() {
+// ----------------------- Icons (✅ FILLED / "Field" style) -----------------------
+function MicIcon({ off }: { off?: boolean }) {
     return (
         <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-            <path
-                d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"
-                fill="currentColor"
-            />
-            <path
-                d="M6 11a1 1 0 0 0-2 0 8 8 0 0 0 7 7.93V21H9a1 1 0 0 0 0 2h6a1 1 0 1 0 0-2h-2v-2.07A8 8 0 0 0 20 11a1 1 0 0 0-2 0 6 6 0 0 1-12 0z"
-                fill="currentColor"
-            />
+            {!off ? (
+                <>
+                    <path
+                        d="M12 3a3.25 3.25 0 0 1 3.25 3.25v5.5A3.25 3.25 0 0 1 12 15a3.25 3.25 0 0 1-3.25-3.25v-5.5A3.25 3.25 0 0 1 12 3Z"
+                        fill="currentColor"
+                    />
+                    <path
+                        d="M6.25 11a.95.95 0 0 0-1.9 0 7.65 7.65 0 0 0 6.7 7.6V20H9.25a.95.95 0 0 0 0 1.9h5.5a.95.95 0 0 0 0-1.9H13v-1.4a7.65 7.65 0 0 0 6.7-7.6.95.95 0 0 0-1.9 0 5.8 5.8 0 0 1-11.6 0Z"
+                        fill="currentColor"
+                        opacity="0.92"
+                    />
+                </>
+            ) : (
+                <>
+                    <path
+                        d="M12 3a3.25 3.25 0 0 1 3.25 3.25v4.1c0 .42-.04.82-.13 1.2L8.87 5.3A3.25 3.25 0 0 1 12 3Z"
+                        fill="currentColor"
+                    />
+                    <path
+                        d="M7.4 6.2 6.06 4.86a.95.95 0 0 0-1.35 1.35l1.38 1.38v4.16A3.25 3.25 0 0 0 9.34 15c.4.05.8.06 1.2.04l1.92 1.92c-.15.01-.31.02-.46.02a5.8 5.8 0 0 1-5.8-5.8.95.95 0 0 0-1.9 0 7.65 7.65 0 0 0 6.7 7.6V20H9.25a.95.95 0 0 0 0 1.9h5.5a.95.95 0 0 0 0-1.9H13v-1.44c.46-.07.9-.18 1.32-.32l2.62 2.62a.95.95 0 1 0 1.35-1.35L7.4 6.2Z"
+                        fill="currentColor"
+                        opacity="0.92"
+                    />
+                </>
+            )}
         </svg>
     );
 }
 
-function CameraIcon() {
+function CameraIcon({ off }: { off?: boolean }) {
     return (
         <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-            <rect x="4" y="6" width="11" height="12" rx="2" fill="currentColor" />
-            <path d="M17 9.5 21 7v10l-4-2.5z" fill="currentColor" />
+            {!off ? (
+                <>
+                    <path
+                        d="M8 6.25h5.6c.35 0 .68.14.93.39l1.02 1.02H18.3c1.1 0 2 .9 2 2v6.2c0 1.1-.9 2-2 2H8c-1.1 0-2-.9-2-2V8.25c0-1.1.9-2 2-2Z"
+                        fill="currentColor"
+                    />
+                    <path
+                        d="M15.85 12.2 21 9.3v5.4l-5.15-2.9a.8.8 0 0 1 0-1.6Z"
+                        fill="currentColor"
+                        opacity="0.9"
+                    />
+                </>
+            ) : (
+                <>
+                    <path
+                        d="M6.12 4.86a.95.95 0 1 0-1.35 1.35l1.28 1.28A1.98 1.98 0 0 0 6 8.25v7.6c0 1.1.9 2 2 2h10.3c.3 0 .59-.07.85-.19l1.08 1.08a.95.95 0 1 0 1.35-1.35L6.12 4.86Zm1.89 1.89h5.19c.35 0 .68.14.93.39l1.02 1.02H18.3c1.1 0 2 .9 2 2v5.08l-5.23-5.23-.7.4a.8.8 0 0 0-.39.7.8.8 0 0 0 .39.7l2.18 2.18H8c-1.1 0-2-.9-2-2V8.01l2.01-1.26Z"
+                        fill="currentColor"
+                    />
+                    <path
+                        d="M21 9.3v5.4l-2.46-1.39-3.65-3.65L21 9.3Z"
+                        fill="currentColor"
+                        opacity="0.9"
+                    />
+                </>
+            )}
         </svg>
     );
 }
 
-function ScreenIcon() {
+function ScreenIcon({ active }: { active?: boolean }) {
     return (
         <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-            <rect x="3" y="4" width="18" height="12" rx="2" fill="currentColor" />
-            <rect x="9" y="18" width="6" height="2" rx="1" fill="currentColor" />
+            <path
+                d="M4.2 4.8h15.6c1.1 0 2 .9 2 2v8.6c0 1.1-.9 2-2 2H4.2c-1.1 0-2-.9-2-2V6.8c0-1.1.9-2 2-2Z"
+                fill="currentColor"
+                opacity={active ? 1 : 0.95}
+            />
+            <path
+                d="M9 20.2h6a.95.95 0 0 0 0-1.9H9a.95.95 0 0 0 0 1.9Z"
+                fill="currentColor"
+                opacity="0.9"
+            />
+            <path
+                d="M12.2 9.2a.9.9 0 0 1 1.27 0l2.2 2.2a.9.9 0 0 1-1.27 1.27l-.65-.65v2.35a.9.9 0 1 1-1.8 0v-2.35l-.65.65A.9.9 0 1 1 10.05 11l2.15-2.2Z"
+                fill="currentColor"
+            />
         </svg>
     );
 }
@@ -202,22 +261,20 @@ function ScreenIcon() {
 function SmileIcon() {
     return (
         <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-            <circle
-                cx="12"
-                cy="12"
-                r="9"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-            />
-            <circle cx="9" cy="10" r="0.8" fill="currentColor" />
-            <circle cx="15" cy="10" r="0.8" fill="currentColor" />
             <path
-                d="M9 15c.7.8 1.6 1.2 3 1.2s2.3-.4 3-1.2"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
+                d="M12 2.75c-5.1 0-9.25 4.15-9.25 9.25S6.9 21.25 12 21.25 21.25 17.1 21.25 12 17.1 2.75 12 2.75Z"
+                fill="currentColor"
+                opacity="0.95"
+            />
+            <path
+                d="M8.7 11.05a1.05 1.05 0 1 0 0-2.1 1.05 1.05 0 0 0 0 2.1Zm6.6 0a1.05 1.05 0 1 0 0-2.1 1.05 1.05 0 0 0 0 2.1Z"
+                fill="#050F1A"
+                opacity="0.95"
+            />
+            <path
+                d="M8.75 13.45a.95.95 0 0 1 1.32.18c.45.58 1.07.92 1.93.92.86 0 1.48-.34 1.93-.92a.95.95 0 0 1 1.5 1.14c-.8 1.05-1.95 1.68-3.43 1.68s-2.63-.63-3.43-1.68a.95.95 0 0 1 .18-1.32Z"
+                fill="#050F1A"
+                opacity="0.95"
             />
         </svg>
     );
@@ -227,11 +284,12 @@ function LeaveIcon() {
     return (
         <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true">
             <path
-                d="M5 5h6a1 1 0 0 1 0 2H7v10h4a1 1 0 0 1 0 2H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"
+                d="M5.2 5.2h7.2a1 1 0 1 1 0 2H7.2v9.6h5.2a1 1 0 1 1 0 2H5.2a1.2 1.2 0 0 1-1.2-1.2V6.4a1.2 1.2 0 0 1 1.2-1.2Z"
                 fill="currentColor"
+                opacity="0.95"
             />
             <path
-                d="M13.7 8.3a1 1 0 0 1 1.4 0L19 12l-3.9 3.7a1 1 0 0 1-1.4-1.4L15.6 13H11a1 1 0 0 1 0-2h4.6l-1.3-1.3a1 1 0 0 1 0-1.4z"
+                d="M13.65 8.35a1 1 0 0 1 1.4 0L19.2 12l-4.15 3.65a1 1 0 0 1-1.4-1.4L15.3 13H11a1 1 0 1 1 0-2h4.3l-1.65-1.25a1 1 0 0 1 0-1.4Z"
                 fill="currentColor"
             />
         </svg>
@@ -244,15 +302,18 @@ function AudioSinkItem({ p }: { p: JitsiParticipant }) {
     const streamV = useTrackStreamVersion(p.audioTrack);
 
     useEffect(() => {
-        if (!audioRef.current) return;
+        const el = audioRef.current;
+        if (!el) return;
         if (!p.audioTrack) return;
         if (p.isLocal) return;
 
-        p.audioTrack.attach(audioRef.current);
+        try {
+            p.audioTrack.attach(el);
+        } catch { }
 
         return () => {
             try {
-                p.audioTrack.detach(audioRef.current!);
+                p.audioTrack.detach(el);
             } catch { }
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -287,24 +348,21 @@ function ParticipantTile({
 }: {
     participant: JitsiParticipant;
     tileKey: string;
-    forceAspect?: boolean; // mobile stack uses aspect-video
-    fit?: "contain" | "cover"; // "layout-ish" control
+    forceAspect?: boolean;
+    fit?: "contain" | "cover";
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
 }) {
     const videoRef = useRef<HTMLVideoElement | null>(null);
 
-    // ✅ IMPORTANT:
-    // We keep the track attached even when participant.videoMuted === true.
-    // We only hide the <video> via CSS and show an overlay placeholder.
     const hasVideoTrack = !!participant.videoTrack;
     const streamV = useTrackStreamVersion(participant.videoTrack);
 
-    // ✅ Provide real <video> element to engine (optional)
     const handleVideoRef = (el: HTMLVideoElement | null) => {
         videoRef.current = el;
         onRegisterVideoElement?.(participant.id, el, "video");
     };
 
+    // ✅ attach/detach ONLY based on track changes (NOT based on videoMuted)
     useEffect(() => {
         const el = videoRef.current;
         if (!el) return;
@@ -312,7 +370,6 @@ function ParticipantTile({
         const track = participant.videoTrack;
         if (!track) return;
 
-        // attach (do NOT early-return on videoMuted)
         try {
             track.detach?.(el);
         } catch { }
@@ -323,8 +380,9 @@ function ParticipantTile({
             console.error("attach error", e);
         }
 
+        // ✅ make sure playback starts (helps after reattach)
         try {
-            const pr = el.play?.();
+            const pr = (el as any).play?.();
             (pr as any)?.catch?.(() => { });
         } catch { }
 
@@ -339,23 +397,29 @@ function ParticipantTile({
                 el.load?.();
             } catch { }
         };
-        // ✅ note: NOT depending on participant.videoMuted
     }, [participant.videoTrack, participant.isLocal, streamV]);
 
     const objectClass = fit === "cover" ? "object-cover" : "object-contain";
 
-    const showPlaceholder = !hasVideoTrack || participant.videoMuted;
-    const hideVideo = !hasVideoTrack || participant.videoMuted;
+    // ✅ show placeholder on "camera off" but keep video mounted to avoid hard reset
+    const showPlaceholder = !hasVideoTrack || !!participant.videoMuted;
+    const hideVideo = !hasVideoTrack || !!participant.videoMuted;
+
+    // ✅ FIX: placeholder typography/spacing so text never "falls out"
+    const name = participant.isLocal ? "You" : participant.displayName || "Guest";
+    const initial =
+        (participant.displayName?.trim()?.[0] || (participant.isLocal ? "Y" : "G")).toUpperCase();
 
     return (
         <div
             className={
-                "relative bg-black rounded-2xl overflow-hidden flex items-center justify-center border border-white/5 " +
+                // ✅ REMOVE TILE BORDER/FRAME
+                "relative bg-black rounded-2xl overflow-hidden flex items-center justify-center " +
                 (forceAspect ? "w-full aspect-video" : "w-full h-full")
             }
             data-tile-key={tileKey}
         >
-            {/* ✅ Always keep <video> mounted + attached (if track exists). Just hide on mute. */}
+            {/* ✅ Always keep <video> mounted */}
             <video
                 ref={handleVideoRef}
                 autoPlay
@@ -367,33 +431,34 @@ function ParticipantTile({
                 }
             />
 
-            {/* ✅ Placeholder overlay (Alatar image if exists, else initials) */}
+            {/* ✅ Placeholder overlay */}
             {showPlaceholder && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#111827]">
-                    <div className="w-16 h-16 rounded-full bg-[#0b1220] border border-white/10 overflow-hidden flex items-center justify-center">
-                        {/* try show alatar.png if it exists */}
-                        <img
-                            src={PLACEHOLDER_AVATAR_URL}
-                            alt=""
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                                // hide broken image
-                                (e.currentTarget as HTMLImageElement).style.display = "none";
-                            }}
-                        />
-                        {/* initials fallback (will show if image fails/hides) */}
-                        <div className="absolute inset-0 flex items-center justify-center text-2xl font-semibold text-white/90">
-                            {participant.displayName?.[0]?.toUpperCase() || "?"}
+                <div className="absolute inset-0 flex items-center justify-center bg-[#0B1220]">
+                    <div className="flex flex-col items-center text-center px-3">
+                        <div className="relative w-16 h-16 rounded-full bg-[#0b1220] border border-white/10 overflow-hidden flex items-center justify-center">
+                            <img
+                                src={PLACEHOLDER_AVATAR_URL}
+                                alt=""
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                    (e.currentTarget as HTMLImageElement).style.display = "none";
+                                }}
+                            />
+                            <div className="absolute inset-0 flex items-center justify-center text-[20px] font-semibold text-white/90">
+                                {initial}
+                            </div>
                         </div>
+
+                        <div className="mt-2 text-[13px] text-white/90 font-medium leading-tight max-w-[220px] truncate">
+                            {name}
+                        </div>
+
+                        {participant.videoMuted && (
+                            <div className="mt-1 text-[11px] text-white/55 leading-tight">
+                                Camera off
+                            </div>
+                        )}
                     </div>
-
-                    <span className="mt-2 text-sm text-white/80">
-                        {participant.isLocal ? "You" : participant.displayName || "Guest"}
-                    </span>
-
-                    {participant.videoMuted && (
-                        <span className="mt-1 text-[11px] text-white/50">Camera off</span>
-                    )}
                 </div>
             )}
 
@@ -444,9 +509,9 @@ function GridLayout({
             }}
         >
             {pageParticipants.map((p) => {
-                const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}:${safeTrackId(
-                    p.screenTrack
-                )}`;
+                // ✅ IMPORTANT: key must NOT include track ids to avoid remount/reset on mute/unmute
+                // Using ONLY participant.id keeps DOM stable; attach effect handles track changes.
+                const tileKey = `${p.id}`;
                 return (
                     <ParticipantTile
                         key={tileKey}
@@ -483,7 +548,7 @@ function P2PLayout({
             }}
         >
             {pageParticipants.map((p) => {
-                const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}`;
+                const tileKey = `${p.id}`;
                 return (
                     <ParticipantTile
                         key={tileKey}
@@ -517,9 +582,7 @@ function MobileStackLayout({
             style={{ paddingBottom: paddingBottomPx }}
         >
             {pageParticipants.map((p) => {
-                const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}:${safeTrackId(
-                    p.screenTrack
-                )}`;
+                const tileKey = `${p.id}`;
                 return (
                     <ParticipantTile
                         key={tileKey}
@@ -574,7 +637,8 @@ function ScreenShareLayoutDesktop({
             key={`screen:desk:${layoutVersion}:${screenSharer.id}:${screenTrackId}`}
             className="relative w-full h-full flex flex-row gap-2 p-2 min-h-0"
         >
-            <div className="relative flex-1 bg-black rounded-2xl overflow-hidden border border-white/5 min-h-0">
+            {/* ✅ REMOVE border/frame */}
+            <div className="relative flex-1 bg-black rounded-2xl overflow-hidden min-h-0">
                 <video
                     ref={screenVideoRef}
                     autoPlay
@@ -594,9 +658,7 @@ function ScreenShareLayoutDesktop({
                     <div className="absolute top-3 right-3 w-44 aspect-video rounded-xl overflow-hidden border border-white/20 shadow-lg bg-black">
                         <ParticipantTile
                             participant={cameraParticipant}
-                            tileKey={`${cameraParticipant.id}:${safeTrackId(
-                                cameraParticipant.videoTrack
-                            )}`}
+                            tileKey={`${cameraParticipant.id}`}
                             forceAspect={true}
                             fit="cover"
                             onRegisterVideoElement={onRegisterVideoElement}
@@ -607,7 +669,7 @@ function ScreenShareLayoutDesktop({
 
             <div className="flex flex-col gap-2 w-56 min-h-0">
                 {others.map((p) => {
-                    const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}`;
+                    const tileKey = `${p.id}`;
                     return (
                         <div key={tileKey} className="h-[140px] w-full">
                             <ParticipantTile
@@ -664,7 +726,8 @@ function ScreenShareLayoutMobile({
             className="w-full h-full overflow-y-auto p-2 flex flex-col gap-2"
             style={{ paddingBottom: paddingBottomPx }}
         >
-            <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden border border-white/5 relative">
+            {/* ✅ REMOVE border/frame */}
+            <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden relative">
                 <video
                     ref={screenVideoRef}
                     autoPlay
@@ -682,7 +745,7 @@ function ScreenShareLayoutMobile({
             </div>
 
             {others.map((p) => {
-                const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}`;
+                const tileKey = `${p.id}`;
                 return (
                     <ParticipantTile
                         key={tileKey}
@@ -739,6 +802,15 @@ export function VideoRoom(props: VideoRoomProps) {
     const menuRef = useRef<HTMLDivElement | null>(null);
 
     const [scrollIndex, setScrollIndex] = useState(0);
+
+    /**
+     * ✅ Layout version bumps ONLY when a participant list changes structurally
+     * or when screen share appears/disappears, NOT on track id churn.
+     *
+     * The "hard reset" you described is usually because keys include trackId,
+     * so React remounts tiles. We remove trackId from keys and also stop
+     * bumping layoutVersion on track signatures.
+     */
     const [layoutVersion, setLayoutVersion] = useState(0);
 
     const screenSharer = useMemo(
@@ -766,15 +838,16 @@ export function VideoRoom(props: VideoRoomProps) {
         setScrollIndex((i) => Math.min(Math.max(0, i), maxStartIndex));
     }, [maxStartIndex]);
 
-    const tracksSignature = useMemo(() => {
-        return participants
-            .flatMap((p) => [safeTrackId(p.videoTrack), safeTrackId(p.screenTrack)])
-            .join("|");
-    }, [participants]);
+    // ✅ bump layout only on participants ids count/order and screen share toggles
+    const layoutSignature = useMemo(() => {
+        const ids = participants.map((p) => p.id).join("|");
+        const ss = screenSharer ? `ss:${screenSharer.id}` : "ss:none";
+        return `${ids}::${ss}`;
+    }, [participants, screenSharer]);
 
     useEffect(() => {
         setLayoutVersion((v) => v + 1);
-    }, [tracksSignature]);
+    }, [layoutSignature]);
 
     const pageParticipants = useMemo(() => {
         const start = scrollIndex;
@@ -842,6 +915,7 @@ export function VideoRoom(props: VideoRoomProps) {
         <div className="relative w-full h-full flex flex-col min-h-0">
             <AudioSink participants={participants} />
 
+            {/* ✅ remove video-room frame/border here too */}
             <div className="flex-1 relative overflow-hidden rounded-2xl bg-black/80 min-h-0">
                 {!screenSharer && (
                     <>
@@ -945,8 +1019,9 @@ export function VideoRoom(props: VideoRoomProps) {
                                 " " +
                                 (isAudioMuted ? "bg-red-600 hover:bg-red-700" : "bg-[#111827] hover:bg-[#1f2937]")
                             }
+                            title="Toggle mic"
                         >
-                            <MicIcon />
+                            <MicIcon off={isAudioMuted} />
                         </button>
 
                         <button
@@ -956,8 +1031,9 @@ export function VideoRoom(props: VideoRoomProps) {
                                 " " +
                                 (isVideoMuted ? "bg-red-600 hover:bg-red-700" : "bg-[#111827] hover:bg-[#1f2937]")
                             }
+                            title="Toggle camera"
                         >
-                            <CameraIcon />
+                            <CameraIcon off={isVideoMuted} />
                         </button>
 
                         <button
@@ -967,14 +1043,16 @@ export function VideoRoom(props: VideoRoomProps) {
                                 " " +
                                 (isScreenSharing ? "bg-blue-600 hover:bg-blue-700" : "bg-[#111827] hover:bg-[#1f2937]")
                             }
+                            title="Share screen"
                         >
-                            <ScreenIcon />
+                            <ScreenIcon active={isScreenSharing} />
                         </button>
 
                         <div className="relative" ref={menuRef}>
                             <button
                                 onClick={() => setShowReactionsMenu((v) => !v)}
                                 className={baseBtn + " bg-[#111827] hover:bg-[#1f2937]"}
+                                title="Reactions"
                             >
                                 <SmileIcon />
                             </button>
@@ -995,6 +1073,7 @@ export function VideoRoom(props: VideoRoomProps) {
                             <button
                                 onClick={onLeave}
                                 className="ml-2 px-3 h-9 rounded-full bg-red-600 text-white text-xs font-medium hover:bg-red-700 inline-flex items-center gap-1"
+                                title="Leave"
                             >
                                 <LeaveIcon />
                                 <span>Leave</span>
