@@ -1,5 +1,5 @@
 // src/components/VideoRoom.tsx
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { JitsiParticipant, JitsiTrack } from "../lib/jitsiEngine";
 
 export type ReactionType =
@@ -74,7 +74,7 @@ function Icon({
     alt?: string;
     theme?: "dark" | "light";
 }) {
-    // Если у тебя SVG монохромные (чёрные), можно инвертить для dark темы:
+    // Если SVG монохромные (чёрные), можно инвертить для dark темы:
     // - dark: invert(1)
     // - light: normal
     const invertForDark = theme === "dark" ? "invert brightness-200" : "";
@@ -239,153 +239,6 @@ function AudioSink({ participants }: { participants: JitsiParticipant[] }) {
     );
 }
 
-// ----------------------- Jitsi audio level (built-in, throttled) -----------------------
-type LevelMap = Record<string, number>;
-
-function getJitsiAudioLevelEventName(): string {
-    const ev =
-        (window as any).JitsiMeetJS?.events?.track?.TRACK_AUDIO_LEVEL_CHANGED;
-    return ev || "TRACK_AUDIO_LEVEL_CHANGED";
-}
-
-function normalizeLevel01(level: any): number {
-    // lib-jitsi-meet обычно шлёт 0..1, но на всякий:
-    const n = typeof level === "number" ? level : level?.level;
-    if (typeof n !== "number" || Number.isNaN(n)) return 0;
-    if (n <= 0) return 0;
-    if (n >= 1) return 1;
-    return n;
-}
-
-/**
- * Слушаем встроенный Jitsi audio-level на audioTrack.
- * Важно: мы НЕ обновляем React state на каждый event.
- * Мы складываем уровни в ref, и "сбрасываем" в state ~8 раз/сек.
- */
-function useJitsiAudioLevels(visibleParticipants: JitsiParticipant[]) {
-    const levelsRef = useRef<LevelMap>({});
-    const [levels, setLevels] = useState<LevelMap>({});
-
-    // Подписки на треки: trackId -> cleanup
-    const subsRef = useRef<Record<string, () => void>>({});
-
-    useEffect(() => {
-        const eventName = getJitsiAudioLevelEventName();
-        const nextSubs: Record<string, () => void> = {};
-
-        for (const p of visibleParticipants) {
-            const tr: any = p.audioTrack;
-            if (!tr || typeof tr.addEventListener !== "function") continue;
-
-            const tid = `${p.id}:${safeTrackId(tr)}`;
-            const handler = (lvl: any) => {
-                levelsRef.current[p.id] = normalizeLevel01(lvl);
-            };
-
-            try {
-                tr.addEventListener(eventName, handler);
-            } catch {
-                // ignore
-            }
-
-            nextSubs[tid] = () => {
-                try {
-                    tr.removeEventListener(eventName, handler);
-                } catch { }
-            };
-        }
-
-        // cleanup старых подписок, которых больше нет
-        for (const [k, unsub] of Object.entries(subsRef.current)) {
-            if (!nextSubs[k]) {
-                try {
-                    unsub();
-                } catch { }
-            }
-        }
-
-        subsRef.current = nextSubs;
-
-        return () => {
-            for (const unsub of Object.values(subsRef.current)) {
-                try {
-                    unsub();
-                } catch { }
-            }
-            subsRef.current = {};
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [
-        // зависимость по "составу" видимых участников и их audioTrack
-        visibleParticipants
-            .map((p) => `${p.id}:${safeTrackId(p.audioTrack)}`)
-            .join("|"),
-    ]);
-
-    // throttled flush в state
-    useEffect(() => {
-        if (!visibleParticipants.length) return;
-
-        const interval = window.setInterval(() => {
-            setLevels((prev) => {
-                // 1) быстрый check: есть ли вообще изменения
-                let changed = false;
-                for (const p of visibleParticipants) {
-                    const id = p.id;
-                    const v = levelsRef.current[id] ?? 0;
-                    const old = prev[id] ?? 0;
-                    if (Math.abs(old - v) > 0.04) {
-                        changed = true;
-                        break;
-                    }
-                }
-                // также если кол-во ключей отличается (сменились участники)
-                if (!changed) {
-                    const prevKeys = Object.keys(prev).length;
-                    if (prevKeys !== visibleParticipants.length) changed = true;
-                }
-
-                if (!changed) return prev;
-
-                const next: LevelMap = {};
-                for (const p of visibleParticipants) {
-                    next[p.id] = levelsRef.current[p.id] ?? 0;
-                }
-                return next;
-            });
-        }, 125); // ~8fps
-
-        return () => window.clearInterval(interval);
-    }, [visibleParticipants]);
-
-    return levels;
-}
-
-// ----------------------- Speaking bars -----------------------
-function SpeakingBars({
-    level,
-    theme,
-}: {
-    level: number; // 0..1
-    theme: "dark" | "light";
-}) {
-    // Чуть "оживим": даже маленький уровень даёт заметность
-    const l = Math.max(0, Math.min(1, level));
-    const h1 = 5 + Math.round(l * 10);
-    const h2 = 4 + Math.round(l * 14);
-    const h3 = 5 + Math.round(l * 9);
-
-    const bar = theme === "light" ? "bg-black/60" : "bg-white/70";
-
-    return (
-        <div className="flex items-end gap-[3px] h-4">
-            <div className={`${bar} w-[3px] rounded-full`} style={{ height: h1 }} />
-            <div className={`${bar} w-[3px] rounded-full`} style={{ height: h2 }} />
-            <div className={`${bar} w-[3px] rounded-full`} style={{ height: h3 }} />
-        </div>
-    );
-}
-
 // ----------------------- Tiles -----------------------
 function ParticipantTile({
     theme,
@@ -393,14 +246,12 @@ function ParticipantTile({
     forceAspect = false,
     fit = "contain",
     onRegisterVideoElement,
-    audioLevel01 = 0,
 }: {
     theme: "dark" | "light";
     participant: JitsiParticipant;
     forceAspect?: boolean;
     fit?: "contain" | "cover";
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
-    audioLevel01?: number;
 }) {
     const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -455,9 +306,6 @@ function ParticipantTile({
 
     const name = participant.isLocal ? "You" : participant.displayName || "Guest";
 
-    // speaking based on jitsi audio level (not WebAudio)
-    const speaking = !participant.audioMuted && audioLevel01 > 0.09;
-
     const tileBaseBg = theme === "light" ? "bg-[#EEF1F7]" : "bg-[#0B1220]";
     const placeholderBg = theme === "light" ? "bg-white" : "bg-[#111827]";
     const labelBg =
@@ -465,13 +313,9 @@ function ParticipantTile({
             ? "bg-white/90 border border-black/10 text-black/80"
             : "bg-black/45 border border-white/10 text-white/80";
 
-    const ringClass = speaking
-        ? theme === "light"
-            ? "ring-2 ring-blue-500/70"
-            : "ring-2 ring-emerald-400/70"
-        : theme === "light"
-            ? "ring-1 ring-black/10"
-            : "ring-1 ring-white/10";
+    // ✅ ВАЖНО: убрали speaking-подсветку — теперь всегда нейтральное кольцо
+    const ringClass =
+        theme === "light" ? "ring-1 ring-black/10" : "ring-1 ring-white/10";
 
     return (
         <div
@@ -498,9 +342,7 @@ function ParticipantTile({
 
             {/* Placeholder overlay */}
             {showPlaceholder && (
-                <div
-                    className={`absolute inset-0 flex flex-col items-center justify-center ${placeholderBg}`}
-                >
+                <div className={`absolute inset-0 flex flex-col items-center justify-center ${placeholderBg}`}>
                     <div className="relative w-16 h-16 rounded-full overflow-hidden border border-black/10">
                         <img
                             src={PLACEHOLDER_AVATAR_URL}
@@ -557,25 +399,7 @@ function ParticipantTile({
                     theme={theme}
                 />
 
-                {/* маленький speaking-dot */}
-                <span
-                    className={
-                        "w-2 h-2 rounded-full " +
-                        (participant.audioMuted
-                            ? "bg-red-500"
-                            : speaking
-                                ? "bg-emerald-500"
-                                : "bg-green-400")
-                    }
-                />
-
-                {/* speaking bars */}
-                <div className="ml-1">
-                    <SpeakingBars
-                        level={participant.audioMuted ? 0 : audioLevel01}
-                        theme={theme}
-                    />
-                </div>
+                {/* ✅ speaking-dot + speaking-bars убраны полностью */}
             </div>
         </div>
     );
@@ -593,12 +417,10 @@ function GridLayout({
     theme,
     pageParticipants,
     onRegisterVideoElement,
-    levels,
 }: {
     theme: "dark" | "light";
     pageParticipants: JitsiParticipant[];
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
-    levels: LevelMap;
 }) {
     const { cols, rows } = useMemo(
         () => computeGrid(pageParticipants.length),
@@ -621,7 +443,6 @@ function GridLayout({
                     forceAspect={false}
                     fit="contain"
                     onRegisterVideoElement={onRegisterVideoElement}
-                    audioLevel01={levels[p.id] ?? 0}
                 />
             ))}
         </div>
@@ -632,12 +453,10 @@ function P2PLayout({
     theme,
     pageParticipants,
     onRegisterVideoElement,
-    levels,
 }: {
     theme: "dark" | "light";
     pageParticipants: JitsiParticipant[];
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
-    levels: LevelMap;
 }) {
     const count = pageParticipants.length;
 
@@ -657,7 +476,6 @@ function P2PLayout({
                     forceAspect={false}
                     fit="contain"
                     onRegisterVideoElement={onRegisterVideoElement}
-                    audioLevel01={levels[p.id] ?? 0}
                 />
             ))}
         </div>
@@ -669,13 +487,11 @@ function MobileStackLayout({
     pageParticipants,
     paddingBottomPx = 96,
     onRegisterVideoElement,
-    levels,
 }: {
     theme: "dark" | "light";
     pageParticipants: JitsiParticipant[];
     paddingBottomPx?: number;
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
-    levels: LevelMap;
 }) {
     return (
         <div
@@ -690,7 +506,6 @@ function MobileStackLayout({
                     forceAspect={true}
                     fit="cover"
                     onRegisterVideoElement={onRegisterVideoElement}
-                    audioLevel01={levels[p.id] ?? 0}
                 />
             ))}
         </div>
@@ -702,13 +517,11 @@ function ScreenShareLayoutDesktop({
     screenSharer,
     others,
     onRegisterVideoElement,
-    levels,
 }: {
     theme: "dark" | "light";
     screenSharer: JitsiParticipant;
     others: JitsiParticipant[];
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
-    levels: LevelMap;
 }) {
     const screenVideoRef = useRef<HTMLVideoElement | null>(null);
     const screenTrackId = useMemo(
@@ -763,10 +576,7 @@ function ScreenShareLayoutDesktop({
                         className="w-3.5 h-3.5 opacity-80"
                         theme={theme}
                     />
-                    <SpeakingBars
-                        level={screenSharer.audioMuted ? 0 : levels[screenSharer.id] ?? 0}
-                        theme={theme}
-                    />
+                    {/* ✅ speaking-bars убраны */}
                 </div>
             </div>
 
@@ -779,7 +589,6 @@ function ScreenShareLayoutDesktop({
                             forceAspect={false}
                             fit="cover"
                             onRegisterVideoElement={onRegisterVideoElement}
-                            audioLevel01={levels[p.id] ?? 0}
                         />
                     </div>
                 ))}
@@ -794,14 +603,12 @@ function ScreenShareLayoutMobile({
     others,
     paddingBottomPx = 96,
     onRegisterVideoElement,
-    levels,
 }: {
     theme: "dark" | "light";
     screenSharer: JitsiParticipant;
     others: JitsiParticipant[];
     paddingBottomPx?: number;
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
-    levels: LevelMap;
 }) {
     const screenVideoRef = useRef<HTMLVideoElement | null>(null);
     const screenTrackId = useMemo(
@@ -859,10 +666,7 @@ function ScreenShareLayoutMobile({
                         className="w-3.5 h-3.5 opacity-80"
                         theme={theme}
                     />
-                    <SpeakingBars
-                        level={screenSharer.audioMuted ? 0 : levels[screenSharer.id] ?? 0}
-                        theme={theme}
-                    />
+                    {/* ✅ speaking-bars убраны */}
                 </div>
             </div>
 
@@ -874,7 +678,6 @@ function ScreenShareLayoutMobile({
                     forceAspect={true}
                     fit="cover"
                     onRegisterVideoElement={onRegisterVideoElement}
-                    audioLevel01={levels[p.id] ?? 0}
                 />
             ))}
         </div>
@@ -985,16 +788,6 @@ export function VideoRoom(props: VideoRoomProps) {
         return () => clearTimeout(t);
     }, [onVisibleVideoIdsChange, visibleRemoteIds]);
 
-    // ✅ Jitsi built-in audio levels for "who speaks"
-    const visibleForLevels = useMemo(() => {
-        const list = screenSharer
-            ? [screenSharer, ...screenOthers]
-            : pageParticipants;
-        return list;
-    }, [screenSharer, screenOthers, pageParticipants]);
-
-    const levels = useJitsiAudioLevels(visibleForLevels);
-
     const isAudioMuted = !!localParticipant?.audioMuted;
     const isVideoMuted = !!localParticipant?.videoMuted;
     const isScreenSharing = !!localParticipant?.isScreenSharing;
@@ -1023,11 +816,11 @@ export function VideoRoom(props: VideoRoomProps) {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, [showReactionsMenu]);
 
-    const baseBtn = "w-10 h-10 rounded-2xl flex items-center justify-center transition";
+    const baseBtn =
+        "w-10 h-10 rounded-2xl flex items-center justify-center transition";
 
     const goPrev = () => setScrollIndex((i) => Math.max(0, i - SCROLL_STEP));
-    const goNext = () =>
-        setScrollIndex((i) => Math.min(maxStartIndex, i + SCROLL_STEP));
+    const goNext = () => setScrollIndex((i) => Math.min(maxStartIndex, i + SCROLL_STEP));
 
     const shownStart = canScroll ? scrollIndex + 1 : Math.min(1, baseParticipants.length);
     const shownEnd = Math.min(scrollIndex + PAGE_SIZE, baseParticipants.length);
@@ -1051,21 +844,18 @@ export function VideoRoom(props: VideoRoomProps) {
                                 theme={theme}
                                 pageParticipants={pageParticipants}
                                 onRegisterVideoElement={onRegisterVideoElement}
-                                levels={levels}
                             />
                         ) : isP2P ? (
                             <P2PLayout
                                 theme={theme}
                                 pageParticipants={pageParticipants}
                                 onRegisterVideoElement={onRegisterVideoElement}
-                                levels={levels}
                             />
                         ) : (
                             <GridLayout
                                 theme={theme}
                                 pageParticipants={pageParticipants}
                                 onRegisterVideoElement={onRegisterVideoElement}
-                                levels={levels}
                             />
                         )}
                     </>
@@ -1079,7 +869,6 @@ export function VideoRoom(props: VideoRoomProps) {
                                 screenSharer={screenSharer}
                                 others={screenOthers}
                                 onRegisterVideoElement={onRegisterVideoElement}
-                                levels={levels}
                             />
                         ) : (
                             <ScreenShareLayoutDesktop
@@ -1087,19 +876,16 @@ export function VideoRoom(props: VideoRoomProps) {
                                 screenSharer={screenSharer}
                                 others={screenOthers}
                                 onRegisterVideoElement={onRegisterVideoElement}
-                                levels={levels}
                             />
                         )}
                     </>
                 )}
 
+                {/* ✅ REACTIONS OVERLAY — НЕ ТРОГАЛ */}
                 {((overlayLocal?.length || 0) + (incomingReactions?.length || 0) > 0) && (
                     <div className="pointer-events-none absolute inset-0 flex items-end justify-center pb-20 gap-2">
                         {(overlayLocal || []).map((r: any) => (
-                            <div
-                                key={`local-${r.id}`}
-                                className="text-4xl drop-shadow-lg animate-bounce"
-                            >
+                            <div key={`local-${r.id}`} className="text-4xl drop-shadow-lg animate-bounce">
                                 {reactionEmoji[r.type]}
                             </div>
                         ))}
@@ -1176,11 +962,7 @@ export function VideoRoom(props: VideoRoomProps) {
                             }
                             title="Toggle mic"
                         >
-                            <Icon
-                                name={isAudioMuted ? "mic-off" : "mic-on"}
-                                className="w-5 h-5"
-                                theme={theme}
-                            />
+                            <Icon name={isAudioMuted ? "mic-off" : "mic-on"} className="w-5 h-5" theme={theme} />
                         </button>
 
                         <button
@@ -1196,11 +978,7 @@ export function VideoRoom(props: VideoRoomProps) {
                             }
                             title="Toggle camera"
                         >
-                            <Icon
-                                name={isVideoMuted ? "camera-off" : "camera-on"}
-                                className="w-5 h-5"
-                                theme={theme}
-                            />
+                            <Icon name={isVideoMuted ? "camera-off" : "camera-on"} className="w-5 h-5" theme={theme} />
                         </button>
 
                         <button
@@ -1219,6 +997,7 @@ export function VideoRoom(props: VideoRoomProps) {
                             <Icon name="screen-share" className="w-5 h-5" theme={theme} />
                         </button>
 
+                        {/* ✅ REACTIONS MENU — НЕ ТРОГАЛ */}
                         <div className="relative" ref={menuRef}>
                             <button
                                 onClick={() => setShowReactionsMenu((v) => !v)}
