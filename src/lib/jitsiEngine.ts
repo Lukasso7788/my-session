@@ -1,5 +1,6 @@
 // ============================================================================
 // src/lib/jitsiEngine.ts — SFU-only (P2P OFF) + track-based + reactions + SAFE background effects
+// Ultra-stable subscriptions: no-op caching + delayed hard reset + cooldown
 // ============================================================================
 
 import { createBackgroundEffect, BgMode, JitsiStreamEffect } from "./backgroundEffect";
@@ -123,21 +124,25 @@ export class JitsiEngine {
   private selectedVideoIds: string[] = [];
   private qualityMode: "auto" | "low" | "medium" | "high" = "auto";
   private readonly MAX_LAST_N = 36;
+
   private subsApplyTimer: any = null;
   private subsHardResetTimer: any = null;
   private subsHardResetInFlight = false;
+
+  // ✅ stable: no-op caching
+  private lastSubsKey = "";
+  private lastSubsAppliedAt = 0;
+
+  // ✅ stable: delayed recovery reset + cooldown
+  private hardResetCooldownUntil = 0;
+
+  // ✅ stable: soft watchdog (not every 3s)
   private subsWatchdog: any = null;
 
   // REAL BG EFFECT (Your custom effect object)
   private videoEffect: JitsiStreamEffect | undefined = undefined;
-
-  // Persisted bg prefs (to re-apply on track replacement)
   private bgPrefs: { mode: BgMode; imageUrl?: string } = { mode: "none" };
-
-  // Guard: some builds fire TRACK_MUTE_CHANGED during setEffect and UI thinks "camera off"
   private bgApplying = false;
-
-  // IMPORTANT: for YOUR custom effect, we only need track.setEffect
   private effectsSupported = false;
 
   constructor(callbacks: JitsiEngineCallbacks = {}) {
@@ -163,11 +168,8 @@ export class JitsiEngine {
   private refreshEffectsSupport(track?: any) {
     const t = track ?? this.localVideoTrack;
     const hasSetEffect = typeof (t as any)?.setEffect === "function";
-
-    // For custom Canvas/MediaPipe effect -> factory is NOT required
     this.effectsSupported = !!hasSetEffect;
 
-    // Sanity logs (quiet but informative)
     try {
       const hasEffectsModule = !!this.JitsiMeetJS?.effects;
       const hasFactory =
@@ -193,14 +195,12 @@ export class JitsiEngine {
   private async ensureLocalVideoTrack(): Promise<void> {
     if (this.disposed || !this.JitsiMeetJS || !this.conference) return;
 
-    // if we already have a live video track -> ok
     try {
       const ms = this.localVideoTrack?.getOriginalStream?.();
       const vt = ms?.getVideoTracks?.()?.[0];
       if (this.localVideoTrack && vt && vt.readyState !== "ended") return;
     } catch { }
 
-    // create new video track
     const tracks = await this.JitsiMeetJS.createLocalTracks({
       devices: ["video"],
       constraints: {
@@ -213,7 +213,6 @@ export class JitsiEngine {
     const newVideo = tracks.find((t: any) => t.getType?.() === "video");
     if (!newVideo) return;
 
-    // replace safely (no "second video track")
     if (this.localVideoTrack) {
       if (typeof this.conference.replaceTrack === "function") {
         try {
@@ -224,7 +223,6 @@ export class JitsiEngine {
           this.localVideoTrack.dispose?.();
         } catch { }
       } else {
-        // fallback: remove old then add new
         try {
           await this.clearBgEffectOnTrack(this.localVideoTrack);
         } catch { }
@@ -242,20 +240,17 @@ export class JitsiEngine {
 
     this.localVideoTrack = newVideo;
 
-    // update store + UI
     if (this.localUserId) {
       const entry = this.tracksByParticipant.get(this.localUserId) || {};
       entry.video = newVideo;
       this.tracksByParticipant.set(this.localUserId, entry);
 
       this.rebuildParticipantsFromTracks();
-      // force "video on" in local DTO (since we just recreated it)
       const p = this.participants[this.localUserId];
       if (p) p.videoMuted = newVideo?.isMuted?.() === true;
       this.emitParticipants();
     }
 
-    // refresh effect support & reapply if needed
     this.refreshEffectsSupport(newVideo);
     await this.reapplyBgIfNeeded();
   }
@@ -267,8 +262,6 @@ export class JitsiEngine {
     if (!track) return;
 
     const hasSetEffect = typeof track.setEffect === "function";
-
-    // Try to clear effect if possible (safe)
     if (hasSetEffect) {
       try {
         await track.setEffect(undefined);
@@ -277,7 +270,6 @@ export class JitsiEngine {
       }
     }
 
-    // Always dispose our local effect reference/resources
     try {
       await this.videoEffect?.dispose?.();
     } catch { }
@@ -290,7 +282,6 @@ export class JitsiEngine {
   private async applyBgEffectToTrack(track: any) {
     if (!track) return;
 
-    // For custom effect, only need setEffect
     this.refreshEffectsSupport(track);
 
     if (!this.effectsSupported) {
@@ -312,7 +303,6 @@ export class JitsiEngine {
       }
     })();
 
-    // If user is muted right now — don't start heavy pipeline.
     if (wasMuted) return;
 
     if (this.bgPrefs.mode === "none") {
@@ -320,7 +310,6 @@ export class JitsiEngine {
       return;
     }
 
-    // recreate effect (simple + reliable)
     await this.clearBgEffectOnTrack(track);
 
     const effect = await createBackgroundEffect({
@@ -340,7 +329,6 @@ export class JitsiEngine {
       await track.setEffect(effect);
       this.videoEffect = effect;
 
-      // restore mute if lib toggles it transiently
       try {
         const nowMuted = track.isMuted?.() === true;
         if (!wasMuted && nowMuted && typeof track.unmute === "function") {
@@ -372,51 +360,41 @@ export class JitsiEngine {
     await this.applyBgEffectToTrack(this.localVideoTrack);
   }
 
-  // Public API: set bg prefs + apply now
   public async setBackgroundEffect(opts: { mode: BgMode; imageUrl?: string }) {
     this.bgPrefs = { mode: opts.mode, imageUrl: opts.imageUrl };
-
-    // reflect in settings (UI)
     this.mediaSettings.bgMode = opts.mode;
     this.mediaSettings.bgImageUrl = opts.imageUrl;
 
-    // Ensure we have a track (prevents "stuck off")
     await this.ensureLocalVideoTrack();
 
     const t = this.localVideoTrack;
     if (!t) return;
 
-    // refresh support before doing anything
     this.refreshEffectsSupport(t);
 
-    // If lib doesn't support setEffect -> do NOT touch video track
     if (!this.effectsSupported) {
       console.warn(
         "[bg] Requested",
         opts.mode,
         "but track.setEffect not supported. Keeping video as-is."
       );
-      this.scheduleHardResetSubscriptions(0);
+      // no need to hard reset subs
       return;
     }
 
     if (opts.mode === "none") {
       await this.clearBgEffectOnTrack(t);
-      this.scheduleHardResetSubscriptions(0);
       return;
     }
 
     await this.applyBgEffectToTrack(t);
 
-    // make sure local DTO isn't stuck at "videoMuted=true"
     try {
       if (this.localUserId && this.participants[this.localUserId]) {
         this.participants[this.localUserId].videoMuted = t.isMuted?.() === true;
         this.emitParticipants();
       }
     } catch { }
-
-    this.scheduleHardResetSubscriptions(0);
   }
 
   // ========================================================================
@@ -434,12 +412,10 @@ export class JitsiEngine {
     const videoChanged = !!videoInputId && videoInputId !== prevVideo;
     const audioChanged = !!audioInputId && audioInputId !== prevAudio;
 
-    // If nothing changed -> do nothing (prevents unnecessary track reset)
     if (!videoChanged && !audioChanged) {
       return { audio: this.localAudioTrack, video: this.localVideoTrack };
     }
 
-    // 1) AUDIO: try setDevice (best)
     if (audioChanged) {
       try {
         if (this.localAudioTrack && typeof this.localAudioTrack.setDevice === "function") {
@@ -450,11 +426,9 @@ export class JitsiEngine {
       }
     }
 
-    // 2) VIDEO: try setDevice (best)
     if (videoChanged) {
       try {
         if (this.localVideoTrack && typeof this.localVideoTrack.setDevice === "function") {
-          // clear effects ONLY if setEffect exists (custom effect needs only setEffect)
           const hasSetEffect = typeof (this.localVideoTrack as any)?.setEffect === "function";
           if (hasSetEffect && this.bgPrefs.mode !== "none") {
             await this.clearBgEffectOnTrack(this.localVideoTrack);
@@ -462,10 +436,10 @@ export class JitsiEngine {
 
           await this.localVideoTrack.setDevice(videoInputId);
 
-          // sometimes Jitsi replaces the track instance; TRACK_ADDED will resync pointers
           setTimeout(() => {
             void this.reapplyBgIfNeeded();
           }, 0);
+
           return { audio: this.localAudioTrack, video: this.localVideoTrack };
         }
       } catch (e) {
@@ -473,8 +447,6 @@ export class JitsiEngine {
       }
     }
 
-    // 3) Fallback: recreate tracks (если setDevice нет)
-    // ВАЖНО: replaceTrack / remove+add (чтобы не было "second video track")
     const JitsiMeetJS = (window as any).JitsiMeetJS;
     if (!JitsiMeetJS?.createLocalTracks) throw new Error("JitsiMeetJS.createLocalTracks not found");
 
@@ -496,7 +468,6 @@ export class JitsiEngine {
           this.localAudioTrack.dispose?.();
           this.localAudioTrack = newAudio;
         } else if (this.localAudioTrack) {
-          // fallback remove+add
           try {
             await this.conference.removeTrack?.(this.localAudioTrack);
           } catch { }
@@ -521,7 +492,6 @@ export class JitsiEngine {
           this.localVideoTrack.dispose?.();
           this.localVideoTrack = newVideo;
         } else if (this.localVideoTrack) {
-          // fallback remove+add
           if (hasSetEffect && this.bgPrefs.mode !== "none") {
             await this.clearBgEffectOnTrack(this.localVideoTrack);
           }
@@ -540,7 +510,6 @@ export class JitsiEngine {
       }
     }
 
-    // store + UI update
     if (this.localUserId) {
       const entry = this.tracksByParticipant.get(this.localUserId) || {};
       if (this.localAudioTrack) entry.audio = this.localAudioTrack;
@@ -550,7 +519,6 @@ export class JitsiEngine {
       this.emitParticipants();
     }
 
-    // refresh support + re-apply effect if possible
     this.refreshEffectsSupport(this.localVideoTrack);
     await this.reapplyBgIfNeeded();
 
@@ -573,7 +541,6 @@ export class JitsiEngine {
       if (typeof lvl !== "undefined") this.JitsiMeetJS.setLogLevel(lvl);
     } catch { }
 
-    // init
     this.JitsiMeetJS.init({
       disableP2P: true,
       disableAudioLevels: true,
@@ -587,7 +554,6 @@ export class JitsiEngine {
       },
     });
 
-    // sanity logs
     try {
       const hasEffects = !!this.JitsiMeetJS?.effects;
       const hasCreate =
@@ -632,12 +598,12 @@ export class JitsiEngine {
 
   public setQualityMode(mode: "auto" | "low" | "medium" | "high") {
     this.qualityMode = mode;
-    this.scheduleApplyVideoSubscriptions();
+    this.scheduleApplyVideoSubscriptions(150, true);
   }
 
   public setVisibleVideoParticipants(ids: string[]) {
     this.selectedVideoIds = Array.isArray(ids) ? ids : [];
-    this.scheduleApplyVideoSubscriptions();
+    this.scheduleApplyVideoSubscriptions(150, false);
   }
 
   async toggleAudioMute(): Promise<void> {
@@ -661,7 +627,6 @@ export class JitsiEngine {
   async toggleVideoMute(): Promise<void> {
     if (!this.localUserId) return;
 
-    // IMPORTANT: recover track if it died/stuck
     try {
       await this.ensureLocalVideoTrack();
     } catch { }
@@ -674,15 +639,16 @@ export class JitsiEngine {
       if (track.isMuted && track.isMuted()) {
         await track.unmute();
         local.videoMuted = false;
-
-        // re-apply effect after unmute (if supported)
         await this.reapplyBgIfNeeded();
       } else {
         await track.mute();
         local.videoMuted = true;
       }
       this.emitParticipants();
-      this.scheduleHardResetSubscriptions(0);
+
+      // ✅ IMPORTANT: no hard reset on local mute/unmute
+      // subscriptions are unchanged; UI hides video via CSS.
+      this.scheduleApplyVideoSubscriptions(0, false);
     } catch { }
   }
 
@@ -721,7 +687,10 @@ export class JitsiEngine {
 
       this.rebuildParticipantsFromTracks();
       this.emitParticipants();
-      this.scheduleHardResetSubscriptions(0);
+
+      // topology change -> schedule recovery
+      this.scheduleApplyVideoSubscriptions(0, true);
+      this.scheduleHardResetSubscriptions(4500);
     } catch {
       this.callbacks.onError?.("Screen share failed");
     }
@@ -822,18 +791,18 @@ export class JitsiEngine {
 
     const events = this.JitsiMeetJS.events;
 
-    const applySubsSoon = () => {
+    const applySubsSoon = (force: boolean = false) => {
       if (this.disposed) return;
       clearTimeout((this as any).__applySubsT);
       (this as any).__applySubsT = setTimeout(() => {
         if (this.disposed) return;
-        this.scheduleApplyVideoSubscriptions(0);
-      }, 50);
+        this.scheduleApplyVideoSubscriptions(0, force);
+      }, 80);
     };
 
-    const updateRemoteSubscriptions = () => {
-      if (!this.conference) return;
-      this.scheduleApplyVideoSubscriptions(0);
+    const topologyChanged = () => {
+      // join/leave/track add/remove: schedule recovery hard reset after 4.5s
+      this.scheduleHardResetSubscriptions(4500);
     };
 
     conf.on(events.conference.CONFERENCE_JOINED, () => {
@@ -860,13 +829,20 @@ export class JitsiEngine {
       if (!this.tracksByParticipant.has(localId)) this.tracksByParticipant.set(localId, {});
 
       this.callbacks.onConferenceJoin?.();
-      updateRemoteSubscriptions();
 
+      // initial apply (force) + recovery window
+      applySubsSoon(true);
+      topologyChanged();
+
+      // ✅ soft watchdog: only to recover rare stuck states, not to churn
       if (this.subsWatchdog) clearInterval(this.subsWatchdog);
       this.subsWatchdog = setInterval(() => {
         if (this.disposed) return;
-        this.scheduleApplyVideoSubscriptions(0);
-      }, 3000);
+        const now = Date.now();
+        if (now - this.lastSubsAppliedAt > 9000) {
+          this.scheduleApplyVideoSubscriptions(0, false);
+        }
+      }, 10000);
 
       setTimeout(() => {
         if (this.disposed) return;
@@ -880,7 +856,9 @@ export class JitsiEngine {
       this.ensureRemoteParticipant(id, user?._displayName || "Guest");
       if (!this.tracksByParticipant.has(id)) this.tracksByParticipant.set(id, {});
       this.emitParticipants();
-      updateRemoteSubscriptions();
+
+      applySubsSoon(true);
+      topologyChanged();
     });
 
     conf.on(events.conference.USER_LEFT, (id: string) => {
@@ -889,7 +867,9 @@ export class JitsiEngine {
       delete this.participants[id];
       this.tracksByParticipant.delete(id);
       this.emitParticipants();
-      updateRemoteSubscriptions();
+
+      applySubsSoon(true);
+      topologyChanged();
     });
 
     conf.on(events.conference.DISPLAY_NAME_CHANGED, (id: string, displayName: string) => {
@@ -903,22 +883,24 @@ export class JitsiEngine {
     conf.on(events.conference.TRACK_ADDED, (track: any) => {
       if (this.disposed) return;
       this.handleTrackAdded(track);
-      applySubsSoon();
-      this.scheduleHardResetSubscriptions(120);
+      applySubsSoon(true);
+      topologyChanged();
     });
 
     conf.on(events.conference.TRACK_REMOVED, (track: any) => {
       if (this.disposed) return;
       this.handleTrackRemoved(track);
-      applySubsSoon();
-      this.scheduleHardResetSubscriptions(120);
+      applySubsSoon(true);
+      topologyChanged();
     });
 
     conf.on(events.conference.TRACK_MUTE_CHANGED, (track: any) => {
       if (this.disposed) return;
       this.handleTrackMuteChanged(track);
-      applySubsSoon();
-      this.scheduleHardResetSubscriptions(120);
+
+      // ✅ IMPORTANT: no hard reset on mute
+      // subscriptions don't need to change; UI hides video via CSS.
+      applySubsSoon(false);
     });
 
     conf.on(events.conference.ENDPOINT_MESSAGE_RECEIVED, (senderId: string, payload: any) => {
@@ -956,10 +938,8 @@ export class JitsiEngine {
         if (type === "video") this.localVideoTrack = t;
       }
 
-      // detect support after we have a real video track
       this.refreshEffectsSupport(this.localVideoTrack);
 
-      // debug
       try {
         console.log(
           "[dbg] localVideoTrack setEffect:",
@@ -974,12 +954,14 @@ export class JitsiEngine {
       if (this.localVideoTrack) entry.video = this.localVideoTrack;
       this.tracksByParticipant.set(this.localUserId, entry);
 
-      // re-apply persisted background effect (if any & supported)
       await this.reapplyBgIfNeeded();
 
       this.rebuildParticipantsFromTracks();
       this.emitParticipants();
-      this.scheduleHardResetSubscriptions(0);
+
+      // initial apply (force) + recovery
+      this.scheduleApplyVideoSubscriptions(0, true);
+      this.scheduleHardResetSubscriptions(4500);
     } catch (e) {
       console.error("createLocalTracks error", e);
       this.callbacks.onError?.("Failed to access camera/microphone");
@@ -987,18 +969,18 @@ export class JitsiEngine {
   }
 
   // ========================================================================
-  // VIDEO SUBSCRIPTIONS
+  // VIDEO SUBSCRIPTIONS (stable)
   // ========================================================================
-  private scheduleApplyVideoSubscriptions(delayMs: number = 150) {
+  private scheduleApplyVideoSubscriptions(delayMs: number = 150, force: boolean = false) {
     if (!this.conference || this.disposed) return;
     if (this.subsApplyTimer) clearTimeout(this.subsApplyTimer);
     this.subsApplyTimer = setTimeout(() => {
       this.subsApplyTimer = null;
-      this.applyVideoSubscriptions();
+      this.applyVideoSubscriptions(force);
     }, delayMs);
   }
 
-  private scheduleHardResetSubscriptions(delayMs: number = 120) {
+  private scheduleHardResetSubscriptions(delayMs: number = 4500) {
     if (!this.conference || this.disposed) return;
     if (this.subsHardResetTimer) clearTimeout(this.subsHardResetTimer);
     this.subsHardResetTimer = setTimeout(() => {
@@ -1021,48 +1003,55 @@ export class JitsiEngine {
 
   private getRemoteIdsWithAnyVideoOrScreen(): string[] {
     const localId = this.localUserId;
-    const screens: string[] = [];
-    const videos: string[] = [];
+    const out: string[] = [];
 
     for (const [pid, tracks] of this.tracksByParticipant.entries()) {
       if (!pid) continue;
       if (localId && pid === localId) continue;
 
-      if (tracks?.screen) screens.push(pid);
-      if (tracks?.video) videos.push(pid);
+      if (tracks?.screen || tracks?.video) out.push(pid);
     }
 
-    const out: string[] = [];
-    for (const id of screens) if (!out.includes(id)) out.push(id);
-    for (const id of videos) if (!out.includes(id)) out.push(id);
+    // stable ordering
+    out.sort();
     return out;
   }
 
   private computeFinalRemoteIds(): string[] {
     const localId = this.localUserId;
 
-    const uiRemoteIds = (this.selectedVideoIds || []).filter((id) => id && id !== localId);
-    const activeRemoteIds = this.getRemoteIdsWithAnyVideoOrScreen();
+    const active = this.getRemoteIdsWithAnyVideoOrScreen();
+    const ui = (this.selectedVideoIds || []).filter((id) => id && id !== localId).slice().sort();
 
-    const finalRemoteIds: string[] = [];
-    for (const id of activeRemoteIds)
-      if (id && id !== localId && !finalRemoteIds.includes(id)) finalRemoteIds.push(id);
-    for (const id of uiRemoteIds)
-      if (id && id !== localId && !finalRemoteIds.includes(id)) finalRemoteIds.push(id);
+    const merged: string[] = [];
+    for (const id of active) if (!merged.includes(id)) merged.push(id);
+    for (const id of ui) if (!merged.includes(id)) merged.push(id);
 
-    return finalRemoteIds;
+    return merged;
   }
 
-  private applyVideoSubscriptions() {
+  private buildSubsKey(finalRemoteIds: string[], desiredLastN: number, h: number) {
+    // include qualityMode so changing mode re-applies
+    return `${this.qualityMode}|${desiredLastN}|${h}|${finalRemoteIds.join(",")}`;
+  }
+
+  private applyVideoSubscriptions(force: boolean = false) {
     if (!this.conference) return;
 
     try {
       const finalRemoteIds = this.computeFinalRemoteIds();
       const desiredLastN = Math.min(finalRemoteIds.length, this.MAX_LAST_N);
+      const h = this.pickReceiverConstraintHeight(desiredLastN);
+
+      const key = this.buildSubsKey(finalRemoteIds, desiredLastN, h);
+
+      // ✅ no-op if nothing actually changed
+      if (!force && key === this.lastSubsKey) return;
+
+      this.lastSubsKey = key;
+      this.lastSubsAppliedAt = Date.now();
 
       this.conference.setLastN?.(desiredLastN);
-
-      const h = this.pickReceiverConstraintHeight(desiredLastN);
       this.conference.setReceiverVideoConstraint?.(h);
       this.conference.setReceiverAudioConstraint?.(true);
 
@@ -1075,6 +1064,9 @@ export class JitsiEngine {
   private hardResetAndApplyVideoSubscriptions() {
     if (!this.conference || this.subsHardResetInFlight) return;
 
+    const now = Date.now();
+    if (now < this.hardResetCooldownUntil) return;
+
     this.subsHardResetInFlight = true;
 
     try {
@@ -1082,6 +1074,7 @@ export class JitsiEngine {
       const desiredLastN = Math.min(finalRemoteIds.length, this.MAX_LAST_N);
       const h = this.pickReceiverConstraintHeight(desiredLastN);
 
+      // hard reset (rare)
       try {
         this.conference.selectParticipants?.([]);
       } catch { }
@@ -1100,12 +1093,18 @@ export class JitsiEngine {
           this.conference.setReceiverVideoConstraint?.(h);
           this.conference.setReceiverAudioConstraint?.(true);
           this.conference.selectParticipants?.(finalRemoteIds.slice(0, desiredLastN));
+
+          // force refresh cache
+          this.lastSubsKey = "";
+          this.lastSubsAppliedAt = Date.now();
         } catch {
           // ignore
         } finally {
+          // ✅ cooldown so we don't spam resets
+          this.hardResetCooldownUntil = Date.now() + 20000; // 20s
           this.subsHardResetInFlight = false;
         }
-      }, 180);
+      }, 220);
     } catch {
       this.subsHardResetInFlight = false;
     }
@@ -1176,11 +1175,9 @@ export class JitsiEngine {
       if (type === "audio") entry.audio = track;
       if (type === "video") entry.video = track;
 
-      // keep local pointers in sync if Jitsi replaces tracks
       if (isLocal && type === "video") {
         this.localVideoTrack = track;
         this.refreshEffectsSupport(track);
-        // avoid unhandled promise
         void this.reapplyBgIfNeeded();
       }
       if (isLocal && type === "audio") {
@@ -1241,7 +1238,6 @@ export class JitsiEngine {
       p.audioMuted = track.isMuted ? track.isMuted() : p.audioMuted;
     } else if (type === "video") {
       if (!this.isDesktopTrack(track)) {
-        // ignore transient mute events during setEffect
         if (!(pid === this.localUserId && this.bgApplying)) {
           p.videoMuted = track.isMuted ? track.isMuted() : p.videoMuted;
         }
@@ -1313,7 +1309,9 @@ export class JitsiEngine {
 
     this.rebuildParticipantsFromTracks();
     this.emitParticipants();
-    this.scheduleHardResetSubscriptions(0);
+
+    this.scheduleApplyVideoSubscriptions(0, true);
+    this.scheduleHardResetSubscriptions(4500);
   }
 
   private emitParticipants() {
