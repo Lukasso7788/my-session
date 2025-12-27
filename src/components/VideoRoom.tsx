@@ -31,6 +31,16 @@ type VideoRoomProps = {
 
     showControls?: boolean;
     audioOutputId?: string;
+
+    /**
+     * ✅ Optional: allow engine to monitor/recover "black video"
+     * Register actual <video> elements per participant.
+     */
+    onRegisterVideoElement?: (
+        participantId: string,
+        el: HTMLVideoElement | null,
+        kind: "video" | "screen"
+    ) => void;
 };
 
 const reactionEmoji: Record<ReactionType, string> = {
@@ -41,6 +51,9 @@ const reactionEmoji: Record<ReactionType, string> = {
     thumbsUp: "👍",
     thumbsDown: "👎",
 };
+
+// optional: put your placeholder image into /public/alatar.png
+const PLACEHOLDER_AVATAR_URL = "/alatar.png";
 
 function safeTrackId(track?: any): string {
     if (!track) return "none";
@@ -61,6 +74,12 @@ function attachTrackToMedia(
     } catch (e) {
         console.error("attach error", e);
     }
+
+    // ✅ make sure playback starts (helps after reattach)
+    try {
+        const pr = (element as any).play?.();
+        (pr as any)?.catch?.(() => { });
+    } catch { }
 
     return () => {
         try {
@@ -264,36 +283,41 @@ function ParticipantTile({
     tileKey,
     forceAspect = false,
     fit = "contain",
+    onRegisterVideoElement,
 }: {
     participant: JitsiParticipant;
     tileKey: string;
     forceAspect?: boolean; // mobile stack uses aspect-video
     fit?: "contain" | "cover"; // "layout-ish" control
+    onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
 }) {
     const videoRef = useRef<HTMLVideoElement | null>(null);
-    const showVideo = !!participant.videoTrack && !participant.videoMuted;
 
+    // ✅ IMPORTANT:
+    // We keep the track attached even when participant.videoMuted === true.
+    // We only hide the <video> via CSS and show an overlay placeholder.
+    const hasVideoTrack = !!participant.videoTrack;
     const streamV = useTrackStreamVersion(participant.videoTrack);
+
+    // ✅ Provide real <video> element to engine (optional)
+    const handleVideoRef = (el: HTMLVideoElement | null) => {
+        videoRef.current = el;
+        onRegisterVideoElement?.(participant.id, el, "video");
+    };
 
     useEffect(() => {
         const el = videoRef.current;
         if (!el) return;
 
         const track = participant.videoTrack;
+        if (!track) return;
 
+        // attach (do NOT early-return on videoMuted)
         try {
-            (el as any).srcObject = null;
+            track.detach?.(el);
         } catch { }
-        try {
-            el.load?.();
-        } catch { }
-
-        if (!track || participant.videoMuted) return;
 
         try {
-            try {
-                track.detach?.(el);
-            } catch { }
             track.attach(el);
         } catch (e) {
             console.error("attach error", e);
@@ -315,9 +339,13 @@ function ParticipantTile({
                 el.load?.();
             } catch { }
         };
-    }, [participant.videoTrack, participant.videoMuted, participant.isLocal, streamV]);
+        // ✅ note: NOT depending on participant.videoMuted
+    }, [participant.videoTrack, participant.isLocal, streamV]);
 
     const objectClass = fit === "cover" ? "object-cover" : "object-contain";
+
+    const showPlaceholder = !hasVideoTrack || participant.videoMuted;
+    const hideVideo = !hasVideoTrack || participant.videoMuted;
 
     return (
         <div
@@ -327,22 +355,45 @@ function ParticipantTile({
             }
             data-tile-key={tileKey}
         >
-            {showVideo ? (
-                <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted={participant.isLocal}
-                    className={`absolute inset-0 w-full h-full ${objectClass} bg-black`}
-                />
-            ) : (
+            {/* ✅ Always keep <video> mounted + attached (if track exists). Just hide on mute. */}
+            <video
+                ref={handleVideoRef}
+                autoPlay
+                playsInline
+                muted={participant.isLocal}
+                className={
+                    `absolute inset-0 w-full h-full ${objectClass} bg-black transition-opacity duration-150 ` +
+                    (hideVideo ? "opacity-0" : "opacity-100")
+                }
+            />
+
+            {/* ✅ Placeholder overlay (Alatar image if exists, else initials) */}
+            {showPlaceholder && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#111827]">
-                    <div className="w-16 h-16 rounded-full bg-[#374151] flex items-center justify-center text-2xl font-semibold">
-                        {participant.displayName?.[0]?.toUpperCase() || "?"}
+                    <div className="w-16 h-16 rounded-full bg-[#0b1220] border border-white/10 overflow-hidden flex items-center justify-center">
+                        {/* try show alatar.png if it exists */}
+                        <img
+                            src={PLACEHOLDER_AVATAR_URL}
+                            alt=""
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                                // hide broken image
+                                (e.currentTarget as HTMLImageElement).style.display = "none";
+                            }}
+                        />
+                        {/* initials fallback (will show if image fails/hides) */}
+                        <div className="absolute inset-0 flex items-center justify-center text-2xl font-semibold text-white/90">
+                            {participant.displayName?.[0]?.toUpperCase() || "?"}
+                        </div>
                     </div>
+
                     <span className="mt-2 text-sm text-white/80">
                         {participant.isLocal ? "You" : participant.displayName || "Guest"}
                     </span>
+
+                    {participant.videoMuted && (
+                        <span className="mt-1 text-[11px] text-white/50">Camera off</span>
+                    )}
                 </div>
             )}
 
@@ -364,7 +415,6 @@ function ParticipantTile({
 // ----------------------- Layouts -----------------------
 function computeGrid(count: number) {
     if (count <= 1) return { cols: 1, rows: 1 };
-    // небольшая защита от "слишком много колонок"
     const cols = Math.min(4, Math.ceil(Math.sqrt(count)));
     const rows = Math.ceil(count / cols);
     return { cols, rows };
@@ -373,9 +423,11 @@ function computeGrid(count: number) {
 function GridLayout({
     pageParticipants,
     layoutVersion,
+    onRegisterVideoElement,
 }: {
     pageParticipants: JitsiParticipant[];
     layoutVersion: number;
+    onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
 }) {
     const { cols, rows } = useMemo(
         () => computeGrid(pageParticipants.length),
@@ -402,6 +454,7 @@ function GridLayout({
                         tileKey={tileKey}
                         forceAspect={false}
                         fit="contain"
+                        onRegisterVideoElement={onRegisterVideoElement}
                     />
                 );
             })}
@@ -412,9 +465,11 @@ function GridLayout({
 function P2PLayout({
     pageParticipants,
     layoutVersion,
+    onRegisterVideoElement,
 }: {
     pageParticipants: JitsiParticipant[];
     layoutVersion: number;
+    onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
 }) {
     const count = pageParticipants.length;
 
@@ -436,6 +491,7 @@ function P2PLayout({
                         tileKey={tileKey}
                         forceAspect={false}
                         fit="contain"
+                        onRegisterVideoElement={onRegisterVideoElement}
                     />
                 );
             })}
@@ -443,15 +499,16 @@ function P2PLayout({
     );
 }
 
-/** ✅ Mobile-first: vertical stack like your screenshot (layout only) */
 function MobileStackLayout({
     pageParticipants,
     layoutVersion,
-    paddingBottomPx = 96, // чтобы нижняя фикс-панель не перекрывала последний tile
+    paddingBottomPx = 96,
+    onRegisterVideoElement,
 }: {
     pageParticipants: JitsiParticipant[];
     layoutVersion: number;
     paddingBottomPx?: number;
+    onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
 }) {
     return (
         <div
@@ -470,6 +527,7 @@ function MobileStackLayout({
                         tileKey={tileKey}
                         forceAspect={true}
                         fit="cover"
+                        onRegisterVideoElement={onRegisterVideoElement}
                     />
                 );
             })}
@@ -481,10 +539,12 @@ function ScreenShareLayoutDesktop({
     screenSharer,
     others,
     layoutVersion,
+    onRegisterVideoElement,
 }: {
     screenSharer: JitsiParticipant;
     others: JitsiParticipant[];
     layoutVersion: number;
+    onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
 }) {
     const screenVideoRef = useRef<HTMLVideoElement | null>(null);
     const screenTrackId = useMemo(
@@ -494,10 +554,17 @@ function ScreenShareLayoutDesktop({
     const screenStreamV = useTrackStreamVersion(screenSharer.screenTrack);
 
     useEffect(() => {
+        const el = screenVideoRef.current;
+        onRegisterVideoElement?.(screenSharer.id, el ?? null, "screen");
+        return () => onRegisterVideoElement?.(screenSharer.id, null, "screen");
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [screenSharer.id, screenTrackId]);
+
+    useEffect(() => {
         if (!screenVideoRef.current) return;
         if (!screenSharer.screenTrack) return;
         return attachTrackToMedia(screenSharer.screenTrack, screenVideoRef.current);
-    }, [screenTrackId, screenStreamV]); // include streamV
+    }, [screenTrackId, screenStreamV]);
 
     const cameraParticipant =
         screenSharer.videoTrack && !screenSharer.videoMuted ? screenSharer : undefined;
@@ -532,6 +599,7 @@ function ScreenShareLayoutDesktop({
                             )}`}
                             forceAspect={true}
                             fit="cover"
+                            onRegisterVideoElement={onRegisterVideoElement}
                         />
                     </div>
                 )}
@@ -547,6 +615,7 @@ function ScreenShareLayoutDesktop({
                                 tileKey={tileKey}
                                 forceAspect={false}
                                 fit="cover"
+                                onRegisterVideoElement={onRegisterVideoElement}
                             />
                         </div>
                     );
@@ -561,11 +630,13 @@ function ScreenShareLayoutMobile({
     others,
     layoutVersion,
     paddingBottomPx = 96,
+    onRegisterVideoElement,
 }: {
     screenSharer: JitsiParticipant;
     others: JitsiParticipant[];
     layoutVersion: number;
     paddingBottomPx?: number;
+    onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
 }) {
     const screenVideoRef = useRef<HTMLVideoElement | null>(null);
     const screenTrackId = useMemo(
@@ -573,6 +644,13 @@ function ScreenShareLayoutMobile({
         [screenSharer.screenTrack]
     );
     const screenStreamV = useTrackStreamVersion(screenSharer.screenTrack);
+
+    useEffect(() => {
+        const el = screenVideoRef.current;
+        onRegisterVideoElement?.(screenSharer.id, el ?? null, "screen");
+        return () => onRegisterVideoElement?.(screenSharer.id, null, "screen");
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [screenSharer.id, screenTrackId]);
 
     useEffect(() => {
         if (!screenVideoRef.current) return;
@@ -586,7 +664,6 @@ function ScreenShareLayoutMobile({
             className="w-full h-full overflow-y-auto p-2 flex flex-col gap-2"
             style={{ paddingBottom: paddingBottomPx }}
         >
-            {/* screen on top */}
             <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden border border-white/5 relative">
                 <video
                     ref={screenVideoRef}
@@ -604,7 +681,6 @@ function ScreenShareLayoutMobile({
                 </div>
             </div>
 
-            {/* others stacked below */}
             {others.map((p) => {
                 const tileKey = `${p.id}:${safeTrackId(p.videoTrack)}`;
                 return (
@@ -614,6 +690,7 @@ function ScreenShareLayoutMobile({
                         tileKey={tileKey}
                         forceAspect={true}
                         fit="cover"
+                        onRegisterVideoElement={onRegisterVideoElement}
                     />
                 );
             })}
@@ -635,12 +712,11 @@ export function VideoRoom(props: VideoRoomProps) {
         onVisibleVideoIdsChange,
         showControls = true,
         audioOutputId,
+        onRegisterVideoElement,
     } = props;
 
-    // ✅ mobile breakpoint: below md
     const isMobile = useMediaQuery("(max-width: 767px)");
 
-    // ----------------------- Audio sinkId apply -----------------------
     useEffect(() => {
         const deviceId = audioOutputId;
         if (!deviceId || deviceId === "default") return;
@@ -767,21 +843,30 @@ export function VideoRoom(props: VideoRoomProps) {
             <AudioSink participants={participants} />
 
             <div className="flex-1 relative overflow-hidden rounded-2xl bg-black/80 min-h-0">
-                {/* ✅ NO SCREEN SHARE */}
                 {!screenSharer && (
                     <>
-                        {/* Mobile: stack list like screenshot */}
                         {isMobile ? (
-                            <MobileStackLayout pageParticipants={pageParticipants} layoutVersion={layoutVersion} />
+                            <MobileStackLayout
+                                pageParticipants={pageParticipants}
+                                layoutVersion={layoutVersion}
+                                onRegisterVideoElement={onRegisterVideoElement}
+                            />
                         ) : isP2P ? (
-                            <P2PLayout pageParticipants={pageParticipants} layoutVersion={layoutVersion} />
+                            <P2PLayout
+                                pageParticipants={pageParticipants}
+                                layoutVersion={layoutVersion}
+                                onRegisterVideoElement={onRegisterVideoElement}
+                            />
                         ) : (
-                            <GridLayout pageParticipants={pageParticipants} layoutVersion={layoutVersion} />
+                            <GridLayout
+                                pageParticipants={pageParticipants}
+                                layoutVersion={layoutVersion}
+                                onRegisterVideoElement={onRegisterVideoElement}
+                            />
                         )}
                     </>
                 )}
 
-                {/* ✅ SCREEN SHARE */}
                 {screenSharer && (
                     <>
                         {isMobile ? (
@@ -789,12 +874,14 @@ export function VideoRoom(props: VideoRoomProps) {
                                 screenSharer={screenSharer}
                                 others={screenOthers}
                                 layoutVersion={layoutVersion}
+                                onRegisterVideoElement={onRegisterVideoElement}
                             />
                         ) : (
                             <ScreenShareLayoutDesktop
                                 screenSharer={screenSharer}
                                 others={screenOthers}
                                 layoutVersion={layoutVersion}
+                                onRegisterVideoElement={onRegisterVideoElement}
                             />
                         )}
                     </>
@@ -815,7 +902,6 @@ export function VideoRoom(props: VideoRoomProps) {
                     </div>
                 )}
 
-                {/* ✅ keep your paging buttons (desktop-only; on mobile better to just scroll list) */}
                 {canScroll && !isMobile && (
                     <div className="absolute top-3 right-3 flex items-center gap-2">
                         <button
@@ -849,7 +935,6 @@ export function VideoRoom(props: VideoRoomProps) {
                 )}
             </div>
 
-            {/* Internal controls (you обычно выключаешь showControls и рисуешь в RoomPage) */}
             {showControls && (
                 <div className="mt-3 flex items-center justify-center">
                     <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-[#020617]/90 border border-white/10 shadow-lg">

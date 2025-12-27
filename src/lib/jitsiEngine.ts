@@ -2,6 +2,7 @@
 // src/lib/jitsiEngine.ts — SFU-only (P2P OFF) + track-based + reactions + SAFE background effects
 // Ultra-stable subscriptions: no-op caching + delayed hard reset + cooldown
 // ✅ Added: targeted “black video” recovery (reattach per participant + optional subs bump)
+// ✅ Fixed: do NOT treat local camera/audio track add/remove as topology change (prevents global resub churn on toggleVideo)
 // ============================================================================
 
 import { createBackgroundEffect, BgMode, JitsiStreamEffect } from "./backgroundEffect";
@@ -110,10 +111,7 @@ export class JitsiEngine {
   private participants: Record<string, JitsiParticipant> = {};
   private localUserId: string | null = null;
 
-  private tracksByParticipant = new Map<
-    string,
-    { audio?: JitsiTrack; video?: JitsiTrack; screen?: JitsiTrack }
-  >();
+  private tracksByParticipant = new Map<string, { audio?: JitsiTrack; video?: JitsiTrack; screen?: JitsiTrack }>();
 
   private localAudioTrack: JitsiTrack | null = null;
   private localVideoTrack: JitsiTrack | null = null;
@@ -157,6 +155,7 @@ export class JitsiEngine {
   private screenElByPid = new Map<string, HTMLVideoElement>();
 
   private videoHealthTimer: any = null;
+  private healthSoonTimer: any = null;
 
   private readonly HEALTH_TICK_MS = 1500;
   private readonly STUCK_THRESHOLD_MS = 2500;
@@ -214,15 +213,19 @@ export class JitsiEngine {
     }
 
     map.set(participantId, el);
-
-    // kick a quick health tick so newly-mounted tiles get validated
     this.scheduleHealthTickSoon();
   }
 
   private scheduleHealthTickSoon() {
-    // Do not create extra timers; just run next tick quickly.
-    // If monitor not running, start (safe).
+    // Start monitor if needed; also do a one-shot soon tick (coalesced)
     this.startVideoHealthMonitor();
+
+    if (this.healthSoonTimer) return;
+    this.healthSoonTimer = setTimeout(() => {
+      this.healthSoonTimer = null;
+      if (this.disposed) return;
+      this.healthTick();
+    }, 0);
   }
 
   private startVideoHealthMonitor() {
@@ -236,6 +239,10 @@ export class JitsiEngine {
   private stopVideoHealthMonitor() {
     if (this.videoHealthTimer) clearInterval(this.videoHealthTimer);
     this.videoHealthTimer = null;
+
+    if (this.healthSoonTimer) clearTimeout(this.healthSoonTimer);
+    this.healthSoonTimer = null;
+
     this.videoHealthState.clear();
     this.videoElByPid.clear();
     this.screenElByPid.clear();
@@ -298,7 +305,6 @@ export class JitsiEngine {
     // Cleanup state for participants we no longer care about
     for (const pid of Array.from(this.videoHealthState.keys())) {
       if (!subscribedRemoteIds.includes(pid)) {
-        // keep a tiny bit of state? no, clean to avoid leaks
         this.videoHealthState.delete(pid);
       }
     }
@@ -311,17 +317,13 @@ export class JitsiEngine {
       const hasScreen = !!p.screenTrack && this.screenElByPid.has(pid);
       const kind: "video" | "screen" = hasScreen ? "screen" : "video";
 
-      const el =
-        kind === "screen" ? this.screenElByPid.get(pid) : this.videoElByPid.get(pid);
-
-      const track =
-        kind === "screen" ? p.screenTrack : p.videoTrack;
+      const el = kind === "screen" ? this.screenElByPid.get(pid) : this.videoElByPid.get(pid);
+      const track = kind === "screen" ? p.screenTrack : p.videoTrack;
 
       if (!el || !track) continue;
 
       // Don’t attempt to recover if muted (camera off) for camera kind
       if (kind === "video" && p.videoMuted) {
-        // reset stuck tracking
         const st = this.getOrInitHealth(pid);
         st.stuckSince = null;
         st.lastProgressAt = now;
@@ -330,7 +332,6 @@ export class JitsiEngine {
         continue;
       }
 
-      // If element is not in a playable state yet, give it time.
       // (readyState: 0..4; 2+ means “have current data”.)
       const ready = el.readyState >= 2;
       const hasSize = (el.videoWidth || 0) > 0 && (el.videoHeight || 0) > 0;
@@ -341,11 +342,9 @@ export class JitsiEngine {
       const curTime = Number(el.currentTime || 0);
 
       let progressed = false;
-
       if (frames != null && st.lastFrameCount != null) {
         progressed = frames > st.lastFrameCount;
       } else {
-        // fallback: currentTime moves when playing
         progressed = curTime > (st.lastCurrentTime || 0);
       }
 
@@ -357,21 +356,14 @@ export class JitsiEngine {
         continue;
       }
 
-      // If not progressed, start/continue stuck timer
       if (st.stuckSince == null) st.stuckSince = now;
 
-      // update last observed counters
       st.lastFrameCount = frames;
       st.lastCurrentTime = curTime;
 
       const stuckFor = now - st.stuckSince;
+      if (stuckFor < this.STUCK_THRESHOLD_MS) continue;
 
-      if (stuckFor < this.STUCK_THRESHOLD_MS) {
-        // still within grace window
-        continue;
-      }
-
-      // Now we consider this tile “stuck black / frozen”
       void this.recoverParticipantVideo(pid, kind, track, el, st);
     }
   }
@@ -393,11 +385,8 @@ export class JitsiEngine {
     }
   ) {
     const now = Date.now();
-
-    // Rate limit reattach attempts
     if (now - st.lastReattachAt < this.REATTACH_COOLDOWN_MS) return;
 
-    // Count attempts in rolling window
     if (now - st.lastAttemptWindowAt > 12000) {
       st.lastAttemptWindowAt = now;
       st.reattachAttemptsInWindow = 0;
@@ -409,18 +398,23 @@ export class JitsiEngine {
     try {
       // ✅ Targeted reattach: detach/attach the same track to the same element
       if (typeof track.detach === "function") {
-        try { track.detach(el); } catch { }
+        try {
+          track.detach(el);
+        } catch { }
       }
       // Some builds accept detach() without args
       if (typeof track.detach === "function") {
-        try { track.detach(); } catch { }
+        try {
+          track.detach();
+        } catch { }
       }
 
-      // Small micro-delay helps in some browsers
       await new Promise((r) => setTimeout(r, 40));
 
       if (typeof track.attach === "function") {
-        try { track.attach(el); } catch { }
+        try {
+          track.attach(el);
+        } catch { }
       }
 
       // Ensure playback
@@ -430,19 +424,14 @@ export class JitsiEngine {
         }
       } catch { }
 
-      // Reset stuck timer so we give it fresh grace window
       st.stuckSince = Date.now();
       st.lastProgressAt = Date.now();
 
-      // If we had to do many reattaches in short time, escalate to “subs bump”
       if (st.reattachAttemptsInWindow >= 2) {
         this.bumpParticipantSubscription(pid, st);
       }
-
-      // Optional debug
       // console.warn(`[health] Reattached ${kind} for ${pid}`);
     } catch {
-      // if reattach itself throws, try bump once
       this.bumpParticipantSubscription(pid, st);
     }
   }
@@ -461,7 +450,6 @@ export class JitsiEngine {
       const original = subscribedRemoteIds.slice(0, desiredLastN);
       const without = original.filter((x) => x !== pid);
 
-      // ✅ “toggle” only this endpoint by briefly deselecting it
       try {
         this.conference.selectParticipants?.(without);
       } catch { }
@@ -473,7 +461,6 @@ export class JitsiEngine {
         } catch { }
       }, 220);
 
-      // Optional debug
       // console.warn(`[health] Bumped subscription for ${pid}`);
     } catch { }
   }
@@ -488,8 +475,7 @@ export class JitsiEngine {
 
     try {
       const hasEffectsModule = !!this.JitsiMeetJS?.effects;
-      const hasFactory =
-        typeof this.JitsiMeetJS?.effects?.createVirtualBackgroundEffect === "function";
+      const hasFactory = typeof this.JitsiMeetJS?.effects?.createVirtualBackgroundEffect === "function";
       console.log(
         "[Jitsi][effects] module:",
         hasEffectsModule,
@@ -694,7 +680,6 @@ export class JitsiEngine {
         opts.mode,
         "but track.setEffect not supported. Keeping video as-is."
       );
-      // no need to hard reset subs
       return;
     }
 
@@ -867,19 +852,16 @@ export class JitsiEngine {
         tfjsWasm: "/libs/tfjs-backend-wasm.wasm",
         tfjsSimdWasm: "/libs/tfjs-backend-wasm-simd.wasm",
         tfjsThreadedSimdWasm: "/libs/tfjs-backend-wasm-threaded-simd.wasm",
-        tfjsSimdWasm: "/libs/tfjs-backend-wasm-threaded-simd.wasm",
       },
     });
 
     try {
       const hasEffects = !!this.JitsiMeetJS?.effects;
-      const hasCreate =
-        typeof this.JitsiMeetJS?.effects?.createVirtualBackgroundEffect === "function";
+      const hasCreate = typeof this.JitsiMeetJS?.effects?.createVirtualBackgroundEffect === "function";
       console.log("[Jitsi] effectsModule:", hasEffects, "createVirtualBackgroundEffect:", hasCreate);
     } catch { }
 
-    const serviceUrl =
-      this.config.websocket || this.config.bosh || `wss://${JITSI_DOMAIN}/xmpp-websocket`;
+    const serviceUrl = this.config.websocket || this.config.bosh || `wss://${JITSI_DOMAIN}/xmpp-websocket`;
 
     const options = {
       hosts: this.config.hosts,
@@ -916,12 +898,12 @@ export class JitsiEngine {
   public setQualityMode(mode: "auto" | "low" | "medium" | "high") {
     this.qualityMode = mode;
     this.scheduleApplyVideoSubscriptions(150, true);
+    this.scheduleHealthTickSoon();
   }
 
   public setVisibleVideoParticipants(ids: string[]) {
     this.selectedVideoIds = Array.isArray(ids) ? ids : [];
     this.scheduleApplyVideoSubscriptions(150, false);
-    // also give health monitor a chance (no-op if no registered els)
     this.scheduleHealthTickSoon();
   }
 
@@ -1008,7 +990,7 @@ export class JitsiEngine {
       this.rebuildParticipantsFromTracks();
       this.emitParticipants();
 
-      // topology change -> schedule recovery
+      // topology-ish: screen share sometimes causes receiver glitches -> allow recovery
       this.scheduleApplyVideoSubscriptions(0, true);
       this.scheduleHardResetSubscriptions(4500);
 
@@ -1130,6 +1112,17 @@ export class JitsiEngine {
       this.scheduleHardResetSubscriptions(4500);
     };
 
+    const isLocalCameraOrAudio = (track: any) => {
+      try {
+        if (!track?.isLocal?.()) return false;
+        if (this.isDesktopTrack(track)) return false;
+        const type = track.getType?.();
+        return type === "video" || type === "audio";
+      } catch {
+        return false;
+      }
+    };
+
     conf.on(events.conference.CONFERENCE_JOINED, () => {
       if (this.disposed) return;
 
@@ -1218,16 +1211,30 @@ export class JitsiEngine {
     conf.on(events.conference.TRACK_ADDED, (track: any) => {
       if (this.disposed) return;
       this.handleTrackAdded(track);
-      applySubsSoon(true);
-      topologyChanged();
+
+      // ✅ FIX: local camera/audio track changes should NOT trigger global recovery hard reset
+      if (isLocalCameraOrAudio(track)) {
+        applySubsSoon(false);
+      } else {
+        applySubsSoon(true);
+        topologyChanged();
+      }
+
       this.scheduleHealthTickSoon();
     });
 
     conf.on(events.conference.TRACK_REMOVED, (track: any) => {
       if (this.disposed) return;
       this.handleTrackRemoved(track);
-      applySubsSoon(true);
-      topologyChanged();
+
+      // ✅ FIX: local camera/audio track changes should NOT trigger global recovery hard reset
+      if (isLocalCameraOrAudio(track)) {
+        applySubsSoon(false);
+      } else {
+        applySubsSoon(true);
+        topologyChanged();
+      }
+
       this.scheduleHealthTickSoon();
     });
 
@@ -1236,7 +1243,6 @@ export class JitsiEngine {
       this.handleTrackMuteChanged(track);
 
       // ✅ IMPORTANT: no hard reset on mute
-      // subscriptions don't need to change; UI hides video via CSS.
       applySubsSoon(false);
 
       // health can re-validate after unmute
@@ -1258,9 +1264,7 @@ export class JitsiEngine {
         devices: ["audio", "video"],
         resolution: 720,
         constraints: {
-          audio: this.mediaSettings.audioInputId
-            ? { deviceId: { exact: this.mediaSettings.audioInputId } }
-            : true,
+          audio: this.mediaSettings.audioInputId ? { deviceId: { exact: this.mediaSettings.audioInputId } } : true,
           video: this.mediaSettings.videoInputId
             ? { deviceId: { exact: this.mediaSettings.videoInputId } }
             : {
@@ -1401,7 +1405,6 @@ export class JitsiEngine {
         this.conference.selectParticipants(finalRemoteIds.slice(0, desiredLastN));
       }
 
-      // After subs apply, validate tiles soon
       this.scheduleHealthTickSoon();
     } catch { }
   }
@@ -1564,5 +1567,129 @@ export class JitsiEngine {
 
     if (!entry.audio && !entry.video && !entry.screen) {
       if (pid !== this.localUserId) this.tracksByParticipant.delete(pid);
-      else t
-      :: contentReference[oaicite: 0]{ index = 0 }
+      else this.tracksByParticipant.set(pid, entry);
+    } else {
+      this.tracksByParticipant.set(pid, entry);
+    }
+
+    if (pid === this.localUserId && this.localScreenshareTrack === track) this.localScreenshareTrack = null;
+
+    this.rebuildParticipantsFromTracks();
+    this.emitParticipants();
+
+    this.scheduleHealthTickSoon();
+  }
+
+  private handleTrackMuteChanged(track: any) {
+    const pid = this.resolveTrackParticipantId(track);
+    if (!pid) return;
+
+    const p = this.participants[pid];
+    if (!p) return;
+
+    const type = track.getType?.();
+    if (type === "audio") {
+      p.audioMuted = track.isMuted ? track.isMuted() : p.audioMuted;
+    } else if (type === "video") {
+      if (!this.isDesktopTrack(track)) {
+        if (!(pid === this.localUserId && this.bgApplying)) {
+          p.videoMuted = track.isMuted ? track.isMuted() : p.videoMuted;
+        }
+
+        if (pid === this.localUserId) {
+          try {
+            const nowMuted = track.isMuted?.() === true;
+            if (!nowMuted) void this.reapplyBgIfNeeded();
+          } catch { }
+        }
+      }
+    }
+
+    p.isScreenSharing = !!p.screenTrack;
+    this.emitParticipants();
+  }
+
+  private rebuildParticipantsFromTracks() {
+    for (const [pid, tracks] of this.tracksByParticipant.entries()) {
+      if (pid === this.localUserId) this.ensureLocalParticipant(this.participants[pid]?.displayName || "Me");
+      else this.ensureRemoteParticipant(pid, this.participants[pid]?.displayName || "Guest");
+
+      const p = this.participants[pid];
+      if (!p) continue;
+
+      p.audioTrack = tracks.audio;
+      p.videoTrack = tracks.video;
+      p.screenTrack = tracks.screen;
+      p.isScreenSharing = !!tracks.screen;
+
+      if (tracks.audio?.isMuted) p.audioMuted = !!tracks.audio.isMuted();
+      if (tracks.video?.isMuted) p.videoMuted = !!tracks.video.isMuted();
+    }
+  }
+
+  private resolveTrackParticipantId(track: any): string | null {
+    const isLocal = track?.isLocal?.() === true;
+    if (isLocal) return this.localUserId;
+    return track?.getParticipantId?.() || null;
+  }
+
+  private isDesktopTrack(track: any): boolean {
+    const type = track?.getType?.();
+    const videoType = track?.getVideoType?.();
+    return videoType === "desktop" || type === "desktop";
+  }
+
+  private async handleLocalScreenshareStopped() {
+    if (!this.localScreenshareTrack || !this.conference || !this.localUserId) {
+      this.localScreenshareTrack = null;
+      return;
+    }
+
+    try {
+      await this.conference.removeTrack(this.localScreenshareTrack);
+    } catch { }
+    try {
+      this.localScreenshareTrack.dispose?.();
+    } catch { }
+
+    const pid = this.localUserId;
+    const entry = this.tracksByParticipant.get(pid);
+    if (entry?.screen === this.localScreenshareTrack) {
+      delete entry.screen;
+      this.tracksByParticipant.set(pid, entry);
+    }
+
+    this.localScreenshareTrack = null;
+
+    this.rebuildParticipantsFromTracks();
+    this.emitParticipants();
+
+    this.scheduleApplyVideoSubscriptions(0, true);
+    this.scheduleHardResetSubscriptions(4500);
+
+    this.scheduleHealthTickSoon();
+  }
+
+  private emitParticipants() {
+    const arr = Object.values(this.participants);
+
+    arr.sort((a, b) => {
+      if (a.isLocal && !b.isLocal) return -1;
+      if (!a.isLocal && b.isLocal) return 1;
+      const an = (a.displayName || "").toLowerCase();
+      const bn = (b.displayName || "").toLowerCase();
+      if (an < bn) return -1;
+      if (an > bn) return 1;
+      return a.id.localeCompare(b.id);
+    });
+
+    this.callbacks.onParticipantsUpdate?.(arr);
+  }
+
+  private handleEndpointMessage(senderId: string, payload: any) {
+    if (!payload) return;
+    if (payload.kind === "reaction" && payload.reaction) {
+      this.callbacks.onReactionReceived?.(senderId, payload.reaction);
+    }
+  }
+}
