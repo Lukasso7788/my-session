@@ -1,12 +1,5 @@
 // src/components/VideoRoom.tsx
-import {
-    useCallback,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
-    type MutableRefObject,
-} from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JitsiParticipant, JitsiTrack } from "../lib/jitsiEngine";
 
 export type ReactionType =
@@ -24,11 +17,14 @@ export type Reaction = {
 
 type VideoRoomProps = {
     theme?: "dark" | "light";
+
     participants: JitsiParticipant[];
+
     onToggleAudio: () => void;
     onToggleVideo: () => void;
     onToggleScreenShare: () => void;
     onLeave?: () => void;
+
     activeScreenSharer?: string | null;
 
     incomingReactions?: { id: number; type: ReactionType }[];
@@ -58,8 +54,9 @@ const reactionEmoji: Record<ReactionType, string> = {
 
 function Icon({
     name,
-    className = "w-4 h-4",
+    className = "w-5 h-5",
     alt = "",
+    theme = "dark",
 }: {
     name:
     | "mic-on"
@@ -68,14 +65,23 @@ function Icon({
     | "camera-off"
     | "screen-share"
     | "reaction"
-    | "leave";
+    | "leave"
+    | "participant"
+    | "chat"
+    | "intentions"
+    | "settings";
     className?: string;
     alt?: string;
+    theme?: "dark" | "light";
 }) {
+    // Если у тебя SVG монохромные (чёрные), можно инвертить для dark темы:
+    // - dark: invert(1)
+    // - light: normal
+    const invertForDark = theme === "dark" ? "invert brightness-200" : "";
     return (
         <img
             src={`/icons/${name}.svg`}
-            className={className}
+            className={`${className} ${invertForDark}`}
             alt={alt}
             draggable={false}
         />
@@ -93,7 +99,10 @@ function safeTrackId(track?: any): string {
     return String((track as any)?._id ?? "track");
 }
 
-function attachTrackToMedia(track: JitsiTrack | undefined, element: HTMLMediaElement | null) {
+function attachTrackToMedia(
+    track: JitsiTrack | undefined,
+    element: HTMLMediaElement | null
+) {
     if (!track || !element) return;
 
     try {
@@ -144,7 +153,10 @@ function useTrackStreamVersion(track: any) {
             "LOCAL_TRACK_STOPPED",
         ];
 
-        const eventNames: string[] = Array.from(new Set([...(candidates as string[]), ...fallback]));
+        const eventNames: string[] = Array.from(
+            new Set([...(candidates as string[]), ...fallback])
+        );
+
         const bump = () => setV((x) => x + 1);
 
         for (const ev of eventNames) {
@@ -165,6 +177,7 @@ function useTrackStreamVersion(track: any) {
     return v;
 }
 
+/** small helper: responsive bool without extra deps */
 function useMediaQuery(query: string) {
     const [matches, setMatches] = useState(false);
 
@@ -186,28 +199,16 @@ function useMediaQuery(query: string) {
     return matches;
 }
 
-// ----------------------- Audio sink + audio level (MEMORY SAFE) -----------------------
-type LevelMap = Record<string, number>;
-
-function AudioSinkItem({
-    p,
-    audioCtxRef,
-    onLevel,
-}: {
-    p: JitsiParticipant;
-    audioCtxRef: MutableRefObject<AudioContext | null>;
-    onLevel: (id: string, level01: number) => void;
-}) {
+// ----------------------- Audio sink (playback only) -----------------------
+function AudioSinkItem({ p }: { p: JitsiParticipant }) {
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const streamV = useTrackStreamVersion(p.audioTrack);
 
-    // Attach audio track to hidden <audio>
     useEffect(() => {
         if (!audioRef.current) return;
         if (!p.audioTrack) return;
+        if (p.isLocal) return;
 
-        // NOTE: we also allow local here to measure, but we do NOT want it audible.
-        // For local, we keep the audio element muted.
         try {
             p.audioTrack.attach(audioRef.current);
         } catch { }
@@ -218,162 +219,146 @@ function AudioSinkItem({
             } catch { }
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [p.audioTrack, streamV]);
+    }, [p.audioTrack, p.isLocal, streamV]);
 
-    // Audio analyser: sample at low rate, never per-frame setState.
-    useEffect(() => {
-        const el = audioRef.current;
-        if (!el) return;
-        if (!p.audioTrack) return;
-
-        let cancelled = false;
-
-        // For local: ensure muted to avoid echo.
-        try {
-            el.muted = !!p.isLocal;
-        } catch { }
-
-        if (!audioCtxRef.current) {
-            try {
-                audioCtxRef.current = new (window.AudioContext ||
-                    (window as any).webkitAudioContext)();
-            } catch {
-                audioCtxRef.current = null;
-            }
-        }
-
-        const ctx = audioCtxRef.current;
-        if (!ctx) return;
-
-        let analyser: AnalyserNode | null = null;
-        let source: MediaStreamAudioSourceNode | null = null;
-
-        let intervalId: number | null = null;
-        let data: Uint8Array | null = null;
-        let smooth = 0;
-
-        const waitForStream = async () => {
-            // wait for srcObject to appear (max ~1s)
-            for (let i = 0; i < 20; i++) {
-                if (cancelled) return null;
-                const so = (el as any).srcObject;
-                if (so && so instanceof MediaStream) return so as MediaStream;
-                await new Promise((r) => setTimeout(r, 50));
-            }
-            return null;
-        };
-
-        const setup = async () => {
-            const stream = await waitForStream();
-            if (cancelled) return;
-            if (!stream) return;
-
-            try {
-                source = ctx.createMediaStreamSource(stream);
-                analyser = ctx.createAnalyser();
-                analyser.fftSize = 256;
-                analyser.smoothingTimeConstant = 0.85;
-                source.connect(analyser);
-
-                data = new Uint8Array(analyser.frequencyBinCount);
-            } catch {
-                analyser = null;
-                source = null;
-                data = null;
-                return;
-            }
-
-            const SAMPLE_MS = 120; // ~8fps (critical for memory)
-            intervalId = window.setInterval(() => {
-                if (cancelled) return;
-                if (!analyser || !data) return;
-
-                try {
-                    analyser.getByteFrequencyData(data);
-
-                    let sum = 0;
-                    for (let i = 0; i < data.length; i++) sum += data[i];
-                    const avg = sum / Math.max(1, data.length); // 0..255
-                    const level = Math.min(1, Math.max(0, avg / 140)); // tune
-
-                    smooth = smooth * 0.7 + level * 0.3;
-
-                    // If muted -> zero (prevents flicker)
-                    const out = p.audioMuted ? 0 : smooth;
-
-                    onLevel(p.id, out);
-                } catch {
-                    // never throw from interval
-                }
-            }, SAMPLE_MS);
-        };
-
-        setup();
-
-        return () => {
-            cancelled = true;
-
-            try {
-                if (intervalId) window.clearInterval(intervalId);
-            } catch { }
-            intervalId = null;
-
-            try {
-                onLevel(p.id, 0);
-            } catch { }
-
-            try {
-                source?.disconnect();
-            } catch { }
-            try {
-                analyser?.disconnect();
-            } catch { }
-
-            source = null;
-            analyser = null;
-            data = null;
-        };
-    }, [p.id, p.audioTrack, p.audioMuted, p.isLocal, streamV, audioCtxRef, onLevel]);
-
-    return <audio ref={audioRef} autoPlay playsInline preload="auto" muted={!!p.isLocal} />;
+    return <audio ref={audioRef} autoPlay playsInline preload="auto" />;
 }
 
-function AudioSink({
-    participants,
-    onLevel,
-}: {
-    participants: JitsiParticipant[];
-    onLevel: (id: string, level01: number) => void;
-}) {
-    // Include both local + remote (local muted) so local speaking can be detected too.
-    const withAudio = useMemo(
-        () => participants.filter((p) => !!p.audioTrack),
+function AudioSink({ participants }: { participants: JitsiParticipant[] }) {
+    const remotes = useMemo(
+        () => participants.filter((p) => !p.isLocal),
         [participants]
     );
 
-    const audioCtxRef = useRef<AudioContext | null>(null);
-
-    useEffect(() => {
-        return () => {
-            try {
-                audioCtxRef.current?.close?.();
-            } catch { }
-            audioCtxRef.current = null;
-        };
-    }, []);
-
     return (
         <div className="absolute w-0 h-0 overflow-hidden opacity-0 pointer-events-none">
-            {withAudio.map((p) => (
-                <AudioSinkItem
-                    key={`${p.id}:${safeTrackId(p.audioTrack)}`}
-                    p={p}
-                    audioCtxRef={audioCtxRef}
-                    onLevel={onLevel}
-                />
+            {remotes.map((p) => (
+                <AudioSinkItem key={p.id} p={p} />
             ))}
         </div>
     );
+}
+
+// ----------------------- Jitsi audio level (built-in, throttled) -----------------------
+type LevelMap = Record<string, number>;
+
+function getJitsiAudioLevelEventName(): string {
+    const ev =
+        (window as any).JitsiMeetJS?.events?.track?.TRACK_AUDIO_LEVEL_CHANGED;
+    return ev || "TRACK_AUDIO_LEVEL_CHANGED";
+}
+
+function normalizeLevel01(level: any): number {
+    // lib-jitsi-meet обычно шлёт 0..1, но на всякий:
+    const n = typeof level === "number" ? level : level?.level;
+    if (typeof n !== "number" || Number.isNaN(n)) return 0;
+    if (n <= 0) return 0;
+    if (n >= 1) return 1;
+    return n;
+}
+
+/**
+ * Слушаем встроенный Jitsi audio-level на audioTrack.
+ * Важно: мы НЕ обновляем React state на каждый event.
+ * Мы складываем уровни в ref, и "сбрасываем" в state ~8 раз/сек.
+ */
+function useJitsiAudioLevels(visibleParticipants: JitsiParticipant[]) {
+    const levelsRef = useRef<LevelMap>({});
+    const [levels, setLevels] = useState<LevelMap>({});
+
+    // Подписки на треки: trackId -> cleanup
+    const subsRef = useRef<Record<string, () => void>>({});
+
+    useEffect(() => {
+        const eventName = getJitsiAudioLevelEventName();
+        const nextSubs: Record<string, () => void> = {};
+
+        for (const p of visibleParticipants) {
+            const tr: any = p.audioTrack;
+            if (!tr || typeof tr.addEventListener !== "function") continue;
+
+            const tid = `${p.id}:${safeTrackId(tr)}`;
+            const handler = (lvl: any) => {
+                levelsRef.current[p.id] = normalizeLevel01(lvl);
+            };
+
+            try {
+                tr.addEventListener(eventName, handler);
+            } catch {
+                // ignore
+            }
+
+            nextSubs[tid] = () => {
+                try {
+                    tr.removeEventListener(eventName, handler);
+                } catch { }
+            };
+        }
+
+        // cleanup старых подписок, которых больше нет
+        for (const [k, unsub] of Object.entries(subsRef.current)) {
+            if (!nextSubs[k]) {
+                try {
+                    unsub();
+                } catch { }
+            }
+        }
+
+        subsRef.current = nextSubs;
+
+        return () => {
+            for (const unsub of Object.values(subsRef.current)) {
+                try {
+                    unsub();
+                } catch { }
+            }
+            subsRef.current = {};
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [
+        // зависимость по "составу" видимых участников и их audioTrack
+        visibleParticipants
+            .map((p) => `${p.id}:${safeTrackId(p.audioTrack)}`)
+            .join("|"),
+    ]);
+
+    // throttled flush в state
+    useEffect(() => {
+        if (!visibleParticipants.length) return;
+
+        const interval = window.setInterval(() => {
+            setLevels((prev) => {
+                // 1) быстрый check: есть ли вообще изменения
+                let changed = false;
+                for (const p of visibleParticipants) {
+                    const id = p.id;
+                    const v = levelsRef.current[id] ?? 0;
+                    const old = prev[id] ?? 0;
+                    if (Math.abs(old - v) > 0.04) {
+                        changed = true;
+                        break;
+                    }
+                }
+                // также если кол-во ключей отличается (сменились участники)
+                if (!changed) {
+                    const prevKeys = Object.keys(prev).length;
+                    if (prevKeys !== visibleParticipants.length) changed = true;
+                }
+
+                if (!changed) return prev;
+
+                const next: LevelMap = {};
+                for (const p of visibleParticipants) {
+                    next[p.id] = levelsRef.current[p.id] ?? 0;
+                }
+                return next;
+            });
+        }, 125); // ~8fps
+
+        return () => window.clearInterval(interval);
+    }, [visibleParticipants]);
+
+    return levels;
 }
 
 // ----------------------- Speaking bars -----------------------
@@ -384,17 +369,19 @@ function SpeakingBars({
     level: number; // 0..1
     theme: "dark" | "light";
 }) {
-    const h1 = 6 + Math.round(level * 10);
-    const h2 = 4 + Math.round(level * 14);
-    const h3 = 5 + Math.round(level * 9);
+    // Чуть "оживим": даже маленький уровень даёт заметность
+    const l = Math.max(0, Math.min(1, level));
+    const h1 = 5 + Math.round(l * 10);
+    const h2 = 4 + Math.round(l * 14);
+    const h3 = 5 + Math.round(l * 9);
 
-    const barBg = theme === "light" ? "bg-black/55" : "bg-white/70";
+    const bar = theme === "light" ? "bg-black/60" : "bg-white/70";
 
     return (
         <div className="flex items-end gap-[3px] h-4">
-            <div className={`${barBg} w-[3px] rounded-full`} style={{ height: h1 }} />
-            <div className={`${barBg} w-[3px] rounded-full`} style={{ height: h2 }} />
-            <div className={`${barBg} w-[3px] rounded-full`} style={{ height: h3 }} />
+            <div className={`${bar} w-[3px] rounded-full`} style={{ height: h1 }} />
+            <div className={`${bar} w-[3px] rounded-full`} style={{ height: h2 }} />
+            <div className={`${bar} w-[3px] rounded-full`} style={{ height: h3 }} />
         </div>
     );
 }
@@ -459,7 +446,7 @@ function ParticipantTile({
                 el.load?.();
             } catch { }
         };
-    }, [participant.videoTrack, streamV]);
+    }, [participant.videoTrack, participant.isLocal, streamV]);
 
     const objectClass = fit === "cover" ? "object-cover" : "object-contain";
 
@@ -467,16 +454,17 @@ function ParticipantTile({
     const hideVideo = !hasVideoTrack || participant.videoMuted;
 
     const name = participant.isLocal ? "You" : participant.displayName || "Guest";
-    const speaking = !participant.audioMuted && audioLevel01 > 0.08;
+
+    // speaking based on jitsi audio level (not WebAudio)
+    const speaking = !participant.audioMuted && audioLevel01 > 0.09;
 
     const tileBaseBg = theme === "light" ? "bg-[#EEF1F7]" : "bg-[#0B1220]";
     const placeholderBg = theme === "light" ? "bg-white" : "bg-[#111827]";
     const labelBg =
         theme === "light"
-            ? "bg-white/85 border border-black/10 text-black/80"
+            ? "bg-white/90 border border-black/10 text-black/80"
             : "bg-black/45 border border-white/10 text-white/80";
 
-    // IMPORTANT: ring is only a CSS class; does NOT affect keys/remounts.
     const ringClass = speaking
         ? theme === "light"
             ? "ring-2 ring-blue-500/70"
@@ -510,7 +498,9 @@ function ParticipantTile({
 
             {/* Placeholder overlay */}
             {showPlaceholder && (
-                <div className={`absolute inset-0 flex flex-col items-center justify-center ${placeholderBg}`}>
+                <div
+                    className={`absolute inset-0 flex flex-col items-center justify-center ${placeholderBg}`}
+                >
                     <div className="relative w-16 h-16 rounded-full overflow-hidden border border-black/10">
                         <img
                             src={PLACEHOLDER_AVATAR_URL}
@@ -539,6 +529,7 @@ function ParticipantTile({
                         <Icon
                             name={participant.audioMuted ? "mic-off" : "mic-on"}
                             className="w-4 h-4 opacity-80"
+                            theme={theme}
                         />
                     </div>
 
@@ -554,17 +545,36 @@ function ParticipantTile({
             )}
 
             {/* Bottom label */}
-            <div className={`absolute left-3 bottom-3 rounded-lg px-2 py-1 text-[11px] flex items-center gap-2 ${labelBg}`}>
+            <div
+                className={`absolute left-3 bottom-3 rounded-lg px-2 py-1 text-[11px] flex items-center gap-2 ${labelBg}`}
+            >
                 <span className="truncate max-w-[160px]">{name}</span>
-                <Icon name={participant.audioMuted ? "mic-off" : "mic-on"} className="w-3.5 h-3.5 opacity-80" />
+
+                {/* mic on/off icon рядом с именем */}
+                <Icon
+                    name={participant.audioMuted ? "mic-off" : "mic-on"}
+                    className="w-3.5 h-3.5 opacity-80"
+                    theme={theme}
+                />
+
+                {/* маленький speaking-dot */}
                 <span
                     className={
                         "w-2 h-2 rounded-full " +
-                        (participant.audioMuted ? "bg-red-500" : speaking ? "bg-emerald-500" : "bg-green-400")
+                        (participant.audioMuted
+                            ? "bg-red-500"
+                            : speaking
+                                ? "bg-emerald-500"
+                                : "bg-green-400")
                     }
                 />
+
+                {/* speaking bars */}
                 <div className="ml-1">
-                    <SpeakingBars level={participant.audioMuted ? 0 : audioLevel01} theme={theme} />
+                    <SpeakingBars
+                        level={participant.audioMuted ? 0 : audioLevel01}
+                        theme={theme}
+                    />
                 </div>
             </div>
         </div>
@@ -590,7 +600,10 @@ function GridLayout({
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
     levels: LevelMap;
 }) {
-    const { cols, rows } = useMemo(() => computeGrid(pageParticipants.length), [pageParticipants.length]);
+    const { cols, rows } = useMemo(
+        () => computeGrid(pageParticipants.length),
+        [pageParticipants.length]
+    );
 
     return (
         <div
@@ -698,7 +711,10 @@ function ScreenShareLayoutDesktop({
     levels: LevelMap;
 }) {
     const screenVideoRef = useRef<HTMLVideoElement | null>(null);
-    const screenTrackId = useMemo(() => safeTrackId(screenSharer.screenTrack), [screenSharer.screenTrack]);
+    const screenTrackId = useMemo(
+        () => safeTrackId(screenSharer.screenTrack),
+        [screenSharer.screenTrack]
+    );
     const screenStreamV = useTrackStreamVersion(screenSharer.screenTrack);
 
     useEffect(() => {
@@ -715,12 +731,16 @@ function ScreenShareLayoutDesktop({
     }, [screenTrackId, screenStreamV]);
 
     const labelBg =
-        theme === "light" ? "bg-white/85 border border-black/10 text-black/80" : "bg-black/45 border border-white/10 text-white/80";
+        theme === "light"
+            ? "bg-white/90 border border-black/10 text-black/80"
+            : "bg-black/45 border border-white/10 text-white/80";
 
     return (
         <div className="relative w-full h-full flex flex-row gap-3 p-3 min-h-0">
             <div
-                className={`relative flex-1 overflow-hidden rounded-2xl ${theme === "light" ? "bg-white ring-1 ring-black/10" : "bg-[#0B1220] ring-1 ring-white/10"
+                className={`relative flex-1 overflow-hidden rounded-2xl ${theme === "light"
+                        ? "bg-white ring-1 ring-black/10"
+                        : "bg-[#0B1220] ring-1 ring-white/10"
                     } min-h-0`}
             >
                 <video
@@ -730,12 +750,23 @@ function ScreenShareLayoutDesktop({
                     muted={screenSharer.isLocal}
                     className="w-full h-full object-contain bg-black"
                 />
-                <div className={`absolute left-3 bottom-3 rounded-lg px-2 py-1 text-[11px] flex items-center gap-2 ${labelBg}`}>
+                <div
+                    className={`absolute left-3 bottom-3 rounded-lg px-2 py-1 text-[11px] flex items-center gap-2 ${labelBg}`}
+                >
                     <span className="truncate max-w-[220px]">
-                        {screenSharer.isLocal ? "You (screen)" : `${screenSharer.displayName || "Guest"} (screen)`}
+                        {screenSharer.isLocal
+                            ? "You (screen)"
+                            : `${screenSharer.displayName || "Guest"} (screen)`}
                     </span>
-                    <Icon name={screenSharer.audioMuted ? "mic-off" : "mic-on"} className="w-3.5 h-3.5 opacity-80" />
-                    <SpeakingBars level={screenSharer.audioMuted ? 0 : (levels[screenSharer.id] ?? 0)} theme={theme} />
+                    <Icon
+                        name={screenSharer.audioMuted ? "mic-off" : "mic-on"}
+                        className="w-3.5 h-3.5 opacity-80"
+                        theme={theme}
+                    />
+                    <SpeakingBars
+                        level={screenSharer.audioMuted ? 0 : levels[screenSharer.id] ?? 0}
+                        theme={theme}
+                    />
                 </div>
             </div>
 
@@ -773,7 +804,10 @@ function ScreenShareLayoutMobile({
     levels: LevelMap;
 }) {
     const screenVideoRef = useRef<HTMLVideoElement | null>(null);
-    const screenTrackId = useMemo(() => safeTrackId(screenSharer.screenTrack), [screenSharer.screenTrack]);
+    const screenTrackId = useMemo(
+        () => safeTrackId(screenSharer.screenTrack),
+        [screenSharer.screenTrack]
+    );
     const screenStreamV = useTrackStreamVersion(screenSharer.screenTrack);
 
     useEffect(() => {
@@ -790,12 +824,19 @@ function ScreenShareLayoutMobile({
     }, [screenTrackId, screenStreamV]);
 
     const labelBg =
-        theme === "light" ? "bg-white/85 border border-black/10 text-black/80" : "bg-black/45 border border-white/10 text-white/80";
+        theme === "light"
+            ? "bg-white/90 border border-black/10 text-black/80"
+            : "bg-black/45 border border-white/10 text-white/80";
 
     return (
-        <div className="w-full h-full overflow-y-auto p-3 flex flex-col gap-3" style={{ paddingBottom: paddingBottomPx }}>
+        <div
+            className="w-full h-full overflow-y-auto p-3 flex flex-col gap-3"
+            style={{ paddingBottom: paddingBottomPx }}
+        >
             <div
-                className={`w-full aspect-video overflow-hidden rounded-2xl ${theme === "light" ? "bg-white ring-1 ring-black/10" : "bg-[#0B1220] ring-1 ring-white/10"
+                className={`w-full aspect-video overflow-hidden rounded-2xl ${theme === "light"
+                        ? "bg-white ring-1 ring-black/10"
+                        : "bg-[#0B1220] ring-1 ring-white/10"
                     } relative`}
             >
                 <video
@@ -805,12 +846,23 @@ function ScreenShareLayoutMobile({
                     muted={screenSharer.isLocal}
                     className="absolute inset-0 w-full h-full object-contain bg-black"
                 />
-                <div className={`absolute left-3 bottom-3 rounded-lg px-2 py-1 text-[11px] flex items-center gap-2 ${labelBg}`}>
+                <div
+                    className={`absolute left-3 bottom-3 rounded-lg px-2 py-1 text-[11px] flex items-center gap-2 ${labelBg}`}
+                >
                     <span className="truncate max-w-[220px]">
-                        {screenSharer.isLocal ? "You (screen)" : `${screenSharer.displayName || "Guest"} (screen)`}
+                        {screenSharer.isLocal
+                            ? "You (screen)"
+                            : `${screenSharer.displayName || "Guest"} (screen)`}
                     </span>
-                    <Icon name={screenSharer.audioMuted ? "mic-off" : "mic-on"} className="w-3.5 h-3.5 opacity-80" />
-                    <SpeakingBars level={screenSharer.audioMuted ? 0 : (levels[screenSharer.id] ?? 0)} theme={theme} />
+                    <Icon
+                        name={screenSharer.audioMuted ? "mic-off" : "mic-on"}
+                        className="w-3.5 h-3.5 opacity-80"
+                        theme={theme}
+                    />
+                    <SpeakingBars
+                        level={screenSharer.audioMuted ? 0 : levels[screenSharer.id] ?? 0}
+                        theme={theme}
+                    />
                 </div>
             </div>
 
@@ -863,7 +915,7 @@ export function VideoRoom(props: VideoRoomProps) {
         });
     }, [audioOutputId]);
 
-    // participants paging
+    // paging (unchanged)
     const PAGE_SIZE = 20;
     const SCROLL_STEP = 5;
 
@@ -874,61 +926,6 @@ export function VideoRoom(props: VideoRoomProps) {
 
     const [scrollIndex, setScrollIndex] = useState(0);
 
-    // --------- LEVELS: memory-safe throttled state ---------
-    const levelsRef = useRef<LevelMap>({});
-    const [levels, setLevels] = useState<LevelMap>({});
-    const flushTimerRef = useRef<number | null>(null);
-
-    const flushLevelsToState = useCallback(() => {
-        flushTimerRef.current = null;
-
-        const next = { ...levelsRef.current };
-
-        // shallow compare to avoid useless renders
-        setLevels((prev) => {
-            const prevKeys = Object.keys(prev);
-            const nextKeys = Object.keys(next);
-            if (prevKeys.length !== nextKeys.length) return next;
-            for (const k of nextKeys) {
-                if ((prev[k] ?? 0) !== (next[k] ?? 0)) return next;
-            }
-            return prev;
-        });
-    }, []);
-
-    const onLevel = useCallback(
-        (id: string, level01: number) => {
-            levelsRef.current[id] = level01;
-
-            // Throttle all state updates to ~8fps max
-            if (flushTimerRef.current == null) {
-                flushTimerRef.current = window.setTimeout(flushLevelsToState, 120);
-            }
-        },
-        [flushLevelsToState]
-    );
-
-    // prune old ids when participants change (prevents map growth)
-    useEffect(() => {
-        const active = new Set(participants.map((p) => p.id));
-        let changed = false;
-
-        const cur = { ...levelsRef.current };
-        for (const k of Object.keys(cur)) {
-            if (!active.has(k)) {
-                delete cur[k];
-                changed = true;
-            }
-        }
-
-        if (changed) {
-            levelsRef.current = cur;
-            // also update state once
-            setLevels(cur);
-        }
-    }, [participants]);
-
-    // --------- screen share logic ---------
     const screenSharer = useMemo(
         () => participants.find((p) => p.isScreenSharing && p.screenTrack),
         [participants]
@@ -942,14 +939,19 @@ export function VideoRoom(props: VideoRoomProps) {
     );
 
     const baseParticipants = useMemo(() => {
-        return screenSharer ? participants.filter((p) => p.id !== screenSharer.id) : participants;
+        return screenSharer
+            ? participants.filter((p) => p.id !== screenSharer.id)
+            : participants;
     }, [participants, screenSharer]);
 
     const maxStartIndex = useMemo(
         () => Math.max(0, baseParticipants.length - PAGE_SIZE),
         [baseParticipants.length]
     );
-    const canScroll = useMemo(() => baseParticipants.length > PAGE_SIZE, [baseParticipants.length]);
+    const canScroll = useMemo(
+        () => baseParticipants.length > PAGE_SIZE,
+        [baseParticipants.length]
+    );
 
     useEffect(() => {
         setScrollIndex((i) => Math.min(Math.max(0, i), maxStartIndex));
@@ -970,14 +972,28 @@ export function VideoRoom(props: VideoRoomProps) {
 
     // visible remote ids -> engine
     const visibleRemoteIds = useMemo(() => {
-        const visibleList = screenSharer ? [screenSharer, ...screenOthers] : pageParticipants;
-        return visibleList.map((p) => p.id).filter((id) => id && id !== localParticipant?.id);
+        const visibleList = screenSharer
+            ? [screenSharer, ...screenOthers]
+            : pageParticipants;
+        return visibleList
+            .map((p) => p.id)
+            .filter((id) => id && id !== localParticipant?.id);
     }, [screenSharer, screenOthers, pageParticipants, localParticipant?.id]);
 
     useEffect(() => {
         const t = setTimeout(() => onVisibleVideoIdsChange?.(visibleRemoteIds), 150);
         return () => clearTimeout(t);
     }, [onVisibleVideoIdsChange, visibleRemoteIds]);
+
+    // ✅ Jitsi built-in audio levels for "who speaks"
+    const visibleForLevels = useMemo(() => {
+        const list = screenSharer
+            ? [screenSharer, ...screenOthers]
+            : pageParticipants;
+        return list;
+    }, [screenSharer, screenOthers, pageParticipants]);
+
+    const levels = useJitsiAudioLevels(visibleForLevels);
 
     const isAudioMuted = !!localParticipant?.audioMuted;
     const isVideoMuted = !!localParticipant?.videoMuted;
@@ -1010,21 +1026,23 @@ export function VideoRoom(props: VideoRoomProps) {
     const baseBtn = "w-10 h-10 rounded-2xl flex items-center justify-center transition";
 
     const goPrev = () => setScrollIndex((i) => Math.max(0, i - SCROLL_STEP));
-    const goNext = () => setScrollIndex((i) => Math.min(maxStartIndex, i + SCROLL_STEP));
+    const goNext = () =>
+        setScrollIndex((i) => Math.min(maxStartIndex, i + SCROLL_STEP));
 
     const shownStart = canScroll ? scrollIndex + 1 : Math.min(1, baseParticipants.length);
     const shownEnd = Math.min(scrollIndex + PAGE_SIZE, baseParticipants.length);
 
     const overlayLocal = localReactions ?? reactions;
 
-    const controlsBg =
-        isLight ? "bg-white/90 border border-black/10" : "bg-[#020617]/90 border border-white/10";
+    const controlsBg = isLight
+        ? "bg-white/90 border border-black/10"
+        : "bg-[#020617]/90 border border-white/10";
 
     return (
         <div className="relative w-full h-full flex flex-col min-h-0">
-            <AudioSink participants={participants} onLevel={onLevel} />
+            <AudioSink participants={participants} />
 
-            {/* ✅ no extra “black frame” wrapper */}
+            {/* ✅ без общей чёрной рамки/контейнера */}
             <div className="flex-1 relative min-h-0">
                 {!screenSharer && (
                     <>
@@ -1078,7 +1096,10 @@ export function VideoRoom(props: VideoRoomProps) {
                 {((overlayLocal?.length || 0) + (incomingReactions?.length || 0) > 0) && (
                     <div className="pointer-events-none absolute inset-0 flex items-end justify-center pb-20 gap-2">
                         {(overlayLocal || []).map((r: any) => (
-                            <div key={`local-${r.id}`} className="text-4xl drop-shadow-lg animate-bounce">
+                            <div
+                                key={`local-${r.id}`}
+                                className="text-4xl drop-shadow-lg animate-bounce"
+                            >
                                 {reactionEmoji[r.type]}
                             </div>
                         ))}
@@ -1138,6 +1159,7 @@ export function VideoRoom(props: VideoRoomProps) {
                 )}
             </div>
 
+            {/* Optional internal controls (если ты это реально используешь) */}
             {showControls && (
                 <div className="mt-3 flex items-center justify-center">
                     <div className={`inline-flex items-center gap-3 px-4 py-2 rounded-2xl shadow-lg ${controlsBg}`}>
@@ -1154,7 +1176,11 @@ export function VideoRoom(props: VideoRoomProps) {
                             }
                             title="Toggle mic"
                         >
-                            <Icon name={isAudioMuted ? "mic-off" : "mic-on"} className="w-5 h-5" />
+                            <Icon
+                                name={isAudioMuted ? "mic-off" : "mic-on"}
+                                className="w-5 h-5"
+                                theme={theme}
+                            />
                         </button>
 
                         <button
@@ -1170,7 +1196,11 @@ export function VideoRoom(props: VideoRoomProps) {
                             }
                             title="Toggle camera"
                         >
-                            <Icon name={isVideoMuted ? "camera-off" : "camera-on"} className="w-5 h-5" />
+                            <Icon
+                                name={isVideoMuted ? "camera-off" : "camera-on"}
+                                className="w-5 h-5"
+                                theme={theme}
+                            />
                         </button>
 
                         <button
@@ -1186,16 +1216,20 @@ export function VideoRoom(props: VideoRoomProps) {
                             }
                             title="Share screen"
                         >
-                            <Icon name="screen-share" className="w-5 h-5" />
+                            <Icon name="screen-share" className="w-5 h-5" theme={theme} />
                         </button>
 
                         <div className="relative" ref={menuRef}>
                             <button
                                 onClick={() => setShowReactionsMenu((v) => !v)}
-                                className={baseBtn + " " + (isLight ? "bg-black/5 hover:bg-black/10" : "bg-[#111827] hover:bg-[#1f2937]")}
+                                className={
+                                    baseBtn +
+                                    " " +
+                                    (isLight ? "bg-black/5 hover:bg-black/10" : "bg-[#111827] hover:bg-[#1f2937]")
+                                }
                                 title="Reactions"
                             >
-                                <Icon name="reaction" className="w-5 h-5" />
+                                <Icon name="reaction" className="w-5 h-5" theme={theme} />
                             </button>
 
                             {showReactionsMenu && (
@@ -1219,7 +1253,7 @@ export function VideoRoom(props: VideoRoomProps) {
                                 className="ml-2 px-3 h-10 rounded-2xl bg-red-600 text-white text-xs font-semibold hover:bg-red-700 inline-flex items-center gap-2"
                                 title="Leave"
                             >
-                                <Icon name="leave" className="w-5 h-5" />
+                                <Icon name="leave" className="w-5 h-5" theme={theme} />
                                 <span>Leave</span>
                             </button>
                         )}
