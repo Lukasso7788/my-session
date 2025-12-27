@@ -1,5 +1,12 @@
 // src/components/VideoRoom.tsx
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+    type MutableRefObject,
+} from "react";
 import type { JitsiParticipant, JitsiTrack } from "../lib/jitsiEngine";
 
 export type ReactionType =
@@ -179,7 +186,7 @@ function useMediaQuery(query: string) {
     return matches;
 }
 
-// ----------------------- Audio sink + audio level -----------------------
+// ----------------------- Audio sink + audio level (MEMORY SAFE) -----------------------
 type LevelMap = Record<string, number>;
 
 function AudioSinkItem({
@@ -188,17 +195,19 @@ function AudioSinkItem({
     onLevel,
 }: {
     p: JitsiParticipant;
-    audioCtxRef: React.MutableRefObject<AudioContext | null>;
+    audioCtxRef: MutableRefObject<AudioContext | null>;
     onLevel: (id: string, level01: number) => void;
 }) {
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const streamV = useTrackStreamVersion(p.audioTrack);
 
+    // Attach audio track to hidden <audio>
     useEffect(() => {
         if (!audioRef.current) return;
         if (!p.audioTrack) return;
-        if (p.isLocal) return;
 
+        // NOTE: we also allow local here to measure, but we do NOT want it audible.
+        // For local, we keep the audio element muted.
         try {
             p.audioTrack.attach(audioRef.current);
         } catch { }
@@ -209,16 +218,25 @@ function AudioSinkItem({
             } catch { }
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [p.audioTrack, p.isLocal, streamV]);
+    }, [p.audioTrack, streamV]);
 
+    // Audio analyser: sample at low rate, never per-frame setState.
     useEffect(() => {
-        if (!audioRef.current) return;
+        const el = audioRef.current;
+        if (!el) return;
         if (!p.audioTrack) return;
-        if (p.isLocal) return;
+
+        let cancelled = false;
+
+        // For local: ensure muted to avoid echo.
+        try {
+            el.muted = !!p.isLocal;
+        } catch { }
 
         if (!audioCtxRef.current) {
             try {
-                audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+                audioCtxRef.current = new (window.AudioContext ||
+                    (window as any).webkitAudioContext)();
             } catch {
                 audioCtxRef.current = null;
             }
@@ -227,75 +245,97 @@ function AudioSinkItem({
         const ctx = audioCtxRef.current;
         if (!ctx) return;
 
-        let raf = 0;
         let analyser: AnalyserNode | null = null;
         let source: MediaStreamAudioSourceNode | null = null;
 
-        const setup = async () => {
-            // wait for srcObject to appear
-            const el = audioRef.current!;
+        let intervalId: number | null = null;
+        let data: Uint8Array | null = null;
+        let smooth = 0;
+
+        const waitForStream = async () => {
+            // wait for srcObject to appear (max ~1s)
             for (let i = 0; i < 20; i++) {
+                if (cancelled) return null;
                 const so = (el as any).srcObject;
-                if (so && so instanceof MediaStream) break;
+                if (so && so instanceof MediaStream) return so as MediaStream;
                 await new Promise((r) => setTimeout(r, 50));
             }
+            return null;
+        };
 
-            const stream = (audioRef.current as any)?.srcObject as MediaStream | null;
+        const setup = async () => {
+            const stream = await waitForStream();
+            if (cancelled) return;
             if (!stream) return;
 
             try {
                 source = ctx.createMediaStreamSource(stream);
                 analyser = ctx.createAnalyser();
-                analyser.fftSize = 512;
+                analyser.fftSize = 256;
                 analyser.smoothingTimeConstant = 0.85;
                 source.connect(analyser);
+
+                data = new Uint8Array(analyser.frequencyBinCount);
             } catch {
                 analyser = null;
                 source = null;
+                data = null;
                 return;
             }
 
-            const data = new Uint8Array(analyser.frequencyBinCount);
-            let smooth = 0;
+            const SAMPLE_MS = 120; // ~8fps (critical for memory)
+            intervalId = window.setInterval(() => {
+                if (cancelled) return;
+                if (!analyser || !data) return;
 
-            const tick = () => {
-                if (!analyser) return;
-                analyser.getByteFrequencyData(data);
+                try {
+                    analyser.getByteFrequencyData(data);
 
-                // normalized RMS-ish
-                let sum = 0;
-                for (let i = 0; i < data.length; i++) sum += data[i];
-                const avg = sum / Math.max(1, data.length); // 0..255
-                const level = Math.min(1, Math.max(0, avg / 140)); // tune
+                    let sum = 0;
+                    for (let i = 0; i < data.length; i++) sum += data[i];
+                    const avg = sum / Math.max(1, data.length); // 0..255
+                    const level = Math.min(1, Math.max(0, avg / 140)); // tune
 
-                smooth = smooth * 0.7 + level * 0.3;
-                onLevel(p.id, smooth);
+                    smooth = smooth * 0.7 + level * 0.3;
 
-                raf = requestAnimationFrame(tick);
-            };
+                    // If muted -> zero (prevents flicker)
+                    const out = p.audioMuted ? 0 : smooth;
 
-            raf = requestAnimationFrame(tick);
+                    onLevel(p.id, out);
+                } catch {
+                    // never throw from interval
+                }
+            }, SAMPLE_MS);
         };
 
         setup();
 
         return () => {
+            cancelled = true;
+
             try {
-                if (raf) cancelAnimationFrame(raf);
+                if (intervalId) window.clearInterval(intervalId);
             } catch { }
+            intervalId = null;
+
             try {
                 onLevel(p.id, 0);
             } catch { }
+
             try {
                 source?.disconnect();
             } catch { }
             try {
                 analyser?.disconnect();
             } catch { }
-        };
-    }, [p.id, p.audioTrack, p.isLocal, audioCtxRef, onLevel]);
 
-    return <audio ref={audioRef} autoPlay playsInline preload="auto" />;
+            source = null;
+            analyser = null;
+            data = null;
+        };
+    }, [p.id, p.audioTrack, p.audioMuted, p.isLocal, streamV, audioCtxRef, onLevel]);
+
+    return <audio ref={audioRef} autoPlay playsInline preload="auto" muted={!!p.isLocal} />;
 }
 
 function AudioSink({
@@ -305,7 +345,12 @@ function AudioSink({
     participants: JitsiParticipant[];
     onLevel: (id: string, level01: number) => void;
 }) {
-    const remotes = useMemo(() => participants.filter((p) => !p.isLocal), [participants]);
+    // Include both local + remote (local muted) so local speaking can be detected too.
+    const withAudio = useMemo(
+        () => participants.filter((p) => !!p.audioTrack),
+        [participants]
+    );
+
     const audioCtxRef = useRef<AudioContext | null>(null);
 
     useEffect(() => {
@@ -319,8 +364,13 @@ function AudioSink({
 
     return (
         <div className="absolute w-0 h-0 overflow-hidden opacity-0 pointer-events-none">
-            {remotes.map((p) => (
-                <AudioSinkItem key={p.id} p={p} audioCtxRef={audioCtxRef} onLevel={onLevel} />
+            {withAudio.map((p) => (
+                <AudioSinkItem
+                    key={`${p.id}:${safeTrackId(p.audioTrack)}`}
+                    p={p}
+                    audioCtxRef={audioCtxRef}
+                    onLevel={onLevel}
+                />
             ))}
         </div>
     );
@@ -409,7 +459,7 @@ function ParticipantTile({
                 el.load?.();
             } catch { }
         };
-    }, [participant.videoTrack, participant.isLocal, streamV]);
+    }, [participant.videoTrack, streamV]);
 
     const objectClass = fit === "cover" ? "object-cover" : "object-contain";
 
@@ -419,13 +469,14 @@ function ParticipantTile({
     const name = participant.isLocal ? "You" : participant.displayName || "Guest";
     const speaking = !participant.audioMuted && audioLevel01 > 0.08;
 
-    const tileBaseBg =
-        theme === "light" ? "bg-[#EEF1F7]" : "bg-[#0B1220]";
-    const placeholderBg =
-        theme === "light" ? "bg-white" : "bg-[#111827]";
+    const tileBaseBg = theme === "light" ? "bg-[#EEF1F7]" : "bg-[#0B1220]";
+    const placeholderBg = theme === "light" ? "bg-white" : "bg-[#111827]";
     const labelBg =
-        theme === "light" ? "bg-white/85 border border-black/10 text-black/80" : "bg-black/45 border border-white/10 text-white/80";
+        theme === "light"
+            ? "bg-white/85 border border-black/10 text-black/80"
+            : "bg-black/45 border border-white/10 text-white/80";
 
+    // IMPORTANT: ring is only a CSS class; does NOT affect keys/remounts.
     const ringClass = speaking
         ? theme === "light"
             ? "ring-2 ring-blue-500/70"
@@ -470,23 +521,32 @@ function ParticipantTile({
                             }}
                             draggable={false}
                         />
-                        <div className={`absolute inset-0 flex items-center justify-center text-2xl font-semibold ${theme === "light" ? "text-black/80" : "text-white/90"
-                            }`}>
+                        <div
+                            className={`absolute inset-0 flex items-center justify-center text-2xl font-semibold ${theme === "light" ? "text-black/80" : "text-white/90"
+                                }`}
+                        >
                             {name?.[0]?.toUpperCase() || "?"}
                         </div>
                     </div>
 
                     <div className="mt-3 flex items-center gap-2">
-                        <span className={`text-[14px] font-semibold leading-none ${theme === "light" ? "text-black/80" : "text-white/85"
-                            }`}>
+                        <span
+                            className={`text-[14px] font-semibold leading-none ${theme === "light" ? "text-black/80" : "text-white/85"
+                                }`}
+                        >
                             {name}
                         </span>
-                        <Icon name={participant.audioMuted ? "mic-off" : "mic-on"} className="w-4 h-4 opacity-80" />
+                        <Icon
+                            name={participant.audioMuted ? "mic-off" : "mic-on"}
+                            className="w-4 h-4 opacity-80"
+                        />
                     </div>
 
                     {participant.videoMuted && (
-                        <span className={`mt-2 text-[12px] leading-none ${theme === "light" ? "text-black/45" : "text-white/55"
-                            }`}>
+                        <span
+                            className={`mt-2 text-[12px] leading-none ${theme === "light" ? "text-black/45" : "text-white/55"
+                                }`}
+                        >
                             Camera off
                         </span>
                     )}
@@ -503,7 +563,6 @@ function ParticipantTile({
                         (participant.audioMuted ? "bg-red-500" : speaking ? "bg-emerald-500" : "bg-green-400")
                     }
                 />
-                {/* speaking bars */}
                 <div className="ml-1">
                     <SpeakingBars level={participant.audioMuted ? 0 : audioLevel01} theme={theme} />
                 </div>
@@ -660,8 +719,10 @@ function ScreenShareLayoutDesktop({
 
     return (
         <div className="relative w-full h-full flex flex-row gap-3 p-3 min-h-0">
-            <div className={`relative flex-1 overflow-hidden rounded-2xl ${theme === "light" ? "bg-white ring-1 ring-black/10" : "bg-[#0B1220] ring-1 ring-white/10"
-                } min-h-0`}>
+            <div
+                className={`relative flex-1 overflow-hidden rounded-2xl ${theme === "light" ? "bg-white ring-1 ring-black/10" : "bg-[#0B1220] ring-1 ring-white/10"
+                    } min-h-0`}
+            >
                 <video
                     ref={screenVideoRef}
                     autoPlay
@@ -732,12 +793,11 @@ function ScreenShareLayoutMobile({
         theme === "light" ? "bg-white/85 border border-black/10 text-black/80" : "bg-black/45 border border-white/10 text-white/80";
 
     return (
-        <div
-            className="w-full h-full overflow-y-auto p-3 flex flex-col gap-3"
-            style={{ paddingBottom: paddingBottomPx }}
-        >
-            <div className={`w-full aspect-video overflow-hidden rounded-2xl ${theme === "light" ? "bg-white ring-1 ring-black/10" : "bg-[#0B1220] ring-1 ring-white/10"
-                } relative`}>
+        <div className="w-full h-full overflow-y-auto p-3 flex flex-col gap-3" style={{ paddingBottom: paddingBottomPx }}>
+            <div
+                className={`w-full aspect-video overflow-hidden rounded-2xl ${theme === "light" ? "bg-white ring-1 ring-black/10" : "bg-[#0B1220] ring-1 ring-white/10"
+                    } relative`}
+            >
                 <video
                     ref={screenVideoRef}
                     autoPlay
@@ -814,15 +874,61 @@ export function VideoRoom(props: VideoRoomProps) {
 
     const [scrollIndex, setScrollIndex] = useState(0);
 
+    // --------- LEVELS: memory-safe throttled state ---------
+    const levelsRef = useRef<LevelMap>({});
     const [levels, setLevels] = useState<LevelMap>({});
+    const flushTimerRef = useRef<number | null>(null);
 
-    const onLevel = (id: string, level01: number) => {
+    const flushLevelsToState = useCallback(() => {
+        flushTimerRef.current = null;
+
+        const next = { ...levelsRef.current };
+
+        // shallow compare to avoid useless renders
         setLevels((prev) => {
-            const next = { ...prev, [id]: level01 };
-            return next;
+            const prevKeys = Object.keys(prev);
+            const nextKeys = Object.keys(next);
+            if (prevKeys.length !== nextKeys.length) return next;
+            for (const k of nextKeys) {
+                if ((prev[k] ?? 0) !== (next[k] ?? 0)) return next;
+            }
+            return prev;
         });
-    };
+    }, []);
 
+    const onLevel = useCallback(
+        (id: string, level01: number) => {
+            levelsRef.current[id] = level01;
+
+            // Throttle all state updates to ~8fps max
+            if (flushTimerRef.current == null) {
+                flushTimerRef.current = window.setTimeout(flushLevelsToState, 120);
+            }
+        },
+        [flushLevelsToState]
+    );
+
+    // prune old ids when participants change (prevents map growth)
+    useEffect(() => {
+        const active = new Set(participants.map((p) => p.id));
+        let changed = false;
+
+        const cur = { ...levelsRef.current };
+        for (const k of Object.keys(cur)) {
+            if (!active.has(k)) {
+                delete cur[k];
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            levelsRef.current = cur;
+            // also update state once
+            setLevels(cur);
+        }
+    }, [participants]);
+
+    // --------- screen share logic ---------
     const screenSharer = useMemo(
         () => participants.find((p) => p.isScreenSharing && p.screenTrack),
         [participants]
@@ -839,7 +945,10 @@ export function VideoRoom(props: VideoRoomProps) {
         return screenSharer ? participants.filter((p) => p.id !== screenSharer.id) : participants;
     }, [participants, screenSharer]);
 
-    const maxStartIndex = useMemo(() => Math.max(0, baseParticipants.length - PAGE_SIZE), [baseParticipants.length]);
+    const maxStartIndex = useMemo(
+        () => Math.max(0, baseParticipants.length - PAGE_SIZE),
+        [baseParticipants.length]
+    );
     const canScroll = useMemo(() => baseParticipants.length > PAGE_SIZE, [baseParticipants.length]);
 
     useEffect(() => {
@@ -898,8 +1007,7 @@ export function VideoRoom(props: VideoRoomProps) {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, [showReactionsMenu]);
 
-    const baseBtn =
-        "w-10 h-10 rounded-2xl flex items-center justify-center transition";
+    const baseBtn = "w-10 h-10 rounded-2xl flex items-center justify-center transition";
 
     const goPrev = () => setScrollIndex((i) => Math.max(0, i - SCROLL_STEP));
     const goNext = () => setScrollIndex((i) => Math.min(maxStartIndex, i + SCROLL_STEP));
@@ -916,7 +1024,7 @@ export function VideoRoom(props: VideoRoomProps) {
         <div className="relative w-full h-full flex flex-col min-h-0">
             <AudioSink participants={participants} onLevel={onLevel} />
 
-            {/* ✅ NO extra thick black frame here */}
+            {/* ✅ no extra “black frame” wrapper */}
             <div className="flex-1 relative min-h-0">
                 {!screenSharer && (
                     <>
@@ -989,7 +1097,9 @@ export function VideoRoom(props: VideoRoomProps) {
                             disabled={scrollIndex === 0}
                             className={
                                 "px-3 h-9 rounded-xl text-sm " +
-                                (isLight ? "bg-white/85 border border-black/10 text-black/70" : "bg-black/45 border border-white/10 text-white/80") +
+                                (isLight
+                                    ? "bg-white/85 border border-black/10 text-black/70"
+                                    : "bg-black/45 border border-white/10 text-white/80") +
                                 (scrollIndex === 0 ? " opacity-40 cursor-not-allowed" : " hover:opacity-90")
                             }
                             title="Scroll back"
@@ -1000,7 +1110,9 @@ export function VideoRoom(props: VideoRoomProps) {
                         <div
                             className={
                                 "px-3 h-9 rounded-xl text-xs flex items-center " +
-                                (isLight ? "bg-white/85 border border-black/10 text-black/65" : "bg-black/45 border border-white/10 text-white/70")
+                                (isLight
+                                    ? "bg-white/85 border border-black/10 text-black/65"
+                                    : "bg-black/45 border border-white/10 text-white/70")
                             }
                         >
                             Showing {shownStart}–{shownEnd} of {baseParticipants.length}
@@ -1011,8 +1123,12 @@ export function VideoRoom(props: VideoRoomProps) {
                             disabled={scrollIndex >= maxStartIndex}
                             className={
                                 "px-3 h-9 rounded-xl text-sm " +
-                                (isLight ? "bg-white/85 border border-black/10 text-black/70" : "bg-black/45 border border-white/10 text-white/80") +
-                                (scrollIndex >= maxStartIndex ? " opacity-40 cursor-not-allowed" : " hover:opacity-90")
+                                (isLight
+                                    ? "bg-white/85 border border-black/10 text-black/70"
+                                    : "bg-black/45 border border-white/10 text-white/80") +
+                                (scrollIndex >= maxStartIndex
+                                    ? " opacity-40 cursor-not-allowed"
+                                    : " hover:opacity-90")
                             }
                             title="Scroll forward"
                         >
@@ -1022,7 +1138,6 @@ export function VideoRoom(props: VideoRoomProps) {
                 )}
             </div>
 
-            {/* Optional internal controls (kept, but usually you pass showControls=false from RoomPage) */}
             {showControls && (
                 <div className="mt-3 flex items-center justify-center">
                     <div className={`inline-flex items-center gap-3 px-4 py-2 rounded-2xl shadow-lg ${controlsBg}`}>
@@ -1031,7 +1146,11 @@ export function VideoRoom(props: VideoRoomProps) {
                             className={
                                 baseBtn +
                                 " " +
-                                (isAudioMuted ? "bg-red-600 hover:bg-red-700" : (isLight ? "bg-black/5 hover:bg-black/10" : "bg-[#111827] hover:bg-[#1f2937]"))
+                                (isAudioMuted
+                                    ? "bg-red-600 hover:bg-red-700"
+                                    : isLight
+                                        ? "bg-black/5 hover:bg-black/10"
+                                        : "bg-[#111827] hover:bg-[#1f2937]")
                             }
                             title="Toggle mic"
                         >
@@ -1043,7 +1162,11 @@ export function VideoRoom(props: VideoRoomProps) {
                             className={
                                 baseBtn +
                                 " " +
-                                (isVideoMuted ? "bg-red-600 hover:bg-red-700" : (isLight ? "bg-black/5 hover:bg-black/10" : "bg-[#111827] hover:bg-[#1f2937]"))
+                                (isVideoMuted
+                                    ? "bg-red-600 hover:bg-red-700"
+                                    : isLight
+                                        ? "bg-black/5 hover:bg-black/10"
+                                        : "bg-[#111827] hover:bg-[#1f2937]")
                             }
                             title="Toggle camera"
                         >
@@ -1055,7 +1178,11 @@ export function VideoRoom(props: VideoRoomProps) {
                             className={
                                 baseBtn +
                                 " " +
-                                (isScreenSharing ? "bg-blue-600 hover:bg-blue-700" : (isLight ? "bg-black/5 hover:bg-black/10" : "bg-[#111827] hover:bg-[#1f2937]"))
+                                (isScreenSharing
+                                    ? "bg-blue-600 hover:bg-blue-700"
+                                    : isLight
+                                        ? "bg-black/5 hover:bg-black/10"
+                                        : "bg-[#111827] hover:bg-[#1f2937]")
                             }
                             title="Share screen"
                         >
@@ -1072,8 +1199,10 @@ export function VideoRoom(props: VideoRoomProps) {
                             </button>
 
                             {showReactionsMenu && (
-                                <div className={`absolute bottom-12 left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
-                                    }`}>
+                                <div
+                                    className={`absolute bottom-12 left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
+                                        }`}
+                                >
                                     <button onClick={() => handleReactionClick("fire")}>🔥</button>
                                     <button onClick={() => handleReactionClick("laugh")}>😂</button>
                                     <button onClick={() => handleReactionClick("clap")}>👏</button>
