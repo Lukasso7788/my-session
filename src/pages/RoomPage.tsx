@@ -1,6 +1,8 @@
 // src/pages/RoomPage.tsx
 // ROOMPAGE + JITSI ENGINE + VIDEO UI (UPDATED WITH REACTIONS)
-// ✅ Updated: bottom "more" menu (mobile-only), desktop direct buttons, stagebar full width + clipped, hide host indicator <= 480px
+// ✅ Updated: full-width layout (no max-w container), unified control icons (stroke style),
+// ✅ mic/cam slashed icons when muted/off, new icons for reactions/screen/leave,
+// ✅ bottom "more" menu (mobile-only), desktop direct buttons, stagebar full width + clipped, hide host indicator <= 480px
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -29,151 +31,176 @@ type Stage = {
 
 type RightPanelTab = "participants" | "chat" | "intentions" | null;
 
-function MicIcon() {
+/* ============================================================
+   ✅ UNIFIED ICONS (stroke style, consistent sizes)
+   ============================================================ */
+
+type IconProps = { className?: string };
+
+function IconBase({
+  children,
+  className = "w-5 h-5",
+  viewBox = "0 0 24 24",
+}: {
+  children: React.ReactNode;
+  className?: string;
+  viewBox?: string;
+}) {
   return (
-    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-      <path
-        d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"
-        fill="currentColor"
-      />
-      <path
-        d="M6 11a1 1 0 0 0-2 0 8 8 0 0 0 7 7.93V21H9a1 1 0 0 0 0 2h6a1 1 0 1 0 0-2h-2v-2.07A8 8 0 0 0 20 11a1 1 0 0 0-2 0 6 6 0 0 1-12 0z"
-        fill="currentColor"
-      />
+    <svg
+      viewBox={viewBox}
+      className={className}
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {children}
     </svg>
   );
 }
 
-function CameraIcon() {
+function MicOnIcon({ className }: IconProps) {
   return (
-    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-      <rect x="4" y="6" width="11" height="12" rx="2" fill="currentColor" />
-      <path d="M17 9.5 21 7v10l-4-2.5z" fill="currentColor" />
-    </svg>
+    <IconBase className={className}>
+      <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z" />
+      <path d="M19 11a7 7 0 0 1-14 0" />
+      <path d="M12 18v3" />
+      <path d="M9 21h6" />
+    </IconBase>
   );
 }
 
-function ScreenIcon() {
+function MicOffIcon({ className }: IconProps) {
   return (
-    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-      <rect x="3" y="4" width="18" height="12" rx="2" fill="currentColor" />
-      <rect x="9" y="18" width="6" height="2" rx="1" fill="currentColor" />
-    </svg>
+    <IconBase className={className}>
+      <path d="M10 9V6a2 2 0 0 1 4 0v5a2 2 0 0 1-.2.9" />
+      <path d="M9 13a3 3 0 0 0 5.2 1.9" />
+      <path d="M19 11a7 7 0 0 1-1.2 3.9" />
+      <path d="M5 11a7 7 0 0 0 9.8 6.4" />
+      <path d="M12 18v3" />
+      <path d="M9 21h6" />
+      <path d="M4 4l16 16" />
+    </IconBase>
   );
 }
 
-function SmileIcon() {
+function CameraOnIcon({ className }: IconProps) {
   return (
-    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-      <circle
-        cx="12"
-        cy="12"
-        r="9"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-      />
-      <circle cx="9" cy="10" r="0.8" fill="currentColor" />
-      <circle cx="15" cy="10" r="0.8" fill="currentColor" />
-      <path
-        d="M9 15c.7.8 1.6 1.2 3 1.2s2.3-.4 3-1.2"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-    </svg>
+    <IconBase className={className}>
+      <path d="M14.5 7H7.5A2.5 2.5 0 0 0 5 9.5v5A2.5 2.5 0 0 0 7.5 17h7A2.5 2.5 0 0 0 17 14.5v-5A2.5 2.5 0 0 0 14.5 7Z" />
+      <path d="M17 10l3-2v8l-3-2" />
+    </IconBase>
   );
 }
 
-function SettingsIcon() {
+function CameraOffIcon({ className }: IconProps) {
   return (
-    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-      <path
-        d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.2 7.2 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 1h-3.8a.5.5 0 0 0-.49.42l-.36 2.54c-.58.23-1.12.54-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 7.48a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94L2.83 14.52a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.6.22l2.39-.96c.51.4 1.05.71 1.63.94l.36 2.54c.04.24.25.42.49.42h3.8c.24 0 .45-.18.49-.42l.36-2.54c.58-.23 1.12-.54 1.63-.94l2.39.96c.21.08.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5z"
-        fill="currentColor"
-      />
-    </svg>
+    <IconBase className={className}>
+      <path d="M14.5 7H9.2" />
+      <path d="M7.5 7A2.5 2.5 0 0 0 5 9.5v5A2.5 2.5 0 0 0 7.5 17h7A2.5 2.5 0 0 0 17 14.5v-1.9" />
+      <path d="M17 10l3-2v8l-3-2" />
+      <path d="M4 4l16 16" />
+    </IconBase>
   );
 }
 
-function MoreIcon() {
+function ScreenShareOnIcon({ className }: IconProps) {
   return (
-    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-      <circle cx="6" cy="12" r="1.8" fill="currentColor" />
-      <circle cx="12" cy="12" r="1.8" fill="currentColor" />
-      <circle cx="18" cy="12" r="1.8" fill="currentColor" />
-    </svg>
+    <IconBase className={className}>
+      <rect x="3.5" y="5" width="17" height="11.5" rx="2.2" />
+      <path d="M12 19h0" />
+      <path d="M9.5 19h5" />
+      {/* arrow */}
+      <path d="M12 8.2v5.2" />
+      <path d="M9.8 10.4 12 8.2l2.2 2.2" />
+    </IconBase>
   );
 }
 
-function LeaveIcon() {
+function ScreenShareOffIcon({ className }: IconProps) {
   return (
-    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-      <path
-        d="M5 5h6a1 1 0 0 1 0 2H7v10h4a1 1 0 0 1 0 2H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"
-        fill="currentColor"
-      />
-      <path
-        d="M13.7 8.3a1 1 0 0 1 1.4 0L19 12l-3.9 3.7a1 1 0 0 1-1.4-1.4L15.6 13H11a1 1 0 0 1 0-2h4.6l-1.3-1.3a1 1 0 0 1 0-1.4z"
-        fill="currentColor"
-      />
-    </svg>
+    <IconBase className={className}>
+      <rect x="3.5" y="5" width="17" height="11.5" rx="2.2" />
+      <path d="M9.5 19h5" />
+      <path d="M4 4l16 16" />
+    </IconBase>
   );
 }
 
-/** ✅ OLD ICONS (restored): Participants + Chat */
-function ParticipantsIcon() {
+function ReactionsIcon({ className }: IconProps) {
   return (
-    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-      <path
-        d="M12 12c2.21 0 4-1.79 4-4S14.21 4 12 4 8 5.79 8 8s1.79 4 4 4z"
-        fill="currentColor"
-        opacity="0.95"
-      />
-      <path
-        d="M4 20c0-3.31 3.58-6 8-6s8 2.69 8 6v1H4v-1z"
-        fill="currentColor"
-        opacity="0.9"
-      />
-    </svg>
+    <IconBase className={className}>
+      <path d="M12 21a9 9 0 1 0-9-9c0 1.8.5 3.4 1.4 4.9L3.5 20l3.3-.8c1.5 1 3.2 1.6 5.2 1.6Z" />
+      <path d="M9.2 11h.01" />
+      <path d="M14.8 11h.01" />
+      <path d="M8.8 14.2c.9 1.1 2.1 1.7 3.2 1.7s2.3-.6 3.2-1.7" />
+      {/* small plus corner */}
+      <path d="M18.3 6.8v3.4" />
+      <path d="M16.6 8.5h3.4" />
+    </IconBase>
   );
 }
 
-function OldChatIcon() {
+function SettingsIcon({ className }: IconProps) {
   return (
-    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-      <path
-        d="M4 4h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 3v-3H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"
-        fill="currentColor"
-      />
-    </svg>
+    <IconBase className={className}>
+      <path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z" />
+      <path d="M19.4 12a7.7 7.7 0 0 0-.1-1l2-1.6-2-3.4-2.4 1a8.1 8.1 0 0 0-1.7-1l-.4-2.6H10l-.4 2.6a8.1 8.1 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7.7 7.7 0 0 0 0 2l-2 1.6 2 3.4 2.4-1c.5.4 1.1.7 1.7 1l.4 2.6h4l.4-2.6c.6-.2 1.2-.6 1.7-1l2.4 1 2-3.4-2-1.6c.1-.3.1-.6.1-1Z" />
+    </IconBase>
   );
 }
 
-/** ✅ Intentions icon kept */
-function TargetIcon() {
+function MoreIcon({ className }: IconProps) {
   return (
-    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
-      <circle
-        cx="12"
-        cy="12"
-        r="8"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-      />
-      <circle
-        cx="12"
-        cy="12"
-        r="4"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        opacity="0.9"
-      />
-      <circle cx="12" cy="12" r="1.6" fill="currentColor" />
-    </svg>
+    <IconBase className={className}>
+      <circle cx="6" cy="12" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="18" cy="12" r="1.2" fill="currentColor" stroke="none" />
+    </IconBase>
+  );
+}
+
+function LeaveIcon({ className }: IconProps) {
+  return (
+    <IconBase className={className}>
+      <path d="M10 7V6a2 2 0 0 1 2-2h7v16h-7a2 2 0 0 1-2-2v-1" />
+      <path d="M4 12h9" />
+      <path d="M7 9l-3 3 3 3" />
+    </IconBase>
+  );
+}
+
+function ParticipantsIcon({ className }: IconProps) {
+  return (
+    <IconBase className={className}>
+      <path d="M16 11a3 3 0 1 0-3-3 3 3 0 0 0 3 3Z" />
+      <path d="M8 12a2.5 2.5 0 1 0-2.5-2.5A2.5 2.5 0 0 0 8 12Z" />
+      <path d="M5 20a4 4 0 0 1 6-3.5" />
+      <path d="M13 20a5 5 0 0 1 10 0" />
+    </IconBase>
+  );
+}
+
+function ChatIcon({ className }: IconProps) {
+  return (
+    <IconBase className={className}>
+      <path d="M20 12a7 7 0 0 1-7 7H8l-4 3v-3a7 7 0 0 1-1-4 7 7 0 0 1 7-7h3a7 7 0 0 1 7 7Z" />
+      <path d="M8 12h7" />
+      <path d="M8 15h5" />
+    </IconBase>
+  );
+}
+
+function TargetIcon({ className }: IconProps) {
+  return (
+    <IconBase className={className}>
+      <circle cx="12" cy="12" r="7.5" />
+      <circle cx="12" cy="12" r="3.5" />
+      <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" />
+    </IconBase>
   );
 }
 
@@ -1129,8 +1156,9 @@ export function RoomPage() {
     );
 
   return (
-    <div className="min-h-screen bg-[#050F1A] text-white flex justify-center">
-      <div className="max-w-[1720px] w-full px-5 pt-5 pb-[calc(110px+env(safe-area-inset-bottom))] flex flex-col gap-5 min-h-screen">
+    <div className="min-h-screen bg-[#050F1A] text-white">
+      {/* ✅ FULL-WIDTH CONTAINER WITH RESPONSIVE EDGE PADDING (≈32–40px on desktop) */}
+      <div className="w-full px-4 sm:px-6 md:px-8 xl:px-10 pt-5 pb-[calc(110px+env(safe-area-inset-bottom))] flex flex-col gap-5 min-h-screen">
         {/* TOP BAR */}
         <div className="flex w-full rounded-2xl overflow-hidden bg-[#111827]/40 border border-white/5">
           <div className="flex-1 px-6 py-4">
@@ -1221,7 +1249,11 @@ export function RoomPage() {
                 // ✅ NEW: give engine the actual <video> elements (black-video recovery)
                 onRegisterVideoElement={(pid, el, kind) => {
                   try {
-                    (engineRef.current as any)?.registerVideoElement?.(pid, el, kind);
+                    (engineRef.current as any)?.registerVideoElement?.(
+                      pid,
+                      el,
+                      kind
+                    );
                   } catch { }
                 }}
               />
@@ -1420,7 +1452,8 @@ export function RoomPage() {
 
       {/* FIXED BOTTOM CONTROLS */}
       <div className="fixed inset-x-0 bottom-0 z-50">
-        <div className="max-w-[1720px] mx-auto px-3 sm:px-5 pb-[calc(12px+env(safe-area-inset-bottom))]">
+        {/* ✅ FULL-WIDTH BOTTOM CONTROLS WRAPPER */}
+        <div className="w-full px-3 sm:px-6 md:px-8 xl:px-10 pb-[calc(12px+env(safe-area-inset-bottom))]">
           <div className="h-[64px] sm:h-[74px] rounded-2xl bg-[#07101E]/85 border border-white/10 shadow-2xl backdrop-blur grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4">
             {/* LEFT GROUP: ✅ mobile menu (<768), desktop direct buttons (>=768) */}
             <div className="flex items-center gap-2" ref={moreMenuRef}>
@@ -1431,11 +1464,11 @@ export function RoomPage() {
                   className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition bg-[#111827] hover:bg-[#1f2937] text-white/85"
                   title="Menu"
                 >
-                  <MoreIcon />
+                  <MoreIcon className="w-5 h-5" />
                 </button>
 
                 {showMoreMenu && (
-                  <div className="absolute bottom-[76px] sm:bottom-[86px] left-3 sm:left-5">
+                  <div className="absolute bottom-[76px] sm:bottom-[86px] left-3 sm:left-6 md:left-8 xl:left-10">
                     <div className="w-[240px] rounded-2xl bg-[#020617] border border-white/10 shadow-2xl overflow-hidden">
                       <button
                         onClick={() => {
@@ -1445,7 +1478,7 @@ export function RoomPage() {
                         className="w-full px-4 py-3 text-left text-[13px] text-white/85 hover:bg-white/5 transition flex items-center gap-2"
                       >
                         <span className="opacity-90">
-                          <ParticipantsIcon />
+                          <ParticipantsIcon className="w-5 h-5" />
                         </span>
                         <span>Participants</span>
                       </button>
@@ -1458,7 +1491,7 @@ export function RoomPage() {
                         className="w-full px-4 py-3 text-left text-[13px] text-white/85 hover:bg-white/5 transition flex items-center gap-2"
                       >
                         <span className="opacity-90">
-                          <OldChatIcon />
+                          <ChatIcon className="w-5 h-5" />
                         </span>
                         <span>Chat</span>
                       </button>
@@ -1471,7 +1504,7 @@ export function RoomPage() {
                         className="w-full px-4 py-3 text-left text-[13px] text-white/85 hover:bg-white/5 transition flex items-center gap-2"
                       >
                         <span className="opacity-90">
-                          <TargetIcon />
+                          <TargetIcon className="w-5 h-5" />
                         </span>
                         <span>Intentions</span>
                       </button>
@@ -1487,7 +1520,7 @@ export function RoomPage() {
                         className="w-full px-4 py-3 text-left text-[13px] text-white/85 hover:bg-white/5 transition flex items-center gap-2"
                       >
                         <span className="opacity-90">
-                          <SettingsIcon />
+                          <SettingsIcon className="w-5 h-5" />
                         </span>
                         <span>Video settings</span>
                       </button>
@@ -1503,7 +1536,7 @@ export function RoomPage() {
                   className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition bg-[#111827] hover:bg-[#1f2937] text-white/85"
                   title="Participants"
                 >
-                  <ParticipantsIcon />
+                  <ParticipantsIcon className="w-5 h-5" />
                 </button>
 
                 <button
@@ -1511,7 +1544,7 @@ export function RoomPage() {
                   className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition bg-[#111827] hover:bg-[#1f2937] text-white/85"
                   title="Chat"
                 >
-                  <OldChatIcon />
+                  <ChatIcon className="w-5 h-5" />
                 </button>
 
                 <button
@@ -1519,7 +1552,7 @@ export function RoomPage() {
                   className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition bg-[#111827] hover:bg-[#1f2937] text-white/85"
                   title="Intentions"
                 >
-                  <TargetIcon />
+                  <TargetIcon className="w-5 h-5" />
                 </button>
 
                 <button
@@ -1530,7 +1563,7 @@ export function RoomPage() {
                   className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition bg-[#111827] hover:bg-[#1f2937] text-white/85"
                   title="Video settings"
                 >
-                  <SettingsIcon />
+                  <SettingsIcon className="w-5 h-5" />
                 </button>
               </div>
             </div>
@@ -1547,7 +1580,11 @@ export function RoomPage() {
                 }
                 title="Toggle mic"
               >
-                <MicIcon />
+                {isAudioMuted ? (
+                  <MicOffIcon className="w-5 h-5" />
+                ) : (
+                  <MicOnIcon className="w-5 h-5" />
+                )}
               </button>
 
               <button
@@ -1560,7 +1597,11 @@ export function RoomPage() {
                 }
                 title="Toggle camera"
               >
-                <CameraIcon />
+                {isVideoMuted ? (
+                  <CameraOffIcon className="w-5 h-5" />
+                ) : (
+                  <CameraOnIcon className="w-5 h-5" />
+                )}
               </button>
 
               <button
@@ -1573,7 +1614,11 @@ export function RoomPage() {
                 }
                 title="Share screen"
               >
-                <ScreenIcon />
+                {isScreenSharing ? (
+                  <ScreenShareOffIcon className="w-5 h-5" />
+                ) : (
+                  <ScreenShareOnIcon className="w-5 h-5" />
+                )}
               </button>
 
               {/* reactions */}
@@ -1583,13 +1628,20 @@ export function RoomPage() {
                   className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition bg-[#111827] hover:bg-[#1f2937]"
                   title="Reactions"
                 >
-                  <SmileIcon />
+                  <ReactionsIcon className="w-5 h-5" />
                 </button>
 
                 {showReactionsMenu && (
                   <div className="absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 bg-[#020617] border border-white/10 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl">
                     {(
-                      ["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown"] as ReactionType[]
+                      [
+                        "fire",
+                        "laugh",
+                        "clap",
+                        "heart",
+                        "thumbsUp",
+                        "thumbsDown",
+                      ] as ReactionType[]
                     ).map((t) => (
                       <button
                         key={t}
@@ -1616,6 +1668,7 @@ export function RoomPage() {
                 className="hidden sm:flex h-11 px-6 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-semibold items-center justify-center gap-2"
                 title="Leave"
               >
+                <LeaveIcon className="w-5 h-5" />
                 <span className="text-[14px]">Leave</span>
               </button>
 
@@ -1625,7 +1678,7 @@ export function RoomPage() {
                 className="sm:hidden w-10 h-10 rounded-2xl bg-red-600 hover:bg-red-700 text-white flex items-center justify-center"
                 title="Leave"
               >
-                <LeaveIcon />
+                <LeaveIcon className="w-5 h-5" />
               </button>
             </div>
           </div>
