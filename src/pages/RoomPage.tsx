@@ -1,7 +1,7 @@
 // src/pages/RoomPage.tsx
 // ROOMPAGE + JITSI ENGINE + VIDEO UI (UPDATED)
-// ✅ Full-width layout with small safe padding
-// ✅ Light/Dark theme toggle (persisted in localStorage)
+// ✅ Full-width layout with small safe padding (top/video aligned to bottom controls width)
+// ✅ Light/Dark theme toggle (icon-only, persisted in localStorage)
 // ✅ All control icons loaded from /public/icons/*.svg (you will drop svgs there)
 // ✅ VideoRoom has NO extra black frame; tiles handle speaking highlight + mic icon inside
 
@@ -946,7 +946,8 @@ export function RoomPage() {
 
   return (
     <div className={`min-h-screen ${pageBg}`}>
-      <div className="w-full px-5 sm:px-8 lg:px-10 pt-5 pb-[calc(110px+env(safe-area-inset-bottom))] flex flex-col gap-5 min-h-screen">
+      {/* ✅ align top/video width with bottom controls: use same px as bottom (px-3 sm:px-5) */}
+      <div className="w-full px-3 sm:px-5 pt-5 pb-[calc(110px+env(safe-area-inset-bottom))] flex flex-col gap-5 min-h-screen">
         {/* TOP BAR */}
         <div className={`flex w-full rounded-2xl overflow-hidden ${topBarBg}`}>
           <div className="flex-1 px-6 py-4">
@@ -970,38 +971,43 @@ export function RoomPage() {
                   </div>
                 )}
 
-                {/* Theme toggle */}
+                {/* ✅ Theme toggle (icon-only) */}
                 <button
                   onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-                  className={`px-3 py-1.5 rounded-xl text-[13px] font-inter border transition ${isLight
-                      ? "bg-black/5 border-black/10 hover:bg-black/10 text-black/70"
-                      : "bg-white/5 border-white/10 hover:bg-white/10 text-white/80"
+                  className={`w-10 h-10 rounded-xl border flex items-center justify-center transition ${isLight
+                    ? "bg-black/5 border-black/10 hover:bg-black/10"
+                    : "bg-white/5 border-white/10 hover:bg-white/10"
                     }`}
-                  title="Toggle theme"
+                  title={isLight ? "Switch to dark" : "Switch to light"}
                 >
-                  {isLight ? "Light" : "Dark"}
+                  <img
+                    src={`/icons/${isLight ? "theme-moon" : "theme-sun"}-${theme}.svg`}
+                    className="w-5 h-5"
+                    alt=""
+                    draggable={false}
+                  />
                 </button>
 
-                {/* Host indicator */}
+                {/* ✅ Host indicator (font size matched back; icon theme-aware) */}
                 {session.host_profile && (
                   <button
                     onClick={() => setSelectedUser(session.host_profile)}
-                    className={`max-[480px]:hidden flex items-center gap-2 px-3 py-1.5 rounded-xl border transition font-inter ${isLight
-                        ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                        : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                    className={`max-[480px]:hidden flex items-center gap-2 px-3 py-1.5 rounded-xl border transition font-inter text-[13px] ${isLight
+                      ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                      : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                       }`}
                   >
                     <img
-                      src="/icons/host_session_icon.svg"
+                      src={`/icons/host_session_icon-${theme}.svg`}
                       className="h-5 w-5 opacity-90"
                       alt=""
                       draggable={false}
                     />
-                    <span className="flex items-center gap-1">
-                      <span className={isLight ? "font-normal text-black/55" : "font-normal text-white/70"}>
+                    <span className="flex items-center gap-1 min-w-0">
+                      <span className={isLight ? "text-black/55" : "text-white/70"}>
                         Host:
                       </span>
-                      <span className="font-semibold">
+                      <span className="font-semibold truncate max-w-[220px]">
                         {session.host_profile.full_name}
                       </span>
                     </span>
@@ -1034,7 +1040,7 @@ export function RoomPage() {
           }
         >
           {/* VIDEO AREA (no thick border frame) */}
-          <div className={`rounded-2xl overflow-hidden min-h-0 ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"}`}>
+          <div className={`rounded-2xl overflow-hidden min-h-0 ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"} relative`}>
             <div className="w-full h-full min-h-0">
               <VideoRoom
                 theme={theme}
