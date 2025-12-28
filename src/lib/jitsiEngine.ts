@@ -13,10 +13,15 @@
 //
 // ✅ PATCH (SAFE stream adapter for startEffect input):
 // - Wraps effect.startEffect(...) to always receive a MediaStream
+// - ✅ Allows async startEffect (Promise return) and async getOriginalStream() when needed
 //
 // ✅ PATCH (SERIALIZED setEffect + SAFE dispose):
 // - All track.setEffect calls go through per-track queue (prevents: "setEffect already in progress!")
 // - Dispose waits for pending effect ops on that track
+//
+// ✅ FIX (Compatibility):
+// - Do NOT mark build incompatible just because vendored effect.startEffect is async
+// - Only mark incompatible if there is no factory or track.setEffect is missing
 // ============================================================================
 
 import { createVirtualBackgroundEffect as createVendoredVirtualBackgroundEffect } from "./jitsiEffects/virtualBackground";
@@ -630,47 +635,57 @@ export class JitsiEngine {
    * SAFETY WRAPPER:
    * Some lib-jitsi-meet builds call effect.startEffect(...) with NOT a MediaStream.
    * Jitsi effects expect a MediaStream with getTracks().
+   *
+   * ✅ This wrapper:
+   * - Forces a MediaStream when possible (MediaStreamTrack, {track}, getOriginalStream)
+   * - Allows async getOriginalStream() and Promise return from startEffect (vendored async)
    */
   private wrapEffectToForceMediaStream(effect: any) {
     if (!effect || typeof effect.startEffect !== "function") return effect;
 
+    const origStart = effect.startEffect;
+
+    const isPromiseLike = (x: any) => x && typeof x.then === "function";
+
+    const toMediaStreamOrPromise = (streamLike: any): MediaStream | Promise<MediaStream> => {
+      let s: any = streamLike;
+
+      if (s && typeof s.getTracks === "function") return s as MediaStream;
+
+      // MediaStreamTrack
+      if (typeof MediaStreamTrack !== "undefined" && s instanceof MediaStreamTrack) {
+        return new MediaStream([s]);
+      }
+
+      // sometimes { track: MediaStreamTrack }
+      if (s?.track && typeof MediaStreamTrack !== "undefined" && s.track instanceof MediaStreamTrack) {
+        return new MediaStream([s.track]);
+      }
+
+      // wrapper exposing getOriginalStream()
+      if (typeof s?.getOriginalStream === "function") {
+        const maybe = s.getOriginalStream();
+        if (isPromiseLike(maybe)) {
+          return Promise.resolve(maybe);
+        }
+        if (maybe && typeof maybe.getTracks === "function") return maybe as MediaStream;
+      }
+
+      throw new Error("[bg] startEffect received non-MediaStream");
+    };
+
     return {
       ...effect,
       startEffect: (streamLike: any) => {
-        let s: any = streamLike;
+        const msOrP = toMediaStreamOrPromise(streamLike);
 
-        if (s && typeof s.getTracks !== "function") {
-          // MediaStreamTrack
-          if (typeof MediaStreamTrack !== "undefined" && s instanceof MediaStreamTrack) {
-            s = new MediaStream([s]);
-          }
-          // sometimes { track: MediaStreamTrack }
-          else if (s?.track && typeof MediaStreamTrack !== "undefined" && s.track instanceof MediaStreamTrack) {
-            s = new MediaStream([s.track]);
-          }
-          // sometimes wrapper exposing getOriginalStream()
-          else if (typeof s?.getOriginalStream === "function") {
-            const maybe = s.getOriginalStream();
-            if (maybe && typeof maybe.then === "function") {
-              // cannot resolve async here (must be sync)
-              throw new Error("[bg] startEffect received async getOriginalStream; build expects sync MediaStream");
-            }
-            s = maybe;
-          }
+        // If async stream: return Promise that resolves to origStart(ms)
+        if (isPromiseLike(msOrP)) {
+          return Promise.resolve(msOrP).then((ms) => origStart(ms));
         }
 
-        if (!s || typeof s.getTracks !== "function") {
-          throw new Error("[bg] startEffect received non-MediaStream");
-        }
-
-        const out = effect.startEffect(s);
-
-        // If vendor returns Promise here -> this build will likely break on toggles
-        if (out && typeof out.then === "function") {
-          throw new Error("[bg] startEffect returned Promise; this build expects sync MediaStream");
-        }
-
-        return out;
+        // sync stream path
+        return origStart(msOrP as MediaStream);
       },
     };
   }
@@ -714,22 +729,16 @@ export class JitsiEngine {
       return null;
     }
 
-    // If startEffect is async => incompatible for this build (it breaks camera toggles)
+    // ✅ Do NOT mark incompatible if startEffect is async.
+    // Many builds work fine with async vendored effects; we allow it + wrap to support Promise flows.
     if (this.isAsyncFunction(effect.startEffect)) {
-      this.markEffectsIncompatible(`${pick.kind} effect.startEffect is async (incompatible with this build)`);
-      return null;
+      try {
+        console.warn(`[bg] ${pick.kind} effect.startEffect is async (allowing it).`);
+      } catch { }
     }
 
     // Some builds assume isEnabled exists
     if (typeof effect.isEnabled !== "function") effect.isEnabled = () => true;
-
-    // If isSupported exists and is false => do not apply
-    try {
-      if (typeof effect.isSupported === "function") {
-        // some implementations want track; some don't
-        // we'll check later with track if needed
-      }
-    } catch { }
 
     this.markEffectsOk();
     return effect;
@@ -776,7 +785,7 @@ export class JitsiEngine {
     })();
     if (wasMuted) return;
 
-    // If we already know build is incompatible (async startEffect), do nothing
+    // If we already know build is incompatible (e.g., no factory), do nothing
     if (this.effectsCompatibility === "incompatible") {
       console.warn("[bg] Effect requested but incompatible build:", this.effectsIncompatReason);
       return;
