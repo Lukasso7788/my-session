@@ -10,6 +10,9 @@
 //   src/lib/jitsiEffects/virtualBackground/{index.ts, JitsiStreamBackgroundEffect.ts, vendor/tflite/*}
 // - Applies effect via localVideoTrack.setEffect(effect)
 // - Re-applies effect after camera change / track recreation
+//
+// ✅ PATCH (SAFE stream adapter for setEffect):
+// - Wraps effect.startEffect(...) to always receive a MediaStream (fixes: stream.getTracks is not a function)
 // ============================================================================
 
 import { createVirtualBackgroundEffect } from "./jitsiEffects/virtualBackground";
@@ -439,7 +442,6 @@ export class JitsiEngine {
       if (st.reattachAttemptsInWindow >= 2) {
         this.bumpParticipantSubscription(pid, st);
       }
-      // console.warn(`[health] Reattached ${kind} for ${pid}`);
     } catch {
       this.bumpParticipantSubscription(pid, st);
     }
@@ -469,8 +471,6 @@ export class JitsiEngine {
           this.conference.selectParticipants?.(original);
         } catch { }
       }, 220);
-
-      // console.warn(`[health] Bumped subscription for ${pid}`);
     } catch { }
   }
 
@@ -563,6 +563,46 @@ export class JitsiEngine {
   // ========================================================================
   // BG EFFECT CORE (Native Jitsi Virtual Background Effect)
   // ========================================================================
+
+  /**
+   * ✅ SAFETY WRAPPER:
+   * Some lib-jitsi-meet builds call effect.startEffect(...) with something that is NOT a MediaStream.
+   * Jitsi effects expect a MediaStream with getTracks().
+   * This wrapper coerces common shapes (MediaStreamTrack, {track}, wrappers) into MediaStream.
+   */
+  private wrapEffectToForceMediaStream(effect: any) {
+    if (!effect || typeof effect.startEffect !== "function") return effect;
+
+    return {
+      ...effect,
+      startEffect: async (streamLike: any) => {
+        let s: any = await Promise.resolve(streamLike);
+
+        // If Jitsi passes a track instead of stream
+        if (s && typeof s.getTracks !== "function") {
+          // MediaStreamTrack
+          if (typeof MediaStreamTrack !== "undefined" && s instanceof MediaStreamTrack) {
+            s = new MediaStream([s]);
+          }
+          // sometimes { track: MediaStreamTrack }
+          else if (s?.track && typeof MediaStreamTrack !== "undefined" && s.track instanceof MediaStreamTrack) {
+            s = new MediaStream([s.track]);
+          }
+          // sometimes wrapper exposing getOriginalStream()
+          else if (typeof s?.getOriginalStream === "function") {
+            s = await Promise.resolve(s.getOriginalStream());
+          }
+        }
+
+        if (!s || typeof s.getTracks !== "function") {
+          throw new Error("[bg] startEffect received non-MediaStream");
+        }
+
+        return effect.startEffect(s);
+      },
+    };
+  }
+
   private async clearBgEffectOnTrack(track: any) {
     if (!track) return;
 
@@ -623,6 +663,16 @@ export class JitsiEngine {
 
     if (wasMuted) return;
 
+    // ✅ Extra safety: don’t try if original stream isn't ready yet
+    try {
+      const msAny = track.getOriginalStream?.();
+      const ms = await Promise.resolve(msAny);
+      if (!ms || typeof ms.getTracks !== "function") {
+        console.warn("[bg] track original stream not ready; skip applying effect");
+        return;
+      }
+    } catch { }
+
     if (this.bgPrefs.mode === "none") {
       await this.clearBgEffectOnTrack(track);
       return;
@@ -638,7 +688,7 @@ export class JitsiEngine {
 
     this.bgApplying = true;
     try {
-      // ✅ Native Jitsi effect (vendored from jitsi-meet)
+      // ✅ Native Jitsi effect (if available in this build)
       const anyJitsi = (window as any).JitsiMeetJS;
       const nativeFactory = anyJitsi?.effects?.createVirtualBackgroundEffect;
 
@@ -649,12 +699,27 @@ export class JitsiEngine {
         effect = await createVirtualBackgroundEffect(vb as any);
       }
 
+      // ✅ Critical: coerce startEffect(...) input into MediaStream
+      effect = this.wrapEffectToForceMediaStream(effect);
+
       // Some builds expose isEnabled(track); keep safe
       try {
         if (effect?.isEnabled && !effect.isEnabled(track)) {
           console.warn("[bg] effect.isEnabled returned false; clearing");
           await track.setEffect(undefined);
           return;
+        }
+      } catch { }
+
+      // Some builds expose isSupported(...); keep safe (avoid bf.isSupported crash)
+      try {
+        if (typeof effect?.isSupported === "function") {
+          const ok = effect.isSupported(track);
+          if (!ok) {
+            console.warn("[bg] effect.isSupported returned false; clearing");
+            await track.setEffect(undefined);
+            return;
+          }
         }
       } catch { }
 
