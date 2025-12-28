@@ -639,7 +639,15 @@ export class JitsiEngine {
     this.bgApplying = true;
     try {
       // ✅ Native Jitsi effect (vendored from jitsi-meet)
-      const effect = await createVirtualBackgroundEffect(vb as any);
+      const anyJitsi = (window as any).JitsiMeetJS;
+      const nativeFactory = anyJitsi?.effects?.createVirtualBackgroundEffect;
+
+      let effect: any;
+      if (typeof nativeFactory === "function") {
+        effect = await nativeFactory(vb as any);
+      } else {
+        effect = await createVirtualBackgroundEffect(vb as any);
+      }
 
       // Some builds expose isEnabled(track); keep safe
       try {

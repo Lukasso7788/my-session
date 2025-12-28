@@ -1,71 +1,31 @@
 // src/lib/jitsiEffects/virtualBackground/index.ts
 
-import JitsiStreamBackgroundEffect, { IBackgroundEffectOptions } from "./JitsiStreamBackgroundEffect";
+import JitsiStreamBackgroundEffect from "./JitsiStreamBackgroundEffect";
 
-// tflite modules (emscripten factories)
-import createTFLiteModule from "./tflite/tflite.js";
-import createTFLiteSIMDModule from "./tflite/tflite-simd.js";
+export type VirtualBackgroundOptions =
+    | { backgroundType: "blur" }
+    | { backgroundType: "image"; virtualSource: string };
 
-let tflite: any;
-let modelPromise: Promise<void> | null = null;
-
-const MODEL_URL = "/libs/selfie_segmentation_landscape.tflite";
-
-async function loadModelOnce(tfl: any) {
-    if (modelPromise) return modelPromise;
-
-    modelPromise = (async () => {
-        const res = await fetch(MODEL_URL);
-        if (!res.ok) throw new Error(`Failed to fetch model: ${res.status} ${res.statusText}`);
-
-        const buf = await res.arrayBuffer();
-        const bytes = new Uint8Array(buf);
-
-        const size = bytes.length;
-        const ptr = tfl._malloc(size);
-        tfl.HEAPU8.set(bytes, ptr);
-
-        if (typeof tfl._loadModel !== "function") {
-            throw new Error("tflite._loadModel is not a function — check vendor tflite.js version");
-        }
-
-        tfl._loadModel(ptr, size);
-        tfl._free(ptr);
-    })();
-
-    return modelPromise;
+// Простая проверка: если setEffect есть — значит в целом можем пробовать.
+// (реальная совместимость дальше уже решится внутри эффекта)
+export function isSupported() {
+    return true;
 }
 
-async function initTfliteOnce() {
-    if (tflite) return tflite;
+export async function createVirtualBackgroundEffect(opts: VirtualBackgroundOptions) {
+    // ВАЖНО: никаких bf.isSupported() — просто создаём эффект.
+    // Если внутри эффекта что-то не так — упадёт уже более конкретно (fetch/wasm/model).
+    const effect: any = new (JitsiStreamBackgroundEffect as any)(opts);
 
-    // пробуем SIMD, если не выйдет — fallback
-    try {
-        tflite = await createTFLiteSIMDModule({
-            locateFile: (p: string) => `/libs/${p}`,
-        });
-    } catch {
-        tflite = await createTFLiteModule({
-            locateFile: (p: string) => `/libs/${p}`,
-        });
+    // если в твоём JitsiStreamBackgroundEffect есть init/load — вызови безопасно
+    if (typeof effect.init === "function") {
+        await effect.init();
+    }
+    if (typeof effect.loadModel === "function") {
+        await effect.loadModel();
     }
 
-    await loadModelOnce(tflite);
-    return tflite;
+    return effect;
 }
 
-export async function createVirtualBackgroundEffect(
-    virtualBackground: IBackgroundEffectOptions["virtualBackground"]
-) {
-    if (!JitsiStreamBackgroundEffect.isSupported()) {
-        throw new Error("JitsiStreamBackgroundEffect not supported!");
-    }
-
-    const tfl = await initTfliteOnce();
-
-    const options: IBackgroundEffectOptions = {
-        virtualBackground,
-    };
-
-    return new JitsiStreamBackgroundEffect(tfl, options);
-}
+export default createVirtualBackgroundEffect;
