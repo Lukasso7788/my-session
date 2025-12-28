@@ -1,7 +1,7 @@
 // src/pages/RoomPage.tsx
 // ROOMPAGE + JITSI ENGINE + VIDEO UI (UPDATED)
 // ✅ Full-width layout aligned with bottom controls padding
-// ✅ Light/Dark theme switcher (icon-only, persisted in localStorage)
+// ✅ Light/Dark theme switcher (thumb icon, persisted in localStorage)
 // ✅ Icons loaded from /public/icons/*.svg with theme fallback:
 //    tries /icons/<name>-<theme>.svg, falls back to /icons/<name>.svg
 // ✅ VideoRoom has NO extra black frame; tiles handle speaking highlight + mic icon inside
@@ -51,7 +51,9 @@ function Icon({
   | "intentions"
   | "settings"
   | "theme-sun"
-  | "theme-moon";
+  | "theme-moon"
+  | "timer"
+  | "host_session_icon";
   theme: RoomTheme;
   className?: string;
   alt?: string;
@@ -61,7 +63,6 @@ function Icon({
 
   const [src, setSrc] = useState(themedSrc);
 
-  // when theme changes, try themed first again
   useEffect(() => {
     setSrc(themedSrc);
   }, [themedSrc]);
@@ -70,7 +71,6 @@ function Icon({
     <img
       src={src}
       onError={() => {
-        // fallback to non-themed icon if themed is missing
         if (src !== fallbackSrc) setSrc(fallbackSrc);
       }}
       className={className}
@@ -154,9 +154,7 @@ function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: numbe
 
     if (!Number.isFinite(n) || n <= 0) return 0;
 
-    // heuristic: "50/5/5" often stored as minutes
     if (n <= 180) return n * 60;
-
     return n;
   };
 
@@ -947,18 +945,19 @@ export function RoomPage() {
 
   const participantsCount = participants.length;
 
-  // theme switcher UI
+  // ✅ SWITCH: 1.5x longer + thumb icon (sun/moon on white circle)
   const switchTrack =
-    "w-[54px] h-[30px] rounded-full border relative transition flex items-center px-[3px]";
+    "w-[84px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
 
   const switchTrackCls = isLight
     ? "bg-black/5 border-black/10 hover:bg-black/10"
     : "bg-white/5 border-white/10 hover:bg-white/10";
 
   const switchThumb =
-    "absolute top-[3px] w-[24px] h-[24px] rounded-full shadow-md transition-transform";
+    "absolute top-[3px] w-[28px] h-[28px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center";
 
-  const switchThumbCls = isLight ? "bg-white" : "bg-[#0B1220]";
+  // 84 - (3*2) - 28 = 50
+  const thumbTranslate = isLight ? "translateX(0px)" : "translateX(50px)";
 
   if (loading) {
     return (
@@ -996,46 +995,39 @@ export function RoomPage() {
               <div className="flex items-center gap-2 shrink-0">
                 {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
                   <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}>
-                    <span className={isLight ? "text-black/60 text-[12px]" : "text-white/70 text-[12px]"}>⏱</span>
+                    <Icon
+                      name="timer"
+                      theme={theme}
+                      className="w-4 h-4 opacity-80"
+                      alt="Timer"
+                    />
                     <span className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"}`}>
                       {remainingTime || "--:--"}
                     </span>
                   </div>
                 )}
 
-                {/* ✅ Theme switcher (no text) */}
+                {/* ✅ Theme switcher (thumb icon) */}
                 <button
                   onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
                   className={`${switchTrack} ${switchTrackCls}`}
                   title="Toggle theme"
                   aria-label="Toggle theme"
                 >
-                  {/* icons inside track */}
-                  <div className="w-full flex items-center justify-between px-[6px]">
+                  <div
+                    className={switchThumb}
+                    style={{ transform: thumbTranslate }}
+                  >
                     <Icon
-                      name="theme-sun"
+                      name={isLight ? "theme-sun" : "theme-moon"}
                       theme={theme}
-                      className={`w-4 h-4 ${isLight ? "opacity-90" : "opacity-60"}`}
-                      alt="Light"
-                    />
-                    <Icon
-                      name="theme-moon"
-                      theme={theme}
-                      className={`w-4 h-4 ${isLight ? "opacity-60" : "opacity-90"}`}
-                      alt="Dark"
+                      className="w-4 h-4"
+                      alt={isLight ? "Light" : "Dark"}
                     />
                   </div>
-
-                  {/* thumb */}
-                  <div
-                    className={`${switchThumb} ${switchThumbCls}`}
-                    style={{
-                      transform: isLight ? "translateX(0px)" : "translateX(24px)",
-                    }}
-                  />
                 </button>
 
-                {/* Host indicator (font size aligned) */}
+                {/* Host indicator (theme-aware icon) */}
                 {session.host_profile && (
                   <button
                     onClick={() => setSelectedUser(session.host_profile)}
@@ -1044,11 +1036,11 @@ export function RoomPage() {
                       : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                       }`}
                   >
-                    <img
-                      src="/icons/host_session_icon.svg"
+                    <Icon
+                      name="host_session_icon"
+                      theme={theme}
                       className="h-5 w-5 opacity-90"
                       alt=""
-                      draggable={false}
                     />
                     <span className="flex items-center gap-1 leading-none">
                       <span className={isLight ? "font-normal text-black/55" : "font-normal text-white/70"}>
@@ -1122,6 +1114,10 @@ export function RoomPage() {
           {/* RIGHT PANEL */}
           {rightPanelOpen && (
             <div className={`rounded-2xl shadow-lg overflow-hidden min-h-0 ${panelBg}`}>
+              {/* ТВОЙ ТЕКУЩИЙ RIGHT PANEL КОД — без изменений */}
+              {/* я оставил как в твоей версии (вставляй 1-в-1 то что ты прислал) */}
+
+              {/* participants */}
               {rightTab === "participants" && (
                 <div className="h-full flex flex-col">
                   <div className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
@@ -1240,6 +1236,7 @@ export function RoomPage() {
                 </div>
               )}
 
+              {/* chat */}
               {rightTab === "chat" && (
                 <div className="h-full">
                   <div className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
@@ -1261,6 +1258,7 @@ export function RoomPage() {
                 </div>
               )}
 
+              {/* intentions */}
               {rightTab === "intentions" && (
                 <div className="h-full">
                   <div className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>

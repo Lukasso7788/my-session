@@ -58,30 +58,26 @@ function Icon({
     alt = "",
     theme = "dark",
 }: {
-    name:
-    | "mic-on"
-    | "mic-off"
-    | "camera-on"
-    | "camera-off"
-    | "screen-share"
-    | "reaction"
-    | "leave"
-    | "participant"
-    | "chat"
-    | "intentions"
-    | "settings";
+    name: "mic-on" | "mic-off" | "camera-on" | "camera-off" | "screen-share" | "reaction" | "leave";
     className?: string;
     alt?: string;
     theme?: "dark" | "light";
 }) {
-    // Если SVG монохромные (чёрные), можно инвертить для dark темы:
-    // - dark: invert(1)
-    // - light: normal
-    const invertForDark = theme === "dark" ? "invert brightness-200" : "";
+    const themedSrc = `/icons/${name}-${theme}.svg`;
+    const fallbackSrc = `/icons/${name}.svg`;
+    const [src, setSrc] = useState(themedSrc);
+
+    useEffect(() => {
+        setSrc(themedSrc);
+    }, [themedSrc]);
+
     return (
         <img
-            src={`/icons/${name}.svg`}
-            className={`${className} ${invertForDark}`}
+            src={src}
+            onError={() => {
+                if (src !== fallbackSrc) setSrc(fallbackSrc);
+            }}
+            className={className}
             alt={alt}
             draggable={false}
         />
@@ -255,7 +251,6 @@ function ParticipantTile({
 }) {
     const videoRef = useRef<HTMLVideoElement | null>(null);
 
-    // Keep track attached; hide video via CSS when muted
     const hasVideoTrack = !!participant.videoTrack;
     const streamV = useTrackStreamVersion(participant.videoTrack);
 
@@ -313,7 +308,6 @@ function ParticipantTile({
             ? "bg-white/90 border border-black/10 text-black/80"
             : "bg-black/45 border border-white/10 text-white/80";
 
-    // ✅ ВАЖНО: убрали speaking-подсветку — теперь всегда нейтральное кольцо
     const ringClass =
         theme === "light" ? "ring-1 ring-black/10" : "ring-1 ring-white/10";
 
@@ -328,7 +322,6 @@ function ParticipantTile({
                 (forceAspect ? "w-full aspect-video rounded-2xl" : "w-full h-full rounded-2xl")
             }
         >
-            {/* video always mounted */}
             <video
                 ref={handleVideoRef}
                 autoPlay
@@ -340,9 +333,9 @@ function ParticipantTile({
                 }
             />
 
-            {/* Placeholder overlay */}
+            {/* ✅ Placeholder overlay: centered + NO "Camera off" */}
             {showPlaceholder && (
-                <div className={`absolute inset-0 flex flex-col items-center justify-center ${placeholderBg}`}>
+                <div className={`absolute inset-0 flex flex-col items-center justify-center text-center ${placeholderBg}`}>
                     <div className="relative w-16 h-16 rounded-full overflow-hidden border border-black/10">
                         <img
                             src={PLACEHOLDER_AVATAR_URL}
@@ -361,7 +354,7 @@ function ParticipantTile({
                         </div>
                     </div>
 
-                    <div className="mt-3 flex items-center gap-2">
+                    <div className="mt-3 flex items-center justify-center gap-2">
                         <span
                             className={`text-[14px] font-semibold leading-none ${theme === "light" ? "text-black/80" : "text-white/85"
                                 }`}
@@ -375,14 +368,7 @@ function ParticipantTile({
                         />
                     </div>
 
-                    {participant.videoMuted && (
-                        <span
-                            className={`mt-2 text-[12px] leading-none ${theme === "light" ? "text-black/45" : "text-white/55"
-                                }`}
-                        >
-                            Camera off
-                        </span>
-                    )}
+                    {/* ❌ убрали полностью "Camera off" */}
                 </div>
             )}
 
@@ -392,14 +378,11 @@ function ParticipantTile({
             >
                 <span className="truncate max-w-[160px]">{name}</span>
 
-                {/* mic on/off icon рядом с именем */}
                 <Icon
                     name={participant.audioMuted ? "mic-off" : "mic-on"}
                     className="w-3.5 h-3.5 opacity-80"
                     theme={theme}
                 />
-
-                {/* ✅ speaking-dot + speaking-bars убраны полностью */}
             </div>
         </div>
     );
@@ -552,8 +535,8 @@ function ScreenShareLayoutDesktop({
         <div className="relative w-full h-full flex flex-row gap-3 p-3 min-h-0">
             <div
                 className={`relative flex-1 overflow-hidden rounded-2xl ${theme === "light"
-                        ? "bg-white ring-1 ring-black/10"
-                        : "bg-[#0B1220] ring-1 ring-white/10"
+                    ? "bg-white ring-1 ring-black/10"
+                    : "bg-[#0B1220] ring-1 ring-white/10"
                     } min-h-0`}
             >
                 <video
@@ -576,7 +559,6 @@ function ScreenShareLayoutDesktop({
                         className="w-3.5 h-3.5 opacity-80"
                         theme={theme}
                     />
-                    {/* ✅ speaking-bars убраны */}
                 </div>
             </div>
 
@@ -642,8 +624,8 @@ function ScreenShareLayoutMobile({
         >
             <div
                 className={`w-full aspect-video overflow-hidden rounded-2xl ${theme === "light"
-                        ? "bg-white ring-1 ring-black/10"
-                        : "bg-[#0B1220] ring-1 ring-white/10"
+                    ? "bg-white ring-1 ring-black/10"
+                    : "bg-[#0B1220] ring-1 ring-white/10"
                     } relative`}
             >
                 <video
@@ -666,7 +648,6 @@ function ScreenShareLayoutMobile({
                         className="w-3.5 h-3.5 opacity-80"
                         theme={theme}
                     />
-                    {/* ✅ speaking-bars убраны */}
                 </div>
             </div>
 
@@ -705,7 +686,6 @@ export function VideoRoom(props: VideoRoomProps) {
     const isMobile = useMediaQuery("(max-width: 767px)");
     const isLight = theme === "light";
 
-    // audio sink output device
     useEffect(() => {
         const deviceId = audioOutputId;
         if (!deviceId || deviceId === "default") return;
@@ -718,7 +698,6 @@ export function VideoRoom(props: VideoRoomProps) {
         });
     }, [audioOutputId]);
 
-    // paging (unchanged)
     const PAGE_SIZE = 20;
     const SCROLL_STEP = 5;
 
@@ -773,7 +752,6 @@ export function VideoRoom(props: VideoRoomProps) {
         return baseParticipants.slice(start, end);
     }, [baseParticipants, screenSharer, scrollIndex]);
 
-    // visible remote ids -> engine
     const visibleRemoteIds = useMemo(() => {
         const visibleList = screenSharer
             ? [screenSharer, ...screenOthers]
@@ -835,7 +813,6 @@ export function VideoRoom(props: VideoRoomProps) {
         <div className="relative w-full h-full flex flex-col min-h-0">
             <AudioSink participants={participants} />
 
-            {/* ✅ без общей чёрной рамки/контейнера */}
             <div className="flex-1 relative min-h-0">
                 {!screenSharer && (
                     <>
@@ -881,7 +858,6 @@ export function VideoRoom(props: VideoRoomProps) {
                     </>
                 )}
 
-                {/* ✅ REACTIONS OVERLAY — НЕ ТРОГАЛ */}
                 {((overlayLocal?.length || 0) + (incomingReactions?.length || 0) > 0) && (
                     <div className="pointer-events-none absolute inset-0 flex items-end justify-center pb-20 gap-2">
                         {(overlayLocal || []).map((r: any) => (
@@ -945,7 +921,6 @@ export function VideoRoom(props: VideoRoomProps) {
                 )}
             </div>
 
-            {/* Optional internal controls (если ты это реально используешь) */}
             {showControls && (
                 <div className="mt-3 flex items-center justify-center">
                     <div className={`inline-flex items-center gap-3 px-4 py-2 rounded-2xl shadow-lg ${controlsBg}`}>
@@ -997,7 +972,6 @@ export function VideoRoom(props: VideoRoomProps) {
                             <Icon name="screen-share" className="w-5 h-5" theme={theme} />
                         </button>
 
-                        {/* ✅ REACTIONS MENU — НЕ ТРОГАЛ */}
                         <div className="relative" ref={menuRef}>
                             <button
                                 onClick={() => setShowReactionsMenu((v) => !v)}
