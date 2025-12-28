@@ -13,15 +13,11 @@
 //
 // ✅ PATCH (SAFE stream adapter for startEffect input):
 // - Wraps effect.startEffect(...) to always receive a MediaStream
-// - ✅ Allows async startEffect (Promise return) and async getOriginalStream() when needed
+// - IMPORTANT: wrapper preserves prototype methods (isEnabled) — no spread
 //
 // ✅ PATCH (SERIALIZED setEffect + SAFE dispose):
 // - All track.setEffect calls go through per-track queue (prevents: "setEffect already in progress!")
 // - Dispose waits for pending effect ops on that track
-//
-// ✅ FIX (Compatibility):
-// - Do NOT mark build incompatible just because vendored effect.startEffect is async
-// - Only mark incompatible if there is no factory or track.setEffect is missing
 // ============================================================================
 
 import { createVirtualBackgroundEffect as createVendoredVirtualBackgroundEffect } from "./jitsiEffects/virtualBackground";
@@ -176,7 +172,7 @@ export class JitsiEngine {
   private effectQueueByTrack = new WeakMap<any, Promise<void>>();
 
   // Some lib builds don’t tolerate null/undefined in setEffect — they expect an object with isEnabled().
-  // Use a passthrough effect that returns the original stream synchronously.
+  // Use a passthrough effect that returns the original stream.
   private readonly PASSTHROUGH_EFFECT = {
     startEffect: (stream: MediaStream) => stream, // sync
     stopEffect: () => { },
@@ -628,6 +624,21 @@ export class JitsiEngine {
   }
 
   // ========================================================================
+  // ✅ EFFECT API GUARANTEE
+  // ========================================================================
+  private ensureEffectApi(effect: any) {
+    if (!effect) return effect;
+
+    if (typeof effect.isEnabled !== "function") effect.isEnabled = () => true;
+    if (typeof effect.isSupported !== "function") effect.isSupported = () => true;
+
+    if (typeof effect.stopEffect !== "function") effect.stopEffect = () => { };
+    if (typeof effect.dispose !== "function") effect.dispose = () => { };
+
+    return effect;
+  }
+
+  // ========================================================================
   // BG EFFECT CORE
   // ========================================================================
 
@@ -636,20 +647,22 @@ export class JitsiEngine {
    * Some lib-jitsi-meet builds call effect.startEffect(...) with NOT a MediaStream.
    * Jitsi effects expect a MediaStream with getTracks().
    *
-   * ✅ This wrapper:
-   * - Forces a MediaStream when possible (MediaStreamTrack, {track}, getOriginalStream)
-   * - Allows async getOriginalStream() and Promise return from startEffect (vendored async)
+   * IMPORTANT:
+   * - do NOT use {...effect} spread => loses prototype methods (isEnabled) for class-based effects
+   * - use Object.create(effect) to preserve prototype chain
+   * - support async startEffect too (your vendored effect is async)
    */
   private wrapEffectToForceMediaStream(effect: any) {
     if (!effect || typeof effect.startEffect !== "function") return effect;
 
-    const origStart = effect.startEffect;
+    this.ensureEffectApi(effect);
 
     const isPromiseLike = (x: any) => x && typeof x.then === "function";
 
     const toMediaStreamOrPromise = (streamLike: any): MediaStream | Promise<MediaStream> => {
       let s: any = streamLike;
 
+      // Already MediaStream
       if (s && typeof s.getTracks === "function") return s as MediaStream;
 
       // MediaStreamTrack
@@ -662,32 +675,31 @@ export class JitsiEngine {
         return new MediaStream([s.track]);
       }
 
-      // wrapper exposing getOriginalStream()
+      // sometimes wrapper exposing getOriginalStream()
       if (typeof s?.getOriginalStream === "function") {
         const maybe = s.getOriginalStream();
-        if (isPromiseLike(maybe)) {
-          return Promise.resolve(maybe);
-        }
+        if (isPromiseLike(maybe)) return Promise.resolve(maybe);
         if (maybe && typeof maybe.getTracks === "function") return maybe as MediaStream;
       }
 
       throw new Error("[bg] startEffect received non-MediaStream");
     };
 
-    return {
-      ...effect,
-      startEffect: (streamLike: any) => {
-        const msOrP = toMediaStreamOrPromise(streamLike);
+    // Preserve prototype chain (do NOT spread)
+    const wrapped: any = Object.create(effect);
+    this.ensureEffectApi(wrapped);
 
-        // If async stream: return Promise that resolves to origStart(ms)
-        if (isPromiseLike(msOrP)) {
-          return Promise.resolve(msOrP).then((ms) => origStart(ms));
-        }
+    const origStart = effect.startEffect.bind(effect);
 
-        // sync stream path
-        return origStart(msOrP as MediaStream);
-      },
+    wrapped.startEffect = (streamLike: any, ...rest: any[]) => {
+      const msOrP = toMediaStreamOrPromise(streamLike);
+      if (isPromiseLike(msOrP)) {
+        return Promise.resolve(msOrP).then((ms) => origStart(ms, ...rest));
+      }
+      return origStart(msOrP as MediaStream, ...rest);
     };
+
+    return wrapped;
   }
 
   private buildVirtualBackgroundOptions() {
@@ -729,16 +741,16 @@ export class JitsiEngine {
       return null;
     }
 
-    // ✅ Do NOT mark incompatible if startEffect is async.
-    // Many builds work fine with async vendored effects; we allow it + wrap to support Promise flows.
+    // Some builds used to be picky about async startEffect, but your vendored effect is async.
+    // We'll allow it, but log once.
     if (this.isAsyncFunction(effect.startEffect)) {
       try {
         console.warn(`[bg] ${pick.kind} effect.startEffect is async (allowing it).`);
       } catch { }
     }
 
-    // Some builds assume isEnabled exists
-    if (typeof effect.isEnabled !== "function") effect.isEnabled = () => true;
+    // Ensure required API exists on the returned object
+    this.ensureEffectApi(effect);
 
     this.markEffectsOk();
     return effect;
@@ -785,7 +797,7 @@ export class JitsiEngine {
     })();
     if (wasMuted) return;
 
-    // If we already know build is incompatible (e.g., no factory), do nothing
+    // If we already know build is incompatible, do nothing
     if (this.effectsCompatibility === "incompatible") {
       console.warn("[bg] Effect requested but incompatible build:", this.effectsIncompatReason);
       return;
@@ -820,12 +832,13 @@ export class JitsiEngine {
 
       let effect = await this.createEffectObject(vb);
       if (!effect) {
-        // already marked incompatible OR factory failed
         await this.safeSetEffect(track, this.PASSTHROUGH_EFFECT, "apply:no-effect");
         return;
       }
 
+      // Wrap WITHOUT losing prototype methods
       effect = this.wrapEffectToForceMediaStream(effect);
+      this.ensureEffectApi(effect);
 
       // Guards with track
       try {
