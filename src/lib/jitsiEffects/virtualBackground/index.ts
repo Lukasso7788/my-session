@@ -1,8 +1,10 @@
+// src/lib/jitsiEffects/virtualBackground/index.ts
+
 import JitsiStreamBackgroundEffect, { IBackgroundEffectOptions } from "./JitsiStreamBackgroundEffect";
 
-// vendor tflite modules (emscripten factories)
-import createTFLiteModule from "./vendor/tflite/tflite.js";
-import createTFLiteSIMDModule from "./vendor/tflite/tflite-simd.js";
+// tflite modules (emscripten factories)
+import createTFLiteModule from "./tflite/tflite.js";
+import createTFLiteSIMDModule from "./tflite/tflite-simd.js";
 
 let tflite: any;
 let modelPromise: Promise<void> | null = null;
