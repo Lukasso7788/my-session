@@ -186,7 +186,7 @@ export class JitsiEngine {
         videoType: track?.getVideoType?.(),
         local: !!track?.isLocal?.(),
         muted: !!track?.isMuted?.(),
-        trackId: track?.getTrackId?.?.() || track?.getId?.?.() || undefined,
+        trackId: track?.getTrackId?.() || track?.getId?.() || undefined,
           hasSetEffect: typeof track?.setEffect === "function",
             origStreamPromise: isPromise,
       };
