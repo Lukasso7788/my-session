@@ -4,17 +4,22 @@
 // ✅ Added: targeted “black video” recovery (reattach per participant + optional subs bump)
 // ✅ Fixed: do NOT treat local camera/audio track add/remove as topology change (prevents global resub churn on toggleVideo)
 //
-// ✅ IMPORTANT (Effects compatibility guard):
-// Some lib-jitsi-meet builds expect EFFECT OBJECT to be sync and effect.startEffect() to be sync,
-// but JitsiMeetJS.effects.createVirtualBackgroundEffect(...) may return Promise in other builds.
-// If we detect "factory returned Promise" => mark effects as INCOMPATIBLE and STOP applying effects
-// (to prevent camera from getting stuck on toggle / track replacement).
+// ✅ UPDATED (Background effects):
+// - Prefers native JitsiMeetJS.effects.createVirtualBackgroundEffect (same as Jitsi UI) if present
+// - Falls back to vendored implementation: ./jitsiEffects/virtualBackground
+// - Factory may return Promise -> we await it
+// - Applies effect via track.setEffect(effect) with per-track serialization
+// - Clears via passthrough effect (NOT null/undefined)
 //
-// ✅ PATCHES:
-// - Per-track serialized setEffect queue preserved (no races).
-// - setEffect calls are timed out (prevents deadlocks).
-// - If effects are incompatible => we keep video working and simply skip applying background.
+// ✅ PATCH (SAFE stream adapter for startEffect input):
+// - Wraps effect.startEffect(...) to always receive a MediaStream
+//
+// ✅ PATCH (SERIALIZED setEffect + SAFE dispose):
+// - All track.setEffect calls go through per-track queue (prevents: "setEffect already in progress!")
+// - Dispose waits for pending effect ops on that track
 // ============================================================================
+
+import { createVirtualBackgroundEffect as createVendoredVirtualBackgroundEffect } from "./jitsiEffects/virtualBackground";
 
 declare global {
   interface Window {
@@ -149,17 +154,15 @@ export class JitsiEngine {
   // ✅ stable: soft watchdog (not every 3s)
   private subsWatchdog: any = null;
 
-  // REAL BG EFFECT (Native Jitsi effect object)
+  // REAL BG EFFECT (effect object)
   private videoEffect: any | undefined = undefined;
   private bgPrefs: { mode: BgMode; imageUrl?: string } = { mode: "none" };
   private bgApplying = false;
-
   private effectsSupported = false;
 
-  // ✅ effects compatibility guard (your logs show: factory returns Promise but setEffect expects sync)
-  private effectsCompat: "unknown" | "compatible" | "incompatible" = "unknown";
-  private effectsCompatReason = "";
-  private effectsCompatLogged = false;
+  // Effects compatibility (don’t spam logs)
+  private effectsCompatibility: "unknown" | "ok" | "incompatible" = "unknown";
+  private effectsIncompatReason: string | null = null;
 
   // ========================================================================
   // ✅ EFFECT OPS SERIALIZER + DEBUG (per-track)
@@ -170,7 +173,7 @@ export class JitsiEngine {
   // Some lib builds don’t tolerate null/undefined in setEffect — they expect an object with isEnabled().
   // Use a passthrough effect that returns the original stream synchronously.
   private readonly PASSTHROUGH_EFFECT = {
-    startEffect: (stream: MediaStream) => stream, // MUST be sync in sync builds
+    startEffect: (stream: MediaStream) => stream, // sync
     stopEffect: () => { },
     dispose: () => { },
     isEnabled: () => true,
@@ -181,27 +184,23 @@ export class JitsiEngine {
     this.callbacks = callbacks;
   }
 
-  // ========================================================================
-  // UTILS
-  // ========================================================================
-  private isAsyncFunction(fn: any) {
-    try {
-      return typeof fn === "function" && fn.constructor && fn.constructor.name === "AsyncFunction";
-    } catch {
-      return false;
+  private markEffectsIncompatible(reason: string) {
+    if (this.effectsCompatibility !== "incompatible") {
+      this.effectsCompatibility = "incompatible";
+      this.effectsIncompatReason = reason;
+      try {
+        console.warn("[bg] Effects marked INCOMPATIBLE:", reason);
+      } catch { }
     }
   }
 
-  private async withTimeout<T>(p: Promise<T> | T, ms: number, label: string): Promise<T> {
-    const pr = Promise.resolve(p);
-    let t: any = null;
-    const timeout = new Promise<T>((_, rej) => {
-      t = setTimeout(() => rej(new Error(`[bg] ${label} timeout ${ms}ms`)), ms);
-    });
-    try {
-      return await Promise.race([pr, timeout]);
-    } finally {
-      if (t) clearTimeout(t);
+  private markEffectsOk() {
+    if (this.effectsCompatibility !== "ok") {
+      this.effectsCompatibility = "ok";
+      this.effectsIncompatReason = null;
+      try {
+        console.log("[bg] Effects marked OK");
+      } catch { }
     }
   }
 
@@ -236,7 +235,7 @@ export class JitsiEngine {
     const opId = ++this.effectOpSeq;
 
     const next = prev
-      .catch(() => { })
+      .catch(() => { }) // don't break chain
       .then(async () => {
         this.logEffect(opId, `BEGIN ${label}`, this.getTrackDbg(track));
         const t0 = performance.now();
@@ -266,10 +265,7 @@ export class JitsiEngine {
     if (!track || typeof track.setEffect !== "function") return;
 
     await this.runEffectOpOnTrack(track, `setEffect(${reason})`, async () => {
-      const attempt = async () => {
-        // setEffect may be sync or return Promise depending on build
-        return this.withTimeout(Promise.resolve(track.setEffect(effect)), 2500, `setEffect(${reason})`);
-      };
+      const attempt = async () => track.setEffect(effect);
 
       try {
         await attempt();
@@ -339,6 +335,11 @@ export class JitsiEngine {
     this.mediaSettings.audioOutputId = deviceId || "default";
   }
 
+  /**
+   * ✅ Optional: call from VideoRoom when you have the actual <video> element for a participant.
+   * - kind="video" for camera track
+   * - kind="screen" for desktop track
+   */
   public registerVideoElement(
     participantId: string,
     el: HTMLVideoElement | null | undefined,
@@ -424,6 +425,7 @@ export class JitsiEngine {
     return init;
   }
 
+  /** Who are we actually subscribed to right now? Mirror applyVideoSubscriptions logic. */
   private getSubscribedRemoteIds(): { ids: string[]; desiredLastN: number } {
     const finalRemoteIds = this.computeFinalRemoteIds();
     const desiredLastN = Math.min(finalRemoteIds.length, this.MAX_LAST_N);
@@ -438,6 +440,7 @@ export class JitsiEngine {
 
     const now = Date.now();
 
+    // Cleanup state for participants we no longer care about
     for (const pid of Array.from(this.videoHealthState.keys())) {
       if (!subscribedRemoteIds.includes(pid)) {
         this.videoHealthState.delete(pid);
@@ -448,6 +451,7 @@ export class JitsiEngine {
       const p = this.participants[pid];
       if (!p || p.isLocal) continue;
 
+      // Prefer screen if participant is sharing and screen element exists
       const hasScreen = !!p.screenTrack && this.screenElByPid.has(pid);
       const kind: "video" | "screen" = hasScreen ? "screen" : "video";
 
@@ -456,6 +460,7 @@ export class JitsiEngine {
 
       if (!el || !track) continue;
 
+      // Don’t attempt to recover if muted (camera off) for camera kind
       if (kind === "video" && p.videoMuted) {
         const st = this.getOrInitHealth(pid);
         st.stuckSince = null;
@@ -474,11 +479,8 @@ export class JitsiEngine {
       const curTime = Number(el.currentTime || 0);
 
       let progressed = false;
-      if (frames != null && st.lastFrameCount != null) {
-        progressed = frames > st.lastFrameCount;
-      } else {
-        progressed = curTime > (st.lastCurrentTime || 0);
-      }
+      if (frames != null && st.lastFrameCount != null) progressed = frames > st.lastFrameCount;
+      else progressed = curTime > (st.lastCurrentTime || 0);
 
       if (ready && hasSize && progressed) {
         st.lastProgressAt = now;
@@ -528,6 +530,7 @@ export class JitsiEngine {
     st.lastReattachAt = now;
 
     try {
+      // ✅ Targeted reattach: detach/attach the same track to the same element
       if (typeof track.detach === "function") {
         try {
           track.detach(el);
@@ -592,7 +595,7 @@ export class JitsiEngine {
   }
 
   // ========================================================================
-  // EFFECT SUPPORT DETECTION + COMPAT CHECK
+  // EFFECT SUPPORT DETECTION
   // ========================================================================
   private refreshEffectsSupport(track?: any) {
     const t = track ?? this.localVideoTrack;
@@ -611,60 +614,10 @@ export class JitsiEngine {
     return this.effectsSupported;
   }
 
-  private markEffectsIncompatible(reason: string) {
-    this.effectsCompat = "incompatible";
-    this.effectsCompatReason = reason || "unknown";
-    if (!this.effectsCompatLogged) {
-      this.effectsCompatLogged = true;
-      console.warn("[bg] Effects marked INCOMPATIBLE:", this.effectsCompatReason);
-    }
-  }
-
-  private async ensureEffectsCompatible(): Promise<boolean> {
-    if (!this.effectsSupported) return false;
-    if (this.effectsCompat === "compatible") return true;
-    if (this.effectsCompat === "incompatible") return false;
-
-    // Try detect from factory return shape
+  private isAsyncFunction(fn: any) {
     try {
-      const anyJitsi = (window as any).JitsiMeetJS;
-      const nativeFactory = anyJitsi?.effects?.createVirtualBackgroundEffect;
-
-      if (typeof nativeFactory !== "function") {
-        this.markEffectsIncompatible("JitsiMeetJS.effects.createVirtualBackgroundEffect is missing");
-        return false;
-      }
-
-      const testVb = { backgroundType: "blur" };
-      const created = nativeFactory(testVb);
-
-      if (created && typeof created.then === "function") {
-        this.markEffectsIncompatible("createVirtualBackgroundEffect returned Promise (sync build expects object)");
-        return false;
-      }
-
-      const effect = created;
-      if (!effect || typeof effect.startEffect !== "function") {
-        this.markEffectsIncompatible("factory returned invalid effect object");
-        return false;
-      }
-
-      if (this.isAsyncFunction(effect.startEffect)) {
-        this.markEffectsIncompatible("effect.startEffect is async (sync build expects sync)");
-        return false;
-      }
-
-      // Some builds assume isEnabled exists even during clearing
-      if (typeof effect.isEnabled !== "function") effect.isEnabled = () => true;
-      if (typeof effect.isSupported !== "function") effect.isSupported = () => true;
-
-      // If we got here — looks compatible enough
-      this.effectsCompat = "compatible";
-      this.effectsCompatReason = "";
-      console.log("[bg] Effects marked COMPATIBLE");
-      return true;
-    } catch (e: any) {
-      this.markEffectsIncompatible(String(e?.message || e || "compat check failed"));
+      return typeof fn === "function" && fn.constructor && fn.constructor.name === "AsyncFunction";
+    } catch {
       return false;
     }
   }
@@ -672,20 +625,118 @@ export class JitsiEngine {
   // ========================================================================
   // BG EFFECT CORE
   // ========================================================================
+
+  /**
+   * SAFETY WRAPPER:
+   * Some lib-jitsi-meet builds call effect.startEffect(...) with NOT a MediaStream.
+   * Jitsi effects expect a MediaStream with getTracks().
+   */
+  private wrapEffectToForceMediaStream(effect: any) {
+    if (!effect || typeof effect.startEffect !== "function") return effect;
+
+    return {
+      ...effect,
+      startEffect: (streamLike: any) => {
+        let s: any = streamLike;
+
+        if (s && typeof s.getTracks !== "function") {
+          // MediaStreamTrack
+          if (typeof MediaStreamTrack !== "undefined" && s instanceof MediaStreamTrack) {
+            s = new MediaStream([s]);
+          }
+          // sometimes { track: MediaStreamTrack }
+          else if (s?.track && typeof MediaStreamTrack !== "undefined" && s.track instanceof MediaStreamTrack) {
+            s = new MediaStream([s.track]);
+          }
+          // sometimes wrapper exposing getOriginalStream()
+          else if (typeof s?.getOriginalStream === "function") {
+            const maybe = s.getOriginalStream();
+            if (maybe && typeof maybe.then === "function") {
+              // cannot resolve async here (must be sync)
+              throw new Error("[bg] startEffect received async getOriginalStream; build expects sync MediaStream");
+            }
+            s = maybe;
+          }
+        }
+
+        if (!s || typeof s.getTracks !== "function") {
+          throw new Error("[bg] startEffect received non-MediaStream");
+        }
+
+        const out = effect.startEffect(s);
+
+        // If vendor returns Promise here -> this build will likely break on toggles
+        if (out && typeof out.then === "function") {
+          throw new Error("[bg] startEffect returned Promise; this build expects sync MediaStream");
+        }
+
+        return out;
+      },
+    };
+  }
+
+  private buildVirtualBackgroundOptions() {
+    if (this.bgPrefs.mode === "blur") {
+      return { backgroundType: "blur" };
+    }
+    if (this.bgPrefs.mode === "image") {
+      if (!this.bgPrefs.imageUrl) return null;
+      return { backgroundType: "image", virtualSource: this.bgPrefs.imageUrl };
+    }
+    return null;
+  }
+
+  private getEffectFactory() {
+    const anyJitsi = (window as any).JitsiMeetJS;
+    const nativeFactory = anyJitsi?.effects?.createVirtualBackgroundEffect;
+
+    // Prefer native, fallback to vendored
+    if (typeof nativeFactory === "function") {
+      return { kind: "native" as const, factory: nativeFactory };
+    }
+    return { kind: "vendored" as const, factory: createVendoredVirtualBackgroundEffect };
+  }
+
+  private async createEffectObject(vb: any) {
+    const pick = this.getEffectFactory();
+
+    if (!pick?.factory) {
+      this.markEffectsIncompatible("No effect factory available");
+      return null;
+    }
+
+    // Factory can be sync or async -> await anyway
+    const created = pick.factory(vb);
+    const effect = await Promise.resolve(created);
+
+    if (!effect) {
+      this.markEffectsIncompatible(`${pick.kind} factory returned empty effect`);
+      return null;
+    }
+
+    // If startEffect is async => incompatible for this build (it breaks camera toggles)
+    if (this.isAsyncFunction(effect.startEffect)) {
+      this.markEffectsIncompatible(`${pick.kind} effect.startEffect is async (incompatible with this build)`);
+      return null;
+    }
+
+    // Some builds assume isEnabled exists
+    if (typeof effect.isEnabled !== "function") effect.isEnabled = () => true;
+
+    // If isSupported exists and is false => do not apply
+    try {
+      if (typeof effect.isSupported === "function") {
+        // some implementations want track; some don't
+        // we'll check later with track if needed
+      }
+    } catch { }
+
+    this.markEffectsOk();
+    return effect;
+  }
+
   private async clearBgEffectOnTrack(track: any) {
     if (!track) return;
-
-    // If incompatible — do not touch setEffect at all (avoids stuck camera cases)
-    if (this.effectsCompat === "incompatible") {
-      try {
-        await this.videoEffect?.dispose?.();
-      } catch { }
-      try {
-        await (this.videoEffect as any)?.stopEffect?.();
-      } catch { }
-      this.videoEffect = undefined;
-      return;
-    }
 
     const hasSetEffect = typeof track.setEffect === "function";
     if (hasSetEffect) {
@@ -705,27 +756,17 @@ export class JitsiEngine {
     this.videoEffect = undefined;
   }
 
-  private buildVirtualBackgroundOptions() {
-    if (this.bgPrefs.mode === "blur") {
-      return { backgroundType: "blur" };
-    }
-    if (this.bgPrefs.mode === "image") {
-      if (!this.bgPrefs.imageUrl) return null;
-      return { backgroundType: "image", virtualSource: this.bgPrefs.imageUrl };
-    }
-    return null;
-  }
-
   private async applyBgEffectToTrack(track: any) {
     if (!track) return;
 
     this.refreshEffectsSupport(track);
+
     if (!this.effectsSupported) {
-      console.warn("[bg] effects are NOT supported (track.setEffect missing)");
+      console.warn("[bg] effects are NOT supported by current lib build (track.setEffect missing)");
       return;
     }
 
-    // Don’t apply if muted
+    // Don’t try to apply when muted
     const wasMuted = (() => {
       try {
         return track.isMuted?.() === true;
@@ -735,22 +776,28 @@ export class JitsiEngine {
     })();
     if (wasMuted) return;
 
-    // If no effect desired — just clear
+    // If we already know build is incompatible (async startEffect), do nothing
+    if (this.effectsCompatibility === "incompatible") {
+      console.warn("[bg] Effect requested but incompatible build:", this.effectsIncompatReason);
+      return;
+    }
+
+    // Extra safety: don’t try if original stream isn't ready yet
+    try {
+      const msAny = track.getOriginalStream?.();
+      const ms = await Promise.resolve(msAny);
+      if (!ms || typeof ms.getTracks !== "function") {
+        console.warn("[bg] track original stream not ready; skip applying effect");
+        return;
+      }
+    } catch { }
+
     if (this.bgPrefs.mode === "none") {
       await this.clearBgEffectOnTrack(track);
       return;
     }
 
-    // Compatibility guard (fixes your exact crash)
-    const compatible = await this.ensureEffectsCompatible();
-    if (!compatible) {
-      // Keep preference stored, but do not apply (prevents camera stuck)
-      if (!this.effectsCompatLogged) {
-        this.effectsCompatLogged = true;
-        console.warn("[bg] Skipping background effect due to incompatible lib build:", this.effectsCompatReason);
-      }
-      return;
-    }
+    await this.clearBgEffectOnTrack(track);
 
     const vb = this.buildVirtualBackgroundOptions();
     if (!vb) {
@@ -758,56 +805,20 @@ export class JitsiEngine {
       return;
     }
 
-    // Extra safety: original stream should be ready
-    try {
-      const msAny = track.getOriginalStream?.();
-      const ms = await Promise.resolve(msAny);
-      if (!ms || typeof ms.getTracks !== "function") {
-        console.warn("[bg] original stream not ready; skip applying effect");
-        return;
-      }
-    } catch { }
-
-    // Clear previous effect safely
-    await this.clearBgEffectOnTrack(track);
-
     this.bgApplying = true;
     try {
       console.debug("[bg] apply request:", this.bgPrefs, "track:", this.getTrackDbg(track));
 
-      const anyJitsi = (window as any).JitsiMeetJS;
-      const nativeFactory = anyJitsi?.effects?.createVirtualBackgroundEffect;
-
-      if (typeof nativeFactory !== "function") {
-        this.markEffectsIncompatible("nativeFactory missing at apply time");
+      let effect = await this.createEffectObject(vb);
+      if (!effect) {
+        // already marked incompatible OR factory failed
+        await this.safeSetEffect(track, this.PASSTHROUGH_EFFECT, "apply:no-effect");
         return;
       }
 
-      let effect: any = nativeFactory(vb as any);
+      effect = this.wrapEffectToForceMediaStream(effect);
 
-      // If factory suddenly returns Promise — mark incompatible and stop
-      if (effect && typeof effect.then === "function") {
-        this.markEffectsIncompatible("createVirtualBackgroundEffect returned Promise at apply time");
-        return;
-      }
-
-      if (!effect || typeof effect.startEffect !== "function") {
-        console.warn("[bg] invalid effect object; clearing");
-        await this.safeSetEffect(track, this.PASSTHROUGH_EFFECT, "invalid-effect-clear");
-        return;
-      }
-
-      // Guard: async startEffect breaks sync builds
-      if (this.isAsyncFunction(effect.startEffect)) {
-        this.markEffectsIncompatible("effect.startEffect is async");
-        return;
-      }
-
-      // Ensure required helpers exist
-      if (typeof effect.isEnabled !== "function") effect.isEnabled = () => true;
-      if (typeof effect.isSupported !== "function") effect.isSupported = () => true;
-
-      // Guard: isSupported / isEnabled
+      // Guards with track
       try {
         if (typeof effect.isSupported === "function") {
           const ok = effect.isSupported(track);
@@ -830,18 +841,18 @@ export class JitsiEngine {
         }
       } catch { }
 
-      await this.safeSetEffect(track, effect, `apply/${this.bgPrefs.mode}`);
+      await this.safeSetEffect(track, effect, `apply:${this.bgPrefs.mode}`);
       this.videoEffect = effect;
 
-      // Some builds may flip mute state — try to restore
+      // Some builds weirdly mute after effect; try to unmute
       try {
         const nowMuted = track.isMuted?.() === true;
-        if (nowMuted && typeof track.unmute === "function") {
+        if (!wasMuted && nowMuted && typeof track.unmute === "function") {
           await track.unmute();
         }
       } catch { }
     } catch (e) {
-      console.warn("[bg] setEffect failed, clearing:", e);
+      console.warn("[bg] apply failed; clearing:", e);
       try {
         await this.safeSetEffect(track, this.PASSTHROUGH_EFFECT, "fail-clear");
       } catch { }
@@ -862,8 +873,6 @@ export class JitsiEngine {
   private async reapplyBgIfNeeded() {
     if (!this.localVideoTrack) return;
     if (this.bgPrefs.mode === "none") return;
-    // If incompatible — don't even try
-    if (this.effectsCompat === "incompatible") return;
     await this.applyBgEffectToTrack(this.localVideoTrack);
   }
 
@@ -891,13 +900,6 @@ export class JitsiEngine {
       return;
     }
 
-    // If incompatible — do not apply (prevents camera stuck), but keep preference
-    const ok = await this.ensureEffectsCompatible();
-    if (!ok) {
-      console.warn("[bg] Effect requested but incompatible build:", this.effectsCompatReason);
-      return;
-    }
-
     await this.applyBgEffectToTrack(t);
 
     try {
@@ -915,7 +917,8 @@ export class JitsiEngine {
     if (this.disposed || !this.JitsiMeetJS || !this.conference) return;
 
     try {
-      const ms = this.localVideoTrack?.getOriginalStream?.();
+      const msAny = this.localVideoTrack?.getOriginalStream?.();
+      const ms = await Promise.resolve(msAny);
       const vt = ms?.getVideoTracks?.()?.[0];
       if (this.localVideoTrack && vt && vt.readyState !== "ended") return;
     } catch { }
@@ -923,9 +926,7 @@ export class JitsiEngine {
     const tracks = await this.JitsiMeetJS.createLocalTracks({
       devices: ["video"],
       constraints: {
-        video: this.mediaSettings.videoInputId
-          ? { deviceId: { exact: this.mediaSettings.videoInputId } }
-          : true,
+        video: this.mediaSettings.videoInputId ? { deviceId: { exact: this.mediaSettings.videoInputId } } : true,
       },
     });
 
@@ -935,11 +936,12 @@ export class JitsiEngine {
     const oldVideo = this.localVideoTrack;
 
     if (oldVideo) {
-      // Clear bg safely only if we are not in incompatible mode (prevents camera issues)
+      // Make sure no effect op is in flight + clear effect before replace/remove
       try {
-        if (this.effectsCompat !== "incompatible" && this.bgPrefs.mode !== "none") {
-          await this.clearBgEffectOnTrack(oldVideo);
-        }
+        await this.waitEffectIdle(oldVideo);
+      } catch { }
+      try {
+        await this.clearBgEffectOnTrack(oldVideo);
       } catch { }
 
       if (typeof this.conference.replaceTrack === "function") {
@@ -970,8 +972,6 @@ export class JitsiEngine {
     }
 
     this.refreshEffectsSupport(newVideo);
-
-    // Reapply only if compatible
     await this.reapplyBgIfNeeded();
   }
 
@@ -1007,9 +1007,9 @@ export class JitsiEngine {
     if (videoChanged) {
       try {
         if (this.localVideoTrack && typeof this.localVideoTrack.setDevice === "function") {
-          // Clear effect before switching device only if compatible
+          // Clear effect before switching device (stable)
           const hasSetEffect = typeof (this.localVideoTrack as any)?.setEffect === "function";
-          if (hasSetEffect && this.effectsCompat !== "incompatible" && this.bgPrefs.mode !== "none") {
+          if (hasSetEffect && this.bgPrefs.mode !== "none") {
             await this.clearBgEffectOnTrack(this.localVideoTrack);
           }
 
@@ -1067,14 +1067,14 @@ export class JitsiEngine {
         const hasSetEffect = typeof (oldVideo as any)?.setEffect === "function";
 
         if (oldVideo && typeof this.conference.replaceTrack === "function") {
-          if (hasSetEffect && this.effectsCompat !== "incompatible" && this.bgPrefs.mode !== "none") {
+          if (hasSetEffect && this.bgPrefs.mode !== "none") {
             await this.clearBgEffectOnTrack(oldVideo);
           }
           await this.conference.replaceTrack(oldVideo, newVideo);
           await this.safeDisposeTrack(oldVideo, "applyInputDevices:oldVideo");
           this.localVideoTrack = newVideo;
         } else if (oldVideo) {
-          if (hasSetEffect && this.effectsCompat !== "incompatible" && this.bgPrefs.mode !== "none") {
+          if (hasSetEffect && this.bgPrefs.mode !== "none") {
             await this.clearBgEffectOnTrack(oldVideo);
           }
           try {
@@ -1203,15 +1203,16 @@ export class JitsiEngine {
     if (!local || !this.localVideoTrack) return;
 
     const track = this.localVideoTrack;
+
     try {
       if (track.isMuted && track.isMuted()) {
         await track.unmute();
         local.videoMuted = false;
 
-        // Reapply bg (only if compatible)
+        // Reapply bg (queued)
         await this.reapplyBgIfNeeded();
       } else {
-        // Before muting, make sure no effect op is in-flight
+        // Before muting, ensure no effect op is in-flight
         await this.waitEffectIdle(track);
         await track.mute();
         local.videoMuted = true;
@@ -1237,8 +1238,7 @@ export class JitsiEngine {
       const tracks = await this.JitsiMeetJS.createLocalTracks({ devices: ["desktop"] });
 
       const screenTrack =
-        tracks.find((t: any) => this.isDesktopTrack(t)) ||
-        tracks.find((t: any) => t.getType && t.getType() === "desktop");
+        tracks.find((t: any) => this.isDesktopTrack(t)) || tracks.find((t: any) => t.getType && t.getType() === "desktop");
 
       if (!screenTrack) return;
 
@@ -1282,6 +1282,7 @@ export class JitsiEngine {
     if (this.subsWatchdog) clearInterval(this.subsWatchdog);
     this.subsWatchdog = null;
 
+    // ✅ stop health monitor + clear DOM refs
     this.stopVideoHealthMonitor();
 
     try {
@@ -1372,6 +1373,7 @@ export class JitsiEngine {
     };
 
     const topologyChanged = () => {
+      // join/leave/remote track add/remove: schedule recovery hard reset after 4.5s
       this.scheduleHardResetSubscriptions(4500);
     };
 
@@ -1415,6 +1417,7 @@ export class JitsiEngine {
       applySubsSoon(true);
       topologyChanged();
 
+      // ✅ soft watchdog: only to recover rare stuck states, not to churn
       if (this.subsWatchdog) clearInterval(this.subsWatchdog);
       this.subsWatchdog = setInterval(() => {
         if (this.disposed) return;
@@ -1424,6 +1427,7 @@ export class JitsiEngine {
         }
       }, 10000);
 
+      // ✅ start health monitor (safe even if no registered elements)
       this.startVideoHealthMonitor();
 
       setTimeout(() => {
@@ -1614,7 +1618,6 @@ export class JitsiEngine {
       if (tracks?.screen || tracks?.video) out.push(pid);
     }
 
-    // stable ordering
     out.sort();
     return out;
   }
@@ -1633,7 +1636,6 @@ export class JitsiEngine {
   }
 
   private buildSubsKey(finalRemoteIds: string[], desiredLastN: number, h: number) {
-    // include qualityMode so changing mode re-applies
     return `${this.qualityMode}|${desiredLastN}|${h}|${finalRemoteIds.join(",")}`;
   }
 
@@ -1813,7 +1815,7 @@ export class JitsiEngine {
       if (type === "video" && entry.video === track) delete entry.video;
 
       if (pid === this.localUserId && type === "video" && this.localVideoTrack === track) {
-        this.clearBgEffectOnTrack(track);
+        void this.clearBgEffectOnTrack(track);
         this.localVideoTrack = null;
       }
       if (pid === this.localUserId && type === "audio" && this.localAudioTrack === track) {
