@@ -5,6 +5,7 @@
 // ✅ Icons loaded from /public/icons/*.svg with theme fallback:
 //    tries /icons/<name>-<theme>.svg, falls back to /icons/<name>.svg
 // ✅ VideoRoom has NO extra black frame; tiles handle speaking highlight + mic icon inside
+// ✅ Media settings persisted in localStorage + applied to engine before join
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -105,9 +106,7 @@ function safeParseJson(raw: any) {
 }
 
 /** ✅ parse "50/5/5" (or "50-5-5") schedule stored as a string. */
-function parse50505(
-  raw: any
-): { focus: number; break: number; intentions: number } | null {
+function parse50505(raw: any): { focus: number; break: number; intentions: number } | null {
   if (typeof raw !== "string") return null;
   const s = raw.trim();
   const m1 = s.match(/^(\d+)\s*\/\s*(\d+)\s*\/\s*(\d+)$/);
@@ -119,20 +118,13 @@ function parse50505(
   const br = Number(m[2]);
   const intentions = Number(m[3]);
 
-  if (
-    !Number.isFinite(focus) ||
-    !Number.isFinite(br) ||
-    !Number.isFinite(intentions)
-  )
-    return null;
+  if (!Number.isFinite(focus) || !Number.isFinite(br) || !Number.isFinite(intentions)) return null;
   if (focus <= 0 || br <= 0 || intentions <= 0) return null;
 
   return { focus, break: br, intentions };
 }
 
-function normalizeInfinitePhases(
-  anyPhases: any
-): { name: string; seconds: number }[] {
+function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: number }[] {
   if (!anyPhases) return [];
 
   const toSeconds = (raw: any): number => {
@@ -205,6 +197,38 @@ const STAGE_COLORS: Record<string, string> = {
   outro: "#80DF86",
 };
 
+const MEDIA_SETTINGS_KEY = "mysession_media_settings_v1";
+
+function loadStoredMediaSettings(): RoomMediaSettings | null {
+  try {
+    const raw = localStorage.getItem(MEDIA_SETTINGS_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (!obj || typeof obj !== "object") return null;
+
+    const bgMode =
+      obj.bgMode === "blur" || obj.bgMode === "image" || obj.bgMode === "none"
+        ? obj.bgMode
+        : "none";
+
+    return {
+      videoInputId: String(obj.videoInputId || ""),
+      audioInputId: String(obj.audioInputId || ""),
+      audioOutputId: String(obj.audioOutputId || "default"),
+      bgMode,
+      bgImageUrl: obj.bgImageUrl ? String(obj.bgImageUrl) : undefined,
+    } as RoomMediaSettings;
+  } catch {
+    return null;
+  }
+}
+
+function saveStoredMediaSettings(s: RoomMediaSettings) {
+  try {
+    localStorage.setItem(MEDIA_SETTINGS_KEY, JSON.stringify(s));
+  } catch { }
+}
+
 export function RoomPage() {
   const [theme, setTheme] = useState<RoomTheme>(() => {
     try {
@@ -224,26 +248,14 @@ export function RoomPage() {
   const isLight = theme === "light";
 
   // theme tokens
-  const pageBg = isLight
-    ? "bg-[#F6F7FB] text-[#0B1220]"
-    : "bg-[#050F1A] text-white";
-  const topBarBg = isLight
-    ? "bg-white/85 border border-black/10"
-    : "bg-[#111827]/40 border border-white/5";
-  const chipBg = isLight
-    ? "bg-black/5 border border-black/10"
-    : "bg-[#0B1220]/70 border border-white/5";
+  const pageBg = isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white";
+  const topBarBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#111827]/40 border border-white/5";
+  const chipBg = isLight ? "bg-black/5 border border-black/10" : "bg-[#0B1220]/70 border border-white/5";
   const subtleText = isLight ? "text-black/55" : "text-[#9CA3AF]";
   const strongText = isLight ? "text-black/85" : "text-[#F3F4F6]/90";
-  const panelBg = isLight
-    ? "bg-white/85 border border-black/10"
-    : "bg-[#0B1220]/55 border border-white/5";
-  const bottomBarBg = isLight
-    ? "bg-white/85 border border-black/10"
-    : "bg-[#07101E]/85 border border-white/10";
-  const ctlBtnBase = isLight
-    ? "bg-black/5 hover:bg-black/10"
-    : "bg-[#111827] hover:bg-[#1f2937]";
+  const panelBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#0B1220]/55 border border-white/5";
+  const bottomBarBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#07101E]/85 border border-white/10";
+  const ctlBtnBase = isLight ? "bg-black/5 hover:bg-black/10" : "bg-[#111827] hover:bg-[#1f2937]";
 
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -253,12 +265,17 @@ export function RoomPage() {
     audioOutputs: MediaDeviceInfo[];
   }>({ videoInputs: [], audioInputs: [], audioOutputs: [] });
 
-  const [mediaSettings, setMediaSettings] = useState<RoomMediaSettings>({
-    videoInputId: "",
-    audioInputId: "",
-    audioOutputId: "default",
-    bgMode: "none",
-    bgImageUrl: undefined,
+  const [mediaSettings, setMediaSettings] = useState<RoomMediaSettings>(() => {
+    const stored = loadStoredMediaSettings();
+    return (
+      stored || {
+        videoInputId: "",
+        audioInputId: "",
+        audioOutputId: "default",
+        bgMode: "none",
+        bgImageUrl: undefined,
+      }
+    );
   });
 
   const { id } = useParams<{ id: string }>();
@@ -267,8 +284,13 @@ export function RoomPage() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  const [selectedAudioOutputId, setSelectedAudioOutputId] =
-    useState<string>("default");
+  const [selectedAudioOutputId, setSelectedAudioOutputId] = useState<string>(() => {
+    try {
+      return loadStoredMediaSettings()?.audioOutputId || "default";
+    } catch {
+      return "default";
+    }
+  });
 
   const [stages, setStages] = useState<Stage[]>([]);
   const [hoveredStage, setHoveredStage] = useState<Stage | null>(null);
@@ -277,9 +299,7 @@ export function RoomPage() {
 
   // stagebar start + infinite cycle
   const [stagebarStartTime, setStagebarStartTime] = useState<string>("");
-  const [stagebarCycleSeconds, setStagebarCycleSeconds] = useState<
-    number | undefined
-  >(undefined);
+  const [stagebarCycleSeconds, setStagebarCycleSeconds] = useState<number | undefined>(undefined);
 
   const [selectedUser, setSelectedUser] = useState<any>(null);
 
@@ -294,19 +314,13 @@ export function RoomPage() {
   const prevCountRef = useRef<number>(0);
 
   // TRACK SCREEN SHARER
-  const [activeScreenSharer, setActiveScreenSharer] = useState<string | null>(
-    null
-  );
+  const [activeScreenSharer, setActiveScreenSharer] = useState<string | null>(null);
 
   // REACTIONS
-  const [incomingReactions, setIncomingReactions] = useState<
-    { id: number; type: ReactionType }[]
-  >([]);
+  const [incomingReactions, setIncomingReactions] = useState<{ id: number; type: ReactionType }[]>([]);
   const reactionIdRef = useRef<number>(0);
 
-  const [localReactions, setLocalReactions] = useState<
-    { id: number; type: ReactionType }[]
-  >([]);
+  const [localReactions, setLocalReactions] = useState<{ id: number; type: ReactionType }[]>([]);
   const localReactionIdRef = useRef<number>(0);
 
   // AUDIO
@@ -349,8 +363,7 @@ export function RoomPage() {
     if (parse50505(raw)) return true;
 
     const parsed = safeParseJson(raw);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-      return false;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
 
     const kind = String((parsed as any)?.kind || "").toLowerCase();
     if (kind === "infinite_room") return true;
@@ -370,15 +383,18 @@ export function RoomPage() {
     const title = String(session?.title || "").toLowerCase();
 
     const tpl = session?.session_templates;
-    const tplName = Array.isArray(tpl)
-      ? String(tpl?.[0]?.name || tpl?.[0]?.title || "")
-      : String(tpl?.name || tpl?.title || "");
-    const tplKey = Array.isArray(tpl)
-      ? String(tpl?.[0]?.key || tpl?.[0]?.slug || tpl?.[0]?.type || "")
-      : String(tpl?.key || tpl?.slug || tpl?.type || "");
-    const tplFmt = Array.isArray(tpl)
-      ? String(tpl?.[0]?.format || "")
-      : String(tpl?.format || "");
+    const tplName =
+      Array.isArray(tpl)
+        ? String(tpl?.[0]?.name || tpl?.[0]?.title || "")
+        : String(tpl?.name || tpl?.title || "");
+    const tplKey =
+      Array.isArray(tpl)
+        ? String(tpl?.[0]?.key || tpl?.[0]?.slug || tpl?.[0]?.type || "")
+        : String(tpl?.key || tpl?.slug || tpl?.type || "");
+    const tplFmt =
+      Array.isArray(tpl)
+        ? String(tpl?.[0]?.format || "")
+        : String(tpl?.format || "");
 
     const hay = `${fmt} ${title} ${tplName} ${tplKey} ${tplFmt}`.toLowerCase();
     return hay.includes("silent");
@@ -490,9 +506,7 @@ export function RoomPage() {
           if (t) {
             parsed = {
               kind: "infinite_room",
-              timer: {
-                phases: { focus: t.focus, break: t.break, intentions: t.intentions },
-              },
+              timer: { phases: { focus: t.focus, break: t.break, intentions: t.intentions } },
               anchor_ts: data?.start_time || data?.created_at || fallbackStart,
             };
           }
@@ -585,10 +599,7 @@ export function RoomPage() {
           );
           setStagebarStartTime(anchor);
 
-          const sumSeconds = phases.reduce(
-            (acc, p) => acc + (Number(p.seconds) || 0),
-            0
-          );
+          const sumSeconds = phases.reduce((acc, p) => acc + (Number(p.seconds) || 0), 0);
 
           let cycleSeconds =
             Number((parsed as any)?.timer?.cycle_seconds) ||
@@ -655,10 +666,7 @@ export function RoomPage() {
 
         const updated = list.map((p) => {
           if (!p.isLocal && p.displayName === "Guest") {
-            if (
-              session?.host_profile?.full_name &&
-              session.host_profile.id === p.id
-            ) {
+            if (session?.host_profile?.full_name && session.host_profile.id === p.id) {
               return { ...p, displayName: session.host_profile.full_name };
             }
           }
@@ -676,10 +684,7 @@ export function RoomPage() {
         const newId = reactionIdRef.current + 1;
         reactionIdRef.current = newId;
 
-        setIncomingReactions((prev) => [
-          ...prev,
-          { id: newId, type: reaction as ReactionType },
-        ]);
+        setIncomingReactions((prev) => [...prev, { id: newId, type: reaction as ReactionType }]);
 
         setTimeout(() => {
           setIncomingReactions((prev) => prev.filter((r) => r.id !== newId));
@@ -691,6 +696,17 @@ export function RoomPage() {
         setLastErr(msg);
       },
     });
+
+    // apply persisted settings BEFORE join (devices + bg prefs)
+    try {
+      engine.mediaSettings.videoInputId = mediaSettings.videoInputId || "";
+      engine.mediaSettings.audioInputId = mediaSettings.audioInputId || "";
+      engine.setAudioOutputDevice?.(mediaSettings.audioOutputId || "default");
+      (engine as any).setBackgroundPrefs?.({
+        mode: mediaSettings.bgMode,
+        imageUrl: mediaSettings.bgImageUrl,
+      });
+    } catch { }
 
     engineRef.current = engine;
     (window as any).engine = engine;
@@ -760,6 +776,8 @@ export function RoomPage() {
 
       setSelectedAudioOutputId(next.audioOutputId || "default");
       setMediaSettings(next);
+
+      saveStoredMediaSettings(next);
     } catch (e) {
       console.error("applyMediaSettings error:", e);
     }
@@ -836,12 +854,7 @@ export function RoomPage() {
         if (diffSec < next) {
           active = i;
           const rem = next - diffSec;
-          setRemainingTime(
-            `${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(
-              2,
-              "0"
-            )}`
-          );
+          setRemainingTime(`${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`);
           break;
         }
         total = next;
@@ -867,8 +880,7 @@ export function RoomPage() {
           const prevType = prev?.type;
           const newType = stage.type;
 
-          if (prevType === "break" && newType !== "break")
-            playOneShot(BREAK_END_SOUND);
+          if (prevType === "break" && newType !== "break") playOneShot(BREAK_END_SOUND);
 
           if (newType === "intro") {
             startWelcomeLoop();
@@ -889,10 +901,7 @@ export function RoomPage() {
   }, [stagebarStartTime, stages, isSilentRoom, isInfiniteRoom, stagebarCycleSeconds]);
 
   // DERIVED
-  const localParticipant = useMemo(
-    () => participants.find((p) => p.isLocal) || null,
-    [participants]
-  );
+  const localParticipant = useMemo(() => participants.find((p) => p.isLocal) || null, [participants]);
 
   const isAudioMuted = !!localParticipant?.audioMuted;
   const isVideoMuted = !!localParticipant?.videoMuted;
@@ -908,8 +917,7 @@ export function RoomPage() {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node | null;
       if (!reactionsMenuRef.current || !target) return;
-      if (!reactionsMenuRef.current.contains(target))
-        setShowReactionsMenu(false);
+      if (!reactionsMenuRef.current.contains(target)) setShowReactionsMenu(false);
     };
 
     document.addEventListener("mousedown", handleClickOutside);
@@ -978,12 +986,9 @@ export function RoomPage() {
   const participantsCount = participants.length;
 
   // ✅ SWITCH: 1.5x longer + thumb icon (sun/moon on white circle)
-  const switchTrack =
-    "w-[84px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
+  const switchTrack = "w-[84px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
 
-  const switchTrackCls = isLight
-    ? "bg-black/5 border-black/10 hover:bg-black/10"
-    : "bg-white/5 border-white/10 hover:bg-white/10";
+  const switchTrackCls = isLight ? "bg-black/5 border-black/10 hover:bg-black/10" : "bg-white/5 border-white/10 hover:bg-white/10";
 
   const switchThumb =
     "absolute top-[3px] w-[28px] h-[28px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center";
@@ -992,11 +997,7 @@ export function RoomPage() {
   const thumbTranslate = isLight ? "translateX(0px)" : "translateX(50px)";
 
   if (loading) {
-    return (
-      <div className={`flex h-screen justify-center items-center ${pageBg}`}>
-        Loading session...
-      </div>
-    );
+    return <div className={`flex h-screen justify-center items-center ${pageBg}`}>Loading session...</div>;
   }
 
   if (!session) {
@@ -1016,31 +1017,15 @@ export function RoomPage() {
           <div className="flex-1 px-6 py-4">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <p
-                  className={`font-inter font-semibold text-[18px] truncate ${strongText}`}
-                >
-                  {session.title}
-                </p>
-                <p className={`font-inter text-[13px] ${subtleText}`}>
-                  {participantsCount} participants
-                </p>
+                <p className={`font-inter font-semibold text-[18px] truncate ${strongText}`}>{session.title}</p>
+                <p className={`font-inter text-[13px] ${subtleText}`}>{participantsCount} participants</p>
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
                 {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
-                  <div
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}
-                  >
-                    <Icon
-                      name="timer"
-                      theme={theme}
-                      className="w-4 h-4 opacity-80"
-                      alt="Timer"
-                    />
-                    <span
-                      className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"
-                        }`}
-                    >
+                  <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}>
+                    <Icon name="timer" theme={theme} className="w-4 h-4 opacity-80" alt="Timer" />
+                    <span className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"}`}>
                       {remainingTime || "--:--"}
                     </span>
                   </div>
@@ -1072,25 +1057,10 @@ export function RoomPage() {
                         : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                       }`}
                   >
-                    <Icon
-                      name="host_session_icon"
-                      theme={theme}
-                      className="h-5 w-5 opacity-90"
-                      alt=""
-                    />
+                    <Icon name="host_session_icon" theme={theme} className="h-5 w-5 opacity-90" alt="" />
                     <span className="flex items-center gap-1 leading-none">
-                      <span
-                        className={
-                          isLight
-                            ? "font-normal text-black/55"
-                            : "font-normal text-white/70"
-                        }
-                      >
-                        Host:
-                      </span>
-                      <span className="font-semibold">
-                        {session.host_profile.full_name}
-                      </span>
+                      <span className={isLight ? "font-normal text-black/55" : "font-normal text-white/70"}>Host:</span>
+                      <span className="font-semibold">{session.host_profile.full_name}</span>
                     </span>
                   </button>
                 )}
@@ -1121,12 +1091,7 @@ export function RoomPage() {
           }
         >
           {/* VIDEO AREA (no thick border frame) */}
-          <div
-            className={`rounded-2xl overflow-hidden min-h-0 ${isLight
-                ? "bg-white/70 border border-black/10"
-                : "bg-[#0B1220]/45 border border-white/5"
-              }`}
-          >
+          <div className={`rounded-2xl overflow-hidden min-h-0 ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"}`}>
             <div className="w-full h-full min-h-0">
               <VideoRoom
                 theme={theme}
@@ -1139,17 +1104,11 @@ export function RoomPage() {
                 incomingReactions={incomingReactions}
                 localReactions={localReactions}
                 showControls={false}
-                onVisibleVideoIdsChange={(ids) =>
-                  engineRef.current?.setVisibleVideoParticipants(ids)
-                }
+                onVisibleVideoIdsChange={(ids) => engineRef.current?.setVisibleVideoParticipants(ids)}
                 audioOutputId={selectedAudioOutputId}
                 onRegisterVideoElement={(pid, el, kind) => {
                   try {
-                    (engineRef.current as any)?.registerVideoElement?.(
-                      pid,
-                      el,
-                      kind
-                    );
+                    (engineRef.current as any)?.registerVideoElement?.(pid, el, kind);
                   } catch { }
                 }}
               />
@@ -1168,29 +1127,18 @@ export function RoomPage() {
               {/* participants */}
               {rightTab === "participants" && (
                 <div className="h-full flex flex-col">
-                  <div
-                    className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
-                      }`}
-                  >
+                  <div className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
                     <div className="flex items-center gap-2">
-                      <span
-                        className={`${isLight ? "text-black/80" : "text-white/85"
-                          } font-inter font-semibold`}
-                      >
+                      <span className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>
                         Participants
                       </span>
-                      <span
-                        className={`${isLight ? "text-black/50" : "text-white/55"
-                          } text-sm`}
-                      >
+                      <span className={`${isLight ? "text-black/50" : "text-white/55"} text-sm`}>
                         ({participantsCount})
                       </span>
                     </div>
                     <button
                       onClick={() => openRightTab(null)}
-                      className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                          ? "bg-black/5 hover:bg-black/10 text-black/60"
-                          : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
                         }`}
                       title="Close"
                     >
@@ -1199,19 +1147,12 @@ export function RoomPage() {
                   </div>
 
                   <div className="p-4">
-                    <div
-                      className={`rounded-xl px-3 py-2 ${isLight
-                          ? "bg-black/5 border border-black/10"
-                          : "bg-[#0B1220]/70 border border-white/10"
-                        }`}
-                    >
+                    <div className={`rounded-xl px-3 py-2 ${isLight ? "bg-black/5 border border-black/10" : "bg-[#0B1220]/70 border border-white/10"}`}>
                       <input
                         value={participantsSearch}
                         onChange={(e) => setParticipantsSearch(e.target.value)}
                         placeholder="Search participants..."
-                        className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${isLight
-                            ? "text-black/80 placeholder:text-black/40"
-                            : "text-white/85 placeholder:text-white/35"
+                        className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${isLight ? "text-black/80 placeholder:text-black/40" : "text-white/85 placeholder:text-white/35"
                           }`}
                       />
                     </div>
@@ -1232,29 +1173,17 @@ export function RoomPage() {
                         return (
                           <div
                             key={p.id}
-                            className={`flex items-center justify-between px-3 py-2 rounded-xl transition ${isLight ? "hover:bg-black/5" : "hover:bg-white/5"
-                              }`}
+                            className={`flex items-center justify-between px-3 py-2 rounded-xl transition ${isLight ? "hover:bg-black/5" : "hover:bg-white/5"}`}
                           >
                             <div className="flex items-center gap-3 min-w-0">
-                              <div
-                                className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${isLight
-                                    ? "bg-blue-500/15 text-blue-700"
-                                    : "bg-emerald-500/80 text-[#02140B]"
-                                  }`}
-                              >
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${isLight ? "bg-blue-500/15 text-blue-700" : "bg-emerald-500/80 text-[#02140B]"}`}>
                                 {initials}
                               </div>
                               <div className="min-w-0">
-                                <div
-                                  className={`text-[13px] font-medium truncate ${isLight ? "text-black/85" : "text-white/90"
-                                    }`}
-                                >
+                                <div className={`text-[13px] font-medium truncate ${isLight ? "text-black/85" : "text-white/90"}`}>
                                   {name}
                                 </div>
-                                <div
-                                  className={`text-[11px] truncate ${isLight ? "text-black/45" : "text-white/45"
-                                    }`}
-                                >
+                                <div className={`text-[11px] truncate ${isLight ? "text-black/45" : "text-white/45"}`}>
                                   {p.isLocal ? "Team member" : "Participant"}
                                 </div>
                               </div>
@@ -1265,20 +1194,15 @@ export function RoomPage() {
                                 className={
                                   "w-8 h-8 rounded-lg flex items-center justify-center " +
                                   (p.audioMuted
-                                    ? isLight
-                                      ? "bg-red-500/10"
-                                      : "bg-red-500/20"
-                                    : isLight
-                                      ? "bg-black/5"
-                                      : "bg-white/5")
+                                    ? (isLight ? "bg-red-500/10" : "bg-red-500/20")
+                                    : (isLight ? "bg-black/5" : "bg-white/5"))
                                 }
                                 title={p.audioMuted ? "Muted" : "Unmuted"}
                               >
                                 <Icon
                                   name={p.audioMuted ? "mic-off" : "mic-on"}
                                   theme={theme}
-                                  className={`w-4 h-4 ${p.audioMuted ? "opacity-90" : "opacity-80"
-                                    }`}
+                                  className={`w-4 h-4 ${p.audioMuted ? "opacity-90" : "opacity-80"}`}
                                 />
                               </div>
 
@@ -1286,20 +1210,15 @@ export function RoomPage() {
                                 className={
                                   "w-8 h-8 rounded-lg flex items-center justify-center " +
                                   (p.videoMuted
-                                    ? isLight
-                                      ? "bg-red-500/10"
-                                      : "bg-red-500/20"
-                                    : isLight
-                                      ? "bg-black/5"
-                                      : "bg-white/5")
+                                    ? (isLight ? "bg-red-500/10" : "bg-red-500/20")
+                                    : (isLight ? "bg-black/5" : "bg-white/5"))
                                 }
                                 title={p.videoMuted ? "Video off" : "Video on"}
                               >
                                 <Icon
                                   name={p.videoMuted ? "camera-off" : "camera-on"}
                                   theme={theme}
-                                  className={`w-4 h-4 ${p.videoMuted ? "opacity-90" : "opacity-80"
-                                    }`}
+                                  className={`w-4 h-4 ${p.videoMuted ? "opacity-90" : "opacity-80"}`}
                                 />
                               </div>
                             </div>
@@ -1309,15 +1228,10 @@ export function RoomPage() {
                     </div>
                   </div>
 
-                  <div
-                    className={`p-4 border-t ${isLight ? "border-black/10" : "border-white/5"
-                      }`}
-                  >
+                  <div className={`p-4 border-t ${isLight ? "border-black/10" : "border-white/5"}`}>
                     <button
                       onClick={() => { }}
-                      className={`w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 ${isLight
-                          ? "bg-blue-600 hover:bg-blue-700 text-white"
-                          : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
+                      className={`w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 ${isLight ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
                         }`}
                     >
                       <span className="text-lg">+</span>
@@ -1330,53 +1244,29 @@ export function RoomPage() {
               {/* chat */}
               {rightTab === "chat" && (
                 <div className="h-full">
-                  <div
-                    className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
-                      }`}
-                  >
-                    <div
-                      className={`${isLight ? "text-black/80" : "text-white/85"
-                        } font-inter font-semibold`}
-                    >
-                      Chat
-                    </div>
+                  <div className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
+                    <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Chat</div>
                     <button
                       onClick={() => openRightTab(null)}
-                      className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                          ? "bg-black/5 hover:bg-black/10 text-black/60"
-                          : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
                         }`}
                       title="Close"
                     >
                       ✕
                     </button>
                   </div>
-
-                  <div className="p-4 h-[calc(100%-64px)]">
-                    {/* ✅ FIX: always use route param `id` as sessionId for chat */}
-                    {id ? <ChatPanel sessionId={id} /> : null}
-                  </div>
+                  <div className="p-4 h-[calc(100%-64px)]">{session?.id ? <ChatPanel sessionId={session.id} /> : null}</div>
                 </div>
               )}
 
               {/* intentions */}
               {rightTab === "intentions" && (
                 <div className="h-full">
-                  <div
-                    className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
-                      }`}
-                  >
-                    <div
-                      className={`${isLight ? "text-black/80" : "text-white/85"
-                        } font-inter font-semibold`}
-                    >
-                      Intentions
-                    </div>
+                  <div className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
+                    <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Intentions</div>
                     <button
                       onClick={() => openRightTab(null)}
-                      className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                          ? "bg-black/5 hover:bg-black/10 text-black/60"
-                          : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
                         }`}
                       title="Close"
                     >
@@ -1396,9 +1286,7 @@ export function RoomPage() {
       {/* FIXED BOTTOM CONTROLS */}
       <div className="fixed inset-x-0 bottom-0 z-50">
         <div className="w-full px-3 sm:px-5 pb-[calc(12px+env(safe-area-inset-bottom))]">
-          <div
-            className={`h-[64px] sm:h-[74px] rounded-2xl shadow-2xl backdrop-blur grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4 ${bottomBarBg}`}
-          >
+          <div className={`h-[64px] sm:h-[74px] rounded-2xl shadow-2xl backdrop-blur grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4 ${bottomBarBg}`}>
             {/* LEFT GROUP */}
             <div className="flex items-center gap-2" ref={moreMenuRef}>
               {/* MOBILE (<768): dropdown */}
@@ -1408,34 +1296,20 @@ export function RoomPage() {
                   className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
                   title="Menu"
                 >
-                  <span className={isLight ? "text-black/70" : "text-white/85"}>
-                    ⋯
-                  </span>
+                  <span className={isLight ? "text-black/70" : "text-white/85"}>⋯</span>
                 </button>
 
                 {showMoreMenu && (
                   <div className="absolute bottom-[76px] sm:bottom-[86px] left-0">
-                    <div
-                      className={`w-[240px] rounded-2xl shadow-2xl overflow-hidden ${isLight
-                          ? "bg-white border border-black/10"
-                          : "bg-[#020617] border border-white/10"
-                        }`}
-                    >
+                    <div className={`w-[240px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}>
                       <button
                         onClick={() => {
                           openRightTab("participants");
                           setShowMoreMenu(false);
                         }}
-                        className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight
-                            ? "text-black/75 hover:bg-black/5"
-                            : "text-white/85 hover:bg-white/5"
-                          }`}
+                        className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
                       >
-                        <Icon
-                          name="participants"
-                          theme={theme}
-                          className="w-4 h-4 opacity-90"
-                        />
+                        <Icon name="participants" theme={theme} className="w-4 h-4 opacity-90" />
                         <span>Participants</span>
                       </button>
 
@@ -1444,10 +1318,7 @@ export function RoomPage() {
                           openRightTab("chat");
                           setShowMoreMenu(false);
                         }}
-                        className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight
-                            ? "text-black/75 hover:bg-black/5"
-                            : "text-white/85 hover:bg-white/5"
-                          }`}
+                        className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
                       >
                         <Icon name="chat" theme={theme} className="w-4 h-4 opacity-90" />
                         <span>Chat</span>
@@ -1458,16 +1329,9 @@ export function RoomPage() {
                           openRightTab("intentions");
                           setShowMoreMenu(false);
                         }}
-                        className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight
-                            ? "text-black/75 hover:bg-black/5"
-                            : "text-white/85 hover:bg-white/5"
-                          }`}
+                        className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
                       >
-                        <Icon
-                          name="intentions"
-                          theme={theme}
-                          className="w-4 h-4 opacity-90"
-                        />
+                        <Icon name="intentions" theme={theme} className="w-4 h-4 opacity-90" />
                         <span>Intentions</span>
                       </button>
 
@@ -1479,16 +1343,9 @@ export function RoomPage() {
                           setTimeout(() => loadDevices(), 0);
                           setShowMoreMenu(false);
                         }}
-                        className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight
-                            ? "text-black/75 hover:bg-black/5"
-                            : "text-white/85 hover:bg-white/5"
-                          }`}
+                        className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
                       >
-                        <Icon
-                          name="settings"
-                          theme={theme}
-                          className="w-4 h-4 opacity-90"
-                        />
+                        <Icon name="settings" theme={theme} className="w-4 h-4 opacity-90" />
                         <span>Video settings</span>
                       </button>
                     </div>
@@ -1545,11 +1402,7 @@ export function RoomPage() {
                 }
                 title="Toggle mic"
               >
-                <Icon
-                  name={isAudioMuted ? "mic-off" : "mic-on"}
-                  theme={theme}
-                  className="w-5 h-5"
-                />
+                <Icon name={isAudioMuted ? "mic-off" : "mic-on"} theme={theme} className="w-5 h-5" />
               </button>
 
               <button
@@ -1560,11 +1413,7 @@ export function RoomPage() {
                 }
                 title="Toggle camera"
               >
-                <Icon
-                  name={isVideoMuted ? "camera-off" : "camera-on"}
-                  theme={theme}
-                  className="w-5 h-5"
-                />
+                <Icon name={isVideoMuted ? "camera-off" : "camera-on"} theme={theme} className="w-5 h-5" />
               </button>
 
               <button
@@ -1590,14 +1439,9 @@ export function RoomPage() {
 
                 {showReactionsMenu && (
                   <div
-                    className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl ${isLight
-                        ? "bg-white border border-black/10"
-                        : "bg-[#020617] border border-white/10"
-                      }`}
+                    className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}
                   >
-                    {(
-                      ["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown"] as ReactionType[]
-                    ).map((t) => (
+                    {(["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown"] as ReactionType[]).map((t) => (
                       <button
                         key={t}
                         onClick={() => {
@@ -1619,8 +1463,7 @@ export function RoomPage() {
             <div className="flex items-center justify-end gap-2 sm:gap-3">
               <button
                 onClick={handleLeave}
-                className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${isLight ? "bg-red-600 hover:bg-red-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"
-                  }`}
+                className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${isLight ? "bg-red-600 hover:bg-red-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"}`}
                 title="Leave"
               >
                 <Icon name="leave" theme={theme} className="w-5 h-5" />
@@ -1656,9 +1499,7 @@ export function RoomPage() {
         }}
       />
 
-      {selectedUser && (
-        <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
-      )}
+      {selectedUser && <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />}
     </div>
   );
 }

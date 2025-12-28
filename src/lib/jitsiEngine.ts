@@ -3,9 +3,16 @@
 // Ultra-stable subscriptions: no-op caching + delayed hard reset + cooldown
 // ✅ Added: targeted “black video” recovery (reattach per participant + optional subs bump)
 // ✅ Fixed: do NOT treat local camera/audio track add/remove as topology change (prevents global resub churn on toggleVideo)
+//
+// ✅ UPDATED (Native Jitsi background effects):
+// - Removed custom ./backgroundEffect usage
+// - Uses vendored Jitsi Meet virtual background implementation:
+//   src/lib/jitsiEffects/virtualBackground/{index.ts, JitsiStreamBackgroundEffect.ts, vendor/tflite/*}
+// - Applies effect via localVideoTrack.setEffect(effect)
+// - Re-applies effect after camera change / track recreation
 // ============================================================================
 
-import { createBackgroundEffect, BgMode, JitsiStreamEffect } from "./backgroundEffect";
+import { createVirtualBackgroundEffect } from "./jitsiEffects/virtualBackground";
 
 declare global {
   interface Window {
@@ -34,6 +41,8 @@ export type JitsiEngineCallbacks = {
   onReactionReceived?: (fromId: string, reaction: string) => void;
   onError?: (message: string) => void;
 };
+
+export type BgMode = "none" | "blur" | "image";
 
 const JITSI_DOMAIN = "jitsi.lukassodesign.site";
 
@@ -138,8 +147,8 @@ export class JitsiEngine {
   // ✅ stable: soft watchdog (not every 3s)
   private subsWatchdog: any = null;
 
-  // REAL BG EFFECT (Your custom effect object)
-  private videoEffect: JitsiStreamEffect | undefined = undefined;
+  // REAL BG EFFECT (Native Jitsi effect object)
+  private videoEffect: any | undefined = undefined;
   private bgPrefs: { mode: BgMode; imageUrl?: string } = { mode: "none" };
   private bgApplying = false;
   private effectsSupported = false;
@@ -474,16 +483,10 @@ export class JitsiEngine {
     this.effectsSupported = !!hasSetEffect;
 
     try {
-      const hasEffectsModule = !!this.JitsiMeetJS?.effects;
-      const hasFactory = typeof this.JitsiMeetJS?.effects?.createVirtualBackgroundEffect === "function";
       console.log(
-        "[Jitsi][effects] module:",
-        hasEffectsModule,
-        "createVB:",
-        hasFactory,
-        "track.setEffect:",
+        "[Jitsi][effects] track.setEffect:",
         typeof (t as any)?.setEffect,
-        "=> supportedForCustom:",
+        "=> supported:",
         this.effectsSupported
       );
     } catch { }
@@ -558,7 +561,7 @@ export class JitsiEngine {
   }
 
   // ========================================================================
-  // BG EFFECT CORE
+  // BG EFFECT CORE (Native Jitsi Virtual Background Effect)
   // ========================================================================
   private async clearBgEffectOnTrack(track: any) {
     if (!track) return;
@@ -579,6 +582,19 @@ export class JitsiEngine {
       await (this.videoEffect as any)?.stopEffect?.();
     } catch { }
     this.videoEffect = undefined;
+  }
+
+  private buildVirtualBackgroundOptions() {
+    if (this.bgPrefs.mode === "blur") {
+      // Jitsi Meet expects { backgroundType: 'blur' }
+      return { backgroundType: "blur" };
+    }
+    if (this.bgPrefs.mode === "image") {
+      if (!this.bgPrefs.imageUrl) return null;
+      // Jitsi Meet expects { backgroundType: 'image', virtualSource: <url> }
+      return { backgroundType: "image", virtualSource: this.bgPrefs.imageUrl };
+    }
+    return null;
   }
 
   private async applyBgEffectToTrack(track: any) {
@@ -614,20 +630,26 @@ export class JitsiEngine {
 
     await this.clearBgEffectOnTrack(track);
 
-    const effect = await createBackgroundEffect({
-      mode: this.bgPrefs.mode,
-      imageUrl: this.bgPrefs.imageUrl,
-      blurValue: 25,
-      fps: 20,
-    });
-
-    if (!effect) {
-      console.warn("[bg] createBackgroundEffect returned empty (missing imageUrl or error)");
+    const vb = this.buildVirtualBackgroundOptions();
+    if (!vb) {
+      console.warn("[bg] invalid vb options (missing imageUrl?)");
       return;
     }
 
     this.bgApplying = true;
     try {
+      // ✅ Native Jitsi effect (vendored from jitsi-meet)
+      const effect = await createVirtualBackgroundEffect(vb as any);
+
+      // Some builds expose isEnabled(track); keep safe
+      try {
+        if (effect?.isEnabled && !effect.isEnabled(track)) {
+          console.warn("[bg] effect.isEnabled returned false; clearing");
+          await track.setEffect(undefined);
+          return;
+        }
+      } catch { }
+
       await track.setEffect(effect);
       this.videoEffect = effect;
 
@@ -643,10 +665,10 @@ export class JitsiEngine {
         await track.setEffect(undefined);
       } catch { }
       try {
-        await effect.dispose?.();
+        await this.videoEffect?.dispose?.();
       } catch { }
       try {
-        await (effect as any)?.stopEffect?.();
+        await (this.videoEffect as any)?.stopEffect?.();
       } catch { }
       this.videoEffect = undefined;
     } finally {
@@ -675,11 +697,7 @@ export class JitsiEngine {
     this.refreshEffectsSupport(t);
 
     if (!this.effectsSupported) {
-      console.warn(
-        "[bg] Requested",
-        opts.mode,
-        "but track.setEffect not supported. Keeping video as-is."
-      );
+      console.warn("[bg] Requested", opts.mode, "but track.setEffect not supported. Keeping video as-is.");
       return;
     }
 
@@ -737,6 +755,7 @@ export class JitsiEngine {
 
           await this.localVideoTrack.setDevice(videoInputId);
 
+          // ✅ Re-apply after device switch (effect often drops)
           setTimeout(() => {
             void this.reapplyBgIfNeeded();
           }, 0);
@@ -842,24 +861,12 @@ export class JitsiEngine {
       if (typeof lvl !== "undefined") this.JitsiMeetJS.setLogLevel(lvl);
     } catch { }
 
+    // ✅ IMPORTANT: do NOT rely on JitsiMeetJS.effects module / init effects bundle here.
+    // We use vendored createVirtualBackgroundEffect + track.setEffect(effect).
     this.JitsiMeetJS.init({
       disableP2P: true,
       disableAudioLevels: true,
-      effects: {
-        tfliteModel: "/libs/selfie_segmentation_landscape.tflite",
-        tfliteWasm: "/libs/tflite.wasm",
-        tfliteSimdWasm: "/libs/tflite-simd.wasm",
-        tfjsWasm: "/libs/tfjs-backend-wasm.wasm",
-        tfjsSimdWasm: "/libs/tfjs-backend-wasm-simd.wasm",
-        tfjsThreadedSimdWasm: "/libs/tfjs-backend-wasm-threaded-simd.wasm",
-      },
     });
-
-    try {
-      const hasEffects = !!this.JitsiMeetJS?.effects;
-      const hasCreate = typeof this.JitsiMeetJS?.effects?.createVirtualBackgroundEffect === "function";
-      console.log("[Jitsi] effectsModule:", hasEffects, "createVirtualBackgroundEffect:", hasCreate);
-    } catch { }
 
     const serviceUrl = this.config.websocket || this.config.bosh || `wss://${JITSI_DOMAIN}/xmpp-websocket`;
 
@@ -1285,12 +1292,7 @@ export class JitsiEngine {
       this.refreshEffectsSupport(this.localVideoTrack);
 
       try {
-        console.log(
-          "[dbg] localVideoTrack setEffect:",
-          typeof (this.localVideoTrack as any)?.setEffect,
-          "effectsFactory:",
-          typeof (this.JitsiMeetJS as any)?.effects?.createVirtualBackgroundEffect
-        );
+        console.log("[dbg] localVideoTrack setEffect:", typeof (this.localVideoTrack as any)?.setEffect);
       } catch { }
 
       const entry = this.tracksByParticipant.get(this.localUserId) || {};
