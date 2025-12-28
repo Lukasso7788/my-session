@@ -13,11 +13,14 @@
 //
 // ✅ PATCH (SAFE stream adapter for startEffect input):
 // - Wraps effect.startEffect(...) to always receive a MediaStream
-// - IMPORTANT: wrapper preserves prototype methods (isEnabled) — no spread
 //
 // ✅ PATCH (SERIALIZED setEffect + SAFE dispose):
 // - All track.setEffect calls go through per-track queue (prevents: "setEffect already in progress!")
 // - Dispose waits for pending effect ops on that track
+//
+// ✅ PATCH #1 (CAM TOGGLE AFTER BLUR FIX):
+// - When turning camera OFF and bg is enabled: clear effect BEFORE muting
+// - When turning camera ON: ensure track, unmute, then re-apply bg
 // ============================================================================
 
 import { createVirtualBackgroundEffect as createVendoredVirtualBackgroundEffect } from "./jitsiEffects/virtualBackground";
@@ -172,7 +175,7 @@ export class JitsiEngine {
   private effectQueueByTrack = new WeakMap<any, Promise<void>>();
 
   // Some lib builds don’t tolerate null/undefined in setEffect — they expect an object with isEnabled().
-  // Use a passthrough effect that returns the original stream.
+  // Use a passthrough effect that returns the original stream synchronously.
   private readonly PASSTHROUGH_EFFECT = {
     startEffect: (stream: MediaStream) => stream, // sync
     stopEffect: () => { },
@@ -624,21 +627,6 @@ export class JitsiEngine {
   }
 
   // ========================================================================
-  // ✅ EFFECT API GUARANTEE
-  // ========================================================================
-  private ensureEffectApi(effect: any) {
-    if (!effect) return effect;
-
-    if (typeof effect.isEnabled !== "function") effect.isEnabled = () => true;
-    if (typeof effect.isSupported !== "function") effect.isSupported = () => true;
-
-    if (typeof effect.stopEffect !== "function") effect.stopEffect = () => { };
-    if (typeof effect.dispose !== "function") effect.dispose = () => { };
-
-    return effect;
-  }
-
-  // ========================================================================
   // BG EFFECT CORE
   // ========================================================================
 
@@ -646,60 +634,49 @@ export class JitsiEngine {
    * SAFETY WRAPPER:
    * Some lib-jitsi-meet builds call effect.startEffect(...) with NOT a MediaStream.
    * Jitsi effects expect a MediaStream with getTracks().
-   *
-   * IMPORTANT:
-   * - do NOT use {...effect} spread => loses prototype methods (isEnabled) for class-based effects
-   * - use Object.create(effect) to preserve prototype chain
-   * - support async startEffect too (your vendored effect is async)
    */
   private wrapEffectToForceMediaStream(effect: any) {
     if (!effect || typeof effect.startEffect !== "function") return effect;
 
-    this.ensureEffectApi(effect);
+    return {
+      ...effect,
+      startEffect: (streamLike: any) => {
+        let s: any = streamLike;
 
-    const isPromiseLike = (x: any) => x && typeof x.then === "function";
+        if (s && typeof s.getTracks !== "function") {
+          // MediaStreamTrack
+          if (typeof MediaStreamTrack !== "undefined" && s instanceof MediaStreamTrack) {
+            s = new MediaStream([s]);
+          }
+          // sometimes { track: MediaStreamTrack }
+          else if (s?.track && typeof MediaStreamTrack !== "undefined" && s.track instanceof MediaStreamTrack) {
+            s = new MediaStream([s.track]);
+          }
+          // sometimes wrapper exposing getOriginalStream()
+          else if (typeof s?.getOriginalStream === "function") {
+            const maybe = s.getOriginalStream();
+            if (maybe && typeof maybe.then === "function") {
+              // cannot resolve async here (must be sync)
+              throw new Error("[bg] startEffect received async getOriginalStream; build expects sync MediaStream");
+            }
+            s = maybe;
+          }
+        }
 
-    const toMediaStreamOrPromise = (streamLike: any): MediaStream | Promise<MediaStream> => {
-      let s: any = streamLike;
+        if (!s || typeof s.getTracks !== "function") {
+          throw new Error("[bg] startEffect received non-MediaStream");
+        }
 
-      // Already MediaStream
-      if (s && typeof s.getTracks === "function") return s as MediaStream;
+        const out = effect.startEffect(s);
 
-      // MediaStreamTrack
-      if (typeof MediaStreamTrack !== "undefined" && s instanceof MediaStreamTrack) {
-        return new MediaStream([s]);
-      }
+        // If vendor returns Promise here -> this build will likely break on toggles
+        if (out && typeof out.then === "function") {
+          throw new Error("[bg] startEffect returned Promise; this build expects sync MediaStream");
+        }
 
-      // sometimes { track: MediaStreamTrack }
-      if (s?.track && typeof MediaStreamTrack !== "undefined" && s.track instanceof MediaStreamTrack) {
-        return new MediaStream([s.track]);
-      }
-
-      // sometimes wrapper exposing getOriginalStream()
-      if (typeof s?.getOriginalStream === "function") {
-        const maybe = s.getOriginalStream();
-        if (isPromiseLike(maybe)) return Promise.resolve(maybe);
-        if (maybe && typeof maybe.getTracks === "function") return maybe as MediaStream;
-      }
-
-      throw new Error("[bg] startEffect received non-MediaStream");
+        return out;
+      },
     };
-
-    // Preserve prototype chain (do NOT spread)
-    const wrapped: any = Object.create(effect);
-    this.ensureEffectApi(wrapped);
-
-    const origStart = effect.startEffect.bind(effect);
-
-    wrapped.startEffect = (streamLike: any, ...rest: any[]) => {
-      const msOrP = toMediaStreamOrPromise(streamLike);
-      if (isPromiseLike(msOrP)) {
-        return Promise.resolve(msOrP).then((ms) => origStart(ms, ...rest));
-      }
-      return origStart(msOrP as MediaStream, ...rest);
-    };
-
-    return wrapped;
   }
 
   private buildVirtualBackgroundOptions() {
@@ -741,16 +718,22 @@ export class JitsiEngine {
       return null;
     }
 
-    // Some builds used to be picky about async startEffect, but your vendored effect is async.
-    // We'll allow it, but log once.
+    // If startEffect is async => incompatible for this build (it breaks camera toggles)
     if (this.isAsyncFunction(effect.startEffect)) {
-      try {
-        console.warn(`[bg] ${pick.kind} effect.startEffect is async (allowing it).`);
-      } catch { }
+      this.markEffectsIncompatible(`${pick.kind} effect.startEffect is async (incompatible with this build)`);
+      return null;
     }
 
-    // Ensure required API exists on the returned object
-    this.ensureEffectApi(effect);
+    // Some builds assume isEnabled exists
+    if (typeof effect.isEnabled !== "function") effect.isEnabled = () => true;
+
+    // If isSupported exists and is false => do not apply
+    try {
+      if (typeof effect.isSupported === "function") {
+        // some implementations want track; some don't
+        // we'll check later with track if needed
+      }
+    } catch { }
 
     this.markEffectsOk();
     return effect;
@@ -797,7 +780,7 @@ export class JitsiEngine {
     })();
     if (wasMuted) return;
 
-    // If we already know build is incompatible, do nothing
+    // If we already know build is incompatible (async startEffect), do nothing
     if (this.effectsCompatibility === "incompatible") {
       console.warn("[bg] Effect requested but incompatible build:", this.effectsIncompatReason);
       return;
@@ -832,13 +815,12 @@ export class JitsiEngine {
 
       let effect = await this.createEffectObject(vb);
       if (!effect) {
+        // already marked incompatible OR factory failed
         await this.safeSetEffect(track, this.PASSTHROUGH_EFFECT, "apply:no-effect");
         return;
       }
 
-      // Wrap WITHOUT losing prototype methods
       effect = this.wrapEffectToForceMediaStream(effect);
-      this.ensureEffectApi(effect);
 
       // Guards with track
       try {
@@ -1212,6 +1194,9 @@ export class JitsiEngine {
     } catch { }
   }
 
+  // ========================================================================
+  // ✅ PATCH #1: FIX camera toggle after blur/background effect
+  // ========================================================================
   async toggleVideoMute(): Promise<void> {
     if (!this.localUserId) return;
 
@@ -1224,19 +1209,31 @@ export class JitsiEngine {
     const local = this.participants[this.localUserId];
     if (!local || !this.localVideoTrack) return;
 
-    const track = this.localVideoTrack;
-
     try {
-      if (track.isMuted && track.isMuted()) {
-        await track.unmute();
+      // IMPORTANT: track might have been recreated in ensureLocalVideoTrack()
+      let track = this.localVideoTrack!;
+      const isMutedNow = track.isMuted?.() === true;
+
+      if (isMutedNow) {
+        // Turning ON camera
+        await this.ensureLocalVideoTrack();
+        track = this.localVideoTrack!;
+        await track.unmute?.();
         local.videoMuted = false;
 
-        // Reapply bg (queued)
+        // Re-apply bg AFTER unmute (queued)
         await this.reapplyBgIfNeeded();
       } else {
-        // Before muting, ensure no effect op is in-flight
+        // Turning OFF camera
+        // ✅ CRITICAL: clear effect BEFORE muting, иначе часто камера не возвращается
+        if (this.bgPrefs.mode !== "none") {
+          await this.clearBgEffectOnTrack(track);
+        }
+
+        // Ensure no effect op is in-flight
         await this.waitEffectIdle(track);
-        await track.mute();
+
+        await track.mute?.();
         local.videoMuted = true;
       }
 
@@ -1245,7 +1242,9 @@ export class JitsiEngine {
       // ✅ IMPORTANT: no hard reset on local mute/unmute
       this.scheduleApplyVideoSubscriptions(0, false);
       this.scheduleHealthTickSoon();
-    } catch { }
+    } catch (e) {
+      console.warn("[cam] toggleVideoMute failed:", e);
+    }
   }
 
   async toggleScreenShare(): Promise<void> {
