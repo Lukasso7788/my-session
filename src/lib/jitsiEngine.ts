@@ -11,8 +11,11 @@
 // - Applies effect via localVideoTrack.setEffect(effect)
 // - Re-applies effect after camera change / track recreation
 //
-// ✅ PATCH (SAFE stream adapter for setEffect):
-// - Wraps effect.startEffect(...) to always receive a MediaStream (fixes: stream.getTracks is not a function)
+// ✅ PATCH (SAFE effect normalization + startEffect stream adapter):
+// - DO NOT clone effect via {...effect} (would drop prototype methods like isEnabled / isSupported)
+// - Ensures effect has isEnabled/isSupported (some lib-jitsi-meet builds expect these)
+// - Patches effect.startEffect(...) IN-PLACE to always receive a MediaStream
+//   (fixes: stream.getTracks is not a function)
 // ============================================================================
 
 import { createVirtualBackgroundEffect } from "./jitsiEffects/virtualBackground";
@@ -157,7 +160,7 @@ export class JitsiEngine {
   private effectsSupported = false;
 
   // ==========================================================================
-  // ✅ TARGETED BLACK-VIDEO RECOVERY (Point #4)
+  // ✅ TARGETED BLACK-VIDEO RECOVERY
   // ==========================================================================
   /**
    * Engine doesn’t own DOM by default. VideoRoom can (optionally) register <video> elements here.
@@ -483,12 +486,7 @@ export class JitsiEngine {
     this.effectsSupported = !!hasSetEffect;
 
     try {
-      console.log(
-        "[Jitsi][effects] track.setEffect:",
-        typeof (t as any)?.setEffect,
-        "=> supported:",
-        this.effectsSupported
-      );
+      console.log("[Jitsi][effects] track.setEffect:", typeof (t as any)?.setEffect, "=> supported:", this.effectsSupported);
     } catch { }
 
     return this.effectsSupported;
@@ -509,9 +507,7 @@ export class JitsiEngine {
     const tracks = await this.JitsiMeetJS.createLocalTracks({
       devices: ["video"],
       constraints: {
-        video: this.mediaSettings.videoInputId
-          ? { deviceId: { exact: this.mediaSettings.videoInputId } }
-          : true,
+        video: this.mediaSettings.videoInputId ? { deviceId: { exact: this.mediaSettings.videoInputId } } : true,
       },
     });
 
@@ -565,42 +561,67 @@ export class JitsiEngine {
   // ========================================================================
 
   /**
-   * ✅ SAFETY WRAPPER:
-   * Some lib-jitsi-meet builds call effect.startEffect(...) with something that is NOT a MediaStream.
-   * Jitsi effects expect a MediaStream with getTracks().
-   * This wrapper coerces common shapes (MediaStreamTrack, {track}, wrappers) into MediaStream.
+   * ✅ Normalize effect: make sure lib-jitsi-meet won't crash expecting methods.
+   * Some builds call effect.isEnabled()/isSupported() unconditionally.
    */
-  private wrapEffectToForceMediaStream(effect: any) {
+  private normalizeJitsiEffect(effect: any) {
+    if (!effect || typeof effect !== "object") return effect;
+
+    try {
+      if (typeof effect.isEnabled !== "function") effect.isEnabled = () => true;
+      if (typeof effect.isSupported !== "function") effect.isSupported = () => true;
+
+      // If dispose is missing but stopEffect exists, alias it
+      if (typeof effect.dispose !== "function" && typeof effect.stopEffect === "function") {
+        effect.dispose = () => effect.stopEffect();
+      }
+    } catch {
+      // ignore
+    }
+
+    return effect;
+  }
+
+  /**
+   * ✅ Patch startEffect IN-PLACE (DO NOT {...effect}!)
+   * Otherwise we'd drop prototype methods and get "isEnabled is not a function".
+   */
+  private patchStartEffectToForceMediaStream(effect: any) {
     if (!effect || typeof effect.startEffect !== "function") return effect;
 
-    return {
-      ...effect,
-      startEffect: async (streamLike: any) => {
-        let s: any = await Promise.resolve(streamLike);
+    // Prevent double patching
+    if ((effect as any).__mysession_patched_startEffect) return effect;
+    (effect as any).__mysession_patched_startEffect = true;
 
-        // If Jitsi passes a track instead of stream
-        if (s && typeof s.getTracks !== "function") {
-          // MediaStreamTrack
-          if (typeof MediaStreamTrack !== "undefined" && s instanceof MediaStreamTrack) {
-            s = new MediaStream([s]);
-          }
-          // sometimes { track: MediaStreamTrack }
-          else if (s?.track && typeof MediaStreamTrack !== "undefined" && s.track instanceof MediaStreamTrack) {
-            s = new MediaStream([s.track]);
-          }
-          // sometimes wrapper exposing getOriginalStream()
-          else if (typeof s?.getOriginalStream === "function") {
-            s = await Promise.resolve(s.getOriginalStream());
-          }
+    const original = effect.startEffect.bind(effect);
+
+    effect.startEffect = async (streamLike: any) => {
+      let s: any = await Promise.resolve(streamLike);
+
+      // If Jitsi passes a track instead of a stream
+      if (s && typeof s.getTracks !== "function") {
+        // MediaStreamTrack
+        if (typeof MediaStreamTrack !== "undefined" && s instanceof MediaStreamTrack) {
+          s = new MediaStream([s]);
         }
-
-        if (!s || typeof s.getTracks !== "function") {
-          throw new Error("[bg] startEffect received non-MediaStream");
+        // sometimes { track: MediaStreamTrack }
+        else if (s?.track && typeof MediaStreamTrack !== "undefined" && s.track instanceof MediaStreamTrack) {
+          s = new MediaStream([s.track]);
         }
+        // sometimes wrapper exposing getOriginalStream()
+        else if (typeof s?.getOriginalStream === "function") {
+          s = await Promise.resolve(s.getOriginalStream());
+        }
+      }
 
-        return effect.startEffect(s);
-      },
+      if (!s || typeof s.getTracks !== "function") {
+        throw new Error("[bg] startEffect received non-MediaStream");
+      }
+
+      return original(s);
     };
+
+    return effect;
   }
 
   private async clearBgEffectOnTrack(track: any) {
@@ -609,9 +630,10 @@ export class JitsiEngine {
     const hasSetEffect = typeof track.setEffect === "function";
     if (hasSetEffect) {
       try {
-        await track.setEffect(undefined);
+        // ✅ safer across builds than undefined
+        await track.setEffect(null);
       } catch (e) {
-        console.warn("[bg] clear setEffect(undefined) failed:", e);
+        console.warn("[bg] clear setEffect(null) failed:", e);
       }
     }
 
@@ -699,25 +721,29 @@ export class JitsiEngine {
         effect = await createVirtualBackgroundEffect(vb as any);
       }
 
-      // ✅ Critical: coerce startEffect(...) input into MediaStream
-      effect = this.wrapEffectToForceMediaStream(effect);
+      // ✅ Normalize + patch IN-PLACE
+      effect = this.normalizeJitsiEffect(effect);
+      effect = this.patchStartEffectToForceMediaStream(effect);
+      effect = this.normalizeJitsiEffect(effect);
 
-      // Some builds expose isEnabled(track); keep safe
+      // Optional: soft checks (avoid mismatched signatures)
       try {
-        if (effect?.isEnabled && !effect.isEnabled(track)) {
-          console.warn("[bg] effect.isEnabled returned false; clearing");
-          await track.setEffect(undefined);
-          return;
+        if (typeof effect?.isSupported === "function") {
+          const ok = effect.isSupported.length >= 1 ? effect.isSupported(track) : effect.isSupported();
+          if (!ok) {
+            console.warn("[bg] effect.isSupported returned false; clearing");
+            await track.setEffect(null);
+            return;
+          }
         }
       } catch { }
 
-      // Some builds expose isSupported(...); keep safe (avoid bf.isSupported crash)
       try {
-        if (typeof effect?.isSupported === "function") {
-          const ok = effect.isSupported(track);
+        if (typeof effect?.isEnabled === "function") {
+          const ok = effect.isEnabled.length >= 1 ? effect.isEnabled(track) : effect.isEnabled();
           if (!ok) {
-            console.warn("[bg] effect.isSupported returned false; clearing");
-            await track.setEffect(undefined);
+            console.warn("[bg] effect.isEnabled returned false; clearing");
+            await track.setEffect(null);
             return;
           }
         }
@@ -735,7 +761,7 @@ export class JitsiEngine {
     } catch (e) {
       console.warn("[bg] setEffect failed, clearing:", e);
       try {
-        await track.setEffect(undefined);
+        await track.setEffect(null);
       } catch { }
       try {
         await this.videoEffect?.dispose?.();
@@ -934,7 +960,6 @@ export class JitsiEngine {
       if (typeof lvl !== "undefined") this.JitsiMeetJS.setLogLevel(lvl);
     } catch { }
 
-    // ✅ IMPORTANT: do NOT rely on JitsiMeetJS.effects module / init effects bundle here.
     // We use vendored createVirtualBackgroundEffect + track.setEffect(effect).
     this.JitsiMeetJS.init({
       disableP2P: true,
@@ -1028,7 +1053,6 @@ export class JitsiEngine {
       this.emitParticipants();
 
       // ✅ IMPORTANT: no hard reset on local mute/unmute
-      // subscriptions are unchanged; UI hides video via CSS.
       this.scheduleApplyVideoSubscriptions(0, false);
       this.scheduleHealthTickSoon();
     } catch { }
@@ -1046,8 +1070,7 @@ export class JitsiEngine {
       const tracks = await this.JitsiMeetJS.createLocalTracks({ devices: ["desktop"] });
 
       const screenTrack =
-        tracks.find((t: any) => this.isDesktopTrack(t)) ||
-        tracks.find((t: any) => t.getType && t.getType() === "desktop");
+        tracks.find((t: any) => this.isDesktopTrack(t)) || tracks.find((t: any) => t.getType && t.getType() === "desktop");
 
       if (!screenTrack) return;
 
