@@ -1,8 +1,9 @@
 // src/pages/RoomPage.tsx
 // ROOMPAGE + JITSI ENGINE + VIDEO UI (UPDATED)
-// ✅ Full-width layout with small safe padding (top/video aligned to bottom controls width)
-// ✅ Light/Dark theme toggle (icon-only, persisted in localStorage)
-// ✅ All control icons loaded from /public/icons/*.svg (you will drop svgs there)
+// ✅ Full-width layout aligned with bottom controls padding
+// ✅ Light/Dark theme switcher (icon-only, persisted in localStorage)
+// ✅ Icons loaded from /public/icons/*.svg with theme fallback:
+//    tries /icons/<name>-<theme>.svg, falls back to /icons/<name>.svg
 // ✅ VideoRoom has NO extra black frame; tiles handle speaking highlight + mic icon inside
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -33,6 +34,7 @@ type RoomTheme = "dark" | "light";
 
 function Icon({
   name,
+  theme,
   className = "w-5 h-5",
   alt = "",
 }: {
@@ -47,13 +49,30 @@ function Icon({
   | "participants"
   | "chat"
   | "intentions"
-  | "settings";
+  | "settings"
+  | "theme-sun"
+  | "theme-moon";
+  theme: RoomTheme;
   className?: string;
   alt?: string;
 }) {
+  const themedSrc = `/icons/${name}-${theme}.svg`;
+  const fallbackSrc = `/icons/${name}.svg`;
+
+  const [src, setSrc] = useState(themedSrc);
+
+  // when theme changes, try themed first again
+  useEffect(() => {
+    setSrc(themedSrc);
+  }, [themedSrc]);
+
   return (
     <img
-      src={`/icons/${name}.svg`}
+      src={src}
+      onError={() => {
+        // fallback to non-themed icon if themed is missing
+        if (src !== fallbackSrc) setSrc(fallbackSrc);
+      }}
       className={className}
       alt={alt}
       draggable={false}
@@ -928,6 +947,19 @@ export function RoomPage() {
 
   const participantsCount = participants.length;
 
+  // theme switcher UI
+  const switchTrack =
+    "w-[54px] h-[30px] rounded-full border relative transition flex items-center px-[3px]";
+
+  const switchTrackCls = isLight
+    ? "bg-black/5 border-black/10 hover:bg-black/10"
+    : "bg-white/5 border-white/10 hover:bg-white/10";
+
+  const switchThumb =
+    "absolute top-[3px] w-[24px] h-[24px] rounded-full shadow-md transition-transform";
+
+  const switchThumbCls = isLight ? "bg-white" : "bg-[#0B1220]";
+
   if (loading) {
     return (
       <div className={`flex h-screen justify-center items-center ${pageBg}`}>
@@ -946,7 +978,7 @@ export function RoomPage() {
 
   return (
     <div className={`min-h-screen ${pageBg}`}>
-      {/* ✅ align top/video width with bottom controls: use same px as bottom (px-3 sm:px-5) */}
+      {/* ✅ match bottom controls padding: px-3 sm:px-5 */}
       <div className="w-full px-3 sm:px-5 pt-5 pb-[calc(110px+env(safe-area-inset-bottom))] flex flex-col gap-5 min-h-screen">
         {/* TOP BAR */}
         <div className={`flex w-full rounded-2xl overflow-hidden ${topBarBg}`}>
@@ -965,30 +997,45 @@ export function RoomPage() {
                 {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
                   <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}>
                     <span className={isLight ? "text-black/60 text-[12px]" : "text-white/70 text-[12px]"}>⏱</span>
-                    <span className={`font-inter text-[14px] ${isLight ? "text-black/75" : "text-white/90"}`}>
+                    <span className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"}`}>
                       {remainingTime || "--:--"}
                     </span>
                   </div>
                 )}
 
-                {/* ✅ Theme toggle (icon-only) */}
+                {/* ✅ Theme switcher (no text) */}
                 <button
                   onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-                  className={`w-10 h-10 rounded-xl border flex items-center justify-center transition ${isLight
-                    ? "bg-black/5 border-black/10 hover:bg-black/10"
-                    : "bg-white/5 border-white/10 hover:bg-white/10"
-                    }`}
-                  title={isLight ? "Switch to dark" : "Switch to light"}
+                  className={`${switchTrack} ${switchTrackCls}`}
+                  title="Toggle theme"
+                  aria-label="Toggle theme"
                 >
-                  <img
-                    src={`/icons/${isLight ? "theme-moon" : "theme-sun"}-${theme}.svg`}
-                    className="w-5 h-5"
-                    alt=""
-                    draggable={false}
+                  {/* icons inside track */}
+                  <div className="w-full flex items-center justify-between px-[6px]">
+                    <Icon
+                      name="theme-sun"
+                      theme={theme}
+                      className={`w-4 h-4 ${isLight ? "opacity-90" : "opacity-60"}`}
+                      alt="Light"
+                    />
+                    <Icon
+                      name="theme-moon"
+                      theme={theme}
+                      className={`w-4 h-4 ${isLight ? "opacity-60" : "opacity-90"}`}
+                      alt="Dark"
+                    />
+                  </div>
+
+                  {/* thumb */}
+                  <div
+                    className={`${switchThumb} ${switchThumbCls}`}
+                    style={{
+                      transform: isLight ? "translateX(0px)" : "translateX(24px)",
+                    }}
                   />
                 </button>
 
-                {/* ✅ Host indicator (font size matched back; icon theme-aware) */}
+                {/* Host indicator (font size aligned) */}
                 {session.host_profile && (
                   <button
                     onClick={() => setSelectedUser(session.host_profile)}
@@ -998,16 +1045,16 @@ export function RoomPage() {
                       }`}
                   >
                     <img
-                      src={`/icons/host_session_icon-${theme}.svg`}
+                      src="/icons/host_session_icon.svg"
                       className="h-5 w-5 opacity-90"
                       alt=""
                       draggable={false}
                     />
-                    <span className="flex items-center gap-1 min-w-0">
-                      <span className={isLight ? "text-black/55" : "text-white/70"}>
+                    <span className="flex items-center gap-1 leading-none">
+                      <span className={isLight ? "font-normal text-black/55" : "font-normal text-white/70"}>
                         Host:
                       </span>
-                      <span className="font-semibold truncate max-w-[220px]">
+                      <span className="font-semibold">
                         {session.host_profile.full_name}
                       </span>
                     </span>
@@ -1040,7 +1087,7 @@ export function RoomPage() {
           }
         >
           {/* VIDEO AREA (no thick border frame) */}
-          <div className={`rounded-2xl overflow-hidden min-h-0 ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"} relative`}>
+          <div className={`rounded-2xl overflow-hidden min-h-0 ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"}`}>
             <div className="w-full h-full min-h-0">
               <VideoRoom
                 theme={theme}
@@ -1153,6 +1200,7 @@ export function RoomPage() {
                               >
                                 <Icon
                                   name={p.audioMuted ? "mic-off" : "mic-on"}
+                                  theme={theme}
                                   className={`w-4 h-4 ${p.audioMuted ? "opacity-90" : "opacity-80"}`}
                                 />
                               </div>
@@ -1168,6 +1216,7 @@ export function RoomPage() {
                               >
                                 <Icon
                                   name={p.videoMuted ? "camera-off" : "camera-on"}
+                                  theme={theme}
                                   className={`w-4 h-4 ${p.videoMuted ? "opacity-90" : "opacity-80"}`}
                                 />
                               </div>
@@ -1262,7 +1311,7 @@ export function RoomPage() {
                         className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"
                           }`}
                       >
-                        <Icon name="participants" className="w-4 h-4 opacity-90" />
+                        <Icon name="participants" theme={theme} className="w-4 h-4 opacity-90" />
                         <span>Participants</span>
                       </button>
 
@@ -1271,7 +1320,7 @@ export function RoomPage() {
                         className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"
                           }`}
                       >
-                        <Icon name="chat" className="w-4 h-4 opacity-90" />
+                        <Icon name="chat" theme={theme} className="w-4 h-4 opacity-90" />
                         <span>Chat</span>
                       </button>
 
@@ -1280,7 +1329,7 @@ export function RoomPage() {
                         className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"
                           }`}
                       >
-                        <Icon name="intentions" className="w-4 h-4 opacity-90" />
+                        <Icon name="intentions" theme={theme} className="w-4 h-4 opacity-90" />
                         <span>Intentions</span>
                       </button>
 
@@ -1295,7 +1344,7 @@ export function RoomPage() {
                         className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"
                           }`}
                       >
-                        <Icon name="settings" className="w-4 h-4 opacity-90" />
+                        <Icon name="settings" theme={theme} className="w-4 h-4 opacity-90" />
                         <span>Video settings</span>
                       </button>
                     </div>
@@ -1310,7 +1359,7 @@ export function RoomPage() {
                   className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
                   title="Participants"
                 >
-                  <Icon name="participants" className="w-5 h-5" />
+                  <Icon name="participants" theme={theme} className="w-5 h-5" />
                 </button>
 
                 <button
@@ -1318,7 +1367,7 @@ export function RoomPage() {
                   className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
                   title="Chat"
                 >
-                  <Icon name="chat" className="w-5 h-5" />
+                  <Icon name="chat" theme={theme} className="w-5 h-5" />
                 </button>
 
                 <button
@@ -1326,7 +1375,7 @@ export function RoomPage() {
                   className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
                   title="Intentions"
                 >
-                  <Icon name="intentions" className="w-5 h-5" />
+                  <Icon name="intentions" theme={theme} className="w-5 h-5" />
                 </button>
 
                 <button
@@ -1334,7 +1383,7 @@ export function RoomPage() {
                   className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
                   title="Video settings"
                 >
-                  <Icon name="settings" className="w-5 h-5" />
+                  <Icon name="settings" theme={theme} className="w-5 h-5" />
                 </button>
               </div>
             </div>
@@ -1349,7 +1398,7 @@ export function RoomPage() {
                 }
                 title="Toggle mic"
               >
-                <Icon name={isAudioMuted ? "mic-off" : "mic-on"} className="w-5 h-5" />
+                <Icon name={isAudioMuted ? "mic-off" : "mic-on"} theme={theme} className="w-5 h-5" />
               </button>
 
               <button
@@ -1360,7 +1409,7 @@ export function RoomPage() {
                 }
                 title="Toggle camera"
               >
-                <Icon name={isVideoMuted ? "camera-off" : "camera-on"} className="w-5 h-5" />
+                <Icon name={isVideoMuted ? "camera-off" : "camera-on"} theme={theme} className="w-5 h-5" />
               </button>
 
               <button
@@ -1371,7 +1420,7 @@ export function RoomPage() {
                 }
                 title="Share screen"
               >
-                <Icon name="screen-share" className="w-5 h-5" />
+                <Icon name="screen-share" theme={theme} className="w-5 h-5" />
               </button>
 
               {/* reactions */}
@@ -1381,7 +1430,7 @@ export function RoomPage() {
                   className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
                   title="Reactions"
                 >
-                  <Icon name="reaction" className="w-5 h-5" />
+                  <Icon name="reaction" theme={theme} className="w-5 h-5" />
                 </button>
 
                 {showReactionsMenu && (
@@ -1417,7 +1466,7 @@ export function RoomPage() {
                   }`}
                 title="Leave"
               >
-                <Icon name="leave" className="w-5 h-5" />
+                <Icon name="leave" theme={theme} className="w-5 h-5" />
                 <span className="text-[14px]">Leave</span>
               </button>
 
@@ -1426,7 +1475,7 @@ export function RoomPage() {
                 className="sm:hidden w-10 h-10 rounded-2xl bg-red-600 hover:bg-red-700 text-white flex items-center justify-center"
                 title="Leave"
               >
-                <Icon name="leave" className="w-5 h-5" />
+                <Icon name="leave" theme={theme} className="w-5 h-5" />
               </button>
             </div>
           </div>
