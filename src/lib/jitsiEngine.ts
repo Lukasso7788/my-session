@@ -178,6 +178,31 @@ export class JitsiEngine {
   // ✅ BG ops serializer (prevents races: join/apply/click/mute events)
   private bgOpQueue: Promise<void> = Promise.resolve();
   private bgOpSeq = 0;
+  // ✅ CAM ops serializer (prevents races with bg queue on hard toggle)
+  private camOpQueue: Promise<void> = Promise.resolve();
+  private camOpSeq = 0;
+  private camToggling = false;
+
+  private enqueueCamOp(label: string, fn: () => Promise<void>) {
+    const id = ++this.camOpSeq;
+
+    this.camOpQueue = this.camOpQueue
+      .catch(() => { })
+      .then(async () => {
+        try { console.debug(`[camQ#${id}] BEGIN ${label}`); } catch { }
+        await fn();
+        try { console.debug(`[camQ#${id}] END ${label}`); } catch { }
+      })
+      .catch((e) => {
+        console.warn(`[camQ#${id}] FAIL ${label}:`, e);
+      });
+
+    return this.camOpQueue;
+  }
+
+  private async waitBgIdle() {
+    try { await this.bgOpQueue; } catch { }
+  }
 
   private enqueueBgOp(label: string, fn: () => Promise<void>) {
     const id = ++this.bgOpSeq;
@@ -1558,6 +1583,9 @@ export class JitsiEngine {
   private async disableLocalVideoHard(reason: string) {
     if (this.disposed || !this.conference || !this.localUserId) return;
 
+    // avoid racing with bg apply/reapply operations
+    await this.waitBgIdle();
+
     let track = this.localVideoTrack;
 
     // If engine lost ref but conference still has local video track — grab it.
@@ -1672,9 +1700,13 @@ export class JitsiEngine {
       this.refreshEffectsSupport(newVideo);
 
       // Re-apply background if user had chosen it (even if blur was never used, harmless)
-      try {
-        await this.reapplyBgIfNeeded();
-      } catch { }
+      // ✅ Important: don't await bg queue here (can interleave / cause races).
+      // Reapply on next tick after conference track becomes stable.
+      setTimeout(() => {
+        if (this.disposed) return;
+        if (this.camToggling) return; // if still toggling for some reason, skip
+        void this.reapplyBgIfNeeded();
+      }, 0);
 
       this.rebuildParticipantsFromTracks();
 
@@ -1917,55 +1949,61 @@ export class JitsiEngine {
   // ✅ PATCH: Make video toggle fully HARD (remove/add) to avoid multi-participant + BG edge cases
   // ========================================================================
   async toggleVideoMute(): Promise<void> {
-    if (!this.localUserId) return;
+    return this.enqueueCamOp("toggleVideoMute", async () => {
+      if (!this.localUserId) return;
 
-    const local = this.participants[this.localUserId];
-    if (!local) return;
+      const local = this.participants[this.localUserId];
+      if (!local) return;
 
-    // If engine lost refs but conf still has local video => treat as ON.
-    const confTrack = this.getConferenceLocalVideoTrack();
-    const hasVideoInConf = !!confTrack;
-    const hasVideoInEngine = !!this.localVideoTrack;
+      // ⚠️ wait any pending bg op to finish (join/apply/click)
+      await this.waitBgIdle();
 
-    console.debug(
-      "[cam] toggleVideoMute(HARD) request. engineTrack:",
-      this.getTrackDbg(this.localVideoTrack),
-      "confHasVideo:",
-      hasVideoInConf,
-      "bgPrefs:",
-      this.bgPrefs,
-      "bgImpl:",
-      this.bgImplMode
-    );
-
-    try {
-      // ON -> OFF
-      if (hasVideoInEngine || hasVideoInConf) {
-        await this.disableLocalVideoHard("toggleVideoMute");
-        local.videoMuted = true;
-        this.emitParticipants();
-        return;
-      }
-
-      // OFF -> ON
-      await this.enableLocalVideoHard("toggleVideoMute");
-
-      // enableLocalVideoHard already re-applies BG if needed.
-      // Ensure participants DTO reflects state.
+      this.camToggling = true;
       try {
-        const t = this.localVideoTrack;
-        if (t) local.videoMuted = t.isMuted?.() === true;
-        else local.videoMuted = true;
-      } catch {
-        local.videoMuted = false;
+        // If engine lost refs but conf still has local video => treat as ON.
+        const confTrack = this.getConferenceLocalVideoTrack();
+        const hasVideoInConf = !!confTrack;
+        const hasVideoInEngine = !!this.localVideoTrack;
+
+        console.debug(
+          "[cam] toggleVideoMute(HARD) request. engineTrack:",
+          this.getTrackDbg(this.localVideoTrack),
+          "confHasVideo:",
+          hasVideoInConf,
+          "bgPrefs:",
+          this.bgPrefs,
+          "bgImpl:",
+          this.bgImplMode
+        );
+
+        // ON -> OFF
+        if (hasVideoInEngine || hasVideoInConf) {
+          await this.disableLocalVideoHard("toggleVideoMute");
+          local.videoMuted = true;
+          this.emitParticipants();
+          return;
+        }
+
+        // OFF -> ON
+        await this.enableLocalVideoHard("toggleVideoMute");
+
+        // enableLocalVideoHard will schedule bg reapply (we'll tweak it below)
+        try {
+          const t = this.localVideoTrack;
+          if (t) local.videoMuted = t.isMuted?.() === true;
+          else local.videoMuted = true;
+        } catch {
+          local.videoMuted = false;
+        }
+        this.emitParticipants();
+      } catch (e) {
+        console.warn("[cam] toggleVideoMute(HARD) failed:", e);
+      } finally {
+        this.camToggling = false;
+        this.scheduleApplyVideoSubscriptions(0, false);
+        this.scheduleHealthTickSoon();
       }
-      this.emitParticipants();
-    } catch (e) {
-      console.warn("[cam] toggleVideoMute(HARD) failed:", e);
-    } finally {
-      this.scheduleApplyVideoSubscriptions(0, false);
-      this.scheduleHealthTickSoon();
-    }
+    });
   }
 
   async toggleScreenShare(): Promise<void> {
@@ -2533,8 +2571,7 @@ export class JitsiEngine {
         this.localVideoTrack = track;
         this.refreshEffectsSupport(track);
 
-        // ✅ ВАЖНО: если мы сейчас применяем BG или уже в replaceTrack — НЕ триггерим реапплай
-        if (!this.bgApplying && this.bgImplMode !== "replaceTrack") {
+        if (!this.camToggling && !this.bgApplying && this.bgImplMode !== "replaceTrack") {
           void this.reapplyBgIfNeeded();
         }
       }
@@ -2611,10 +2648,11 @@ export class JitsiEngine {
         if (pid === this.localUserId) {
           try {
             const nowMuted = track.isMuted?.() === true;
-            if (!nowMuted)
+            if (!nowMuted && !this.camToggling) {
               void this.enqueueBgOp("TRACK_MUTE_CHANGED:unmuted", () =>
                 this.applyBgNow("TRACK_MUTE_CHANGED:unmuted")
               );
+            }
           } catch { }
         }
       }
