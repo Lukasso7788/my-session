@@ -991,7 +991,7 @@ export function RoomPage() {
   const switchTrackCls = isLight ? "bg-black/5 border-black/10 hover:bg-black/10" : "bg-white/5 border-white/10 hover:bg-white/10";
 
   const switchThumb =
-    "absolute top-[3px] w-[26px] h-[26px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center";
+    "absolute top-[2px] w-[26px] h-[26px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center";
 
   // 84 - (3*2) - 28 = 50
   const thumbTranslate = isLight ? "translateX(0px)" : "translateX(50px)";
