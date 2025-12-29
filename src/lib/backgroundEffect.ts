@@ -1,290 +1,292 @@
 // src/lib/backgroundEffect.ts
-// MediaPipe selfie-segmentation -> blur/background -> canvas.captureStream()
-// Exports: createBackgroundEffect(opts)
+// Canvas + (optional) MediaPipe SelfieSegmentation background effects.
+// Used by jitsiEngine replaceTrack pipeline (can be async safely).
 
-import { FilesetResolver, ImageSegmenter } from "@mediapipe/tasks-vision";
+export type BgMode = "none" | "blur" | "image";
 
-export type BgOpts = {
-    mode: "none" | "blur" | "image";
+type CreateOpts = {
+    mode: BgMode;
     imageUrl?: string;
-    // optional tuning
-    blurPx?: number;      // default 12
-    fps?: number;         // default 20
-    segWidth?: number;    // default 256
-    segHeight?: number;   // default 144
-    wasmBaseUrl?: string; // default uses jsdelivr
-    modelUrl?: string;    // default uses Google-hosted selfie_segmenter.tflite
+    blurPx?: number;        // default 10
+    fps?: number;           // default 30
+    maxWidth?: number;      // default 1280
 };
 
 type Processor = {
-    startEffect: (baseStream: MediaStream) => Promise<MediaStream> | MediaStream;
-    stopEffect: () => void;
-    dispose: () => void;
+    startEffect: (input: MediaStream) => Promise<MediaStream> | MediaStream;
+    stopEffect: () => Promise<void> | void;
+    dispose: () => Promise<void> | void;
 };
-
-const DEFAULT_WASM =
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2/wasm";
-const DEFAULT_MODEL =
-    "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite";
 
 function sleep(ms: number) {
     return new Promise((r) => setTimeout(r, ms));
 }
 
-export function createBackgroundEffect(opts: BgOpts): Processor {
-    const mode = opts.mode ?? "none";
-    const blurPx = Number.isFinite(opts.blurPx as number) ? (opts.blurPx as number) : 12;
-    const fps = Number.isFinite(opts.fps as number) ? (opts.fps as number) : 20;
+function clamp(n: number, a: number, b: number) {
+    return Math.max(a, Math.min(b, n));
+}
 
-    const segW = Number.isFinite(opts.segWidth as number) ? (opts.segWidth as number) : 256;
-    const segH = Number.isFinite(opts.segHeight as number) ? (opts.segHeight as number) : 144;
+async function loadImage(url: string): Promise<HTMLImageElement> {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.decoding = "async";
+    img.src = url;
+    await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("Failed to load image: " + url));
+    });
+    return img;
+}
 
-    const wasmBaseUrl = opts.wasmBaseUrl || DEFAULT_WASM;
-    const modelUrl = opts.modelUrl || DEFAULT_MODEL;
+async function tryCreateSelfieSegmentation() {
+    // Optional dependency. If missing — return null, we will fallback.
+    try {
+        const mod: any = await import("@mediapipe/selfie_segmentation");
+        const SelfieSegmentation = mod?.SelfieSegmentation;
+        if (!SelfieSegmentation) return null;
 
-    let disposed = false;
+        const seg = new SelfieSegmentation({
+            locateFile: (file: string) =>
+                // CDN fallback is common; adjust if you host locally.
+                `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`,
+        });
+
+        seg.setOptions({
+            modelSelection: 1, // 0 = general, 1 = landscape (usually better)
+        });
+
+        return seg;
+    } catch {
+        return null;
+    }
+}
+
+export function createBackgroundEffect(opts: CreateOpts): Processor {
+    const mode: BgMode = opts.mode ?? "none";
+    const fps = clamp(opts.fps ?? 30, 5, 60);
+    const blurPx = clamp(opts.blurPx ?? 10, 0, 40);
+    const maxWidth = clamp(opts.maxWidth ?? 1280, 320, 3840);
+
     let running = false;
     let rafId: number | null = null;
 
-    let segmenter: ImageSegmenter | null = null;
-
-    // source video (hidden)
-    const srcVideo = document.createElement("video");
-    srcVideo.autoplay = true;
-    srcVideo.muted = true;
-    (srcVideo as any).playsInline = true;
-
-    // output canvas
-    const outCanvas = document.createElement("canvas");
-    const outCtx = outCanvas.getContext("2d", { alpha: false })!;
-
-    // fg canvas (full res)
-    const fgCanvas = document.createElement("canvas");
-    const fgCtx = fgCanvas.getContext("2d")!;
-
-    // seg input canvas (small res)
-    const segCanvas = document.createElement("canvas");
-    segCanvas.width = segW;
-    segCanvas.height = segH;
-    const segCtx = segCanvas.getContext("2d", { willReadFrequently: true })!;
-
-    // mask canvas (small res)
-    const maskCanvas = document.createElement("canvas");
-    maskCanvas.width = segW;
-    maskCanvas.height = segH;
-    const maskCtx = maskCanvas.getContext("2d", { willReadFrequently: true })!;
-    const maskImageData = maskCtx.createImageData(segW, segH);
-
-    // background image (for mode=image)
-    let bgImg: HTMLImageElement | null = null;
-    let bgReady = false;
+    let videoEl: HTMLVideoElement | null = null;
+    let canvas: HTMLCanvasElement | null = null;
+    let ctx: CanvasRenderingContext2D | null = null;
 
     let outStream: MediaStream | null = null;
+    let inputStream: MediaStream | null = null;
 
-    async function ensureSegmenter() {
-        if (segmenter) return;
+    let bgImage: HTMLImageElement | null = null;
 
-        const fileset = await FilesetResolver.forVisionTasks(wasmBaseUrl);
-        // runningMode VIDEO + outputCategoryMask=true (маска 0/1) :contentReference[oaicite:1]{index=1}
-        segmenter = await ImageSegmenter.createFromOptions(fileset, {
-            baseOptions: {
-                modelAssetPath: modelUrl, // :contentReference[oaicite:2]{index=2}
-                delegate: "GPU",
-            },
-            runningMode: "VIDEO",
-            outputCategoryMask: true,
-        });
-    }
+    // MediaPipe
+    let seg: any | null = null;
+    let lastMask: CanvasImageSource | null = null;
+    let segReady = false;
+    let segBusy = false;
 
-    async function loadBgImageIfNeeded() {
-        bgReady = false;
-        bgImg = null;
-
-        if (mode !== "image") return;
-        if (!opts.imageUrl) return;
-
-        bgImg = new Image();
-        bgImg.crossOrigin = "anonymous";
-        bgImg.src = opts.imageUrl;
-
-        await new Promise<void>((resolve) => {
-            if (!bgImg) return resolve();
-            bgImg.onload = () => resolve();
-            bgImg.onerror = () => resolve();
-        });
-
-        bgReady = !!bgImg && bgImg.naturalWidth > 0;
-    }
-
-    function segmentForVideoAsync(input: HTMLCanvasElement, tsMs: number) {
-        return new Promise<any>((resolve) => {
-            if (!segmenter) return resolve(null);
-            // callback style (как в примерах) :contentReference[oaicite:3]{index=3}
-            (segmenter as any).segmentForVideo(input, tsMs, (res: any) => resolve(res));
-        });
-    }
-
-    function updateMaskFromCategoryMask(result: any) {
-        // result.categoryMask.getAsUint8Array() -> 0 background, 1 person (обычно)
-        const cm = result?.categoryMask;
-        if (!cm || typeof cm.getAsUint8Array !== "function") return false;
-
-        const arr: Uint8Array = cm.getAsUint8Array();
-        if (!arr || arr.length !== segW * segH) return false;
-
-        const data = maskImageData.data;
-        // RGBA for mask: alpha = foreground
-        for (let i = 0; i < arr.length; i++) {
-            const a = arr[i] === 1 ? 255 : 0;
-            const o = i * 4;
-            data[o] = 255;
-            data[o + 1] = 255;
-            data[o + 2] = 255;
-            data[o + 3] = a;
-        }
-        maskCtx.putImageData(maskImageData, 0, 0);
-        return true;
-    }
-
-    function drawCompositeFrame() {
-        const w = outCanvas.width;
-        const h = outCanvas.height;
-
-        // 1) draw background (blurred video OR image)
-        outCtx.setTransform(1, 0, 0, 1, 0, 0);
-        outCtx.globalCompositeOperation = "source-over";
-        outCtx.filter = "none";
-        outCtx.clearRect(0, 0, w, h);
-
-        if (mode === "image" && bgReady && bgImg) {
-            outCtx.drawImage(bgImg, 0, 0, w, h);
-        } else {
-            // blur background from the video itself
-            outCtx.filter = `blur(${blurPx}px)`;
-            outCtx.drawImage(srcVideo, 0, 0, w, h);
-            outCtx.filter = "none";
-        }
-
-        // 2) draw foreground video into fgCanvas
-        fgCtx.setTransform(1, 0, 0, 1, 0, 0);
-        fgCtx.globalCompositeOperation = "source-over";
-        fgCtx.filter = "none";
-        fgCtx.clearRect(0, 0, w, h);
-        fgCtx.drawImage(srcVideo, 0, 0, w, h);
-
-        // 3) apply mask to fgCanvas (destination-in)
-        fgCtx.globalCompositeOperation = "destination-in";
-        fgCtx.filter = "blur(6px)"; // мягкие края
-        fgCtx.drawImage(maskCanvas, 0, 0, w, h);
-        fgCtx.filter = "none";
-
-        // 4) draw foreground over background
-        outCtx.globalCompositeOperation = "source-over";
-        outCtx.drawImage(fgCanvas, 0, 0, w, h);
-    }
-
-    async function loop() {
-        if (disposed || !running) return;
-
-        // wait for srcVideo metadata
-        if (!srcVideo.videoWidth || !srcVideo.videoHeight) {
-            rafId = requestAnimationFrame(loop);
-            return;
-        }
-
-        const w = srcVideo.videoWidth;
-        const h = srcVideo.videoHeight;
-
-        if (outCanvas.width !== w || outCanvas.height !== h) {
-            outCanvas.width = w;
-            outCanvas.height = h;
-            fgCanvas.width = w;
-            fgCanvas.height = h;
-        }
-
-        // draw into segCanvas (small)
-        segCtx.drawImage(srcVideo, 0, 0, segW, segH);
-
-        const ts = performance.now();
-        const result = await segmentForVideoAsync(segCanvas, ts);
-
-        if (result) {
-            const ok = updateMaskFromCategoryMask(result);
-            if (ok) drawCompositeFrame();
-        }
-
-        rafId = requestAnimationFrame(loop);
-    }
-
-    return {
-        async startEffect(baseStream: MediaStream) {
-            disposed = false;
-            running = true;
-
-            await loadBgImageIfNeeded();
-            await ensureSegmenter();
-
-            // attach base stream to src video
-            srcVideo.srcObject = baseStream;
-
-            // ensure it plays
-            try {
-                await (srcVideo as any).play?.();
-            } catch {
-                // ignore
-            }
-
-            // IMPORTANT: capture stream from canvas
-            outStream = outCanvas.captureStream(fps);
-
-            // small delay so first frames appear
-            await sleep(30);
-
-            rafId = requestAnimationFrame(loop);
-            return outStream!;
-        },
-
-        stopEffect() {
-            running = false;
-            if (rafId != null) cancelAnimationFrame(rafId);
-            rafId = null;
-
-            try {
-                srcVideo.pause();
-            } catch { }
-
-            // stop output tracks (optional; Jitsi will dispose track too)
-            try {
-                outStream?.getTracks?.().forEach((t) => t.stop());
-            } catch { }
-
-            outStream = null;
-        },
-
-        dispose() {
-            if (disposed) return;
-            disposed = true;
-
-            running = false;
-            if (rafId != null) cancelAnimationFrame(rafId);
-            rafId = null;
-
-            try {
-                srcVideo.srcObject = null;
-            } catch { }
-
-            try {
-                segmenter?.close?.();
-            } catch { }
-            segmenter = null;
-
-            try {
-                outStream?.getTracks?.().forEach((t) => t.stop());
-            } catch { }
-            outStream = null;
-
-            bgImg = null;
-            bgReady = false;
-        },
+    const stopTracks = (s: MediaStream | null) => {
+        try {
+            s?.getTracks?.()?.forEach((t) => {
+                try { t.stop(); } catch { }
+            });
+        } catch { }
     };
+
+    const cleanupDom = () => {
+        try {
+            if (videoEl) {
+                videoEl.pause?.();
+                (videoEl as any).srcObject = null;
+            }
+        } catch { }
+        videoEl = null;
+        canvas = null;
+        ctx = null;
+    };
+
+    const tickDrawFallback = () => {
+        if (!running || !videoEl || !canvas || !ctx) return;
+
+        // Fallback: no segmentation available yet
+        // - blur: blur whole frame
+        // - image: draw image behind + draw video normal on top (no cutout)
+        const w = canvas.width;
+        const h = canvas.height;
+
+        ctx.clearRect(0, 0, w, h);
+
+        if (mode === "image" && bgImage) {
+            ctx.drawImage(bgImage, 0, 0, w, h);
+            ctx.globalAlpha = 1;
+            ctx.drawImage(videoEl, 0, 0, w, h);
+        } else if (mode === "blur") {
+            ctx.filter = `blur(${blurPx}px)`;
+            ctx.drawImage(videoEl, 0, 0, w, h);
+            ctx.filter = "none";
+        } else {
+            ctx.drawImage(videoEl, 0, 0, w, h);
+        }
+    };
+
+    const tickDrawWithMask = () => {
+        if (!running || !videoEl || !canvas || !ctx) return;
+        const w = canvas.width;
+        const h = canvas.height;
+
+        ctx.clearRect(0, 0, w, h);
+
+        // 1) Draw person (foreground) using mask
+        ctx.save();
+        ctx.drawImage(videoEl, 0, 0, w, h);
+        ctx.globalCompositeOperation = "destination-in";
+        if (lastMask) ctx.drawImage(lastMask, 0, 0, w, h);
+        ctx.restore();
+
+        // 2) Draw background behind person
+        ctx.save();
+        ctx.globalCompositeOperation = "destination-over";
+
+        if (mode === "image" && bgImage) {
+            ctx.drawImage(bgImage, 0, 0, w, h);
+        } else if (mode === "blur") {
+            ctx.filter = `blur(${blurPx}px)`;
+            ctx.drawImage(videoEl, 0, 0, w, h);
+            ctx.filter = "none";
+        } else {
+            // none -> just original background (but if mode none, we should not be here)
+            ctx.drawImage(videoEl, 0, 0, w, h);
+        }
+
+        ctx.restore();
+        ctx.globalCompositeOperation = "source-over";
+    };
+
+    const loop = async () => {
+        if (!running) return;
+
+        try {
+            if (segReady && lastMask) tickDrawWithMask();
+            else tickDrawFallback();
+        } catch {
+            // ignore draw errors
+        }
+
+        // segmentation step (async)
+        if (seg && segReady && !segBusy && videoEl) {
+            segBusy = true;
+            try {
+                // MediaPipe expects an HTMLVideoElement / HTMLImageElement / Canvas
+                await seg.send({ image: videoEl });
+            } catch {
+                // if segmentation fails, fallback
+            } finally {
+                segBusy = false;
+            }
+        }
+
+        rafId = requestAnimationFrame(loop as any);
+    };
+
+    const startEffect = async (input: MediaStream): Promise<MediaStream> => {
+        inputStream = input;
+
+        // Prepare video element
+        videoEl = document.createElement("video");
+        videoEl.playsInline = true;
+        videoEl.muted = true;
+        videoEl.autoplay = true;
+        (videoEl as any).srcObject = input;
+
+        // Wait for metadata so we know dimensions
+        try {
+            await videoEl.play().catch(() => { });
+        } catch { }
+
+        // if metadata not ready, wait a bit
+        const t0 = Date.now();
+        while (Date.now() - t0 < 1200) {
+            const vw = videoEl.videoWidth || 0;
+            const vh = videoEl.videoHeight || 0;
+            if (vw > 0 && vh > 0) break;
+            await sleep(50);
+        }
+
+        const vw0 = videoEl.videoWidth || 640;
+        const vh0 = videoEl.videoHeight || 360;
+
+        // scale down if huge
+        const scale = vw0 > maxWidth ? maxWidth / vw0 : 1;
+        const vw = Math.round(vw0 * scale);
+        const vh = Math.round(vh0 * scale);
+
+        canvas = document.createElement("canvas");
+        canvas.width = vw;
+        canvas.height = vh;
+        ctx = canvas.getContext("2d", { alpha: true });
+
+        if (!ctx) throw new Error("Canvas 2D context not available");
+
+        // Output stream
+        outStream = canvas.captureStream(fps);
+
+        // Load background image if needed
+        if (mode === "image" && opts.imageUrl) {
+            try {
+                bgImage = await loadImage(opts.imageUrl);
+            } catch {
+                bgImage = null;
+            }
+        }
+
+        // Try init MediaPipe segmentation
+        seg = await tryCreateSelfieSegmentation();
+        if (seg) {
+            try {
+                seg.onResults((res: any) => {
+                    // res.segmentationMask is usually a canvas
+                    if (res?.segmentationMask) lastMask = res.segmentationMask as any;
+                });
+                segReady = true;
+            } catch {
+                seg = null;
+                segReady = false;
+            }
+        }
+
+        running = true;
+        rafId = requestAnimationFrame(loop as any);
+
+        return outStream;
+    };
+
+    const stopEffect = async () => {
+        running = false;
+        if (rafId != null) cancelAnimationFrame(rafId);
+        rafId = null;
+
+        // Stop segmentation
+        try {
+            await seg?.close?.();
+        } catch { }
+        seg = null;
+        segReady = false;
+        segBusy = false;
+        lastMask = null;
+
+        // Don’t stop input tracks here (camera owned by Jitsi base track)
+        // Only stop output tracks (canvas stream)
+        stopTracks(outStream);
+        outStream = null;
+
+        cleanupDom();
+    };
+
+    const dispose = async () => {
+        await stopEffect();
+        bgImage = null;
+        inputStream = null;
+    };
+
+    return { startEffect, stopEffect, dispose };
 }

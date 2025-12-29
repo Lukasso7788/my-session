@@ -1,5 +1,5 @@
 // src/components/VideoRoom.tsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import type { JitsiParticipant, JitsiTrack } from "../lib/jitsiEngine";
 
 export type ReactionType =
@@ -100,6 +100,11 @@ function attachTrackToMedia(
     element: HTMLMediaElement | null
 ) {
     if (!track || !element) return;
+
+    // ✅ safety: detach before attach (avoid double attachments / stale streams)
+    try {
+        track.detach?.(element);
+    } catch { }
 
     try {
         track.attach(element);
@@ -254,52 +259,29 @@ function ParticipantTile({
     const hasVideoTrack = !!participant.videoTrack;
     const streamV = useTrackStreamVersion(participant.videoTrack);
 
-    const handleVideoRef = (el: HTMLVideoElement | null) => {
-        videoRef.current = el;
-        onRegisterVideoElement?.(participant.id, el, "video");
-    };
+    // ✅ IMPORTANT: register <video> element so engine can "black video recovery" reattach correctly
+    const handleVideoRef = useCallback(
+        (el: HTMLVideoElement | null) => {
+            videoRef.current = el;
+            onRegisterVideoElement?.(participant.id, el, "video");
+        },
+        [onRegisterVideoElement, participant.id]
+    );
 
     useEffect(() => {
         return () => {
             onRegisterVideoElement?.(participant.id, null, "video");
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [participant.id]);
-    
+    }, [onRegisterVideoElement, participant.id]);
 
+    // ✅ attach/detach via helper
     useEffect(() => {
         const el = videoRef.current;
         if (!el) return;
+        if (!participant.videoTrack) return;
 
-        const track = participant.videoTrack;
-        if (!track) return;
-
-        try {
-            track.detach?.(el);
-        } catch { }
-
-        try {
-            track.attach(el);
-        } catch (e) {
-            console.error("attach error", e);
-        }
-
-        try {
-            const pr = el.play?.();
-            (pr as any)?.catch?.(() => { });
-        } catch { }
-
-        return () => {
-            try {
-                track.detach?.(el);
-            } catch { }
-            try {
-                (el as any).srcObject = null;
-            } catch { }
-            try {
-                el.load?.();
-            } catch { }
-        };
+        return attachTrackToMedia(participant.videoTrack, el);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [participant.videoTrack, participant.isLocal, streamV]);
 
     const objectClass = fit === "cover" ? "object-cover" : "object-contain";
@@ -521,18 +503,26 @@ function ScreenShareLayoutDesktop({
     );
     const screenStreamV = useTrackStreamVersion(screenSharer.screenTrack);
 
-    useEffect(() => {
-        const el = screenVideoRef.current;
-        onRegisterVideoElement?.(screenSharer.id, el ?? null, "screen");
-        return () => onRegisterVideoElement?.(screenSharer.id, null, "screen");
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [screenSharer.id, screenTrackId]);
+    // ✅ use callback ref to guarantee registration happens when element exists
+    const handleScreenRef = useCallback(
+        (el: HTMLVideoElement | null) => {
+            screenVideoRef.current = el;
+            onRegisterVideoElement?.(screenSharer.id, el, "screen");
+        },
+        [onRegisterVideoElement, screenSharer.id]
+    );
 
     useEffect(() => {
-        if (!screenVideoRef.current) return;
+        return () => onRegisterVideoElement?.(screenSharer.id, null, "screen");
+    }, [onRegisterVideoElement, screenSharer.id]);
+
+    useEffect(() => {
+        const el = screenVideoRef.current;
+        if (!el) return;
         if (!screenSharer.screenTrack) return;
-        return attachTrackToMedia(screenSharer.screenTrack, screenVideoRef.current);
-    }, [screenTrackId, screenStreamV]);
+
+        return attachTrackToMedia(screenSharer.screenTrack, el);
+    }, [screenTrackId, screenStreamV, screenSharer.screenTrack]);
 
     const labelBg =
         theme === "light"
@@ -548,7 +538,7 @@ function ScreenShareLayoutDesktop({
                     } min-h-0`}
             >
                 <video
-                    ref={screenVideoRef}
+                    ref={handleScreenRef}
                     autoPlay
                     playsInline
                     muted={screenSharer.isLocal}
@@ -607,18 +597,25 @@ function ScreenShareLayoutMobile({
     );
     const screenStreamV = useTrackStreamVersion(screenSharer.screenTrack);
 
-    useEffect(() => {
-        const el = screenVideoRef.current;
-        onRegisterVideoElement?.(screenSharer.id, el ?? null, "screen");
-        return () => onRegisterVideoElement?.(screenSharer.id, null, "screen");
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [screenSharer.id, screenTrackId]);
+    const handleScreenRef = useCallback(
+        (el: HTMLVideoElement | null) => {
+            screenVideoRef.current = el;
+            onRegisterVideoElement?.(screenSharer.id, el, "screen");
+        },
+        [onRegisterVideoElement, screenSharer.id]
+    );
 
     useEffect(() => {
-        if (!screenVideoRef.current) return;
+        return () => onRegisterVideoElement?.(screenSharer.id, null, "screen");
+    }, [onRegisterVideoElement, screenSharer.id]);
+
+    useEffect(() => {
+        const el = screenVideoRef.current;
+        if (!el) return;
         if (!screenSharer.screenTrack) return;
-        return attachTrackToMedia(screenSharer.screenTrack, screenVideoRef.current);
-    }, [screenTrackId, screenStreamV]);
+
+        return attachTrackToMedia(screenSharer.screenTrack, el);
+    }, [screenTrackId, screenStreamV, screenSharer.screenTrack]);
 
     const labelBg =
         theme === "light"
@@ -637,7 +634,7 @@ function ScreenShareLayoutMobile({
                     } relative`}
             >
                 <video
-                    ref={screenVideoRef}
+                    ref={handleScreenRef}
                     autoPlay
                     playsInline
                     muted={screenSharer.isLocal}

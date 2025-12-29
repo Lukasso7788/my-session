@@ -176,7 +176,22 @@ export class JitsiEngine {
   // ========================================================================
   // Strategy: auto => try setEffect first, else replaceTrack.
   // You can force it if needed.
-  private bgStrategy: "auto" | "setEffect" | "replaceTrack" = "replaceTrack";
+  // ✅ FIX: make it truly "auto" by default (was "replaceTrack")
+  private bgStrategy: "auto" | "setEffect" | "replaceTrack" = "auto";
+
+  /**
+   * Optional: allow forcing strategy from UI/debug
+   */
+  public setBackgroundStrategy(strategy: "auto" | "setEffect" | "replaceTrack") {
+    this.bgStrategy = strategy;
+    try {
+      console.log("[bg] strategy set to:", strategy);
+    } catch { }
+    // if bg is enabled — reapply under new strategy
+    if (this.bgPrefs.mode !== "none") {
+      void this.applyBgNow("setBackgroundStrategy");
+    }
+  }
 
   // ReplaceTrack state (B)
   private bgImplMode: "none" | "setEffect" | "replaceTrack" = "none";
@@ -915,11 +930,7 @@ export class JitsiEngine {
     try {
       // expected: src/lib/backgroundEffect.ts exports createBackgroundEffect(opts)
       const mod: any = await import("./backgroundEffect");
-      const fn =
-        mod?.createBackgroundEffect ||
-        mod?.createCanvasVirtualBgEffect ||
-        mod?.default ||
-        null;
+      const fn = mod?.createBackgroundEffect || mod?.createCanvasVirtualBgEffect || mod?.default || null;
 
       if (typeof fn !== "function") {
         console.warn("[bg] backgroundEffect module loaded but no factory function export found");
@@ -1054,8 +1065,6 @@ export class JitsiEngine {
     await this.stopReplaceTrackProcessor(`disable:${reason}`);
 
     // Decide whether to keep base track pointer
-    // If we keepPrefs=false (i.e. full disable), we can drop base pointer.
-    // If keepPrefs=true (temporary disable, e.g. before mute/device switch), keep base pointer.
     if (!keepPrefs) {
       this.bgBaseVideoTrack = null;
     }
@@ -1096,9 +1105,7 @@ export class JitsiEngine {
 
     // Get base stream
     const baseTrack = this.bgBaseVideoTrack || this.localVideoTrack;
-    const baseStream =
-      (await this.waitBaseStream(baseTrack, 2000)) ||
-      (await this.getBaseVideoStreamForBg());
+    const baseStream = (await this.waitBaseStream(baseTrack, 2000)) || (await this.getBaseVideoStreamForBg());
     if (!baseStream) {
       console.warn("[bg] replaceTrack: base stream not ready -> retry soon");
       setTimeout(() => {
@@ -1148,10 +1155,9 @@ export class JitsiEngine {
       this.bgProcessedTrack = processedJitsiTrack;
 
       // Replace outgoing track in conference:
-      // IMPORTANT: old outgoing is current localVideoTrack (which we expect to be base here)
       const oldOutgoing = this.localVideoTrack;
 
-      // Update local refs before replace to avoid our TRACK_REMOVED handler nulling us
+      // Update local refs before replace to avoid TRACK_REMOVED handler nulling us
       this.localVideoTrack = processedJitsiTrack;
       if (this.localUserId) {
         const entry = this.tracksByParticipant.get(this.localUserId) || {};
@@ -1273,7 +1279,6 @@ export class JitsiEngine {
     }
 
     // ReplaceTrack enable expects localVideoTrack to be base camera at the moment of enable.
-    // Ensure we're not pointing to a stale processed track.
     this.bgBaseVideoTrack = this.bgBaseVideoTrack || this.localVideoTrack;
     this.bgImplMode = "none";
 
@@ -1310,7 +1315,6 @@ export class JitsiEngine {
     if (this.disposed || !this.JitsiMeetJS || !this.conference) return;
 
     // If we're in replaceTrack mode, the outgoing track is processed and base track is the camera.
-    // Validate base track first; if base is dead, recreate it and then re-enable bg.
     const needBase = this.bgImplMode === "replaceTrack" && this.bgBaseVideoTrack;
     const baseCandidate = needBase ? this.bgBaseVideoTrack : this.localVideoTrack;
 
@@ -1320,7 +1324,6 @@ export class JitsiEngine {
       const ms = await Promise.resolve(msAny);
       const vt = ms?.getVideoTracks?.()?.[0];
       if (baseCandidate && vt && vt.readyState !== "ended") {
-        // base is alive; in non-replaceTrack we also want outgoing alive
         if (!needBase) return;
 
         // ensure outgoing exists too
@@ -1349,19 +1352,14 @@ export class JitsiEngine {
     const newCamera = tracks.find((t: any) => t.getType?.() === "video");
     if (!newCamera) return;
 
-    // If we were in replaceTrack mode, we must:
-    // 1) disable current bg (swap outgoing back to base if possible)
-    // 2) replace base with newCamera (and make outgoing base temporarily)
-    // 3) re-enable bg if prefs say so
     if (this.bgImplMode === "replaceTrack") {
-      // Step 1: best-effort disable bg but keep prefs and keep base pointer alive
       try {
         await this.disableBg_replaceTrack("ensureLocalVideoTrack:recreate", true);
       } catch { }
 
       const oldBase = this.bgBaseVideoTrack;
       const oldOutgoing = this.localVideoTrack; // after disable, localVideoTrack should be base
-      // Step 2: replace outgoing/base in conference with newCamera
+
       try {
         if (oldOutgoing && typeof this.conference.replaceTrack === "function") {
           await this.conference.replaceTrack(oldOutgoing, newCamera);
@@ -1375,7 +1373,6 @@ export class JitsiEngine {
         }
       } catch { }
 
-      // Update refs: outgoing becomes newCamera; base becomes newCamera
       this.localVideoTrack = newCamera;
       this.bgBaseVideoTrack = newCamera;
 
@@ -1387,7 +1384,6 @@ export class JitsiEngine {
         this.emitParticipants();
       }
 
-      // Dispose old tracks (but be careful: oldOutgoing could equal oldBase)
       if (oldOutgoing && oldOutgoing !== oldBase) {
         await this.safeDisposeTrack(oldOutgoing, "ensureLocalVideoTrack:oldOutgoing");
       }
@@ -1395,12 +1391,11 @@ export class JitsiEngine {
         await this.safeDisposeTrack(oldBase, "ensureLocalVideoTrack:oldBase");
       }
 
-      // Step 3: re-enable bg if needed
       await this.applyBgNow("ensureLocalVideoTrack:re-enable");
       return;
     }
 
-    // Non-replaceTrack path (original behavior)
+    // Non-replaceTrack path
     const oldVideo = this.localVideoTrack;
 
     if (oldVideo) {
@@ -1728,8 +1723,7 @@ export class JitsiEngine {
       const tracks = await this.JitsiMeetJS.createLocalTracks({ devices: ["desktop"] });
 
       const screenTrack =
-        tracks.find((t: any) => this.isDesktopTrack(t)) ||
-        tracks.find((t: any) => t.getType && t.getType() === "desktop");
+        tracks.find((t: any) => this.isDesktopTrack(t)) || tracks.find((t: any) => t.getType && t.getType() === "desktop");
 
       if (!screenTrack) return;
 
@@ -2272,8 +2266,11 @@ export class JitsiEngine {
       if (isLocal && type === "video") {
         this.localVideoTrack = track;
         this.refreshEffectsSupport(track);
-        // Only reapply if not currently doing replaceTrack; replaceTrack manager controls itself
-        if (this.bgImplMode !== "replaceTrack") void this.reapplyBgIfNeeded();
+
+        // ✅ ВАЖНО: если мы сейчас применяем BG или уже в replaceTrack — НЕ триггерим реапплай
+        if (!this.bgApplying && this.bgImplMode !== "replaceTrack") {
+          void this.reapplyBgIfNeeded();
+        }
       }
       if (isLocal && type === "audio") {
         this.localAudioTrack = track;
