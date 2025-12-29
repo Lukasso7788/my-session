@@ -260,6 +260,14 @@ function ParticipantTile({
     };
 
     useEffect(() => {
+        return () => {
+            onRegisterVideoElement?.(participant.id, null, "video");
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [participant.id]);
+    
+
+    useEffect(() => {
         const el = videoRef.current;
         if (!el) return;
 

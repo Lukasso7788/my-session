@@ -176,7 +176,7 @@ export class JitsiEngine {
   // ========================================================================
   // Strategy: auto => try setEffect first, else replaceTrack.
   // You can force it if needed.
-  private bgStrategy: "auto" | "setEffect" | "replaceTrack" = "auto";
+  private bgStrategy: "auto" | "setEffect" | "replaceTrack" = "replaceTrack";
 
   // ReplaceTrack state (B)
   private bgImplMode: "none" | "setEffect" | "replaceTrack" = "none";
@@ -950,6 +950,20 @@ export class JitsiEngine {
     }
   }
 
+  private async waitBaseStream(track: any, timeoutMs = 2000): Promise<MediaStream | null> {
+    const t0 = Date.now();
+    while (Date.now() - t0 < timeoutMs) {
+      try {
+        const msAny = track?.getOriginalStream?.();
+        const ms = await Promise.resolve(msAny);
+        const vt = ms?.getVideoTracks?.()?.[0];
+        if (ms && vt && vt.readyState !== "ended") return ms as MediaStream;
+      } catch { }
+      await new Promise((r) => setTimeout(r, 60));
+    }
+    return null;
+  }
+
   private async createJitsiVideoTrackFromStream(stream: MediaStream): Promise<JitsiTrack> {
     const J = this.JitsiMeetJS;
     if (!J) throw new Error("JitsiMeetJS not ready");
@@ -1081,7 +1095,10 @@ export class JitsiEngine {
     }
 
     // Get base stream
-    const baseStream = await this.getBaseVideoStreamForBg();
+    const baseTrack = this.bgBaseVideoTrack || this.localVideoTrack;
+    const baseStream =
+      (await this.waitBaseStream(baseTrack, 2000)) ||
+      (await this.getBaseVideoStreamForBg());
     if (!baseStream) {
       console.warn("[bg] replaceTrack: base stream not ready -> retry soon");
       setTimeout(() => {
@@ -1159,7 +1176,7 @@ export class JitsiEngine {
       this.bgImplMode = "replaceTrack";
 
       try {
-        console.debug("[bg] replaceTrack enabled:", reason, {
+        console.log("[bg] replaceTrack enabled:", reason, {
           base: this.getTrackDbg(this.bgBaseVideoTrack),
           outgoing: this.getTrackDbg(this.localVideoTrack),
         });
