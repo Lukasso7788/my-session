@@ -942,7 +942,11 @@ export function VideoRoom(props: VideoRoomProps) {
                             }
                             title="Toggle mic"
                         >
-                            <Icon name={isAudioMuted ? "mic-off" : "mic-on"} className="w-5 h-5" theme={theme} />
+                            <Icon
+                                name={isAudioMuted ? "mic-off" : "mic-on"}
+                                className="w-5 h-5"
+                                theme={isAudioMuted ? "dark" : theme}   // ✅ mic-off всегда белая
+                            />
                         </button>
 
                         <button
