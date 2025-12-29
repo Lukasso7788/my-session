@@ -1,4 +1,9 @@
 // src/components/RoomMediaSettingsModal.tsx
+// Ключевая идея:
+// - НЕ ревокать blob:, который уже "commit/applied" (даже если value ещё не успел обновиться)
+// - ревокать временные blob: при закрытии без Apply
+// - опционально: ревокать старый committed blob: с задержкой после смены на другой фон
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { X, RefreshCcw } from "lucide-react";
 
@@ -63,13 +68,56 @@ export function RoomMediaSettingsModal({
         bgImageUrl: value?.bgImageUrl,
     });
 
-    const prevObjectUrlRef = useRef<string | null>(null);
-
     const videoInputs = devices?.videoInputs ?? [];
     const audioInputs = devices?.audioInputs ?? [];
     const audioOutputs = devices?.audioOutputs ?? [];
 
-    // when open: sync from value + refresh devices
+    // ────────────────────────────────────────────────────────────────────────────
+    // COMMIT TRACKING (защита от Apply→Close race)
+    // ────────────────────────────────────────────────────────────────────────────
+
+    // "закоммиченный" url (после Apply) — но мы также обновляем его СРАЗУ при клике Apply
+    const committedBgUrlRef = useRef<string | undefined>(value?.bgImageUrl);
+
+    // последний draft blob:url (временный)
+    const prevDraftObjectUrlRef = useRef<string | null>(null);
+
+    // чтобы не текли "committed blob:" навсегда — ревокаем старый committed blob с задержкой
+    const prevCommittedObjectUrlRef = useRef<string | null>(isObjectUrl(value?.bgImageUrl) ? value.bgImageUrl! : null);
+    const revokeCommittedTimerRef = useRef<any>(null);
+
+    // когда родитель реально обновил value.bgImageUrl — считаем это "committed"
+    useEffect(() => {
+        const next = value?.bgImageUrl;
+        const prevCommitted = prevCommittedObjectUrlRef.current;
+
+        committedBgUrlRef.current = next;
+
+        // если у нас был committed blob и он сменился на другой url/undefined — ревокаем старый через задержку
+        if (prevCommitted && isObjectUrl(prevCommitted) && prevCommitted !== next) {
+            if (revokeCommittedTimerRef.current) clearTimeout(revokeCommittedTimerRef.current);
+            revokeCommittedTimerRef.current = setTimeout(() => {
+                try {
+                    URL.revokeObjectURL(prevCommitted);
+                } catch { }
+            }, 10_000); // 10s — чтобы engine успел подхватить картинку
+        }
+
+        prevCommittedObjectUrlRef.current = isObjectUrl(next) ? (next as string) : null;
+    }, [value?.bgImageUrl]);
+
+    // cleanup таймера
+    useEffect(() => {
+        return () => {
+            if (revokeCommittedTimerRef.current) clearTimeout(revokeCommittedTimerRef.current);
+            revokeCommittedTimerRef.current = null;
+        };
+    }, []);
+
+    // ────────────────────────────────────────────────────────────────────────────
+    // OPEN SYNC
+    // ────────────────────────────────────────────────────────────────────────────
+
     useEffect(() => {
         if (!open) return;
 
@@ -91,11 +139,9 @@ export function RoomMediaSettingsModal({
 
         setDraft((p) => {
             const next = { ...p };
-
             if (!next.videoInputId && videoInputs[0]?.deviceId) next.videoInputId = videoInputs[0].deviceId;
             if (!next.audioInputId && audioInputs[0]?.deviceId) next.audioInputId = audioInputs[0].deviceId;
             if (!next.audioOutputId) next.audioOutputId = "default";
-
             return next;
         });
     }, [open, videoInputs, audioInputs]);
@@ -106,30 +152,25 @@ export function RoomMediaSettingsModal({
         onChange?.(draft);
     }, [draft, open, onChange]);
 
-    // cleanup old objectURL when replaced
+    // ────────────────────────────────────────────────────────────────────────────
+    // DRAFT BLOB URL CLEANUP
+    // Ревокаем старый draft blob:url только если он НЕ закоммичен.
+    // ────────────────────────────────────────────────────────────────────────────
     useEffect(() => {
         if (!open) return;
 
-        const url = draft.bgImageUrl;
-        const prev = prevObjectUrlRef.current;
+        const next = draft.bgImageUrl;
+        const prev = prevDraftObjectUrlRef.current;
+        const committed = committedBgUrlRef.current;
 
-        if (isObjectUrl(prev) && prev !== url) {
-            try { URL.revokeObjectURL(prev); } catch { }
+        if (prev && isObjectUrl(prev) && prev !== next && prev !== committed) {
+            try {
+                URL.revokeObjectURL(prev);
+            } catch { }
         }
 
-        prevObjectUrlRef.current = isObjectUrl(url) ? url : null;
+        prevDraftObjectUrlRef.current = isObjectUrl(next) ? (next as string) : null;
     }, [draft.bgImageUrl, open]);
-
-    // cleanup on unmount
-    useEffect(() => {
-        return () => {
-            const prev = prevObjectUrlRef.current;
-            if (prev && prev.startsWith("blob:")) {
-                try { URL.revokeObjectURL(prev); } catch { }
-            }
-            prevObjectUrlRef.current = null;
-        };
-    }, []);
 
     const canApply = useMemo(() => {
         return !!draft.videoInputId && !!draft.audioInputId && !!draft.audioOutputId;
@@ -146,9 +187,34 @@ export function RoomMediaSettingsModal({
         setBgImage(url);
     };
 
+    const handleClose = () => {
+        // если есть временный blob:url, который не применён — ревокаем
+        const committed = committedBgUrlRef.current;
+        const cur = draft.bgImageUrl;
+
+        if (cur && isObjectUrl(cur) && cur !== committed) {
+            try {
+                URL.revokeObjectURL(cur);
+            } catch { }
+        }
+
+        onClose();
+    };
+
+    const handleApply = async () => {
+        // ✅ критично: считаем текущий draft.bgImageUrl "committed" СРАЗУ,
+        // чтобы handleClose не ревокнул его до того, как родитель обновит value.
+        committedBgUrlRef.current = draft.bgImageUrl;
+
+        // также обновим prevCommittedObjectUrlRef, чтобы эффект с "revoke committed" не тронул свежий
+        prevCommittedObjectUrlRef.current = isObjectUrl(draft.bgImageUrl) ? (draft.bgImageUrl as string) : null;
+
+        await onApply(draft);
+    };
+
     return (
         <div className="fixed inset-0 z-[60]">
-            <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+            <div className="absolute inset-0 bg-black/60" onClick={handleClose} />
 
             <div className="absolute left-1/2 top-1/2 w-[92vw] max-w-[640px] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-white/10 bg-[#0B1220] shadow-xl">
                 <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
@@ -165,7 +231,7 @@ export function RoomMediaSettingsModal({
                         </button>
 
                         <button
-                            onClick={onClose}
+                            onClick={handleClose}
                             className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/80"
                             title="Close"
                             type="button"
@@ -231,7 +297,7 @@ export function RoomMediaSettingsModal({
                     <div>
                         <div className="text-[12px] text-white/60 mb-2">Background</div>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                             <button
                                 type="button"
                                 onClick={setBgNone}
@@ -287,6 +353,8 @@ export function RoomMediaSettingsModal({
                                         const file = e.target.files?.[0];
                                         if (!file) return;
                                         setCustomFile(file);
+                                        // чтобы второй раз тот же файл можно было выбрать:
+                                        e.currentTarget.value = "";
                                     }}
                                 />
                             </label>
@@ -335,18 +403,20 @@ export function RoomMediaSettingsModal({
 
                 <div className="px-5 py-4 border-t border-white/10 flex items-center justify-end gap-2">
                     <button
-                        onClick={onClose}
+                        onClick={handleClose}
                         className="h-11 px-4 rounded-xl bg-white/5 hover:bg-white/10 text-white/80"
                         type="button"
                     >
                         Cancel
                     </button>
                     <button
-                        onClick={() => onApply(draft)}
+                        onClick={handleApply}
                         disabled={!canApply}
                         className={
                             "h-11 px-5 rounded-xl font-semibold text-[13px] transition " +
-                            (canApply ? "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]" : "bg-[#111827] text-white/35 cursor-not-allowed")
+                            (canApply
+                                ? "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
+                                : "bg-[#111827] text-white/35 cursor-not-allowed")
                         }
                         type="button"
                     >
