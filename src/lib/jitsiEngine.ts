@@ -1083,7 +1083,11 @@ export class JitsiEngine {
     // Get base stream
     const baseStream = await this.getBaseVideoStreamForBg();
     if (!baseStream) {
-      console.warn("[bg] replaceTrack: base stream not ready");
+      console.warn("[bg] replaceTrack: base stream not ready -> retry soon");
+      setTimeout(() => {
+        if (this.disposed) return;
+        void this.applyBgNow("retry:base-stream-not-ready");
+      }, 200);
       return;
     }
 

@@ -1,264 +1,104 @@
-// ============================================================================
-// src/lib/backgroundEffect.ts — Canvas + MediaPipe SelfieSegmentation
-// Notes:
-// - Waits for video metadata so canvas sizes correctly
-// - Throttles segmentation to `fps` (default 20)
-// - Guards against overlapping `segmentation.send()` calls (inFlight)
-// - Cancels RAF on stop/dispose
-// - Safe cleanup even if Jitsi calls dispose multiple times
-// ============================================================================
+// src/lib/backgroundEffect.ts
+// Минимальный рабочий processor для replaceTrack pipeline.
+// Делает "фейковый blur" всего кадра через canvas (для smoke-test).
+// Потом заменишь на MediaPipe/segmentation.
 
-import { SelfieSegmentation } from "@mediapipe/selfie_segmentation";
-
-export type BgMode = "none" | "blur" | "image";
-export type JitsiStreamEffect = any;
-
-type CreateOpts = {
-    mode: BgMode;
+type BgOpts = {
+    mode: "none" | "blur" | "image";
     imageUrl?: string;
-    blurValue?: number; // like 8/25 in Jitsi
-    fps?: number; // throttle segmentation loop; default 20
 };
 
-class CanvasVirtualBgEffect {
-    private mode: BgMode;
-    private imageUrl?: string;
-    private blurValue: number;
-    private fps: number;
+export function createBackgroundEffect(opts: BgOpts) {
+    let video: HTMLVideoElement | null = null;
+    let canvas: HTMLCanvasElement | null = null;
+    let ctx: CanvasRenderingContext2D | null = null;
+    let rafId: number | null = null;
+    let outStream: MediaStream | null = null;
 
-    private videoEl?: HTMLVideoElement;
-    private canvas?: HTMLCanvasElement;
-    private ctx?: CanvasRenderingContext2D | null;
+    const stopLoop = () => {
+        if (rafId != null) cancelAnimationFrame(rafId);
+        rafId = null;
+    };
 
-    private segmentation?: SelfieSegmentation;
-    private running = false;
-
-    private bgImg?: HTMLImageElement;
-
-    private rafId: number | null = null;
-    private inFlight = false;
-    private lastSentAt = 0;
-
-    constructor(opts: CreateOpts) {
-        this.mode = opts.mode;
-        this.imageUrl = opts.imageUrl;
-        this.blurValue = opts.blurValue ?? 25;
-        this.fps = Math.max(5, Math.min(30, opts.fps ?? 20));
-    }
-
-    isEnabled() {
-        return this.mode !== "none";
-    }
-
-    // IMPORTANT: engine calls dispose() sometimes; make it available.
-    async dispose() {
-        await this.stopEffect();
-    }
-
-    private async waitVideoReady(v: HTMLVideoElement): Promise<void> {
-        // If video already has metadata
-        if ((v.videoWidth || 0) > 0 && (v.videoHeight || 0) > 0) return;
-
-        await new Promise<void>((resolve) => {
-            const done = () => {
-                v.removeEventListener("loadedmetadata", done);
-                v.removeEventListener("loadeddata", done);
-                resolve();
-            };
-            v.addEventListener("loadedmetadata", done, { once: true });
-            v.addEventListener("loadeddata", done, { once: true });
-
-            // Safety: sometimes metadata event already fired but sizes still 0 for a tick
-            setTimeout(done, 250);
-        });
-    }
-
-    private async preloadBgImage(url: string): Promise<HTMLImageElement> {
-        const img = new Image();
-        img.crossOrigin = "anonymous";
-        img.src = url;
-
-        await new Promise<void>((res, rej) => {
-            img.onload = () => res();
-            img.onerror = () => rej(new Error("Failed to load background image"));
-        });
-
-        return img;
-    }
-
-    async startEffect(stream: MediaStream): Promise<MediaStream> {
-        // create hidden video
-        const v = document.createElement("video");
-        v.autoplay = true;
-        v.muted = true;
-        v.playsInline = true;
-        v.srcObject = stream;
-
-        // In most cases this works because stream comes from getUserMedia
+    const cleanup = () => {
+        stopLoop();
         try {
-            await v.play();
-        } catch {
-            // ignore; metadata may still load and frames may still render
-        }
-
-        await this.waitVideoReady(v);
-
-        const c = document.createElement("canvas");
-        c.width = v.videoWidth || 1280;
-        c.height = v.videoHeight || 720;
-
-        const ctx = c.getContext("2d");
-        if (!ctx) throw new Error("2d canvas context not available");
-
-        this.videoEl = v;
-        this.canvas = c;
-        this.ctx = ctx;
-
-        // preload bg image if needed
-        if (this.mode === "image" && this.imageUrl) {
-            try {
-                this.bgImg = await this.preloadBgImage(this.imageUrl);
-            } catch {
-                // If image fails, fall back to original background
-                this.bgImg = undefined;
+            if (video) {
+                video.pause();
+                (video as any).srcObject = null;
             }
+        } catch { }
+        video = null;
+        canvas = null;
+        ctx = null;
+        outStream = null;
+    };
+
+    const startEffect = async (input: MediaStream): Promise<MediaStream> => {
+        if (!input || typeof input.getTracks !== "function") {
+            throw new Error("[backgroundEffect] input is not a MediaStream");
         }
 
-        // init MediaPipe
-        const seg = new SelfieSegmentation({
-            locateFile: (file) =>
-                `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`,
+        // Создаём video, чтобы “проигрывать” входной stream
+        video = document.createElement("video");
+        video.muted = true;
+        video.playsInline = true;
+        (video as any).srcObject = input;
+
+        // canvas куда рисуем кадры
+        canvas = document.createElement("canvas");
+        ctx = canvas.getContext("2d");
+
+        // ждём метаданные, чтобы знать размеры
+        await new Promise<void>((resolve) => {
+            if (!video) return resolve();
+            video.onloadedmetadata = () => resolve();
+            // если вдруг уже готово
+            if (video.readyState >= 1) resolve();
         });
 
-        // modelSelection: 0 (general) / 1 (landscape)
-        seg.setOptions({ modelSelection: 1 });
+        const w = Math.max(1, video.videoWidth || 1280);
+        const h = Math.max(1, video.videoHeight || 720);
 
-        seg.onResults((results: any) => {
-            if (!this.running || !this.ctx || !this.canvas) return;
+        canvas.width = w;
+        canvas.height = h;
 
-            const w = this.canvas.width;
-            const h = this.canvas.height;
-            const canvasCtx = this.ctx;
+        // стартуем воспроизведение
+        try { await video.play(); } catch { }
 
-            canvasCtx.save();
-            canvasCtx.clearRect(0, 0, w, h);
+        // выходной стрим
+        outStream = canvas.captureStream(30);
 
-            // 1) draw mask
-            canvasCtx.drawImage(results.segmentationMask, 0, 0, w, h);
+        const loop = () => {
+            if (!video || !canvas || !ctx) return;
 
-            // 2) draw person (source-in keeps only where mask is)
-            canvasCtx.globalCompositeOperation = "source-in";
-            canvasCtx.drawImage(results.image, 0, 0, w, h);
-
-            // 3) draw background behind person
-            canvasCtx.globalCompositeOperation = "destination-atop";
-
-            if (this.mode === "blur") {
-                // map blurValue -> px (rough)
-                const blurPx = Math.max(1, Math.round(this.blurValue / 2));
-                canvasCtx.filter = `blur(${blurPx}px)`;
-                canvasCtx.drawImage(results.image, 0, 0, w, h);
-                canvasCtx.filter = "none";
-            } else if (this.mode === "image" && this.bgImg) {
-                canvasCtx.drawImage(this.bgImg, 0, 0, w, h);
+            // "blur" всего кадра (smoke test)
+            if (opts.mode === "blur") {
+                (ctx as any).filter = "blur(10px)";
             } else {
-                // fallback: just original
-                canvasCtx.drawImage(results.image, 0, 0, w, h);
+                (ctx as any).filter = "none";
             }
-
-            canvasCtx.restore();
-        });
-
-        this.segmentation = seg;
-        this.running = true;
-        this.inFlight = false;
-        this.lastSentAt = 0;
-
-        const frameIntervalMs = Math.max(1, Math.round(1000 / this.fps));
-
-        // pump frames
-        const loop = async (ts: number) => {
-            if (!this.running || !this.videoEl || !this.segmentation) return;
-
-            this.rafId = requestAnimationFrame(loop);
-
-            // throttle
-            if (ts - this.lastSentAt < frameIntervalMs) return;
-            this.lastSentAt = ts;
-
-            // keep canvas size synced
-            const vw = this.videoEl.videoWidth || 1280;
-            const vh = this.videoEl.videoHeight || 720;
-            if (this.canvas && (this.canvas.width !== vw || this.canvas.height !== vh)) {
-                this.canvas.width = vw;
-                this.canvas.height = vh;
-            }
-
-            if (this.inFlight) return;
-            this.inFlight = true;
 
             try {
-                await this.segmentation.send({ image: this.videoEl });
-            } catch {
-                // ignore frame errors
-            } finally {
-                this.inFlight = false;
-            }
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            } catch { }
+
+            rafId = requestAnimationFrame(loop);
         };
 
-        this.rafId = requestAnimationFrame(loop);
+        loop();
+        return outStream;
+    };
 
-        // output stream
-        return c.captureStream(30);
-    }
+    const stopEffect = async () => {
+        cleanup();
+    };
 
-    async stopEffect() {
-        this.running = false;
+    const dispose = async () => {
+        cleanup();
+    };
 
-        try {
-            if (this.rafId != null) cancelAnimationFrame(this.rafId);
-        } catch {
-            // ignore
-        }
-        this.rafId = null;
-        this.inFlight = false;
-
-        try {
-            this.segmentation?.close?.();
-        } catch {
-            // ignore
-        }
-        this.segmentation = undefined;
-
-        try {
-            if (this.videoEl) {
-                try {
-                    this.videoEl.pause();
-                } catch {
-                    // ignore
-                }
-                try {
-                    (this.videoEl.srcObject as any) = null;
-                } catch {
-                    // ignore
-                }
-            }
-        } catch {
-            // ignore
-        }
-
-        this.videoEl = undefined;
-        this.canvas = undefined;
-        this.ctx = undefined;
-        this.bgImg = undefined;
-    }
+    return { startEffect, stopEffect, dispose };
 }
 
-export async function createBackgroundEffect(
-    opts: CreateOpts
-): Promise<JitsiStreamEffect | undefined> {
-    if (opts.mode === "none") return undefined;
-    if (opts.mode === "image" && !opts.imageUrl) return undefined;
-
-    return new CanvasVirtualBgEffect(opts);
-}
+export default createBackgroundEffect;
