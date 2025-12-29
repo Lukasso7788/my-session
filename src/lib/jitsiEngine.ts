@@ -163,6 +163,31 @@ export class JitsiEngine {
   private bgPrefs: { mode: BgMode; imageUrl?: string } = { mode: "none" };
   private bgApplying = false;
 
+  // ✅ BG ops serializer (prevents races: join/apply/click/mute events)
+  private bgOpQueue: Promise<void> = Promise.resolve();
+  private bgOpSeq = 0;
+
+  private enqueueBgOp(label: string, fn: () => Promise<void>) {
+    const id = ++this.bgOpSeq;
+
+    this.bgOpQueue = this.bgOpQueue
+      .catch(() => { })
+      .then(async () => {
+        try {
+          console.debug(`[bgQ#${id}] BEGIN ${label}`);
+        } catch { }
+        await fn();
+        try {
+          console.debug(`[bgQ#${id}] END ${label}`);
+        } catch { }
+      })
+      .catch((e) => {
+        console.warn(`[bgQ#${id}] FAIL ${label}:`, e);
+      });
+
+    return this.bgOpQueue;
+  }
+
   // setEffect-based effect object (A)
   private videoEffect: any | undefined = undefined;
   private effectsSupported = false;
@@ -177,7 +202,7 @@ export class JitsiEngine {
   // Strategy: auto => try setEffect first, else replaceTrack.
   // You can force it if needed.
   // ✅ FIX: make it truly "auto" by default (was "replaceTrack")
-  private bgStrategy: "auto" | "setEffect" | "replaceTrack" = "auto";
+  private bgStrategy: "auto" | "setEffect" | "replaceTrack" = "replaceTrack";
 
   /**
    * Optional: allow forcing strategy from UI/debug
@@ -189,7 +214,7 @@ export class JitsiEngine {
     } catch { }
     // if bg is enabled — reapply under new strategy
     if (this.bgPrefs.mode !== "none") {
-      void this.applyBgNow("setBackgroundStrategy");
+      void this.enqueueBgOp("setBackgroundStrategy", () => this.applyBgNow("setBackgroundStrategy"));
     }
   }
 
@@ -199,6 +224,7 @@ export class JitsiEngine {
   private bgProcessedTrack: JitsiTrack | null = null; // outgoing track used in conference when bg enabled
   private bgProcessor: any | null = null; // Canvas/MediaPipe effect instance
   private bgProcessedStream: MediaStream | null = null;
+  private bgReplaceRetryCount = 0;
 
   // Lazy loader for src/lib/backgroundEffect.ts
   private canvasBgFactoryLoaded = false;
@@ -1180,6 +1206,7 @@ export class JitsiEngine {
 
       // Keep base track alive (not disposed) because it feeds processor
       this.bgImplMode = "replaceTrack";
+      this.bgReplaceRetryCount = 0;
 
       try {
         console.log("[bg] replaceTrack enabled:", reason, {
@@ -1199,6 +1226,18 @@ export class JitsiEngine {
       try {
         await this.ensureLocalVideoTrack();
       } catch { }
+
+      // ✅ Auto-retry a few times (so user doesn't need 2-3 clicks)
+      this.bgReplaceRetryCount = this.bgReplaceRetryCount + 1;
+      if (this.bgReplaceRetryCount <= 3 && this.bgPrefs.mode !== "none") {
+        const delay = 250 * this.bgReplaceRetryCount; // 250ms, 500ms, 750ms
+        setTimeout(() => {
+          if (this.disposed) return;
+          void this.enqueueBgOp(`replaceTrack-retry#${this.bgReplaceRetryCount}`, () =>
+            this.applyBgNow(`replaceTrack-retry#${this.bgReplaceRetryCount}`)
+          );
+        }, delay);
+      }
     } finally {
       setTimeout(() => {
         this.bgApplying = false;
@@ -1288,7 +1327,7 @@ export class JitsiEngine {
   private async reapplyBgIfNeeded() {
     if (!this.localVideoTrack) return;
     if (this.bgPrefs.mode === "none") return;
-    await this.applyBgNow("reapplyBgIfNeeded");
+    await this.enqueueBgOp("reapplyBgIfNeeded", () => this.applyBgNow("reapplyBgIfNeeded"));
   }
 
   public async setBackgroundEffect(opts: { mode: BgMode; imageUrl?: string }) {
@@ -1298,7 +1337,7 @@ export class JitsiEngine {
     this.mediaSettings.bgMode = opts.mode;
     this.mediaSettings.bgImageUrl = opts.imageUrl;
 
-    await this.applyBgNow("setBackgroundEffect");
+    await this.enqueueBgOp("setBackgroundEffect", () => this.applyBgNow("setBackgroundEffect"));
 
     try {
       if (this.localUserId && this.participants[this.localUserId] && this.localVideoTrack) {
@@ -1566,6 +1605,8 @@ export class JitsiEngine {
     }
 
     this.refreshEffectsSupport(this.localVideoTrack);
+    // ✅ preload BG factory so first blur/image click is instant
+    void this.loadCanvasBgFactory();
     await this.applyBgNow("applyInputDevices:final");
 
     return { audio: this.localAudioTrack, video: this.localVideoTrack };
@@ -2044,7 +2085,7 @@ export class JitsiEngine {
       if (this.localVideoTrack) entry.video = this.localVideoTrack;
       this.tracksByParticipant.set(this.localUserId, entry);
 
-      await this.applyBgNow("createLocalTracks");
+      await this.enqueueBgOp("createLocalTracks", () => this.applyBgNow("createLocalTracks"));
 
       this.rebuildParticipantsFromTracks();
       this.emitParticipants();
@@ -2345,7 +2386,7 @@ export class JitsiEngine {
         if (pid === this.localUserId) {
           try {
             const nowMuted = track.isMuted?.() === true;
-            if (!nowMuted) void this.applyBgNow("TRACK_MUTE_CHANGED:unmuted");
+            if (!nowMuted) void this.enqueueBgOp("TRACK_MUTE_CHANGED:unmuted", () => this.applyBgNow("TRACK_MUTE_CHANGED:unmuted"));
           } catch { }
         }
       }
