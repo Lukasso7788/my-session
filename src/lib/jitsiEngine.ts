@@ -26,6 +26,12 @@
 // ✅ PATCH #2 (FIRST-CLICK BLUR APPLY FIX):
 // - If setEffect path is incompatible (e.g., vendored effect.startEffect is async), THROW to trigger fallback to replaceTrack
 // - Do not “silently succeed” by applying PASSTHROUGH and returning (that ate the first click)
+//
+// ✅ PATCH #3 (MULTI-PARTICIPANT CAM TOGGLE FIX):
+// - In some lib-jitsi-meet builds, local video "mute/unmute" can get stuck when >1 participant.
+// - Symptom: camera cannot re-enable until BG set to "none" (which forces track pipeline reset).
+// - Fix: make toggleVideoMute use HARD toggle (remove/dispose + recreate/add) instead of mute/unmute.
+// - Also ensure BG base pointers are cleared when camera is hard-disabled.
 // ============================================================================
 
 import { createVirtualBackgroundEffect as createVendoredVirtualBackgroundEffect } from "./jitsiEffects/virtualBackground";
@@ -880,7 +886,6 @@ export class JitsiEngine {
         throw new Error(`setEffect unavailable: ${this.effectsIncompatReason || "no effect"}`);
       }
 
-      // Debug “isEnabled is not a function” root cause
       try {
         const dbg = {
           ctor: effect?.constructor?.name,
@@ -955,7 +960,6 @@ export class JitsiEngine {
     this.canvasBgFactoryLoaded = true;
 
     try {
-      // expected: src/lib/backgroundEffect.ts exports createBackgroundEffect(opts)
       const mod: any = await import("./backgroundEffect");
       const fn = mod?.createBackgroundEffect || mod?.createCanvasVirtualBgEffect || mod?.default || null;
 
@@ -1040,7 +1044,6 @@ export class JitsiEngine {
 
     this.bgProcessedStream = null;
 
-    // processed Jitsi track (outgoing) is disposed separately by caller
     try {
       console.debug("[bg] replaceTrack processor stopped:", reason);
     } catch { }
@@ -1054,13 +1057,11 @@ export class JitsiEngine {
 
     if (processed && base && typeof this.conference.replaceTrack === "function") {
       try {
-        // switch outgoing back to base
         await this.conference.replaceTrack(processed, base);
       } catch (e) {
         console.warn("[bg] replaceTrack disable replaceTrack(processed->base) failed:", e);
       }
     } else if (processed && base) {
-      // fallback path if replaceTrack missing
       try {
         await this.conference.removeTrack?.(processed);
       } catch { }
@@ -1091,15 +1092,13 @@ export class JitsiEngine {
 
     await this.stopReplaceTrackProcessor(`disable:${reason}`);
 
-    // Decide whether to keep base track pointer
     if (!keepPrefs) {
       this.bgBaseVideoTrack = null;
     }
 
     if (!keepPrefs) {
-      // also clear setEffect state if it existed
       this.videoEffect = undefined;
-      this.effectsCompatibility = this.effectsCompatibility; // no-op, just explicit
+      this.effectsCompatibility = this.effectsCompatibility;
     }
 
     this.bgImplMode = "none";
@@ -1110,27 +1109,22 @@ export class JitsiEngine {
 
     if (this.bgPrefs.mode === "none") return;
 
-    // Ensure base video track exists and is a real camera track
     if (!this.localVideoTrack) return;
 
-    // Base track is the raw camera feeding the processor
     if (!this.bgBaseVideoTrack) {
       this.bgBaseVideoTrack = this.localVideoTrack;
     }
 
-    // Don’t apply if muted
     try {
       if (this.bgBaseVideoTrack?.isMuted?.() === true) return;
     } catch { }
 
-    // Build processor instance
     const factory = await this.loadCanvasBgFactory();
     if (!factory) {
       console.warn("[bg] replaceTrack path unavailable: no backgroundEffect factory");
       return;
     }
 
-    // Get base stream
     const baseTrack = this.bgBaseVideoTrack || this.localVideoTrack;
     const baseStream = (await this.waitBaseStream(baseTrack, 2000)) || (await this.getBaseVideoStreamForBg());
     if (!baseStream) {
@@ -1142,12 +1136,10 @@ export class JitsiEngine {
       return;
     }
 
-    // Stop previous processor/processed track if any (reconfigure)
     if (this.bgProcessedTrack) {
       await this.disableBg_replaceTrack("reconfigure", true);
     }
 
-    // Create processor and processed stream (can be async safely here)
     this.bgApplying = true;
     try {
       const opts = {
@@ -1177,14 +1169,11 @@ export class JitsiEngine {
 
       this.bgProcessedStream = processedStream;
 
-      // Create outgoing Jitsi track from processed stream
       const processedJitsiTrack = await this.createJitsiVideoTrackFromStream(processedStream);
       this.bgProcessedTrack = processedJitsiTrack;
 
-      // Replace outgoing track in conference:
       const oldOutgoing = this.localVideoTrack;
 
-      // Update local refs before replace to avoid TRACK_REMOVED handler nulling us
       this.localVideoTrack = processedJitsiTrack;
       if (this.localUserId) {
         const entry = this.tracksByParticipant.get(this.localUserId) || {};
@@ -1205,7 +1194,6 @@ export class JitsiEngine {
         await this.conference.addTrack(processedJitsiTrack);
       }
 
-      // Keep base track alive (not disposed) because it feeds processor
       this.bgImplMode = "replaceTrack";
       this.bgReplaceRetryCount = 0;
 
@@ -1218,20 +1206,17 @@ export class JitsiEngine {
     } catch (e) {
       console.warn("[bg] replaceTrack enable failed:", e);
 
-      // revert to base on failure
       try {
         await this.disableBg_replaceTrack("enable-failed", false);
       } catch { }
 
-      // keep localVideoTrack safe: if we lost it, attempt ensure
       try {
         await this.ensureLocalVideoTrack();
       } catch { }
 
-      // ✅ Auto-retry a few times (so user doesn't need 2-3 clicks)
       this.bgReplaceRetryCount = this.bgReplaceRetryCount + 1;
       if (this.bgReplaceRetryCount <= 3 && this.bgPrefs.mode !== "none") {
-        const delay = 250 * this.bgReplaceRetryCount; // 250ms, 500ms, 750ms
+        const delay = 250 * this.bgReplaceRetryCount;
         setTimeout(() => {
           if (this.disposed) return;
           void this.enqueueBgOp(`replaceTrack-retry#${this.bgReplaceRetryCount}`, () =>
@@ -1250,13 +1235,11 @@ export class JitsiEngine {
   // BG MANAGER — unified apply/clear entrypoints
   // ========================================================================
   private async clearAnyBg(keepPrefs: boolean, reason: string) {
-    // Clear replaceTrack mode first (if active)
     if (this.bgImplMode === "replaceTrack") {
       await this.disableBg_replaceTrack(reason, keepPrefs);
       return;
     }
 
-    // Clear setEffect mode if active or if track has setEffect
     if (this.localVideoTrack) {
       try {
         await this.clearBgEffectOnTrack_setEffect(this.localVideoTrack);
@@ -1273,7 +1256,6 @@ export class JitsiEngine {
     }
   }
 
-  // Small helper (keeps TS happy + used by hard-toggle path)
   private async clearBgEffectOnTrack(_track: any) {
     if (this.bgPrefs.mode === "none") return;
     await this.clearAnyBg(true, "clearBgEffectOnTrack");
@@ -1299,18 +1281,15 @@ export class JitsiEngine {
       return;
     }
 
-    // If we are already in replaceTrack mode, just reconfigure via disable+enable
     if (this.bgImplMode === "replaceTrack") {
       await this.enableBg_replaceTrack(`reapply:${reason}`);
       return;
     }
 
-    // Strategy "setEffect" or auto (try A first)
     if (this.bgStrategy !== "replaceTrack" && this.canTrySetEffect(track)) {
       try {
         await this.applyBgEffectToTrack_setEffect(track);
 
-        // ✅ PATCH #2: treat as failure if we didn't end up with a real effect instance
         if (this.bgPrefs.mode !== "none" && !this.videoEffect) {
           throw new Error("setEffect produced no effect instance");
         }
@@ -1322,15 +1301,12 @@ export class JitsiEngine {
       }
     }
 
-    // Fallback / forced replaceTrack
-    // If we previously were in setEffect mode, clear it before switching
     if (this.bgImplMode === "setEffect") {
       try {
         await this.clearBgEffectOnTrack_setEffect(track);
       } catch { }
     }
 
-    // ReplaceTrack enable expects localVideoTrack to be base camera at the moment of enable.
     this.bgBaseVideoTrack = this.bgBaseVideoTrack || this.localVideoTrack;
     this.bgImplMode = "none";
 
@@ -1366,11 +1342,9 @@ export class JitsiEngine {
   private async ensureLocalVideoTrack(): Promise<void> {
     if (this.disposed || !this.JitsiMeetJS || !this.conference) return;
 
-    // If we're in replaceTrack mode, the outgoing track is processed and base track is the camera.
     const needBase = this.bgImplMode === "replaceTrack" && this.bgBaseVideoTrack;
     const baseCandidate = needBase ? this.bgBaseVideoTrack : this.localVideoTrack;
 
-    // If candidate exists and looks alive, we may be done.
     try {
       const msAny = baseCandidate?.getOriginalStream?.();
       const ms = await Promise.resolve(msAny);
@@ -1378,7 +1352,6 @@ export class JitsiEngine {
       if (baseCandidate && vt && vt.readyState !== "ended") {
         if (!needBase) return;
 
-        // ensure outgoing exists too
         if (this.localVideoTrack) {
           try {
             const outMsAny = this.localVideoTrack?.getOriginalStream?.();
@@ -1410,7 +1383,7 @@ export class JitsiEngine {
       } catch { }
 
       const oldBase = this.bgBaseVideoTrack;
-      const oldOutgoing = this.localVideoTrack; // after disable, localVideoTrack should be base
+      const oldOutgoing = this.localVideoTrack;
 
       try {
         if (oldOutgoing && typeof this.conference.replaceTrack === "function") {
@@ -1447,7 +1420,6 @@ export class JitsiEngine {
       return;
     }
 
-    // Non-replaceTrack path
     const oldVideo = this.localVideoTrack;
 
     if (oldVideo) {
@@ -1497,7 +1469,6 @@ export class JitsiEngine {
 
     const track = this.localVideoTrack;
     if (!track) {
-      // already off
       const p = this.participants[this.localUserId];
       if (p) {
         p.videoMuted = true;
@@ -1515,17 +1486,19 @@ export class JitsiEngine {
         await this.clearBgEffectOnTrack(track);
       } catch { }
 
-      // Remove from conference
+      // ✅ PATCH #3: when camera is being disabled hard, base pointer must be cleared.
+      // clearBgEffectOnTrack(... keepPrefs=true) can leave bgBaseVideoTrack pointing to the disposed camera track.
+      this.bgBaseVideoTrack = null;
+      this.bgProcessedTrack = null;
+
       try {
         await this.conference.removeTrack?.(track);
       } catch { }
 
-      // Dispose track (stops camera)
       await this.safeDisposeTrack(track, `disableLocalVideoHard:${reason}`);
 
       this.localVideoTrack = null;
 
-      // Update mapping
       const entry = this.tracksByParticipant.get(this.localUserId) || {};
       if (entry.video === track) delete entry.video;
       this.tracksByParticipant.set(this.localUserId, entry);
@@ -1537,7 +1510,6 @@ export class JitsiEngine {
 
       this.emitParticipants();
 
-      // No topology churn, but let subs re-evaluate
       this.scheduleApplyVideoSubscriptions(0, false);
       this.scheduleHealthTickSoon();
     } catch (e) {
@@ -1549,7 +1521,6 @@ export class JitsiEngine {
     if (this.disposed || !this.JitsiMeetJS || !this.conference || !this.localUserId) return;
 
     try {
-      // Create fresh video track
       const tracks = await this.JitsiMeetJS.createLocalTracks({
         devices: ["video"],
         constraints: {
@@ -1566,19 +1537,22 @@ export class JitsiEngine {
       const newVideo = tracks.find((t: any) => t.getType?.() === "video");
       if (!newVideo) return;
 
-      // Add to conference
       await this.conference.addTrack(newVideo);
 
       this.localVideoTrack = newVideo;
 
-      // Update mapping
+      // ✅ PATCH #3: if bg is enabled, this track is the new base candidate
+      if (this.bgPrefs.mode !== "none") {
+        this.bgBaseVideoTrack = newVideo;
+      }
+
       const entry = this.tracksByParticipant.get(this.localUserId) || {};
       entry.video = newVideo;
       this.tracksByParticipant.set(this.localUserId, entry);
 
       this.refreshEffectsSupport(newVideo);
 
-      // Re-apply background if user had chosen it (even if blur was never used, harmless)
+      // Re-apply background if user had chosen it
       try {
         await this.reapplyBgIfNeeded();
       } catch { }
@@ -1592,6 +1566,10 @@ export class JitsiEngine {
 
       this.scheduleApplyVideoSubscriptions(0, false);
       this.scheduleHealthTickSoon();
+
+      try {
+        console.debug("[cam] enableLocalVideoHard OK", reason, this.getTrackDbg(newVideo));
+      } catch { }
     } catch (e) {
       console.warn("[cam] enableLocalVideoHard failed:", e);
       this.callbacks.onError?.("Failed to enable camera");
@@ -1617,7 +1595,6 @@ export class JitsiEngine {
       return { audio: this.localAudioTrack, video: this.localVideoTrack };
     }
 
-    // If replaceTrack bg is active and video device changes, temporarily disable bg first.
     if (videoChanged && this.bgImplMode === "replaceTrack" && this.bgPrefs.mode !== "none") {
       try {
         await this.disableBg_replaceTrack("applyInputDevices:pre-video-switch", true);
@@ -1637,14 +1614,12 @@ export class JitsiEngine {
     if (videoChanged) {
       try {
         if (this.localVideoTrack && typeof this.localVideoTrack.setDevice === "function") {
-          // If setEffect mode active, clear effect before switching device (stable)
           if (this.bgImplMode === "setEffect" && this.bgPrefs.mode !== "none") {
             await this.clearBgEffectOnTrack_setEffect(this.localVideoTrack);
           }
 
           await this.localVideoTrack.setDevice(videoInputId);
 
-          // Re-apply after device switch
           setTimeout(() => {
             void this.applyBgNow("applyInputDevices:post-setDevice");
           }, 0);
@@ -1694,7 +1669,6 @@ export class JitsiEngine {
       if (newVideo) {
         const oldVideo = this.localVideoTrack;
 
-        // If bg is active, fully clear before replacing tracks.
         if (this.bgPrefs.mode !== "none") {
           await this.clearAnyBg(true, "applyInputDevices:pre-video-replace");
         }
@@ -1727,7 +1701,6 @@ export class JitsiEngine {
     }
 
     this.refreshEffectsSupport(this.localVideoTrack);
-    // ✅ preload BG factory so first blur/image click is instant
     void this.loadCanvasBgFactory();
     await this.applyBgNow("applyInputDevices:final");
 
@@ -1820,53 +1793,37 @@ export class JitsiEngine {
   }
 
   // ========================================================================
-  // ✅ PATCH #1: FIX camera toggle after blur/background effect
+  // ✅ PATCH #3: reliable camera toggle (HARD toggle)
   // ========================================================================
   async toggleVideoMute(): Promise<void> {
     if (!this.localUserId) return;
 
     console.debug("[cam] toggleVideoMute request. track:", this.getTrackDbg(this.localVideoTrack), "bg:", this.bgPrefs);
 
-    try {
-      await this.ensureLocalVideoTrack();
-    } catch { }
-
     const local = this.participants[this.localUserId];
-    if (!local || !this.localVideoTrack) return;
+    if (!local) return;
+
+    // Determine "enabled" robustly: track exists AND not muted
+    const track = this.localVideoTrack;
+    const isCurrentlyOn = !!track && (track.isMuted?.() !== true);
 
     try {
-      let track = this.localVideoTrack!;
-      const isMutedNow = track.isMuted?.() === true;
-
-      if (isMutedNow) {
-        // Turning ON camera
-        await this.ensureLocalVideoTrack();
-        track = this.localVideoTrack!;
-        await track.unmute?.();
-        local.videoMuted = false;
-
-        // Re-apply bg AFTER unmute
-        await this.applyBgNow("toggleVideoMute:on");
-      } else {
-        // Turning OFF camera
-        // If replaceTrack bg is active, first swap back to base (keep prefs) before muting base.
-        if (this.bgPrefs.mode !== "none") {
-          if (this.bgImplMode === "replaceTrack") {
-            await this.disableBg_replaceTrack("toggleVideoMute:pre-mute", true);
-            track = this.localVideoTrack!;
-          } else if (this.bgImplMode === "setEffect") {
-            await this.clearBgEffectOnTrack_setEffect(track);
-          }
-        }
-
-        await this.waitEffectIdle(track);
-
-        await track.mute?.();
+      if (isCurrentlyOn) {
+        // Turning OFF: hard-disable (prevents multi-participant stuck state)
+        await this.disableLocalVideoHard("toggleVideoMute:off");
         local.videoMuted = true;
+      } else {
+        // Turning ON: hard-enable
+        await this.enableLocalVideoHard("toggleVideoMute:on");
+        local.videoMuted = this.localVideoTrack?.isMuted?.() === true;
+
+        // If bg prefs are enabled, apply after camera is back
+        if (this.bgPrefs.mode !== "none") {
+          await this.applyBgNow("toggleVideoMute:on:reapply-bg");
+        }
       }
 
       this.emitParticipants();
-
       this.scheduleApplyVideoSubscriptions(0, false);
       this.scheduleHealthTickSoon();
     } catch (e) {
@@ -1932,12 +1889,10 @@ export class JitsiEngine {
 
     this.stopVideoHealthMonitor();
 
-    // Clear BG (both modes)
     try {
       await this.clearAnyBg(false, "dispose");
     } catch { }
 
-    // Dispose screenshare
     try {
       if (this.localScreenshareTrack) {
         try {
@@ -1948,7 +1903,6 @@ export class JitsiEngine {
       }
     } catch { }
 
-    // Dispose audio
     try {
       if (this.localAudioTrack) {
         try {
@@ -1959,7 +1913,6 @@ export class JitsiEngine {
       }
     } catch { }
 
-    // Dispose video (outgoing) — if replaceTrack mode was used, also dispose base if it still exists and is different
     try {
       const outgoing = this.localVideoTrack;
       if (outgoing) {
@@ -2195,7 +2148,6 @@ export class JitsiEngine {
 
       this.refreshEffectsSupport(this.localVideoTrack);
 
-      // ✅ PATCH #2 perf: prewarm replaceTrack background pipeline so first click is instant
       void this.loadCanvasBgFactory();
 
       try {
@@ -2434,7 +2386,6 @@ export class JitsiEngine {
         this.localVideoTrack = track;
         this.refreshEffectsSupport(track);
 
-        // ✅ ВАЖНО: если мы сейчас применяем BG или уже в replaceTrack — НЕ триггерим реапплай
         if (!this.bgApplying && this.bgImplMode !== "replaceTrack") {
           void this.reapplyBgIfNeeded();
         }
@@ -2466,8 +2417,6 @@ export class JitsiEngine {
       if (type === "video" && entry.video === track) delete entry.video;
 
       if (pid === this.localUserId && type === "video" && this.localVideoTrack === track) {
-        // If setEffect mode, clear effect.
-        // In replaceTrack mode, BG manager handles lifecycle elsewhere; do not nuke base pointers here.
         if (this.bgImplMode === "setEffect") {
           void this.clearBgEffectOnTrack_setEffect(track);
         }
