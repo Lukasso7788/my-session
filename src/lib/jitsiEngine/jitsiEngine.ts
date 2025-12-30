@@ -195,11 +195,11 @@ export class JitsiEngine {
   private enqueueCamOp(label: string, fn: () => Promise<void>) {
     const id = ++this.camOpSeq;
     this.camOpQueue = this.camOpQueue
-      .catch(() => {})
+      .catch(() => { })
       .then(async () => {
-        try { console.debug(`[camQ#${id}] BEGIN ${label}`); } catch {}
+        try { console.debug(`[camQ#${id}] BEGIN ${label}`); } catch { }
         await fn();
-        try { console.debug(`[camQ#${id}] END ${label}`); } catch {}
+        try { console.debug(`[camQ#${id}] END ${label}`); } catch { }
       })
       .catch((e) => {
         console.warn(`[camQ#${id}] FAIL ${label}:`, e);
@@ -254,9 +254,9 @@ export class JitsiEngine {
     await this.bg.waitEffectIdle(track);
     try {
       track.dispose?.();
-      try { console.debug(`[track] dispose(${reason}) OK`); } catch {}
+      try { console.debug(`[track] dispose(${reason}) OK`); } catch { }
     } catch (e) {
-      try { console.debug(`[track] dispose(${reason}) FAIL`, e); } catch {}
+      try { console.debug(`[track] dispose(${reason}) FAIL`, e); } catch { }
     }
   }
 
@@ -299,11 +299,11 @@ export class JitsiEngine {
       try {
         if (typeof conf.replaceTrack === "function") await conf.replaceTrack(existing, newVideo);
         else {
-          try { await conf.removeTrack?.(existing); } catch {}
+          try { await conf.removeTrack?.(existing); } catch { }
           await conf.addTrack(newVideo);
         }
       } finally {
-        try { await this.safeDisposeTrack(existing, `replaceOrAddLocalVideoTrack:${reason}:old`); } catch {}
+        try { await this.safeDisposeTrack(existing, `replaceOrAddLocalVideoTrack:${reason}:old`); } catch { }
       }
       return;
     }
@@ -320,11 +320,11 @@ export class JitsiEngine {
       try {
         if (typeof conf.replaceTrack === "function") await conf.replaceTrack(existing, newAudio);
         else {
-          try { await conf.removeTrack?.(existing); } catch {}
+          try { await conf.removeTrack?.(existing); } catch { }
           await conf.addTrack(newAudio);
         }
       } finally {
-        try { await this.safeDisposeTrack(existing, `replaceOrAddLocalAudioTrack:${reason}:old`); } catch {}
+        try { await this.safeDisposeTrack(existing, `replaceOrAddLocalAudioTrack:${reason}:old`); } catch { }
       }
       return;
     }
@@ -364,7 +364,7 @@ export class JitsiEngine {
     try {
       const lvl = this.JitsiMeetJS?.logLevels?.ERROR;
       if (typeof lvl !== "undefined") this.JitsiMeetJS.setLogLevel(lvl);
-    } catch {}
+    } catch { }
 
     this.JitsiMeetJS.init({
       disableP2P: true,
@@ -420,7 +420,7 @@ export class JitsiEngine {
         local.audioMuted = true;
       }
       this.emitParticipants();
-    } catch {}
+    } catch { }
   }
 
   // ========================================================================
@@ -450,7 +450,7 @@ export class JitsiEngine {
       if (nowConfVideo) track = nowConfVideo;
       else if (this.localVideoTrack) track = this.localVideoTrack;
 
-      try { await this.conference.removeTrack?.(track); } catch {}
+      try { await this.conference.removeTrack?.(track); } catch { }
       await this.safeDisposeTrack(track, `disableLocalVideoHard:${reason}`);
 
       // pointers reset but prefs preserved
@@ -485,10 +485,10 @@ export class JitsiEngine {
           video: this.mediaSettings.videoInputId
             ? { deviceId: { exact: this.mediaSettings.videoInputId } }
             : {
-                height: { ideal: 720, max: 720 },
-                width: { ideal: 1280, max: 1280 },
-                frameRate: { ideal: 30, max: 30 },
-              },
+              height: { ideal: 720, max: 720 },
+              width: { ideal: 1280, max: 1280 },
+              frameRate: { ideal: 30, max: 30 },
+            },
         },
       });
 
@@ -632,49 +632,49 @@ export class JitsiEngine {
     if (this.resumeRecoverTimer) clearTimeout(this.resumeRecoverTimer);
     this.resumeRecoverTimer = null;
 
-    try { (this as any).__resumeRemovers?.(); } catch {}
+    try { (this as any).__resumeRemovers?.(); } catch { }
     (this as any).__resumeRemovers = null;
     this.resumeHandlersAttached = false;
 
     this.health.stop();
 
     // Clear BG (both modes)
-    try { await this.bg.clearAnyBg(false, "dispose"); } catch {}
+    try { await this.bg.clearAnyBg(false, "dispose"); } catch { }
 
     // Dispose screenshare
     try {
       if (this.localScreenshareTrack) {
-        try { await this.conference?.removeTrack?.(this.localScreenshareTrack); } catch {}
+        try { await this.conference?.removeTrack?.(this.localScreenshareTrack); } catch { }
         await this.safeDisposeTrack(this.localScreenshareTrack, "dispose:screen");
         this.localScreenshareTrack = null;
       }
-    } catch {}
+    } catch { }
 
     // Dispose audio
     try {
       if (this.localAudioTrack) {
-        try { await this.conference?.removeTrack?.(this.localAudioTrack); } catch {}
+        try { await this.conference?.removeTrack?.(this.localAudioTrack); } catch { }
         await this.safeDisposeTrack(this.localAudioTrack, "dispose:audio");
         this.localAudioTrack = null;
       }
-    } catch {}
+    } catch { }
 
     // Dispose video outgoing
     try {
       const outgoing = this.localVideoTrack;
       if (outgoing) {
-        try { await this.conference?.removeTrack?.(outgoing); } catch {}
+        try { await this.conference?.removeTrack?.(outgoing); } catch { }
         await this.safeDisposeTrack(outgoing, "dispose:video:outgoing");
       }
       this.localVideoTrack = null;
-    } catch {}
+    } catch { }
 
     this.tracksByParticipant.clear();
     this.participants = {};
     this.emitParticipants();
 
-    try { await this.conference?.leave?.(); } catch {}
-    try { await this.connection?.disconnect?.(); } catch {}
+    try { await this.conference?.leave?.(); } catch { }
+    try { await this.connection?.disconnect?.(); } catch { }
 
     this.conference = null;
     this.connection = null;
@@ -858,10 +858,10 @@ export class JitsiEngine {
           video: this.mediaSettings.videoInputId
             ? { deviceId: { exact: this.mediaSettings.videoInputId } }
             : {
-                height: { ideal: 720, max: 720 },
-                width: { ideal: 1280, max: 1280 },
-                frameRate: { ideal: 30, max: 30 },
-              },
+              height: { ideal: 720, max: 720 },
+              width: { ideal: 1280, max: 1280 },
+              frameRate: { ideal: 30, max: 30 },
+            },
         },
       });
 
@@ -927,10 +927,10 @@ export class JitsiEngine {
             const outMs = await Promise.resolve(outMsAny);
             const outVt = outMs?.getVideoTracks?.()?.[0];
             if (outVt && outVt.readyState !== "ended") return;
-          } catch {}
+          } catch { }
         }
       }
-    } catch {}
+    } catch { }
 
     const tracks = await this.JitsiMeetJS.createLocalTracks({
       devices: ["video"],
@@ -944,7 +944,7 @@ export class JitsiEngine {
 
     // If BG replaceTrack was active, clear bg first (keep prefs), then replace camera
     if (impl === "replaceTrack") {
-      try { await this.bg.clearAnyBg(true, "ensureLocalVideoTrack:recreate"); } catch {}
+      try { await this.bg.clearAnyBg(true, "ensureLocalVideoTrack:recreate"); } catch { }
 
       await this.replaceOrAddLocalVideoTrack(newCamera, "ensureLocalVideoTrack:replaceTrack");
 
@@ -975,13 +975,13 @@ export class JitsiEngine {
     const oldVideo = this.localVideoTrack;
 
     if (oldVideo) {
-      try { await this.bg.clearSetEffectOnTrack(oldVideo, "ensureLocalVideoTrack:clearOld"); } catch {}
+      try { await this.bg.clearSetEffectOnTrack(oldVideo, "ensureLocalVideoTrack:clearOld"); } catch { }
 
       if (typeof this.conference.replaceTrack === "function") {
         await this.conference.replaceTrack(oldVideo, newCamera);
         await this.safeDisposeTrack(oldVideo, "ensureLocalVideoTrack:oldVideo");
       } else {
-        try { await this.conference.removeTrack?.(oldVideo); } catch {}
+        try { await this.conference.removeTrack?.(oldVideo); } catch { }
         await this.safeDisposeTrack(oldVideo, "ensureLocalVideoTrack:oldVideo");
         await this.conference.addTrack(newCamera);
       }
@@ -1024,7 +1024,7 @@ export class JitsiEngine {
 
     // if video changes and bg is active, temporarily clear bg (keep prefs)
     if (videoChanged && this.bg.getImplMode() === "replaceTrack" && this.mediaSettings.bgMode !== "none") {
-      try { await this.bg.clearAnyBg(true, "applyInputDevices:pre-video-switch"); } catch {}
+      try { await this.bg.clearAnyBg(true, "applyInputDevices:pre-video-switch"); } catch { }
     }
 
     if (audioChanged) {
@@ -1078,7 +1078,7 @@ export class JitsiEngine {
           this.localAudioTrack = newAudio;
         } else if (this.localAudioTrack) {
           const oldAudio = this.localAudioTrack;
-          try { await this.conference.removeTrack?.(oldAudio); } catch {}
+          try { await this.conference.removeTrack?.(oldAudio); } catch { }
           await this.safeDisposeTrack(oldAudio, "applyInputDevices:oldAudio");
           await this.conference.addTrack(newAudio);
           this.localAudioTrack = newAudio;
@@ -1100,7 +1100,7 @@ export class JitsiEngine {
           await this.safeDisposeTrack(oldVideo, "applyInputDevices:oldVideo");
           this.localVideoTrack = newVideo;
         } else if (oldVideo) {
-          try { await this.conference.removeTrack?.(oldVideo); } catch {}
+          try { await this.conference.removeTrack?.(oldVideo); } catch { }
           await this.safeDisposeTrack(oldVideo, "applyInputDevices:oldVideo");
           await this.conference.addTrack(newVideo);
           this.localVideoTrack = newVideo;
@@ -1216,7 +1216,7 @@ export class JitsiEngine {
       }
 
       this.health.tickSoon();
-    } catch {}
+    } catch { }
   }
 
   private hardResetAndApplyVideoSubscriptions() {
@@ -1232,8 +1232,8 @@ export class JitsiEngine {
       const desiredLastN = Math.min(finalRemoteIds.length, this.MAX_LAST_N);
       const h = this.pickReceiverConstraintHeight(desiredLastN);
 
-      try { this.conference.selectParticipants?.([]); } catch {}
-      try { this.conference.setLastN?.(0); } catch {}
+      try { this.conference.selectParticipants?.([]); } catch { }
+      try { this.conference.setLastN?.(0); } catch { }
 
       setTimeout(() => {
         if (this.disposed || !this.conference) {
@@ -1396,7 +1396,7 @@ export class JitsiEngine {
             if (!nowMuted && !this.camToggling) {
               this.bg.reapplyIfNeeded("TRACK_MUTE_CHANGED:unmuted");
             }
-          } catch {}
+          } catch { }
         }
       }
     }
@@ -1444,7 +1444,7 @@ export class JitsiEngine {
       return;
     }
 
-    try { await this.conference.removeTrack(this.localScreenshareTrack); } catch {}
+    try { await this.conference.removeTrack(this.localScreenshareTrack); } catch { }
     await this.safeDisposeTrack(this.localScreenshareTrack, "handleLocalScreenshareStopped:screen");
 
     const pid = this.localUserId;
@@ -1474,7 +1474,7 @@ export class JitsiEngine {
     const ids = Object.keys(this.participants);
     for (const id of ids) {
       if (id === this.localUserId) continue;
-      try { this.conference.sendEndpointMessage(id, ev); } catch {}
+      try { this.conference.sendEndpointMessage(id, ev); } catch { }
     }
   }
 
@@ -1492,9 +1492,9 @@ export class JitsiEngine {
     try {
       const audios = Array.from(document.querySelectorAll("audio")) as HTMLAudioElement[];
       for (const a of audios) {
-        try { await a.play().catch(() => {}); } catch {}
+        try { await a.play().catch(() => { }); } catch { }
       }
-    } catch {}
+    } catch { }
   }
 
   private schedulePostJoinSelfHeal() {
@@ -1542,10 +1542,10 @@ export class JitsiEngine {
     window.addEventListener("pageshow", onPageShow);
 
     (this as any).__resumeRemovers = () => {
-      try { document.removeEventListener("visibilitychange", onVisibility); } catch {}
-      try { window.removeEventListener("focus", onFocus); } catch {}
-      try { window.removeEventListener("online", onOnline); } catch {}
-      try { window.removeEventListener("pageshow", onPageShow); } catch {}
+      try { document.removeEventListener("visibilitychange", onVisibility); } catch { }
+      try { window.removeEventListener("focus", onFocus); } catch { }
+      try { window.removeEventListener("online", onOnline); } catch { }
+      try { window.removeEventListener("pageshow", onPageShow); } catch { }
     };
   }
 
@@ -1563,7 +1563,7 @@ export class JitsiEngine {
       console.warn("[resume] recoverAfterResume:", reason);
 
       await this.bg.waitIdle();
-      await this.camOpQueue.catch(() => {});
+      await this.camOpQueue.catch(() => { });
 
       await this.resumeAllAudioElements();
       await this.ensureLocalAudioTrack();
@@ -1638,7 +1638,7 @@ export class JitsiEngine {
     const savedQuality = this.qualityMode;
     const savedSelected = [...(this.selectedVideoIds || [])];
 
-    await this.dispose().catch(() => {});
+    await this.dispose().catch(() => { });
     this.disposed = false;
 
     this.mediaSettings = savedMedia;
@@ -1670,7 +1670,7 @@ export class JitsiEngine {
         const at = ms?.getAudioTracks?.()?.[0];
         if (at && at.readyState === "live" && at.enabled !== false) return;
       }
-    } catch {}
+    } catch { }
 
     try {
       const confAudio = this.getConferenceLocalAudioTrack();
@@ -1687,7 +1687,7 @@ export class JitsiEngine {
           return;
         }
       }
-    } catch {}
+    } catch { }
 
     try {
       const tracks = await this.JitsiMeetJS.createLocalTracks({
