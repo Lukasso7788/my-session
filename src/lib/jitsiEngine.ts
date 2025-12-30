@@ -2,6 +2,7 @@
 // src/lib/jitsiEngine.ts — SFU-only (P2P OFF) + track-based + reactions + SAFE background effects
 // Ultra-stable subscriptions: no-op caching + delayed hard reset + cooldown
 // ✅ Added: targeted “black video” recovery (reattach per participant + optional subs bump)
+// ✅ Added: post-join local A/V self-heal + resume/visibility wake recovery + optional safe rejoin
 // ✅ Fixed: do NOT treat local camera/audio track add/remove as topology change (prevents global resub churn on toggleVideo)
 //
 // ✅ UPDATED (Background effects):
@@ -152,6 +153,11 @@ export class JitsiEngine {
 
   private disposed = false;
 
+  // Remember last join args (for safe rejoin after resume / broken states)
+  private lastJoinRoomName: string | null = null;
+  private lastJoinUserName: string | null = null;
+  private lastSafeRejoinAt = 0;
+
   // VIDEO SUBS
   private selectedVideoIds: string[] = [];
   private qualityMode: "auto" | "low" | "medium" | "high" = "auto";
@@ -183,15 +189,27 @@ export class JitsiEngine {
   private camOpSeq = 0;
   private camToggling = false;
 
+  // Resume / wake recovery
+  private resumeHandlersAttached = false;
+  private hiddenAt: number | null = null;
+  private resumeRecoverTimer: any = null;
+
+  // Post-join local A/V self-heal
+  private postJoinHealTimer: any = null;
+
   private enqueueCamOp(label: string, fn: () => Promise<void>) {
     const id = ++this.camOpSeq;
 
     this.camOpQueue = this.camOpQueue
       .catch(() => { })
       .then(async () => {
-        try { console.debug(`[camQ#${id}] BEGIN ${label}`); } catch { }
+        try {
+          console.debug(`[camQ#${id}] BEGIN ${label}`);
+        } catch { }
         await fn();
-        try { console.debug(`[camQ#${id}] END ${label}`); } catch { }
+        try {
+          console.debug(`[camQ#${id}] END ${label}`);
+        } catch { }
       })
       .catch((e) => {
         console.warn(`[camQ#${id}] FAIL ${label}:`, e);
@@ -201,7 +219,9 @@ export class JitsiEngine {
   }
 
   private async waitBgIdle() {
-    try { await this.bgOpQueue; } catch { }
+    try {
+      await this.bgOpQueue;
+    } catch { }
   }
 
   private enqueueBgOp(label: string, fn: () => Promise<void>) {
@@ -413,6 +433,18 @@ export class JitsiEngine {
     }
   }
 
+  private getConferenceLocalAudioTrack(): any | null {
+    try {
+      const conf = this.conference;
+      if (!conf) return null;
+      const arr: any[] = conf.getLocalTracks?.() || [];
+      const a = arr.find((t) => !this.isDesktopTrack(t) && t?.getType?.() === "audio") || null;
+      return a || null;
+    } catch {
+      return null;
+    }
+  }
+
   private async replaceOrAddLocalVideoTrack(newVideo: any, reason: string) {
     if (!this.conference || this.disposed) throw new Error("conference not ready");
     const conf = this.conference;
@@ -441,6 +473,33 @@ export class JitsiEngine {
 
     // No existing => safe to add
     await conf.addTrack(newVideo);
+  }
+
+  private async replaceOrAddLocalAudioTrack(newAudio: any, reason: string) {
+    if (!this.conference || this.disposed) throw new Error("conference not ready");
+    const conf = this.conference;
+
+    const existing = this.getConferenceLocalAudioTrack();
+
+    if (existing && existing !== newAudio) {
+      try {
+        if (typeof conf.replaceTrack === "function") {
+          await conf.replaceTrack(existing, newAudio);
+        } else {
+          try {
+            await conf.removeTrack?.(existing);
+          } catch { }
+          await conf.addTrack(newAudio);
+        }
+      } finally {
+        try {
+          await this.safeDisposeTrack(existing, `replaceOrAddLocalAudioTrack:${reason}:old`);
+        } catch { }
+      }
+      return;
+    }
+
+    await conf.addTrack(newAudio);
   }
 
   // ========================================================================
@@ -738,6 +797,344 @@ export class JitsiEngine {
         } catch { }
       }, 220);
     } catch { }
+  }
+
+  // ========================================================================
+  // ✅ LOCAL A/V SELF-HEAL + RESUME RECOVERY
+  // ========================================================================
+  private isLocalTrackUsable(track: any, kind: "audio" | "video") {
+    if (!track) return false;
+
+    try {
+      // If user explicitly muted, we consider it "healthy" (it's intended).
+      if (kind === "audio" && this.localUserId && this.participants[this.localUserId]?.audioMuted) return true;
+      if (kind === "video" && this.localUserId && this.participants[this.localUserId]?.videoMuted) return true;
+
+      // If track exposes muted state, and it's muted unexpectedly, treat as not-usable only for audio (optional).
+      // For stability, we DO NOT force-unmute here.
+      const msAny = track.getOriginalStream?.();
+      // Some builds return promise; accept both
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      const check = async () => {
+        const ms = await Promise.resolve(msAny);
+        if (!ms || typeof ms.getTracks !== "function") return false;
+
+        if (kind === "audio") {
+          const at = ms.getAudioTracks?.()?.[0];
+          if (!at) return false;
+          if (at.readyState !== "live") return false;
+          if (at.enabled === false) return false;
+          return true;
+        } else {
+          const vt = ms.getVideoTracks?.()?.[0];
+          if (!vt) return false;
+          if (vt.readyState !== "live") return false;
+          if (vt.enabled === false) return false;
+          return true;
+        }
+      };
+
+      // Synchronous fast path: if msAny isn't a Promise and looks like MediaStream
+      if (msAny && typeof msAny.then !== "function" && typeof msAny.getTracks === "function") {
+        if (kind === "audio") {
+          const at = msAny.getAudioTracks?.()?.[0];
+          return !!at && at.readyState === "live" && at.enabled !== false;
+        } else {
+          const vt = msAny.getVideoTracks?.()?.[0];
+          return !!vt && vt.readyState === "live" && vt.enabled !== false;
+        }
+      }
+
+      // Promise path: we can't await here; caller awaits a wrapper method.
+      // Return "unknown false" so ensure method can await.
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  private async ensureLocalAudioTrack(): Promise<void> {
+    if (this.disposed || !this.JitsiMeetJS || !this.conference || !this.localUserId) return;
+
+    const local = this.participants[this.localUserId];
+    // If user muted, don't recreate (it will look like "bug" to user)
+    if (local?.audioMuted) return;
+
+    // If we have a usable audio track, stop.
+    try {
+      if (this.localAudioTrack) {
+        const msAny = this.localAudioTrack.getOriginalStream?.();
+        const ms = await Promise.resolve(msAny);
+        const at = ms?.getAudioTracks?.()?.[0];
+        if (at && at.readyState === "live" && at.enabled !== false) return;
+      }
+    } catch { }
+
+    // If engine lost ref but conference still has it and it's usable: adopt it.
+    try {
+      const confAudio = this.getConferenceLocalAudioTrack();
+      if (confAudio) {
+        const msAny = confAudio.getOriginalStream?.();
+        const ms = await Promise.resolve(msAny);
+        const at = ms?.getAudioTracks?.()?.[0];
+        if (at && at.readyState === "live" && at.enabled !== false) {
+          this.localAudioTrack = confAudio;
+          const entry = this.tracksByParticipant.get(this.localUserId) || {};
+          entry.audio = confAudio;
+          this.tracksByParticipant.set(this.localUserId, entry);
+          this.rebuildParticipantsFromTracks();
+          this.emitParticipants();
+          return;
+        }
+      }
+    } catch { }
+
+    // Create fresh audio track
+    try {
+      const tracks = await this.JitsiMeetJS.createLocalTracks({
+        devices: ["audio"],
+        constraints: {
+          audio: this.mediaSettings.audioInputId ? { deviceId: { exact: this.mediaSettings.audioInputId } } : true,
+        },
+      });
+
+      const newAudio = tracks.find((t: any) => t.getType?.() === "audio") || null;
+      if (!newAudio) return;
+
+      // Replace-or-add safely
+      await this.replaceOrAddLocalAudioTrack(newAudio, "ensureLocalAudioTrack");
+
+      this.localAudioTrack = newAudio;
+
+      const entry = this.tracksByParticipant.get(this.localUserId) || {};
+      entry.audio = newAudio;
+      this.tracksByParticipant.set(this.localUserId, entry);
+
+      this.rebuildParticipantsFromTracks();
+      this.emitParticipants();
+    } catch (e) {
+      console.warn("[audio] ensureLocalAudioTrack failed:", e);
+    }
+  }
+
+  private async resumeAllAudioElements() {
+    try {
+      const audios = Array.from(document.querySelectorAll("audio")) as HTMLAudioElement[];
+      for (const a of audios) {
+        try {
+          await a.play().catch(() => { });
+        } catch { }
+      }
+    } catch { }
+  }
+
+  private schedulePostJoinSelfHeal() {
+    if (this.postJoinHealTimer) clearTimeout(this.postJoinHealTimer);
+    this.postJoinHealTimer = setTimeout(() => {
+      this.postJoinHealTimer = null;
+      if (this.disposed) return;
+      void this.postJoinSelfHeal();
+    }, 2500);
+  }
+
+  private async postJoinSelfHeal() {
+    // 1) Unlock audio playback if needed (autoplay policies)
+    await this.resumeAllAudioElements();
+
+    // 2) Ensure local tracks exist + are alive
+    await this.ensureLocalAudioTrack();
+    await this.ensureLocalVideoTrack();
+
+    // 3) BG re-apply is already handled by createLocalTracks/ensureLocalVideoTrack
+    this.scheduleHealthTickSoon();
+  }
+
+  private attachResumeHandlers() {
+    if (this.resumeHandlersAttached) return;
+    this.resumeHandlersAttached = true;
+
+    const onVisibility = () => {
+      if (this.disposed) return;
+
+      if (document.visibilityState === "hidden") {
+        this.hiddenAt = Date.now();
+        return;
+      }
+
+      const dt = this.hiddenAt ? Date.now() - this.hiddenAt : 0;
+      this.hiddenAt = null;
+
+      // If we were hidden/suspended long enough, do wake recovery.
+      if (dt > 15_000) {
+        this.scheduleResumeRecovery("visibility");
+      } else {
+        // still try to resume audio (cheap)
+        void this.resumeAllAudioElements();
+      }
+    };
+
+    const onFocus = () => {
+      if (this.disposed) return;
+      this.scheduleResumeRecovery("focus");
+    };
+
+    const onOnline = () => {
+      if (this.disposed) return;
+      this.scheduleResumeRecovery("online");
+    };
+
+    const onPageShow = (ev: any) => {
+      if (this.disposed) return;
+      if (ev?.persisted) this.scheduleResumeRecovery("pageshow:bfcache");
+    };
+
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("pageshow", onPageShow);
+
+    // Store removers in closures on the instance (lightweight)
+    (this as any).__resumeRemovers = () => {
+      try {
+        document.removeEventListener("visibilitychange", onVisibility);
+      } catch { }
+      try {
+        window.removeEventListener("focus", onFocus);
+      } catch { }
+      try {
+        window.removeEventListener("online", onOnline);
+      } catch { }
+      try {
+        window.removeEventListener("pageshow", onPageShow);
+      } catch { }
+    };
+  }
+
+  private scheduleResumeRecovery(reason: string) {
+    if (this.resumeRecoverTimer) return;
+    this.resumeRecoverTimer = setTimeout(() => {
+      this.resumeRecoverTimer = null;
+      if (this.disposed) return;
+      void this.recoverAfterResume(reason);
+    }, 250);
+  }
+
+  private async recoverAfterResume(reason: string) {
+    try {
+      console.warn("[resume] recoverAfterResume:", reason);
+
+      // Avoid racing with BG/cam ops
+      await this.waitBgIdle().catch(() => { });
+      await this.camOpQueue.catch(() => { });
+
+      await this.resumeAllAudioElements();
+      await this.ensureLocalAudioTrack();
+      await this.ensureLocalVideoTrack();
+
+      // If still looks unhealthy after a short delay, consider safe rejoin.
+      setTimeout(() => {
+        if (this.disposed) return;
+        void this.maybeSafeRejoin(`resume:${reason}`);
+      }, 3500);
+    } catch (e) {
+      console.warn("[resume] recoverAfterResume failed:", e);
+      void this.maybeSafeRejoin(`resume:${reason}:exception`);
+    }
+  }
+
+  private async isConferenceLikelyHealthy(): Promise<boolean> {
+    if (!this.conference || this.disposed || !this.localUserId) return false;
+
+    // If user intentionally has both muted, we consider it fine.
+    const local = this.participants[this.localUserId];
+    const audioWanted = !local?.audioMuted;
+    const videoWanted = !local?.videoMuted;
+
+    // If nothing is wanted, it's "healthy" enough.
+    if (!audioWanted && !videoWanted) return true;
+
+    // Check local audio
+    if (audioWanted) {
+      try {
+        const t = this.localAudioTrack || this.getConferenceLocalAudioTrack();
+        const msAny = t?.getOriginalStream?.();
+        const ms = await Promise.resolve(msAny);
+        const at = ms?.getAudioTracks?.()?.[0];
+        if (!at || at.readyState !== "live" || at.enabled === false) return false;
+      } catch {
+        return false;
+      }
+    }
+
+    // Check local video (base when replaceTrack)
+    if (videoWanted) {
+      try {
+        const base = this.bgImplMode === "replaceTrack" ? this.bgBaseVideoTrack : this.localVideoTrack;
+        const t = base || this.getConferenceLocalVideoTrack();
+        const msAny = t?.getOriginalStream?.();
+        const ms = await Promise.resolve(msAny);
+        const vt = ms?.getVideoTracks?.()?.[0];
+        if (!vt || vt.readyState !== "live" || vt.enabled === false) return false;
+      } catch {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private async maybeSafeRejoin(tag: string) {
+    const now = Date.now();
+    if (now - this.lastSafeRejoinAt < 60_000) return;
+
+    const ok = await this.isConferenceLikelyHealthy().catch(() => false);
+    if (ok) return;
+
+    await this.safeRejoin(tag);
+  }
+
+  private async safeRejoin(tag: string) {
+    const now = Date.now();
+    if (now - this.lastSafeRejoinAt < 60_000) return;
+    this.lastSafeRejoinAt = now;
+
+    const room = this.lastJoinRoomName;
+    const user = this.lastJoinUserName;
+
+    if (!room || !user) {
+      console.warn("[rejoin] no join args stored; skip safeRejoin", tag);
+      return;
+    }
+
+    console.warn("[rejoin] SAFE REJOIN:", tag);
+
+    // Snapshot prefs we want to preserve
+    const savedMedia = { ...this.mediaSettings };
+    const savedBgPrefs = { ...this.bgPrefs };
+    const savedBgStrategy = this.bgStrategy;
+    const savedQuality = this.qualityMode;
+    const savedSelected = [...(this.selectedVideoIds || [])];
+
+    // Dispose current session
+    await this.dispose().catch(() => { });
+
+    // Re-arm engine for new join
+    this.disposed = false;
+
+    // Restore preserved state
+    this.mediaSettings = savedMedia;
+    this.bgPrefs = savedBgPrefs;
+    this.bgStrategy = savedBgStrategy;
+    this.qualityMode = savedQuality;
+    this.selectedVideoIds = savedSelected;
+
+    // Reset some volatile fields
+    this.lastSubsKey = "";
+    this.lastSubsAppliedAt = 0;
+    this.hardResetCooldownUntil = 0;
+
+    // Rejoin
+    await this.initAndJoin(room, user);
   }
 
   // ========================================================================
@@ -1699,12 +2096,10 @@ export class JitsiEngine {
 
       this.refreshEffectsSupport(newVideo);
 
-      // Re-apply background if user had chosen it (even if blur was never used, harmless)
-      // ✅ Important: don't await bg queue here (can interleave / cause races).
-      // Reapply on next tick after conference track becomes stable.
+      // Re-apply background if user had chosen it
       setTimeout(() => {
         if (this.disposed) return;
-        if (this.camToggling) return; // if still toggling for some reason, skip
+        if (this.camToggling) return;
         void this.reapplyBgIfNeeded();
       }, 0);
 
@@ -1866,6 +2261,9 @@ export class JitsiEngine {
   async initAndJoin(roomName: string, userName: string): Promise<void> {
     await loadJitsiScripts();
 
+    this.lastJoinRoomName = roomName;
+    this.lastJoinUserName = userName;
+
     this.JitsiMeetJS = window.JitsiMeetJS;
     this.config = window.config;
 
@@ -1987,7 +2385,6 @@ export class JitsiEngine {
         // OFF -> ON
         await this.enableLocalVideoHard("toggleVideoMute");
 
-        // enableLocalVideoHard will schedule bg reapply (we'll tweak it below)
         try {
           const t = this.localVideoTrack;
           if (t) local.videoMuted = t.isMuted?.() === true;
@@ -2061,6 +2458,19 @@ export class JitsiEngine {
 
     if (this.subsWatchdog) clearInterval(this.subsWatchdog);
     this.subsWatchdog = null;
+
+    if (this.postJoinHealTimer) clearTimeout(this.postJoinHealTimer);
+    this.postJoinHealTimer = null;
+
+    if (this.resumeRecoverTimer) clearTimeout(this.resumeRecoverTimer);
+    this.resumeRecoverTimer = null;
+
+    // remove resume handlers
+    try {
+      (this as any).__resumeRemovers?.();
+    } catch { }
+    (this as any).__resumeRemovers = null;
+    this.resumeHandlersAttached = false;
 
     this.stopVideoHealthMonitor();
 
@@ -2198,6 +2608,9 @@ export class JitsiEngine {
       this.ensureLocalParticipant(userName);
       if (!this.tracksByParticipant.has(localId)) this.tracksByParticipant.set(localId, {});
 
+      // Attach resume handlers once we are in a room
+      this.attachResumeHandlers();
+
       this.callbacks.onConferenceJoin?.();
 
       applySubsSoon(true);
@@ -2213,6 +2626,9 @@ export class JitsiEngine {
       }, 10000);
 
       this.startVideoHealthMonitor();
+
+      // Post-join self-heal (handles: "after refresh audio/video dead" & autoplay unlock)
+      this.schedulePostJoinSelfHeal();
 
       setTimeout(() => {
         if (this.disposed) return;
@@ -2323,6 +2739,8 @@ export class JitsiEngine {
         // ✅ be defensive: if local video already exists (rare race), replace
         if (type === "video") {
           await this.replaceOrAddLocalVideoTrack(t, "createLocalTracks");
+        } else if (type === "audio") {
+          await this.replaceOrAddLocalAudioTrack(t, "createLocalTracks");
         } else {
           await this.conference.addTrack(t);
         }
@@ -2349,6 +2767,9 @@ export class JitsiEngine {
       this.tracksByParticipant.set(this.localUserId, entry);
 
       await this.enqueueBgOp("createLocalTracks", () => this.applyBgNow("createLocalTracks"));
+
+      // After we actually have tracks, run self-heal again (covers rare races)
+      this.schedulePostJoinSelfHeal();
 
       this.rebuildParticipantsFromTracks();
       this.emitParticipants();
@@ -2649,9 +3070,7 @@ export class JitsiEngine {
           try {
             const nowMuted = track.isMuted?.() === true;
             if (!nowMuted && !this.camToggling) {
-              void this.enqueueBgOp("TRACK_MUTE_CHANGED:unmuted", () =>
-                this.applyBgNow("TRACK_MUTE_CHANGED:unmuted")
-              );
+              void this.enqueueBgOp("TRACK_MUTE_CHANGED:unmuted", () => this.applyBgNow("TRACK_MUTE_CHANGED:unmuted"));
             }
           } catch { }
         }
