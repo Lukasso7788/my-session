@@ -13,24 +13,32 @@ type BgStrategy = "auto" | "setEffect" | "replaceTrack";
 type BgImplMode = "none" | "setEffect" | "replaceTrack";
 
 export type BgManagerDeps = {
+    // session state
     getConference: () => any | null;
     getJitsiMeetJS: () => any | null;
 
     getLocalUserId: () => string | null;
 
+    // local outgoing video track (what conference currently uses)
     getLocalVideoTrack: () => any | null;
     setLocalVideoTrack: (t: any | null) => void;
 
+    // local device settings mirror (engine.mediaSettings)
     setMediaBg: (mode: BgMode, imageUrl?: string) => void;
 
-    upsertLocalVideoMapping: (t: any | null) => void;
+    // participant mapping update helpers (engine-owned)
+    upsertLocalVideoMapping: (t: any | null) => void; // entry.video set/delete + rebuild+emit
     rebuildParticipantsFromTracks: () => void;
     emitParticipants: () => void;
 
+    // core helpers
     isDesktopTrack: (t: any) => boolean;
     safeDisposeTrack: (t: any, reason: string) => Promise<void>;
 
+    // ensure camera track exists (IMPORTANT: should NOT call bg.apply internally if called with reapplyBg=false)
     ensureLocalVideoTrack: (opts?: { reapplyBg?: boolean }) => Promise<void>;
+
+    // conference local video helpers (to avoid "Cannot add second video track")
     replaceOrAddLocalVideoTrack: (t: any, reason: string) => Promise<void>;
 };
 
@@ -86,8 +94,8 @@ export class BgManager {
     private effectsIncompatReason: string | null = null;
 
     // replaceTrack path
-    private baseVideoTrack: any | null = null;
-    private processedTrack: any | null = null;
+    private baseVideoTrack: any | null = null; // raw camera feeding processor
+    private processedTrack: any | null = null; // outgoing track in conference when bg enabled
     private processor: any | null = null;
     private processedStream: MediaStream | null = null;
     private replaceRetryCount = 0;
@@ -111,6 +119,8 @@ export class BgManager {
     constructor(deps: BgManagerDeps) {
         this.deps = deps;
     }
+
+    // -------- public API --------
 
     public getPrefs() {
         return { ...this.prefs };
@@ -147,15 +157,26 @@ export class BgManager {
         this.prefs = { mode: opts.mode, imageUrl: opts.imageUrl };
         this.deps.setMediaBg(opts.mode, opts.imageUrl);
         await this.enqueue("setBackgroundEffect", () => this.applyNow("setBackgroundEffect"));
-        try { this.deps.emitParticipants(); } catch { }
+
+        // refresh local participant muted in dto if needed
+        try {
+            const uid = this.deps.getLocalUserId();
+            const t = this.deps.getLocalVideoTrack();
+            if (uid && t) {
+                // engine will emit participants already; this is just defensive
+                this.deps.emitParticipants();
+            }
+        } catch { }
     }
 
+    /** clear bg (keepPrefs=false wipes internal base/processed pointers) */
     public async clearAnyBg(keepPrefs: boolean, reason: string) {
         await this.enqueue(`clearAnyBg:${reason}`, async () => {
             await this.clearAnyBgNow(keepPrefs, reason);
         });
     }
 
+    /** called by engine when camera stopped; keeps user prefs but resets track pointers */
     public resetForCameraStopped() {
         this.baseVideoTrack = null;
         this.processedTrack = null;
@@ -165,7 +186,9 @@ export class BgManager {
         this.videoEffect = undefined;
     }
 
+    /** called by engine after fresh camera created */
     public resetForNewCamera() {
+        // prefs stay
         this.baseVideoTrack = null;
         this.processedTrack = null;
         this.processedStream = null;
@@ -174,13 +197,17 @@ export class BgManager {
         this.videoEffect = undefined;
     }
 
+    /** Engine helper: make sure old video’s setEffect ops drained before dispose */
     public async waitEffectIdle(track: any) {
         const p = this.effectQueueByTrack.get(track);
         if (p) {
-            try { await p; } catch { }
+            try {
+                await p;
+            } catch { }
         }
     }
 
+    /** Engine helper: clear setEffect mode on a specific track (safe no-op) */
     public async clearSetEffectOnTrack(track: any, reason: string) {
         await this.enqueue(`clearSetEffectOnTrack:${reason}`, async () => {
             await this.clearBgEffectOnTrack_setEffect(track);
@@ -188,14 +215,19 @@ export class BgManager {
         });
     }
 
+    /** Engine helper: request reapply if prefs enabled */
     public reapplyIfNeeded(reason: string) {
         if (this.prefs.mode === "none") return;
         void this.enqueue(`reapplyIfNeeded:${reason}`, () => this.applyNow(`reapplyIfNeeded:${reason}`));
     }
 
+    // -------- queue wrapper --------
+
     private enqueue(label: string, fn: () => Promise<void>) {
         return this.q.enqueue(label, fn);
     }
+
+    // -------- debug helpers --------
 
     private getTrackDbg(track: any) {
         try {
@@ -219,7 +251,9 @@ export class BgManager {
         if (this.effectsCompatibility !== "incompatible") {
             this.effectsCompatibility = "incompatible";
             this.effectsIncompatReason = reason;
-            try { console.warn("[bg] setEffect path marked INCOMPATIBLE:", reason); } catch { }
+            try {
+                console.warn("[bg] setEffect path marked INCOMPATIBLE:", reason);
+            } catch { }
         }
     }
 
@@ -227,7 +261,9 @@ export class BgManager {
         if (this.effectsCompatibility !== "ok") {
             this.effectsCompatibility = "ok";
             this.effectsIncompatReason = null;
-            try { console.log("[bg] setEffect path marked OK"); } catch { }
+            try {
+                console.log("[bg] setEffect path marked OK");
+            } catch { }
         }
     }
 
@@ -235,6 +271,7 @@ export class BgManager {
         const t = track ?? this.deps.getLocalVideoTrack();
         const hasSetEffect = typeof (t as any)?.setEffect === "function";
         this.effectsSupported = !!hasSetEffect;
+
         try {
             console.log("[Jitsi][effects] track.setEffect:", typeof (t as any)?.setEffect, "=> supported:", this.effectsSupported);
         } catch { }
@@ -249,8 +286,12 @@ export class BgManager {
         }
     }
 
+    // -------- per-track setEffect serializer --------
+
     private logEffect(opId: number, phase: string, extra?: any) {
-        try { console.debug(`[bg][op#${opId}] ${phase}`, extra ?? ""); } catch { }
+        try {
+            console.debug(`[bg][op#${opId}] ${phase}`, extra ?? "");
+        } catch { }
     }
 
     private async runEffectOpOnTrack(track: any, label: string, fn: () => Promise<void>) {
@@ -297,7 +338,7 @@ export class BgManager {
         });
     }
 
-    // -------- setEffect path --------
+    // -------- setEffect path (A) --------
 
     private wrapEffectToForceMediaStream(effect: any) {
         if (!effect || typeof effect.startEffect !== "function") return effect;
@@ -411,6 +452,7 @@ export class BgManager {
         if (!track) return;
 
         this.refreshEffectsSupport(track);
+
         if (!this.effectsSupported) throw new Error("setEffect not supported");
 
         const wasMuted = (() => {
@@ -490,7 +532,7 @@ export class BgManager {
         return typeof track.setEffect === "function";
     }
 
-    // -------- replaceTrack path --------
+    // -------- replaceTrack path (B) --------
 
     private async loadCanvasBgFactory(): Promise<((opts: any) => any) | null> {
         if (this.factoryLoaded) return this.factoryFn;
@@ -539,7 +581,9 @@ export class BgManager {
         if (!vt) throw new Error("processed stream has no video track");
 
         if (typeof J.createLocalTracksFromMediaStreams === "function") {
-            const infos = [{ mediaType: "video", sourceType: "external", stream, track: vt, videoType: "camera" }];
+            const infos = [
+                { mediaType: "video", sourceType: "external", stream, track: vt, videoType: "camera" },
+            ];
             const created = await J.createLocalTracksFromMediaStreams(infos);
             const t = (created || []).find((x: any) => x?.getType?.() === "video") || (created || [])[0];
             if (!t) throw new Error("createLocalTracksFromMediaStreams returned empty");
@@ -554,6 +598,7 @@ export class BgManager {
         try { await this.processor?.dispose?.(); } catch { }
         this.processor = null;
         this.processedStream = null;
+
         try { console.debug("[bg] replaceTrack processor stopped:", reason); } catch { }
     }
 
@@ -593,11 +638,13 @@ export class BgManager {
     private async enableBg_replaceTrack(reason: string) {
         const conf = this.deps.getConference();
         if (!conf) return;
+
         if (this.prefs.mode === "none") return;
 
         const outgoing = this.deps.getLocalVideoTrack();
         if (!outgoing) return;
 
+        // stale base check
         if (this.baseVideoTrack) {
             try {
                 const msAny = this.baseVideoTrack?.getOriginalStream?.();
@@ -662,6 +709,7 @@ export class BgManager {
 
             const oldOutgoing = this.deps.getLocalVideoTrack();
 
+            // update refs before replace to prevent TRACK_REMOVED races
             this.deps.setLocalVideoTrack(processedJitsiTrack);
             this.deps.upsertLocalVideoMapping(processedJitsiTrack);
 
@@ -706,6 +754,7 @@ export class BgManager {
     // -------- unified apply/clear --------
 
     private async clearAnyBgNow(keepPrefs: boolean, reason: string) {
+        // replaceTrack mode first
         if (this.implMode === "replaceTrack") {
             await this.disableBg_replaceTrack(reason, keepPrefs);
             if (!keepPrefs) {
@@ -717,6 +766,7 @@ export class BgManager {
             return;
         }
 
+        // setEffect mode
         const t = this.deps.getLocalVideoTrack();
         if (t) {
             try { await this.clearBgEffectOnTrack_setEffect(t); } catch { }
@@ -732,10 +782,12 @@ export class BgManager {
         }
     }
 
+    /** main entry: apply current prefs using strategy */
     public async applyNow(reason: string) {
         const conf = this.deps.getConference();
         if (!conf) return;
 
+        // make sure we have a camera track (but do not recursively reapply bg inside ensure)
         await this.deps.ensureLocalVideoTrack({ reapplyBg: false });
 
         const track = this.deps.getLocalVideoTrack();
@@ -758,7 +810,7 @@ export class BgManager {
                 this.implMode = "setEffect";
                 return;
             } catch {
-                // fallback to replaceTrack
+                // fallthrough to replaceTrack
             }
         }
 
@@ -766,13 +818,16 @@ export class BgManager {
             try { await this.clearBgEffectOnTrack_setEffect(track); } catch { }
         }
 
+        // ensure base points to the raw camera at moment of enable
         this.baseVideoTrack = this.baseVideoTrack || this.deps.getLocalVideoTrack();
         this.implMode = "none";
 
         await this.enableBg_replaceTrack(`fallback:${reason}`);
     }
 
+    /** called by engine when it replaced/added a new camera track (base) */
     public onNewCameraTrack(newCamera: any) {
+        // reset base binding to this camera so next enable uses correct base
         this.baseVideoTrack = newCamera;
     }
 }

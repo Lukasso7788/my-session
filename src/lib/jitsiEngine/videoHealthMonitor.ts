@@ -7,6 +7,8 @@ export type VideoHealthDeps = {
     isDisposed: () => boolean;
     getConference: () => any | null;
     getParticipants: () => Record<string, any>;
+
+    // must mirror engine subscription logic
     getSubscribedRemoteIds: () => { ids: string[]; desiredLastN: number };
 };
 
@@ -139,6 +141,7 @@ export class VideoHealthMonitor {
 
         const now = Date.now();
 
+        // drop states for no-longer-subscribed
         for (const pid of Array.from(this.videoHealthState.keys())) {
             if (!subscribedRemoteIds.includes(pid)) this.videoHealthState.delete(pid);
         }
@@ -200,7 +203,7 @@ export class VideoHealthMonitor {
 
     private async recoverParticipantVideo(
         pid: string,
-        _kind: "video" | "screen",
+        kind: "video" | "screen",
         track: any,
         el: HTMLVideoElement,
         st: {
