@@ -35,6 +35,9 @@
 // - When enabling camera, if conference already has a local video track (even if engine lost ref),
 //   we MUST replaceTrack/remove+add instead of addTrack.
 // - Also clear stale bgBaseVideoTrack when camera is stopped, so blur re-apply uses the new camera.
+//
+// ✅ FIX (2025-12-30):
+// - Removed duplicate USER_LEFT listener (was registered twice and caused double churn).
 // ============================================================================
 
 import { createVirtualBackgroundEffect as createVendoredVirtualBackgroundEffect } from "./jitsiEffects/virtualBackground";
@@ -134,6 +137,9 @@ export class JitsiEngine {
     bgMode: "none" as BgMode,
     bgImageUrl: undefined as string | undefined,
   };
+  // BG suspend on tab hidden (replaceTrack only)
+  private bgSuspendedByHidden = false;
+  private bgSuspendedAt = 0;
 
   private callbacks: JitsiEngineCallbacks;
   private JitsiMeetJS: any | null = null;
@@ -216,6 +222,52 @@ export class JitsiEngine {
       });
 
     return this.camOpQueue;
+  }
+
+  private postLeaveKickTimer: any = null;
+
+  private schedulePostLeaveRecoveryKick() {
+    if (this.postLeaveKickTimer) clearTimeout(this.postLeaveKickTimer);
+    this.postLeaveKickTimer = setTimeout(() => {
+      this.postLeaveKickTimer = null;
+      if (this.disposed || !this.conference) return;
+      this.kickAllSubscribedEndpoints("user_left");
+    }, 450);
+  }
+
+  private kickAllSubscribedEndpoints(reason: string) {
+    try {
+      if (!this.conference || this.disposed) return;
+
+      const { ids: subscribedRemoteIds, desiredLastN } = this.getSubscribedRemoteIds();
+      const original = subscribedRemoteIds.slice(0, desiredLastN);
+      if (original.length === 0) return;
+
+      // 1) re-assert selection (cheap)
+      try {
+        this.conference.selectParticipants?.(original);
+      } catch { }
+
+      // 2) micro-toggle each endpoint one-by-one (forces resub + often triggers fresh keyframe)
+      // Keep it very light: only do it for small rooms (<= 8), otherwise skip to avoid churn.
+      if (original.length <= 8) {
+        original.forEach((pid, idx) => {
+          setTimeout(() => {
+            if (this.disposed || !this.conference) return;
+            try {
+              const without = original.filter((x) => x !== pid);
+              this.conference.selectParticipants?.(without);
+              setTimeout(() => {
+                if (this.disposed || !this.conference) return;
+                this.conference.selectParticipants?.(original);
+              }, 140);
+            } catch { }
+          }, 120 + idx * 90);
+        });
+      }
+
+      this.scheduleHealthTickSoon();
+    } catch { }
   }
 
   private async waitBgIdle() {
@@ -810,10 +862,7 @@ export class JitsiEngine {
       if (kind === "audio" && this.localUserId && this.participants[this.localUserId]?.audioMuted) return true;
       if (kind === "video" && this.localUserId && this.participants[this.localUserId]?.videoMuted) return true;
 
-      // If track exposes muted state, and it's muted unexpectedly, treat as not-usable only for audio (optional).
-      // For stability, we DO NOT force-unmute here.
       const msAny = track.getOriginalStream?.();
-      // Some builds return promise; accept both
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       const check = async () => {
         const ms = await Promise.resolve(msAny);
@@ -834,7 +883,7 @@ export class JitsiEngine {
         }
       };
 
-      // Synchronous fast path: if msAny isn't a Promise and looks like MediaStream
+      // Synchronous fast path
       if (msAny && typeof msAny.then !== "function" && typeof msAny.getTracks === "function") {
         if (kind === "audio") {
           const at = msAny.getAudioTracks?.()?.[0];
@@ -845,8 +894,8 @@ export class JitsiEngine {
         }
       }
 
-      // Promise path: we can't await here; caller awaits a wrapper method.
-      // Return "unknown false" so ensure method can await.
+      // Promise path: we can't await here.
+      void check();
       return false;
     } catch {
       return false;
@@ -958,17 +1007,40 @@ export class JitsiEngine {
 
       if (document.visibilityState === "hidden") {
         this.hiddenAt = Date.now();
+
+        // ✅ CRITICAL FIX: replaceTrack BG freezes in background tabs => suspend it
+        if (this.bgPrefs.mode !== "none" && this.bgImplMode === "replaceTrack") {
+          this.bgSuspendedByHidden = true;
+          this.bgSuspendedAt = Date.now();
+
+          void this.enqueueBgOp("visibility:hidden:suspend-bg", async () => {
+            // avoid races with cam toggles
+            await this.camOpQueue.catch(() => { });
+            // swap processed->base + stop processor, but keep prefs so we can resume
+            await this.disableBg_replaceTrack("visibility:hidden", true);
+            // keep bgImplMode=none now; outgoing is base => no freeze
+          });
+        }
         return;
       }
 
       const dt = this.hiddenAt ? Date.now() - this.hiddenAt : 0;
       this.hiddenAt = null;
 
-      // If we were hidden/suspended long enough, do wake recovery.
+      // ✅ resume BG if we suspended it
+      if (this.bgSuspendedByHidden) {
+        this.bgSuspendedByHidden = false;
+        void this.enqueueBgOp("visibility:visible:resume-bg", async () => {
+          // if user still wants BG, reapply now
+          if (this.bgPrefs.mode !== "none") {
+            await this.applyBgNow("visibility:visible:resume");
+          }
+        });
+      }
+
       if (dt > 15_000) {
         this.scheduleResumeRecovery("visibility");
       } else {
-        // still try to resume audio (cheap)
         void this.resumeAllAudioElements();
       }
     };
@@ -2585,55 +2657,25 @@ export class JitsiEngine {
       }
     };
 
-    conf.on(events.conference.CONFERENCE_JOINED, () => {
+    // ✅ SINGLE USER_LEFT HANDLER (duplicate removed)
+    conf.on(events.conference.USER_LEFT, (id: string) => {
       if (this.disposed) return;
 
-      const anyConf = conf as any;
-      let localId: string | null = null;
+      delete this.participants[id];
+      this.tracksByParticipant.delete(id);
+      this.emitParticipants();
 
-      if (typeof anyConf.getLocalUserId === "function") localId = anyConf.getLocalUserId();
-      else if (typeof anyConf.myUserId === "function") localId = anyConf.myUserId();
+      this.videoElByPid.delete(id);
+      this.screenElByPid.delete(id);
+      this.videoHealthState.delete(id);
 
-      if (!localId) {
-        this.callbacks.onError?.("Failed to resolve local user id");
-        return;
-      }
-
-      this.localUserId = localId;
-
-      if (userName && typeof anyConf.setDisplayName === "function") {
-        anyConf.setDisplayName(userName);
-      }
-
-      this.ensureLocalParticipant(userName);
-      if (!this.tracksByParticipant.has(localId)) this.tracksByParticipant.set(localId, {});
-
-      // Attach resume handlers once we are in a room
-      this.attachResumeHandlers();
-
-      this.callbacks.onConferenceJoin?.();
-
+      // ✅ Keep subscriptions stable; avoid hard reset on leave
       applySubsSoon(true);
-      topologyChanged();
 
-      if (this.subsWatchdog) clearInterval(this.subsWatchdog);
-      this.subsWatchdog = setInterval(() => {
-        if (this.disposed) return;
-        const now = Date.now();
-        if (now - this.lastSubsAppliedAt > 9000) {
-          this.scheduleApplyVideoSubscriptions(0, false);
-        }
-      }, 10000);
+      // ✅ give remaining endpoints a tiny "kick" to force fresh frames / re-key
+      this.schedulePostLeaveRecoveryKick();
 
-      this.startVideoHealthMonitor();
-
-      // Post-join self-heal (handles: "after refresh audio/video dead" & autoplay unlock)
-      this.schedulePostJoinSelfHeal();
-
-      setTimeout(() => {
-        if (this.disposed) return;
-        this.createLocalTracks();
-      }, 0);
+      this.scheduleHealthTickSoon();
     });
 
     conf.on(events.conference.USER_JOINED, (id: string, user: any) => {
@@ -2647,21 +2689,6 @@ export class JitsiEngine {
       topologyChanged();
 
       this.scheduleHealthTickSoon();
-    });
-
-    conf.on(events.conference.USER_LEFT, (id: string) => {
-      if (this.disposed) return;
-
-      delete this.participants[id];
-      this.tracksByParticipant.delete(id);
-      this.emitParticipants();
-
-      this.videoElByPid.delete(id);
-      this.screenElByPid.delete(id);
-      this.videoHealthState.delete(id);
-
-      applySubsSoon(true);
-      topologyChanged();
     });
 
     conf.on(events.conference.DISPLAY_NAME_CHANGED, (id: string, displayName: string) => {
