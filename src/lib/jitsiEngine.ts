@@ -1,40 +1,14 @@
 // ============================================================================
 // src/lib/jitsiEngine.ts — SFU-only (P2P OFF) + track-based + reactions + SAFE background effects
 // Ultra-stable subscriptions: no-op caching + delayed hard reset + cooldown
-// ✅ Added: targeted “black video” recovery (reattach per participant + optional subs bump)
-// ✅ Added: post-join local A/V self-heal + resume/visibility wake recovery + optional safe rejoin
-// ✅ Fixed: do NOT treat local camera/audio track add/remove as topology change (prevents global resub churn on toggleVideo)
+// ✅ Targeted “black video” recovery (reattach per participant + optional subs bump)
+// ✅ Post-join local A/V self-heal + resume/visibility wake recovery + optional safe rejoin
+// ✅ Do NOT treat local camera/audio add/remove as topology change (prevents global resub churn on toggleVideo)
 //
-// ✅ UPDATED (Background effects):
-// - BG Manager supports 2 variants:
-//   (A) track.setEffect(effect) (native Jitsi VB if present, else vendored)
-//   (B) replaceTrack pipeline (Canvas/MediaPipe processor -> createLocalTracksFromMediaStreams -> conference.replaceTrack)
-//
-// - Strategy: "auto" (default):
-//   Prefer (A) if compatible; if any incompatibility/error => fall back to (B).
-//
-// ✅ PATCH (SAFE stream adapter for startEffect input):
-// - Wraps effect.startEffect(...) to always receive a MediaStream
-//
-// ✅ PATCH (SERIALIZED setEffect + SAFE dispose):
-// - All track.setEffect calls go through per-track queue (prevents: "setEffect already in progress!")
-// - Dispose waits for pending effect ops on that track
-//
-// ✅ PATCH #1 (CAM TOGGLE AFTER BLUR FIX):
-// - When turning camera OFF and bg is enabled: clear effect BEFORE muting (or swap to base BEFORE muting in replaceTrack mode)
-// - When turning camera ON: ensure track, unmute, then re-apply bg
-//
-// ✅ PATCH #2 (FIRST-CLICK BLUR APPLY FIX):
-// - If setEffect path is incompatible (e.g., vendored effect.startEffect is async), THROW to trigger fallback to replaceTrack
-// - Do not “silently succeed” by applying PASSTHROUGH and returning (that ate the first click)
-//
-// ✅ PATCH #3 (FIX "Cannot add second video track"):
-// - Hard-toggle camera must never leave a hidden local video track inside the conference.
-// - When disabling camera while replaceTrack bg was active, clearAnyBg swaps processed->base,
-//   so we must remove/dispose THE CURRENT conference video track (base), not the stale reference (processed).
-// - When enabling camera, if conference already has a local video track (even if engine lost ref),
-//   we MUST replaceTrack/remove+add instead of addTrack.
-// - Also clear stale bgBaseVideoTrack when camera is stopped, so blur re-apply uses the new camera.
+// ✅ Background effects (2 variants):
+// (A) track.setEffect(effect) (native Jitsi VB if present, else vendored) — serialized per-track
+// (B) replaceTrack pipeline (Canvas/MediaPipe processor -> createLocalTracksFromMediaStreams -> conference.replaceTrack)
+// Strategy: "auto" => prefer (A), fallback to (B) on any incompatibility/error.
 // ============================================================================
 
 import { createVirtualBackgroundEffect as createVendoredVirtualBackgroundEffect } from "./jitsiEffects/virtualBackground";
@@ -71,7 +45,7 @@ export type BgMode = "none" | "blur" | "image";
 
 const JITSI_DOMAIN = "jitsi.lukassodesign.site";
 
-// грузим assets с ТВОЕГО домена приложения
+// assets from YOUR app domain
 const JITSI_CONFIG_URL = "/config.js";
 const JITSI_LIB_URL = "/libs/lib-jitsi-meet.min.js";
 
@@ -134,9 +108,6 @@ export class JitsiEngine {
     bgMode: "none" as BgMode,
     bgImageUrl: undefined as string | undefined,
   };
-  // BG suspend on tab hidden (replaceTrack only)
-  private bgSuspendedByHidden = false;
-  private bgSuspendedAt = 0;
 
   private callbacks: JitsiEngineCallbacks;
   private JitsiMeetJS: any | null = null;
@@ -156,7 +127,7 @@ export class JitsiEngine {
 
   private disposed = false;
 
-  // Remember last join args (for safe rejoin after resume / broken states)
+  // Remember last join args (safe rejoin)
   private lastJoinRoomName: string | null = null;
   private lastJoinUserName: string | null = null;
   private lastSafeRejoinAt = 0;
@@ -166,166 +137,34 @@ export class JitsiEngine {
   private qualityMode: "auto" | "low" | "medium" | "high" = "auto";
   private readonly MAX_LAST_N = 36;
 
-  private subsApplyTimer: any = null;
-  private subsHardResetTimer: any = null;
   private subsHardResetInFlight = false;
-
-  // ✅ stable: no-op caching
   private lastSubsKey = "";
   private lastSubsAppliedAt = 0;
-
-  // ✅ stable: delayed recovery reset + cooldown
   private hardResetCooldownUntil = 0;
-
-  // ✅ stable: soft watchdog (not every 3s)
-  private subsWatchdog: any = null;
 
   // BG PREFS
   private bgPrefs: { mode: BgMode; imageUrl?: string } = { mode: "none" };
   private bgApplying = false;
 
-  // ✅ BG ops serializer (prevents races: join/apply/click/mute events)
-  private bgOpQueue: Promise<void> = Promise.resolve();
-  private bgOpSeq = 0;
-  // ✅ CAM ops serializer (prevents races with bg queue on hard toggle)
-  private camOpQueue: Promise<void> = Promise.resolve();
-  private camOpSeq = 0;
+  // ✅ CAM state
   private camToggling = false;
 
   // Resume / wake recovery
   private resumeHandlersAttached = false;
   private hiddenAt: number | null = null;
-  private resumeRecoverTimer: any = null;
 
-  // Post-join local A/V self-heal
-  private postJoinHealTimer: any = null;
+  // ✅ BG strategy
+  private bgStrategy: "auto" | "setEffect" | "replaceTrack" = "auto";
 
-  private enqueueCamOp(label: string, fn: () => Promise<void>) {
-    const id = ++this.camOpSeq;
-
-    this.camOpQueue = this.camOpQueue
-      .catch(() => { })
-      .then(async () => {
-        try {
-          console.debug(`[camQ#${id}] BEGIN ${label}`);
-        } catch { }
-        await fn();
-        try {
-          console.debug(`[camQ#${id}] END ${label}`);
-        } catch { }
-      })
-      .catch((e) => {
-        console.warn(`[camQ#${id}] FAIL ${label}:`, e);
-      });
-
-    return this.camOpQueue;
-  }
-
-  private postLeaveKickTimer: any = null;
-
-  private schedulePostLeaveRecoveryKick() {
-    if (this.postLeaveKickTimer) clearTimeout(this.postLeaveKickTimer);
-    this.postLeaveKickTimer = setTimeout(() => {
-      this.postLeaveKickTimer = null;
-      if (this.disposed || !this.conference) return;
-      this.kickAllSubscribedEndpoints("user_left");
-    }, 450);
-  }
-
-  private kickAllSubscribedEndpoints(reason: string) {
-    try {
-      if (!this.conference || this.disposed) return;
-
-      const { ids: subscribedRemoteIds, desiredLastN } = this.getSubscribedRemoteIds();
-      const original = subscribedRemoteIds.slice(0, desiredLastN);
-      if (original.length === 0) return;
-
-      // 1) re-assert selection (cheap)
-      try {
-        this.conference.selectParticipants?.(original);
-      } catch { }
-
-      // 2) micro-toggle each endpoint one-by-one (forces resub + often triggers fresh keyframe)
-      // Keep it very light: only do it for small rooms (<= 8), otherwise skip to avoid churn.
-      if (original.length <= 8) {
-        original.forEach((pid, idx) => {
-          setTimeout(() => {
-            if (this.disposed || !this.conference) return;
-            try {
-              const without = original.filter((x) => x !== pid);
-              this.conference.selectParticipants?.(without);
-              setTimeout(() => {
-                if (this.disposed || !this.conference) return;
-                this.conference.selectParticipants?.(original);
-              }, 140);
-            } catch { }
-          }, 120 + idx * 90);
-        });
-      }
-
-      this.scheduleHealthTickSoon();
-    } catch { }
-  }
-
-  private async waitBgIdle() {
-    try {
-      await this.bgOpQueue;
-    } catch { }
-  }
-
-  private enqueueBgOp(label: string, fn: () => Promise<void>) {
-    const id = ++this.bgOpSeq;
-
-    this.bgOpQueue = this.bgOpQueue
-      .catch(() => { })
-      .then(async () => {
-        try {
-          console.debug(`[bgQ#${id}] BEGIN ${label}`);
-        } catch { }
-        await fn();
-        try {
-          console.debug(`[bgQ#${id}] END ${label}`);
-        } catch { }
-      })
-      .catch((e) => {
-        console.warn(`[bgQ#${id}] FAIL ${label}:`, e);
-      });
-
-    return this.bgOpQueue;
-  }
-
-  // setEffect-based effect object (A)
+  // setEffect-based (A)
   private videoEffect: any | undefined = undefined;
   private effectsSupported = false;
-
-  // Effects compatibility (don’t spam logs)
   private effectsCompatibility: "unknown" | "ok" | "incompatible" = "unknown";
   private effectsIncompatReason: string | null = null;
 
-  // ========================================================================
-  // ✅ BG MANAGER (two variants)
-  // ========================================================================
-  // Strategy: auto => try setEffect first, else replaceTrack.
-  // You can force it if needed.
-  private bgStrategy: "auto" | "setEffect" | "replaceTrack" = "auto";
-
-  /**
-   * Optional: allow forcing strategy from UI/debug
-   */
-  public setBackgroundStrategy(strategy: "auto" | "setEffect" | "replaceTrack") {
-    this.bgStrategy = strategy;
-    try {
-      console.log("[bg] strategy set to:", strategy);
-    } catch { }
-    // if bg is enabled — reapply under new strategy
-    if (this.bgPrefs.mode !== "none") {
-      void this.enqueueBgOp("setBackgroundStrategy", () => this.applyBgNow("setBackgroundStrategy"));
-    }
-  }
-
-  // ReplaceTrack state (B)
+  // replaceTrack-based (B)
   private bgImplMode: "none" | "setEffect" | "replaceTrack" = "none";
-  private bgBaseVideoTrack: JitsiTrack | null = null; // raw camera track feeding processor
+  private bgBaseVideoTrack: JitsiTrack | null = null; // raw camera feeding processor
   private bgProcessedTrack: JitsiTrack | null = null; // outgoing track used in conference when bg enabled
   private bgProcessor: any | null = null; // Canvas/MediaPipe effect instance
   private bgProcessedStream: MediaStream | null = null;
@@ -336,13 +175,107 @@ export class JitsiEngine {
   private canvasBgFactory: ((opts: any) => any) | null = null;
 
   // ========================================================================
+  // timers (centralized)
+  // ========================================================================
+  private t = {
+    subsApply: null as any,
+    subsHard: null as any,
+    subsWatch: null as any,
+    postJoinHeal: null as any,
+    resumeRecover: null as any,
+    health: null as any,
+    healthSoon: null as any,
+    applySubsSoon: null as any,
+  };
+
+  private clearTO(k: keyof typeof this.t) {
+    if (this.t[k]) clearTimeout(this.t[k]);
+    this.t[k] = null;
+  }
+  private clearIV(k: keyof typeof this.t) {
+    if (this.t[k]) clearInterval(this.t[k]);
+    this.t[k] = null;
+  }
+  private setTO(k: keyof typeof this.t, ms: number, fn: () => void) {
+    this.clearTO(k);
+    this.t[k] = setTimeout(fn, ms);
+  }
+  private setIV(k: keyof typeof this.t, ms: number, fn: () => void) {
+    this.clearIV(k);
+    this.t[k] = setInterval(fn, ms);
+  }
+
+  // ========================================================================
+  // safe utils
+  // ========================================================================
+  private safe<T>(fn: () => T, fallback?: T): T {
+    try {
+      return fn();
+    } catch {
+      return fallback as T;
+    }
+  }
+  private async safeAsync<T>(fn: () => Promise<T>, fallback?: T): Promise<T> {
+    try {
+      return await fn();
+    } catch {
+      return fallback as T;
+    }
+  }
+  private sleep(ms: number) {
+    return new Promise<void>((r) => setTimeout(r, ms));
+  }
+
+  // ========================================================================
+  // unified op queues (BG + CAM)
+  // ========================================================================
+  private makeOpQueue(prefix: string, log: boolean = true) {
+    let seq = 0;
+    let q: Promise<void> = Promise.resolve();
+
+    const enqueue = (label: string, fn: () => Promise<void>) => {
+      const id = ++seq;
+      q = q
+        .catch(() => { })
+        .then(async () => {
+          if (log) this.safe(() => console.debug(`[${prefix}#${id}] BEGIN ${label}`));
+          await fn();
+          if (log) this.safe(() => console.debug(`[${prefix}#${id}] END ${label}`));
+        })
+        .catch((e) => {
+          this.safe(() => console.warn(`[${prefix}#${id}] FAIL ${label}:`, e));
+        });
+      return q;
+    };
+
+    const waitIdle = async () => {
+      try {
+        await q;
+      } catch { }
+    };
+
+    return { enqueue, waitIdle, get promise() { return q; } };
+  }
+
+  private bgQ = this.makeOpQueue("bgQ");
+  private camQ = this.makeOpQueue("camQ");
+
+  private enqueueBgOp(label: string, fn: () => Promise<void>) {
+    return this.bgQ.enqueue(label, fn);
+  }
+  private enqueueCamOp(label: string, fn: () => Promise<void>) {
+    return this.camQ.enqueue(label, fn);
+  }
+  private async waitBgIdle() {
+    return this.bgQ.waitIdle();
+  }
+
+  // ========================================================================
   // ✅ EFFECT OPS SERIALIZER + DEBUG (per-track)
   // ========================================================================
   private effectOpSeq = 0;
   private effectQueueByTrack = new WeakMap<any, Promise<void>>();
 
-  // Some lib builds don’t tolerate null/undefined in setEffect — they expect an object with isEnabled().
-  // Use a passthrough effect that returns the original stream synchronously.
   private readonly PASSTHROUGH_EFFECT = {
     startEffect: (stream: MediaStream) => stream, // sync
     stopEffect: () => { },
@@ -355,13 +288,30 @@ export class JitsiEngine {
     this.callbacks = callbacks;
   }
 
+  // ========================================================================
+  // PUBLIC small settings
+  // ========================================================================
+  public async listMediaDevices() {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return {
+      videoInputs: devices.filter((d) => d.kind === "videoinput"),
+      audioInputs: devices.filter((d) => d.kind === "audioinput"),
+      audioOutputs: devices.filter((d) => d.kind === "audiooutput"),
+    };
+  }
+
+  public setAudioOutputDevice(deviceId: string) {
+    this.mediaSettings.audioOutputId = deviceId || "default";
+  }
+
+  // ========================================================================
+  // effect support markers
+  // ========================================================================
   private markEffectsIncompatible(reason: string) {
     if (this.effectsCompatibility !== "incompatible") {
       this.effectsCompatibility = "incompatible";
       this.effectsIncompatReason = reason;
-      try {
-        console.warn("[bg] setEffect path marked INCOMPATIBLE:", reason);
-      } catch { }
+      this.safe(() => console.warn("[bg] setEffect path marked INCOMPATIBLE:", reason));
     }
   }
 
@@ -369,9 +319,7 @@ export class JitsiEngine {
     if (this.effectsCompatibility !== "ok") {
       this.effectsCompatibility = "ok";
       this.effectsIncompatReason = null;
-      try {
-        console.log("[bg] setEffect path marked OK");
-      } catch { }
+      this.safe(() => console.log("[bg] setEffect path marked OK"));
     }
   }
 
@@ -394,9 +342,7 @@ export class JitsiEngine {
   }
 
   private logEffect(opId: number, phase: string, extra?: any) {
-    try {
-      console.debug(`[bg][op#${opId}] ${phase}`, extra ?? "");
-    } catch { }
+    this.safe(() => console.debug(`[bg][op#${opId}] ${phase}`, extra ?? ""));
   }
 
   private async runEffectOpOnTrack(track: any, label: string, fn: () => Promise<void>) {
@@ -444,7 +390,7 @@ export class JitsiEngine {
         const msg = String(e?.message || e || "");
         if (msg.includes("setEffect already in progress")) {
           this.logEffect(++this.effectOpSeq, `RETRY setEffect(${reason}) after in-progress`);
-          await new Promise((r) => setTimeout(r, 120));
+          await this.sleep(120);
           await attempt();
         } else {
           throw e;
@@ -467,88 +413,42 @@ export class JitsiEngine {
   // ========================================================================
   // ✅ LOCAL CONFERENCE TRACK HELPERS (prevents "Cannot add second video track")
   // ========================================================================
-  private getConferenceLocalVideoTrack(): any | null {
+  private getConferenceLocalTrack(kind: "audio" | "video"): any | null {
     try {
       const conf = this.conference;
       if (!conf) return null;
       const arr: any[] = conf.getLocalTracks?.() || [];
-      const v =
-        arr.find((t) => !this.isDesktopTrack(t) && t?.getType?.() === "video") ||
-        arr.find((t) => t?.getType?.() === "video") ||
-        null;
-      return v || null;
+      const pick = (t: any) => !this.isDesktopTrack(t) && t?.getType?.() === kind;
+      return arr.find(pick) || arr.find((t) => t?.getType?.() === kind) || null;
     } catch {
       return null;
     }
   }
 
-  private getConferenceLocalAudioTrack(): any | null {
-    try {
-      const conf = this.conference;
-      if (!conf) return null;
-      const arr: any[] = conf.getLocalTracks?.() || [];
-      const a = arr.find((t) => !this.isDesktopTrack(t) && t?.getType?.() === "audio") || null;
-      return a || null;
-    } catch {
-      return null;
-    }
-  }
-
-  private async replaceOrAddLocalVideoTrack(newVideo: any, reason: string) {
+  private async replaceOrAddLocalTrack(kind: "audio" | "video", next: any, reason: string) {
     if (!this.conference || this.disposed) throw new Error("conference not ready");
     const conf = this.conference;
 
-    const existing = this.getConferenceLocalVideoTrack();
+    const existing = this.getConferenceLocalTrack(kind);
 
-    // If conference already has a local video track, we must replace/remove+add.
-    if (existing && existing !== newVideo) {
+    if (existing && existing !== next) {
       try {
-        if (typeof conf.replaceTrack === "function") {
-          await conf.replaceTrack(existing, newVideo);
-        } else {
+        if (typeof conf.replaceTrack === "function") await conf.replaceTrack(existing, next);
+        else {
           try {
             await conf.removeTrack?.(existing);
           } catch { }
-          await conf.addTrack(newVideo);
+          await conf.addTrack(next);
         }
       } finally {
-        // Dispose the old track (stops camera capture on old)
         try {
-          await this.safeDisposeTrack(existing, `replaceOrAddLocalVideoTrack:${reason}:old`);
+          await this.safeDisposeTrack(existing, `replaceOrAddLocalTrack:${kind}:${reason}:old`);
         } catch { }
       }
       return;
     }
 
-    // No existing => safe to add
-    await conf.addTrack(newVideo);
-  }
-
-  private async replaceOrAddLocalAudioTrack(newAudio: any, reason: string) {
-    if (!this.conference || this.disposed) throw new Error("conference not ready");
-    const conf = this.conference;
-
-    const existing = this.getConferenceLocalAudioTrack();
-
-    if (existing && existing !== newAudio) {
-      try {
-        if (typeof conf.replaceTrack === "function") {
-          await conf.replaceTrack(existing, newAudio);
-        } else {
-          try {
-            await conf.removeTrack?.(existing);
-          } catch { }
-          await conf.addTrack(newAudio);
-        }
-      } finally {
-        try {
-          await this.safeDisposeTrack(existing, `replaceOrAddLocalAudioTrack:${reason}:old`);
-        } catch { }
-      }
-      return;
-    }
-
-    await conf.addTrack(newAudio);
+    await conf.addTrack(next);
   }
 
   // ========================================================================
@@ -556,9 +456,6 @@ export class JitsiEngine {
   // ========================================================================
   private videoElByPid = new Map<string, HTMLVideoElement>();
   private screenElByPid = new Map<string, HTMLVideoElement>();
-
-  private videoHealthTimer: any = null;
-  private healthSoonTimer: any = null;
 
   private readonly HEALTH_TICK_MS = 1500;
   private readonly STUCK_THRESHOLD_MS = 2500;
@@ -580,21 +477,8 @@ export class JitsiEngine {
     }
   >();
 
-  public async listMediaDevices() {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    return {
-      videoInputs: devices.filter((d) => d.kind === "videoinput"),
-      audioInputs: devices.filter((d) => d.kind === "audioinput"),
-      audioOutputs: devices.filter((d) => d.kind === "audiooutput"),
-    };
-  }
-
-  public setAudioOutputDevice(deviceId: string) {
-    this.mediaSettings.audioOutputId = deviceId || "default";
-  }
-
   /**
-   * ✅ Optional: call from VideoRoom when you have the actual <video> element for a participant.
+   * Optional: call from VideoRoom when you have the actual <video> element for a participant.
    * - kind="video" for camera track
    * - kind="screen" for desktop track
    */
@@ -617,30 +501,25 @@ export class JitsiEngine {
 
   private scheduleHealthTickSoon() {
     this.startVideoHealthMonitor();
-
-    if (this.healthSoonTimer) return;
-    this.healthSoonTimer = setTimeout(() => {
-      this.healthSoonTimer = null;
+    if (this.t.healthSoon) return;
+    this.t.healthSoon = setTimeout(() => {
+      this.t.healthSoon = null;
       if (this.disposed) return;
       this.healthTick();
     }, 0);
   }
 
   private startVideoHealthMonitor() {
-    if (this.videoHealthTimer) return;
-    this.videoHealthTimer = setInterval(() => {
+    if (this.t.health) return;
+    this.setIV("health", this.HEALTH_TICK_MS, () => {
       if (this.disposed) return;
       this.healthTick();
-    }, this.HEALTH_TICK_MS);
+    });
   }
 
   private stopVideoHealthMonitor() {
-    if (this.videoHealthTimer) clearInterval(this.videoHealthTimer);
-    this.videoHealthTimer = null;
-
-    if (this.healthSoonTimer) clearTimeout(this.healthSoonTimer);
-    this.healthSoonTimer = null;
-
+    this.clearIV("health");
+    this.clearTO("healthSoon");
     this.videoHealthState.clear();
     this.videoElByPid.clear();
     this.screenElByPid.clear();
@@ -649,10 +528,7 @@ export class JitsiEngine {
   private getFrameCount(el: HTMLVideoElement): number | null {
     try {
       const anyEl = el as any;
-
-      if (typeof anyEl.webkitDecodedFrameCount === "number") {
-        return Number(anyEl.webkitDecodedFrameCount);
-      }
+      if (typeof anyEl.webkitDecodedFrameCount === "number") return Number(anyEl.webkitDecodedFrameCount);
 
       if (typeof el.getVideoPlaybackQuality === "function") {
         const q = el.getVideoPlaybackQuality();
@@ -683,7 +559,7 @@ export class JitsiEngine {
     return init;
   }
 
-  /** Who are we actually subscribed to right now? Mirror applyVideoSubscriptions logic. */
+  /** Mirror applyVideoSubscriptions logic. */
   private getSubscribedRemoteIds(): { ids: string[]; desiredLastN: number } {
     const finalRemoteIds = this.computeFinalRemoteIds();
     const desiredLastN = Math.min(finalRemoteIds.length, this.MAX_LAST_N);
@@ -699,9 +575,7 @@ export class JitsiEngine {
     const now = Date.now();
 
     for (const pid of Array.from(this.videoHealthState.keys())) {
-      if (!subscribedRemoteIds.includes(pid)) {
-        this.videoHealthState.delete(pid);
-      }
+      if (!subscribedRemoteIds.includes(pid)) this.videoHealthState.delete(pid);
     }
 
     for (const pid of subscribedRemoteIds) {
@@ -729,7 +603,6 @@ export class JitsiEngine {
       const hasSize = (el.videoWidth || 0) > 0 && (el.videoHeight || 0) > 0;
 
       const st = this.getOrInitHealth(pid);
-
       const frames = this.getFrameCount(el);
       const curTime = Number(el.currentTime || 0);
 
@@ -781,41 +654,27 @@ export class JitsiEngine {
       st.reattachAttemptsInWindow = 0;
     }
     st.reattachAttemptsInWindow += 1;
-
     st.lastReattachAt = now;
 
     try {
       if (typeof track.detach === "function") {
-        try {
-          track.detach(el);
-        } catch { }
-      }
-      if (typeof track.detach === "function") {
-        try {
-          track.detach();
-        } catch { }
+        this.safe(() => track.detach(el));
+        this.safe(() => track.detach());
       }
 
-      await new Promise((r) => setTimeout(r, 40));
+      await this.sleep(40);
 
-      if (typeof track.attach === "function") {
-        try {
-          track.attach(el);
-        } catch { }
-      }
+      if (typeof track.attach === "function") this.safe(() => track.attach(el));
 
-      try {
-        if (typeof (el as any).play === "function") {
-          await el.play().catch(() => { });
-        }
-      } catch { }
+      await this.safeAsync(async () => {
+        const p = (el as any).play?.();
+        if (p && typeof p.then === "function") await p.catch(() => { });
+      });
 
       st.stuckSince = Date.now();
       st.lastProgressAt = Date.now();
 
-      if (st.reattachAttemptsInWindow >= 2) {
-        this.bumpParticipantSubscription(pid, st);
-      }
+      if (st.reattachAttemptsInWindow >= 2) this.bumpParticipantSubscription(pid, st);
     } catch {
       this.bumpParticipantSubscription(pid, st);
     }
@@ -835,15 +694,11 @@ export class JitsiEngine {
       const original = subscribedRemoteIds.slice(0, desiredLastN);
       const without = original.filter((x) => x !== pid);
 
-      try {
-        this.conference.selectParticipants?.(without);
-      } catch { }
+      this.safe(() => this.conference.selectParticipants?.(without));
 
       setTimeout(() => {
         if (this.disposed || !this.conference) return;
-        try {
-          this.conference.selectParticipants?.(original);
-        } catch { }
+        this.safe(() => this.conference.selectParticipants?.(original));
       }, 220);
     } catch { }
   }
@@ -851,80 +706,27 @@ export class JitsiEngine {
   // ========================================================================
   // ✅ LOCAL A/V SELF-HEAL + RESUME RECOVERY
   // ========================================================================
-  private isLocalTrackUsable(track: any, kind: "audio" | "video") {
-    if (!track) return false;
-
-    try {
-      // If user explicitly muted, we consider it "healthy" (it's intended).
-      if (kind === "audio" && this.localUserId && this.participants[this.localUserId]?.audioMuted) return true;
-      if (kind === "video" && this.localUserId && this.participants[this.localUserId]?.videoMuted) return true;
-
-      // If track exposes muted state, and it's muted unexpectedly, treat as not-usable only for audio (optional).
-      // For stability, we DO NOT force-unmute here.
-      const msAny = track.getOriginalStream?.();
-      // Some builds return promise; accept both
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      const check = async () => {
-        const ms = await Promise.resolve(msAny);
-        if (!ms || typeof ms.getTracks !== "function") return false;
-
-        if (kind === "audio") {
-          const at = ms.getAudioTracks?.()?.[0];
-          if (!at) return false;
-          if (at.readyState !== "live") return false;
-          if (at.enabled === false) return false;
-          return true;
-        } else {
-          const vt = ms.getVideoTracks?.()?.[0];
-          if (!vt) return false;
-          if (vt.readyState !== "live") return false;
-          if (vt.enabled === false) return false;
-          return true;
-        }
-      };
-
-      // Synchronous fast path: if msAny isn't a Promise and looks like MediaStream
-      if (msAny && typeof msAny.then !== "function" && typeof msAny.getTracks === "function") {
-        if (kind === "audio") {
-          const at = msAny.getAudioTracks?.()?.[0];
-          return !!at && at.readyState === "live" && at.enabled !== false;
-        } else {
-          const vt = msAny.getVideoTracks?.()?.[0];
-          return !!vt && vt.readyState === "live" && vt.enabled !== false;
-        }
-      }
-
-      // Promise path: we can't await here; caller awaits a wrapper method.
-      // Return "unknown false" so ensure method can await.
-      return false;
-    } catch {
-      return false;
-    }
-  }
-
   private async ensureLocalAudioTrack(): Promise<void> {
     if (this.disposed || !this.JitsiMeetJS || !this.conference || !this.localUserId) return;
 
     const local = this.participants[this.localUserId];
-    // If user muted, don't recreate (it will look like "bug" to user)
     if (local?.audioMuted) return;
 
     // If we have a usable audio track, stop.
     try {
-      if (this.localAudioTrack) {
-        const msAny = this.localAudioTrack.getOriginalStream?.();
-        const ms = await Promise.resolve(msAny);
+      const t = this.localAudioTrack;
+      if (t) {
+        const ms = await Promise.resolve(t.getOriginalStream?.());
         const at = ms?.getAudioTracks?.()?.[0];
         if (at && at.readyState === "live" && at.enabled !== false) return;
       }
     } catch { }
 
-    // If engine lost ref but conference still has it and it's usable: adopt it.
+    // Adopt conference track if usable
     try {
-      const confAudio = this.getConferenceLocalAudioTrack();
+      const confAudio = this.getConferenceLocalTrack("audio");
       if (confAudio) {
-        const msAny = confAudio.getOriginalStream?.();
-        const ms = await Promise.resolve(msAny);
+        const ms = await Promise.resolve(confAudio.getOriginalStream?.());
         const at = ms?.getAudioTracks?.()?.[0];
         if (at && at.readyState === "live" && at.enabled !== false) {
           this.localAudioTrack = confAudio;
@@ -950,8 +752,7 @@ export class JitsiEngine {
       const newAudio = tracks.find((t: any) => t.getType?.() === "audio") || null;
       if (!newAudio) return;
 
-      // Replace-or-add safely
-      await this.replaceOrAddLocalAudioTrack(newAudio, "ensureLocalAudioTrack");
+      await this.replaceOrAddLocalTrack("audio", newAudio, "ensureLocalAudioTrack");
 
       this.localAudioTrack = newAudio;
 
@@ -962,7 +763,7 @@ export class JitsiEngine {
       this.rebuildParticipantsFromTracks();
       this.emitParticipants();
     } catch (e) {
-      console.warn("[audio] ensureLocalAudioTrack failed:", e);
+      this.safe(() => console.warn("[audio] ensureLocalAudioTrack failed:", e));
     }
   }
 
@@ -970,31 +771,25 @@ export class JitsiEngine {
     try {
       const audios = Array.from(document.querySelectorAll("audio")) as HTMLAudioElement[];
       for (const a of audios) {
-        try {
-          await a.play().catch(() => { });
-        } catch { }
+        await this.safeAsync(async () => {
+          const p = a.play?.();
+          if (p && typeof p.then === "function") await p.catch(() => { });
+        });
       }
     } catch { }
   }
 
   private schedulePostJoinSelfHeal() {
-    if (this.postJoinHealTimer) clearTimeout(this.postJoinHealTimer);
-    this.postJoinHealTimer = setTimeout(() => {
-      this.postJoinHealTimer = null;
+    this.setTO("postJoinHeal", 2500, () => {
       if (this.disposed) return;
       void this.postJoinSelfHeal();
-    }, 2500);
+    });
   }
 
   private async postJoinSelfHeal() {
-    // 1) Unlock audio playback if needed (autoplay policies)
     await this.resumeAllAudioElements();
-
-    // 2) Ensure local tracks exist + are alive
     await this.ensureLocalAudioTrack();
     await this.ensureLocalVideoTrack();
-
-    // 3) BG re-apply is already handled by createLocalTracks/ensureLocalVideoTrack
     this.scheduleHealthTickSoon();
   }
 
@@ -1007,42 +802,14 @@ export class JitsiEngine {
 
       if (document.visibilityState === "hidden") {
         this.hiddenAt = Date.now();
-
-        // ✅ CRITICAL FIX: replaceTrack BG freezes in background tabs => suspend it
-        if (this.bgPrefs.mode !== "none" && this.bgImplMode === "replaceTrack") {
-          this.bgSuspendedByHidden = true;
-          this.bgSuspendedAt = Date.now();
-
-          void this.enqueueBgOp("visibility:hidden:suspend-bg", async () => {
-            // avoid races with cam toggles
-            await this.camOpQueue.catch(() => { });
-            // swap processed->base + stop processor, but keep prefs so we can resume
-            await this.disableBg_replaceTrack("visibility:hidden", true);
-            // keep bgImplMode=none now; outgoing is base => no freeze
-          });
-        }
         return;
       }
 
       const dt = this.hiddenAt ? Date.now() - this.hiddenAt : 0;
       this.hiddenAt = null;
 
-      // ✅ resume BG if we suspended it
-      if (this.bgSuspendedByHidden) {
-        this.bgSuspendedByHidden = false;
-        void this.enqueueBgOp("visibility:visible:resume-bg", async () => {
-          // if user still wants BG, reapply now
-          if (this.bgPrefs.mode !== "none") {
-            await this.applyBgNow("visibility:visible:resume");
-          }
-        });
-      }
-
-      if (dt > 15_000) {
-        this.scheduleResumeRecovery("visibility");
-      } else {
-        void this.resumeAllAudioElements();
-      }
+      if (dt > 15_000) this.scheduleResumeRecovery("visibility");
+      else void this.resumeAllAudioElements();
     };
 
     const onFocus = () => {
@@ -1065,27 +832,18 @@ export class JitsiEngine {
     window.addEventListener("online", onOnline);
     window.addEventListener("pageshow", onPageShow);
 
-    // Store removers in closures on the instance (lightweight)
     (this as any).__resumeRemovers = () => {
-      try {
-        document.removeEventListener("visibilitychange", onVisibility);
-      } catch { }
-      try {
-        window.removeEventListener("focus", onFocus);
-      } catch { }
-      try {
-        window.removeEventListener("online", onOnline);
-      } catch { }
-      try {
-        window.removeEventListener("pageshow", onPageShow);
-      } catch { }
+      this.safe(() => document.removeEventListener("visibilitychange", onVisibility));
+      this.safe(() => window.removeEventListener("focus", onFocus));
+      this.safe(() => window.removeEventListener("online", onOnline));
+      this.safe(() => window.removeEventListener("pageshow", onPageShow));
     };
   }
 
   private scheduleResumeRecovery(reason: string) {
-    if (this.resumeRecoverTimer) return;
-    this.resumeRecoverTimer = setTimeout(() => {
-      this.resumeRecoverTimer = null;
+    if (this.t.resumeRecover) return;
+    this.t.resumeRecover = setTimeout(() => {
+      this.t.resumeRecover = null;
       if (this.disposed) return;
       void this.recoverAfterResume(reason);
     }, 250);
@@ -1093,23 +851,21 @@ export class JitsiEngine {
 
   private async recoverAfterResume(reason: string) {
     try {
-      console.warn("[resume] recoverAfterResume:", reason);
+      this.safe(() => console.warn("[resume] recoverAfterResume:", reason));
 
-      // Avoid racing with BG/cam ops
       await this.waitBgIdle().catch(() => { });
-      await this.camOpQueue.catch(() => { });
+      await this.camQ.promise.catch(() => { });
 
       await this.resumeAllAudioElements();
       await this.ensureLocalAudioTrack();
       await this.ensureLocalVideoTrack();
 
-      // If still looks unhealthy after a short delay, consider safe rejoin.
       setTimeout(() => {
         if (this.disposed) return;
         void this.maybeSafeRejoin(`resume:${reason}`);
       }, 3500);
     } catch (e) {
-      console.warn("[resume] recoverAfterResume failed:", e);
+      this.safe(() => console.warn("[resume] recoverAfterResume failed:", e));
       void this.maybeSafeRejoin(`resume:${reason}:exception`);
     }
   }
@@ -1117,20 +873,16 @@ export class JitsiEngine {
   private async isConferenceLikelyHealthy(): Promise<boolean> {
     if (!this.conference || this.disposed || !this.localUserId) return false;
 
-    // If user intentionally has both muted, we consider it fine.
     const local = this.participants[this.localUserId];
     const audioWanted = !local?.audioMuted;
     const videoWanted = !local?.videoMuted;
 
-    // If nothing is wanted, it's "healthy" enough.
     if (!audioWanted && !videoWanted) return true;
 
-    // Check local audio
     if (audioWanted) {
       try {
-        const t = this.localAudioTrack || this.getConferenceLocalAudioTrack();
-        const msAny = t?.getOriginalStream?.();
-        const ms = await Promise.resolve(msAny);
+        const t = this.localAudioTrack || this.getConferenceLocalTrack("audio");
+        const ms = await Promise.resolve(t?.getOriginalStream?.());
         const at = ms?.getAudioTracks?.()?.[0];
         if (!at || at.readyState !== "live" || at.enabled === false) return false;
       } catch {
@@ -1138,13 +890,11 @@ export class JitsiEngine {
       }
     }
 
-    // Check local video (base when replaceTrack)
     if (videoWanted) {
       try {
         const base = this.bgImplMode === "replaceTrack" ? this.bgBaseVideoTrack : this.localVideoTrack;
-        const t = base || this.getConferenceLocalVideoTrack();
-        const msAny = t?.getOriginalStream?.();
-        const ms = await Promise.resolve(msAny);
+        const t = base || this.getConferenceLocalTrack("video");
+        const ms = await Promise.resolve(t?.getOriginalStream?.());
         const vt = ms?.getVideoTracks?.()?.[0];
         if (!vt || vt.readyState !== "live" || vt.enabled === false) return false;
       } catch {
@@ -1174,38 +924,32 @@ export class JitsiEngine {
     const user = this.lastJoinUserName;
 
     if (!room || !user) {
-      console.warn("[rejoin] no join args stored; skip safeRejoin", tag);
+      this.safe(() => console.warn("[rejoin] no join args stored; skip safeRejoin", tag));
       return;
     }
 
-    console.warn("[rejoin] SAFE REJOIN:", tag);
+    this.safe(() => console.warn("[rejoin] SAFE REJOIN:", tag));
 
-    // Snapshot prefs we want to preserve
     const savedMedia = { ...this.mediaSettings };
     const savedBgPrefs = { ...this.bgPrefs };
     const savedBgStrategy = this.bgStrategy;
     const savedQuality = this.qualityMode;
     const savedSelected = [...(this.selectedVideoIds || [])];
 
-    // Dispose current session
     await this.dispose().catch(() => { });
 
-    // Re-arm engine for new join
     this.disposed = false;
 
-    // Restore preserved state
     this.mediaSettings = savedMedia;
     this.bgPrefs = savedBgPrefs;
     this.bgStrategy = savedBgStrategy;
     this.qualityMode = savedQuality;
     this.selectedVideoIds = savedSelected;
 
-    // Reset some volatile fields
     this.lastSubsKey = "";
     this.lastSubsAppliedAt = 0;
     this.hardResetCooldownUntil = 0;
 
-    // Rejoin
     await this.initAndJoin(room, user);
   }
 
@@ -1217,14 +961,9 @@ export class JitsiEngine {
     const hasSetEffect = typeof (t as any)?.setEffect === "function";
     this.effectsSupported = !!hasSetEffect;
 
-    try {
-      console.log(
-        "[Jitsi][effects] track.setEffect:",
-        typeof (t as any)?.setEffect,
-        "=> supported:",
-        this.effectsSupported
-      );
-    } catch { }
+    this.safe(() =>
+      console.log("[Jitsi][effects] track.setEffect:", typeof (t as any)?.setEffect, "=> supported:", this.effectsSupported)
+    );
 
     return this.effectsSupported;
   }
@@ -1238,18 +977,19 @@ export class JitsiEngine {
   }
 
   // ========================================================================
+  // BG MANAGER — strategy setter
+  // ========================================================================
+  public setBackgroundStrategy(strategy: "auto" | "setEffect" | "replaceTrack") {
+    this.bgStrategy = strategy;
+    this.safe(() => console.log("[bg] strategy set to:", strategy));
+    if (this.bgPrefs.mode !== "none") void this.enqueueBgOp("setBackgroundStrategy", () => this.applyBgNow("setBackgroundStrategy"));
+  }
+
+  // ========================================================================
   // BG EFFECT (A) — setEffect path
   // ========================================================================
-
-  /**
-   * SAFETY WRAPPER:
-   * Some lib-jitsi-meet builds call effect.startEffect(...) with NOT a MediaStream.
-   * Jitsi effects expect a MediaStream with getTracks().
-   */
   private wrapEffectToForceMediaStream(effect: any) {
     if (!effect || typeof effect.startEffect !== "function") return effect;
-
-    // Avoid double-wrapping
     if ((effect as any).__msWrapped) return effect;
 
     const makeAdapter = (target: any, callOriginal: (s: MediaStream) => any) => {
@@ -1270,34 +1010,22 @@ export class JitsiEngine {
           }
         }
 
-        if (!s || typeof s.getTracks !== "function") {
-          throw new Error("[bg] startEffect received non-MediaStream");
-        }
+        if (!s || typeof s.getTracks !== "function") throw new Error("[bg] startEffect received non-MediaStream");
 
         const out = callOriginal(s);
-
-        if (out && typeof out.then === "function") {
-          throw new Error("[bg] startEffect returned Promise; this build expects sync MediaStream");
-        }
-
+        if (out && typeof out.then === "function") throw new Error("[bg] startEffect returned Promise; this build expects sync MediaStream");
         return out;
       };
 
-      // Ensure isEnabled exists somewhere (some builds REQUIRE it)
-      if (typeof target.isEnabled !== "function") {
-        target.isEnabled = (_track?: any) => true;
-      }
-
+      if (typeof target.isEnabled !== "function") target.isEnabled = (_track?: any) => true;
       return target;
     };
 
-    // 1) Prefer in-place patch (keeps prototype 100%)
     try {
       const original = effect.startEffect.bind(effect);
       (effect as any).__msWrapped = true;
       return makeAdapter(effect, original);
     } catch {
-      // 2) Fallback: wrapper with prototype chain preserved
       const wrapped = Object.create(effect);
       const original = effect.startEffect.bind(effect);
       (wrapped as any).__msWrapped = true;
@@ -1306,9 +1034,7 @@ export class JitsiEngine {
   }
 
   private buildVirtualBackgroundOptions() {
-    if (this.bgPrefs.mode === "blur") {
-      return { backgroundType: "blur" };
-    }
+    if (this.bgPrefs.mode === "blur") return { backgroundType: "blur" };
     if (this.bgPrefs.mode === "image") {
       if (!this.bgPrefs.imageUrl) return null;
       return { backgroundType: "image", virtualSource: this.bgPrefs.imageUrl };
@@ -1319,16 +1045,12 @@ export class JitsiEngine {
   private getEffectFactory() {
     const anyJitsi = (window as any).JitsiMeetJS;
     const nativeFactory = anyJitsi?.effects?.createVirtualBackgroundEffect;
-
-    if (typeof nativeFactory === "function") {
-      return { kind: "native" as const, factory: nativeFactory };
-    }
+    if (typeof nativeFactory === "function") return { kind: "native" as const, factory: nativeFactory };
     return { kind: "vendored" as const, factory: createVendoredVirtualBackgroundEffect };
   }
 
   private async createEffectObject(vb: any) {
     const pick = this.getEffectFactory();
-
     if (!pick?.factory) {
       this.markEffectsIncompatible("No effect factory available");
       return null;
@@ -1342,7 +1064,6 @@ export class JitsiEngine {
       return null;
     }
 
-    // If startEffect is async => incompatible for setEffect path (camera toggle issues)
     if (this.isAsyncFunction(effect.startEffect)) {
       this.markEffectsIncompatible(`${pick.kind} effect.startEffect is async (incompatible with this build)`);
       return null;
@@ -1357,21 +1078,12 @@ export class JitsiEngine {
   private async clearBgEffectOnTrack_setEffect(track: any) {
     if (!track) return;
 
-    const hasSetEffect = typeof track.setEffect === "function";
-    if (hasSetEffect) {
-      try {
-        await this.safeSetEffect(track, this.PASSTHROUGH_EFFECT, "clear:setEffect");
-      } catch (e) {
-        console.warn("[bg] clear setEffect(passthrough) failed:", e);
-      }
+    if (typeof track.setEffect === "function") {
+      await this.safeAsync(() => this.safeSetEffect(track, this.PASSTHROUGH_EFFECT, "clear:setEffect"));
     }
 
-    try {
-      await this.videoEffect?.dispose?.();
-    } catch { }
-    try {
-      await (this.videoEffect as any)?.stopEffect?.();
-    } catch { }
+    await this.safeAsync(async () => this.videoEffect?.dispose?.());
+    await this.safeAsync(async () => (this.videoEffect as any)?.stopEffect?.());
     this.videoEffect = undefined;
   }
 
@@ -1379,32 +1091,16 @@ export class JitsiEngine {
     if (!track) return;
 
     this.refreshEffectsSupport(track);
+    if (!this.effectsSupported) throw new Error("setEffect not supported");
 
-    if (!this.effectsSupported) {
-      console.warn("[bg] setEffect path: track.setEffect missing");
-      throw new Error("setEffect not supported");
-    }
-
-    const wasMuted = (() => {
-      try {
-        return track.isMuted?.() === true;
-      } catch {
-        return false;
-      }
-    })();
+    const wasMuted = this.safe(() => track.isMuted?.() === true, false);
     if (wasMuted) return;
 
-    if (this.effectsCompatibility === "incompatible") {
-      throw new Error(`setEffect incompatible: ${this.effectsIncompatReason || "unknown"}`);
-    }
+    if (this.effectsCompatibility === "incompatible") throw new Error(`setEffect incompatible: ${this.effectsIncompatReason || "unknown"}`);
 
     try {
-      const msAny = track.getOriginalStream?.();
-      const ms = await Promise.resolve(msAny);
-      if (!ms || typeof ms.getTracks !== "function") {
-        console.warn("[bg] track original stream not ready; skip applying setEffect");
-        return;
-      }
+      const ms = await Promise.resolve(track.getOriginalStream?.());
+      if (!ms || typeof ms.getTracks !== "function") return;
     } catch { }
 
     if (this.bgPrefs.mode === "none") {
@@ -1415,85 +1111,44 @@ export class JitsiEngine {
     await this.clearBgEffectOnTrack_setEffect(track);
 
     const vb = this.buildVirtualBackgroundOptions();
-    if (!vb) {
-      console.warn("[bg] invalid vb options (missing imageUrl?)");
-      return;
-    }
+    if (!vb) return;
 
     this.bgApplying = true;
     try {
-      console.debug("[bg] setEffect apply request:", this.bgPrefs, "track:", this.getTrackDbg(track));
+      this.safe(() => console.debug("[bg] setEffect apply request:", this.bgPrefs, "track:", this.getTrackDbg(track)));
 
       let effect = await this.createEffectObject(vb);
-      if (!effect) {
-        // ✅ PATCH #2: force fallback to replaceTrack on this same click
-        throw new Error(`setEffect unavailable: ${this.effectsIncompatReason || "no effect"}`);
-      }
-
-      // Debug “isEnabled is not a function” root cause
-      try {
-        const dbg = {
-          ctor: effect?.constructor?.name,
-          keys: effect ? Object.keys(effect) : null,
-          isEnabled: typeof effect?.isEnabled,
-          startEffect: typeof effect?.startEffect,
-          stopEffect: typeof effect?.stopEffect,
-          dispose: typeof effect?.dispose,
-        };
-        console.debug("[bg] effect object before wrap", dbg, effect);
-      } catch { }
+      if (!effect) throw new Error(`setEffect unavailable: ${this.effectsIncompatReason || "no effect"}`);
 
       effect = this.wrapEffectToForceMediaStream(effect);
 
-      try {
-        if (typeof effect.isSupported === "function") {
-          const ok = effect.isSupported(track);
-          if (!ok) {
-            console.warn("[bg] effect.isSupported returned false");
-            throw new Error("setEffect isSupported=false");
-          }
-        }
-      } catch { }
-
-      try {
-        if (typeof effect.isEnabled === "function") {
-          const ok = effect.isEnabled(track);
-          if (!ok) {
-            console.warn("[bg] effect.isEnabled returned false");
-            throw new Error("setEffect isEnabled=false");
-          }
-        }
-      } catch { }
+      // Guard optional checks
+      if (typeof effect.isSupported === "function") {
+        const ok = this.safe(() => effect.isSupported(track), true);
+        if (!ok) throw new Error("setEffect isSupported=false");
+      }
+      if (typeof effect.isEnabled === "function") {
+        const ok = this.safe(() => effect.isEnabled(track), true);
+        if (!ok) throw new Error("setEffect isEnabled=false");
+      }
 
       await this.safeSetEffect(track, effect, `apply:setEffect:${this.bgPrefs.mode}`);
       this.videoEffect = effect;
 
-      try {
-        const nowMuted = track.isMuted?.() === true;
-        if (!wasMuted && nowMuted && typeof track.unmute === "function") {
-          await track.unmute();
-        }
-      } catch { }
-    } catch (e) {
-      console.warn("[bg] setEffect apply failed:", e);
-      try {
-        await this.safeSetEffect(track, this.PASSTHROUGH_EFFECT, "apply:setEffect:fail-clear");
-      } catch { }
-      try {
-        await this.videoEffect?.dispose?.();
-      } catch { }
-      try {
-        await (this.videoEffect as any)?.stopEffect?.();
-      } catch { }
+      const nowMuted = this.safe(() => track.isMuted?.() === true, false);
+      if (!wasMuted && nowMuted && typeof track.unmute === "function") await this.safeAsync(() => track.unmute());
+    } catch (e: any) {
+      this.safe(() => console.warn("[bg] setEffect apply failed:", e));
+
+      await this.safeAsync(() => this.safeSetEffect(track, this.PASSTHROUGH_EFFECT, "apply:setEffect:fail-clear"));
+      await this.safeAsync(async () => this.videoEffect?.dispose?.());
+      await this.safeAsync(async () => (this.videoEffect as any)?.stopEffect?.());
       this.videoEffect = undefined;
 
-      // mark incompatible so auto strategy will fall back to replaceTrack
-      this.markEffectsIncompatible(`setEffect apply failed: ${String((e as any)?.message || e || "")}`);
+      this.markEffectsIncompatible(`setEffect apply failed: ${String(e?.message || e || "")}`);
       throw e;
     } finally {
-      setTimeout(() => {
-        this.bgApplying = false;
-      }, 250);
+      setTimeout(() => (this.bgApplying = false), 250);
     }
   }
 
@@ -1505,12 +1160,11 @@ export class JitsiEngine {
     this.canvasBgFactoryLoaded = true;
 
     try {
-      // expected: src/lib/backgroundEffect.ts exports createBackgroundEffect(opts)
       const mod: any = await import("./backgroundEffect");
       const fn = mod?.createBackgroundEffect || mod?.createCanvasVirtualBgEffect || mod?.default || null;
 
       if (typeof fn !== "function") {
-        console.warn("[bg] backgroundEffect module loaded but no factory function export found");
+        this.safe(() => console.warn("[bg] backgroundEffect module loaded but no factory function export found"));
         this.canvasBgFactory = null;
         return null;
       }
@@ -1518,22 +1172,8 @@ export class JitsiEngine {
       this.canvasBgFactory = fn;
       return fn;
     } catch (e) {
-      console.warn("[bg] Failed to load ./backgroundEffect:", e);
+      this.safe(() => console.warn("[bg] Failed to load ./backgroundEffect:", e));
       this.canvasBgFactory = null;
-      return null;
-    }
-  }
-
-  private async getBaseVideoStreamForBg(): Promise<MediaStream | null> {
-    const base = this.bgBaseVideoTrack || this.localVideoTrack;
-    if (!base) return null;
-
-    try {
-      const msAny = base.getOriginalStream?.();
-      const ms = await Promise.resolve(msAny);
-      if (!ms || typeof ms.getTracks !== "function") return null;
-      return ms as MediaStream;
-    } catch {
       return null;
     }
   }
@@ -1542,12 +1182,11 @@ export class JitsiEngine {
     const t0 = Date.now();
     while (Date.now() - t0 < timeoutMs) {
       try {
-        const msAny = track?.getOriginalStream?.();
-        const ms = await Promise.resolve(msAny);
+        const ms = await Promise.resolve(track?.getOriginalStream?.());
         const vt = ms?.getVideoTracks?.()?.[0];
         if (ms && vt && vt.readyState !== "ended") return ms as MediaStream;
       } catch { }
-      await new Promise((r) => setTimeout(r, 60));
+      await this.sleep(60);
     }
     return null;
   }
@@ -1560,16 +1199,7 @@ export class JitsiEngine {
     if (!vt) throw new Error("processed stream has no video track");
 
     if (typeof J.createLocalTracksFromMediaStreams === "function") {
-      const infos = [
-        {
-          mediaType: "video",
-          sourceType: "external",
-          stream,
-          track: vt,
-          videoType: "camera",
-        },
-      ];
-
+      const infos = [{ mediaType: "video", sourceType: "external", stream, track: vt, videoType: "camera" }];
       const created = await J.createLocalTracksFromMediaStreams(infos);
       const t = (created || []).find((x: any) => x?.getType?.() === "video") || (created || [])[0];
       if (!t) throw new Error("createLocalTracksFromMediaStreams returned empty");
@@ -1580,20 +1210,11 @@ export class JitsiEngine {
   }
 
   private async stopReplaceTrackProcessor(reason: string) {
-    try {
-      await this.bgProcessor?.stopEffect?.();
-    } catch { }
-    try {
-      await this.bgProcessor?.dispose?.();
-    } catch { }
+    await this.safeAsync(async () => this.bgProcessor?.stopEffect?.());
+    await this.safeAsync(async () => this.bgProcessor?.dispose?.());
     this.bgProcessor = null;
-
     this.bgProcessedStream = null;
-
-    // processed Jitsi track (outgoing) is disposed separately by caller
-    try {
-      console.debug("[bg] replaceTrack processor stopped:", reason);
-    } catch { }
+    this.safe(() => console.debug("[bg] replaceTrack processor stopped:", reason));
   }
 
   private async disableBg_replaceTrack(reason: string, keepPrefs: boolean) {
@@ -1603,23 +1224,12 @@ export class JitsiEngine {
     const processed = this.bgProcessedTrack;
 
     if (processed && base && typeof this.conference.replaceTrack === "function") {
-      try {
-        // switch outgoing back to base
-        await this.conference.replaceTrack(processed, base);
-      } catch (e) {
-        console.warn("[bg] replaceTrack disable replaceTrack(processed->base) failed:", e);
-      }
+      await this.safeAsync(() => this.conference.replaceTrack(processed, base));
     } else if (processed && base) {
-      // fallback path if replaceTrack missing
-      try {
-        await this.conference.removeTrack?.(processed);
-      } catch { }
-      try {
-        await this.conference.addTrack?.(base);
-      } catch { }
+      await this.safeAsync(() => this.conference.removeTrack?.(processed));
+      await this.safeAsync(() => this.conference.addTrack?.(base));
     }
 
-    // Update refs: outgoing becomes base again
     if (base) {
       this.localVideoTrack = base;
       if (this.localUserId) {
@@ -1631,73 +1241,43 @@ export class JitsiEngine {
       }
     }
 
-    // Dispose processed track + processor
-    if (processed) {
-      try {
-        await this.safeDisposeTrack(processed, `bg:disable:processed:${reason}`);
-      } catch { }
-    }
+    if (processed) await this.safeDisposeTrack(processed, `bg:disable:processed:${reason}`);
     this.bgProcessedTrack = null;
 
     await this.stopReplaceTrackProcessor(`disable:${reason}`);
 
-    // Decide whether to keep base track pointer
-    if (!keepPrefs) {
-      this.bgBaseVideoTrack = null;
-    }
-
-    if (!keepPrefs) {
-      // also clear setEffect state if it existed
-      this.videoEffect = undefined;
-      this.effectsCompatibility = this.effectsCompatibility; // no-op, just explicit
-    }
+    if (!keepPrefs) this.bgBaseVideoTrack = null;
 
     this.bgImplMode = "none";
   }
 
   private async enableBg_replaceTrack(reason: string) {
     if (!this.conference || this.disposed) return;
-
     if (this.bgPrefs.mode === "none") return;
-
-    // Ensure base video track exists and is a real camera track
     if (!this.localVideoTrack) return;
 
-    // Base track is the raw camera feeding the processor
-    // ✅ PATCH #3: if bgBaseVideoTrack is stale/disposed, reset it so we bind to the NEW camera
+    // If base stale/disposed -> reset
     if (this.bgBaseVideoTrack) {
       try {
-        const msAny = this.bgBaseVideoTrack?.getOriginalStream?.();
-        const ms = await Promise.resolve(msAny);
+        const ms = await Promise.resolve(this.bgBaseVideoTrack.getOriginalStream?.());
         const vt = ms?.getVideoTracks?.()?.[0];
-        if (!vt || vt.readyState === "ended") {
-          this.bgBaseVideoTrack = null;
-        }
+        if (!vt || vt.readyState === "ended") this.bgBaseVideoTrack = null;
       } catch {
         this.bgBaseVideoTrack = null;
       }
     }
-    if (!this.bgBaseVideoTrack) {
-      this.bgBaseVideoTrack = this.localVideoTrack;
-    }
+    if (!this.bgBaseVideoTrack) this.bgBaseVideoTrack = this.localVideoTrack;
 
-    // Don’t apply if muted
-    try {
-      if (this.bgBaseVideoTrack?.isMuted?.() === true) return;
-    } catch { }
+    if (this.safe(() => this.bgBaseVideoTrack?.isMuted?.() === true, false)) return;
 
-    // Build processor instance
     const factory = await this.loadCanvasBgFactory();
-    if (!factory) {
-      console.warn("[bg] replaceTrack path unavailable: no backgroundEffect factory");
-      return;
-    }
+    if (!factory) return;
 
-    // Get base stream
     const baseTrack = this.bgBaseVideoTrack || this.localVideoTrack;
-    const baseStream = (await this.waitBaseStream(baseTrack, 2000)) || (await this.getBaseVideoStreamForBg());
+    const baseStream = (await this.waitBaseStream(baseTrack, 2000)) || null;
+
     if (!baseStream) {
-      console.warn("[bg] replaceTrack: base stream not ready -> retry soon");
+      this.safe(() => console.warn("[bg] replaceTrack: base stream not ready -> retry soon"));
       setTimeout(() => {
         if (this.disposed) return;
         void this.applyBgNow("retry:base-stream-not-ready");
@@ -1705,12 +1285,8 @@ export class JitsiEngine {
       return;
     }
 
-    // Stop previous processor/processed track if any (reconfigure)
-    if (this.bgProcessedTrack) {
-      await this.disableBg_replaceTrack("reconfigure", true);
-    }
+    if (this.bgProcessedTrack) await this.disableBg_replaceTrack("reconfigure", true);
 
-    // Create processor and processed stream (can be async safely here)
     this.bgApplying = true;
     try {
       const opts = {
@@ -1724,7 +1300,6 @@ export class JitsiEngine {
       this.bgProcessor = processor;
 
       if (!processor || typeof processor.startEffect !== "function") {
-        console.warn("[bg] replaceTrack: factory returned invalid processor");
         await this.stopReplaceTrackProcessor("invalid-processor");
         return;
       }
@@ -1733,21 +1308,18 @@ export class JitsiEngine {
       const processedStream = await Promise.resolve(processedStreamAny);
 
       if (!processedStream || typeof processedStream.getTracks !== "function") {
-        console.warn("[bg] replaceTrack: processor returned invalid processed stream");
         await this.stopReplaceTrackProcessor("invalid-processed-stream");
         return;
       }
 
       this.bgProcessedStream = processedStream;
 
-      // Create outgoing Jitsi track from processed stream
       const processedJitsiTrack = await this.createJitsiVideoTrackFromStream(processedStream);
       this.bgProcessedTrack = processedJitsiTrack;
 
-      // Replace outgoing track in conference:
       const oldOutgoing = this.localVideoTrack;
 
-      // Update local refs before replace to avoid TRACK_REMOVED handler nulling us
+      // Update refs BEFORE replace
       this.localVideoTrack = processedJitsiTrack;
       if (this.localUserId) {
         const entry = this.tracksByParticipant.get(this.localUserId) || {};
@@ -1760,41 +1332,30 @@ export class JitsiEngine {
       if (oldOutgoing && typeof this.conference.replaceTrack === "function") {
         await this.conference.replaceTrack(oldOutgoing, processedJitsiTrack);
       } else if (oldOutgoing) {
-        try {
-          await this.conference.removeTrack?.(oldOutgoing);
-        } catch { }
+        await this.safeAsync(() => this.conference.removeTrack?.(oldOutgoing));
         await this.conference.addTrack(processedJitsiTrack);
       } else {
         await this.conference.addTrack(processedJitsiTrack);
       }
 
-      // Keep base track alive (not disposed) because it feeds processor
       this.bgImplMode = "replaceTrack";
       this.bgReplaceRetryCount = 0;
 
-      try {
+      this.safe(() =>
         console.log("[bg] replaceTrack enabled:", reason, {
           base: this.getTrackDbg(this.bgBaseVideoTrack),
           outgoing: this.getTrackDbg(this.localVideoTrack),
-        });
-      } catch { }
+        })
+      );
     } catch (e) {
-      console.warn("[bg] replaceTrack enable failed:", e);
+      this.safe(() => console.warn("[bg] replaceTrack enable failed:", e));
 
-      // revert to base on failure
-      try {
-        await this.disableBg_replaceTrack("enable-failed", false);
-      } catch { }
+      await this.safeAsync(() => this.disableBg_replaceTrack("enable-failed", false));
+      await this.safeAsync(() => this.ensureLocalVideoTrack());
 
-      // keep localVideoTrack safe: if we lost it, attempt ensure
-      try {
-        await this.ensureLocalVideoTrack();
-      } catch { }
-
-      // ✅ Auto-retry a few times (so user doesn't need 2-3 clicks)
       this.bgReplaceRetryCount = this.bgReplaceRetryCount + 1;
       if (this.bgReplaceRetryCount <= 3 && this.bgPrefs.mode !== "none") {
-        const delay = 250 * this.bgReplaceRetryCount; // 250ms, 500ms, 750ms
+        const delay = 250 * this.bgReplaceRetryCount;
         setTimeout(() => {
           if (this.disposed) return;
           void this.enqueueBgOp(`replaceTrack-retry#${this.bgReplaceRetryCount}`, () =>
@@ -1803,9 +1364,7 @@ export class JitsiEngine {
         }, delay);
       }
     } finally {
-      setTimeout(() => {
-        this.bgApplying = false;
-      }, 250);
+      setTimeout(() => (this.bgApplying = false), 250);
     }
   }
 
@@ -1813,19 +1372,12 @@ export class JitsiEngine {
   // BG MANAGER — unified apply/clear entrypoints
   // ========================================================================
   private async clearAnyBg(keepPrefs: boolean, reason: string) {
-    // Clear replaceTrack mode first (if active)
     if (this.bgImplMode === "replaceTrack") {
       await this.disableBg_replaceTrack(reason, keepPrefs);
       return;
     }
 
-    // Clear setEffect mode if active or if track has setEffect
-    if (this.localVideoTrack) {
-      try {
-        await this.clearBgEffectOnTrack_setEffect(this.localVideoTrack);
-      } catch { }
-    }
-
+    if (this.localVideoTrack) await this.safeAsync(() => this.clearBgEffectOnTrack_setEffect(this.localVideoTrack));
     this.bgImplMode = "none";
 
     if (!keepPrefs) {
@@ -1836,7 +1388,6 @@ export class JitsiEngine {
     }
   }
 
-  // Small helper (keeps TS happy + used by hard-toggle path)
   private async clearBgEffectOnTrack(_track: any) {
     if (this.bgPrefs.mode === "none") return;
     await this.clearAnyBg(true, "clearBgEffectOnTrack");
@@ -1862,22 +1413,15 @@ export class JitsiEngine {
       return;
     }
 
-    // If we are already in replaceTrack mode, just reconfigure via disable+enable
     if (this.bgImplMode === "replaceTrack") {
       await this.enableBg_replaceTrack(`reapply:${reason}`);
       return;
     }
 
-    // Strategy "setEffect" or auto (try A first)
     if (this.bgStrategy !== "replaceTrack" && this.canTrySetEffect(track)) {
       try {
         await this.applyBgEffectToTrack_setEffect(track);
-
-        // ✅ PATCH #2: treat as failure if we didn't end up with a real effect instance
-        if (this.bgPrefs.mode !== "none" && !this.videoEffect) {
-          throw new Error("setEffect produced no effect instance");
-        }
-
+        if (this.bgPrefs.mode !== "none" && !this.videoEffect) throw new Error("setEffect produced no effect instance");
         this.bgImplMode = "setEffect";
         return;
       } catch {
@@ -1885,15 +1429,8 @@ export class JitsiEngine {
       }
     }
 
-    // Fallback / forced replaceTrack
-    // If we previously were in setEffect mode, clear it before switching
-    if (this.bgImplMode === "setEffect") {
-      try {
-        await this.clearBgEffectOnTrack_setEffect(track);
-      } catch { }
-    }
+    if (this.bgImplMode === "setEffect") await this.safeAsync(() => this.clearBgEffectOnTrack_setEffect(track));
 
-    // ReplaceTrack enable expects localVideoTrack to be base camera at the moment of enable.
     this.bgBaseVideoTrack = this.bgBaseVideoTrack || this.localVideoTrack;
     this.bgImplMode = "none";
 
@@ -1907,7 +1444,7 @@ export class JitsiEngine {
   }
 
   public async setBackgroundEffect(opts: { mode: BgMode; imageUrl?: string }) {
-    console.debug("[bg] setBackgroundEffect request:", opts, "track:", this.getTrackDbg(this.localVideoTrack));
+    this.safe(() => console.debug("[bg] setBackgroundEffect request:", opts, "track:", this.getTrackDbg(this.localVideoTrack)));
 
     this.bgPrefs = { mode: opts.mode, imageUrl: opts.imageUrl };
     this.mediaSettings.bgMode = opts.mode;
@@ -1915,12 +1452,12 @@ export class JitsiEngine {
 
     await this.enqueueBgOp("setBackgroundEffect", () => this.applyBgNow("setBackgroundEffect"));
 
-    try {
+    this.safe(() => {
       if (this.localUserId && this.participants[this.localUserId] && this.localVideoTrack) {
         this.participants[this.localUserId].videoMuted = this.localVideoTrack.isMuted?.() === true;
         this.emitParticipants();
       }
-    } catch { }
+    });
   }
 
   // ========================================================================
@@ -1929,54 +1466,36 @@ export class JitsiEngine {
   private async ensureLocalVideoTrack(): Promise<void> {
     if (this.disposed || !this.JitsiMeetJS || !this.conference) return;
 
-    // If we're in replaceTrack mode, the outgoing track is processed and base track is the camera.
     const needBase = this.bgImplMode === "replaceTrack" && this.bgBaseVideoTrack;
     const baseCandidate = needBase ? this.bgBaseVideoTrack : this.localVideoTrack;
 
-    // If candidate exists and looks alive, we may be done.
+    // candidate alive?
     try {
-      const msAny = baseCandidate?.getOriginalStream?.();
-      const ms = await Promise.resolve(msAny);
+      const ms = await Promise.resolve(baseCandidate?.getOriginalStream?.());
       const vt = ms?.getVideoTracks?.()?.[0];
       if (baseCandidate && vt && vt.readyState !== "ended") {
         if (!needBase) return;
-
-        // ensure outgoing exists too
+        // ensure outgoing alive too
         if (this.localVideoTrack) {
-          try {
-            const outMsAny = this.localVideoTrack?.getOriginalStream?.();
-            const outMs = await Promise.resolve(outMsAny);
-            const outVt = outMs?.getVideoTracks?.()?.[0];
-            if (outVt && outVt.readyState !== "ended") return;
-          } catch {
-            // continue to recreate outgoing below
-          }
+          const outMs = await Promise.resolve(this.localVideoTrack.getOriginalStream?.());
+          const outVt = outMs?.getVideoTracks?.()?.[0];
+          if (outVt && outVt.readyState !== "ended") return;
         }
       }
-    } catch {
-      // continue to recreate
-    }
+    } catch { }
 
     const tracks = await this.JitsiMeetJS.createLocalTracks({
       devices: ["video"],
-      constraints: {
-        video: this.mediaSettings.videoInputId ? { deviceId: { exact: this.mediaSettings.videoInputId } } : true,
-      },
+      constraints: { video: this.mediaSettings.videoInputId ? { deviceId: { exact: this.mediaSettings.videoInputId } } : true },
     });
 
     const newCamera = tracks.find((t: any) => t.getType?.() === "video");
     if (!newCamera) return;
 
     if (this.bgImplMode === "replaceTrack") {
-      // We are in BG mode but the base/outgoing is broken: rebuild safely.
-      try {
-        await this.disableBg_replaceTrack("ensureLocalVideoTrack:recreate", true);
-      } catch { }
+      await this.safeAsync(() => this.disableBg_replaceTrack("ensureLocalVideoTrack:recreate", true));
 
-      // ✅ PATCH #3: never add second local video track
-      try {
-        await this.replaceOrAddLocalVideoTrack(newCamera, "ensureLocalVideoTrack:replaceTrack");
-      } catch { }
+      await this.safeAsync(() => this.replaceOrAddLocalTrack("video", newCamera, "ensureLocalVideoTrack:replaceTrack"));
 
       const oldBase = this.bgBaseVideoTrack;
       const oldOutgoing = this.localVideoTrack;
@@ -1992,41 +1511,30 @@ export class JitsiEngine {
         this.emitParticipants();
       }
 
-      if (oldOutgoing && oldOutgoing !== newCamera && oldOutgoing !== oldBase) {
-        await this.safeDisposeTrack(oldOutgoing, "ensureLocalVideoTrack:oldOutgoing");
-      }
-      if (oldBase && oldBase !== newCamera && oldBase !== oldOutgoing) {
-        await this.safeDisposeTrack(oldBase, "ensureLocalVideoTrack:oldBase");
-      }
+      if (oldOutgoing && oldOutgoing !== newCamera && oldOutgoing !== oldBase) await this.safeDisposeTrack(oldOutgoing, "ensureLocalVideoTrack:oldOutgoing");
+      if (oldBase && oldBase !== newCamera && oldBase !== oldOutgoing) await this.safeDisposeTrack(oldBase, "ensureLocalVideoTrack:oldBase");
 
       await this.applyBgNow("ensureLocalVideoTrack:re-enable");
       return;
     }
 
-    // Non-replaceTrack path
+    // non-replaceTrack
     const oldVideo = this.localVideoTrack;
 
     if (oldVideo) {
-      try {
-        await this.waitEffectIdle(oldVideo);
-      } catch { }
-      try {
-        await this.clearBgEffectOnTrack_setEffect(oldVideo);
-      } catch { }
+      await this.safeAsync(() => this.waitEffectIdle(oldVideo));
+      await this.safeAsync(() => this.clearBgEffectOnTrack_setEffect(oldVideo));
 
       if (typeof this.conference.replaceTrack === "function") {
         await this.conference.replaceTrack(oldVideo, newCamera);
         await this.safeDisposeTrack(oldVideo, "ensureLocalVideoTrack:oldVideo");
       } else {
-        try {
-          await this.conference.removeTrack?.(oldVideo);
-        } catch { }
+        await this.safeAsync(() => this.conference.removeTrack?.(oldVideo));
         await this.safeDisposeTrack(oldVideo, "ensureLocalVideoTrack:oldVideo");
         await this.conference.addTrack(newCamera);
       }
     } else {
-      // ✅ PATCH #3: if conference already has a local video track (engine ref lost), replace instead of add
-      await this.replaceOrAddLocalVideoTrack(newCamera, "ensureLocalVideoTrack:no-oldVideo");
+      await this.replaceOrAddLocalTrack("video", newCamera, "ensureLocalVideoTrack:no-oldVideo");
     }
 
     this.localVideoTrack = newCamera;
@@ -2047,22 +1555,18 @@ export class JitsiEngine {
   }
 
   // ========================================================================
-  // ✅ HARD TOGGLE LOCAL VIDEO (more reliable than mute/unmute in some builds)
+  // ✅ HARD TOGGLE LOCAL VIDEO
   // ========================================================================
   private async disableLocalVideoHard(reason: string) {
     if (this.disposed || !this.conference || !this.localUserId) return;
 
-    // avoid racing with bg apply/reapply operations
     await this.waitBgIdle();
 
     let track = this.localVideoTrack;
-
-    // If engine lost ref but conference still has local video track — grab it.
-    const confExisting = this.getConferenceLocalVideoTrack();
+    const confExisting = this.getConferenceLocalTrack("video");
     if (!track && confExisting) track = confExisting;
 
     if (!track) {
-      // already off
       const p = this.participants[this.localUserId];
       if (p) {
         p.videoMuted = true;
@@ -2072,33 +1576,17 @@ export class JitsiEngine {
     }
 
     try {
-      // Ensure no effect op in-flight and clear effect (safe even if none)
-      try {
-        await this.waitEffectIdle(track);
-      } catch { }
+      await this.safeAsync(() => this.waitEffectIdle(track));
 
-      // ✅ Important:
-      // If BG was enabled via replaceTrack, clearAnyBg swaps processed->base and sets localVideoTrack=base.
-      // So after clearing, we MUST remove/dispose the CURRENT local video track in conference (base),
-      // not the stale one we started with (processed).
-      try {
-        await this.clearBgEffectOnTrack(track);
-      } catch { }
+      await this.safeAsync(() => this.clearBgEffectOnTrack(track));
 
-      // Refresh to the real conference track (base after BG clear)
-      const nowConfVideo = this.getConferenceLocalVideoTrack();
+      const nowConfVideo = this.getConferenceLocalTrack("video");
       if (nowConfVideo) track = nowConfVideo;
       else if (this.localVideoTrack) track = this.localVideoTrack;
 
-      // Remove from conference
-      try {
-        await this.conference.removeTrack?.(track);
-      } catch { }
-
-      // Dispose track (stops camera)
+      await this.safeAsync(() => this.conference.removeTrack?.(track));
       await this.safeDisposeTrack(track, `disableLocalVideoHard:${reason}`);
 
-      // ✅ PATCH #3: camera is stopped -> base pointer is stale; clear BG internal tracks but keep prefs
       this.localVideoTrack = null;
       this.bgBaseVideoTrack = null;
       this.bgProcessedTrack = null;
@@ -2107,7 +1595,6 @@ export class JitsiEngine {
       this.bgImplMode = "none";
       this.videoEffect = undefined;
 
-      // Update mapping
       const entry = this.tracksByParticipant.get(this.localUserId) || {};
       if (entry.video) delete entry.video;
       this.tracksByParticipant.set(this.localUserId, entry);
@@ -2119,11 +1606,10 @@ export class JitsiEngine {
 
       this.emitParticipants();
 
-      // No topology churn, but let subs re-evaluate
       this.scheduleApplyVideoSubscriptions(0, false);
       this.scheduleHealthTickSoon();
     } catch (e) {
-      console.warn("[cam] disableLocalVideoHard failed:", e);
+      this.safe(() => console.warn("[cam] disableLocalVideoHard failed:", e));
     }
   }
 
@@ -2131,27 +1617,20 @@ export class JitsiEngine {
     if (this.disposed || !this.JitsiMeetJS || !this.conference || !this.localUserId) return;
 
     try {
-      // Create fresh video track
       const tracks = await this.JitsiMeetJS.createLocalTracks({
         devices: ["video"],
         constraints: {
           video: this.mediaSettings.videoInputId
             ? { deviceId: { exact: this.mediaSettings.videoInputId } }
-            : {
-              height: { ideal: 720, max: 720 },
-              width: { ideal: 1280, max: 1280 },
-              frameRate: { ideal: 30, max: 30 },
-            },
+            : { height: { ideal: 720, max: 720 }, width: { ideal: 1280, max: 1280 }, frameRate: { ideal: 30, max: 30 } },
         },
       });
 
       const newVideo = tracks.find((t: any) => t.getType?.() === "video");
       if (!newVideo) return;
 
-      // ✅ PATCH #3: always replace existing local video track if conference still has one
-      await this.replaceOrAddLocalVideoTrack(newVideo, `enableLocalVideoHard:${reason}`);
+      await this.replaceOrAddLocalTrack("video", newVideo, `enableLocalVideoHard:${reason}`);
 
-      // Reset BG track pointers (prefs stay) so reapply binds to THIS new camera
       this.bgBaseVideoTrack = null;
       this.bgProcessedTrack = null;
       this.bgProcessedStream = null;
@@ -2161,14 +1640,12 @@ export class JitsiEngine {
 
       this.localVideoTrack = newVideo;
 
-      // Update mapping
       const entry = this.tracksByParticipant.get(this.localUserId) || {};
       entry.video = newVideo;
       this.tracksByParticipant.set(this.localUserId, entry);
 
       this.refreshEffectsSupport(newVideo);
 
-      // Re-apply background if user had chosen it
       setTimeout(() => {
         if (this.disposed) return;
         if (this.camToggling) return;
@@ -2185,7 +1662,7 @@ export class JitsiEngine {
       this.scheduleApplyVideoSubscriptions(0, false);
       this.scheduleHealthTickSoon();
     } catch (e) {
-      console.warn("[cam] enableLocalVideoHard failed:", e);
+      this.safe(() => console.warn("[cam] enableLocalVideoHard failed:", e));
       this.callbacks.onError?.("Failed to enable camera");
     }
   }
@@ -2205,47 +1682,34 @@ export class JitsiEngine {
     const videoChanged = !!videoInputId && videoInputId !== prevVideo;
     const audioChanged = !!audioInputId && audioInputId !== prevAudio;
 
-    if (!videoChanged && !audioChanged) {
-      return { audio: this.localAudioTrack, video: this.localVideoTrack };
-    }
+    if (!videoChanged && !audioChanged) return { audio: this.localAudioTrack, video: this.localVideoTrack };
 
-    // If replaceTrack bg is active and video device changes, temporarily disable bg first.
     if (videoChanged && this.bgImplMode === "replaceTrack" && this.bgPrefs.mode !== "none") {
-      try {
-        await this.disableBg_replaceTrack("applyInputDevices:pre-video-switch", true);
-      } catch { }
+      await this.safeAsync(() => this.disableBg_replaceTrack("applyInputDevices:pre-video-switch", true));
     }
 
     if (audioChanged) {
-      try {
+      await this.safeAsync(async () => {
         if (this.localAudioTrack && typeof this.localAudioTrack.setDevice === "function") {
           await this.localAudioTrack.setDevice(audioInputId);
         }
-      } catch (e) {
-        console.warn("[applyInputDevices] audio setDevice failed:", e);
-      }
+      });
     }
 
     if (videoChanged) {
-      try {
+      const ok = await this.safeAsync(async () => {
         if (this.localVideoTrack && typeof this.localVideoTrack.setDevice === "function") {
-          // If setEffect mode active, clear effect before switching device (stable)
           if (this.bgImplMode === "setEffect" && this.bgPrefs.mode !== "none") {
             await this.clearBgEffectOnTrack_setEffect(this.localVideoTrack);
           }
-
           await this.localVideoTrack.setDevice(videoInputId);
-
-          // Re-apply after device switch
-          setTimeout(() => {
-            void this.applyBgNow("applyInputDevices:post-setDevice");
-          }, 0);
-
-          return { audio: this.localAudioTrack, video: this.localVideoTrack };
+          setTimeout(() => void this.applyBgNow("applyInputDevices:post-setDevice"), 0);
+          return true;
         }
-      } catch (e) {
-        console.warn("[applyInputDevices] video setDevice failed:", e);
-      }
+        return false;
+      }, false);
+
+      if (ok) return { audio: this.localAudioTrack, video: this.localVideoTrack };
     }
 
     const JitsiMeetJS = (window as any).JitsiMeetJS;
@@ -2264,49 +1728,14 @@ export class JitsiEngine {
 
     if (this.conference) {
       if (newAudio) {
-        if (this.localAudioTrack && typeof this.conference.replaceTrack === "function") {
-          const oldAudio = this.localAudioTrack;
-          await this.conference.replaceTrack(oldAudio, newAudio);
-          await this.safeDisposeTrack(oldAudio, "applyInputDevices:oldAudio");
-          this.localAudioTrack = newAudio;
-        } else if (this.localAudioTrack) {
-          const oldAudio = this.localAudioTrack;
-          try {
-            await this.conference.removeTrack?.(oldAudio);
-          } catch { }
-          await this.safeDisposeTrack(oldAudio, "applyInputDevices:oldAudio");
-          await this.conference.addTrack(newAudio);
-          this.localAudioTrack = newAudio;
-        } else {
-          await this.conference.addTrack(newAudio);
-          this.localAudioTrack = newAudio;
-        }
+        await this.replaceOrAddLocalTrack("audio", newAudio, "applyInputDevices:audio");
+        this.localAudioTrack = newAudio;
       }
 
       if (newVideo) {
-        const oldVideo = this.localVideoTrack;
-
-        // If bg is active, fully clear before replacing tracks.
-        if (this.bgPrefs.mode !== "none") {
-          await this.clearAnyBg(true, "applyInputDevices:pre-video-replace");
-        }
-
-        if (oldVideo && typeof this.conference.replaceTrack === "function") {
-          await this.conference.replaceTrack(oldVideo, newVideo);
-          await this.safeDisposeTrack(oldVideo, "applyInputDevices:oldVideo");
-          this.localVideoTrack = newVideo;
-        } else if (oldVideo) {
-          try {
-            await this.conference.removeTrack?.(oldVideo);
-          } catch { }
-          await this.safeDisposeTrack(oldVideo, "applyInputDevices:oldVideo");
-          await this.conference.addTrack(newVideo);
-          this.localVideoTrack = newVideo;
-        } else {
-          // ✅ If engine lost ref but conf has one — replace instead of add
-          await this.replaceOrAddLocalVideoTrack(newVideo, "applyInputDevices:newVideo");
-          this.localVideoTrack = newVideo;
-        }
+        if (this.bgPrefs.mode !== "none") await this.clearAnyBg(true, "applyInputDevices:pre-video-replace");
+        await this.replaceOrAddLocalTrack("video", newVideo, "applyInputDevices:video");
+        this.localVideoTrack = newVideo;
       }
     }
 
@@ -2320,7 +1749,6 @@ export class JitsiEngine {
     }
 
     this.refreshEffectsSupport(this.localVideoTrack);
-    // ✅ preload BG factory so first blur/image click is instant
     void this.loadCanvasBgFactory();
     await this.applyBgNow("applyInputDevices:final");
 
@@ -2341,15 +1769,12 @@ export class JitsiEngine {
 
     if (!this.JitsiMeetJS || !this.config) throw new Error("Jitsi globals not available");
 
-    try {
+    this.safe(() => {
       const lvl = this.JitsiMeetJS?.logLevels?.ERROR;
       if (typeof lvl !== "undefined") this.JitsiMeetJS.setLogLevel(lvl);
-    } catch { }
-
-    this.JitsiMeetJS.init({
-      disableP2P: true,
-      disableAudioLevels: true,
     });
+
+    this.JitsiMeetJS.init({ disableP2P: true, disableAudioLevels: true });
 
     const serviceUrl = this.config.websocket || this.config.bosh || `wss://${JITSI_DOMAIN}/xmpp-websocket`;
 
@@ -2415,38 +1840,34 @@ export class JitsiEngine {
     } catch { }
   }
 
-  // ========================================================================
-  // ✅ PATCH: Make video toggle fully HARD (remove/add) to avoid multi-participant + BG edge cases
-  // ========================================================================
+  // ✅ HARD toggle video (remove/add)
   async toggleVideoMute(): Promise<void> {
     return this.enqueueCamOp("toggleVideoMute", async () => {
       if (!this.localUserId) return;
-
       const local = this.participants[this.localUserId];
       if (!local) return;
 
-      // ⚠️ wait any pending bg op to finish (join/apply/click)
       await this.waitBgIdle();
 
       this.camToggling = true;
       try {
-        // If engine lost refs but conf still has local video => treat as ON.
-        const confTrack = this.getConferenceLocalVideoTrack();
+        const confTrack = this.getConferenceLocalTrack("video");
         const hasVideoInConf = !!confTrack;
         const hasVideoInEngine = !!this.localVideoTrack;
 
-        console.debug(
-          "[cam] toggleVideoMute(HARD) request. engineTrack:",
-          this.getTrackDbg(this.localVideoTrack),
-          "confHasVideo:",
-          hasVideoInConf,
-          "bgPrefs:",
-          this.bgPrefs,
-          "bgImpl:",
-          this.bgImplMode
+        this.safe(() =>
+          console.debug(
+            "[cam] toggleVideoMute(HARD) request. engineTrack:",
+            this.getTrackDbg(this.localVideoTrack),
+            "confHasVideo:",
+            hasVideoInConf,
+            "bgPrefs:",
+            this.bgPrefs,
+            "bgImpl:",
+            this.bgImplMode
+          )
         );
 
-        // ON -> OFF
         if (hasVideoInEngine || hasVideoInConf) {
           await this.disableLocalVideoHard("toggleVideoMute");
           local.videoMuted = true;
@@ -2454,19 +1875,17 @@ export class JitsiEngine {
           return;
         }
 
-        // OFF -> ON
         await this.enableLocalVideoHard("toggleVideoMute");
 
         try {
           const t = this.localVideoTrack;
-          if (t) local.videoMuted = t.isMuted?.() === true;
-          else local.videoMuted = true;
+          local.videoMuted = t ? t.isMuted?.() === true : true;
         } catch {
           local.videoMuted = false;
         }
         this.emitParticipants();
       } catch (e) {
-        console.warn("[cam] toggleVideoMute(HARD) failed:", e);
+        this.safe(() => console.warn("[cam] toggleVideoMute(HARD) failed:", e));
       } finally {
         this.camToggling = false;
         this.scheduleApplyVideoSubscriptions(0, false);
@@ -2487,8 +1906,7 @@ export class JitsiEngine {
       const tracks = await this.JitsiMeetJS.createLocalTracks({ devices: ["desktop"] });
 
       const screenTrack =
-        tracks.find((t: any) => this.isDesktopTrack(t)) ||
-        tracks.find((t: any) => t.getType && t.getType() === "desktop");
+        tracks.find((t: any) => this.isDesktopTrack(t)) || tracks.find((t: any) => t.getType && t.getType() === "desktop");
 
       if (!screenTrack) return;
 
@@ -2513,7 +1931,6 @@ export class JitsiEngine {
 
       this.scheduleApplyVideoSubscriptions(0, true);
       this.scheduleHardResetSubscriptions(4500);
-
       this.scheduleHealthTickSoon();
     } catch {
       this.callbacks.onError?.("Screen share failed");
@@ -2523,21 +1940,15 @@ export class JitsiEngine {
   async dispose(): Promise<void> {
     this.disposed = true;
 
-    if (this.subsApplyTimer) clearTimeout(this.subsApplyTimer);
-    if (this.subsHardResetTimer) clearTimeout(this.subsHardResetTimer);
-    this.subsApplyTimer = null;
-    this.subsHardResetTimer = null;
+    this.clearTO("subsApply");
+    this.clearTO("subsHard");
+    this.clearIV("subsWatch");
+    this.clearTO("postJoinHeal");
+    this.clearTO("resumeRecover");
+    this.clearTO("healthSoon");
+    this.clearIV("health");
+    this.clearTO("applySubsSoon");
 
-    if (this.subsWatchdog) clearInterval(this.subsWatchdog);
-    this.subsWatchdog = null;
-
-    if (this.postJoinHealTimer) clearTimeout(this.postJoinHealTimer);
-    this.postJoinHealTimer = null;
-
-    if (this.resumeRecoverTimer) clearTimeout(this.resumeRecoverTimer);
-    this.resumeRecoverTimer = null;
-
-    // remove resume handlers
     try {
       (this as any).__resumeRemovers?.();
     } catch { }
@@ -2546,63 +1957,48 @@ export class JitsiEngine {
 
     this.stopVideoHealthMonitor();
 
-    // Clear BG (both modes)
-    try {
-      await this.clearAnyBg(false, "dispose");
-    } catch { }
+    await this.safeAsync(() => this.clearAnyBg(false, "dispose"));
 
-    // Dispose screenshare
-    try {
+    // screenshare
+    await this.safeAsync(async () => {
       if (this.localScreenshareTrack) {
-        try {
-          await this.conference?.removeTrack?.(this.localScreenshareTrack);
-        } catch { }
+        await this.safeAsync(() => this.conference?.removeTrack?.(this.localScreenshareTrack));
         await this.safeDisposeTrack(this.localScreenshareTrack, "dispose:screen");
         this.localScreenshareTrack = null;
       }
-    } catch { }
+    });
 
-    // Dispose audio
-    try {
+    // audio
+    await this.safeAsync(async () => {
       if (this.localAudioTrack) {
-        try {
-          await this.conference?.removeTrack?.(this.localAudioTrack);
-        } catch { }
+        await this.safeAsync(() => this.conference?.removeTrack?.(this.localAudioTrack));
         await this.safeDisposeTrack(this.localAudioTrack, "dispose:audio");
         this.localAudioTrack = null;
       }
-    } catch { }
+    });
 
-    // Dispose video (outgoing) — if replaceTrack mode was used, also dispose base if it still exists and is different
-    try {
+    // video outgoing + base (if different)
+    await this.safeAsync(async () => {
       const outgoing = this.localVideoTrack;
       if (outgoing) {
-        try {
-          await this.conference?.removeTrack?.(outgoing);
-        } catch { }
+        await this.safeAsync(() => this.conference?.removeTrack?.(outgoing));
         await this.safeDisposeTrack(outgoing, "dispose:video:outgoing");
       }
 
       const base = this.bgBaseVideoTrack;
-      if (base && base !== outgoing) {
-        await this.safeDisposeTrack(base, "dispose:video:base");
-      }
+      if (base && base !== outgoing) await this.safeDisposeTrack(base, "dispose:video:base");
 
       this.localVideoTrack = null;
       this.bgBaseVideoTrack = null;
       this.bgProcessedTrack = null;
-    } catch { }
+    });
 
     this.tracksByParticipant.clear();
     this.participants = {};
     this.emitParticipants();
 
-    try {
-      await this.conference?.leave?.();
-    } catch { }
-    try {
-      await this.connection?.disconnect?.();
-    } catch { }
+    await this.safeAsync(() => this.conference?.leave?.());
+    await this.safeAsync(() => this.connection?.disconnect?.());
 
     this.conference = null;
     this.connection = null;
@@ -2610,7 +2006,7 @@ export class JitsiEngine {
   }
 
   // ========================================================================
-  // INTERNAL
+  // INTERNAL — conference setup
   // ========================================================================
   private setupConference(roomName: string, userName: string) {
     if (!this.connection || !this.JitsiMeetJS || !this.config) return;
@@ -2635,11 +2031,10 @@ export class JitsiEngine {
 
     const applySubsSoon = (force: boolean = false) => {
       if (this.disposed) return;
-      clearTimeout((this as any).__applySubsT);
-      (this as any).__applySubsT = setTimeout(() => {
+      this.setTO("applySubsSoon", 80, () => {
         if (this.disposed) return;
         this.scheduleApplyVideoSubscriptions(0, force);
-      }, 80);
+      });
     };
 
     const topologyChanged = () => {
@@ -2657,24 +2052,47 @@ export class JitsiEngine {
       }
     };
 
-    conf.on(events.conference.USER_LEFT, (id: string) => {
+    conf.on(events.conference.CONFERENCE_JOINED, () => {
       if (this.disposed) return;
 
-      delete this.participants[id];
-      this.tracksByParticipant.delete(id);
-      this.emitParticipants();
+      const anyConf = conf as any;
+      let localId: string | null = null;
 
-      this.videoElByPid.delete(id);
-      this.screenElByPid.delete(id);
-      this.videoHealthState.delete(id);
+      if (typeof anyConf.getLocalUserId === "function") localId = anyConf.getLocalUserId();
+      else if (typeof anyConf.myUserId === "function") localId = anyConf.myUserId();
 
-      // ✅ Keep subscriptions stable; avoid hard reset on leave
+      if (!localId) {
+        this.callbacks.onError?.("Failed to resolve local user id");
+        return;
+      }
+
+      this.localUserId = localId;
+
+      if (userName && typeof anyConf.setDisplayName === "function") anyConf.setDisplayName(userName);
+
+      this.ensureLocalParticipant(userName);
+      if (!this.tracksByParticipant.has(localId)) this.tracksByParticipant.set(localId, {});
+
+      this.attachResumeHandlers();
+
+      this.callbacks.onConferenceJoin?.();
+
       applySubsSoon(true);
+      topologyChanged();
 
-      // ✅ give remaining endpoints a tiny "kick" to force fresh frames / re-key
-      this.schedulePostLeaveRecoveryKick();
+      this.setIV("subsWatch", 10000, () => {
+        if (this.disposed) return;
+        const now = Date.now();
+        if (now - this.lastSubsAppliedAt > 9000) this.scheduleApplyVideoSubscriptions(0, false);
+      });
 
-      this.scheduleHealthTickSoon();
+      this.startVideoHealthMonitor();
+      this.schedulePostJoinSelfHeal();
+
+      setTimeout(() => {
+        if (this.disposed) return;
+        void this.createLocalTracks();
+      }, 0);
     });
 
     conf.on(events.conference.USER_JOINED, (id: string, user: any) => {
@@ -2686,7 +2104,6 @@ export class JitsiEngine {
 
       applySubsSoon(true);
       topologyChanged();
-
       this.scheduleHealthTickSoon();
     });
 
@@ -2717,9 +2134,8 @@ export class JitsiEngine {
       if (this.disposed) return;
       this.handleTrackAdded(track);
 
-      if (isLocalCameraOrAudio(track)) {
-        applySubsSoon(false);
-      } else {
+      if (isLocalCameraOrAudio(track)) applySubsSoon(false);
+      else {
         applySubsSoon(true);
         topologyChanged();
       }
@@ -2731,9 +2147,8 @@ export class JitsiEngine {
       if (this.disposed) return;
       this.handleTrackRemoved(track);
 
-      if (isLocalCameraOrAudio(track)) {
-        applySubsSoon(false);
-      } else {
+      if (isLocalCameraOrAudio(track)) applySubsSoon(false);
+      else {
         applySubsSoon(true);
         topologyChanged();
       }
@@ -2744,7 +2159,6 @@ export class JitsiEngine {
     conf.on(events.conference.TRACK_MUTE_CHANGED, (track: any) => {
       if (this.disposed) return;
       this.handleTrackMuteChanged(track);
-
       applySubsSoon(false);
       this.scheduleHealthTickSoon();
     });
@@ -2767,40 +2181,22 @@ export class JitsiEngine {
           audio: this.mediaSettings.audioInputId ? { deviceId: { exact: this.mediaSettings.audioInputId } } : true,
           video: this.mediaSettings.videoInputId
             ? { deviceId: { exact: this.mediaSettings.videoInputId } }
-            : {
-              height: { ideal: 720, max: 720 },
-              width: { ideal: 1280, max: 1280 },
-              frameRate: { ideal: 30, max: 30 },
-            },
+            : { height: { ideal: 720, max: 720 }, width: { ideal: 1280, max: 1280 }, frameRate: { ideal: 30, max: 30 } },
         },
       });
 
       for (const t of tracks) {
         const type = t.getType?.();
-        // ✅ be defensive: if local video already exists (rare race), replace
-        if (type === "video") {
-          await this.replaceOrAddLocalVideoTrack(t, "createLocalTracks");
-        } else if (type === "audio") {
-          await this.replaceOrAddLocalAudioTrack(t, "createLocalTracks");
-        } else {
-          await this.conference.addTrack(t);
-        }
+        if (type === "video") await this.replaceOrAddLocalTrack("video", t, "createLocalTracks");
+        else if (type === "audio") await this.replaceOrAddLocalTrack("audio", t, "createLocalTracks");
+        else await this.conference.addTrack(t);
+
         if (type === "audio") this.localAudioTrack = t;
         if (type === "video") this.localVideoTrack = t;
       }
 
       this.refreshEffectsSupport(this.localVideoTrack);
-
-      // ✅ PATCH #2 perf: prewarm replaceTrack background pipeline so first click is instant
       void this.loadCanvasBgFactory();
-
-      try {
-        console.log("[dbg] localVideoTrack setEffect:", typeof (this.localVideoTrack as any)?.setEffect);
-        console.log(
-          "[dbg] createLocalTracksFromMediaStreams:",
-          typeof (this.JitsiMeetJS as any)?.createLocalTracksFromMediaStreams
-        );
-      } catch { }
 
       const entry = this.tracksByParticipant.get(this.localUserId) || {};
       if (this.localAudioTrack) entry.audio = this.localAudioTrack;
@@ -2809,7 +2205,6 @@ export class JitsiEngine {
 
       await this.enqueueBgOp("createLocalTracks", () => this.applyBgNow("createLocalTracks"));
 
-      // After we actually have tracks, run self-heal again (covers rare races)
       this.schedulePostJoinSelfHeal();
 
       this.rebuildParticipantsFromTracks();
@@ -2817,10 +2212,9 @@ export class JitsiEngine {
 
       this.scheduleApplyVideoSubscriptions(0, true);
       this.scheduleHardResetSubscriptions(4500);
-
       this.scheduleHealthTickSoon();
     } catch (e) {
-      console.error("createLocalTracks error", e);
+      this.safe(() => console.error("createLocalTracks error", e));
       this.callbacks.onError?.("Failed to access camera/microphone");
     }
   }
@@ -2830,20 +2224,18 @@ export class JitsiEngine {
   // ========================================================================
   private scheduleApplyVideoSubscriptions(delayMs: number = 150, force: boolean = false) {
     if (!this.conference || this.disposed) return;
-    if (this.subsApplyTimer) clearTimeout(this.subsApplyTimer);
-    this.subsApplyTimer = setTimeout(() => {
-      this.subsApplyTimer = null;
+    this.setTO("subsApply", delayMs, () => {
+      if (this.disposed) return;
       this.applyVideoSubscriptions(force);
-    }, delayMs);
+    });
   }
 
   private scheduleHardResetSubscriptions(delayMs: number = 4500) {
     if (!this.conference || this.disposed) return;
-    if (this.subsHardResetTimer) clearTimeout(this.subsHardResetTimer);
-    this.subsHardResetTimer = setTimeout(() => {
-      this.subsHardResetTimer = null;
+    this.setTO("subsHard", delayMs, () => {
+      if (this.disposed) return;
       this.hardResetAndApplyVideoSubscriptions();
-    }, delayMs);
+    });
   }
 
   private pickReceiverConstraintHeight(n: number): number {
@@ -2865,7 +2257,6 @@ export class JitsiEngine {
     for (const [pid, tracks] of this.tracksByParticipant.entries()) {
       if (!pid) continue;
       if (localId && pid === localId) continue;
-
       if (tracks?.screen || tracks?.video) out.push(pid);
     }
 
@@ -2899,7 +2290,6 @@ export class JitsiEngine {
       const h = this.pickReceiverConstraintHeight(desiredLastN);
 
       const key = this.buildSubsKey(finalRemoteIds, desiredLastN, h);
-
       if (!force && key === this.lastSubsKey) return;
 
       this.lastSubsKey = key;
@@ -2930,12 +2320,8 @@ export class JitsiEngine {
       const desiredLastN = Math.min(finalRemoteIds.length, this.MAX_LAST_N);
       const h = this.pickReceiverConstraintHeight(desiredLastN);
 
-      try {
-        this.conference.selectParticipants?.([]);
-      } catch { }
-      try {
-        this.conference.setLastN?.(0);
-      } catch { }
+      this.safe(() => this.conference.selectParticipants?.([]));
+      this.safe(() => this.conference.setLastN?.(0));
 
       setTimeout(() => {
         if (this.disposed || !this.conference) {
@@ -2951,11 +2337,9 @@ export class JitsiEngine {
 
           this.lastSubsKey = "";
           this.lastSubsAppliedAt = Date.now();
-        } catch {
         } finally {
           this.hardResetCooldownUntil = Date.now() + 20000;
           this.subsHardResetInFlight = false;
-
           this.scheduleHealthTickSoon();
         }
       }, 220);
@@ -2966,13 +2350,10 @@ export class JitsiEngine {
 
   private broadcastLocalEvent(ev: any) {
     if (!this.conference || !this.localUserId) return;
-
     const ids = Object.keys(this.participants);
     for (const id of ids) {
       if (id === this.localUserId) continue;
-      try {
-        this.conference.sendEndpointMessage(id, ev);
-      } catch { }
+      this.safe(() => this.conference.sendEndpointMessage(id, ev));
     }
   }
 
@@ -3033,19 +2414,14 @@ export class JitsiEngine {
         this.localVideoTrack = track;
         this.refreshEffectsSupport(track);
 
-        if (!this.camToggling && !this.bgApplying && this.bgImplMode !== "replaceTrack") {
-          void this.reapplyBgIfNeeded();
-        }
+        if (!this.camToggling && !this.bgApplying && this.bgImplMode !== "replaceTrack") void this.reapplyBgIfNeeded();
       }
-      if (isLocal && type === "audio") {
-        this.localAudioTrack = track;
-      }
+      if (isLocal && type === "audio") this.localAudioTrack = track;
     }
 
     this.tracksByParticipant.set(pid, entry);
     this.rebuildParticipantsFromTracks();
     this.emitParticipants();
-
     this.scheduleHealthTickSoon();
   }
 
@@ -3064,11 +2440,7 @@ export class JitsiEngine {
       if (type === "video" && entry.video === track) delete entry.video;
 
       if (pid === this.localUserId && type === "video" && this.localVideoTrack === track) {
-        // If setEffect mode, clear effect.
-        // In replaceTrack mode, BG manager handles lifecycle elsewhere; do not nuke base pointers here.
-        if (this.bgImplMode === "setEffect") {
-          void this.clearBgEffectOnTrack_setEffect(track);
-        }
+        if (this.bgImplMode === "setEffect") void this.clearBgEffectOnTrack_setEffect(track);
         this.localVideoTrack = null;
       }
       if (pid === this.localUserId && type === "audio" && this.localAudioTrack === track) {
@@ -3087,7 +2459,6 @@ export class JitsiEngine {
 
     this.rebuildParticipantsFromTracks();
     this.emitParticipants();
-
     this.scheduleHealthTickSoon();
   }
 
@@ -3103,17 +2474,13 @@ export class JitsiEngine {
       p.audioMuted = track.isMuted ? track.isMuted() : p.audioMuted;
     } else if (type === "video") {
       if (!this.isDesktopTrack(track)) {
-        if (!(pid === this.localUserId && this.bgApplying)) {
-          p.videoMuted = track.isMuted ? track.isMuted() : p.videoMuted;
-        }
+        if (!(pid === this.localUserId && this.bgApplying)) p.videoMuted = track.isMuted ? track.isMuted() : p.videoMuted;
 
         if (pid === this.localUserId) {
-          try {
-            const nowMuted = track.isMuted?.() === true;
-            if (!nowMuted && !this.camToggling) {
-              void this.enqueueBgOp("TRACK_MUTE_CHANGED:unmuted", () => this.applyBgNow("TRACK_MUTE_CHANGED:unmuted"));
-            }
-          } catch { }
+          const nowMuted = this.safe(() => track.isMuted?.() === true, false);
+          if (!nowMuted && !this.camToggling) {
+            void this.enqueueBgOp("TRACK_MUTE_CHANGED:unmuted", () => this.applyBgNow("TRACK_MUTE_CHANGED:unmuted"));
+          }
         }
       }
     }
@@ -3158,9 +2525,7 @@ export class JitsiEngine {
       return;
     }
 
-    try {
-      await this.conference.removeTrack(this.localScreenshareTrack);
-    } catch { }
+    await this.safeAsync(() => this.conference.removeTrack(this.localScreenshareTrack));
     await this.safeDisposeTrack(this.localScreenshareTrack, "handleLocalScreenshareStopped:screen");
 
     const pid = this.localUserId;
@@ -3177,7 +2542,6 @@ export class JitsiEngine {
 
     this.scheduleApplyVideoSubscriptions(0, true);
     this.scheduleHardResetSubscriptions(4500);
-
     this.scheduleHealthTickSoon();
   }
 
@@ -3199,8 +2563,6 @@ export class JitsiEngine {
 
   private handleEndpointMessage(senderId: string, payload: any) {
     if (!payload) return;
-    if (payload.kind === "reaction" && payload.reaction) {
-      this.callbacks.onReactionReceived?.(senderId, payload.reaction);
-    }
+    if (payload.kind === "reaction" && payload.reaction) this.callbacks.onReactionReceived?.(senderId, payload.reaction);
   }
 }
