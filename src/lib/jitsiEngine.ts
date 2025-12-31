@@ -2,6 +2,16 @@
 // SFU-only (P2P OFF) + track-based + reactions + SAFE background effects
 // Ultra-stable subscriptions + targeted “black video” recovery + resume/self-heal
 // Single-file optimized (reduced noise/duplication) — no functional split.
+//
+// ✅ PATCH (freeze-after-leave fix):
+// - STOP doing global "selectParticipants([]) + setLastN(0)" resets on USER_LEFT/TRACK_REMOVED
+// - Replace "global nudge" with BEST-EFFORT keyframe requests + light reattach
+// - After any subscription apply / bump / reattach, request keyframes (PLI/FIR) best-effort
+// - Keep your black-video recovery, but make it keyframe-aware
+//
+// Rationale: your symptom "video unfreezes only when voice happens" strongly suggests you're stuck
+// waiting for a keyframe after resubscribe/layer switch. Daily-like behavior = don't do global resets,
+// and always request keyframes when you change subscriptions.
 
 import { createVirtualBackgroundEffect as createVendoredVirtualBackgroundEffect } from "./jitsiEffects/virtualBackground";
 
@@ -145,14 +155,11 @@ export class JitsiEngine {
   private softResetInFlight = false;
   private softResetCooldownUntil = 0;
 
-  // Leave recovery + global nudge
+  // Leave recovery + keyframe refresh (patched)
   private lastLeaveRecoveryAt = 0;
-  private lastGlobalNudgeAt = 0;
-  private globalNudgeTimer: any = null;
 
-  // ✅ keyframe burst throttling (prevents “freeze until audio” after resubscribe)
-  private lastKeyframeBurstAt = 0;
-  private readonly KEYFRAME_BURST_COOLDOWN_MS = 1200;
+  private lastKeyframeRefreshAt = 0;
+  private keyframeRefreshTimer: any = null;
 
   // BG state / prefs
   private bgPrefs: { mode: BgMode; imageUrl?: string } = { mode: "none" };
@@ -268,57 +275,6 @@ export class JitsiEngine {
   }
 
   // ============================================================================
-  // Keyframe requests (best-effort)
-  // ============================================================================
-  private requestKeyframe(pid: string, kind: "video" | "screen", reason: string) {
-    if (!this.conference || this.disposed) return;
-
-    const p = this.participants[pid];
-    const track = kind === "screen" ? p?.screenTrack : p?.videoTrack;
-
-    // 1) sometimes on track
-    this.safe(() => (track as any)?.requestKeyFrame?.());
-    this.safe(() => (track as any)?.requestKeyframe?.());
-
-    // 2) sometimes on conference internals (varies by lib-jitsi-meet version)
-    const anyConf: any = this.conference as any;
-    this.safe(() => anyConf?.rtc?.requestKeyFrame?.(pid));
-    this.safe(() => anyConf?.rtc?._requestKeyframe?.(pid));
-    this.safe(() => anyConf?._room?.requestKeyframe?.(pid));
-    this.safe(() => anyConf?._room?.sendKeyframeRequest?.(pid));
-
-    // no throws; no logs by default
-    void reason;
-  }
-
-  private requestKeyframesForSubscribed(reason: string) {
-    if (!this.conference || this.disposed) return;
-
-    const now = Date.now();
-    if (now - this.lastKeyframeBurstAt < this.KEYFRAME_BURST_COOLDOWN_MS) return;
-    this.lastKeyframeBurstAt = now;
-
-    const { ids } = this.getSubscribedRemoteIds();
-    if (!ids.length) return;
-
-    let d = 0;
-    for (const pid of ids) {
-      const p = this.participants[pid];
-      if (!p || p.isLocal) continue;
-
-      const hasScreen = !!p.screenTrack && this.screenElByPid.has(pid);
-      const kind: "video" | "screen" = hasScreen ? "screen" : "video";
-
-      setTimeout(() => {
-        if (this.disposed) return;
-        this.requestKeyframe(pid, kind, reason);
-      }, d);
-
-      d += 80;
-    }
-  }
-
-  // ============================================================================
   // Queues (bg/cam)
   // ============================================================================
   private enqueueBgOp(label: string, fn: () => Promise<void>) {
@@ -412,7 +368,11 @@ export class JitsiEngine {
   // ============================================================================
   // Register <video> elements (for black-video recovery)
   // ============================================================================
-  public registerVideoElement(pid: string, el: HTMLVideoElement | null | undefined, kind: "video" | "screen" = "video") {
+  public registerVideoElement(
+    pid: string,
+    el: HTMLVideoElement | null | undefined,
+    kind: "video" | "screen" = "video"
+  ) {
     if (!pid) return;
     const map = kind === "screen" ? this.screenElByPid : this.videoElByPid;
     if (!el) {
@@ -488,6 +448,73 @@ export class JitsiEngine {
     const finalRemoteIds = this.computeFinalRemoteIds();
     const desiredLastN = Math.min(finalRemoteIds.length, this.MAX_LAST_N);
     return { ids: finalRemoteIds.slice(0, desiredLastN), desiredLastN };
+  }
+
+  // ============================================================================
+  // BEST-EFFORT KEYFRAME REQUESTS (PLI/FIR)
+  // ============================================================================
+  private requestKeyframe(pid: string, kind: "video" | "screen", reason: string) {
+    if (!this.conference || this.disposed) return;
+
+    const p = this.participants[pid];
+    const track = kind === "screen" ? p?.screenTrack : p?.videoTrack;
+
+    // 1) sometimes exists directly on track
+    this.safe(() => (track as any)?.requestKeyFrame?.());
+    this.safe(() => (track as any)?.requestKeyframe?.());
+
+    // 2) sometimes exists on conference internals (varies by version)
+    const anyConf: any = this.conference as any;
+    this.safe(() => anyConf?.rtc?.requestKeyFrame?.(pid));
+    this.safe(() => anyConf?.rtc?._requestKeyframe?.(pid));
+    this.safe(() => anyConf?._room?.requestKeyframe?.(pid));
+    this.safe(() => anyConf?._room?.sendKeyframeRequest?.(pid));
+
+    // keep silent by default
+    // console.debug("[keyframe]", pid, kind, reason);
+  }
+
+  private requestKeyframesForSubscribed(reason: string) {
+    if (!this.conference || this.disposed) return;
+
+    const { ids } = this.getSubscribedRemoteIds();
+    if (!ids.length) return;
+
+    let d = 0;
+    for (const pid of ids) {
+      const p = this.participants[pid];
+      if (!p || p.isLocal) continue;
+
+      const hasScreen = !!p.screenTrack && this.screenElByPid.has(pid);
+      const kind: "video" | "screen" = hasScreen ? "screen" : "video";
+
+      setTimeout(() => {
+        if (this.disposed) return;
+        this.requestKeyframe(pid, kind, reason);
+      }, d);
+
+      d += 70;
+    }
+  }
+
+  private scheduleKeyframeRefresh(delayMs: number, reason: string) {
+    if (!this.conference || this.disposed) return;
+
+    const now = Date.now();
+    // avoid spamming; enough to cover layer switches after leave/resub
+    if (now - this.lastKeyframeRefreshAt < 700) return;
+
+    this.clearTimer(this.keyframeRefreshTimer);
+    this.keyframeRefreshTimer = setTimeout(() => {
+      this.keyframeRefreshTimer = null;
+      if (!this.conference || this.disposed) return;
+
+      const t = Date.now();
+      if (t - this.lastKeyframeRefreshAt < 700) return;
+      this.lastKeyframeRefreshAt = t;
+
+      this.requestKeyframesForSubscribed(`scheduled:${reason}`);
+    }, delayMs);
   }
 
   private healthTick() {
@@ -600,19 +627,19 @@ export class JitsiEngine {
       if (typeof track.attach === "function") this.safe(() => track.attach(el));
       this.safe(() => void el.play().catch(() => { }));
 
-      // ✅ request keyframe immediately after reattach
+      // ✅ after reattach, request keyframe (this fixes "unfreeze on voice")
       this.requestKeyframe(pid, kind, "recoverParticipantVideo");
 
       st.stuckSince = Date.now();
       st.lastProgressAt = Date.now();
 
-      if (st.reattachAttemptsInWindow >= 2) this.bumpParticipantSubscription(pid, st);
+      if (st.reattachAttemptsInWindow >= 2) this.bumpParticipantSubscription(pid, st, kind);
     } catch {
-      this.bumpParticipantSubscription(pid, st);
+      this.bumpParticipantSubscription(pid, st, kind);
     }
   }
 
-  private bumpParticipantSubscription(pid: string, st: { lastBumpAt: number }) {
+  private bumpParticipantSubscription(pid: string, st: { lastBumpAt: number }, kindHint?: "video" | "screen") {
     const now = Date.now();
     if (!this.conference || this.disposed) return;
     if (now - (st.lastBumpAt || 0) < this.BUMP_COOLDOWN_MS) return;
@@ -627,14 +654,17 @@ export class JitsiEngine {
       const without = original.filter((x) => x !== pid);
 
       this.safe(() => this.conference.selectParticipants?.(without));
+
       setTimeout(() => {
         if (this.disposed || !this.conference) return;
         this.safe(() => this.conference.selectParticipants?.(original));
 
-        // ✅ keyframe for the bumped participant
+        // ✅ after bump restore, ask for keyframe for that participant
         const p = this.participants[pid];
-        const hasScreen = !!p?.screenTrack && this.screenElByPid.has(pid);
-        const kind: "video" | "screen" = hasScreen ? "screen" : "video";
+        const kind: "video" | "screen" =
+          kindHint ||
+          (!!p?.screenTrack && this.screenElByPid.has(pid) ? "screen" : "video");
+
         this.requestKeyframe(pid, kind, "bumpParticipantSubscription");
       }, 220);
     });
@@ -727,8 +757,6 @@ export class JitsiEngine {
       }, 80);
     };
 
-    // NOTE: hard resets are expensive and can cause “freeze until keyframe”.
-    // Keep for major topology (join/screenshare), avoid for USER_LEFT/TRACK_REMOVED.
     const topologyChanged = () => this.scheduleHardResetSubscriptions(4500);
 
     const isLocalCameraOrAudio = (track: any) => {
@@ -796,6 +824,7 @@ export class JitsiEngine {
       applySubsSoon(true);
       topologyChanged();
       this.scheduleHealthTickSoon();
+      this.scheduleKeyframeRefresh(180, "USER_JOINED");
     });
 
     conf.on(events.conference.USER_LEFT, (id: string) => {
@@ -813,11 +842,11 @@ export class JitsiEngine {
 
       this.emitParticipants();
 
-      // ✅ IMPORTANT: do NOT hard-reset subscriptions on leave (it causes “freeze until keyframe” patterns)
+      // ✅ PATCH: on leave, do NOT trigger global topology hard reset / global nudge.
+      // Only apply new subscriptions + request keyframes.
       applySubsSoon(true);
-
-      // ✅ lightweight leave assist: reattach + keyframes (no setLastN(0), no selectParticipants([]))
-      this.triggerLeaveRecovery("USER_LEFT");
+      this.scheduleKeyframeRefresh(120, "USER_LEFT");
+      this.triggerLeaveRecovery("USER_LEFT"); // now lightweight (reattach + keyframe), no setLastN(0)
     });
 
     conf.on(events.conference.DISPLAY_NAME_CHANGED, (id: string, displayName: string) => {
@@ -836,6 +865,7 @@ export class JitsiEngine {
       else {
         applySubsSoon(true);
         topologyChanged();
+        this.scheduleKeyframeRefresh(160, "TRACK_ADDED");
       }
       this.scheduleHealthTickSoon();
     });
@@ -844,11 +874,13 @@ export class JitsiEngine {
       if (this.disposed) return;
       this.handleTrackRemoved(track);
 
-      if (isLocalCameraOrAudio(track)) applySubsSoon(false);
-      else {
-        // ✅ avoid heavy resets on remote track removal (same freeze class as leave)
+      if (isLocalCameraOrAudio(track)) {
+        applySubsSoon(false);
+      } else {
+        // ✅ PATCH: for remote track removed, don't do global hard resets or setLastN(0) nudges.
         applySubsSoon(true);
-        this.triggerLeaveRecovery("TRACK_REMOVED");
+        this.scheduleKeyframeRefresh(140, "TRACK_REMOVED");
+        this.triggerLeaveRecovery("TRACK_REMOVED"); // lightweight
       }
       this.scheduleHealthTickSoon();
     });
@@ -878,12 +910,14 @@ export class JitsiEngine {
     this.qualityMode = mode;
     this.scheduleApplyVideoSubscriptions(150, true);
     this.scheduleHealthTickSoon();
+    this.scheduleKeyframeRefresh(160, "setQualityMode");
   }
 
   public setVisibleVideoParticipants(ids: string[]) {
     this.selectedVideoIds = Array.isArray(ids) ? ids : [];
     this.scheduleApplyVideoSubscriptions(150, false);
     this.scheduleHealthTickSoon();
+    this.scheduleKeyframeRefresh(160, "setVisibleVideoParticipants");
   }
 
   async toggleAudioMute(): Promise<void> {
@@ -943,6 +977,7 @@ export class JitsiEngine {
 
         this.scheduleApplyVideoSubscriptions(0, false);
         this.scheduleHealthTickSoon();
+        this.scheduleKeyframeRefresh(180, "toggleVideoMute");
       }
     });
   }
@@ -982,6 +1017,7 @@ export class JitsiEngine {
       this.scheduleApplyVideoSubscriptions(0, true);
       this.scheduleHardResetSubscriptions(4500);
       this.scheduleHealthTickSoon();
+      this.scheduleKeyframeRefresh(200, "toggleScreenShare");
     } catch {
       this.callbacks.onError?.("Screen share failed");
     }
@@ -1009,8 +1045,8 @@ export class JitsiEngine {
     this.clearTimer(this.resumeRecoverTimer);
     this.resumeRecoverTimer = null;
 
-    this.clearTimer(this.globalNudgeTimer);
-    this.globalNudgeTimer = null;
+    this.clearTimer(this.keyframeRefreshTimer);
+    this.keyframeRefreshTimer = null;
 
     // remove resume handlers
     this.safe(() => (this as any).__resumeRemovers?.());
@@ -1093,6 +1129,7 @@ export class JitsiEngine {
     await this.ensureLocalAudioTrack();
     await this.ensureLocalVideoTrack();
     this.scheduleHealthTickSoon();
+    this.scheduleKeyframeRefresh(220, "postJoinSelfHeal");
   }
 
   private attachResumeHandlers() {
@@ -1151,6 +1188,8 @@ export class JitsiEngine {
     await this.resumeAllAudioElements();
     await this.ensureLocalAudioTrack();
     await this.ensureLocalVideoTrack();
+
+    this.scheduleKeyframeRefresh(240, `resume:${reason}`);
 
     setTimeout(() => {
       if (this.disposed) return;
@@ -1551,7 +1590,8 @@ export class JitsiEngine {
     const processed = this.bgProcessedTrack;
 
     if (processed && base) {
-      if (typeof this.conference.replaceTrack === "function") await this.safeAsync(async () => this.conference.replaceTrack(processed, base));
+      if (typeof this.conference.replaceTrack === "function")
+        await this.safeAsync(async () => this.conference.replaceTrack(processed, base));
       else {
         await this.safeAsync(async () => this.conference.removeTrack?.(processed));
         await this.safeAsync(async () => this.conference.addTrack?.(base));
@@ -1653,7 +1693,8 @@ export class JitsiEngine {
         this.emitParticipants();
       }
 
-      if (oldOutgoing && typeof this.conference.replaceTrack === "function") await this.conference.replaceTrack(oldOutgoing, processedJitsiTrack);
+      if (oldOutgoing && typeof this.conference.replaceTrack === "function")
+        await this.conference.replaceTrack(oldOutgoing, processedJitsiTrack);
       else if (oldOutgoing) {
         await this.safeAsync(async () => this.conference.removeTrack?.(oldOutgoing));
         await this.conference.addTrack(processedJitsiTrack);
@@ -2125,6 +2166,7 @@ export class JitsiEngine {
       this.scheduleApplyVideoSubscriptions(0, true);
       this.scheduleHardResetSubscriptions(4500);
       this.scheduleHealthTickSoon();
+      this.scheduleKeyframeRefresh(250, "createLocalTracks");
     } catch (e) {
       console.error("createLocalTracks error", e);
       this.callbacks.onError?.("Failed to access camera/microphone");
@@ -2229,10 +2271,11 @@ export class JitsiEngine {
       this.conference.setLastN?.(desiredLastN);
       this.conference.setReceiverVideoConstraint?.(h);
       this.conference.setReceiverAudioConstraint?.(true);
-      if (typeof this.conference.selectParticipants === "function") this.conference.selectParticipants(finalRemoteIds.slice(0, desiredLastN));
+      if (typeof this.conference.selectParticipants === "function")
+        this.conference.selectParticipants(finalRemoteIds.slice(0, desiredLastN));
 
-      // ✅ after (re)subscribe, request keyframes (best effort)
-      this.requestKeyframesForSubscribed("applyVideoSubscriptions");
+      // ✅ after any subs apply, request keyframes (prevents "unfreeze only on voice")
+      this.scheduleKeyframeRefresh(120, "applyVideoSubscriptions");
 
       this.scheduleHealthTickSoon();
     } catch { }
@@ -2251,6 +2294,7 @@ export class JitsiEngine {
       const desiredLastN = Math.min(finalRemoteIds.length, this.MAX_LAST_N);
       const h = this.pickReceiverConstraintHeight(desiredLastN);
 
+      // NOTE: kept for rare "stack is wedged" cases, but not used on leave anymore.
       this.safe(() => this.conference.selectParticipants?.([]));
       this.safe(() => this.conference.setLastN?.(0));
 
@@ -2266,13 +2310,11 @@ export class JitsiEngine {
           this.conference.selectParticipants?.(finalRemoteIds.slice(0, desiredLastN));
           this.lastSubsKey = "";
           this.lastSubsAppliedAt = Date.now();
-
-          // ✅ ensure keyframes after restore
-          this.requestKeyframesForSubscribed("hardResetAndApplyVideoSubscriptions");
         } finally {
           this.hardResetCooldownUntil = Date.now() + 20000;
           this.subsHardResetInFlight = false;
           this.scheduleHealthTickSoon();
+          this.scheduleKeyframeRefresh(160, "hardResetAndApplyVideoSubscriptions");
         }
       }, 220);
     } catch {
@@ -2288,6 +2330,7 @@ export class JitsiEngine {
     this.softResetInFlight = true;
 
     try {
+      // NOTE: kept but no longer used as a "leave nudge" by default.
       this.safe(() => this.conference.selectParticipants?.([]));
       this.safe(() => this.conference.setLastN?.(0));
 
@@ -2308,13 +2351,11 @@ export class JitsiEngine {
 
           this.lastSubsKey = "";
           this.lastSubsAppliedAt = Date.now();
-
-          // ✅ ensure keyframes after restore
-          this.requestKeyframesForSubscribed("softResetAndApplyVideoSubscriptions");
         } finally {
           this.softResetCooldownUntil = Date.now() + 3500;
           this.softResetInFlight = false;
           this.scheduleHealthTickSoon();
+          this.scheduleKeyframeRefresh(160, "softResetAndApplyVideoSubscriptions");
         }
       }, 180);
     } catch {
@@ -2323,7 +2364,7 @@ export class JitsiEngine {
   }
 
   // ============================================================================
-  // Leave recovery + global keyframe nudge
+  // Leave recovery (patched lightweight)
   // ============================================================================
   private async reattachAllSubscribedRemoteVideos(reason: string) {
     if (!this.conference || this.disposed) return;
@@ -2351,13 +2392,13 @@ export class JitsiEngine {
         if (typeof track.attach === "function") this.safe(() => track.attach(el));
         this.safe(() => void el.play().catch(() => { }));
 
-        // ✅ keyframe per reattached track
+        // ✅ request keyframe after reattach
         this.requestKeyframe(pid, kind, `reattachAllSubscribedRemoteVideos:${reason}`);
       } catch { }
     }
 
-    // ✅ NO soft/hard reset here (those are what cause the “freeze until audio” class)
-    this.requestKeyframesForSubscribed(`reattachAllSubscribedRemoteVideos:${reason}`);
+    // no more automatic soft/hard reset here
+    this.scheduleKeyframeRefresh(120, `reattachAll:${reason}`);
   }
 
   private triggerLeaveRecovery(reason: string) {
@@ -2370,57 +2411,17 @@ export class JitsiEngine {
     const { ids } = this.getSubscribedRemoteIds();
     if (!ids.length) return;
 
-    // ✅ Lightweight leave assist:
-    // - do a quick reattach pass
-    // - request keyframes
-    // - do NOT reset LastN to 0, do NOT hard-reset
+    // ✅ PATCH: lightweight leave recovery = reattach + keyframes
     setTimeout(() => {
       if (!this.disposed) void this.reattachAllSubscribedRemoteVideos(`leaveRecovery:now:${reason}`);
     }, 0);
 
     setTimeout(() => {
       if (!this.disposed) void this.reattachAllSubscribedRemoteVideos(`leaveRecovery:retry:${reason}`);
-    }, 380);
+    }, 420);
 
-    setTimeout(() => {
-      if (this.disposed) return;
-      this.requestKeyframesForSubscribed(`leaveRecovery:keyframes:${reason}`);
-    }, 220);
-
+    this.scheduleKeyframeRefresh(160, `leaveRecovery:${reason}`);
     this.scheduleHealthTickSoon();
-  }
-
-  // (kept API; now “nudge” is just keyframe + optional reattach; no global LastN=0)
-  private scheduleGlobalKeyframeNudge(delayMs: number, reason: string) {
-    if (!this.conference || this.disposed) return;
-
-    const now = Date.now();
-    if (now - this.lastGlobalNudgeAt < 1200) return;
-
-    this.clearTimer(this.globalNudgeTimer);
-    this.globalNudgeTimer = setTimeout(() => {
-      this.globalNudgeTimer = null;
-      void this.globalKeyframeNudge(reason);
-    }, delayMs);
-  }
-
-  private async globalKeyframeNudge(reason: string) {
-    if (!this.conference || this.disposed) return;
-
-    const now = Date.now();
-    if (now - this.lastGlobalNudgeAt < 1200) return;
-    this.lastGlobalNudgeAt = now;
-
-    try {
-      // ✅ no selectParticipants([]) / setLastN(0) here anymore
-      this.requestKeyframesForSubscribed(`globalKeyframeNudge:${reason}`);
-      setTimeout(() => {
-        if (!this.disposed) void this.reattachAllSubscribedRemoteVideos(`globalNudge:${reason}`);
-      }, 260);
-      this.scheduleHealthTickSoon();
-    } catch (e) {
-      console.warn("[nudge] globalKeyframeNudge failed:", e);
-    }
   }
 
   // ============================================================================
@@ -2639,5 +2640,6 @@ export class JitsiEngine {
     this.scheduleApplyVideoSubscriptions(0, true);
     this.scheduleHardResetSubscriptions(4500);
     this.scheduleHealthTickSoon();
+    this.scheduleKeyframeRefresh(220, "handleLocalScreenshareStopped");
   }
 }
