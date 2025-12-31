@@ -189,6 +189,10 @@ export class JitsiEngine {
   private bgSuspendedByVisibility = false;
   private bgSuspendedAt = 0;
 
+  // ✅ Delayed BG suspend on tab hidden (prevents "bg drops" on quick tab switches)
+  private bgVisibilitySuspendTimer: any = null;
+  private readonly BG_VIS_SUSPEND_DELAY_MS = 2000; // 2s
+
   // ✅ BG ops serializer (prevents races: join/apply/click/mute events)
   private bgOpQueue: Promise<void> = Promise.resolve();
   private bgOpSeq = 0;
@@ -1030,8 +1034,15 @@ export class JitsiEngine {
       if (document.visibilityState === "hidden") {
         this.hiddenAt = Date.now();
 
-        // ✅ ключевой фикс: blur/image в background табе = очень часто фриз
-        this.suspendBgIfNeededForVisibility("visibilitychange");
+        // ✅ IMPORTANT:
+        // Do NOT instantly clear BG on quick tab switches — it causes "image drops".
+        // Instead, suspend only if we stay hidden for BG_VIS_SUSPEND_DELAY_MS.
+        if (this.bgVisibilitySuspendTimer) clearTimeout(this.bgVisibilitySuspendTimer);
+        this.bgVisibilitySuspendTimer = setTimeout(() => {
+          this.bgVisibilitySuspendTimer = null;
+          if (this.disposed) return;
+          this.suspendBgIfNeededForVisibility("visibilitychange");
+        }, this.BG_VIS_SUSPEND_DELAY_MS);
 
         return;
       }
@@ -1040,10 +1051,16 @@ export class JitsiEngine {
       const dt = this.hiddenAt ? Date.now() - this.hiddenAt : 0;
       this.hiddenAt = null;
 
+      // ✅ if we scheduled suspend but returned quickly — cancel it
+      if (this.bgVisibilitySuspendTimer) {
+        clearTimeout(this.bgVisibilitySuspendTimer);
+        this.bgVisibilitySuspendTimer = null;
+      }
+
       // Cheap: unlock audio
       void this.resumeAllAudioElements();
 
-      // ✅ если мы сами выключили blur на hidden — возвращаем сразу же
+      // ✅ if we actually suspended BG — resume it now
       this.resumeBgIfWasSuspended("visibilitychange");
 
       // If we were hidden long enough, do wake recovery.
@@ -2540,6 +2557,9 @@ try {
   if(this.subsHardResetTimer) clearTimeout(this.subsHardResetTimer);
   this.subsApplyTimer = null;
   this.subsHardResetTimer = null;
+
+  if (this.bgVisibilitySuspendTimer) clearTimeout(this.bgVisibilitySuspendTimer);
+  this.bgVisibilitySuspendTimer = null;
 
   if(this.subsWatchdog) clearInterval(this.subsWatchdog);
   this.subsWatchdog = null;
