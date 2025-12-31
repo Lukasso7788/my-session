@@ -7,9 +7,9 @@ export type BgMode = "none" | "blur" | "image";
 type CreateOpts = {
     mode: BgMode;
     imageUrl?: string;
-    blurPx?: number;        // default 10
-    fps?: number;           // default 30
-    maxWidth?: number;      // default 1280
+    blurPx?: number; // default 10
+    fps?: number; // default 30
+    maxWidth?: number; // default 1280
 };
 
 type Processor = {
@@ -40,6 +40,9 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
 
 async function tryCreateSelfieSegmentation() {
     // Optional dependency. If missing — return null, we will fallback.
+    // NOTE: For this to truly be "optional" at runtime, your bundler must be able to resolve this import.
+    // The simplest path: install the package:
+    //   npm i @mediapipe/selfie_segmentation
     try {
         const mod: any = await import("@mediapipe/selfie_segmentation");
         const SelfieSegmentation = mod?.SelfieSegmentation;
@@ -84,11 +87,14 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
     let lastMask: CanvasImageSource | null = null;
     let segReady = false;
     let segBusy = false;
+    let lastSegAt = 0;
 
     const stopTracks = (s: MediaStream | null) => {
         try {
             s?.getTracks?.()?.forEach((t) => {
-                try { t.stop(); } catch { }
+                try {
+                    t.stop();
+                } catch { }
             });
         } catch { }
     };
@@ -110,23 +116,21 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
 
         // Fallback: no segmentation available yet
         // - blur: blur whole frame
-        // - image: draw image behind + draw video normal on top (no cutout)
+        // - image: without mask it cannot be composited meaningfully -> draw raw video frame
         const w = canvas.width;
         const h = canvas.height;
 
         ctx.clearRect(0, 0, w, h);
 
-        if (mode === "image" && bgImage) {
-            ctx.drawImage(bgImage, 0, 0, w, h);
-            ctx.globalAlpha = 1;
-            ctx.drawImage(videoEl, 0, 0, w, h);
-        } else if (mode === "blur") {
+        if (mode === "blur") {
             ctx.filter = `blur(${blurPx}px)`;
             ctx.drawImage(videoEl, 0, 0, w, h);
             ctx.filter = "none";
-        } else {
-            ctx.drawImage(videoEl, 0, 0, w, h);
+            return;
         }
+
+        // mode === "image" or "none" but no segmentation -> just draw the raw frame
+        ctx.drawImage(videoEl, 0, 0, w, h);
     };
 
     const tickDrawWithMask = () => {
@@ -172,16 +176,23 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
             // ignore draw errors
         }
 
-        // segmentation step (async)
+        // segmentation step (async) — throttle to fps
         if (seg && segReady && !segBusy && videoEl) {
-            segBusy = true;
-            try {
-                // MediaPipe expects an HTMLVideoElement / HTMLImageElement / Canvas
-                await seg.send({ image: videoEl });
-            } catch {
-                // if segmentation fails, fallback
-            } finally {
-                segBusy = false;
+            const now = performance.now();
+            const interval = 1000 / fps;
+
+            if (now - lastSegAt >= interval) {
+                lastSegAt = now;
+
+                segBusy = true;
+                try {
+                    // MediaPipe expects an HTMLVideoElement / HTMLImageElement / Canvas
+                    await seg.send({ image: videoEl });
+                } catch {
+                    // ignore segmentation errors, keep fallback drawing
+                } finally {
+                    segBusy = false;
+                }
             }
         }
 
@@ -273,6 +284,7 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         segReady = false;
         segBusy = false;
         lastMask = null;
+        lastSegAt = 0;
 
         // Don’t stop input tracks here (camera owned by Jitsi base track)
         // Only stop output tracks (canvas stream)
