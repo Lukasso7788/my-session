@@ -150,6 +150,10 @@ export class JitsiEngine {
   private lastGlobalNudgeAt = 0;
   private globalNudgeTimer: any = null;
 
+  // ✅ keyframe burst throttling (prevents “freeze until audio” after resubscribe)
+  private lastKeyframeBurstAt = 0;
+  private readonly KEYFRAME_BURST_COOLDOWN_MS = 1200;
+
   // BG state / prefs
   private bgPrefs: { mode: BgMode; imageUrl?: string } = { mode: "none" };
   private bgApplying = false;
@@ -260,6 +264,57 @@ export class JitsiEngine {
       return document.contains(el);
     } catch {
       return false;
+    }
+  }
+
+  // ============================================================================
+  // Keyframe requests (best-effort)
+  // ============================================================================
+  private requestKeyframe(pid: string, kind: "video" | "screen", reason: string) {
+    if (!this.conference || this.disposed) return;
+
+    const p = this.participants[pid];
+    const track = kind === "screen" ? p?.screenTrack : p?.videoTrack;
+
+    // 1) sometimes on track
+    this.safe(() => (track as any)?.requestKeyFrame?.());
+    this.safe(() => (track as any)?.requestKeyframe?.());
+
+    // 2) sometimes on conference internals (varies by lib-jitsi-meet version)
+    const anyConf: any = this.conference as any;
+    this.safe(() => anyConf?.rtc?.requestKeyFrame?.(pid));
+    this.safe(() => anyConf?.rtc?._requestKeyframe?.(pid));
+    this.safe(() => anyConf?._room?.requestKeyframe?.(pid));
+    this.safe(() => anyConf?._room?.sendKeyframeRequest?.(pid));
+
+    // no throws; no logs by default
+    void reason;
+  }
+
+  private requestKeyframesForSubscribed(reason: string) {
+    if (!this.conference || this.disposed) return;
+
+    const now = Date.now();
+    if (now - this.lastKeyframeBurstAt < this.KEYFRAME_BURST_COOLDOWN_MS) return;
+    this.lastKeyframeBurstAt = now;
+
+    const { ids } = this.getSubscribedRemoteIds();
+    if (!ids.length) return;
+
+    let d = 0;
+    for (const pid of ids) {
+      const p = this.participants[pid];
+      if (!p || p.isLocal) continue;
+
+      const hasScreen = !!p.screenTrack && this.screenElByPid.has(pid);
+      const kind: "video" | "screen" = hasScreen ? "screen" : "video";
+
+      setTimeout(() => {
+        if (this.disposed) return;
+        this.requestKeyframe(pid, kind, reason);
+      }, d);
+
+      d += 80;
     }
   }
 
@@ -545,6 +600,9 @@ export class JitsiEngine {
       if (typeof track.attach === "function") this.safe(() => track.attach(el));
       this.safe(() => void el.play().catch(() => { }));
 
+      // ✅ request keyframe immediately after reattach
+      this.requestKeyframe(pid, kind, "recoverParticipantVideo");
+
       st.stuckSince = Date.now();
       st.lastProgressAt = Date.now();
 
@@ -572,6 +630,12 @@ export class JitsiEngine {
       setTimeout(() => {
         if (this.disposed || !this.conference) return;
         this.safe(() => this.conference.selectParticipants?.(original));
+
+        // ✅ keyframe for the bumped participant
+        const p = this.participants[pid];
+        const hasScreen = !!p?.screenTrack && this.screenElByPid.has(pid);
+        const kind: "video" | "screen" = hasScreen ? "screen" : "video";
+        this.requestKeyframe(pid, kind, "bumpParticipantSubscription");
       }, 220);
     });
   }
@@ -663,6 +727,8 @@ export class JitsiEngine {
       }, 80);
     };
 
+    // NOTE: hard resets are expensive and can cause “freeze until keyframe”.
+    // Keep for major topology (join/screenshare), avoid for USER_LEFT/TRACK_REMOVED.
     const topologyChanged = () => this.scheduleHardResetSubscriptions(4500);
 
     const isLocalCameraOrAudio = (track: any) => {
@@ -747,11 +813,11 @@ export class JitsiEngine {
 
       this.emitParticipants();
 
+      // ✅ IMPORTANT: do NOT hard-reset subscriptions on leave (it causes “freeze until keyframe” patterns)
       applySubsSoon(true);
-      topologyChanged();
 
+      // ✅ lightweight leave assist: reattach + keyframes (no setLastN(0), no selectParticipants([]))
       this.triggerLeaveRecovery("USER_LEFT");
-      this.scheduleGlobalKeyframeNudge(60, "USER_LEFT");
     });
 
     conf.on(events.conference.DISPLAY_NAME_CHANGED, (id: string, displayName: string) => {
@@ -780,10 +846,9 @@ export class JitsiEngine {
 
       if (isLocalCameraOrAudio(track)) applySubsSoon(false);
       else {
+        // ✅ avoid heavy resets on remote track removal (same freeze class as leave)
         applySubsSoon(true);
-        topologyChanged();
         this.triggerLeaveRecovery("TRACK_REMOVED");
-        this.scheduleGlobalKeyframeNudge(80, "TRACK_REMOVED");
       }
       this.scheduleHealthTickSoon();
     });
@@ -2166,6 +2231,9 @@ export class JitsiEngine {
       this.conference.setReceiverAudioConstraint?.(true);
       if (typeof this.conference.selectParticipants === "function") this.conference.selectParticipants(finalRemoteIds.slice(0, desiredLastN));
 
+      // ✅ after (re)subscribe, request keyframes (best effort)
+      this.requestKeyframesForSubscribed("applyVideoSubscriptions");
+
       this.scheduleHealthTickSoon();
     } catch { }
   }
@@ -2198,6 +2266,9 @@ export class JitsiEngine {
           this.conference.selectParticipants?.(finalRemoteIds.slice(0, desiredLastN));
           this.lastSubsKey = "";
           this.lastSubsAppliedAt = Date.now();
+
+          // ✅ ensure keyframes after restore
+          this.requestKeyframesForSubscribed("hardResetAndApplyVideoSubscriptions");
         } finally {
           this.hardResetCooldownUntil = Date.now() + 20000;
           this.subsHardResetInFlight = false;
@@ -2237,6 +2308,9 @@ export class JitsiEngine {
 
           this.lastSubsKey = "";
           this.lastSubsAppliedAt = Date.now();
+
+          // ✅ ensure keyframes after restore
+          this.requestKeyframesForSubscribed("softResetAndApplyVideoSubscriptions");
         } finally {
           this.softResetCooldownUntil = Date.now() + 3500;
           this.softResetInFlight = false;
@@ -2276,10 +2350,14 @@ export class JitsiEngine {
         await this.delay(30);
         if (typeof track.attach === "function") this.safe(() => track.attach(el));
         this.safe(() => void el.play().catch(() => { }));
+
+        // ✅ keyframe per reattached track
+        this.requestKeyframe(pid, kind, `reattachAllSubscribedRemoteVideos:${reason}`);
       } catch { }
     }
 
-    this.scheduleSoftResetSubscriptions(120);
+    // ✅ NO soft/hard reset here (those are what cause the “freeze until audio” class)
+    this.requestKeyframesForSubscribed(`reattachAllSubscribedRemoteVideos:${reason}`);
   }
 
   private triggerLeaveRecovery(reason: string) {
@@ -2292,19 +2370,27 @@ export class JitsiEngine {
     const { ids } = this.getSubscribedRemoteIds();
     if (!ids.length) return;
 
+    // ✅ Lightweight leave assist:
+    // - do a quick reattach pass
+    // - request keyframes
+    // - do NOT reset LastN to 0, do NOT hard-reset
     setTimeout(() => {
       if (!this.disposed) void this.reattachAllSubscribedRemoteVideos(`leaveRecovery:now:${reason}`);
     }, 0);
 
     setTimeout(() => {
       if (!this.disposed) void this.reattachAllSubscribedRemoteVideos(`leaveRecovery:retry:${reason}`);
-    }, 420);
+    }, 380);
 
-    this.scheduleSoftResetSubscriptions(120);
-    this.scheduleHardResetSubscriptions(1200);
+    setTimeout(() => {
+      if (this.disposed) return;
+      this.requestKeyframesForSubscribed(`leaveRecovery:keyframes:${reason}`);
+    }, 220);
+
     this.scheduleHealthTickSoon();
   }
 
+  // (kept API; now “nudge” is just keyframe + optional reattach; no global LastN=0)
   private scheduleGlobalKeyframeNudge(delayMs: number, reason: string) {
     if (!this.conference || this.disposed) return;
 
@@ -2326,37 +2412,11 @@ export class JitsiEngine {
     this.lastGlobalNudgeAt = now;
 
     try {
-      const finalRemoteIds = this.computeFinalRemoteIds();
-      const desiredLastN = Math.min(finalRemoteIds.length, this.MAX_LAST_N);
-      const h = this.pickReceiverConstraintHeight(desiredLastN);
-      const original = finalRemoteIds.slice(0, desiredLastN);
-      if (!original.length) return;
-
-      this.safe(() => this.conference.selectParticipants?.([]));
-      this.safe(() => this.conference.setLastN?.(0));
-      await this.delay(160);
-
-      this.safe(() => this.conference.setLastN?.(desiredLastN));
-      this.safe(() => this.conference.setReceiverVideoConstraint?.(h));
-      this.safe(() => this.conference.selectParticipants?.(original));
-
-      this.lastSubsKey = "";
-      this.lastSubsAppliedAt = Date.now();
-
-      let d = 60;
-      for (const pid of original) {
-        setTimeout(() => {
-          if (this.disposed) return;
-          const st = this.videoHealthState.get(pid) || this.getOrInitHealth(pid);
-          this.bumpParticipantSubscription(pid, st);
-        }, d);
-        d += 90;
-      }
-
+      // ✅ no selectParticipants([]) / setLastN(0) here anymore
+      this.requestKeyframesForSubscribed(`globalKeyframeNudge:${reason}`);
       setTimeout(() => {
         if (!this.disposed) void this.reattachAllSubscribedRemoteVideos(`globalNudge:${reason}`);
-      }, 420);
-
+      }, 260);
       this.scheduleHealthTickSoon();
     } catch (e) {
       console.warn("[nudge] globalKeyframeNudge failed:", e);
