@@ -70,8 +70,19 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
     const blurPx = clamp(opts.blurPx ?? 10, 0, 40);
     const maxWidth = clamp(opts.maxWidth ?? 1280, 320, 3840);
 
+    // IMPORTANT:
+    // We intentionally do NOT rely purely on requestAnimationFrame.
+    // When the tab is hidden, RAF can effectively stop. That can freeze the outgoing canvas stream.
+    // Instead we use a hybrid scheduler:
+    // - visible: prefer requestVideoFrameCallback (best), else RAF
+    // - hidden: use setTimeout (timers get throttled, but they still tick -> stream stays alive)
     let running = false;
+
     let rafId: number | null = null;
+    let timerId: number | null = null;
+    let vfcId: number | null = null;
+
+    let tickInFlight = false;
 
     let videoEl: HTMLVideoElement | null = null;
     let canvas: HTMLCanvasElement | null = null;
@@ -109,6 +120,25 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         videoEl = null;
         canvas = null;
         ctx = null;
+    };
+
+    const clearScheduled = () => {
+        try {
+            if (rafId != null) cancelAnimationFrame(rafId);
+        } catch { }
+        rafId = null;
+
+        try {
+            if (timerId != null) clearTimeout(timerId);
+        } catch { }
+        timerId = null;
+
+        try {
+            if (vfcId != null && videoEl && typeof (videoEl as any).cancelVideoFrameCallback === "function") {
+                (videoEl as any).cancelVideoFrameCallback(vfcId);
+            }
+        } catch { }
+        vfcId = null;
     };
 
     const tickDrawFallback = () => {
@@ -166,37 +196,106 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         ctx.globalCompositeOperation = "source-over";
     };
 
-    const loop = async () => {
+    const shouldUseVFC = () => {
+        // Prefer requestVideoFrameCallback when visible (better pacing than RAF).
+        // Some browsers may not support it.
+        try {
+            return (
+                document.visibilityState === "visible" &&
+                !!videoEl &&
+                typeof (videoEl as any).requestVideoFrameCallback === "function"
+            );
+        } catch {
+            return false;
+        }
+    };
+
+    const scheduleNext = () => {
         if (!running) return;
 
-        try {
-            if (segReady && lastMask) tickDrawWithMask();
-            else tickDrawFallback();
-        } catch {
-            // ignore draw errors
+        // Cancel any existing scheduled callback before scheduling a new one
+        // (prevents duplicates on visibility flips)
+        clearScheduled();
+
+        // Hidden => timers (RAF can stop entirely)
+        if (document.visibilityState !== "visible") {
+            const ms = Math.max(33, Math.round(1000 / fps));
+            timerId = window.setTimeout(() => {
+                timerId = null;
+                void tickAndReschedule();
+            }, ms) as any;
+            return;
         }
 
-        // segmentation step (async) — throttle to fps
-        if (seg && segReady && !segBusy && videoEl) {
-            const now = performance.now();
-            const interval = 1000 / fps;
-
-            if (now - lastSegAt >= interval) {
-                lastSegAt = now;
-
-                segBusy = true;
-                try {
-                    // MediaPipe expects an HTMLVideoElement / HTMLImageElement / Canvas
-                    await seg.send({ image: videoEl });
-                } catch {
-                    // ignore segmentation errors, keep fallback drawing
-                } finally {
-                    segBusy = false;
-                }
+        // Visible => prefer VFC, fallback RAF
+        if (shouldUseVFC()) {
+            try {
+                vfcId = (videoEl as any).requestVideoFrameCallback(() => {
+                    vfcId = null;
+                    void tickAndReschedule();
+                });
+                return;
+            } catch {
+                // fall through to RAF
             }
         }
 
-        rafId = requestAnimationFrame(loop as any);
+        rafId = requestAnimationFrame(() => {
+            rafId = null;
+            void tickAndReschedule();
+        });
+    };
+
+    const tickAndReschedule = async () => {
+        if (!running) return;
+
+        // Prevent overlapping ticks (especially important because seg.send is async)
+        if (tickInFlight) {
+            scheduleNext();
+            return;
+        }
+
+        tickInFlight = true;
+        try {
+            // draw
+            try {
+                if (segReady && lastMask) tickDrawWithMask();
+                else tickDrawFallback();
+            } catch {
+                // ignore draw errors
+            }
+
+            // segmentation step (async) — throttle to fps
+            if (seg && segReady && !segBusy && videoEl) {
+                const now = performance.now();
+                const interval = 1000 / fps;
+
+                if (now - lastSegAt >= interval) {
+                    lastSegAt = now;
+
+                    segBusy = true;
+                    try {
+                        // MediaPipe expects an HTMLVideoElement / HTMLImageElement / Canvas
+                        await seg.send({ image: videoEl });
+                    } catch {
+                        // ignore segmentation errors, keep fallback drawing
+                    } finally {
+                        segBusy = false;
+                    }
+                }
+            }
+        } finally {
+            tickInFlight = false;
+            scheduleNext();
+        }
+    };
+
+    const onVisibility = () => {
+        if (!running) return;
+
+        // We reschedule immediately on visibility flips so we don't get stuck
+        // in a paused RAF when tab becomes hidden, or in a throttled timer when visible again.
+        scheduleNext();
     };
 
     const startEffect = async (input: MediaStream): Promise<MediaStream> => {
@@ -266,15 +365,30 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         }
 
         running = true;
-        rafId = requestAnimationFrame(loop as any);
+        tickInFlight = false;
+        lastSegAt = 0;
+
+        // Listen to visibility so we can swap scheduler mode instantly.
+        try {
+            document.addEventListener("visibilitychange", onVisibility);
+        } catch { }
+
+        // Kick scheduler
+        scheduleNext();
 
         return outStream;
     };
 
     const stopEffect = async () => {
         running = false;
-        if (rafId != null) cancelAnimationFrame(rafId);
-        rafId = null;
+
+        // Stop scheduler
+        clearScheduled();
+
+        // Remove visibility listener
+        try {
+            document.removeEventListener("visibilitychange", onVisibility);
+        } catch { }
 
         // Stop segmentation
         try {
