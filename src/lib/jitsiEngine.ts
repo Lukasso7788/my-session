@@ -162,6 +162,10 @@ export class JitsiEngine {
   private lastLeaveRecoveryAt = 0;
   private leaveRecoveryTimer: any = null;
 
+  // ✅ GLOBAL KEYFRAME NUDGE (force fresh decode for everyone after topology churn)
+  private lastGlobalNudgeAt = 0;
+  private globalNudgeTimer: any = null;
+
   // VIDEO SUBS
   private selectedVideoIds: string[] = [];
   private qualityMode: "auto" | "low" | "medium" | "high" = "auto";
@@ -672,6 +676,72 @@ export class JitsiEngine {
 
     // 5) Сразу health tick (пусть твой монитор быстрее заметит stuck)
     this.scheduleHealthTickSoon();
+  }
+
+  private scheduleGlobalKeyframeNudge(delayMs: number, reason: string) {
+    if (!this.conference || this.disposed) return;
+
+    const now = Date.now();
+    // анти-спам (USER_LEFT + TRACK_REMOVED пачкой)
+    if (now - this.lastGlobalNudgeAt < 1200) return;
+
+    if (this.globalNudgeTimer) clearTimeout(this.globalNudgeTimer);
+    this.globalNudgeTimer = setTimeout(() => {
+      this.globalNudgeTimer = null;
+      void this.globalKeyframeNudge(reason);
+    }, delayMs);
+  }
+
+  private async globalKeyframeNudge(reason: string) {
+    if (!this.conference || this.disposed) return;
+
+    const now = Date.now();
+    if (now - this.lastGlobalNudgeAt < 1200) return;
+    this.lastGlobalNudgeAt = now;
+
+    try {
+      const finalRemoteIds = this.computeFinalRemoteIds();
+      const desiredLastN = Math.min(finalRemoteIds.length, this.MAX_LAST_N);
+      const h = this.pickReceiverConstraintHeight(desiredLastN);
+      const original = finalRemoteIds.slice(0, desiredLastN);
+
+      if (!original.length) return;
+
+      // 1) коротко "уроним" подписки
+      try { this.conference.selectParticipants?.([]); } catch { }
+      try { this.conference.setLastN?.(0); } catch { }
+
+      await new Promise(r => setTimeout(r, 160));
+
+      // 2) вернём обратно
+      try { this.conference.setLastN?.(desiredLastN); } catch { }
+      try { this.conference.setReceiverVideoConstraint?.(h); } catch { }
+      try { this.conference.selectParticipants?.(original); } catch { }
+      
+      this.lastSubsKey = "";
+      this.lastSubsAppliedAt = Date.now();
+
+      // 3) индивидуальный bump каждому (stagger)
+      let delay = 60;
+      for (const pid of original) {
+        setTimeout(() => {
+          if (this.disposed) return;
+          const st = this.videoHealthState.get(pid) || this.getOrInitHealth(pid);
+          this.bumpParticipantSubscription(pid, st);
+        }, delay);
+        delay += 90;
+      }
+
+      // 4) финальный reattach
+      setTimeout(() => {
+        if (this.disposed) return;
+        void this.reattachAllSubscribedRemoteVideos(`globalNudge:${reason}`);
+      }, 420);
+
+      this.scheduleHealthTickSoon();
+    } catch (e) {
+      console.warn("[nudge] globalKeyframeNudge failed:", e);
+    }
   }
 
   private getFrameCount(el: HTMLVideoElement): number | null {
@@ -2553,6 +2623,9 @@ try {
   if(this.resumeRecoverTimer) clearTimeout(this.resumeRecoverTimer);
   this.resumeRecoverTimer = null;
 
+  if (this.globalNudgeTimer) clearTimeout(this.globalNudgeTimer);
+  this.globalNudgeTimer = null;
+
   // remove resume handlers
   try {
       (this as any).__resumeRemovers?.();
@@ -2760,6 +2833,7 @@ this.localUserId = null;
 
       // ✅ усиленный антифриз
       this.triggerLeaveRecovery("USER_LEFT");
+      this.scheduleGlobalKeyframeNudge(60, "USER_LEFT");
     });
 
   conf.on(events.conference.DISPLAY_NAME_CHANGED, (id: string, displayName: string) => {
@@ -2795,11 +2869,8 @@ this.localUserId = null;
         applySubsSoon(true);
         topologyChanged();
 
-        // optional: иногда удаление remote track (без USER_LEFT) тоже может фризить
-        // this.triggerLeaveRecovery("TRACK_REMOVED");
-        if (!isLocalCameraOrAudio(track)) {
-          this.triggerLeaveRecovery("TRACK_REMOVED");
-        }
+        this.triggerLeaveRecovery("TRACK_REMOVED");
+        this.scheduleGlobalKeyframeNudge(80, "TRACK_REMOVED");
       }
 
       this.scheduleHealthTickSoon();
