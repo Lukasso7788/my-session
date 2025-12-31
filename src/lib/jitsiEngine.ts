@@ -2737,23 +2737,30 @@ this.localUserId = null;
     this.scheduleHealthTickSoon();
   });
 
-  conf.on(events.conference.USER_LEFT, (id: string) => {
-    if (this.disposed) return;
+    conf.on(events.conference.USER_LEFT, (id: string) => {
+      if (this.disposed) return;
 
-    delete this.participants[id];
-    this.tracksByParticipant.delete(id);
-    this.emitParticipants();
+      delete this.participants[id];
+      this.tracksByParticipant.delete(id);
 
-    this.videoElByPid.delete(id);
-    this.screenElByPid.delete(id);
-    this.videoHealthState.delete(id);
+      // ✅ CRITICAL: убираем "stale" id из UI-пинов/видимых плиток
+      this.selectedVideoIds = (this.selectedVideoIds || []).filter((x) => x && x !== id);
 
-    applySubsSoon(true);
-    topologyChanged();
+      // ✅ CRITICAL: сбрасываем no-op caching, иначе applyVideoSubscriptions может быть пропущен
+      this.lastSubsKey = "";
 
-    // ✅ новый усиленный антифриз
-    this.triggerLeaveRecovery("USER_LEFT");
-  });
+      this.emitParticipants();
+
+      this.videoElByPid.delete(id);
+      this.screenElByPid.delete(id);
+      this.videoHealthState.delete(id);
+
+      applySubsSoon(true);
+      topologyChanged();
+
+      // ✅ усиленный антифриз
+      this.triggerLeaveRecovery("USER_LEFT");
+    });
 
   conf.on(events.conference.DISPLAY_NAME_CHANGED, (id: string, displayName: string) => {
     if (this.disposed) return;
@@ -2790,6 +2797,9 @@ this.localUserId = null;
 
         // optional: иногда удаление remote track (без USER_LEFT) тоже может фризить
         // this.triggerLeaveRecovery("TRACK_REMOVED");
+        if (!isLocalCameraOrAudio(track)) {
+          this.triggerLeaveRecovery("TRACK_REMOVED");
+        }
       }
 
       this.scheduleHealthTickSoon();
@@ -2928,17 +2938,33 @@ this.localUserId = null;
 }
 
   private computeFinalRemoteIds(): string[] {
-  const localId = this.localUserId;
+    const localId = this.localUserId;
 
-  const active = this.getRemoteIdsWithAnyVideoOrScreen();
-  const ui = (this.selectedVideoIds || []).filter((id) => id && id !== localId).slice().sort();
+    // активные (имеют video/screen track)
+    const active = this.getRemoteIdsWithAnyVideoOrScreen();
 
-  const merged: string[] = [];
-  for (const id of active) if (!merged.includes(id)) merged.push(id);
-  for (const id of ui) if (!merged.includes(id)) merged.push(id);
+    // ✅ UI ids (selectedVideoIds) могут содержать "мертвые" id после USER_LEFT
+    // или участников без video/screen — их нельзя отдавать в selectParticipants, иначе бывают зависания.
+    const ui = (this.selectedVideoIds || [])
+      .filter((id) => id && id !== localId)
+      .filter((id) => {
+        // должен существовать в participants или tracksByParticipant
+        const known = !!this.participants[id] || this.tracksByParticipant.has(id);
+        if (!known) return false;
 
-  return merged;
-}
+        // должен иметь video или screen track (иначе просто крадёт слот LastN)
+        const t = this.tracksByParticipant.get(id);
+        return !!(t?.video || t?.screen);
+      })
+      .slice()
+      .sort();
+
+    const merged: string[] = [];
+    for (const id of active) if (!merged.includes(id)) merged.push(id);
+    for (const id of ui) if (!merged.includes(id)) merged.push(id);
+
+    return merged;
+  }
 
   private buildSubsKey(finalRemoteIds: string[], desiredLastN: number, h: number) {
   return `${this.qualityMode}|${desiredLastN}|${h}|${finalRemoteIds.join(",")}`;
