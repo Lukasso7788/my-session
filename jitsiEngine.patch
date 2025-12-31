@@ -1,0 +1,328 @@
+diff --git a/src/lib/jitsiEngine.ts b/src/lib/jitsiEngine.ts
+index 0000000..1111111 100644
+--- a/src/lib/jitsiEngine.ts
++++ b/src/lib/jitsiEngine.ts
+@@ -1,28 +1,6 @@
+-// ============================================================================
+-// src/lib/jitsiEngine.ts — SFU-only (P2P OFF) + track-based + reactions + SAFE background effects
+-// Ultra-stable subscriptions: no-op caching + delayed hard reset + cooldown
+-// ✅ Added: targeted “black video” recovery (reattach per participant + optional subs bump)
+-// ✅ Added: post-join local A/V self-heal + resume/visibility wake recovery + optional safe rejoin
+-// ✅ Fixed: do NOT treat local camera/audio track add/remove as topology change (prevents global resub churn on toggleVideo)
+-//
+-// ✅ UPDATED (Background effects):
+-// - BG Manager supports 2 variants:
+-//   (A) track.setEffect(effect) (native Jitsi VB if present, else vendored)
+-//   (B) replaceTrack pipeline (Canvas/MediaPipe processor -> createLocalTracksFromMediaStreams -> conference.replaceTrack)
+-//
+-// - Strategy: "auto" (default):
+-//   Prefer (A) if compatible; if any incompatibility/error => fall back to (B).
+-//
+-// ✅ PATCH (SAFE stream adapter for startEffect input):
+-// - Wraps effect.startEffect(...) to always receive a MediaStream
+-//
+-// ✅ PATCH (SERIALIZED setEffect + SAFE dispose):
+-// - All track.setEffect calls go through per-track queue (prevents: "setEffect already in progress!")
+-// - Dispose waits for pending effect ops on that track
+-//
+-// ✅ PATCH #1 (CAM TOGGLE AFTER BLUR FIX):
+-// - When turning camera OFF and bg is enabled: clear effect BEFORE muting (or swap to base BEFORE muting in replaceTrack mode)
+-// - When turning camera ON: ensure track, unmute, then re-apply bg
+-//
+-// ✅ PATCH #2 (FIRST-CLICK BLUR APPLY FIX):
+-// - If setEffect path is incompatible (e.g., vendored effect.startEffect is async), THROW to trigger fallback to replaceTrack
+-// - Do not “silently succeed” by applying PASSTHROUGH and returning (that ate the first click)
+-//
+-// ✅ PATCH #3 (FIX "Cannot add second video track"):
+-// - Hard-toggle camera must never leave a hidden local video track inside the conference.
+-// - When disabling camera while replaceTrack bg was active, clearAnyBg swaps processed->base,
+-//   so we must remove/dispose THE CURRENT conference video track (base), not the stale reference (processed).
+-// - When enabling camera, if conference already has a local video track (even if engine lost ref),
+-//   we MUST replaceTrack/remove+add instead of addTrack.
+-// - Also clear stale bgBaseVideoTrack when camera is stopped, so blur re-apply uses the new camera.
+-// ============================================================================
++// src/lib/jitsiEngine.ts
+ 
+ import { createVirtualBackgroundEffect as createVendoredVirtualBackgroundEffect } from "./jitsiEffects/virtualBackground";
+ 
+@@ -170,6 +148,7 @@ export class JitsiEngine {
+   private bgOpQueue: Promise<void> = Promise.resolve();
+   private bgOpSeq = 0;
++  private bgOpRunning = false;
+   // ✅ CAM ops serializer (prevents races with bg queue on hard toggle)
+   private camOpQueue: Promise<void> = Promise.resolve();
+   private camOpSeq = 0;
+@@ -206,6 +185,11 @@ export class JitsiEngine {
+   private subsHardResetTimer: any = null;
+   private subsHardResetInFlight = false;
+ 
++  // SOFT RESET (short bump)
++  private softResetTimer: any = null;
++  private softResetInFlight = false;
++  private softResetCooldownUntil = 0;
++
+   // ✅ stable: no-op caching
+   private lastSubsKey = "";
+   private lastSubsAppliedAt = 0;
+@@ -257,27 +241,42 @@ export class JitsiEngine {
+   private enqueueBgOp(label: string, fn: () => Promise<void>) {
+     const id = ++this.bgOpSeq;
+ 
+     this.bgOpQueue = this.bgOpQueue
+       .catch(() => { })
+       .then(async () => {
++        this.bgOpRunning = true;
+         try {
+           console.debug(`[bgQ#${id}] BEGIN ${label}`);
+         } catch { }
+-        await fn();
+-        try {
+-          console.debug(`[bgQ#${id}] END ${label}`);
+-        } catch { }
++        try {
++          await fn();
++          try {
++            console.debug(`[bgQ#${id}] END ${label}`);
++          } catch { }
++        } finally {
++          this.bgOpRunning = false;
++        }
+       })
+       .catch((e) => {
+         console.warn(`[bgQ#${id}] FAIL ${label}:`, e);
++        this.bgOpRunning = false;
+       });
+ 
+     return this.bgOpQueue;
+   }
+ 
+@@ -486,6 +485,53 @@ export class JitsiEngine {
+   private schedulePostJoinSelfHeal() {
+     if (this.postJoinHealTimer) clearTimeout(this.postJoinHealTimer);
+     this.postJoinHealTimer = setTimeout(() => {
+       this.postJoinHealTimer = null;
+       if (this.disposed) return;
+       void this.postJoinSelfHeal();
+     }, 2500);
+   }
+ 
++  // VISIBILITY: suspend/resume background effects (prevent throttling freeze)
++  private suspendBgIfNeededForVisibility(reason: string) {
++    if (this.disposed) return;
++    if (this.bgPrefs.mode === "none") return;
++    if (this.bgSuspendedByVisibility) return;
++
++    this.bgSuspendedByVisibility = true;
++    this.bgSuspendedAt = Date.now();
++
++    void this.enqueueBgOp(`visibility:suspend:${reason}`, async () => {
++      await this.clearAnyBg(true, `visibility:hidden:${reason}`); // keepPrefs=true
++    });
++  }
++
++  private resumeBgIfWasSuspended(reason: string) {
++    if (this.disposed) return;
++    if (!this.bgSuspendedByVisibility) return;
++
++    this.bgSuspendedByVisibility = false;
++
++    // If user has camera off - do not reapply
++    if (this.localUserId && this.participants[this.localUserId]?.videoMuted) return;
++
++    void this.enqueueBgOp(`visibility:resume:${reason}`, async () => {
++      await this.applyBgNow(`visibility:resume:${reason}`);
++    });
++  }
++
+   private async postJoinSelfHeal() {
+     // 1) Unlock audio playback if needed (autoplay policies)
+     await this.resumeAllAudioElements();
+@@ -552,7 +598,7 @@ export class JitsiEngine {
+       if (document.visibilityState === "hidden") {
+         this.hiddenAt = Date.now();
+ 
+-        // ✅ ключевой фикс: blur/image в background табе = очень часто фриз
++        // suspend blur/image while hidden
+         this.suspendBgIfNeededForVisibility("visibilitychange");
+ 
+         return;
+@@ -564,7 +610,7 @@ export class JitsiEngine {
+       // Cheap: unlock audio
+       void this.resumeAllAudioElements();
+ 
+-      // ✅ если мы сами выключили blur на hidden — возвращаем сразу же
++      // if we suspended blur while hidden - restore
+       this.resumeBgIfWasSuspended("visibilitychange");
+ 
+       // If we were hidden long enough, do wake recovery.
+       if (dt > 15_000) {
+@@ -1010,14 +1056,25 @@ export class JitsiEngine {
+   private async reapplyBgIfNeeded() {
+     if (!this.localVideoTrack) return;
+     if (this.bgPrefs.mode === "none") return;
+-    await this.enqueueBgOp("reapplyBgIfNeeded", () => this.applyBgNow("reapplyBgIfNeeded"));
++
++    // Avoid deadlock: if we're already running inside bg queue, call directly.
++    if (this.bgOpRunning) {
++      await this.applyBgNow("reapplyBgIfNeeded:direct");
++      return;
++    }
++
++    await this.enqueueBgOp("reapplyBgIfNeeded", () => this.applyBgNow("reapplyBgIfNeeded"));
+   }
+ 
+@@ -1104,55 +1163,6 @@ export class JitsiEngine {
+       return;
+     }
+-
+-      private suspendBgIfNeededForVisibility(reason: string) {
+-    if (this.disposed) return;
+-    if (this.bgPrefs.mode === "none") return;
+-    if (this.bgSuspendedByVisibility) return;
+-
+-    this.bgSuspendedByVisibility = true;
+-    this.bgSuspendedAt = Date.now();
+-
+-    // Важно: делаем это через bg очередь, чтобы не подраться с apply/cam toggle.
+-    void this.enqueueBgOp(`visibility:suspend:${reason}`, async () => {
+-      // keepPrefs=true: user preference сохраняем, просто выключаем эффект
+-      await this.clearAnyBg(true, `visibility:hidden:${reason}`);
+-      // после clearAnyBg outgoing будет "base" (или passthrough), что НЕ фризится так жестко в background
+-    });
+-  }
+-
+-  private resumeBgIfWasSuspended(reason: string) {
+-    if (this.disposed) return;
+-    if (!this.bgSuspendedByVisibility) return;
+-
+-    this.bgSuspendedByVisibility = false;
+-
+-    // Если камера сейчас выключена пользователем — ничего не делаем
+-    if (this.localUserId && this.participants[this.localUserId]?.videoMuted) return;
+-
+-    // Возвращаем blur/image обратно (prefs уже сохранены в bgPrefs)
+-    void this.enqueueBgOp(`visibility:resume:${reason}`, async () => {
+-      await this.applyBgNow(`visibility:resume:${reason}`);
+-    });
+-  }
+ 
+     // If we are already in replaceTrack mode, just reconfigure via disable+enable
+     if (this.bgImplMode === "replaceTrack") {
+       await this.enableBg_replaceTrack(`reapply:${reason}`);
+@@ -1802,6 +1861,83 @@ export class JitsiEngine {
+     }
+   }
+ 
+-    private scheduleSoftResetSubscriptions(delayMs: number, reason: string) {
+-  if (!this.conference || this.disposed) return;
+-
+-  const now = Date.now();
+-  if (now < this.softResetCooldownUntil) return;
+-
+-  if (this.softResetTimer) clearTimeout(this.softResetTimer);
+-  this.softResetTimer = setTimeout(() => {
+-    this.softResetTimer = null;
+-    this.softResetAndApplyVideoSubscriptions(reason);
+-  }, delayMs);
+-}
+-
+-  private softResetAndApplyVideoSubscriptions(reason: string) {
+-  if (!this.conference || this.disposed || this.softResetInFlight) return;
+-
+-  const now = Date.now();
+-  if (now < this.softResetCooldownUntil) return;
+-
+-  this.softResetInFlight = true;
+-
+-  try {
+-    // кратко "роняем" подписки
+-    try { this.conference.selectParticipants?.([]); } catch { }
+-    try { this.conference.setLastN?.(0); } catch { }
+-
+-    setTimeout(() => {
+-      if (this.disposed || !this.conference) {
+-        this.softResetInFlight = false;
+-        return;
+-      }
+-
+-      try {
+-        const finalRemoteIds = this.computeFinalRemoteIds();
+-        const desiredLastN = Math.min(finalRemoteIds.length, this.MAX_LAST_N);
+-        const h = this.pickReceiverConstraintHeight(desiredLastN);
+-
+-        this.conference.setLastN?.(desiredLastN);
+-        this.conference.setReceiverVideoConstraint?.(h);
+-        this.conference.setReceiverAudioConstraint?.(true);
+-        this.conference.selectParticipants?.(finalRemoteIds.slice(0, desiredLastN));
+-
+-        // сброс no-op caching чтобы следующий apply не игнорился
+-        this.lastSubsKey = "";
+-        this.lastSubsAppliedAt = Date.now();
+-      } finally {
+-        // короткий кулдаун, чтобы не дрожало от серии событий
+-        this.softResetCooldownUntil = Date.now() + 3500;
+-        this.softResetInFlight = false;
+-        this.scheduleHealthTickSoon();
+-      }
+-    }, 180);
+-  } catch {
+-    this.softResetInFlight = false;
+-  }
+-}
++  private scheduleSoftResetSubscriptions(delayMs: number, reason: string) {
++    if (!this.conference || this.disposed) return;
++
++    const now = Date.now();
++    if (now < this.softResetCooldownUntil) return;
++
++    if (this.softResetTimer) clearTimeout(this.softResetTimer);
++    this.softResetTimer = setTimeout(() => {
++      this.softResetTimer = null;
++      this.softResetAndApplyVideoSubscriptions(reason);
++    }, delayMs);
++  }
++
++  private softResetAndApplyVideoSubscriptions(reason: string) {
++    if (!this.conference || this.disposed || this.softResetInFlight) return;
++
++    const now = Date.now();
++    if (now < this.softResetCooldownUntil) return;
++
++    this.softResetInFlight = true;
++
++    try {
++      try { this.conference.selectParticipants?.([]); } catch { }
++      try { this.conference.setLastN?.(0); } catch { }
++
++      setTimeout(() => {
++        if (this.disposed || !this.conference) {
++          this.softResetInFlight = false;
++          return;
++        }
++
++        try {
++          const finalRemoteIds = this.computeFinalRemoteIds();
++          const desiredLastN = Math.min(finalRemoteIds.length, this.MAX_LAST_N);
++          const h = this.pickReceiverConstraintHeight(desiredLastN);
++
++          this.conference.setLastN?.(desiredLastN);
++          this.conference.setReceiverVideoConstraint?.(h);
++          this.conference.setReceiverAudioConstraint?.(true);
++          this.conference.selectParticipants?.(finalRemoteIds.slice(0, desiredLastN));
++
++          this.lastSubsKey = "";
++          this.lastSubsAppliedAt = Date.now();
++        } finally {
++          this.softResetCooldownUntil = Date.now() + 3500;
++          this.softResetInFlight = false;
++          this.scheduleHealthTickSoon();
++          try { console.debug("[subs] soft reset:", reason); } catch { }
++        }
++      }, 180);
++    } catch {
++      this.softResetInFlight = false;
++    }
++  }
+ 
+   private broadcastLocalEvent(ev: any) {
+     if (!this.conference || !this.localUserId) return;
