@@ -1909,10 +1909,10 @@ export class JitsiEngine {
   }
 
   private async reapplyBgIfNeeded() {
-  if (!this.localVideoTrack) return;
-  if (this.bgPrefs.mode === "none") return;
-  await this.enqueueBgOp("reapplyBgIfNeeded", () => this.applyBgNow("reapplyBgIfNeeded"));
-}
+    if (!this.localVideoTrack) return;
+    if (this.bgPrefs.mode === "none") return;
+    await this.enqueueBgOp("reapplyBgIfNeeded", () => this.applyBgNow("reapplyBgIfNeeded"));
+  }
 
   public async setBackgroundEffect(opts: { mode: BgMode; imageUrl?: string }) {
   console.debug("[bg] setBackgroundEffect request:", opts, "track:", this.getTrackDbg(this.localVideoTrack));
@@ -2181,13 +2181,6 @@ await this.reapplyBgIfNeeded();
     this.tracksByParticipant.set(this.localUserId, entry);
 
     this.refreshEffectsSupport(newVideo);
-
-    // Re-apply background if user had chosen it
-    setTimeout(() => {
-      if (this.disposed) return;
-      if (this.camToggling) return;
-      void this.reapplyBgIfNeeded();
-    }, 0);
 
     this.rebuildParticipantsFromTracks();
 
@@ -2483,6 +2476,15 @@ try {
       console.warn("[cam] toggleVideoMute(HARD) failed:", e);
     } finally {
       this.camToggling = false;
+
+      // ✅ IMPORTANT: re-apply BG AFTER camToggling=false,
+      // иначе enableLocalVideoHard() мог пропустить реаплай
+      if (this.bgPrefs.mode !== "none") {
+        void this.enqueueBgOp("toggleVideoMute:post-reapply-bg", async () => {
+          await this.applyBgNow("toggleVideoMute:post-reapply-bg");
+        });
+      }
+
       this.scheduleApplyVideoSubscriptions(0, false);
       this.scheduleHealthTickSoon();
     }
@@ -2775,27 +2777,23 @@ this.localUserId = null;
     this.scheduleHealthTickSoon();
   });
 
-  conf.on(events.conference.TRACK_REMOVED, (track: any) => {
-    if (this.disposed) return;
-    this.handleTrackRemoved(track);
+    conf.on(events.conference.TRACK_REMOVED, (track: any) => {
+      if (this.disposed) return;
 
-    if (isLocalCameraOrAudio(track)) {
-      applySubsSoon(false);
-    } else {
-      applySubsSoon(true);
-      topologyChanged();
+      this.handleTrackRemoved(track);
+
       if (isLocalCameraOrAudio(track)) {
         applySubsSoon(false);
       } else {
         applySubsSoon(true);
         topologyChanged();
+
+        // optional: иногда удаление remote track (без USER_LEFT) тоже может фризить
+        // this.triggerLeaveRecovery("TRACK_REMOVED");
       }
 
       this.scheduleHealthTickSoon();
-    }
-
-    this.scheduleHealthTickSoon();
-  });
+    });
 
   conf.on(events.conference.TRACK_MUTE_CHANGED, (track: any) => {
     if (this.disposed) return;
