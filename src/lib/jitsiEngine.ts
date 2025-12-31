@@ -185,13 +185,6 @@ export class JitsiEngine {
   // BG PREFS
   private bgPrefs: { mode: BgMode; imageUrl?: string } = { mode: "none" };
   private bgApplying = false;
-  // ✅ Suspend BG when tab is hidden (prevents frozen outgoing video due to throttling)
-  private bgSuspendedByVisibility = false;
-  private bgSuspendedAt = 0;
-
-  // ✅ Delayed BG suspend on tab hidden (prevents "bg drops" on quick tab switches)
-  private bgVisibilitySuspendTimer: any = null;
-  private readonly BG_VIS_SUSPEND_DELAY_MS = 2000; // 2s
 
   // ✅ BG ops serializer (prevents races: join/apply/click/mute events)
   private bgOpQueue: Promise<void> = Promise.resolve();
@@ -994,36 +987,6 @@ export class JitsiEngine {
     this.scheduleHealthTickSoon();
   }
 
-  // ✅ Suspend BG when tab is hidden (prevents frozen outgoing video due to throttling)
-  private suspendBgIfNeededForVisibility(reason: string) {
-    if (this.disposed) return;
-    if (this.bgPrefs.mode === "none") return;
-    if (this.bgSuspendedByVisibility) return;
-
-    this.bgSuspendedByVisibility = true;
-    this.bgSuspendedAt = Date.now();
-
-    // Важно: через очередь BG, чтобы не конфликтовать с apply/cam toggle
-    void this.enqueueBgOp(`visibility:suspend:${reason}`, async () => {
-      // keepPrefs=true: предпочтения пользователя сохраняем, просто выключаем эффект
-      await this.clearAnyBg(true, `visibility:hidden:${reason}`);
-    });
-  }
-
-  private resumeBgIfWasSuspended(reason: string) {
-    if (this.disposed) return;
-    if (!this.bgSuspendedByVisibility) return;
-
-    this.bgSuspendedByVisibility = false;
-
-    // Если камера выключена пользователем — не включаем эффект обратно
-    if (this.localUserId && this.participants[this.localUserId]?.videoMuted) return;
-
-    void this.enqueueBgOp(`visibility:resume:${reason}`, async () => {
-      await this.applyBgNow(`visibility:resume:${reason}`);
-    });
-  }
-
   private attachResumeHandlers() {
     if (this.resumeHandlersAttached) return;
     this.resumeHandlersAttached = true;
@@ -1033,17 +996,6 @@ export class JitsiEngine {
 
       if (document.visibilityState === "hidden") {
         this.hiddenAt = Date.now();
-
-        // ✅ IMPORTANT:
-        // Do NOT instantly clear BG on quick tab switches — it causes "image drops".
-        // Instead, suspend only if we stay hidden for BG_VIS_SUSPEND_DELAY_MS.
-        if (this.bgVisibilitySuspendTimer) clearTimeout(this.bgVisibilitySuspendTimer);
-        this.bgVisibilitySuspendTimer = setTimeout(() => {
-          this.bgVisibilitySuspendTimer = null;
-          if (this.disposed) return;
-          this.suspendBgIfNeededForVisibility("visibilitychange");
-        }, this.BG_VIS_SUSPEND_DELAY_MS);
-
         return;
       }
 
@@ -1051,17 +1003,8 @@ export class JitsiEngine {
       const dt = this.hiddenAt ? Date.now() - this.hiddenAt : 0;
       this.hiddenAt = null;
 
-      // ✅ if we scheduled suspend but returned quickly — cancel it
-      if (this.bgVisibilitySuspendTimer) {
-        clearTimeout(this.bgVisibilitySuspendTimer);
-        this.bgVisibilitySuspendTimer = null;
-      }
-
       // Cheap: unlock audio
       void this.resumeAllAudioElements();
-
-      // ✅ if we actually suspended BG — resume it now
-      this.resumeBgIfWasSuspended("visibilitychange");
 
       // If we were hidden long enough, do wake recovery.
       if (dt > 15_000) {
