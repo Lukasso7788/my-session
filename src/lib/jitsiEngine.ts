@@ -2501,9 +2501,6 @@ try {
   this.subsApplyTimer = null;
   this.subsHardResetTimer = null;
 
-  if (this.bgVisibilitySuspendTimer) clearTimeout(this.bgVisibilitySuspendTimer);
-  this.bgVisibilitySuspendTimer = null;
-
   if(this.subsWatchdog) clearInterval(this.subsWatchdog);
   this.subsWatchdog = null;
 
