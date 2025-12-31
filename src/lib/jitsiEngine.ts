@@ -158,6 +158,10 @@ export class JitsiEngine {
   private lastJoinUserName: string | null = null;
   private lastSafeRejoinAt = 0;
 
+  // ✅ LEAVE/FREEZE RECOVERY (anti “one remote video frozen after someone left”)
+  private lastLeaveRecoveryAt = 0;
+  private leaveRecoveryTimer: any = null;
+
   // VIDEO SUBS
   private selectedVideoIds: string[] = [];
   private qualityMode: "auto" | "low" | "medium" | "high" = "auto";
@@ -635,6 +639,41 @@ export class JitsiEngine {
     this.scheduleSoftResetSubscriptions(120, `reattachAll:${reason}`);
   }
 
+  private triggerLeaveRecovery(reason: string) {
+    if (this.disposed || !this.conference) return;
+
+    const now = Date.now();
+
+    // ✅ анти-спам: USER_LEFT + TRACK_REMOVED могут прийти пачкой
+    if (now - this.lastLeaveRecoveryAt < 900) return;
+    this.lastLeaveRecoveryAt = now;
+
+    const { ids: subscribedRemoteIds } = this.getSubscribedRemoteIds();
+    if (!subscribedRemoteIds.length) return;
+
+    // 1) Мгновенный reattach (дешёво, часто чинит сразу)
+    setTimeout(() => {
+      if (this.disposed) return;
+      void this.reattachAllSubscribedRemoteVideos(`leaveRecovery:now:${reason}`);
+    }, 0);
+
+    // 2) Повторный reattach через чуть-чуть (после пересборки потоков/SSRC)
+    setTimeout(() => {
+      if (this.disposed) return;
+      void this.reattachAllSubscribedRemoteVideos(`leaveRecovery:retry:${reason}`);
+    }, 420);
+
+    // 3) Soft reset подписок (лёгкий “пинок”)
+    this.scheduleSoftResetSubscriptions(120, `leaveRecovery:${reason}`);
+
+    // 4) ВАЖНО: ранний hard reset (не жди 4500ms)
+    // scheduleHardResetSubscriptions() сам очистит предыдущий таймер.
+    this.scheduleHardResetSubscriptions(1200);
+
+    // 5) Сразу health tick (пусть твой монитор быстрее заметит stuck)
+    this.scheduleHealthTickSoon();
+  }
+
   private getFrameCount(el: HTMLVideoElement): number | null {
     try {
       const anyEl = el as any;
@@ -784,6 +823,8 @@ export class JitsiEngine {
           track.detach();
         } catch { }
       }
+
+      try { (el as any).srcObject = null; } catch { }
 
       await new Promise((r) => setTimeout(r, 40));
 
@@ -2707,12 +2748,9 @@ this.localUserId = null;
 
     applySubsSoon(true);
     topologyChanged();
-    // ✅ быстрый антифриз после выхода участника
-    this.scheduleSoftResetSubscriptions(220, "USER_LEFT");
-    setTimeout(() => {
-      if (this.disposed) return;
-      void this.reattachAllSubscribedRemoteVideos("USER_LEFT");
-    }, 260);
+
+    // ✅ новый усиленный антифриз
+    this.triggerLeaveRecovery("USER_LEFT");
   });
 
   conf.on(events.conference.DISPLAY_NAME_CHANGED, (id: string, displayName: string) => {
@@ -2746,6 +2784,14 @@ this.localUserId = null;
     } else {
       applySubsSoon(true);
       topologyChanged();
+      if (isLocalCameraOrAudio(track)) {
+        applySubsSoon(false);
+      } else {
+        applySubsSoon(true);
+        topologyChanged();
+      }
+
+      this.scheduleHealthTickSoon();
     }
 
     this.scheduleHealthTickSoon();
