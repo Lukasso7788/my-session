@@ -67,12 +67,10 @@ export default function RegisterPage() {
 
   return (
     <div className="min-h-screen bg-white text-gray-900 flex flex-col font-inter">
-
       <HeaderLite />
 
       <div className="flex flex-col items-center w-full pt-16 px-4">
         <div className="w-full max-w-md mx-auto">
-
           <h2 className="text-center text-[32px] font-bold mb-8">
             Create an Account
           </h2>
@@ -108,6 +106,7 @@ export default function RegisterPage() {
               onChange={(e) => setPassword(e.target.value)}
             />
             <button
+              type="button"
               className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500"
               onClick={() => setShowPass(!showPass)}
             >
@@ -129,7 +128,11 @@ export default function RegisterPage() {
             onClick={signupWithGoogle}
             className="w-full py-3 border border-gray-300 rounded-[16px] flex items-center justify-center gap-3 mb-3 hover:bg-gray-50 transition text-[18px] font-semibold"
           >
-            <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5" />
+            <img
+              src="https://www.svgrepo.com/show/475656/google-color.svg"
+              className="w-5"
+              alt="Google icon"
+            />
             Continue with Google
           </button>
 
@@ -146,18 +149,6 @@ export default function RegisterPage() {
             Continue with Facebook
           </button>
 
-          {/* Apple */}
-          <button
-            className="w-full py-3 rounded-[16px] flex items-center justify-center gap-3 bg-[#2F2F2F] text-white hover:bg-[#1F1F1F] transition text-[18px] font-semibold"
-          >
-            <img
-              src="/icons/apple.svg"
-              className="w-5 h-5"
-              alt="Apple icon"
-            />
-            Continue with Apple
-          </button>
-
           <p className="text-center text-sm text-gray-700 mt-6">
             Already have an account?{" "}
             <span
@@ -167,7 +158,6 @@ export default function RegisterPage() {
               Login
             </span>
           </p>
-
         </div>
       </div>
     </div>
