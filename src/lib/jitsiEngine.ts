@@ -3,8 +3,11 @@
 // Ultra-stable subscriptions + targeted “black video” recovery + resume/self-heal
 // Single-file optimized (reduced noise/duplication) — no functional split.
 //
-// ✅ PATCH (freeze-after-leave fix) — Variant #1:
+// ✅ PATCH (freeze-after-leave fix) — Variant #1 (updated):
 // - STOP doing global "selectParticipants([]) + setLastN(0)" resets on USER_LEFT/TRACK_REMOVED
+// - ✅ Do NOT call selectParticipants at all for small rooms (<=2 remote videos). Let Jitsi handle it.
+// - ✅ Add receiver-constraint "tickle" (0 -> h) on leave to force fresh keyframe/renegotiation behavior.
+// - ✅ Delay subscription apply on leave (650ms) to avoid racing Jitsi internal resubscribe.
 // - Replace "global nudge" with BEST-EFFORT keyframe requests + light reattach
 // - After any subscription apply / bump / reattach, request keyframes (PLI/FIR) best-effort
 // - Keep your black-video recovery, but make it keyframe-aware
@@ -283,6 +286,36 @@ export class JitsiEngine {
     // If a hard reset was marked in-flight but we’re in weird timing, don’t keep it stuck.
     this.subsHardResetInFlight = false;
     // (no logs by default)
+  }
+
+  // ✅ For small rooms we skip selectParticipants entirely (prevents layer-switch/keyframe stalls)
+  private shouldUseSelectParticipants(desiredLastN: number) {
+    // "small room" = <= 2 remote videos (i.e. 1:1 or 3-person call)
+    return desiredLastN > 2;
+  }
+
+  // ✅ Receiver constraint tickle: 0 -> h to encourage fresh keyframe after leave/resubscribe
+  private tickleReceiverVideoConstraint(h: number, reason: string) {
+    if (!this.conference || this.disposed) return;
+    this.safe(() => this.conference.setReceiverVideoConstraint?.(0));
+    setTimeout(() => {
+      if (this.disposed || !this.conference) return;
+      this.safe(() => this.conference.setReceiverVideoConstraint?.(h));
+      this.scheduleKeyframeRefresh(90, `constraintTickle:${reason}`);
+    }, 110);
+  }
+
+  private scheduleConstraintTickle(delayMs: number, reason: string) {
+    if (!this.conference || this.disposed) return;
+    setTimeout(() => {
+      if (this.disposed || !this.conference) return;
+      try {
+        const finalRemoteIds = this.computeFinalRemoteIds();
+        const desiredLastN = Math.min(finalRemoteIds.length, this.MAX_LAST_N);
+        const h = this.pickReceiverConstraintHeight(desiredLastN);
+        this.tickleReceiverVideoConstraint(h, reason);
+      } catch { }
+    }, delayMs);
   }
 
   // ============================================================================
@@ -657,6 +690,18 @@ export class JitsiEngine {
       const { ids, desiredLastN } = this.getSubscribedRemoteIds();
       if (!ids.includes(pid)) return;
 
+      const h = this.pickReceiverConstraintHeight(desiredLastN);
+      const shouldSelect = this.shouldUseSelectParticipants(desiredLastN);
+
+      // ✅ small-room bump: do NOT touch selectParticipants (it can be the source of freezes)
+      if (!shouldSelect) {
+        this.tickleReceiverVideoConstraint(h, "bumpParticipantSubscription");
+        const p = this.participants[pid];
+        const kind: "video" | "screen" = kindHint || (!!p?.screenTrack && this.screenElByPid.has(pid) ? "screen" : "video");
+        this.requestKeyframe(pid, kind, "bumpParticipantSubscription:smallRoom");
+        return;
+      }
+
       const original = ids.slice(0, desiredLastN);
       const without = original.filter((x) => x !== pid);
 
@@ -853,9 +898,13 @@ export class JitsiEngine {
 
       this.emitParticipants();
 
-      // ✅ PATCH: on leave, do NOT trigger global topology hard reset / global nudge.
-      // Only apply new subscriptions + request keyframes.
-      applySubsSoon(true);
+      // ✅ PATCH: on leave, DO NOT touch global hard resets / global nudges.
+      // ✅ Delay subs apply slightly to avoid racing Jitsi internal resubscribe.
+      this.scheduleApplyVideoSubscriptions(650, true);
+
+      // ✅ Constraint tickle after leave is the "cheap" keyframe enforcer
+      this.scheduleConstraintTickle(720, "USER_LEFT");
+
       this.scheduleKeyframeRefresh(120, "USER_LEFT");
       this.triggerLeaveRecovery("USER_LEFT");
     });
@@ -892,7 +941,12 @@ export class JitsiEngine {
         this.cancelPendingHardReset("TRACK_REMOVED(remote)");
 
         // ✅ PATCH: for remote track removed, don't do global hard resets or setLastN(0) nudges.
-        applySubsSoon(true);
+        // ✅ Delay subs apply slightly to avoid racing Jitsi internal resubscribe.
+        this.scheduleApplyVideoSubscriptions(650, true);
+
+        // ✅ Constraint tickle after remote track removal
+        this.scheduleConstraintTickle(720, "TRACK_REMOVED(remote)");
+
         this.scheduleKeyframeRefresh(140, "TRACK_REMOVED");
         this.triggerLeaveRecovery("TRACK_REMOVED");
       }
@@ -1292,7 +1346,11 @@ export class JitsiEngine {
       const conf = this.conference;
       if (!conf) return null;
       const arr: any[] = conf.getLocalTracks?.() || [];
-      return arr.find((t) => !this.isDesktopTrack(t) && t?.getType?.() === "video") || arr.find((t) => t?.getType?.() === "video") || null;
+      return (
+        arr.find((t) => !this.isDesktopTrack(t) && t?.getType?.() === "video") ||
+        arr.find((t) => t?.getType?.() === "video") ||
+        null
+      );
     } catch {
       return null;
     }
@@ -2272,10 +2330,16 @@ export class JitsiEngine {
       this.lastSubsKey = key;
       this.lastSubsAppliedAt = Date.now();
 
+      const shouldSelect = this.shouldUseSelectParticipants(desiredLastN);
+
       this.conference.setLastN?.(desiredLastN);
       this.conference.setReceiverVideoConstraint?.(h);
       this.conference.setReceiverAudioConstraint?.(true);
-      if (typeof this.conference.selectParticipants === "function") this.conference.selectParticipants(finalRemoteIds.slice(0, desiredLastN));
+
+      // ✅ Skip selectParticipants for small rooms (prevents "stuck waiting keyframe" stalls)
+      if (shouldSelect && typeof this.conference.selectParticipants === "function") {
+        this.conference.selectParticipants(finalRemoteIds.slice(0, desiredLastN));
+      }
 
       // ✅ after any subs apply, request keyframes
       this.scheduleKeyframeRefresh(120, "applyVideoSubscriptions");
@@ -2296,10 +2360,16 @@ export class JitsiEngine {
       const finalRemoteIds = this.computeFinalRemoteIds();
       const desiredLastN = Math.min(finalRemoteIds.length, this.MAX_LAST_N);
       const h = this.pickReceiverConstraintHeight(desiredLastN);
+      const shouldSelect = this.shouldUseSelectParticipants(desiredLastN);
 
-      // NOTE: kept for rare "stack is wedged" cases, but NOT used on leave anymore.
-      this.safe(() => this.conference.selectParticipants?.([]));
-      this.safe(() => this.conference.setLastN?.(0));
+      // NOTE: kept for rare "stack is wedged" cases, but avoid it for small rooms.
+      if (shouldSelect) {
+        this.safe(() => this.conference.selectParticipants?.([]));
+        this.safe(() => this.conference.setLastN?.(0));
+      } else {
+        // small rooms: tickle instead of global nudge
+        this.tickleReceiverVideoConstraint(h, "hardReset:smallRoom");
+      }
 
       setTimeout(() => {
         if (this.disposed || !this.conference) {
@@ -2310,7 +2380,11 @@ export class JitsiEngine {
           this.conference.setLastN?.(desiredLastN);
           this.conference.setReceiverVideoConstraint?.(h);
           this.conference.setReceiverAudioConstraint?.(true);
-          this.conference.selectParticipants?.(finalRemoteIds.slice(0, desiredLastN));
+
+          if (shouldSelect) {
+            this.conference.selectParticipants?.(finalRemoteIds.slice(0, desiredLastN));
+          }
+
           this.lastSubsKey = "";
           this.lastSubsAppliedAt = Date.now();
         } finally {
@@ -2333,9 +2407,18 @@ export class JitsiEngine {
     this.softResetInFlight = true;
 
     try {
-      // NOTE: kept but not used as a leave nudge.
-      this.safe(() => this.conference.selectParticipants?.([]));
-      this.safe(() => this.conference.setLastN?.(0));
+      const finalRemoteIds = this.computeFinalRemoteIds();
+      const desiredLastN = Math.min(finalRemoteIds.length, this.MAX_LAST_N);
+      const h = this.pickReceiverConstraintHeight(desiredLastN);
+      const shouldSelect = this.shouldUseSelectParticipants(desiredLastN);
+
+      // NOTE: kept but not used as a leave nudge. Also avoid in small rooms.
+      if (shouldSelect) {
+        this.safe(() => this.conference.selectParticipants?.([]));
+        this.safe(() => this.conference.setLastN?.(0));
+      } else {
+        this.tickleReceiverVideoConstraint(h, "softReset:smallRoom");
+      }
 
       setTimeout(() => {
         if (this.disposed || !this.conference) {
@@ -2343,14 +2426,13 @@ export class JitsiEngine {
           return;
         }
         try {
-          const finalRemoteIds = this.computeFinalRemoteIds();
-          const desiredLastN = Math.min(finalRemoteIds.length, this.MAX_LAST_N);
-          const h = this.pickReceiverConstraintHeight(desiredLastN);
-
           this.conference.setLastN?.(desiredLastN);
           this.conference.setReceiverVideoConstraint?.(h);
           this.conference.setReceiverAudioConstraint?.(true);
-          this.conference.selectParticipants?.(finalRemoteIds.slice(0, desiredLastN));
+
+          if (shouldSelect) {
+            this.conference.selectParticipants?.(finalRemoteIds.slice(0, desiredLastN));
+          }
 
           this.lastSubsKey = "";
           this.lastSubsAppliedAt = Date.now();
