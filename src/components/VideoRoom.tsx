@@ -101,19 +101,9 @@ function attachTrackToMedia(
 ) {
     if (!track || !element) return;
 
-    // ✅ reset element (helps after detach/reattach and stream changes)
+    // ✅ safety: detach before attach (avoid double attachments / stale streams)
     try {
-        (element as any).srcObject = null;
-    } catch { }
-
-    // ✅ IMPORTANT: detach from ALL elements first (avoid stale attachments)
-    try {
-        (track as any).detach?.();
-    } catch { }
-
-    // and also best-effort detach from this element
-    try {
-        (track as any).detach?.(element);
+        track.detach?.(element);
     } catch { }
 
     try {
@@ -129,10 +119,7 @@ function attachTrackToMedia(
 
     return () => {
         try {
-            (track as any).detach?.();
-        } catch { }
-        try {
-            (track as any).detach?.(element);
+            track.detach(element);
         } catch { }
         try {
             (element as any).srcObject = null;
@@ -231,9 +218,6 @@ function AudioSinkItem({ p }: { p: JitsiParticipant }) {
             try {
                 p.audioTrack.detach(audioRef.current!);
             } catch { }
-            try {
-                (audioRef.current as any).srcObject = null;
-            } catch { }
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [p.audioTrack, p.isLocal, streamV]);
@@ -276,7 +260,6 @@ function ParticipantTile({
     const streamV = useTrackStreamVersion(participant.videoTrack);
 
     // ✅ IMPORTANT: register <video> element so engine can "black video recovery" reattach correctly
-    // ✅ ALSO: unregister ONLY here (avoid double-unregister)
     const handleVideoRef = useCallback(
         (el: HTMLVideoElement | null) => {
             videoRef.current = el;
@@ -284,6 +267,12 @@ function ParticipantTile({
         },
         [onRegisterVideoElement, participant.id]
     );
+
+    useEffect(() => {
+        return () => {
+            onRegisterVideoElement?.(participant.id, null, "video");
+        };
+    }, [onRegisterVideoElement, participant.id]);
 
     // ✅ attach/detach via helper
     useEffect(() => {
@@ -523,7 +512,9 @@ function ScreenShareLayoutDesktop({
         [onRegisterVideoElement, screenSharer.id]
     );
 
-    // (leave unregister to callback ref; avoid double-unregister)
+    useEffect(() => {
+        return () => onRegisterVideoElement?.(screenSharer.id, null, "screen");
+    }, [onRegisterVideoElement, screenSharer.id]);
 
     useEffect(() => {
         const el = screenVideoRef.current;
@@ -614,7 +605,9 @@ function ScreenShareLayoutMobile({
         [onRegisterVideoElement, screenSharer.id]
     );
 
-    // (leave unregister to callback ref; avoid double-unregister)
+    useEffect(() => {
+        return () => onRegisterVideoElement?.(screenSharer.id, null, "screen");
+    }, [onRegisterVideoElement, screenSharer.id]);
 
     useEffect(() => {
         const el = screenVideoRef.current;
@@ -773,28 +766,9 @@ export function VideoRoom(props: VideoRoomProps) {
             .filter((id) => id && id !== localParticipant?.id);
     }, [screenSharer, screenOthers, pageParticipants, localParticipant?.id]);
 
-    // ✅ IMPORTANT: debounce updates, and NEVER send transient [] instantly
-    const lastSentKeyRef = useRef<string>("");
     useEffect(() => {
-        const ids = visibleRemoteIds || [];
-        const key = ids.join(",");
-
-        // don't resend identical sets
-        if (key === lastSentKeyRef.current) return;
-
-        // empty list often happens transiently on leave / track removed
-        const delay = ids.length === 0 ? 700 : 150;
-
-        const t = window.setTimeout(() => {
-            // if changed during debounce, skip
-            const nowKey = (visibleRemoteIds || []).join(",");
-            if (nowKey !== key) return;
-
-            lastSentKeyRef.current = key;
-            onVisibleVideoIdsChange?.(ids);
-        }, delay);
-
-        return () => window.clearTimeout(t);
+        const t = setTimeout(() => onVisibleVideoIdsChange?.(visibleRemoteIds), 150);
+        return () => clearTimeout(t);
     }, [onVisibleVideoIdsChange, visibleRemoteIds]);
 
     const isAudioMuted = !!localParticipant?.audioMuted;
