@@ -9,9 +9,10 @@
 // - After any subscription apply / bump / reattach, request keyframes (PLI/FIR) best-effort
 // - Keep your black-video recovery, but make it keyframe-aware
 //
-// Rationale: your symptom "video unfreezes only when voice happens" strongly suggests you're stuck
-// waiting for a keyframe after resubscribe/layer switch. Daily-like behavior = don't do global resets,
-// and always request keyframes when you change subscriptions.
+// ✅ PATCH (A/B host selection - client-side):
+// - Pick Jitsi host per user (A/B) using URL override (?ab=A|B) + persisted localStorage
+// - Load /config.js and /libs/lib-jitsi-meet.min.js from the chosen host
+// - Use chosen host for xmpp websocket fallback (wss://<host>/xmpp-websocket)
 
 import { createVirtualBackgroundEffect as createVendoredVirtualBackgroundEffect } from "./jitsiEffects/virtualBackground";
 
@@ -45,20 +46,116 @@ export type JitsiEngineCallbacks = {
 
 export type BgMode = "none" | "blur" | "image";
 
-const JITSI_DOMAIN = "jitsi.lukassodesign.site";
-const JITSI_CONFIG_URL = "/config.js";
-const JITSI_LIB_URL = "/libs/lib-jitsi-meet.min.js";
+// ============================================================================
+// A/B JITSI HOST SELECTOR (client-side)
+// ============================================================================
+
+type AbGroup = "A" | "B";
+
+const JITSI_HOST_A = "meet.mysession.club";
+const JITSI_HOST_B = "meet2.mysession.club";
+
+const AB_STORAGE_KEY = "mysession_ab_group_v1";
+
+const JITSI_CONFIG_PATH = "/config.js";
+const JITSI_LIB_PATH = "/libs/lib-jitsi-meet.min.js";
+
 const DISABLE_P2P = true;
 
-let jitsiLoaderPromise: Promise<void> | null = null;
+function normalizeAb(v: string | null | undefined): AbGroup | null {
+  if (!v) return null;
+  const s = String(v).trim().toUpperCase();
+  if (s === "A" || s === "0" || s === "MEET" || s === "MEET1") return "A";
+  if (s === "B" || s === "1" || s === "MEET2") return "B";
+  return null;
+}
+
+function getQueryParam(name: string): string | null {
+  try {
+    const u = new URL(window.location.href);
+    const v = u.searchParams.get(name);
+    if (v) return v;
+
+    // hash-router support: /#/route?ab=B
+    const h = String(window.location.hash || "");
+    const idx = h.indexOf("?");
+    if (idx >= 0) {
+      const qs = h.slice(idx + 1);
+      const sp = new URLSearchParams(qs);
+      const hv = sp.get(name);
+      if (hv) return hv;
+    }
+  } catch { }
+  return null;
+}
+
+function chooseAbGroup(): AbGroup {
+  if (typeof window === "undefined") return "A";
+
+  // 1) URL override
+  const forced = normalizeAb(getQueryParam("ab"));
+  if (forced) {
+    try {
+      localStorage.setItem(AB_STORAGE_KEY, forced);
+    } catch { }
+    return forced;
+  }
+
+  // 2) persisted
+  try {
+    const saved = normalizeAb(localStorage.getItem(AB_STORAGE_KEY));
+    if (saved) return saved;
+  } catch { }
+
+  // 3) random assign + persist
+  const g: AbGroup = Math.random() < 0.5 ? "A" : "B";
+  try {
+    localStorage.setItem(AB_STORAGE_KEY, g);
+  } catch { }
+  return g;
+}
+
+function hostForGroup(g: AbGroup): string {
+  return g === "A" ? JITSI_HOST_A : JITSI_HOST_B;
+}
+
+function schemeForCurrentPage(): "http" | "https" {
+  try {
+    if (typeof window !== "undefined" && window.location && window.location.protocol === "http:") return "http";
+  } catch { }
+  return "https";
+}
+
+function wsSchemeForHttpScheme(s: "http" | "https"): "ws" | "wss" {
+  return s === "http" ? "ws" : "wss";
+}
 
 // ============================================================================
-// SCRIPT LOADER
+// SCRIPT LOADER (per chosen host)
 // ============================================================================
-async function loadJitsiScripts(): Promise<void> {
+
+let jitsiLoaderPromise: Promise<void> | null = null;
+let jitsiLoadedBaseUrl: string | null = null;
+
+async function loadJitsiScripts(baseUrl: string): Promise<void> {
   if (typeof window === "undefined") throw new Error("Jitsi can only be loaded in browser");
-  if (window.JitsiMeetJS && window.config) return;
+
+  // Already loaded
+  if (window.JitsiMeetJS && window.config) {
+    // if base changes across runtime, we don't attempt to hot-swap globals
+    if (jitsiLoadedBaseUrl && jitsiLoadedBaseUrl !== baseUrl) {
+      // silently keep existing
+    }
+    return;
+  }
+
+  // In-flight loader
   if (jitsiLoaderPromise) return jitsiLoaderPromise;
+
+  jitsiLoadedBaseUrl = baseUrl;
+
+  const cfgSrc = `${baseUrl}${JITSI_CONFIG_PATH}`;
+  const libSrc = `${baseUrl}${JITSI_LIB_PATH}`;
 
   jitsiLoaderPromise = new Promise<void>((resolve, reject) => {
     let loaded = 0;
@@ -71,21 +168,21 @@ async function loadJitsiScripts(): Promise<void> {
     };
     const onError = (src: string) => reject(new Error("Failed to load Jitsi script: " + src));
 
-    if (!document.querySelector(`script[src="${JITSI_CONFIG_URL}"]`)) {
+    if (!document.querySelector(`script[src="${cfgSrc}"]`)) {
       const sc = document.createElement("script");
-      sc.src = JITSI_CONFIG_URL;
+      sc.src = cfgSrc;
       sc.async = true;
       sc.onload = done;
-      sc.onerror = () => onError(JITSI_CONFIG_URL);
+      sc.onerror = () => onError(cfgSrc);
       document.head.appendChild(sc);
     } else done();
 
-    if (!document.querySelector(`script[src="${JITSI_LIB_URL}"]`)) {
+    if (!document.querySelector(`script[src="${libSrc}"]`)) {
       const sc = document.createElement("script");
-      sc.src = JITSI_LIB_URL;
+      sc.src = libSrc;
       sc.async = true;
       sc.onload = done;
-      sc.onerror = () => onError(JITSI_LIB_URL);
+      sc.onerror = () => onError(libSrc);
       document.head.appendChild(sc);
     } else done();
   });
@@ -96,6 +193,7 @@ async function loadJitsiScripts(): Promise<void> {
 // ============================================================================
 // JITSI ENGINE
 // ============================================================================
+
 export class JitsiEngine {
   // PUBLIC-ish settings (persisted in state/UI)
   public mediaSettings = {
@@ -124,6 +222,13 @@ export class JitsiEngine {
   private localScreenshareTrack: JitsiTrack | null = null;
 
   private disposed = false;
+
+  // A/B host selection (frozen per engine instance)
+  private abGroup: AbGroup = "A";
+  private jitsiHost: string = JITSI_HOST_A;
+  private jitsiHttpScheme: "http" | "https" = "https";
+  private jitsiWsScheme: "ws" | "wss" = "wss";
+  private jitsiBaseUrl: string = `https://${JITSI_HOST_A}`;
 
   // last join args (safe rejoin)
   private lastJoinRoomName: string | null = null;
@@ -368,11 +473,7 @@ export class JitsiEngine {
   // ============================================================================
   // Register <video> elements (for black-video recovery)
   // ============================================================================
-  public registerVideoElement(
-    pid: string,
-    el: HTMLVideoElement | null | undefined,
-    kind: "video" | "screen" = "video"
-  ) {
+  public registerVideoElement(pid: string, el: HTMLVideoElement | null | undefined, kind: "video" | "screen" = "video") {
     if (!pid) return;
     const map = kind === "screen" ? this.screenElByPid : this.videoElByPid;
     if (!el) {
@@ -459,19 +560,14 @@ export class JitsiEngine {
     const p = this.participants[pid];
     const track = kind === "screen" ? p?.screenTrack : p?.videoTrack;
 
-    // 1) sometimes exists directly on track
     this.safe(() => (track as any)?.requestKeyFrame?.());
     this.safe(() => (track as any)?.requestKeyframe?.());
 
-    // 2) sometimes exists on conference internals (varies by version)
     const anyConf: any = this.conference as any;
     this.safe(() => anyConf?.rtc?.requestKeyFrame?.(pid));
     this.safe(() => anyConf?.rtc?._requestKeyframe?.(pid));
     this.safe(() => anyConf?._room?.requestKeyframe?.(pid));
     this.safe(() => anyConf?._room?.sendKeyframeRequest?.(pid));
-
-    // keep silent by default
-    // console.debug("[keyframe]", pid, kind, reason);
   }
 
   private requestKeyframesForSubscribed(reason: string) {
@@ -501,7 +597,6 @@ export class JitsiEngine {
     if (!this.conference || this.disposed) return;
 
     const now = Date.now();
-    // avoid spamming; enough to cover layer switches after leave/resub
     if (now - this.lastKeyframeRefreshAt < 700) return;
 
     this.clearTimer(this.keyframeRefreshTimer);
@@ -525,7 +620,6 @@ export class JitsiEngine {
 
     const now = Date.now();
 
-    // cleanup state for ids we don't care about
     for (const pid of Array.from(this.videoHealthState.keys())) {
       if (!ids.includes(pid)) this.videoHealthState.delete(pid);
     }
@@ -541,7 +635,6 @@ export class JitsiEngine {
       const track = kind === "screen" ? p.screenTrack : p.videoTrack;
       if (!el || !track) continue;
 
-      // ✅ avoid touching unmounted DOM nodes (kills "Node cannot be found in the current page.")
       if (!this.isLiveNode(el)) {
         if (kind === "screen") this.screenElByPid.delete(pid);
         else this.videoElByPid.delete(pid);
@@ -627,7 +720,6 @@ export class JitsiEngine {
       if (typeof track.attach === "function") this.safe(() => track.attach(el));
       this.safe(() => void el.play().catch(() => { }));
 
-      // ✅ after reattach, request keyframe (this fixes "unfreeze on voice")
       this.requestKeyframe(pid, kind, "recoverParticipantVideo");
 
       st.stuckSince = Date.now();
@@ -659,11 +751,8 @@ export class JitsiEngine {
         if (this.disposed || !this.conference) return;
         this.safe(() => this.conference.selectParticipants?.(original));
 
-        // ✅ after bump restore, ask for keyframe for that participant
         const p = this.participants[pid];
-        const kind: "video" | "screen" =
-          kindHint ||
-          (!!p?.screenTrack && this.screenElByPid.has(pid) ? "screen" : "video");
+        const kind: "video" | "screen" = kindHint || (!!p?.screenTrack && this.screenElByPid.has(pid) ? "screen" : "video");
 
         this.requestKeyframe(pid, kind, "bumpParticipantSubscription");
       }, 220);
@@ -674,13 +763,20 @@ export class JitsiEngine {
   // Join / Conference lifecycle
   // ============================================================================
   async initAndJoin(roomName: string, userName: string): Promise<void> {
-    await loadJitsiScripts();
+    // Pick host once for this engine instance
+    this.abGroup = chooseAbGroup();
+    this.jitsiHost = hostForGroup(this.abGroup);
+    this.jitsiHttpScheme = schemeForCurrentPage();
+    this.jitsiWsScheme = wsSchemeForHttpScheme(this.jitsiHttpScheme);
+    this.jitsiBaseUrl = `${this.jitsiHttpScheme}://${this.jitsiHost}`;
+
+    await loadJitsiScripts(this.jitsiBaseUrl);
 
     // store args for safe rejoin
     this.lastJoinRoomName = roomName;
     this.lastJoinUserName = userName;
 
-    // guard double-init/join (router double mount, trailing slash, etc.)
+    // guard double-init/join
     if (this.joinInFlight) return;
     this.joinInFlight = true;
     this.joinedOnce = false;
@@ -700,8 +796,17 @@ export class JitsiEngine {
 
     this.JitsiMeetJS.init({ disableP2P: true, disableAudioLevels: true });
 
-    const serviceUrl = this.config.websocket || this.config.bosh || `wss://${JITSI_DOMAIN}/xmpp-websocket`;
-    const options = { hosts: this.config.hosts, serviceUrl, clientNode: this.config.clientNode, p2p: { enabled: false } };
+    const serviceUrl =
+      this.config.websocket ||
+      this.config.bosh ||
+      `${this.jitsiWsScheme}://${this.jitsiHost}/xmpp-websocket`;
+
+    const options = {
+      hosts: this.config.hosts,
+      serviceUrl,
+      clientNode: this.config.clientNode,
+      p2p: { enabled: false },
+    };
 
     const connection = new this.JitsiMeetJS.JitsiConnection(null, undefined, options);
     this.connection = connection;
@@ -799,7 +904,6 @@ export class JitsiEngine {
       applySubsSoon(true);
       topologyChanged();
 
-      // watchdog
       this.clearIntervalRef(this.subsWatchdog);
       this.subsWatchdog = setInterval(() => {
         if (this.disposed) return;
@@ -842,11 +946,9 @@ export class JitsiEngine {
 
       this.emitParticipants();
 
-      // ✅ PATCH: on leave, do NOT trigger global topology hard reset / global nudge.
-      // Only apply new subscriptions + request keyframes.
       applySubsSoon(true);
       this.scheduleKeyframeRefresh(120, "USER_LEFT");
-      this.triggerLeaveRecovery("USER_LEFT"); // now lightweight (reattach + keyframe), no setLastN(0)
+      this.triggerLeaveRecovery("USER_LEFT");
     });
 
     conf.on(events.conference.DISPLAY_NAME_CHANGED, (id: string, displayName: string) => {
@@ -877,10 +979,9 @@ export class JitsiEngine {
       if (isLocalCameraOrAudio(track)) {
         applySubsSoon(false);
       } else {
-        // ✅ PATCH: for remote track removed, don't do global hard resets or setLastN(0) nudges.
         applySubsSoon(true);
         this.scheduleKeyframeRefresh(140, "TRACK_REMOVED");
-        this.triggerLeaveRecovery("TRACK_REMOVED"); // lightweight
+        this.triggerLeaveRecovery("TRACK_REMOVED");
       }
       this.scheduleHealthTickSoon();
     });
@@ -968,7 +1069,6 @@ export class JitsiEngine {
       } finally {
         this.camToggling = false;
 
-        // reapply bg after toggle
         if (this.bgPrefs.mode !== "none") {
           void this.enqueueBgOp("toggleVideoMute:post-bg", async () => {
             await this.applyBgNow("toggleVideoMute:post-bg");
@@ -1048,19 +1148,16 @@ export class JitsiEngine {
     this.clearTimer(this.keyframeRefreshTimer);
     this.keyframeRefreshTimer = null;
 
-    // remove resume handlers
     this.safe(() => (this as any).__resumeRemovers?.());
     (this as any).__resumeRemovers = null;
     this.resumeHandlersAttached = false;
 
     this.stopVideoHealthMonitor();
 
-    // Clear BG
     await this.safeAsync(async () => {
       await this.clearAnyBg(false, "dispose");
     });
 
-    // screenshare
     await this.safeAsync(async () => {
       if (this.localScreenshareTrack) {
         await this.safeAsync(async () => this.conference?.removeTrack?.(this.localScreenshareTrack));
@@ -1069,7 +1166,6 @@ export class JitsiEngine {
       }
     });
 
-    // audio
     await this.safeAsync(async () => {
       if (this.localAudioTrack) {
         await this.safeAsync(async () => this.conference?.removeTrack?.(this.localAudioTrack));
@@ -1078,7 +1174,6 @@ export class JitsiEngine {
       }
     });
 
-    // video (outgoing + base if different)
     await this.safeAsync(async () => {
       const outgoing = this.localVideoTrack;
       if (outgoing) {
@@ -1422,8 +1517,7 @@ export class JitsiEngine {
 
       if (s && typeof s.getTracks !== "function") {
         if (typeof MediaStreamTrack !== "undefined" && s instanceof MediaStreamTrack) s = new MediaStream([s]);
-        else if (s?.track && typeof MediaStreamTrack !== "undefined" && s.track instanceof MediaStreamTrack)
-          s = new MediaStream([s.track]);
+        else if (s?.track && typeof MediaStreamTrack !== "undefined" && s.track instanceof MediaStreamTrack) s = new MediaStream([s.track]);
         else if (typeof s?.getOriginalStream === "function") {
           const maybe = s.getOriginalStream();
           if (maybe && typeof maybe.then === "function") throw new Error("[bg] startEffect expects sync MediaStream");
@@ -1473,7 +1567,6 @@ export class JitsiEngine {
     if (!this.effectsSupported) throw new Error("setEffect not supported");
     if (this.effectsCompatibility === "incompatible") throw new Error(`setEffect incompatible: ${this.effectsIncompatReason}`);
 
-    // skip if muted
     const wasMuted = (() => {
       try {
         return track.isMuted?.() === true;
@@ -1483,7 +1576,6 @@ export class JitsiEngine {
     })();
     if (wasMuted) return;
 
-    // ensure stream exists
     try {
       const ms = await Promise.resolve(track.getOriginalStream?.());
       if (!ms || typeof ms.getTracks !== "function") return;
@@ -1513,7 +1605,6 @@ export class JitsiEngine {
       await this.safeSetEffect(track, effect);
       this.videoEffect = effect;
 
-      // if it muted unexpectedly, unmute
       this.safeAsync(async () => {
         const nowMuted = track.isMuted?.() === true;
         if (!wasMuted && nowMuted && typeof track.unmute === "function") await track.unmute();
@@ -1590,8 +1681,7 @@ export class JitsiEngine {
     const processed = this.bgProcessedTrack;
 
     if (processed && base) {
-      if (typeof this.conference.replaceTrack === "function")
-        await this.safeAsync(async () => this.conference.replaceTrack(processed, base));
+      if (typeof this.conference.replaceTrack === "function") await this.safeAsync(async () => this.conference.replaceTrack(processed, base));
       else {
         await this.safeAsync(async () => this.conference.removeTrack?.(processed));
         await this.safeAsync(async () => this.conference.addTrack?.(base));
@@ -1623,7 +1713,6 @@ export class JitsiEngine {
     if (this.bgPrefs.mode === "none") return;
     if (!this.localVideoTrack) return;
 
-    // clear stale base
     if (this.bgBaseVideoTrack) {
       try {
         const ms = await Promise.resolve(this.bgBaseVideoTrack.getOriginalStream?.());
@@ -1683,7 +1772,6 @@ export class JitsiEngine {
 
       const oldOutgoing = this.localVideoTrack;
 
-      // update refs first
       this.localVideoTrack = processedJitsiTrack;
       if (this.localUserId) {
         const entry = this.tracksByParticipant.get(this.localUserId) || {};
@@ -1693,8 +1781,7 @@ export class JitsiEngine {
         this.emitParticipants();
       }
 
-      if (oldOutgoing && typeof this.conference.replaceTrack === "function")
-        await this.conference.replaceTrack(oldOutgoing, processedJitsiTrack);
+      if (oldOutgoing && typeof this.conference.replaceTrack === "function") await this.conference.replaceTrack(oldOutgoing, processedJitsiTrack);
       else if (oldOutgoing) {
         await this.safeAsync(async () => this.conference.removeTrack?.(oldOutgoing));
         await this.conference.addTrack(processedJitsiTrack);
@@ -1713,9 +1800,7 @@ export class JitsiEngine {
         const delay = 250 * this.bgReplaceRetryCount;
         setTimeout(() => {
           if (this.disposed) return;
-          void this.enqueueBgOp(`replaceTrack-retry#${this.bgReplaceRetryCount}`, () =>
-            this.applyBgNow(`replaceTrack-retry#${this.bgReplaceRetryCount}`)
-          );
+          void this.enqueueBgOp(`replaceTrack-retry#${this.bgReplaceRetryCount}`, () => this.applyBgNow(`replaceTrack-retry#${this.bgReplaceRetryCount}`));
         }, delay);
       }
     } finally {
@@ -1797,7 +1882,6 @@ export class JitsiEngine {
     const local = this.participants[this.localUserId];
     if (local?.audioMuted) return;
 
-    // if current audio is usable, stop
     try {
       if (this.localAudioTrack) {
         const ms = await Promise.resolve(this.localAudioTrack.getOriginalStream?.());
@@ -1806,7 +1890,6 @@ export class JitsiEngine {
       }
     } catch { }
 
-    // adopt from conference if usable
     try {
       const confAudio = this.getConferenceLocalAudioTrack();
       if (confAudio) {
@@ -1824,7 +1907,6 @@ export class JitsiEngine {
       }
     } catch { }
 
-    // create fresh
     try {
       const tracks = await this.JitsiMeetJS.createLocalTracks({
         devices: ["audio"],
@@ -1849,7 +1931,6 @@ export class JitsiEngine {
   private async ensureLocalVideoTrack(): Promise<void> {
     if (this.disposed || !this.JitsiMeetJS || !this.conference) return;
 
-    // do not resurrect if user intentionally off
     try {
       if (this.localUserId && this.participants[this.localUserId]?.videoMuted) return;
     } catch { }
@@ -1857,7 +1938,6 @@ export class JitsiEngine {
     const needBase = this.bgImplMode === "replaceTrack" && this.bgBaseVideoTrack;
     const baseCandidate = needBase ? this.bgBaseVideoTrack : this.localVideoTrack;
 
-    // if candidate alive and (if replaceTrack) outgoing alive => done
     try {
       const ms = await Promise.resolve(baseCandidate?.getOriginalStream?.());
       const vt = ms?.getVideoTracks?.()?.[0];
@@ -1905,7 +1985,6 @@ export class JitsiEngine {
       return;
     }
 
-    // non-replaceTrack
     const oldVideo = this.localVideoTrack;
 
     if (oldVideo) {
@@ -1961,7 +2040,6 @@ export class JitsiEngine {
       await this.waitEffectIdle(track);
       await this.safeAsync(async () => this.clearAnyBg(true, "disableLocalVideoHard"));
 
-      // refresh to actual conf track (base after bg clear)
       track = this.getConferenceLocalVideoTrack() || this.localVideoTrack || track;
 
       await this.safeAsync(async () => this.conference.removeTrack?.(track));
@@ -2010,7 +2088,6 @@ export class JitsiEngine {
 
       await this.replaceOrAddLocalVideoTrack(newVideo);
 
-      // reset bg pointers (prefs stay)
       this.bgBaseVideoTrack = null;
       this.bgProcessedTrack = null;
       this.bgProcessedStream = null;
@@ -2271,12 +2348,9 @@ export class JitsiEngine {
       this.conference.setLastN?.(desiredLastN);
       this.conference.setReceiverVideoConstraint?.(h);
       this.conference.setReceiverAudioConstraint?.(true);
-      if (typeof this.conference.selectParticipants === "function")
-        this.conference.selectParticipants(finalRemoteIds.slice(0, desiredLastN));
+      if (typeof this.conference.selectParticipants === "function") this.conference.selectParticipants(finalRemoteIds.slice(0, desiredLastN));
 
-      // ✅ after any subs apply, request keyframes (prevents "unfreeze only on voice")
       this.scheduleKeyframeRefresh(120, "applyVideoSubscriptions");
-
       this.scheduleHealthTickSoon();
     } catch { }
   }
@@ -2294,7 +2368,6 @@ export class JitsiEngine {
       const desiredLastN = Math.min(finalRemoteIds.length, this.MAX_LAST_N);
       const h = this.pickReceiverConstraintHeight(desiredLastN);
 
-      // NOTE: kept for rare "stack is wedged" cases, but not used on leave anymore.
       this.safe(() => this.conference.selectParticipants?.([]));
       this.safe(() => this.conference.setLastN?.(0));
 
@@ -2330,7 +2403,6 @@ export class JitsiEngine {
     this.softResetInFlight = true;
 
     try {
-      // NOTE: kept but no longer used as a "leave nudge" by default.
       this.safe(() => this.conference.selectParticipants?.([]));
       this.safe(() => this.conference.setLastN?.(0));
 
@@ -2392,12 +2464,10 @@ export class JitsiEngine {
         if (typeof track.attach === "function") this.safe(() => track.attach(el));
         this.safe(() => void el.play().catch(() => { }));
 
-        // ✅ request keyframe after reattach
         this.requestKeyframe(pid, kind, `reattachAllSubscribedRemoteVideos:${reason}`);
       } catch { }
     }
 
-    // no more automatic soft/hard reset here
     this.scheduleKeyframeRefresh(120, `reattachAll:${reason}`);
   }
 
@@ -2411,7 +2481,6 @@ export class JitsiEngine {
     const { ids } = this.getSubscribedRemoteIds();
     if (!ids.length) return;
 
-    // ✅ PATCH: lightweight leave recovery = reattach + keyframes
     setTimeout(() => {
       if (!this.disposed) void this.reattachAllSubscribedRemoteVideos(`leaveRecovery:now:${reason}`);
     }, 0);
