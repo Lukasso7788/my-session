@@ -13,6 +13,10 @@ import AuthCallback from "./pages/AuthCallback";
 import PricingPage from "./pages/PricingPage";
 import UpdatesPage from "./pages/UpdatesPage";
 
+// ✅ NEW (Privacy + Data deletion)
+import PrivacyPage from "./pages/PrivacyPage";
+import DataDeletionPage from "./pages/DataDeletionPage";
+
 import AppLayout from "./layouts/AppLayout";
 import { CreateSessionModalProvider } from "./context/CreateSessionModalContext";
 
@@ -32,6 +36,10 @@ export default function App() {
           <Route path="/updates" element={<UpdatesPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/profile/:id" element={<PublicProfilePage />} />
+
+          {/* ✅ NEW: public legal pages */}
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/data-deletion" element={<DataDeletionPage />} />
         </Route>
 
         {/* Routes WITHOUT header (обычно так лучше) */}
