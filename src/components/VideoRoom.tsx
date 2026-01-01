@@ -58,14 +58,7 @@ function Icon({
     alt = "",
     theme = "dark",
 }: {
-    name:
-    | "mic-on"
-    | "mic-off"
-    | "camera-on"
-    | "camera-off"
-    | "screen-share"
-    | "reaction"
-    | "leave";
+    name: "mic-on" | "mic-off" | "camera-on" | "camera-off" | "screen-share" | "reaction" | "leave";
     className?: string;
     alt?: string;
     theme?: "dark" | "light";
@@ -108,16 +101,7 @@ function attachTrackToMedia(
 ) {
     if (!track || !element) return;
 
-    // Hard-reset element media object first (helps after leave/rejoin / stream changes)
-    try {
-        (element as any).srcObject = null;
-    } catch { }
-
-    // ✅ IMPORTANT: detach from ALL elements first (prevents stale attachments causing black video)
-    try {
-        track.detach?.();
-    } catch { }
-    // and also from this element best-effort
+    // ✅ safety: detach before attach (avoid double attachments / stale streams)
     try {
         track.detach?.(element);
     } catch { }
@@ -135,10 +119,7 @@ function attachTrackToMedia(
 
     return () => {
         try {
-            track.detach?.();
-        } catch { }
-        try {
-            track.detach?.(element);
+            track.detach(element);
         } catch { }
         try {
             (element as any).srcObject = null;
@@ -229,29 +210,13 @@ function AudioSinkItem({ p }: { p: JitsiParticipant }) {
         if (!p.audioTrack) return;
         if (p.isLocal) return;
 
-        // Detach all first to avoid stale connections
-        try {
-            p.audioTrack.detach?.();
-        } catch { }
-
         try {
             p.audioTrack.attach(audioRef.current);
         } catch { }
 
-        try {
-            const pr = (audioRef.current as any).play?.();
-            (pr as any)?.catch?.(() => { });
-        } catch { }
-
         return () => {
             try {
-                p.audioTrack.detach?.();
-            } catch { }
-            try {
-                p.audioTrack.detach?.(audioRef.current!);
-            } catch { }
-            try {
-                (audioRef.current as any).srcObject = null;
+                p.audioTrack.detach(audioRef.current!);
             } catch { }
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -294,21 +259,22 @@ function ParticipantTile({
     const hasVideoTrack = !!participant.videoTrack;
     const streamV = useTrackStreamVersion(participant.videoTrack);
 
-    // ✅ register <video> element so engine can "black video recovery" reattach correctly
-    // Also: ensure unregister happens only once (ref callback handles it)
+    // ✅ IMPORTANT: register <video> element so engine can "black video recovery" reattach correctly
     const handleVideoRef = useCallback(
         (el: HTMLVideoElement | null) => {
-            // unregister old element if React replaces it
-            if (videoRef.current && videoRef.current !== el) {
-                onRegisterVideoElement?.(participant.id, null, "video");
-            }
-
             videoRef.current = el;
             onRegisterVideoElement?.(participant.id, el, "video");
         },
         [onRegisterVideoElement, participant.id]
     );
 
+    useEffect(() => {
+        return () => {
+            onRegisterVideoElement?.(participant.id, null, "video");
+        };
+    }, [onRegisterVideoElement, participant.id]);
+
+    // ✅ attach/detach via helper
     useEffect(() => {
         const el = videoRef.current;
         if (!el) return;
@@ -359,9 +325,7 @@ function ParticipantTile({
 
             {/* ✅ Placeholder overlay: centered + NO "Camera off" */}
             {showPlaceholder && (
-                <div
-                    className={`absolute inset-0 flex flex-col items-center justify-center text-center ${placeholderBg}`}
-                >
+                <div className={`absolute inset-0 flex flex-col items-center justify-center text-center ${placeholderBg}`}>
                     <div className="relative w-16 h-16 rounded-full overflow-hidden border border-black/10">
                         <img
                             src={PLACEHOLDER_AVATAR_URL}
@@ -393,6 +357,8 @@ function ParticipantTile({
                             theme={theme}
                         />
                     </div>
+
+                    {/* ❌ убрали полностью "Camera off" */}
                 </div>
             )}
 
@@ -537,16 +503,18 @@ function ScreenShareLayoutDesktop({
     );
     const screenStreamV = useTrackStreamVersion(screenSharer.screenTrack);
 
+    // ✅ use callback ref to guarantee registration happens when element exists
     const handleScreenRef = useCallback(
         (el: HTMLVideoElement | null) => {
-            if (screenVideoRef.current && screenVideoRef.current !== el) {
-                onRegisterVideoElement?.(screenSharer.id, null, "screen");
-            }
             screenVideoRef.current = el;
             onRegisterVideoElement?.(screenSharer.id, el, "screen");
         },
         [onRegisterVideoElement, screenSharer.id]
     );
+
+    useEffect(() => {
+        return () => onRegisterVideoElement?.(screenSharer.id, null, "screen");
+    }, [onRegisterVideoElement, screenSharer.id]);
 
     useEffect(() => {
         const el = screenVideoRef.current;
@@ -565,8 +533,8 @@ function ScreenShareLayoutDesktop({
         <div className="relative w-full h-full flex flex-row gap-3 p-3 min-h-0">
             <div
                 className={`relative flex-1 overflow-hidden rounded-2xl ${theme === "light"
-                        ? "bg-white ring-1 ring-black/10"
-                        : "bg-[#0B1220] ring-1 ring-white/10"
+                    ? "bg-white ring-1 ring-black/10"
+                    : "bg-[#0B1220] ring-1 ring-white/10"
                     } min-h-0`}
             >
                 <video
@@ -631,14 +599,15 @@ function ScreenShareLayoutMobile({
 
     const handleScreenRef = useCallback(
         (el: HTMLVideoElement | null) => {
-            if (screenVideoRef.current && screenVideoRef.current !== el) {
-                onRegisterVideoElement?.(screenSharer.id, null, "screen");
-            }
             screenVideoRef.current = el;
             onRegisterVideoElement?.(screenSharer.id, el, "screen");
         },
         [onRegisterVideoElement, screenSharer.id]
     );
+
+    useEffect(() => {
+        return () => onRegisterVideoElement?.(screenSharer.id, null, "screen");
+    }, [onRegisterVideoElement, screenSharer.id]);
 
     useEffect(() => {
         const el = screenVideoRef.current;
@@ -660,8 +629,8 @@ function ScreenShareLayoutMobile({
         >
             <div
                 className={`w-full aspect-video overflow-hidden rounded-2xl ${theme === "light"
-                        ? "bg-white ring-1 ring-black/10"
-                        : "bg-[#0B1220] ring-1 ring-white/10"
+                    ? "bg-white ring-1 ring-black/10"
+                    : "bg-[#0B1220] ring-1 ring-white/10"
                     } relative`}
             >
                 <video
@@ -792,35 +761,15 @@ export function VideoRoom(props: VideoRoomProps) {
         const visibleList = screenSharer
             ? [screenSharer, ...screenOthers]
             : pageParticipants;
-
         return visibleList
             .map((p) => p.id)
             .filter((id) => id && id !== localParticipant?.id);
     }, [screenSharer, screenOthers, pageParticipants, localParticipant?.id]);
 
-    // ✅ CRITICAL: prevent transient [] from causing global unsubscribe / lastN=0
-    // - Debounce: normal sets 150ms
-    // - Empty sets: wait 700ms and only commit if still empty
-    const lastSentKeyRef = useRef<string>("");
-
     useEffect(() => {
-        const ids = visibleRemoteIds || [];
-        const key = ids.join(",");
-
-        if (key === lastSentKeyRef.current) return;
-
-        const delay = ids.length === 0 ? 700 : 150;
-
-        const t = window.setTimeout(() => {
-            const nowKey = (visibleRemoteIds || []).join(",");
-            if (nowKey !== key) return;
-
-            lastSentKeyRef.current = key;
-            onVisibleVideoIdsChange?.(ids);
-        }, delay);
-
-        return () => window.clearTimeout(t);
-    }, [visibleRemoteIds, onVisibleVideoIdsChange]);
+        const t = setTimeout(() => onVisibleVideoIdsChange?.(visibleRemoteIds), 150);
+        return () => clearTimeout(t);
+    }, [onVisibleVideoIdsChange, visibleRemoteIds]);
 
     const isAudioMuted = !!localParticipant?.audioMuted;
     const isVideoMuted = !!localParticipant?.videoMuted;
@@ -850,7 +799,8 @@ export function VideoRoom(props: VideoRoomProps) {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, [showReactionsMenu]);
 
-    const baseBtn = "w-10 h-10 rounded-2xl flex items-center justify-center transition";
+    const baseBtn =
+        "w-10 h-10 rounded-2xl flex items-center justify-center transition";
 
     const goPrev = () => setScrollIndex((i) => Math.max(0, i - SCROLL_STEP));
     const goNext = () => setScrollIndex((i) => Math.min(maxStartIndex, i + SCROLL_STEP));
@@ -964,7 +914,9 @@ export function VideoRoom(props: VideoRoomProps) {
                                 (isLight
                                     ? "bg-white/85 border border-black/10 text-black/70"
                                     : "bg-black/45 border border-white/10 text-white/80") +
-                                (scrollIndex >= maxStartIndex ? " opacity-40 cursor-not-allowed" : " hover:opacity-90")
+                                (scrollIndex >= maxStartIndex
+                                    ? " opacity-40 cursor-not-allowed"
+                                    : " hover:opacity-90")
                             }
                             title="Scroll forward"
                         >
@@ -993,7 +945,7 @@ export function VideoRoom(props: VideoRoomProps) {
                             <Icon
                                 name={isAudioMuted ? "mic-off" : "mic-on"}
                                 className="w-5 h-5"
-                                theme={isAudioMuted ? "dark" : theme} // ✅ mic-off always white
+                                theme={isAudioMuted ? "dark" : theme}   // ✅ mic-off всегда белая
                             />
                         </button>
 
@@ -1032,7 +984,11 @@ export function VideoRoom(props: VideoRoomProps) {
                         <div className="relative" ref={menuRef}>
                             <button
                                 onClick={() => setShowReactionsMenu((v) => !v)}
-                                className={baseBtn + " " + (isLight ? "bg-black/5 hover:bg-black/10" : "bg-[#111827] hover:bg-[#1f2937]")}
+                                className={
+                                    baseBtn +
+                                    " " +
+                                    (isLight ? "bg-black/5 hover:bg-black/10" : "bg-[#111827] hover:bg-[#1f2937]")
+                                }
                                 title="Reactions"
                             >
                                 <Icon name="reaction" className="w-5 h-5" theme={theme} />
