@@ -1,0 +1,28 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+* {
+    font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important;
+}
+
+// hide bottom toolbar + filmstrip, keep modals/panes visible
+.toolbox,
+.toolbox-content,
+.new-toolbox,
+#new-toolbox,
+#toolbox,
+#toolbox-content {
+    display: none !important;
+}
+
+.filmstrip,
+.filmstrip__toolbar,
+.videogrid_filmstrip {
+    display: none !important;
+}
+
+// optional: hide top-left watermark area if still visible in some builds
+.watermark,
+.leftwatermark,
+.rightwatermark {
+    display: none !important;
+}
