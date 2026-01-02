@@ -15,6 +15,11 @@
 // - Audio system (unlock + welcome loop + stage sounds + break-end sound) preserved
 // - Silent-room detection preserved
 // - Right panel (Chat/Intentions) preserved
+//
+// ✅ NEW FIXES (YOU ASKED):
+// - Kill native Jitsi hover controls on iframe (hard overlay mask inside our container)
+// - Settings now WORK 100% from bottom bar via our own modal + set*Device commands
+//   (native Jitsi settings modal is flaky across builds)
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -298,6 +303,18 @@ export default function RoomPageIFrame() {
     // right panel (for chat/intentions only)
     const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(false);
     const [rightTab, setRightTab] = useState<RightPanelTab>(null);
+
+    // ✅ Our Settings modal (device selection)
+    const [settingsOpen, setSettingsOpen] = useState(false);
+    const [devAudioIn, setDevAudioIn] = useState<MediaDeviceInfo[]>([]);
+    const [devVideoIn, setDevVideoIn] = useState<MediaDeviceInfo[]>([]);
+    const [devAudioOut, setDevAudioOut] = useState<MediaDeviceInfo[]>([]);
+
+    const [selAudioIn, setSelAudioIn] = useState<string>("");
+    const [selVideoIn, setSelVideoIn] = useState<string>("");
+    const [selAudioOut, setSelAudioOut] = useState<string>("");
+
+    const [settingsErr, setSettingsErr] = useState<string>("");
 
     const openRightTab = (tab: RightPanelTab) => {
         if (!tab) {
@@ -831,6 +848,77 @@ export default function RoomPageIFrame() {
     }, [session, id, userName, roomName, navigate, jitsiKey]);
 
     // ============================================
+    // SETTINGS (device selection modal)
+    // ============================================
+    useEffect(() => {
+        if (!settingsOpen) return;
+
+        let cancelled = false;
+
+        (async () => {
+            setSettingsErr("");
+
+            try {
+                // ✅ to see labels in enumerateDevices, we need permission at least once
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+                stream.getTracks().forEach((t) => t.stop());
+
+                const list = await navigator.mediaDevices.enumerateDevices();
+                if (cancelled) return;
+
+                const aIn = list.filter((d) => d.kind === "audioinput");
+                const vIn = list.filter((d) => d.kind === "videoinput");
+                const aOut = list.filter((d) => d.kind === "audiooutput");
+
+                setDevAudioIn(aIn);
+                setDevVideoIn(vIn);
+                setDevAudioOut(aOut);
+
+                if (!selAudioIn && aIn[0]?.deviceId) setSelAudioIn(aIn[0].deviceId);
+                if (!selVideoIn && vIn[0]?.deviceId) setSelVideoIn(vIn[0].deviceId);
+                if (!selAudioOut && aOut[0]?.deviceId) setSelAudioOut(aOut[0].deviceId);
+            } catch (e: any) {
+                if (cancelled) return;
+                setSettingsErr(e?.message || String(e));
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [settingsOpen]);
+
+    const applyDevicesToJitsi = () => {
+        const api = apiRef.current;
+        if (!api) {
+            setSettingsOpen(false);
+            return;
+        }
+
+        setSettingsErr("");
+
+        try {
+            if (selAudioIn) api.executeCommand("setAudioInputDevice", selAudioIn);
+        } catch (e: any) {
+            setSettingsErr((prev) => prev || `Audio input failed: ${e?.message || e}`);
+        }
+
+        try {
+            if (selVideoIn) api.executeCommand("setVideoInputDevice", selVideoIn);
+        } catch (e: any) {
+            setSettingsErr((prev) => prev || `Video input failed: ${e?.message || e}`);
+        }
+
+        // Output device often not supported; ignore errors
+        try {
+            if (selAudioOut) api.executeCommand("setAudioOutputDevice", selAudioOut);
+        } catch { }
+
+        setSettingsOpen(false);
+    };
+
+    // ============================================
     // Controls (bottom bar)
     // ============================================
     const toggleTile = () => {
@@ -879,25 +967,6 @@ export default function RoomPageIFrame() {
         // fallback for forks/older builds
         try {
             api.executeCommand("toggleParticipants");
-        } catch { }
-    };
-
-    // ✅ Native Settings modal exactly like on your screenshot (with fallbacks)
-    const openNativeSettings = () => {
-        const api = apiRef.current;
-        if (!api) return;
-
-        // Primary
-        try {
-            api.executeCommand("toggleSettings");
-        } catch { }
-
-        // Fallbacks for different Jitsi builds
-        try {
-            api.executeCommand("toggleDeviceSelection");
-        } catch { }
-        try {
-            api.executeCommand("openSettings");
         } catch { }
     };
 
@@ -1010,8 +1079,8 @@ export default function RoomPageIFrame() {
                                 <button
                                     onClick={forceReloadJitsi}
                                     className={`px-3 py-2 rounded-xl border transition font-inter text-[13px] ${isLight
-                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                        ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                        : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                         }`}
                                     title="Reload video engine"
                                 >
@@ -1023,8 +1092,8 @@ export default function RoomPageIFrame() {
                                     <button
                                         onClick={() => setSelectedUser(session.host_profile)}
                                         className={`max-[520px]:hidden flex items-center gap-2 px-3 py-2 rounded-xl border transition font-inter text-[13px] ${isLight
-                                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                                : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                             }`}
                                     >
                                         <span className="flex items-center gap-1 leading-none">
@@ -1071,6 +1140,16 @@ export default function RoomPageIFrame() {
                             }`}
                     >
                         <div ref={iframeContainerRef} className="w-full h-full min-h-[60vh]" />
+
+                        {/* ✅ HARD-KILL native Jitsi hover toolbar by masking bottom area */}
+                        <div
+                            className={`pointer-events-none absolute left-0 right-0 bottom-0 h-[92px] ${isLight ? "bg-white/80" : "bg-[#0B1220]/80"
+                                } backdrop-blur`}
+                            style={{
+                                maskImage: "linear-gradient(to top, black 70%, transparent 100%)",
+                                WebkitMaskImage: "linear-gradient(to top, black 70%, transparent 100%)",
+                            }}
+                        />
 
                         {lastErr && (
                             <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow z-30">
@@ -1153,9 +1232,9 @@ export default function RoomPageIFrame() {
                             </button>
 
                             <button
-                                onClick={openNativeSettings}
+                                onClick={() => setSettingsOpen(true)}
                                 className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                                title="Settings (Jitsi)"
+                                title="Settings"
                             >
                                 <Icon name="settings" theme={theme} className="w-5 h-5" />
                             </button>
@@ -1229,6 +1308,108 @@ export default function RoomPageIFrame() {
             </div>
 
             {selectedUser && <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />}
+
+            {/* ✅ OUR SETTINGS MODAL (device selection) */}
+            {settingsOpen && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center px-4">
+                    <div
+                        className="absolute inset-0 bg-black/60"
+                        onClick={() => setSettingsOpen(false)}
+                    />
+                    <div
+                        className={`relative w-full max-w-lg rounded-2xl p-5 shadow-2xl ${isLight ? "bg-white text-black" : "bg-[#0B1220] text-white"
+                            } border ${isLight ? "border-black/10" : "border-white/10"}`}
+                    >
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="font-inter font-semibold text-lg">Settings</div>
+                            <button
+                                onClick={() => setSettingsOpen(false)}
+                                className={`w-9 h-9 rounded-xl flex items-center justify-center ${isLight ? "bg-black/5 hover:bg-black/10" : "bg-white/5 hover:bg-white/10"
+                                    }`}
+                                title="Close"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        {settingsErr && (
+                            <div className="mb-3 text-sm px-3 py-2 rounded-xl bg-red-600 text-white">
+                                {settingsErr}
+                            </div>
+                        )}
+
+                        <div className="space-y-3">
+                            <div>
+                                <div className="text-sm opacity-70 mb-1">Microphone</div>
+                                <select
+                                    value={selAudioIn}
+                                    onChange={(e) => setSelAudioIn(e.target.value)}
+                                    className={`w-full rounded-xl px-3 py-2 ${isLight ? "bg-black/5" : "bg-white/5"
+                                        }`}
+                                >
+                                    {devAudioIn.map((d) => (
+                                        <option key={d.deviceId} value={d.deviceId}>
+                                            {d.label || `Mic (${d.deviceId.slice(0, 6)})`}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <div className="text-sm opacity-70 mb-1">Camera</div>
+                                <select
+                                    value={selVideoIn}
+                                    onChange={(e) => setSelVideoIn(e.target.value)}
+                                    className={`w-full rounded-xl px-3 py-2 ${isLight ? "bg-black/5" : "bg-white/5"
+                                        }`}
+                                >
+                                    {devVideoIn.map((d) => (
+                                        <option key={d.deviceId} value={d.deviceId}>
+                                            {d.label || `Camera (${d.deviceId.slice(0, 6)})`}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <div className="text-sm opacity-70 mb-1">Speaker (optional)</div>
+                                <select
+                                    value={selAudioOut}
+                                    onChange={(e) => setSelAudioOut(e.target.value)}
+                                    className={`w-full rounded-xl px-3 py-2 ${isLight ? "bg-black/5" : "bg-white/5"
+                                        }`}
+                                >
+                                    {devAudioOut.length === 0 ? (
+                                        <option value="">Not supported</option>
+                                    ) : (
+                                        devAudioOut.map((d) => (
+                                            <option key={d.deviceId} value={d.deviceId}>
+                                                {d.label || `Speaker (${d.deviceId.slice(0, 6)})`}
+                                            </option>
+                                        ))
+                                    )}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="mt-5 flex gap-2 justify-end">
+                            <button
+                                onClick={() => setSettingsOpen(false)}
+                                className={`h-10 px-4 rounded-xl ${isLight ? "bg-black/5 hover:bg-black/10" : "bg-white/5 hover:bg-white/10"
+                                    }`}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={applyDevicesToJitsi}
+                                className="h-10 px-5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+                            >
+                                Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/*
         ✅ REQUIRED FILE: /public/jitsi-custom.css

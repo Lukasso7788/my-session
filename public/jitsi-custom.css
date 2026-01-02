@@ -1,28 +1,116 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+/* /public/jitsi-custom.css
+   Injected into Jitsi iframe via configOverwrite.customCssUrl
+*/
 
+/* Inter font */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+
+/* Force Inter everywhere inside Jitsi */
 * {
     font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important;
 }
 
-// hide bottom toolbar + filmstrip, keep modals/panes visible
+/* =========================
+   Hide Jitsi native UI chrome
+   (keep dialogs/panes working)
+   ========================= */
+
+/* Hide bottom toolbar (all variants) */
 .toolbox,
 .toolbox-content,
 .new-toolbox,
 #new-toolbox,
 #toolbox,
-#toolbox-content {
+#toolbox-content,
+.toolbox__content,
+.toolbox__container,
+.toolbar,
+#toolbar {
     display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
 }
 
+/* Hide filmstrip + its toolbar */
 .filmstrip,
 .filmstrip__toolbar,
-.videogrid_filmstrip {
+.videogrid_filmstrip,
+#filmstrip,
+#filmstripToolbar {
     display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
 }
 
-// optional: hide top-left watermark area if still visible in some builds
+/* Hide “hover” controls over tiles (best-effort across builds) */
+.videogrid .toolbar,
+.videogrid .toolbox,
+.videogrid .toolbox-content,
+.videogrid .remote-videomenu,
+.videogrid .video-menu,
+.videogrid .context-menu,
+.videogrid .videogrid_toolbar,
+.videogrid .tile-view .toolbar {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* =========================
+   Remove branding / watermarks
+   ========================= */
 .watermark,
 .leftwatermark,
-.rightwatermark {
+.rightwatermark,
+#watermark,
+#poweredby {
     display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+}
+
+/* Some builds show a brand text/link area */
+.branding,
+.branding__link,
+.branding__image,
+.branding__text {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+}
+
+/* =========================
+   Make sure overlays/dialogs remain usable
+   ========================= */
+
+/* Keep dialogs clickable even if we nuked toolbars broadly */
+.modal-dialog,
+.modal-overlay,
+.dialog,
+.overlay,
+.participants-pane,
+.sideToolbarContainer,
+#sideToolbarContainer,
+#settings,
+#participants {
+    pointer-events: auto !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+/* Ensure the main video area uses full height when filmstrip is hidden */
+.large-video-container,
+.largeVideoContainer,
+.videogrid,
+#largeVideoContainer {
+    height: 100% !important;
+    max-height: 100% !important;
+}
+
+/* Optional: remove any background behind the stage */
+#react {
+    background: transparent !important;
 }
