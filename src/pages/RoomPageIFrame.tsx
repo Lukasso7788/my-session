@@ -7,8 +7,8 @@ import { IntentionsPanel } from "../components/IntentionsPanel";
 import { SessionStageBar } from "../components/SessionStageBar";
 import { UserProfileModal } from "../components/UserProfileModal";
 
-// ✅ FIX: your chat component
-import ChatPanel from "../components/chatpanel";
+// ✅ fixed: correct case-sensitive import for Vercel/Linux
+import ChatPanel from "../components/ChatPanel";
 
 type Stage = {
     name: string;
@@ -27,6 +27,7 @@ declare global {
 const JITSI_DOMAIN = "jitsi.lukassodesign.site";
 
 // ====== YOUR ICONS (put your svg files here) ======
+// If some icons don't exist yet, add them in /public/icons/
 const ICONS = {
     tileOn: "/icons/tile-on.svg",
     tileOff: "/icons/tile-off.svg",
@@ -97,16 +98,17 @@ async function loadJitsiExternalApi(domain: string) {
 
         const existing = document.querySelector(`script[src="${src}"]`);
         if (existing) {
-            const t = window.setInterval(() => {
+            const t = setInterval(() => {
                 if (window.JitsiMeetExternalAPI) {
-                    window.clearInterval(t);
+                    clearInterval(t);
                     resolve();
                 }
             }, 50);
 
-            window.setTimeout(() => {
-                window.clearInterval(t);
-                if (!window.JitsiMeetExternalAPI) reject(new Error("external_api.js loaded but API missing"));
+            setTimeout(() => {
+                clearInterval(t);
+                if (!window.JitsiMeetExternalAPI)
+                    reject(new Error("external_api.js loaded but API missing"));
             }, 6000);
 
             return;
@@ -142,6 +144,7 @@ export default function RoomPageIFrame() {
 
     const [lastErr, setLastErr] = useState<string>("");
 
+    // UI state synced from Jitsi events (best effort)
     const [tile, setTile] = useState(true);
     const [mutedAudio, setMutedAudio] = useState(false);
     const [mutedVideo, setMutedVideo] = useState(false);
@@ -159,7 +162,9 @@ export default function RoomPageIFrame() {
 
             const { data, error } = await supabase
                 .from("sessions")
-                .select("*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)")
+                .select(
+                    "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)"
+                )
                 .eq("id", id)
                 .single();
 
@@ -188,7 +193,11 @@ export default function RoomPageIFrame() {
                 (u?.email ? u.email.split("@")[0] : "");
 
             if (!name && u?.id) {
-                const { data: p } = await supabase.from("profiles").select("full_name").eq("id", u.id).single();
+                const { data: p } = await supabase
+                    .from("profiles")
+                    .select("full_name")
+                    .eq("id", u.id)
+                    .single();
                 name = p?.full_name || "";
             }
 
@@ -202,7 +211,7 @@ export default function RoomPageIFrame() {
     useEffect(() => {
         if (!session?.start_time || !stages.length) return;
 
-        const timer = window.setInterval(() => {
+        const timer = setInterval(() => {
             const diffSec = (Date.now() - new Date(session.start_time).getTime()) / 1000;
 
             let total = 0;
@@ -213,7 +222,9 @@ export default function RoomPageIFrame() {
                 if (diffSec < next) {
                     active = i;
                     const rem = next - diffSec;
-                    setRemainingTime(`${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`);
+                    setRemainingTime(
+                        `${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`
+                    );
                     break;
                 }
                 total = next;
@@ -222,7 +233,7 @@ export default function RoomPageIFrame() {
             setCurrentStage(active);
         }, 1000);
 
-        return () => window.clearInterval(timer);
+        return () => clearInterval(timer);
     }, [session?.start_time, stages]);
 
     // ============================================
@@ -256,6 +267,7 @@ export default function RoomPageIFrame() {
                 await loadJitsiExternalApi(JITSI_DOMAIN);
                 if (destroyed) return;
 
+                // clear container
                 iframeContainerRef.current!.innerHTML = "";
 
                 const api = new window.JitsiMeetExternalAPI(JITSI_DOMAIN, {
@@ -283,7 +295,6 @@ export default function RoomPageIFrame() {
 
                         HIDE_INVITE_MORE_HEADER: true,
 
-                        // ✅ hide Jitsi toolbar completely (we use custom controls)
                         TOOLBAR_BUTTONS: [],
 
                         DISABLE_FOCUS_INDICATOR: true,
@@ -295,15 +306,17 @@ export default function RoomPageIFrame() {
 
                 apiRef.current = api;
 
-                // default tile view
+                // Force tile view on start (best effort)
                 try {
                     api.executeCommand("setTileView", true);
                     setTile(true);
                 } catch { }
 
+                // leave handling
                 api.addEventListener?.("readyToClose", leaveToSessions);
                 api.addEventListener?.("videoConferenceLeft", leaveToSessions);
 
+                // state updates
                 api.addEventListener?.("audioMuteStatusChanged", (e: any) => {
                     if (destroyed) return;
                     setMutedAudio(!!e?.muted);
@@ -390,7 +403,10 @@ export default function RoomPageIFrame() {
     if (!session) {
         return (
             <div className="flex h-screen justify-center items-center text-white bg-slate-900">
-                <button onClick={() => navigate("/sessions")} className="px-4 py-2 rounded bg-slate-700 hover:bg-slate-600">
+                <button
+                    onClick={() => navigate("/sessions")}
+                    className="px-4 py-2 rounded bg-slate-700 hover:bg-slate-600"
+                >
                     Back
                 </button>
             </div>
@@ -410,10 +426,16 @@ export default function RoomPageIFrame() {
                     </div>
 
                     <div className="bg-white p-4 rounded-2xl space-y-3 shadow-sm">
-                        <SessionStageBar stages={stages} startTime={session.start_time} onHoverStage={setHoveredStage} />
+                        <SessionStageBar
+                            stages={stages}
+                            startTime={session.start_time}
+                            onHoverStage={setHoveredStage}
+                        />
                         <div className="flex justify-between text-sm text-slate-700">
                             <span>
-                                {hoveredStage ? `${hoveredStage.name} • ${hoveredStage.duration} min` : stages[currentStage]?.name}
+                                {hoveredStage
+                                    ? `${hoveredStage.name} • ${hoveredStage.duration} min`
+                                    : stages[currentStage]?.name}
                             </span>
                             <span className="text-slate-500">⏱ {remainingTime}</span>
                         </div>
@@ -436,9 +458,13 @@ export default function RoomPageIFrame() {
                         className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden relative h-[77vh]"
                         style={{ minHeight: "70vh" }}
                     >
-                        <div ref={iframeContainerRef} className="w-full h-full" style={{ minHeight: "70vh" }} />
+                        <div
+                            ref={iframeContainerRef}
+                            className="w-full h-full"
+                            style={{ minHeight: "70vh" }}
+                        />
 
-                        {/* Custom control bar */}
+                        {/* Custom control bar (your icons) */}
                         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3">
                             <button
                                 onClick={toggleMic}
@@ -515,6 +541,7 @@ export default function RoomPageIFrame() {
                     {/* RIGHT: DARK PANEL */}
                     <div className="rounded-2xl border border-slate-800 bg-slate-900/60 text-white shadow-lg h-[77vh] overflow-hidden">
                         <div className="p-4 h-full flex flex-col gap-4">
+                            {/* Intentions (dark container) */}
                             <div className="flex-1 min-h-0 rounded-2xl border border-slate-800 bg-slate-900/70 overflow-hidden">
                                 <div className="px-4 py-3 border-b border-slate-800 text-xs font-semibold text-slate-300">
                                     Intentions
@@ -524,20 +551,25 @@ export default function RoomPageIFrame() {
                                 </div>
                             </div>
 
-                            {/* ✅ your chatpanel */}
+                            {/* ✅ Your custom chat */}
                             <div className="h-[42%] min-h-[220px] rounded-2xl border border-slate-800 bg-slate-900/70 overflow-hidden">
-                                <div className="px-4 py-3 border-b border-slate-800 text-xs font-semibold text-slate-300">Chat</div>
+                                <div className="px-4 py-3 border-b border-slate-800 text-xs font-semibold text-slate-300">
+                                    Chat
+                                </div>
                                 <div className="h-[calc(100%-44px)]">
-                                    {/* If your chatpanel needs props, add them here */}
-                                    <ChatPanel />
+                                    <ChatPanel sessionId={id!} />
                                 </div>
                             </div>
+
+                            {/* NOTE: participants list intentionally NOT here */}
                         </div>
                     </div>
                 </div>
             </div>
 
-            {selectedUser && <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />}
+            {selectedUser && (
+                <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
+            )}
         </div>
     );
 }
