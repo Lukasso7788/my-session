@@ -1,15 +1,10 @@
 /* /public/jitsi-custom.css
    Injected into Jitsi iframe via configOverwrite.customCssUrl
 
-   GOAL (for "settings-only toolbar"):
-   - Keep ONLY the native Jitsi "settings" button visible
-   - Place it TOP-RIGHT
-   - Hide every other native chrome (filmstrip, watermarks, extra buttons)
-   - Do NOT break dialogs / overlays / settings modal
-
-   Notes:
-   - Jitsi DOM/CSS varies across builds; selectors are "best effort".
-   - We avoid hiding the whole toolbox container because we need the settings button.
+   GOAL (for "NO native controls"):
+   - Hide ALL native Jitsi chrome: toolbar, filmstrip, hover menus, overlays that create bottom blur
+   - Keep dialogs/modals usable (settings modal etc.)
+   - Settings доступен через External API (toggleSettings) из нашего UI
 */
 
 /* =========================
@@ -32,7 +27,9 @@
 .branding,
 .branding__link,
 .branding__image,
-.branding__text {
+.branding__text,
+.jitsi-watermark,
+#jitsi-watermark {
     display: none !important;
     visibility: hidden !important;
     opacity: 0 !important;
@@ -45,7 +42,9 @@
 .filmstrip__toolbar,
 .videogrid_filmstrip,
 #filmstrip,
-#filmstripToolbar {
+#filmstripToolbar,
+.thumbnail-filmstrip,
+#thumbnail-filmstrip {
     display: none !important;
     visibility: hidden !important;
     opacity: 0 !important;
@@ -58,166 +57,48 @@
 .videogrid,
 #largeVideoContainer {
     height: 100% !important;
-    max-height: 100% !important*;
+    max-height: 100% !important;
 }
 
-/* Optional: remove background behind stage */
-#react {
+/* Optional: transparent app background */
+html,
+body,
+#react,
+#app {
     background: transparent !important;
 }
 
 /* =========================
-   TOOLBAR: keep only SETTINGS button
+   TOOLBAR: hide EVERYTHING (no native controls)
    ========================= */
-
-/* 1) Make toolbox container float at top-right (works on many builds) */
 .toolbox,
+.toolbox-content,
 .new-toolbox,
 #new-toolbox,
 #toolbox,
-#toolbar {
-    position: fixed !important;
-    top: 14px !important;
-    right: 14px !important;
-    left: auto !important;
-    bottom: auto !important;
-
-    width: auto !important;
-    height: auto !important;
-
-    background: transparent !important;
-    box-shadow: none !important;
-    border: 0 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-
-    z-index: 999999 !important;
-    pointer-events: auto !important;
-    opacity: 1 !important;
-    visibility: visible !important;
-}
-
-/* 2) Hide any "bottom bar" sizing/layout inside toolbox */
-.toolbox__content,
-.toolbox-content,
 #toolbox-content,
+.toolbox__content,
+.toolbox__container,
 .toolbar,
-.toolbox__container {
-    background: transparent !important;
-    box-shadow: none !important;
-    border: 0 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-}
-
-/* 3) Kill separators / extra chrome if present */
-.toolbox-divider,
-.toolbox__divider,
-.horizontal-separator,
-.vertical-separator {
-    display: none !important;
-}
-
-/* 4) Hide ALL toolbar buttons by default */
-.toolbox button,
-.toolbox a[role="button"],
-.toolbox [role="button"],
-.new-toolbox button,
-.new-toolbox a[role="button"],
-.new-toolbox [role="button"],
-#toolbox button,
-#toolbox a[role="button"],
-#toolbox [role="button"],
-#new-toolbox button,
-#new-toolbox a[role="button"],
-#new-toolbox [role="button"],
-#toolbar button,
-#toolbar a[role="button"],
-#toolbar [role="button"] {
+#toolbar,
+.toolbars,
+.toolbox-background,
+#toolbox-background,
+.toolbox__background {
     display: none !important;
     visibility: hidden !important;
     opacity: 0 !important;
     pointer-events: none !important;
 }
 
-/* 5) Re-enable ONLY "settings" button (multiple selector variants) */
-
-/* New toolbox: aria-label contains "Settings" (common) */
-.toolbox button[aria-label*="Settings"],
-.new-toolbox button[aria-label*="Settings"],
-#toolbox button[aria-label*="Settings"],
-#new-toolbox button[aria-label*="Settings"],
-#toolbar button[aria-label*="Settings"] {
-    display: inline-flex !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-    pointer-events: auto !important;
-}
-
-/* Some builds use data-testid */
-.toolbox [data-testid="toolbar.settings"],
-.new-toolbox [data-testid="toolbar.settings"],
-#toolbox [data-testid="toolbar.settings"],
-#new-toolbox [data-testid="toolbar.settings"],
-#toolbar [data-testid="toolbar.settings"] {
-    display: inline-flex !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-    pointer-events: auto !important;
-}
-
-/* Some builds use aria-label with lowercase */
-.toolbox button[aria-label*="settings"],
-.new-toolbox button[aria-label*="settings"],
-#toolbox button[aria-label*="settings"],
-#new-toolbox button[aria-label*="settings"],
-#toolbar button[aria-label*="settings"] {
-    display: inline-flex !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-    pointer-events: auto !important;
-}
-
-/* 6) Make the settings button look compact + consistent */
-.toolbox button[aria-label*="Settings"],
-.toolbox button[aria-label*="settings"],
-.toolbox [data-testid="toolbar.settings"],
-.new-toolbox button[aria-label*="Settings"],
-.new-toolbox button[aria-label*="settings"],
-.new-toolbox [data-testid="toolbar.settings"],
-#toolbox button[aria-label*="Settings"],
-#toolbox button[aria-label*="settings"],
-#toolbox [data-testid="toolbar.settings"],
-#new-toolbox button[aria-label*="Settings"],
-#new-toolbox button[aria-label*="settings"],
-#new-toolbox [data-testid="toolbar.settings"],
-#toolbar button[aria-label*="Settings"],
-#toolbar button[aria-label*="settings"],
-#toolbar [data-testid="toolbar.settings"] {
-    width: 44px !important;
-    height: 44px !important;
-    min-width: 44px !important;
-    min-height: 44px !important;
-
-    border-radius: 14px !important;
-    background: rgba(17, 24, 39, 0.55) !important;
-    /* dark glass */
-    backdrop-filter: blur(10px) !important;
-
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35) !important;
-    border: 1px solid rgba(255, 255, 255, 0.12) !important;
-
-    padding: 0 !important;
-}
-
-/* Light theme fallback if Jitsi sets html/body light (best-effort) */
-html[style*="background: rgb(255"],
-body[style*="background: rgb(255"] {
-    background: transparent !important;
+/* Remove possible bottom padding reserved for toolbar */
+#videoconference_page,
+.videoconference_page {
+    padding-bottom: 0 !important;
 }
 
 /* =========================
-   Hide hover tile menus (but don't touch dialogs)
+   Hide hover tile menus (but DON'T touch dialogs)
    ========================= */
 .remote-videomenu,
 .video-menu,
@@ -232,16 +113,14 @@ body[style*="background: rgb(255"] {
 
 /* =========================
    Keep overlays/dialogs usable
+   (settings modal, device selection etc.)
    ========================= */
 .modal-dialog,
 .modal-overlay,
 .dialog,
 .overlay,
-.participants-pane,
-.sideToolbarContainer,
-#sideToolbarContainer,
-#settings,
-#participants {
+[role="dialog"],
+[aria-modal="true"] {
     pointer-events: auto !important;
     visibility: visible !important;
     opacity: 1 !important;
