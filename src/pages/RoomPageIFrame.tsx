@@ -1,14 +1,18 @@
 // src/pages/RoomPageIFrame.tsx
-// ROOMPAGE (IFRAME) + JITSI EXTERNAL API + FULL UI PARITY (UPDATED)
-// ✅ Bottom fixed controls (like RoomPage.tsx)
-// ✅ Light/Dark theme switcher (thumb icon, persisted in localStorage)
-// ✅ StageBar supports legacy schedule + infinite schedule (50/5/5 + object phases)
-// ✅ Full audio system: unlock, stage sounds, break-end, welcome loop, user-joined sound
-// ✅ Right panel tabs (participants/chat/intentions) like RoomPage
-// ✅ Uses Jitsi built-in Settings dialog (toggleSettings) — native device/video settings
-// ✅ Tile view toggle button (setTileView)
-// ✅ Attempts to force Inter font inside iframe (best-effort; may be blocked by cross-origin)
-// ✅ Hard disables prejoin / welcome / watermark as much as External API allows
+// ROOMPAGE (IFRAME) + JITSI EXTERNAL API + BOTTOM CONTROLS (RoomPage-like)
+// ✅ Fixed bottom controls (like RoomPage)
+// ✅ Native Jitsi settings opened via our settings button (toggleSettings)
+// ✅ Tile view toggle button restored
+// ✅ Audio system restored: unlock + welcome loop + stage sounds + break-end sound
+// ✅ Stagebar supports legacy array + infinite schedules (50/5/5 and object phases)
+// ✅ Silent-room detection restored
+// ✅ Attempt to force Inter inside iframe via customCssUrl (requires public file)
+//
+// IMPORTANT (Inter in iframe):
+// Put this file into /public/jitsi-custom.css (served from your app domain):
+//   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+//   * { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important; }
+// (Jitsi will load it via configOverwrite.customCssUrl)
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -18,29 +22,20 @@ import { IntentionsPanel } from "../components/IntentionsPanel";
 import { SessionStageBar } from "../components/SessionStageBar";
 import { UserProfileModal } from "../components/UserProfileModal";
 
-// ✅ keep this import style because it already worked for you on Vercel/Linux
+// ✅ fixed: correct case-sensitive import for Vercel/Linux
 import ChatPanel from "../components/ChatPanel";
-
-import { useAttendancePresence } from "../hooks/useAttendancePresence";
-
-type RoomTheme = "dark" | "light";
-type RightPanelTab = "participants" | "chat" | "intentions" | null;
 
 type Stage = {
     name: string;
-    duration: number; // minutes (display / legacy)
+    duration: number; // minutes (display/legacy)
     color: string;
     type: "intro" | "intentions" | "focus" | "break" | "outro" | string;
+    // optional seconds for infinite schedules
     durationSeconds?: number;
 };
 
-type IFrameParticipant = {
-    id: string;
-    displayName: string;
-    avatarURL?: string;
-    role?: string;
-    isLocal?: boolean;
-};
+type RightPanelTab = "chat" | "intentions" | null;
+type RoomTheme = "dark" | "light";
 
 declare global {
     interface Window {
@@ -51,65 +46,18 @@ declare global {
 // ====== JITSI DOMAIN ======
 const JITSI_DOMAIN = "jitsi.lukassodesign.site";
 
-// ====== SOUNDS ======
+// ====== AUDIO ======
 const STAGE_SOUND_MAP: Record<string, string> = {
     intentions: "/sounds/intentions.mp3",
     focus: "/sounds/focus.mp3",
     break: "/sounds/break_start.mp3",
     outro: "/sounds/outro.mp3",
 };
+
 const BREAK_END_SOUND = "/sounds/break_end.mp3";
 const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
-const USER_JOINED_SOUND = "/sounds/user_joined.mp3";
 
-// ====== ICONS (theme-aware fallback: /icons/<name>-<theme>.svg => /icons/<name>.svg) ======
-function Icon({
-    name,
-    theme,
-    className = "w-5 h-5",
-    alt = "",
-}: {
-    name:
-    | "mic-on"
-    | "mic-off"
-    | "camera-on"
-    | "camera-off"
-    | "screen-share"
-    | "leave"
-    | "participants"
-    | "chat"
-    | "intentions"
-    | "settings"
-    | "theme-sun"
-    | "theme-moon"
-    | "timer"
-    | "host_session_icon"
-    | "tile-on"
-    | "tile-off";
-    theme: RoomTheme;
-    className?: string;
-    alt?: string;
-}) {
-    const themedSrc = `/icons/${name}-${theme}.svg`;
-    const fallbackSrc = `/icons/${name}.svg`;
-    const [src, setSrc] = useState(themedSrc);
-
-    useEffect(() => setSrc(themedSrc), [themedSrc]);
-
-    return (
-        <img
-            src={src}
-            onError={() => {
-                if (src !== fallbackSrc) setSrc(fallbackSrc);
-            }}
-            className={className}
-            alt={alt}
-            draggable={false}
-        />
-    );
-}
-
-// ====== schedule helpers (copied/normalized from RoomPage.tsx) ======
+// ====== helpers ======
 function safeParseJson(raw: any) {
     if (!raw) return null;
     if (typeof raw === "string") {
@@ -124,7 +72,10 @@ function safeParseJson(raw: any) {
     return raw;
 }
 
-function parse50505(raw: any): { focus: number; break: number; intentions: number } | null {
+/** ✅ parse "50/5/5" (or "50-5-5") schedule stored as a string. */
+function parse50505(
+    raw: any
+): { focus: number; break: number; intentions: number } | null {
     if (typeof raw !== "string") return null;
     const s = raw.trim();
     const m1 = s.match(/^(\d+)\s*\/\s*(\d+)\s*\/\s*(\d+)$/);
@@ -147,7 +98,9 @@ function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: numbe
 
     const toSeconds = (raw: any): number => {
         const explicitSeconds =
-            Number(raw?.seconds) || Number(raw?.duration_seconds) || Number(raw?.durationSeconds);
+            Number(raw?.seconds) ||
+            Number(raw?.duration_seconds) ||
+            Number(raw?.durationSeconds);
         if (explicitSeconds > 0) return explicitSeconds;
 
         const explicitMinutes =
@@ -157,9 +110,14 @@ function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: numbe
             Number(raw?.durationMinutes);
         if (explicitMinutes > 0) return explicitMinutes * 60;
 
-        const n = typeof raw === "number" ? raw : Number(raw?.duration ?? raw?.value ?? raw ?? 0);
+        const n =
+            typeof raw === "number"
+                ? raw
+                : Number(raw?.duration ?? raw?.value ?? raw ?? 0);
+
         if (!Number.isFinite(n) || n <= 0) return 0;
 
+        // heuristic: <=180 means minutes, else seconds
         if (n <= 180) return n * 60;
         return n;
     };
@@ -178,7 +136,12 @@ function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: numbe
         return Object.entries(anyPhases)
             .map(([k, v]: any) => {
                 const name = String(k || "");
-                const seconds = typeof v === "number" ? (v <= 180 ? Number(v) * 60 : Number(v)) : toSeconds(v);
+                const seconds =
+                    typeof v === "number"
+                        ? v <= 180
+                            ? Number(v) * 60
+                            : Number(v)
+                        : toSeconds(v);
                 return { name, seconds };
             })
             .filter((x) => x.seconds > 0);
@@ -189,11 +152,10 @@ function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: numbe
 
 function phaseToStageType(phaseNameLower: string): Stage["type"] {
     if (phaseNameLower.includes("focus")) return "focus";
-    if (phaseNameLower.includes("checkin") || phaseNameLower.includes("intention")) return "intentions";
-    if (phaseNameLower.includes("break") || phaseNameLower.includes("rest")) return "break";
-    if (phaseNameLower.includes("intro") || phaseNameLower.includes("welcome")) return "intro";
-    if (phaseNameLower.includes("outro") || phaseNameLower.includes("farewell") || phaseNameLower.includes("celebrat"))
-        return "outro";
+    if (phaseNameLower.includes("checkin") || phaseNameLower.includes("intention"))
+        return "intentions";
+    if (phaseNameLower.includes("break") || phaseNameLower.includes("rest"))
+        return "break";
     return "focus";
 }
 
@@ -205,11 +167,6 @@ const STAGE_COLORS: Record<string, string> = {
     outro: "#80DF86",
 };
 
-function safeLower(x: any) {
-    return String(x || "").toLowerCase();
-}
-
-// ====== Jitsi external api loader ======
 async function loadJitsiExternalApi(domain: string) {
     if (typeof window === "undefined") return;
     if (window.JitsiMeetExternalAPI) return;
@@ -217,7 +174,6 @@ async function loadJitsiExternalApi(domain: string) {
     await new Promise<void>((resolve, reject) => {
         const src = `https://${domain}/external_api.js?v=1`;
         const existing = document.querySelector(`script[src^="https://${domain}/external_api.js"]`);
-
         if (existing) {
             const t = setInterval(() => {
                 if (window.JitsiMeetExternalAPI) {
@@ -228,7 +184,8 @@ async function loadJitsiExternalApi(domain: string) {
 
             setTimeout(() => {
                 clearInterval(t);
-                if (!window.JitsiMeetExternalAPI) reject(new Error("external_api.js loaded but API missing"));
+                if (!window.JitsiMeetExternalAPI)
+                    reject(new Error("external_api.js loaded but API missing"));
             }, 6000);
 
             return;
@@ -243,48 +200,64 @@ async function loadJitsiExternalApi(domain: string) {
     });
 }
 
-// ====== Best-effort: try to force Inter inside iframe (may be blocked by cross-origin) ======
-function tryApplyInterToIFrame(api: any) {
-    try {
-        const iframe: HTMLIFrameElement | undefined = api?.getIFrame?.();
-        const doc = iframe?.contentWindow?.document;
-        if (!doc) return false;
+function Icon({
+    name,
+    theme,
+    className = "w-5 h-5",
+    alt = "",
+}: {
+    name:
+    | "mic-on"
+    | "mic-off"
+    | "camera-on"
+    | "camera-off"
+    | "screen-share"
+    | "leave"
+    | "chat"
+    | "intentions"
+    | "settings"
+    | "tile-on"
+    | "tile-off"
+    | "theme-sun"
+    | "theme-moon"
+    | "timer";
+    theme: RoomTheme;
+    className?: string;
+    alt?: string;
+}) {
+    const themedSrc = `/icons/${name}-${theme}.svg`;
+    const fallbackSrc = `/icons/${name}.svg`;
 
-        // inject Inter
-        const existing = doc.querySelector(`link[data-mysession-inter="1"]`);
-        if (!existing) {
-            const link = doc.createElement("link");
-            link.setAttribute("rel", "stylesheet");
-            link.setAttribute("href", "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
-            link.setAttribute("data-mysession-inter", "1");
-            doc.head.appendChild(link);
-        }
+    const [src, setSrc] = useState(themedSrc);
 
-        // force font-family globally
-        const styleExisting = doc.querySelector(`style[data-mysession-font="1"]`);
-        if (!styleExisting) {
-            const style = doc.createElement("style");
-            style.setAttribute("data-mysession-font", "1");
-            style.textContent = `
-        html, body, button, input, textarea, select, div, span, p, h1, h2, h3, h4, h5, h6 {
-          font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans", "Liberation Sans", sans-serif !important;
-        }
-      `;
-            doc.head.appendChild(style);
-        }
+    useEffect(() => {
+        setSrc(themedSrc);
+    }, [themedSrc]);
 
-        return true;
-    } catch {
-        // cross-origin will throw -> not possible
-        return false;
-    }
+    return (
+        <img
+            src={src}
+            onError={() => {
+                if (src !== fallbackSrc) setSrc(fallbackSrc);
+            }}
+            className={className}
+            alt={alt}
+            draggable={false}
+        />
+    );
 }
 
 export default function RoomPageIFrame() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
 
-    // ====== Theme ======
+    const iframeContainerRef = useRef<HTMLDivElement>(null);
+    const apiRef = useRef<any>(null);
+
+    const [session, setSession] = useState<any>(null);
+    const [loading, setLoading] = useState(true);
+
+    // RoomPage-like theme key
     const [theme, setTheme] = useState<RoomTheme>(() => {
         try {
             const v = String(localStorage.getItem("room_theme") || "").toLowerCase();
@@ -293,6 +266,7 @@ export default function RoomPageIFrame() {
             return "dark";
         }
     });
+    const isLight = theme === "light";
 
     useEffect(() => {
         try {
@@ -300,36 +274,7 @@ export default function RoomPageIFrame() {
         } catch { }
     }, [theme]);
 
-    const isLight = theme === "light";
-
-    // theme tokens (same as RoomPage)
-    const pageBg = isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white";
-    const topBarBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#111827]/40 border border-white/5";
-    const chipBg = isLight ? "bg-black/5 border border-black/10" : "bg-[#0B1220]/70 border border-white/5";
-    const subtleText = isLight ? "text-black/55" : "text-[#9CA3AF]";
-    const strongText = isLight ? "text-black/85" : "text-[#F3F4F6]/90";
-    const panelBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#0B1220]/55 border border-white/5";
-    const bottomBarBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#07101E]/85 border border-white/10";
-    const ctlBtnBase = isLight ? "bg-black/5 hover:bg-black/10" : "bg-[#111827] hover:bg-[#1f2937]";
-
-    // Theme switcher UI (thumb icon)
-    const switchTrack = "w-[84px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
-    const switchTrackCls = isLight
-        ? "bg-black/5 border-black/10 hover:bg-black/10"
-        : "bg-white/5 border-white/10 hover:bg-white/10";
-    const switchThumb =
-        "absolute top-[2px] w-[26px] h-[26px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center";
-    const thumbTranslate = isLight ? "translateX(0px)" : "translateX(50px)";
-
-    // ====== Session + user ======
-    const [session, setSession] = useState<any>(null);
-    const [loading, setLoading] = useState(true);
-
-    const [selectedUser, setSelectedUser] = useState<any>(null);
-    const [userName, setUserName] = useState<string>("");
-    const [authUserId, setAuthUserId] = useState<string | null>(null);
-
-    // ====== Stages + timers ======
+    // stagebar state (like RoomPage)
     const [stages, setStages] = useState<Stage[]>([]);
     const [hoveredStage, setHoveredStage] = useState<Stage | null>(null);
     const [currentStage, setCurrentStage] = useState(0);
@@ -338,7 +283,35 @@ export default function RoomPageIFrame() {
     const [stagebarStartTime, setStagebarStartTime] = useState<string>("");
     const [stagebarCycleSeconds, setStagebarCycleSeconds] = useState<number | undefined>(undefined);
 
-    // detect infinite room
+    const [selectedUser, setSelectedUser] = useState<any>(null);
+    const [userName, setUserName] = useState<string>("");
+
+    const [lastErr, setLastErr] = useState<string>("");
+
+    // iframe UI state
+    const [tile, setTile] = useState(true);
+    const [mutedAudio, setMutedAudio] = useState(false);
+    const [mutedVideo, setMutedVideo] = useState(false);
+    const [isScreenSharing, setIsScreenSharing] = useState(false);
+
+    // Right panel (RoomPage-like)
+    const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(false);
+    const [rightTab, setRightTab] = useState<RightPanelTab>(null);
+
+    const openRightTab = (tab: RightPanelTab) => {
+        if (!tab) {
+            setRightPanelOpen(false);
+            setRightTab(null);
+            return;
+        }
+        setRightTab((prevTab) => {
+            const same = prevTab === tab;
+            setRightPanelOpen((prevOpen) => (same ? !prevOpen : true));
+            return tab;
+        });
+    };
+
+    // detect infinite room (like RoomPage)
     const isInfiniteRoom = useMemo(() => {
         const raw = session?.schedule;
         if (parse50505(raw)) return true;
@@ -358,49 +331,36 @@ export default function RoomPageIFrame() {
         return false;
     }, [session]);
 
-    // silent room detection
+    // silent room detection (like RoomPage)
     const isSilentRoom = useMemo(() => {
         const fmt = String(session?.format || "").toLowerCase();
         const title = String(session?.title || "").toLowerCase();
 
         const tpl = session?.session_templates;
         const tplName =
-            Array.isArray(tpl) ? String(tpl?.[0]?.name || tpl?.[0]?.title || "") : String(tpl?.name || tpl?.title || "");
+            Array.isArray(tpl)
+                ? String(tpl?.[0]?.name || tpl?.[0]?.title || "")
+                : String(tpl?.name || tpl?.title || "");
         const tplKey =
             Array.isArray(tpl)
                 ? String(tpl?.[0]?.key || tpl?.[0]?.slug || tpl?.[0]?.type || "")
                 : String(tpl?.key || tpl?.slug || tpl?.type || "");
-        const tplFmt = Array.isArray(tpl) ? String(tpl?.[0]?.format || "") : String(tpl?.format || "");
+        const tplFmt =
+            Array.isArray(tpl)
+                ? String(tpl?.[0]?.format || "")
+                : String(tpl?.format || "");
 
         const hay = `${fmt} ${title} ${tplName} ${tplKey} ${tplFmt}`.toLowerCase();
         return hay.includes("silent");
     }, [session]);
 
-    // ====== Attendance presence ======
-    useAttendancePresence(id && authUserId ? id : null, { heartbeatMs: 10_000 });
-
-    // ====== Jitsi iFrame API ======
-    const iframeContainerRef = useRef<HTMLDivElement>(null);
-    const apiRef = useRef<any>(null);
-
-    const [lastErr, setLastErr] = useState<string>("");
-
-    const [isAudioMuted, setIsAudioMuted] = useState(false);
-    const [isVideoMuted, setIsVideoMuted] = useState(false);
-    const [isScreenSharing, setIsScreenSharing] = useState(false);
-    const [tile, setTile] = useState(true);
-
-    const [participants, setParticipants] = useState<IFrameParticipant[]>([]);
-    const [participantsSearch, setParticipantsSearch] = useState("");
-    const participantsCount = participants.length;
-
-    const prevCountRef = useRef<number>(0);
-
-    const [jitsiKey, setJitsiKey] = useState(0);
-
+    // roomName
     const roomName = useMemo(() => {
         return id ? `session-${id}` : "session-unknown";
     }, [id]);
+
+    // Key to force recreate Jitsi iframe reliably
+    const [jitsiKey, setJitsiKey] = useState(0);
 
     const forceReloadJitsi = () => {
         try {
@@ -409,68 +369,18 @@ export default function RoomPageIFrame() {
         apiRef.current = null;
         if (iframeContainerRef.current) iframeContainerRef.current.innerHTML = "";
         setLastErr("");
-        setParticipants([]);
-        setIsAudioMuted(false);
-        setIsVideoMuted(false);
-        setIsScreenSharing(false);
-        setTile(true);
         setJitsiKey((x) => x + 1);
     };
 
-    // ====== Right panel ======
-    const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(false);
-    const [rightTab, setRightTab] = useState<RightPanelTab>(null);
-
-    const openRightTab = (tab: RightPanelTab) => {
-        if (!tab) {
-            setRightPanelOpen(false);
-            setRightTab(null);
-            return;
-        }
-        setRightTab((prevTab) => {
-            const same = prevTab === tab;
-            setRightPanelOpen((prevOpen) => (same ? !prevOpen : true));
-            return tab;
-        });
-    };
-
-    // ====== Mobile "more" menu ======
-    const [showMoreMenu, setShowMoreMenu] = useState(false);
-    const moreMenuRef = useRef<HTMLDivElement | null>(null);
-
-    useEffect(() => {
-        if (!showMoreMenu) return;
-        const onDown = (e: MouseEvent) => {
-            const t = e.target as Node | null;
-            if (!moreMenuRef.current || !t) return;
-            if (!moreMenuRef.current.contains(t)) setShowMoreMenu(false);
-        };
-        document.addEventListener("mousedown", onDown);
-        return () => document.removeEventListener("mousedown", onDown);
-    }, [showMoreMenu]);
-
-    useEffect(() => {
-        if (typeof window === "undefined" || !window.matchMedia) return;
-        const mql = window.matchMedia("(min-width: 768px)");
-        const onChange = () => {
-            if (mql.matches) setShowMoreMenu(false);
-        };
-        onChange();
-        try {
-            mql.addEventListener("change", onChange);
-            return () => mql.removeEventListener("change", onChange);
-        } catch {
-            mql.addListener(onChange);
-            return () => mql.removeListener(onChange);
-        }
-    }, []);
-
-    // ====== Audio system ======
-    const audioUnlockedRef = useRef<boolean>(false);
-    const welcomeLoopRef = useRef<HTMLAudioElement | null>(null);
+    // =========================
+    // AUDIO SYSTEM (ported)
+    // =========================
     const prevStageRef = useRef<number>(-1);
     const firstTickDoneRef = useRef<boolean>(false);
+    const welcomeLoopRef = useRef<HTMLAudioElement | null>(null);
+    const audioUnlockedRef = useRef<boolean>(false);
 
+    // unlock audio on first interaction
     useEffect(() => {
         const unlock = () => {
             if (audioUnlockedRef.current) return;
@@ -500,6 +410,15 @@ export default function RoomPageIFrame() {
         a.play().catch(() => { });
     };
 
+    const startWelcomeLoop = () => {
+        stopWelcomeLoop();
+        const a = new Audio(WELCOME_LOOP_SOUND);
+        a.loop = true;
+        a.volume = 0.6;
+        welcomeLoopRef.current = a;
+        a.play().catch(() => { });
+    };
+
     const stopWelcomeLoop = () => {
         try {
             if (welcomeLoopRef.current) {
@@ -510,23 +429,18 @@ export default function RoomPageIFrame() {
         } catch { }
     };
 
-    const startWelcomeLoop = () => {
-        stopWelcomeLoop();
-        const a = new Audio(WELCOME_LOOP_SOUND);
-        a.loop = true;
-        a.volume = 0.6;
-        welcomeLoopRef.current = a;
-        a.play().catch(() => { });
-    };
-
-    // ====== LOAD SESSION + BUILD STAGES ======
+    // ============================================
+    // LOAD SESSION + BUILD STAGES (ported)
+    // ============================================
     useEffect(() => {
         (async () => {
             if (!id) return;
 
             const { data, error } = await supabase
                 .from("sessions")
-                .select("*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)")
+                .select(
+                    "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)"
+                )
                 .eq("id", id)
                 .single();
 
@@ -537,7 +451,10 @@ export default function RoomPageIFrame() {
                 setStagebarCycleSeconds(undefined);
                 setStagebarStartTime("");
 
-                const fallbackStart = String(data?.start_time || data?.created_at || new Date().toISOString());
+                const fallbackStart = String(
+                    data?.start_time || data?.created_at || new Date().toISOString()
+                );
+
                 let parsed: any = safeParseJson(data.schedule);
 
                 if (!parsed) {
@@ -551,12 +468,13 @@ export default function RoomPageIFrame() {
                     }
                 }
 
+                // legacy array schedule
                 if (Array.isArray(parsed)) {
                     const formatted: Stage[] = parsed
                         .map((b: any) => {
-                            const lower = safeLower(b?.name);
+                            const lower = String(b?.name || "").toLowerCase();
                             const type: Stage["type"] =
-                                b?.type ||
+                                b.type ||
                                 (lower.includes("welcome") || lower.includes("intro")
                                     ? "intro"
                                     : lower.includes("intention")
@@ -570,9 +488,9 @@ export default function RoomPageIFrame() {
                                                     : "focus");
 
                             return {
-                                name: String(b?.name || "Stage"),
-                                duration: Number(b?.minutes || b?.duration || 0),
-                                color: STAGE_COLORS[type] || "#4CA0FF",
+                                name: b.name,
+                                duration: Number(b.minutes) || 0,
+                                color: STAGE_COLORS[type] || "#F63135",
                                 type,
                             };
                         })
@@ -583,6 +501,7 @@ export default function RoomPageIFrame() {
                     setStagebarCycleSeconds(undefined);
                 }
 
+                // infinite object schedule
                 const isInfiniteScheduleObject =
                     parsed &&
                     typeof parsed === "object" &&
@@ -614,11 +533,7 @@ export default function RoomPageIFrame() {
                                     ? "Intentions (spoken)"
                                     : type === "break"
                                         ? "Break"
-                                        : type === "intro"
-                                            ? "Welcome"
-                                            : type === "outro"
-                                                ? "Celebrate & Farewell"
-                                                : String(p.name || "Stage");
+                                        : String(p.name || "Stage");
 
                         const seconds = Number(p.seconds) || 0;
                         const minutes = Math.max(1, Math.round(seconds / 60));
@@ -626,15 +541,20 @@ export default function RoomPageIFrame() {
                         return {
                             name: displayName,
                             duration: minutes,
-                            durationSeconds: seconds,
-                            color: STAGE_COLORS[type] || "#4CA0FF",
+                            color: STAGE_COLORS[type] || "#F63135",
                             type,
+                            durationSeconds: seconds,
                         };
                     });
 
                     setStages(formatted);
 
-                    const anchor = String((parsed as any)?.anchor_ts || (parsed as any)?.anchorTs || data?.start_time || fallbackStart);
+                    const anchor = String(
+                        (parsed as any)?.anchor_ts ||
+                        (parsed as any)?.anchorTs ||
+                        data?.start_time ||
+                        fallbackStart
+                    );
                     setStagebarStartTime(anchor);
 
                     const sumSeconds = phases.reduce((acc, p) => acc + (Number(p.seconds) || 0), 0);
@@ -661,12 +581,13 @@ export default function RoomPageIFrame() {
         })();
     }, [id]);
 
-    // ====== Resolve user name ======
+    // ============================================
+    // RESOLVE USER NAME (no prompt)
+    // ============================================
     useEffect(() => {
         (async () => {
             const { data } = await supabase.auth.getUser();
             const u = data.user;
-            setAuthUserId(u?.id || null);
 
             let name =
                 (u?.user_metadata?.full_name as string) ||
@@ -674,7 +595,11 @@ export default function RoomPageIFrame() {
                 (u?.email ? u.email.split("@")[0] : "");
 
             if (!name && u?.id) {
-                const { data: p } = await supabase.from("profiles").select("full_name").eq("id", u.id).single();
+                const { data: p } = await supabase
+                    .from("profiles")
+                    .select("full_name")
+                    .eq("id", u.id)
+                    .single();
                 name = p?.full_name || "";
             }
 
@@ -682,7 +607,9 @@ export default function RoomPageIFrame() {
         })();
     }, []);
 
-    // ====== Stage timer + sounds ======
+    // ============================================
+    // STAGES TIMER (scheduled OR infinite) + SOUND
+    // ============================================
     useEffect(() => {
         if (isSilentRoom) {
             setRemainingTime("");
@@ -699,22 +626,26 @@ export default function RoomPageIFrame() {
         if (Number.isNaN(startMs)) return;
 
         const stageSeconds = stages.map((s) => {
-            const sec = Number((s as any)?.durationSeconds) || 0;
+            const sec = Number(s.durationSeconds || 0);
             if (sec > 0) return sec;
-            const mins = Number(s?.duration) || 0;
+            const mins = Number(s.duration) || 0;
             return mins > 0 ? mins * 60 : 0;
         });
 
         const sumStageSeconds = stageSeconds.reduce((acc, v) => acc + v, 0);
         const loopSeconds =
-            (Number(stagebarCycleSeconds) || 0) > 0 ? Number(stagebarCycleSeconds) : Math.max(1, sumStageSeconds);
+            (Number(stagebarCycleSeconds) || 0) > 0
+                ? Number(stagebarCycleSeconds)
+                : Math.max(1, sumStageSeconds);
 
         const timer = window.setInterval(() => {
             const now = Date.now();
             const diffSecRaw = (now - startMs) / 1000;
 
             const diffSec =
-                loopSeconds > 0 && isInfiniteRoom ? ((diffSecRaw % loopSeconds) + loopSeconds) % loopSeconds : diffSecRaw;
+                loopSeconds > 0 && isInfiniteRoom
+                    ? ((diffSecRaw % loopSeconds) + loopSeconds) % loopSeconds
+                    : diffSecRaw;
 
             let total = 0;
             let active = 0;
@@ -722,12 +653,15 @@ export default function RoomPageIFrame() {
             for (let i = 0; i < stages.length; i++) {
                 const dur = stageSeconds[i] || 0;
                 const next = total + dur;
+
                 if (dur <= 0) continue;
 
                 if (diffSec < next) {
                     active = i;
                     const rem = next - diffSec;
-                    setRemainingTime(`${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`);
+                    setRemainingTime(
+                        `${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`
+                    );
                     break;
                 }
                 total = next;
@@ -736,6 +670,7 @@ export default function RoomPageIFrame() {
 
             setCurrentStage(active);
 
+            // sounds only for non-infinite (same as RoomPage)
             if (!isInfiniteRoom) {
                 const stage = stages[active];
 
@@ -773,46 +708,9 @@ export default function RoomPageIFrame() {
         return () => window.clearInterval(timer);
     }, [stagebarStartTime, stages, isSilentRoom, isInfiniteRoom, stagebarCycleSeconds]);
 
-    // ====== Participants ======
-    const upsertLocalParticipant = (list: IFrameParticipant[]) => {
-        const local: IFrameParticipant = { id: "local", displayName: "You", isLocal: true };
-        const hasLocal = list.some((p) => p.isLocal);
-        return hasLocal ? list : [local, ...list];
-    };
-
-    const refreshParticipants = async () => {
-        const api = apiRef.current;
-        if (!api) return;
-
-        try {
-            const info = (await api.getParticipantsInfo?.()) || [];
-            const mapped: IFrameParticipant[] = (Array.isArray(info) ? info : []).map((p: any) => ({
-                id: String(p?.participantId || p?.id || ""),
-                displayName: String(p?.displayName || p?.formattedDisplayName || "Guest"),
-                avatarURL: p?.avatarURL ? String(p.avatarURL) : undefined,
-                role: p?.role ? String(p.role) : undefined,
-                isLocal: false,
-            }));
-
-            const next = upsertLocalParticipant(mapped.filter((p) => p.id));
-            setParticipants(next);
-
-            if (prevCountRef.current < 2 && next.length >= 2) {
-                playOneShot(USER_JOINED_SOUND, 0.9);
-            }
-            prevCountRef.current = next.length;
-        } catch {
-            // ignore
-        }
-    };
-
-    const filteredParticipants = useMemo(() => {
-        const q = participantsSearch.trim().toLowerCase();
-        if (!q) return participants;
-        return participants.filter((p) => (p.isLocal ? "you" : p.displayName || "guest").toLowerCase().includes(q));
-    }, [participants, participantsSearch]);
-
-    // ====== JITSI INIT ======
+    // ============================================
+    // JITSI INIT (External API)
+    // ============================================
     useEffect(() => {
         if (!session || !id) return;
         if (!iframeContainerRef.current) return;
@@ -821,26 +719,18 @@ export default function RoomPageIFrame() {
         let destroyed = false;
 
         const cleanup = () => {
+            stopWelcomeLoop();
             try {
                 apiRef.current?.dispose?.();
             } catch { }
             apiRef.current = null;
         };
 
-        const leaveToSessions = async () => {
+        const leaveToSessions = () => {
             if (destroyed) return;
             destroyed = true;
-
-            try {
-                if (id && authUserId) {
-                    await supabase.rpc("attendance_leave", { p_session_id: id });
-                }
-            } catch {
-                // ignore
-            } finally {
-                cleanup();
-                navigate("/sessions", { replace: true });
-            }
+            cleanup();
+            navigate("/sessions", { replace: true });
         };
 
         (async () => {
@@ -850,41 +740,25 @@ export default function RoomPageIFrame() {
 
                 iframeContainerRef.current!.innerHTML = "";
 
-                const roomNameRaw =
-                    session.jitsi_room_name ||
-                    (session.daily_room_url
-                        ? (() => {
-                            try {
-                                const u = new URL(session.daily_room_url);
-                                const parts = u.pathname.split("/").filter(Boolean);
-                                return parts[parts.length - 1] || `session-${session.id}`;
-                            } catch {
-                                return `session-${session.id}`;
-                            }
-                        })()
-                        : `session-${session.id}`);
-
-                const safeRoomName = String(roomNameRaw || roomName).toLowerCase().replace(/[^a-z0-9-_]/g, "");
-                const finalRoomName = safeRoomName || `session-${session.id}`;
+                const customCssUrl =
+                    typeof window !== "undefined"
+                        ? `${window.location.origin}/jitsi-custom.css`
+                        : undefined;
 
                 const api = new window.JitsiMeetExternalAPI(JITSI_DOMAIN, {
-                    roomName: finalRoomName,
+                    roomName,
                     parentNode: iframeContainerRef.current,
                     width: "100%",
                     height: "100%",
                     userInfo: { displayName: userName },
 
-                    // ✅ Keep Jitsi native device/video settings (we open them via toggleSettings).
-                    // ✅ Still disable prejoin/name prompt/watermark.
+                    // 🔥 IMPORTANT OVERRIDES (server + no prejoin/watermark)
                     configOverwrite: {
                         disableWelcomePage: true,
                         enableWelcomePage: false,
 
                         prejoinPageEnabled: false,
-                        prejoinConfig: {
-                            enabled: false,
-                            hideDisplayName: true,
-                        },
+                        prejoinConfig: { enabled: false },
                         requireDisplayName: false,
 
                         disableDeepLinking: true,
@@ -893,6 +767,9 @@ export default function RoomPageIFrame() {
                         startWithVideoMuted: false,
 
                         disableInviteFunctions: true,
+
+                        // ✅ Inter inside iframe (requires /public/jitsi-custom.css)
+                        ...(customCssUrl ? { customCssUrl } : {}),
                     },
 
                     interfaceConfigOverwrite: {
@@ -900,20 +777,16 @@ export default function RoomPageIFrame() {
                         SHOW_WATERMARK_FOR_GUESTS: false,
                         SHOW_BRAND_WATERMARK: false,
                         JITSI_WATERMARK_LINK: "",
-                        BRAND_WATERMARK_LINK: "",
 
                         HIDE_INVITE_MORE_HEADER: true,
 
-                        // keep iframe clean (no Jitsi toolbar), but settings dialog still accessible via executeCommand("toggleSettings")
+                        // Hide Jitsi toolbar completely (we control from bottom bar)
                         TOOLBAR_BUTTONS: [],
 
                         DISABLE_FOCUS_INDICATOR: true,
                         DISABLE_DOMINANT_SPEAKER_INDICATOR: true,
 
                         DEFAULT_REMOTE_DISPLAY_NAME: "Guest",
-
-                        // If your Jitsi build supports it, this helps ensure settings has what we need:
-                        // SETTINGS_SECTIONS: ["devices", "profile", "calendar"],
                     },
                 });
 
@@ -925,41 +798,19 @@ export default function RoomPageIFrame() {
                     setTile(true);
                 } catch { }
 
-                // Try apply Inter inside iframe (best-effort). Retry a few times after join.
-                const tryFont = () => tryApplyInterToIFrame(api);
-                const fontTryTimer = window.setInterval(() => {
-                    if (destroyed) return;
-                    const ok = tryFont();
-                    if (ok) window.clearInterval(fontTryTimer);
-                }, 800);
-
-                // Stop retries after 8s
-                window.setTimeout(() => {
-                    try {
-                        window.clearInterval(fontTryTimer);
-                    } catch { }
-                }, 8000);
-
-                // participants poll
-                const poll = window.setInterval(() => {
-                    if (!destroyed) refreshParticipants();
-                }, 1500);
-
+                // leave handling
                 api.addEventListener?.("readyToClose", leaveToSessions);
                 api.addEventListener?.("videoConferenceLeft", leaveToSessions);
 
+                // state updates
                 api.addEventListener?.("audioMuteStatusChanged", (e: any) => {
                     if (destroyed) return;
-                    setIsAudioMuted(!!e?.muted);
-                });
-                api.addEventListener?.("videoMuteStatusChanged", (e: any) => {
-                    if (destroyed) return;
-                    setIsVideoMuted(!!e?.muted);
+                    setMutedAudio(!!e?.muted);
                 });
 
-                api.addEventListener?.("screenSharingStatusChanged", (e: any) => {
+                api.addEventListener?.("videoMuteStatusChanged", (e: any) => {
                     if (destroyed) return;
-                    setIsScreenSharing(!!e?.on);
+                    setMutedVideo(!!e?.muted);
                 });
 
                 api.addEventListener?.("tileViewChanged", (e: any) => {
@@ -967,34 +818,17 @@ export default function RoomPageIFrame() {
                     if (typeof e?.enabled === "boolean") setTile(!!e.enabled);
                 });
 
-                api.addEventListener?.("participantJoined", () => {
+                // best-effort screen share status (depends on build)
+                api.addEventListener?.("screenSharingStatusChanged", (e: any) => {
                     if (destroyed) return;
-                    refreshParticipants();
-                });
-                api.addEventListener?.("participantLeft", () => {
-                    if (destroyed) return;
-                    refreshParticipants();
-                });
-
-                api.addEventListener?.("videoConferenceJoined", () => {
-                    if (destroyed) return;
-                    // another shot at Inter after join
-                    tryFont();
+                    if (typeof e?.on === "boolean") setIsScreenSharing(!!e.on);
+                    if (typeof e?.enabled === "boolean") setIsScreenSharing(!!e.enabled);
                 });
 
                 api.addEventListener?.("errorOccurred", (e: any) => {
                     if (destroyed) return;
                     setLastErr(String(e?.error || e?.message || "Jitsi error"));
                 });
-
-                refreshParticipants();
-
-                return () => {
-                    window.clearInterval(poll);
-                    try {
-                        window.clearInterval(fontTryTimer);
-                    } catch { }
-                };
             } catch (e: any) {
                 if (destroyed) return;
                 setLastErr(String(e?.message || e || "Jitsi init error"));
@@ -1004,77 +838,138 @@ export default function RoomPageIFrame() {
         return () => {
             destroyed = true;
             cleanup();
-            stopWelcomeLoop();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [session, id, userName, navigate, jitsiKey, authUserId]);
+    }, [session, id, userName, roomName, navigate, jitsiKey]);
 
-    // ====== Controls ======
-    const exec = (cmd: string, ...args: any[]) => {
+    // ============================================
+    // Controls (bottom bar)
+    // ============================================
+    const toggleTile = () => {
         const api = apiRef.current;
         if (!api) return;
+        const next = !tile;
+        setTile(next);
         try {
-            api.executeCommand(cmd, ...args);
+            api.executeCommand("setTileView", next);
         } catch { }
     };
 
-    const handleToggleAudio = () => exec("toggleAudio");
-    const handleToggleVideo = () => exec("toggleVideo");
-    const handleToggleScreenShare = () => exec("toggleShareScreen");
-
-    const handleToggleTile = () => {
-        const next = !tile;
-        setTile(next);
-        exec("setTileView", next);
+    const toggleMic = () => {
+        const api = apiRef.current;
+        if (!api) return;
+        try {
+            api.executeCommand("toggleAudio");
+        } catch { }
     };
 
-    // ✅ Native Jitsi settings dialog (devices/video/etc.)
-    const handleOpenSettings = () => exec("toggleSettings");
+    const toggleCam = () => {
+        const api = apiRef.current;
+        if (!api) return;
+        try {
+            api.executeCommand("toggleVideo");
+        } catch { }
+    };
 
-    const handleLeave = async () => {
+    const toggleScreenShare = () => {
+        const api = apiRef.current;
+        if (!api) return;
+        try {
+            api.executeCommand("toggleShareScreen");
+        } catch { }
+    };
+
+    const openNativeJitsiSettings = () => {
+        const api = apiRef.current;
+        if (!api) return;
+        // Native Jitsi settings dialog
+        try {
+            api.executeCommand("toggleSettings");
+            return;
+        } catch { }
+        // fallback (some builds)
+        try {
+            api.executeCommand("settings");
+        } catch { }
+    };
+
+    const hangup = () => {
         const api = apiRef.current;
         if (!api) {
-            try {
-                if (id && authUserId) await supabase.rpc("attendance_leave", { p_session_id: id });
-            } catch { }
             navigate("/sessions", { replace: true });
             return;
         }
         try {
             api.executeCommand("hangup");
         } catch {
-            try {
-                if (id && authUserId) await supabase.rpc("attendance_leave", { p_session_id: id });
-            } catch { }
             navigate("/sessions", { replace: true });
         }
     };
 
-    // ====== Render ======
+    // ============================================
+    // UI TOKENS (match RoomPage style)
+    // ============================================
+    const pageBg = isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white";
+    const topBarBg = isLight
+        ? "bg-white/85 border border-black/10"
+        : "bg-[#111827]/40 border border-white/5";
+    const chipBg = isLight
+        ? "bg-black/5 border border-black/10"
+        : "bg-[#0B1220]/70 border border-white/5";
+    const subtleText = isLight ? "text-black/55" : "text-[#9CA3AF]";
+    const strongText = isLight ? "text-black/85" : "text-[#F3F4F6]/90";
+    const panelBg = isLight
+        ? "bg-white/85 border border-black/10"
+        : "bg-[#0B1220]/55 border border-white/5";
+    const bottomBarBg = isLight
+        ? "bg-white/85 border border-black/10"
+        : "bg-[#07101E]/85 border border-white/10";
+    const ctlBtnBase = isLight ? "bg-black/5 hover:bg-black/10" : "bg-[#111827] hover:bg-[#1f2937]";
+
+    // Theme switcher (same as RoomPage)
+    const switchTrack =
+        "w-[84px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
+    const switchTrackCls = isLight
+        ? "bg-black/5 border-black/10 hover:bg-black/10"
+        : "bg-white/5 border-white/10 hover:bg-white/10";
+    const switchThumb =
+        "absolute top-[2px] w-[26px] h-[26px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center";
+    const thumbTranslate = isLight ? "translateX(0px)" : "translateX(50px)";
+
+    // ============================================
+    // RENDER
+    // ============================================
     if (loading) {
-        return <div className={`flex h-screen justify-center items-center ${pageBg}`}>Loading session...</div>;
+        return (
+            <div className={`flex h-screen justify-center items-center ${pageBg}`}>
+                Loading session...
+            </div>
+        );
     }
 
     if (!session) {
         return (
             <div className={`flex h-screen justify-center items-center ${pageBg}`}>
-                <button onClick={() => navigate("/sessions")} className="px-4 py-2 rounded bg-black/10 hover:bg-black/15">
-                    Back
-                </button>
+                <button onClick={() => navigate("/sessions")}>Back</button>
             </div>
         );
     }
 
     return (
         <div className={`min-h-screen ${pageBg}`}>
+            {/* ✅ match bottom controls padding like RoomPage */}
             <div className="w-full px-3 sm:px-5 pt-5 pb-[calc(110px+env(safe-area-inset-bottom))] flex flex-col gap-5 min-h-screen">
                 {/* TOP BAR */}
                 <div className={`flex w-full rounded-2xl overflow-hidden ${topBarBg}`}>
                     <div className="flex-1 px-6 py-4">
                         <div className="flex items-start justify-between gap-4">
                             <div className="min-w-0">
-                                <p className={`font-inter font-semibold text-[18px] truncate ${strongText}`}>{session.title}</p>
-                                <p className={`font-inter text-[13px] ${subtleText}`}>{participantsCount} participants</p>
+                                <p className={`font-inter font-semibold text-[18px] truncate ${strongText}`}>
+                                    {session.title}
+                                </p>
+                                <p className={`font-inter text-[13px] ${subtleText}`}>
+                                    {isSilentRoom ? "Silent room" : "Video session"}
+                                </p>
                             </div>
 
                             <div className="flex items-center gap-2 shrink-0">
@@ -1090,7 +985,7 @@ export default function RoomPageIFrame() {
                                 {/* Theme switcher */}
                                 <button
                                     onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-                                    className={`w-[84px] h-[32px] rounded-full border relative transition flex items-center px-[3px] ${switchTrackCls}`}
+                                    className={`${switchTrack} ${switchTrackCls}`}
                                     title="Toggle theme"
                                     aria-label="Toggle theme"
                                 >
@@ -1104,30 +999,31 @@ export default function RoomPageIFrame() {
                                     </div>
                                 </button>
 
-                                {/* Reload */}
+                                {/* Reload (handy) */}
                                 <button
                                     onClick={forceReloadJitsi}
-                                    className={`px-3 py-1.5 rounded-xl border transition text-[13px] ${isLight
+                                    className={`px-3 py-2 rounded-xl border transition font-inter text-[13px] ${isLight
                                             ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-white/80"
+                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                         }`}
                                     title="Reload video engine"
                                 >
                                     Reload
                                 </button>
 
-                                {/* Host */}
+                                {/* Host indicator */}
                                 {session.host_profile && (
                                     <button
                                         onClick={() => setSelectedUser(session.host_profile)}
-                                        className={`max-[480px]:hidden flex items-center gap-2 px-3 py-1.5 rounded-xl border transition font-inter text-[13px] ${isLight
+                                        className={`max-[520px]:hidden flex items-center gap-2 px-3 py-2 rounded-xl border transition font-inter text-[13px] ${isLight
                                                 ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
                                                 : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                             }`}
                                     >
-                                        <Icon name="host_session_icon" theme={theme} className="h-5 w-5 opacity-90" alt="" />
                                         <span className="flex items-center gap-1 leading-none">
-                                            <span className={isLight ? "font-normal text-black/55" : "font-normal text-white/70"}>Host:</span>
+                                            <span className={isLight ? "font-normal text-black/55" : "font-normal text-white/70"}>
+                                                Host:
+                                            </span>
                                             <span className="font-semibold">{session.host_profile.full_name}</span>
                                         </span>
                                     </button>
@@ -1148,176 +1044,54 @@ export default function RoomPageIFrame() {
                                 </div>
                             </div>
                         )}
+
+                        {/* Hover text row (optional) */}
+                        {!isSilentRoom && stages.length > 0 && (
+                            <div className={`mt-2 text-[13px] font-inter ${isLight ? "text-black/60" : "text-white/60"}`}>
+                                {hoveredStage ? `${hoveredStage.name} • ${hoveredStage.duration} min` : stages[currentStage]?.name}
+                            </div>
+                        )}
                     </div>
                 </div>
 
                 {/* MAIN AREA */}
                 <div
                     className={
-                        "grid gap-5 flex-1 min-h-0 " + (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
+                        "grid gap-5 flex-1 min-h-0 " +
+                        (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
                     }
                 >
-                    {/* VIDEO AREA (iFrame) */}
+                    {/* VIDEO AREA */}
                     <div
-                        className={`rounded-2xl overflow-hidden min-h-0 ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
+                        className={`rounded-2xl overflow-hidden min-h-0 relative ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
                             }`}
                     >
-                        <div className="w-full h-[72vh] min-h-[520px] relative">
-                            <div ref={iframeContainerRef} className="w-full h-full" />
-                            {lastErr && (
-                                <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow">
-                                    {lastErr}
-                                </div>
-                            )}
-                        </div>
+                        <div ref={iframeContainerRef} className="w-full h-full min-h-[60vh]" />
+
+                        {lastErr && (
+                            <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow z-30">
+                                {lastErr}
+                            </div>
+                        )}
                     </div>
 
                     {/* RIGHT PANEL */}
                     {rightPanelOpen && (
                         <div className={`rounded-2xl shadow-lg overflow-hidden min-h-0 ${panelBg}`}>
-                            {/* participants */}
-                            {rightTab === "participants" && (
-                                <div className="h-full flex flex-col">
-                                    <div
-                                        className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
-                                            }`}
-                                    >
-                                        <div className="flex items-center gap-2">
-                                            <span className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>
-                                                Participants
-                                            </span>
-                                            <span className={`${isLight ? "text-black/50" : "text-white/55"} text-sm`}>
-                                                ({participantsCount})
-                                            </span>
-                                        </div>
-                                        <button
-                                            onClick={() => openRightTab(null)}
-                                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
-                                                }`}
-                                            title="Close"
-                                        >
-                                            ✕
-                                        </button>
-                                    </div>
-
-                                    <div className="p-4">
-                                        <div
-                                            className={`rounded-xl px-3 py-2 ${isLight ? "bg-black/5 border border-black/10" : "bg-[#0B1220]/70 border border-white/10"
-                                                }`}
-                                        >
-                                            <input
-                                                value={participantsSearch}
-                                                onChange={(e) => setParticipantsSearch(e.target.value)}
-                                                placeholder="Search participants..."
-                                                className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${isLight ? "text-black/80 placeholder:text-black/40" : "text-white/85 placeholder:text-white/35"
-                                                    }`}
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <div className="flex-1 overflow-y-auto px-4 pb-4">
-                                        <div className="flex flex-col gap-2">
-                                            {filteredParticipants.map((p) => {
-                                                const name = p.isLocal ? "You" : p.displayName || "Guest";
-                                                const initials =
-                                                    name
-                                                        .split(" ")
-                                                        .filter(Boolean)
-                                                        .slice(0, 2)
-                                                        .map((x) => x[0]?.toUpperCase())
-                                                        .join("") || "U";
-
-                                                return (
-                                                    <div
-                                                        key={p.id || name}
-                                                        className={`flex items-center justify-between px-3 py-2 rounded-xl transition ${isLight ? "hover:bg-black/5" : "hover:bg-white/5"
-                                                            }`}
-                                                    >
-                                                        <div className="flex items-center gap-3 min-w-0">
-                                                            <div
-                                                                className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${isLight ? "bg-blue-500/15 text-blue-700" : "bg-emerald-500/80 text-[#02140B]"
-                                                                    }`}
-                                                            >
-                                                                {initials}
-                                                            </div>
-                                                            <div className="min-w-0">
-                                                                <div
-                                                                    className={`text-[13px] font-medium truncate ${isLight ? "text-black/85" : "text-white/90"
-                                                                        }`}
-                                                                >
-                                                                    {name}
-                                                                </div>
-                                                                <div className={`text-[11px] truncate ${isLight ? "text-black/45" : "text-white/45"}`}>
-                                                                    {p.isLocal ? "Team member" : "Participant"}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="flex items-center gap-2">
-                                                            {p.isLocal ? (
-                                                                <>
-                                                                    <div
-                                                                        className={
-                                                                            "w-8 h-8 rounded-lg flex items-center justify-center " +
-                                                                            (isAudioMuted ? (isLight ? "bg-red-500/10" : "bg-red-500/20") : isLight ? "bg-black/5" : "bg-white/5")
-                                                                        }
-                                                                        title={isAudioMuted ? "Muted" : "Unmuted"}
-                                                                    >
-                                                                        <Icon
-                                                                            name={isAudioMuted ? "mic-off" : "mic-on"}
-                                                                            theme={isAudioMuted ? "dark" : theme}
-                                                                            className={`w-4 h-4 ${isAudioMuted ? "opacity-90" : "opacity-80"}`}
-                                                                        />
-                                                                    </div>
-
-                                                                    <div
-                                                                        className={
-                                                                            "w-8 h-8 rounded-lg flex items-center justify-center " +
-                                                                            (isVideoMuted ? (isLight ? "bg-red-500/10" : "bg-red-500/20") : isLight ? "bg-black/5" : "bg-white/5")
-                                                                        }
-                                                                        title={isVideoMuted ? "Video off" : "Video on"}
-                                                                    >
-                                                                        <Icon
-                                                                            name={isVideoMuted ? "camera-off" : "camera-on"}
-                                                                            theme={theme}
-                                                                            className={`w-4 h-4 ${isVideoMuted ? "opacity-90" : "opacity-80"}`}
-                                                                        />
-                                                                    </div>
-                                                                </>
-                                                            ) : (
-                                                                <span className={`text-[11px] ${isLight ? "text-black/40" : "text-white/35"}`}>—</span>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-
-                                    <div className={`p-4 border-t ${isLight ? "border-black/10" : "border-white/5"}`}>
-                                        <button
-                                            onClick={() => { }}
-                                            className={`w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 ${isLight ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
-                                                }`}
-                                        >
-                                            <span className="text-lg">+</span>
-                                            <span>Invite People</span>
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* chat */}
                             {rightTab === "chat" && (
                                 <div className="h-full">
                                     <div
                                         className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
                                             }`}
                                     >
-                                        <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Chat</div>
+                                        <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>
+                                            Chat
+                                        </div>
                                         <button
                                             onClick={() => openRightTab(null)}
-                                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
+                                                    ? "bg-black/5 hover:bg-black/10 text-black/60"
+                                                    : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
                                                 }`}
                                             title="Close"
                                         >
@@ -1328,7 +1102,6 @@ export default function RoomPageIFrame() {
                                 </div>
                             )}
 
-                            {/* intentions */}
                             {rightTab === "intentions" && (
                                 <div className="h-full">
                                     <div
@@ -1340,7 +1113,9 @@ export default function RoomPageIFrame() {
                                         </div>
                                         <button
                                             onClick={() => openRightTab(null)}
-                                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
+                                                    ? "bg-black/5 hover:bg-black/10 text-black/60"
+                                                    : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
                                                 }`}
                                             title="Close"
                                         >
@@ -1357,170 +1132,69 @@ export default function RoomPageIFrame() {
                 </div>
             </div>
 
-            {/* FIXED BOTTOM CONTROLS */}
+            {/* FIXED BOTTOM CONTROLS (RoomPage-like) */}
             <div className="fixed inset-x-0 bottom-0 z-50">
                 <div className="w-full px-3 sm:px-5 pb-[calc(12px+env(safe-area-inset-bottom))]">
                     <div
                         className={`h-[64px] sm:h-[74px] rounded-2xl shadow-2xl backdrop-blur grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4 ${bottomBarBg}`}
                     >
                         {/* LEFT GROUP */}
-                        <div className="flex items-center gap-2" ref={moreMenuRef}>
-                            {/* MOBILE */}
-                            <div className="md:hidden relative">
-                                <button
-                                    onClick={() => setShowMoreMenu((v) => !v)}
-                                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                                    title="Menu"
-                                >
-                                    <span className={isLight ? "text-black/70" : "text-white/85"}>⋯</span>
-                                </button>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => openRightTab("chat")}
+                                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                                title="Chat"
+                            >
+                                <Icon name="chat" theme={theme} className="w-5 h-5" />
+                            </button>
 
-                                {showMoreMenu && (
-                                    <div className="absolute bottom-[76px] sm:bottom-[86px] left-0">
-                                        <div
-                                            className={`w-[260px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
-                                                }`}
-                                        >
-                                            <button
-                                                onClick={() => {
-                                                    openRightTab("participants");
-                                                    setShowMoreMenu(false);
-                                                }}
-                                                className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"
-                                                    }`}
-                                            >
-                                                <Icon name="participants" theme={theme} className="w-4 h-4 opacity-90" />
-                                                <span>Participants</span>
-                                            </button>
+                            <button
+                                onClick={() => openRightTab("intentions")}
+                                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                                title="Intentions"
+                            >
+                                <Icon name="intentions" theme={theme} className="w-5 h-5" />
+                            </button>
 
-                                            <button
-                                                onClick={() => {
-                                                    openRightTab("chat");
-                                                    setShowMoreMenu(false);
-                                                }}
-                                                className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"
-                                                    }`}
-                                            >
-                                                <Icon name="chat" theme={theme} className="w-4 h-4 opacity-90" />
-                                                <span>Chat</span>
-                                            </button>
-
-                                            <button
-                                                onClick={() => {
-                                                    openRightTab("intentions");
-                                                    setShowMoreMenu(false);
-                                                }}
-                                                className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"
-                                                    }`}
-                                            >
-                                                <Icon name="intentions" theme={theme} className="w-4 h-4 opacity-90" />
-                                                <span>Intentions</span>
-                                            </button>
-
-                                            <div className={isLight ? "h-px bg-black/10" : "h-px bg-white/10"} />
-
-                                            <button
-                                                onClick={() => {
-                                                    handleOpenSettings();
-                                                    setShowMoreMenu(false);
-                                                }}
-                                                className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"
-                                                    }`}
-                                            >
-                                                <Icon name="settings" theme={theme} className="w-4 h-4 opacity-90" />
-                                                <span>Video settings (Jitsi)</span>
-                                            </button>
-
-                                            <button
-                                                onClick={() => {
-                                                    handleToggleTile();
-                                                    setShowMoreMenu(false);
-                                                }}
-                                                className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"
-                                                    }`}
-                                            >
-                                                <Icon name={tile ? "tile-on" : "tile-off"} theme={theme} className="w-4 h-4 opacity-90" />
-                                                <span>{tile ? "Tile view: On" : "Tile view: Off"}</span>
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* DESKTOP */}
-                            <div className="hidden md:flex items-center gap-2">
-                                <button
-                                    onClick={() => openRightTab("participants")}
-                                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                                    title="Participants"
-                                >
-                                    <Icon name="participants" theme={theme} className="w-5 h-5" />
-                                </button>
-
-                                <button
-                                    onClick={() => openRightTab("chat")}
-                                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                                    title="Chat"
-                                >
-                                    <Icon name="chat" theme={theme} className="w-5 h-5" />
-                                </button>
-
-                                <button
-                                    onClick={() => openRightTab("intentions")}
-                                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                                    title="Intentions"
-                                >
-                                    <Icon name="intentions" theme={theme} className="w-5 h-5" />
-                                </button>
-
-                                <button
-                                    onClick={handleOpenSettings}
-                                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                                    title="Video settings (Jitsi)"
-                                >
-                                    <Icon name="settings" theme={theme} className="w-5 h-5" />
-                                </button>
-
-                                <button
-                                    onClick={handleToggleTile}
-                                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                                    title="Tile view"
-                                >
-                                    <Icon name={tile ? "tile-on" : "tile-off"} theme={theme} className="w-5 h-5" />
-                                </button>
-                            </div>
+                            <button
+                                onClick={openNativeJitsiSettings}
+                                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                                title="Video settings (Jitsi)"
+                            >
+                                <Icon name="settings" theme={theme} className="w-5 h-5" />
+                            </button>
                         </div>
 
                         {/* CENTER GROUP */}
                         <div className="flex items-center justify-center gap-2 sm:gap-3">
                             <button
-                                onClick={handleToggleAudio}
+                                onClick={toggleMic}
                                 className={
                                     "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
-                                    (isAudioMuted ? "bg-red-600 hover:bg-red-700" : ctlBtnBase)
+                                    (mutedAudio ? "bg-red-600 hover:bg-red-700" : ctlBtnBase)
                                 }
-                                title="Toggle mic"
+                                title={mutedAudio ? "Unmute mic" : "Mute mic"}
                             >
                                 <Icon
-                                    name={isAudioMuted ? "mic-off" : "mic-on"}
-                                    theme={isAudioMuted ? "dark" : theme}
+                                    name={mutedAudio ? "mic-off" : "mic-on"}
+                                    theme={mutedAudio ? "dark" : theme} // mic-off always white if you have that icon
                                     className="w-5 h-5"
                                 />
                             </button>
 
                             <button
-                                onClick={handleToggleVideo}
+                                onClick={toggleCam}
                                 className={
                                     "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
-                                    (isVideoMuted ? "bg-red-600 hover:bg-red-700" : ctlBtnBase)
+                                    (mutedVideo ? "bg-red-600 hover:bg-red-700" : ctlBtnBase)
                                 }
-                                title="Toggle camera"
+                                title={mutedVideo ? "Turn camera on" : "Turn camera off"}
                             >
-                                <Icon name={isVideoMuted ? "camera-off" : "camera-on"} theme={theme} className="w-5 h-5" />
+                                <Icon name={mutedVideo ? "camera-off" : "camera-on"} theme={theme} className="w-5 h-5" />
                             </button>
 
                             <button
-                                onClick={handleToggleScreenShare}
+                                onClick={toggleScreenShare}
                                 className={
                                     "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
                                     (isScreenSharing ? "bg-blue-600 hover:bg-blue-700" : ctlBtnBase)
@@ -1529,12 +1203,20 @@ export default function RoomPageIFrame() {
                             >
                                 <Icon name="screen-share" theme={theme} className="w-5 h-5" />
                             </button>
+
+                            <button
+                                onClick={toggleTile}
+                                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                                title={tile ? "Disable tile view" : "Enable tile view"}
+                            >
+                                <Icon name={tile ? "tile-on" : "tile-off"} theme={theme} className="w-5 h-5" />
+                            </button>
                         </div>
 
                         {/* RIGHT GROUP */}
                         <div className="flex items-center justify-end gap-2 sm:gap-3">
                             <button
-                                onClick={handleLeave}
+                                onClick={hangup}
                                 className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${isLight ? "bg-red-600 hover:bg-red-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"
                                     }`}
                                 title="Leave"
@@ -1544,7 +1226,7 @@ export default function RoomPageIFrame() {
                             </button>
 
                             <button
-                                onClick={handleLeave}
+                                onClick={hangup}
                                 className="sm:hidden w-10 h-10 rounded-2xl bg-red-600 hover:bg-red-700 text-white flex items-center justify-center"
                                 title="Leave"
                             >
