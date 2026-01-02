@@ -1,127 +1,185 @@
 /* /public/jitsi-custom.css
    Injected into Jitsi iframe via configOverwrite.customCssUrl
 
-   GOAL (for "NO native controls"):
-   - Hide ALL native Jitsi chrome: toolbar, filmstrip, hover menus, overlays that create bottom blur
-   - Keep dialogs/modals usable (settings modal etc.)
-   - Settings доступен через External API (toggleSettings) из нашего UI
+   GOAL (Variant A):
+   - Keep ONLY native Settings button visible inside iframe
+   - Hide everything else native (toolbar buttons, filmstrip, headers, watermarks, etc.)
+   - IMPORTANT: Do NOT hide the toolbar containers entirely, иначе settings исчезнет
 */
 
-/* =========================
-   Font
-   ========================= */
+/* Inter font */
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
 
+/* Force Inter everywhere inside Jitsi */
 * {
     font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important;
 }
 
-/* =========================
-   Remove branding / watermarks
-   ========================= */
+/* =========================================================
+   1) Kill watermarks / branding
+   ========================================================= */
 .watermark,
 .leftwatermark,
 .rightwatermark,
-#watermark,
-#poweredby,
-.branding,
-.branding__link,
-.branding__image,
-.branding__text,
 .jitsi-watermark,
-#jitsi-watermark {
+#poweredby,
+#watermark,
+#jitsi-watermark,
+a[href*="jitsi.org"] {
     display: none !important;
-    visibility: hidden !important;
-    opacity: 0 !important;
 }
 
-/* =========================
-   Hide filmstrip completely
-   ========================= */
+/* =========================================================
+   2) Hide filmstrip / thumbnails (optional but usually desired)
+   ========================================================= */
 .filmstrip,
-.filmstrip__toolbar,
-.videogrid_filmstrip,
 #filmstrip,
-#filmstripToolbar,
-.thumbnail-filmstrip,
-#thumbnail-filmstrip {
+.horizontal-filmstrip,
+.vertical-filmstrip,
+#filmstripRemoteVideos,
+#filmstripLocalVideo,
+.remote-videos,
+.local-video-container,
+#remoteVideos {
     display: none !important;
-    visibility: hidden !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
 }
 
-/* Ensure main video uses full height */
-.large-video-container,
-.largeVideoContainer,
-.videogrid,
-#largeVideoContainer {
-    height: 100% !important;
-    max-height: 100% !important;
+/* If some builds place thumbnails in a different wrapper */
+[data-testid*="filmstrip" i],
+[class*="filmstrip" i] {
+    display: none !important;
 }
 
-/* Optional: transparent app background */
-html,
-body,
-#react,
-#app {
-    background: transparent !important;
+/* =========================================================
+   3) Hide top/header elements (room title, subject, etc.)
+   ========================================================= */
+#subject,
+.subject,
+.header,
+.header-container,
+#header,
+.new-toolbox__header,
+#new-toolbox .subject,
+#new-toolbox .header {
+    display: none !important;
 }
 
-/* =========================
-   TOOLBAR: hide EVERYTHING (no native controls)
-   ========================= */
-.toolbox,
-.toolbox-content,
-.new-toolbox,
+/* =========================================================
+   4) Toolbar: show ONLY Settings
+   ========================================================= */
+
+/* Keep toolbar container present but minimal/transparent */
 #new-toolbox,
 #toolbox,
-#toolbox-content,
-.toolbox__content,
-.toolbox__container,
-.toolbar,
-#toolbar,
-.toolbars,
-.toolbox-background,
-#toolbox-background,
-.toolbox__background {
+.new-toolbox,
+.toolbox {
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+/* Make toolbar sit top-right (best-effort; harmless if selectors don't match) */
+#new-toolbox,
+.new-toolbox {
+    justify-content: flex-end !important;
+}
+
+/* ---- Hide ALL toolbar buttons by default (broad net) ---- */
+#new-toolbox button,
+#toolbox button,
+.new-toolbox button,
+.toolbox button,
+[role="toolbar"] button {
     display: none !important;
-    visibility: hidden !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
 }
 
-/* Remove possible bottom padding reserved for toolbar */
-#videoconference_page,
-.videoconference_page {
-    padding-bottom: 0 !important;
-}
-
-/* =========================
-   Hide hover tile menus (but DON'T touch dialogs)
-   ========================= */
-.remote-videomenu,
-.video-menu,
-.context-menu,
-.tile-view .remote-videomenu,
-.tile-view .video-menu {
+/* Some builds use div wrappers for buttons */
+.toolbox-button,
+.toolbar-button,
+.new-toolbox__button,
+.tool-box-button,
+.toolbox-content button,
+.toolbox__content button,
+.toolbox__container button {
     display: none !important;
-    visibility: hidden !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
 }
 
-/* =========================
-   Keep overlays/dialogs usable
-   (settings modal, device selection etc.)
-   ========================= */
-.modal-dialog,
-.modal-overlay,
-.dialog,
-.overlay,
-[role="dialog"],
-[aria-modal="true"] {
-    pointer-events: auto !important;
-    visibility: visible !important;
-    opacity: 1 !important;
+/* ---- Re-enable ONLY Settings button (multiple selector fallbacks) ---- */
+/* aria-label (EN/RU/UA) */
+button[aria-label*="Settings" i],
+button[aria-label*="Настройки" i],
+button[aria-label*="Налаштування" i],
+button[title*="Settings" i],
+button[title*="Настройки" i],
+button[title*="Налаштування" i] {
+    display: inline-flex !important;
+}
+
+/* data-testid fallbacks (varies by build) */
+button[data-testid*="toolbar.settings" i],
+button[data-testid*="settings" i] {
+    display: inline-flex !important;
+}
+
+/* If settings button is an <a> (rare) */
+a[aria-label*="Settings" i],
+a[aria-label*="Настройки" i],
+a[aria-label*="Налаштування" i] {
+    display: inline-flex !important;
+}
+
+/* ---- Hide overflow / more actions / profile / reactions just in case ---- */
+button[aria-label*="More actions" i],
+button[aria-label*="More" i],
+button[aria-label*="Ещё" i],
+button[aria-label*="Ще" i],
+button[aria-label*="Reactions" i],
+button[aria-label*="Raise hand" i],
+button[aria-label*="Participants" i],
+button[aria-label*="Invite" i],
+button[aria-label*="Chat" i],
+button[aria-label*="Tile view" i],
+button[aria-label*="Hang up" i] {
+    display: none !important;
+}
+
+/* ---- Make Settings button look clean (optional) ---- */
+button[aria-label*="Settings" i],
+button[aria-label*="Настройки" i],
+button[aria-label*="Налаштування" i],
+button[data-testid*="toolbar.settings" i],
+button[data-testid*="settings" i] {
+    border-radius: 12px !important;
+    background: rgba(15, 23, 42, 0.45) !important;
+    border: 1px solid rgba(255, 255, 255, 0.14) !important;
+    backdrop-filter: blur(10px) !important;
+    padding: 8px 10px !important;
+    margin: 10px 10px 0 0 !important;
+}
+
+/* =========================================================
+   5) Hide other native overlays/buttons (best-effort)
+   ========================================================= */
+#notifications,
+.notifications-container,
+[aria-label*="Notifications" i] {
+    display: none !important;
+}
+
+#raisehand,
+.reactions-menu,
+.reaction-menu,
+.reactions-panel,
+[aria-label*="Reactions" i] {
+    display: none !important;
+}
+
+/* =========================================================
+   6) Keep video area clean
+   ========================================================= */
+/* Some builds add "dominant speaker" or focus borders */
+.dominant-speaker,
+#dominantSpeaker,
+[class*="dominant" i],
+[class*="focus-indicator" i] {
+    display: none !important;
 }

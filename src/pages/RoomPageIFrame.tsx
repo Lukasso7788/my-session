@@ -1,15 +1,14 @@
 // src/pages/RoomPageIFrame.tsx
 // ROOMPAGE (IFRAME) + JITSI EXTERNAL API + OUR UI CONTROLS
 //
-// ✅ CHANGE (as requested):
-// - NO native Jitsi controls visible inside iframe (toolbar/filmstrip/etc fully hidden)
-// - Settings still available via OUR button -> api.executeCommand("toggleSettings")
-// - Keep "mount" toolbarButtons in configOverwrite to ensure settings module/commands work on more builds
+// ✅ VARIANT A (stable):
+// - Inside Jitsi iframe: show ONLY native "Settings" button
+// - Hide all other native Jitsi UI chrome via interfaceConfigOverwrite + /public/jitsi-custom.css
+// - Keep internal "mount" toolbarButtons in configOverwrite to ensure settings module/commands load on more builds
 //
 // Note:
-// - Visibility is enforced by BOTH:
-//   (1) interfaceConfigOverwrite.TOOLBAR_BUTTONS = [] (no visible native buttons)
-//   (2) /public/jitsi-custom.css hides toolbar containers entirely (hard guarantee)
+// - We do NOT hide toolbar containers entirely anymore (otherwise Settings disappears too).
+// - We hide everything except settings via CSS selectors.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -50,6 +49,9 @@ const TOOLBAR_MOUNT_BUTTONS = [
     "tileview",
     "hangup",
 ];
+
+// ✅ DISPLAY ONLY THIS in the iframe (native UI)
+const TOOLBAR_VISIBLE_BUTTONS = ["settings"];
 
 // ====== AUDIO ======
 const STAGE_SOUND_MAP: Record<string, string> = {
@@ -131,7 +133,8 @@ function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: numbe
         return Object.entries(anyPhases)
             .map(([k, v]: any) => {
                 const name = String(k || "");
-                const seconds = typeof v === "number" ? (v <= 180 ? Number(v) * 60 : Number(v)) : toSeconds(v);
+                const seconds =
+                    typeof v === "number" ? (v <= 180 ? Number(v) * 60 : Number(v)) : toSeconds(v);
                 return { name, seconds };
             })
             .filter((x) => x.seconds > 0);
@@ -723,17 +726,18 @@ export default function RoomPageIFrame() {
                         startWithAudioMuted: false,
                         startWithVideoMuted: false,
 
-                        // ✅ Keep modules mounted on more builds (commands like toggleSettings work)
+                        // ✅ Keep modules mounted on more builds
                         toolbarButtons: TOOLBAR_MOUNT_BUTTONS,
 
                         ...(customCssUrl ? { customCssUrl } : {}),
                     },
 
                     interfaceConfigOverwrite: {
-                        // ✅ NO visible native buttons (toolbar hidden anyway by CSS)
-                        TOOLBAR_BUTTONS: [],
-                        TOOLBAR_ALWAYS_VISIBLE: false,
-                        TOOLBAR_TIMEOUT: 1,
+                        // ✅ Show ONLY settings in the iframe UI
+                        TOOLBAR_BUTTONS: TOOLBAR_VISIBLE_BUTTONS,
+                        TOOLBAR_ALWAYS_VISIBLE: true,
+                        TOOLBAR_TIMEOUT: 0,
+                        TOOLBAR_TIMEOUT_NO_HOVER: 0,
 
                         SHOW_JITSI_WATERMARK: false,
                         SHOW_WATERMARK_FOR_GUESTS: false,
@@ -834,7 +838,8 @@ export default function RoomPageIFrame() {
         } catch { }
     };
 
-    // ✅ Settings modal (only native thing we keep доступным)
+    // Our button - try to open settings via command (not guaranteed on all builds),
+    // BUT native settings button exists in iframe anyway (Variant A), so we're safe.
     const openNativeSettings = () => {
         const api = apiRef.current;
         if (!api) return;
@@ -939,8 +944,8 @@ export default function RoomPageIFrame() {
                                 <button
                                     onClick={forceReloadJitsi}
                                     className={`px-3 py-2 rounded-xl border transition font-inter text-[13px] ${isLight
-                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                        ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                        : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                         }`}
                                     title="Reload video engine"
                                 >
@@ -952,8 +957,8 @@ export default function RoomPageIFrame() {
                                     <button
                                         onClick={() => setSelectedUser(session.host_profile)}
                                         className={`max-[520px]:hidden flex items-center gap-2 px-3 py-2 rounded-xl border transition font-inter text-[13px] ${isLight
-                                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                                : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                             }`}
                                     >
                                         <span className="flex items-center gap-1 leading-none">
