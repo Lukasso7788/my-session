@@ -7,8 +7,8 @@ import { IntentionsPanel } from "../components/IntentionsPanel";
 import { SessionStageBar } from "../components/SessionStageBar";
 import { UserProfileModal } from "../components/UserProfileModal";
 
-// ✅ import your custom chat (adjust the path/name if your component differs)
-import RoomChat from "../components/RoomChat";
+// ✅ FIX: your chat component
+import ChatPanel from "../components/chatpanel";
 
 type Stage = {
     name: string;
@@ -27,7 +27,6 @@ declare global {
 const JITSI_DOMAIN = "jitsi.lukassodesign.site";
 
 // ====== YOUR ICONS (put your svg files here) ======
-// If some icons don't exist yet, add them in /public/icons/
 const ICONS = {
     tileOn: "/icons/tile-on.svg",
     tileOff: "/icons/tile-off.svg",
@@ -98,15 +97,15 @@ async function loadJitsiExternalApi(domain: string) {
 
         const existing = document.querySelector(`script[src="${src}"]`);
         if (existing) {
-            const t = setInterval(() => {
+            const t = window.setInterval(() => {
                 if (window.JitsiMeetExternalAPI) {
-                    clearInterval(t);
+                    window.clearInterval(t);
                     resolve();
                 }
             }, 50);
 
-            setTimeout(() => {
-                clearInterval(t);
+            window.setTimeout(() => {
+                window.clearInterval(t);
                 if (!window.JitsiMeetExternalAPI) reject(new Error("external_api.js loaded but API missing"));
             }, 6000);
 
@@ -143,7 +142,6 @@ export default function RoomPageIFrame() {
 
     const [lastErr, setLastErr] = useState<string>("");
 
-    // UI state synced from Jitsi events (best effort)
     const [tile, setTile] = useState(true);
     const [mutedAudio, setMutedAudio] = useState(false);
     const [mutedVideo, setMutedVideo] = useState(false);
@@ -204,7 +202,7 @@ export default function RoomPageIFrame() {
     useEffect(() => {
         if (!session?.start_time || !stages.length) return;
 
-        const timer = setInterval(() => {
+        const timer = window.setInterval(() => {
             const diffSec = (Date.now() - new Date(session.start_time).getTime()) / 1000;
 
             let total = 0;
@@ -224,7 +222,7 @@ export default function RoomPageIFrame() {
             setCurrentStage(active);
         }, 1000);
 
-        return () => clearInterval(timer);
+        return () => window.clearInterval(timer);
     }, [session?.start_time, stages]);
 
     // ============================================
@@ -258,14 +256,8 @@ export default function RoomPageIFrame() {
                 await loadJitsiExternalApi(JITSI_DOMAIN);
                 if (destroyed) return;
 
-                // clear container
                 iframeContainerRef.current!.innerHTML = "";
 
-                /**
-                 * IMPORTANT:
-                 * - We hide Jitsi toolbar & panels and use only our own controls with your icons.
-                 * - Remove watermark & prejoin is "best effort" from client; some self-host config can override.
-                 */
                 const api = new window.JitsiMeetExternalAPI(JITSI_DOMAIN, {
                     roomName,
                     parentNode: iframeContainerRef.current,
@@ -273,59 +265,45 @@ export default function RoomPageIFrame() {
                     height: "100%",
                     userInfo: { displayName: userName },
 
-                    // ✅ if your deployment supports jwt, you can pass it here:
-                    // jwt: "<token>",
-
                     configOverwrite: {
-                        // try to kill prejoin/welcome pages
                         prejoinPageEnabled: false,
                         enableWelcomePage: false,
-
-                        // reduce distractions
                         disableDeepLinking: true,
 
-                        // start states
                         startWithAudioMuted: false,
                         startWithVideoMuted: false,
 
-                        // often helps hide lobby-type UI on some forks
                         disableInviteFunctions: true,
                     },
 
                     interfaceConfigOverwrite: {
-                        // ✅ Hide watermarks (best effort)
                         SHOW_JITSI_WATERMARK: false,
                         SHOW_WATERMARK_FOR_GUESTS: false,
                         JITSI_WATERMARK_LINK: "",
 
-                        // ✅ Hide "invite more"
                         HIDE_INVITE_MORE_HEADER: true,
 
-                        // ✅ We want NO Jitsi toolbar; our own controls
+                        // ✅ hide Jitsi toolbar completely (we use custom controls)
                         TOOLBAR_BUTTONS: [],
 
-                        // ✅ Also try to hide filmstrip overlays etc
                         DISABLE_FOCUS_INDICATOR: true,
                         DISABLE_DOMINANT_SPEAKER_INDICATOR: true,
 
-                        // Branding text defaults
                         DEFAULT_REMOTE_DISPLAY_NAME: "Guest",
                     },
                 });
 
                 apiRef.current = api;
 
-                // Force tile view on start (best effort)
+                // default tile view
                 try {
                     api.executeCommand("setTileView", true);
                     setTile(true);
                 } catch { }
 
-                // leave handling
                 api.addEventListener?.("readyToClose", leaveToSessions);
                 api.addEventListener?.("videoConferenceLeft", leaveToSessions);
 
-                // state updates
                 api.addEventListener?.("audioMuteStatusChanged", (e: any) => {
                     if (destroyed) return;
                     setMutedAudio(!!e?.muted);
@@ -335,7 +313,6 @@ export default function RoomPageIFrame() {
                     setMutedVideo(!!e?.muted);
                 });
 
-                // optional: keep tile state in sync if user toggles via hotkeys
                 api.addEventListener?.("tileViewChanged", (e: any) => {
                     if (destroyed) return;
                     if (typeof e?.enabled === "boolean") setTile(!!e.enabled);
@@ -461,7 +438,7 @@ export default function RoomPageIFrame() {
                     >
                         <div ref={iframeContainerRef} className="w-full h-full" style={{ minHeight: "70vh" }} />
 
-                        {/* Custom control bar (your icons) */}
+                        {/* Custom control bar */}
                         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3">
                             <button
                                 onClick={toggleMic}
@@ -476,7 +453,6 @@ export default function RoomPageIFrame() {
                                         (e.currentTarget as HTMLImageElement).style.display = "none";
                                     }}
                                 />
-                                {/* fallback */}
                                 <span className="text-xs">{mutedAudio ? "🎙️✖" : "🎙️"}</span>
                             </button>
 
@@ -536,10 +512,9 @@ export default function RoomPageIFrame() {
                         )}
                     </div>
 
-                    {/* RIGHT: DARK PANEL (fix intentions light issue) */}
+                    {/* RIGHT: DARK PANEL */}
                     <div className="rounded-2xl border border-slate-800 bg-slate-900/60 text-white shadow-lg h-[77vh] overflow-hidden">
                         <div className="p-4 h-full flex flex-col gap-4">
-                            {/* Intentions (dark container) */}
                             <div className="flex-1 min-h-0 rounded-2xl border border-slate-800 bg-slate-900/70 overflow-hidden">
                                 <div className="px-4 py-3 border-b border-slate-800 text-xs font-semibold text-slate-300">
                                     Intentions
@@ -549,17 +524,14 @@ export default function RoomPageIFrame() {
                                 </div>
                             </div>
 
-                            {/* ✅ Your custom chat (instead of the local fallback) */}
+                            {/* ✅ your chatpanel */}
                             <div className="h-[42%] min-h-[220px] rounded-2xl border border-slate-800 bg-slate-900/70 overflow-hidden">
-                                <div className="px-4 py-3 border-b border-slate-800 text-xs font-semibold text-slate-300">
-                                    Chat
-                                </div>
+                                <div className="px-4 py-3 border-b border-slate-800 text-xs font-semibold text-slate-300">Chat</div>
                                 <div className="h-[calc(100%-44px)]">
-                                    <RoomChat sessionId={id!} />
+                                    {/* If your chatpanel needs props, add them here */}
+                                    <ChatPanel />
                                 </div>
                             </div>
-
-                            {/* NOTE: participants list intentionally NOT here */}
                         </div>
                     </div>
                 </div>
