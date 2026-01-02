@@ -5,8 +5,9 @@
 // ✅ StageBar supports legacy schedule + infinite schedule (50/5/5 + object phases)
 // ✅ Full audio system: unlock, stage sounds, break-end, welcome loop, user-joined sound
 // ✅ Right panel tabs (participants/chat/intentions) like RoomPage
-// ✅ Uses Jitsi built-in Settings dialog (toggleSettings) instead of custom MediaSettingsModal
+// ✅ Uses Jitsi built-in Settings dialog (toggleSettings) — native device/video settings
 // ✅ Tile view toggle button (setTileView)
+// ✅ Attempts to force Inter font inside iframe (best-effort; may be blocked by cross-origin)
 // ✅ Hard disables prejoin / welcome / watermark as much as External API allows
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -30,7 +31,6 @@ type Stage = {
     duration: number; // minutes (display / legacy)
     color: string;
     type: "intro" | "intentions" | "focus" | "break" | "outro" | string;
-    // optional seconds for infinite schedules
     durationSeconds?: number;
 };
 
@@ -94,9 +94,7 @@ function Icon({
     const fallbackSrc = `/icons/${name}.svg`;
     const [src, setSrc] = useState(themedSrc);
 
-    useEffect(() => {
-        setSrc(themedSrc);
-    }, [themedSrc]);
+    useEffect(() => setSrc(themedSrc), [themedSrc]);
 
     return (
         <img
@@ -126,7 +124,6 @@ function safeParseJson(raw: any) {
     return raw;
 }
 
-/** parse "50/5/5" or "50-5-5" schedule stored as string */
 function parse50505(raw: any): { focus: number; break: number; intentions: number } | null {
     if (typeof raw !== "string") return null;
     const s = raw.trim();
@@ -163,8 +160,8 @@ function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: numbe
         const n = typeof raw === "number" ? raw : Number(raw?.duration ?? raw?.value ?? raw ?? 0);
         if (!Number.isFinite(n) || n <= 0) return 0;
 
-        if (n <= 180) return n * 60; // treat as minutes if small
-        return n; // treat as seconds if big
+        if (n <= 180) return n * 60;
+        return n;
     };
 
     if (Array.isArray(anyPhases)) {
@@ -218,7 +215,6 @@ async function loadJitsiExternalApi(domain: string) {
     if (window.JitsiMeetExternalAPI) return;
 
     await new Promise<void>((resolve, reject) => {
-        // cache-bust to avoid stale copies
         const src = `https://${domain}/external_api.js?v=1`;
         const existing = document.querySelector(`script[src^="https://${domain}/external_api.js"]`);
 
@@ -247,11 +243,48 @@ async function loadJitsiExternalApi(domain: string) {
     });
 }
 
+// ====== Best-effort: try to force Inter inside iframe (may be blocked by cross-origin) ======
+function tryApplyInterToIFrame(api: any) {
+    try {
+        const iframe: HTMLIFrameElement | undefined = api?.getIFrame?.();
+        const doc = iframe?.contentWindow?.document;
+        if (!doc) return false;
+
+        // inject Inter
+        const existing = doc.querySelector(`link[data-mysession-inter="1"]`);
+        if (!existing) {
+            const link = doc.createElement("link");
+            link.setAttribute("rel", "stylesheet");
+            link.setAttribute("href", "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+            link.setAttribute("data-mysession-inter", "1");
+            doc.head.appendChild(link);
+        }
+
+        // force font-family globally
+        const styleExisting = doc.querySelector(`style[data-mysession-font="1"]`);
+        if (!styleExisting) {
+            const style = doc.createElement("style");
+            style.setAttribute("data-mysession-font", "1");
+            style.textContent = `
+        html, body, button, input, textarea, select, div, span, p, h1, h2, h3, h4, h5, h6 {
+          font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans", "Liberation Sans", sans-serif !important;
+        }
+      `;
+            doc.head.appendChild(style);
+        }
+
+        return true;
+    } catch {
+        // cross-origin will throw -> not possible
+        return false;
+    }
+}
+
 export default function RoomPageIFrame() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
 
-    // ====== Theme (match RoomPage.tsx) ======
+    // ====== Theme ======
     const [theme, setTheme] = useState<RoomTheme>(() => {
         try {
             const v = String(localStorage.getItem("room_theme") || "").toLowerCase();
@@ -296,7 +329,7 @@ export default function RoomPageIFrame() {
     const [userName, setUserName] = useState<string>("");
     const [authUserId, setAuthUserId] = useState<string | null>(null);
 
-    // ====== Stages + timers (scheduled or infinite) ======
+    // ====== Stages + timers ======
     const [stages, setStages] = useState<Stage[]>([]);
     const [hoveredStage, setHoveredStage] = useState<Stage | null>(null);
     const [currentStage, setCurrentStage] = useState(0);
@@ -325,7 +358,7 @@ export default function RoomPageIFrame() {
         return false;
     }, [session]);
 
-    // silent room detection (same idea as RoomPage)
+    // silent room detection
     const isSilentRoom = useMemo(() => {
         const fmt = String(session?.format || "").toLowerCase();
         const title = String(session?.title || "").toLowerCase();
@@ -343,7 +376,7 @@ export default function RoomPageIFrame() {
         return hay.includes("silent");
     }, [session]);
 
-    // ====== Attendance presence (like RoomPage) ======
+    // ====== Attendance presence ======
     useAttendancePresence(id && authUserId ? id : null, { heartbeatMs: 10_000 });
 
     // ====== Jitsi iFrame API ======
@@ -352,21 +385,17 @@ export default function RoomPageIFrame() {
 
     const [lastErr, setLastErr] = useState<string>("");
 
-    // local media states
     const [isAudioMuted, setIsAudioMuted] = useState(false);
     const [isVideoMuted, setIsVideoMuted] = useState(false);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [tile, setTile] = useState(true);
 
-    // participants (from External API best-effort)
     const [participants, setParticipants] = useState<IFrameParticipant[]>([]);
     const [participantsSearch, setParticipantsSearch] = useState("");
     const participantsCount = participants.length;
 
-    // user-joined sound guard
     const prevCountRef = useRef<number>(0);
 
-    // Key to force recreate Jitsi iframe reliably
     const [jitsiKey, setJitsiKey] = useState(0);
 
     const roomName = useMemo(() => {
@@ -388,7 +417,7 @@ export default function RoomPageIFrame() {
         setJitsiKey((x) => x + 1);
     };
 
-    // ====== Right panel (like RoomPage) ======
+    // ====== Right panel ======
     const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(false);
     const [rightTab, setRightTab] = useState<RightPanelTab>(null);
 
@@ -405,19 +434,17 @@ export default function RoomPageIFrame() {
         });
     };
 
-    // ====== Mobile "more" menu (like RoomPage) ======
+    // ====== Mobile "more" menu ======
     const [showMoreMenu, setShowMoreMenu] = useState(false);
     const moreMenuRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
         if (!showMoreMenu) return;
-
         const onDown = (e: MouseEvent) => {
             const t = e.target as Node | null;
             if (!moreMenuRef.current || !t) return;
             if (!moreMenuRef.current.contains(t)) setShowMoreMenu(false);
         };
-
         document.addEventListener("mousedown", onDown);
         return () => document.removeEventListener("mousedown", onDown);
     }, [showMoreMenu]);
@@ -433,13 +460,12 @@ export default function RoomPageIFrame() {
             mql.addEventListener("change", onChange);
             return () => mql.removeEventListener("change", onChange);
         } catch {
-            // older browsers
             mql.addListener(onChange);
             return () => mql.removeListener(onChange);
         }
     }, []);
 
-    // ====== Audio system (unlock + stage sounds + welcome loop) ======
+    // ====== Audio system ======
     const audioUnlockedRef = useRef<boolean>(false);
     const welcomeLoopRef = useRef<HTMLAudioElement | null>(null);
     const prevStageRef = useRef<number>(-1);
@@ -493,7 +519,7 @@ export default function RoomPageIFrame() {
         a.play().catch(() => { });
     };
 
-    // ====== LOAD SESSION + BUILD STAGES (parity with RoomPage) ======
+    // ====== LOAD SESSION + BUILD STAGES ======
     useEffect(() => {
         (async () => {
             if (!id) return;
@@ -514,7 +540,6 @@ export default function RoomPageIFrame() {
                 const fallbackStart = String(data?.start_time || data?.created_at || new Date().toISOString());
                 let parsed: any = safeParseJson(data.schedule);
 
-                // allow 50/5/5 string
                 if (!parsed) {
                     const t = parse50505(data.schedule);
                     if (t) {
@@ -526,7 +551,6 @@ export default function RoomPageIFrame() {
                     }
                 }
 
-                // legacy array schedule
                 if (Array.isArray(parsed)) {
                     const formatted: Stage[] = parsed
                         .map((b: any) => {
@@ -559,7 +583,6 @@ export default function RoomPageIFrame() {
                     setStagebarCycleSeconds(undefined);
                 }
 
-                // infinite object schedule
                 const isInfiniteScheduleObject =
                     parsed &&
                     typeof parsed === "object" &&
@@ -611,12 +634,7 @@ export default function RoomPageIFrame() {
 
                     setStages(formatted);
 
-                    const anchor = String(
-                        (parsed as any)?.anchor_ts ||
-                        (parsed as any)?.anchorTs ||
-                        data?.start_time ||
-                        fallbackStart
-                    );
+                    const anchor = String((parsed as any)?.anchor_ts || (parsed as any)?.anchorTs || data?.start_time || fallbackStart);
                     setStagebarStartTime(anchor);
 
                     const sumSeconds = phases.reduce((acc, p) => acc + (Number(p.seconds) || 0), 0);
@@ -664,7 +682,7 @@ export default function RoomPageIFrame() {
         })();
     }, []);
 
-    // ====== Stage timer + sounds (scheduled OR infinite) ======
+    // ====== Stage timer + sounds ======
     useEffect(() => {
         if (isSilentRoom) {
             setRemainingTime("");
@@ -718,7 +736,6 @@ export default function RoomPageIFrame() {
 
             setCurrentStage(active);
 
-            // sounds for NON-infinite rooms (match RoomPage behavior)
             if (!isInfiniteRoom) {
                 const stage = stages[active];
 
@@ -756,7 +773,7 @@ export default function RoomPageIFrame() {
         return () => window.clearInterval(timer);
     }, [stagebarStartTime, stages, isSilentRoom, isInfiniteRoom, stagebarCycleSeconds]);
 
-    // ====== Participants helpers (External API best-effort) ======
+    // ====== Participants ======
     const upsertLocalParticipant = (list: IFrameParticipant[]) => {
         const local: IFrameParticipant = { id: "local", displayName: "You", isLocal: true };
         const hasLocal = list.some((p) => p.isLocal);
@@ -769,7 +786,6 @@ export default function RoomPageIFrame() {
 
         try {
             const info = (await api.getParticipantsInfo?.()) || [];
-            // Jitsi returns: [{ participantId, displayName, avatarURL, role, formattedDisplayName, ... }]
             const mapped: IFrameParticipant[] = (Array.isArray(info) ? info : []).map((p: any) => ({
                 id: String(p?.participantId || p?.id || ""),
                 displayName: String(p?.displayName || p?.formattedDisplayName || "Guest"),
@@ -781,7 +797,6 @@ export default function RoomPageIFrame() {
             const next = upsertLocalParticipant(mapped.filter((p) => p.id));
             setParticipants(next);
 
-            // user-joined sound (first time room becomes 2 people)
             if (prevCountRef.current < 2 && next.length >= 2) {
                 playOneShot(USER_JOINED_SOUND, 0.9);
             }
@@ -797,7 +812,7 @@ export default function RoomPageIFrame() {
         return participants.filter((p) => (p.isLocal ? "you" : p.displayName || "guest").toLowerCase().includes(q));
     }, [participants, participantsSearch]);
 
-    // ====== JITSI INIT (External API) ======
+    // ====== JITSI INIT ======
     useEffect(() => {
         if (!session || !id) return;
         if (!iframeContainerRef.current) return;
@@ -816,7 +831,6 @@ export default function RoomPageIFrame() {
             if (destroyed) return;
             destroyed = true;
 
-            // attendance_leave parity with RoomPage
             try {
                 if (id && authUserId) {
                     await supabase.rpc("attendance_leave", { p_session_id: id });
@@ -834,10 +848,8 @@ export default function RoomPageIFrame() {
                 await loadJitsiExternalApi(JITSI_DOMAIN);
                 if (destroyed) return;
 
-                // Clear container
                 iframeContainerRef.current!.innerHTML = "";
 
-                // NOTE: use a safer room name (same approach as RoomPage)
                 const roomNameRaw =
                     session.jitsi_room_name ||
                     (session.daily_room_url
@@ -862,7 +874,8 @@ export default function RoomPageIFrame() {
                     height: "100%",
                     userInfo: { displayName: userName },
 
-                    // 🔥 HARD DISABLE prejoin/welcome/name prompt
+                    // ✅ Keep Jitsi native device/video settings (we open them via toggleSettings).
+                    // ✅ Still disable prejoin/name prompt/watermark.
                     configOverwrite: {
                         disableWelcomePage: true,
                         enableWelcomePage: false,
@@ -880,13 +893,9 @@ export default function RoomPageIFrame() {
                         startWithVideoMuted: false,
 
                         disableInviteFunctions: true,
-
-                        // keep Jitsi defaults for device settings UI
-                        // (we open it with executeCommand("toggleSettings"))
                     },
 
                     interfaceConfigOverwrite: {
-                        // 🔥 kill watermark
                         SHOW_JITSI_WATERMARK: false,
                         SHOW_WATERMARK_FOR_GUESTS: false,
                         SHOW_BRAND_WATERMARK: false,
@@ -895,13 +904,16 @@ export default function RoomPageIFrame() {
 
                         HIDE_INVITE_MORE_HEADER: true,
 
-                        // remove Jitsi toolbar (we provide our own)
+                        // keep iframe clean (no Jitsi toolbar), but settings dialog still accessible via executeCommand("toggleSettings")
                         TOOLBAR_BUTTONS: [],
 
                         DISABLE_FOCUS_INDICATOR: true,
                         DISABLE_DOMINANT_SPEAKER_INDICATOR: true,
 
                         DEFAULT_REMOTE_DISPLAY_NAME: "Guest",
+
+                        // If your Jitsi build supports it, this helps ensure settings has what we need:
+                        // SETTINGS_SECTIONS: ["devices", "profile", "calendar"],
                     },
                 });
 
@@ -913,16 +925,29 @@ export default function RoomPageIFrame() {
                     setTile(true);
                 } catch { }
 
-                // refresh participants periodically (best-effort)
+                // Try apply Inter inside iframe (best-effort). Retry a few times after join.
+                const tryFont = () => tryApplyInterToIFrame(api);
+                const fontTryTimer = window.setInterval(() => {
+                    if (destroyed) return;
+                    const ok = tryFont();
+                    if (ok) window.clearInterval(fontTryTimer);
+                }, 800);
+
+                // Stop retries after 8s
+                window.setTimeout(() => {
+                    try {
+                        window.clearInterval(fontTryTimer);
+                    } catch { }
+                }, 8000);
+
+                // participants poll
                 const poll = window.setInterval(() => {
                     if (!destroyed) refreshParticipants();
                 }, 1500);
 
-                // leave handling
                 api.addEventListener?.("readyToClose", leaveToSessions);
                 api.addEventListener?.("videoConferenceLeft", leaveToSessions);
 
-                // local mute updates
                 api.addEventListener?.("audioMuteStatusChanged", (e: any) => {
                     if (destroyed) return;
                     setIsAudioMuted(!!e?.muted);
@@ -932,19 +957,16 @@ export default function RoomPageIFrame() {
                     setIsVideoMuted(!!e?.muted);
                 });
 
-                // screen share updates
                 api.addEventListener?.("screenSharingStatusChanged", (e: any) => {
                     if (destroyed) return;
                     setIsScreenSharing(!!e?.on);
                 });
 
-                // tile view updates
                 api.addEventListener?.("tileViewChanged", (e: any) => {
                     if (destroyed) return;
                     if (typeof e?.enabled === "boolean") setTile(!!e.enabled);
                 });
 
-                // participant join/leave events (for faster refresh + join sound)
                 api.addEventListener?.("participantJoined", () => {
                     if (destroyed) return;
                     refreshParticipants();
@@ -954,16 +976,25 @@ export default function RoomPageIFrame() {
                     refreshParticipants();
                 });
 
+                api.addEventListener?.("videoConferenceJoined", () => {
+                    if (destroyed) return;
+                    // another shot at Inter after join
+                    tryFont();
+                });
+
                 api.addEventListener?.("errorOccurred", (e: any) => {
                     if (destroyed) return;
                     setLastErr(String(e?.error || e?.message || "Jitsi error"));
                 });
 
-                // initial participants refresh
                 refreshParticipants();
 
-                // cleanup
-                return () => window.clearInterval(poll);
+                return () => {
+                    window.clearInterval(poll);
+                    try {
+                        window.clearInterval(fontTryTimer);
+                    } catch { }
+                };
             } catch (e: any) {
                 if (destroyed) return;
                 setLastErr(String(e?.message || e || "Jitsi init error"));
@@ -978,7 +1009,7 @@ export default function RoomPageIFrame() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [session, id, userName, navigate, jitsiKey, authUserId]);
 
-    // ====== Controls (External API commands) ======
+    // ====== Controls ======
     const exec = (cmd: string, ...args: any[]) => {
         const api = apiRef.current;
         if (!api) return;
@@ -997,13 +1028,10 @@ export default function RoomPageIFrame() {
         exec("setTileView", next);
     };
 
-    const handleOpenSettings = () => {
-        // Jitsi default device settings dialog
-        exec("toggleSettings");
-    };
+    // ✅ Native Jitsi settings dialog (devices/video/etc.)
+    const handleOpenSettings = () => exec("toggleSettings");
 
     const handleLeave = async () => {
-        // Prefer hangup; leaveToSessions will catch videoConferenceLeft/readyToClose
         const api = apiRef.current;
         if (!api) {
             try {
@@ -1039,7 +1067,6 @@ export default function RoomPageIFrame() {
 
     return (
         <div className={`min-h-screen ${pageBg}`}>
-            {/* match bottom controls padding like RoomPage */}
             <div className="w-full px-3 sm:px-5 pt-5 pb-[calc(110px+env(safe-area-inset-bottom))] flex flex-col gap-5 min-h-screen">
                 {/* TOP BAR */}
                 <div className={`flex w-full rounded-2xl overflow-hidden ${topBarBg}`}>
@@ -1063,7 +1090,7 @@ export default function RoomPageIFrame() {
                                 {/* Theme switcher */}
                                 <button
                                     onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-                                    className={`${switchTrack} ${switchTrackCls}`}
+                                    className={`w-[84px] h-[32px] rounded-full border relative transition flex items-center px-[3px] ${switchTrackCls}`}
                                     title="Toggle theme"
                                     aria-label="Toggle theme"
                                 >
@@ -1077,7 +1104,7 @@ export default function RoomPageIFrame() {
                                     </div>
                                 </button>
 
-                                {/* Reload (kept for applying server config changes) */}
+                                {/* Reload */}
                                 <button
                                     onClick={forceReloadJitsi}
                                     className={`px-3 py-1.5 rounded-xl border transition text-[13px] ${isLight
@@ -1089,7 +1116,7 @@ export default function RoomPageIFrame() {
                                     Reload
                                 </button>
 
-                                {/* Host indicator */}
+                                {/* Host */}
                                 {session.host_profile && (
                                     <button
                                         onClick={() => setSelectedUser(session.host_profile)}
@@ -1135,10 +1162,8 @@ export default function RoomPageIFrame() {
                         className={`rounded-2xl overflow-hidden min-h-0 ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
                             }`}
                     >
-                        {/* Keep a fixed height like RoomPage video container */}
                         <div className="w-full h-[72vh] min-h-[520px] relative">
                             <div ref={iframeContainerRef} className="w-full h-full" />
-
                             {lastErr && (
                                 <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow">
                                     {lastErr}
@@ -1228,8 +1253,6 @@ export default function RoomPageIFrame() {
                                                             </div>
                                                         </div>
 
-                                                        {/* External API doesn't reliably expose remote mute states.
-                               We show local state for "You" only, else no indicators. */}
                                                         <div className="flex items-center gap-2">
                                                             {p.isLocal ? (
                                                                 <>
@@ -1334,7 +1357,7 @@ export default function RoomPageIFrame() {
                 </div>
             </div>
 
-            {/* FIXED BOTTOM CONTROLS (1:1 structure like RoomPage) */}
+            {/* FIXED BOTTOM CONTROLS */}
             <div className="fixed inset-x-0 bottom-0 z-50">
                 <div className="w-full px-3 sm:px-5 pb-[calc(12px+env(safe-area-inset-bottom))]">
                     <div
@@ -1342,7 +1365,7 @@ export default function RoomPageIFrame() {
                     >
                         {/* LEFT GROUP */}
                         <div className="flex items-center gap-2" ref={moreMenuRef}>
-                            {/* MOBILE (<768): dropdown */}
+                            {/* MOBILE */}
                             <div className="md:hidden relative">
                                 <button
                                     onClick={() => setShowMoreMenu((v) => !v)}
@@ -1405,7 +1428,7 @@ export default function RoomPageIFrame() {
                                                     }`}
                                             >
                                                 <Icon name="settings" theme={theme} className="w-4 h-4 opacity-90" />
-                                                <span>Video settings</span>
+                                                <span>Video settings (Jitsi)</span>
                                             </button>
 
                                             <button
@@ -1424,7 +1447,7 @@ export default function RoomPageIFrame() {
                                 )}
                             </div>
 
-                            {/* DESKTOP/TABLET (>=768): direct */}
+                            {/* DESKTOP */}
                             <div className="hidden md:flex items-center gap-2">
                                 <button
                                     onClick={() => openRightTab("participants")}
@@ -1453,7 +1476,7 @@ export default function RoomPageIFrame() {
                                 <button
                                     onClick={handleOpenSettings}
                                     className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                                    title="Video settings"
+                                    title="Video settings (Jitsi)"
                                 >
                                     <Icon name="settings" theme={theme} className="w-5 h-5" />
                                 </button>
@@ -1480,7 +1503,7 @@ export default function RoomPageIFrame() {
                             >
                                 <Icon
                                     name={isAudioMuted ? "mic-off" : "mic-on"}
-                                    theme={isAudioMuted ? "dark" : theme} // mic-off always white version
+                                    theme={isAudioMuted ? "dark" : theme}
                                     className="w-5 h-5"
                                 />
                             </button>
