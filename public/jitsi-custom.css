@@ -1,15 +1,24 @@
 /* /public/jitsi-custom.css
-   Hard-hide all native Jitsi chrome (toolbar/filmstrip/menus).
-   Keep dialogs (settings modal) usable.
+   Injected into Jitsi iframe via configOverwrite.customCssUrl
+
+   GOAL (for "NO native controls"):
+   - Hide ALL native Jitsi chrome: toolbar, filmstrip, hover menus, overlays that create bottom blur
+   - Keep dialogs/modals usable (settings modal etc.)
+   - Settings доступен через External API (toggleSettings) из нашего UI
 */
 
+/* =========================
+   Font
+   ========================= */
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
 
 * {
     font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important;
 }
 
-/* Remove branding / watermarks */
+/* =========================
+   Remove branding / watermarks
+   ========================= */
 .watermark,
 .leftwatermark,
 .rightwatermark,
@@ -18,49 +27,24 @@
 .branding,
 .branding__link,
 .branding__image,
-.branding__text {
+.branding__text,
+.jitsi-watermark,
+#jitsi-watermark {
     display: none !important;
     visibility: hidden !important;
     opacity: 0 !important;
 }
 
-/* Hide filmstrip completely */
+/* =========================
+   Hide filmstrip completely
+   ========================= */
 .filmstrip,
 .filmstrip__toolbar,
 .videogrid_filmstrip,
 #filmstrip,
-#filmstripToolbar {
-    display: none !important;
-    visibility: hidden !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
-}
-
-/* ✅ HARD HIDE: ALL TOOLBARS / NATIVE CONTROLS */
-.toolbox,
-.toolbox-content,
-.new-toolbox,
-#new-toolbox,
-#toolbox,
-#toolbox-content,
-.toolbox__content,
-.toolbox__container,
-.toolbar,
-#toolbar,
-.sideToolbarContainer,
-#sideToolbarContainer {
-    display: none !important;
-    visibility: hidden !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
-}
-
-/* Hide hover tile menus (but don't touch dialogs) */
-.remote-videomenu,
-.video-menu,
-.context-menu,
-.tile-view .remote-videomenu,
-.tile-view .video-menu {
+#filmstripToolbar,
+.thumbnail-filmstrip,
+#thumbnail-filmstrip {
     display: none !important;
     visibility: hidden !important;
     opacity: 0 !important;
@@ -76,18 +60,67 @@
     max-height: 100% !important;
 }
 
-/* Optional: remove background behind stage */
-#react {
+/* Optional: transparent app background */
+html,
+body,
+#react,
+#app {
     background: transparent !important;
 }
 
-/* ✅ Keep dialogs/overlays usable (settings modal etc.) */
+/* =========================
+   TOOLBAR: hide EVERYTHING (no native controls)
+   ========================= */
+.toolbox,
+.toolbox-content,
+.new-toolbox,
+#new-toolbox,
+#toolbox,
+#toolbox-content,
+.toolbox__content,
+.toolbox__container,
+.toolbar,
+#toolbar,
+.toolbars,
+.toolbox-background,
+#toolbox-background,
+.toolbox__background {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* Remove possible bottom padding reserved for toolbar */
+#videoconference_page,
+.videoconference_page {
+    padding-bottom: 0 !important;
+}
+
+/* =========================
+   Hide hover tile menus (but DON'T touch dialogs)
+   ========================= */
+.remote-videomenu,
+.video-menu,
+.context-menu,
+.tile-view .remote-videomenu,
+.tile-view .video-menu {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* =========================
+   Keep overlays/dialogs usable
+   (settings modal, device selection etc.)
+   ========================= */
 .modal-dialog,
 .modal-overlay,
 .dialog,
 .overlay,
-#settings,
-#participants {
+[role="dialog"],
+[aria-modal="true"] {
     pointer-events: auto !important;
     visibility: visible !important;
     opacity: 1 !important;
