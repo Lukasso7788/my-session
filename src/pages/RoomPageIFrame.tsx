@@ -37,7 +37,7 @@ declare global {
 }
 
 // ====== JITSI DOMAIN ======
-const JITSI_DOMAIN = "jitsi.lukassodesign.site";
+const JITSI_DOMAIN = "meet.mysession.club";
 
 // ✅ INTERNAL: keep modules mounted / commands working on more Jitsi builds
 const TOOLBAR_MOUNT_BUTTONS = [

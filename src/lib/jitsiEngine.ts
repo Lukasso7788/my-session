@@ -50,7 +50,7 @@ export type JitsiEngineCallbacks = {
 
 export type BgMode = "none" | "blur" | "image";
 
-const JITSI_DOMAIN = "jitsi.lukassodesign.site";
+const JITSI_DOMAIN = "meet.mysession.club";
 const JITSI_CONFIG_URL = "/config.js";
 const JITSI_LIB_URL = "/libs/lib-jitsi-meet.min.js";
 const DISABLE_P2P = true;
