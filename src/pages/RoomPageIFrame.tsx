@@ -522,7 +522,12 @@ export default function RoomPageIFrame() {
 
                     setStages(formatted);
 
-                    const anchor = String((parsed as any)?.anchor_ts || (parsed as any)?.anchorTs || data?.start_time || fallbackStart);
+                    const anchor = String(
+                        (parsed as any)?.anchor_ts ||
+                        (parsed as any)?.anchorTs ||
+                        data?.start_time ||
+                        fallbackStart
+                    );
                     setStagebarStartTime(anchor);
 
                     const sumSeconds = phases.reduce((acc, p) => acc + (Number(p.seconds) || 0), 0);
@@ -563,7 +568,11 @@ export default function RoomPageIFrame() {
                 (u?.email ? u.email.split("@")[0] : "");
 
             if (!name && u?.id) {
-                const { data: p } = await supabase.from("profiles").select("full_name").eq("id", u.id).single();
+                const { data: p } = await supabase
+                    .from("profiles")
+                    .select("full_name")
+                    .eq("id", u.id)
+                    .single();
                 name = p?.full_name || "";
             }
 
@@ -598,14 +607,18 @@ export default function RoomPageIFrame() {
 
         const sumStageSeconds = stageSeconds.reduce((acc, v) => acc + v, 0);
         const loopSeconds =
-            (Number(stagebarCycleSeconds) || 0) > 0 ? Number(stagebarCycleSeconds) : Math.max(1, sumStageSeconds);
+            (Number(stagebarCycleSeconds) || 0) > 0
+                ? Number(stagebarCycleSeconds)
+                : Math.max(1, sumStageSeconds);
 
         const timer = window.setInterval(() => {
             const now = Date.now();
             const diffSecRaw = (now - startMs) / 1000;
 
             const diffSec =
-                loopSeconds > 0 && isInfiniteRoom ? ((diffSecRaw % loopSeconds) + loopSeconds) % loopSeconds : diffSecRaw;
+                loopSeconds > 0 && isInfiniteRoom
+                    ? ((diffSecRaw % loopSeconds) + loopSeconds) % loopSeconds
+                    : diffSecRaw;
 
             let total = 0;
             let active = 0;
@@ -619,7 +632,9 @@ export default function RoomPageIFrame() {
                 if (diffSec < next) {
                     active = i;
                     const rem = next - diffSec;
-                    setRemainingTime(`${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`);
+                    setRemainingTime(
+                        `${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`
+                    );
                     break;
                 }
                 total = next;
@@ -698,7 +713,9 @@ export default function RoomPageIFrame() {
                 iframeContainerRef.current!.innerHTML = "";
 
                 const customCssUrl =
-                    typeof window !== "undefined" ? `${window.location.origin}/jitsi-custom.css` : undefined;
+                    typeof window !== "undefined"
+                        ? `${window.location.origin}/jitsi-custom.css`
+                        : undefined;
 
                 const api = new window.JitsiMeetExternalAPI(JITSI_DOMAIN, {
                     roomName,
@@ -732,6 +749,10 @@ export default function RoomPageIFrame() {
                         TOOLBAR_BUTTONS: TOOLBAR_VISIBLE_BUTTONS,
                         TOOLBAR_ALWAYS_VISIBLE: true,
                         TOOLBAR_TIMEOUT: 0,
+
+                        // ✅ NEW: extra “always visible” safety knob
+                        // (Most builds ignore unknown keys safely; some honor it)
+                        TOOLBAR_TIMEOUT_NO_HOVER: 0,
 
                         SHOW_JITSI_WATERMARK: false,
                         SHOW_WATERMARK_FOR_GUESTS: false,
@@ -883,12 +904,20 @@ export default function RoomPageIFrame() {
     // UI TOKENS
     // ============================================
     const pageBg = isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white";
-    const topBarBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#111827]/40 border border-white/5";
-    const chipBg = isLight ? "bg-black/5 border border-black/10" : "bg-[#0B1220]/70 border border-white/5";
+    const topBarBg = isLight
+        ? "bg-white/85 border border-black/10"
+        : "bg-[#111827]/40 border border-white/5";
+    const chipBg = isLight
+        ? "bg-black/5 border border-black/10"
+        : "bg-[#0B1220]/70 border border-white/5";
     const subtleText = isLight ? "text-black/55" : "text-[#9CA3AF]";
     const strongText = isLight ? "text-black/85" : "text-[#F3F4F6]/90";
-    const panelBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#0B1220]/55 border border-white/5";
-    const bottomBarBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#07101E]/85 border border-white/10";
+    const panelBg = isLight
+        ? "bg-white/85 border border-black/10"
+        : "bg-[#0B1220]/55 border border-white/5";
+    const bottomBarBg = isLight
+        ? "bg-white/85 border border-black/10"
+        : "bg-[#07101E]/85 border border-white/10";
     const ctlBtnBase = isLight ? "bg-black/5 hover:bg-black/10" : "bg-[#111827] hover:bg-[#1f2937]";
 
     // Theme switcher
