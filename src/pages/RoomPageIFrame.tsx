@@ -1,19 +1,20 @@
 // src/pages/RoomPageIFrame.tsx
-// ROOMPAGE (IFRAME) + JITSI EXTERNAL API + BOTTOM CONTROLS (RoomPage-like)
-// ✅ Fixed bottom controls (like RoomPage)
-// ✅ Native Jitsi settings opened via our settings button:
-//    try toggleSettings -> fallback toggleDeviceSelection
-// ✅ Participants button restored (toggles native Jitsi participants pane)
-// ✅ Tile view toggle button restored
-// ✅ Audio system restored: unlock + welcome loop + stage sounds + break-end sound
-// ✅ Stagebar supports legacy array + infinite schedules (50/5/5 and object phases)
-// ✅ Silent-room detection restored
-// ✅ Force Inter inside iframe via customCssUrl (requires public file)
+// ROOMPAGE (IFRAME) + JITSI EXTERNAL API + BOTTOM CONTROLS
 //
-// IMPORTANT (Inter in iframe):
-// Put this file into /public/jitsi-custom.css (served from your app domain):
-//   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-//   * { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important; }
+// ✅ FIX (CRITICAL):
+// - Native Jitsi Settings modal MUST open from our bottom "settings" button
+// - Native Jitsi Participants pane MUST open from our bottom "participants" button
+//
+// Root cause: if TOOLBAR_BUTTONS = [] then on many Jitsi builds
+// settings/participants modules are not mounted => executeCommand does nothing.
+// Fix: enable minimal toolbar buttons in config/interface, then hide toolbar via customCssUrl.
+//
+// ✅ Also:
+// - Inter font inside iframe via customCssUrl
+// - Tile view toggle button restored + enabled by default
+// - Audio system (unlock + welcome loop + stage sounds + break-end sound) preserved
+// - Silent-room detection preserved
+// - Right panel (Chat/Intentions) preserved
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -22,8 +23,6 @@ import { supabase } from "../lib/supabase";
 import { IntentionsPanel } from "../components/IntentionsPanel";
 import { SessionStageBar } from "../components/SessionStageBar";
 import { UserProfileModal } from "../components/UserProfileModal";
-
-// ✅ fixed: correct case-sensitive import for Vercel/Linux
 import ChatPanel from "../components/ChatPanel";
 
 type Stage = {
@@ -45,6 +44,17 @@ declare global {
 
 // ====== JITSI DOMAIN ======
 const JITSI_DOMAIN = "jitsi.lukassodesign.site";
+
+// ✅ MUST: allow native modules to exist, even if we hide toolbar with CSS
+const NATIVE_TOOLBAR_BUTTONS = [
+    "microphone",
+    "camera",
+    "desktop",
+    "participants-pane",
+    "settings",
+    "tileview",
+    "hangup",
+];
 
 // ====== AUDIO ======
 const STAGE_SOUND_MAP: Record<string, string> = {
@@ -358,7 +368,7 @@ export default function RoomPageIFrame() {
     };
 
     // =========================
-    // AUDIO SYSTEM (ported)
+    // AUDIO SYSTEM
     // =========================
     const prevStageRef = useRef<number>(-1);
     const firstTickDoneRef = useRef<boolean>(false);
@@ -592,7 +602,7 @@ export default function RoomPageIFrame() {
     }, []);
 
     // ============================================
-    // STAGES TIMER (scheduled OR infinite) + SOUND
+    // STAGES TIMER + SOUND
     // ============================================
     useEffect(() => {
         if (isSilentRoom) {
@@ -643,7 +653,9 @@ export default function RoomPageIFrame() {
                 if (diffSec < next) {
                     active = i;
                     const rem = next - diffSec;
-                    setRemainingTime(`${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`);
+                    setRemainingTime(
+                        `${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`
+                    );
                     break;
                 }
                 total = next;
@@ -740,27 +752,28 @@ export default function RoomPageIFrame() {
                         requireDisplayName: false,
 
                         disableDeepLinking: true,
+                        disableInviteFunctions: true,
 
                         startWithAudioMuted: false,
                         startWithVideoMuted: false,
 
-                        disableInviteFunctions: true,
+                        // ✅ IMPORTANT: enable buttons in config too (some builds rely on config.toolbarButtons)
+                        toolbarButtons: NATIVE_TOOLBAR_BUTTONS,
 
-                        // ✅ Inter inside iframe (requires /public/jitsi-custom.css)
+                        // ✅ Inter + hide toolbox/filmstrip via CSS loaded into Jitsi
                         ...(customCssUrl ? { customCssUrl } : {}),
                     },
 
                     interfaceConfigOverwrite: {
+                        // ✅ IMPORTANT: enable buttons (do NOT set empty)
+                        TOOLBAR_BUTTONS: NATIVE_TOOLBAR_BUTTONS,
+
                         SHOW_JITSI_WATERMARK: false,
                         SHOW_WATERMARK_FOR_GUESTS: false,
                         SHOW_BRAND_WATERMARK: false,
                         JITSI_WATERMARK_LINK: "",
 
                         HIDE_INVITE_MORE_HEADER: true,
-
-                        // We hide toolbar, but still open panels via commands
-                        TOOLBAR_BUTTONS: [],
-
                         DISABLE_FOCUS_INDICATOR: true,
                         DISABLE_DOMINANT_SPEAKER_INDICATOR: true,
 
@@ -854,42 +867,38 @@ export default function RoomPageIFrame() {
         } catch { }
     };
 
-    // ✅ Participants button (native Jitsi pane)
-    const toggleParticipantsPane = () => {
+    // ✅ Native Participants pane (with fallbacks)
+    const toggleNativeParticipants = () => {
         const api = apiRef.current;
         if (!api) return;
+
         try {
             api.executeCommand("toggleParticipantsPane");
-        } catch {
-            // Some builds use different command name; keep silent.
-            // You can also try: api.executeCommand("toggleLobby") etc, but not needed here.
-        }
+        } catch { }
+
+        // fallback for forks/older builds
+        try {
+            api.executeCommand("toggleParticipants");
+        } catch { }
     };
 
-    // ✅ Native Jitsi settings like on your screenshot:
-    // 1) toggleSettings (often opens the same panel/dialog)
-    // 2) fallback: toggleDeviceSelection (some builds map the small popover to this)
-    const openNativeJitsiSettings = () => {
+    // ✅ Native Settings modal exactly like on your screenshot (with fallbacks)
+    const openNativeSettings = () => {
         const api = apiRef.current;
         if (!api) return;
 
-        let did = false;
-
+        // Primary
         try {
             api.executeCommand("toggleSettings");
-            did = true;
         } catch { }
 
-        if (!did) {
-            try {
-                api.executeCommand("toggleDeviceSelection");
-                did = true;
-            } catch { }
-        }
-
-        if (!did) {
-            setLastErr("Jitsi settings command not supported by this build");
-        }
+        // Fallbacks for different Jitsi builds
+        try {
+            api.executeCommand("toggleDeviceSelection");
+        } catch { }
+        try {
+            api.executeCommand("openSettings");
+        } catch { }
     };
 
     const hangup = () => {
@@ -906,7 +915,7 @@ export default function RoomPageIFrame() {
     };
 
     // ============================================
-    // UI TOKENS (match RoomPage style)
+    // UI TOKENS
     // ============================================
     const pageBg = isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white";
     const topBarBg = isLight
@@ -939,7 +948,11 @@ export default function RoomPageIFrame() {
     // RENDER
     // ============================================
     if (loading) {
-        return <div className={`flex h-screen justify-center items-center ${pageBg}`}>Loading session...</div>;
+        return (
+            <div className={`flex h-screen justify-center items-center ${pageBg}`}>
+                Loading session...
+            </div>
+        );
     }
 
     if (!session) {
@@ -1116,7 +1129,7 @@ export default function RoomPageIFrame() {
                         {/* LEFT GROUP */}
                         <div className="flex items-center gap-2">
                             <button
-                                onClick={toggleParticipantsPane}
+                                onClick={toggleNativeParticipants}
                                 className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
                                 title="Participants"
                             >
@@ -1140,9 +1153,9 @@ export default function RoomPageIFrame() {
                             </button>
 
                             <button
-                                onClick={openNativeJitsiSettings}
+                                onClick={openNativeSettings}
                                 className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                                title="Video settings (Jitsi)"
+                                title="Settings (Jitsi)"
                             >
                                 <Icon name="settings" theme={theme} className="w-5 h-5" />
                             </button>
@@ -1216,6 +1229,22 @@ export default function RoomPageIFrame() {
             </div>
 
             {selectedUser && <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />}
+
+            {/*
+        ✅ REQUIRED FILE: /public/jitsi-custom.css
+
+        Example content:
+
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        * { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important; }
+
+        // hide bottom toolbar + filmstrip, keep modals/panes visible
+        .toolbox, .toolbox-content, .new-toolbox, #new-toolbox, #toolbox, #toolbox-content { display:none !important; }
+        .filmstrip, .filmstrip__toolbar, .videogrid_filmstrip { display:none !important; }
+
+        // optional: hide top-left watermark area if still visible in some builds
+        .watermark, .leftwatermark, .rightwatermark { display:none !important; }
+      */}
         </div>
     );
 }
