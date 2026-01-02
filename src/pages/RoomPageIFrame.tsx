@@ -27,7 +27,7 @@ declare global {
 const JITSI_DOMAIN = "jitsi.lukassodesign.site";
 
 // ====== YOUR ICONS (put your svg files here) ======
-// If some icons don't exist yet, add them in /public/icons/
+// Ensure these exist in /public/icons/ (case-sensitive on Vercel)
 const ICONS = {
     tileOn: "/icons/tile-on.svg",
     tileOff: "/icons/tile-off.svg",
@@ -38,6 +38,7 @@ const ICONS = {
     leave: "/icons/leave.svg",
 };
 
+// Small helpers
 function safeLower(x: any) {
     return String(x || "").toLowerCase();
 }
@@ -94,9 +95,10 @@ async function loadJitsiExternalApi(domain: string) {
     if (window.JitsiMeetExternalAPI) return;
 
     await new Promise<void>((resolve, reject) => {
-        const src = `https://${domain}/external_api.js`;
+        // cache-bust external_api.js to avoid stale copies
+        const src = `https://${domain}/external_api.js?v=1`;
 
-        const existing = document.querySelector(`script[src="${src}"]`);
+        const existing = document.querySelector(`script[src^="https://${domain}/external_api.js"]`);
         if (existing) {
             const t = setInterval(() => {
                 if (window.JitsiMeetExternalAPI) {
@@ -129,7 +131,6 @@ export default function RoomPageIFrame() {
 
     const iframeContainerRef = useRef<HTMLDivElement>(null);
     const apiRef = useRef<any>(null);
-    const initGuardRef = useRef(false);
 
     const [session, setSession] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -149,9 +150,33 @@ export default function RoomPageIFrame() {
     const [mutedAudio, setMutedAudio] = useState(false);
     const [mutedVideo, setMutedVideo] = useState(false);
 
+    // Theme (match your “white UI” room; allow toggling)
+    const [theme, setTheme] = useState<"light" | "dark">(() => {
+        const saved = localStorage.getItem("roomTheme");
+        return saved === "dark" ? "dark" : "light";
+    });
+    const isLight = theme === "light";
+
+    useEffect(() => {
+        localStorage.setItem("roomTheme", theme);
+    }, [theme]);
+
     const roomName = useMemo(() => {
         return id ? `session-${id}` : "session-unknown";
     }, [id]);
+
+    // Key to force recreate Jitsi iframe reliably (after server config changes, etc.)
+    const [jitsiKey, setJitsiKey] = useState(0);
+
+    const forceReloadJitsi = () => {
+        try {
+            apiRef.current?.dispose?.();
+        } catch { }
+        apiRef.current = null;
+        if (iframeContainerRef.current) iframeContainerRef.current.innerHTML = "";
+        setLastErr("");
+        setJitsiKey((x) => x + 1);
+    };
 
     // ============================================
     // LOAD SESSION
@@ -243,8 +268,6 @@ export default function RoomPageIFrame() {
         if (!session || !id) return;
         if (!iframeContainerRef.current) return;
         if (!userName) return;
-        if (initGuardRef.current) return;
-        initGuardRef.current = true;
 
         let destroyed = false;
 
@@ -267,7 +290,7 @@ export default function RoomPageIFrame() {
                 await loadJitsiExternalApi(JITSI_DOMAIN);
                 if (destroyed) return;
 
-                // clear container
+                // Clear container
                 iframeContainerRef.current!.innerHTML = "";
 
                 const api = new window.JitsiMeetExternalAPI(JITSI_DOMAIN, {
@@ -277,9 +300,15 @@ export default function RoomPageIFrame() {
                     height: "100%",
                     userInfo: { displayName: userName },
 
+                    // 🔥 THE IMPORTANT OVERRIDES (match server + eliminate prejoin/watermark)
                     configOverwrite: {
-                        prejoinPageEnabled: false,
+                        disableWelcomePage: true,
                         enableWelcomePage: false,
+
+                        prejoinPageEnabled: false,
+                        prejoinConfig: { enabled: false }, // ✅ REAL OFF SWITCH on newer builds
+                        requireDisplayName: false,
+
                         disableDeepLinking: true,
 
                         startWithAudioMuted: false,
@@ -291,10 +320,10 @@ export default function RoomPageIFrame() {
                     interfaceConfigOverwrite: {
                         SHOW_JITSI_WATERMARK: false,
                         SHOW_WATERMARK_FOR_GUESTS: false,
+                        SHOW_BRAND_WATERMARK: false,
                         JITSI_WATERMARK_LINK: "",
 
                         HIDE_INVITE_MORE_HEADER: true,
-
                         TOOLBAR_BUTTONS: [],
 
                         DISABLE_FOCUS_INDICATOR: true,
@@ -305,6 +334,12 @@ export default function RoomPageIFrame() {
                 });
 
                 apiRef.current = api;
+
+                // (Optional) Log iframe src for debugging
+                try {
+                    // eslint-disable-next-line no-console
+                    console.log("Jitsi iframe src:", api.getIFrame?.()?.src);
+                } catch { }
 
                 // Force tile view on start (best effort)
                 try {
@@ -345,7 +380,8 @@ export default function RoomPageIFrame() {
             destroyed = true;
             cleanup();
         };
-    }, [session, id, userName, roomName, navigate]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [session, id, userName, roomName, navigate, jitsiKey]);
 
     // ============================================
     // Custom controls (your icons)
@@ -413,25 +449,64 @@ export default function RoomPageIFrame() {
         );
     }
 
+    // Theme classes (match old white UI)
+    const pageBg = isLight ? "bg-slate-50 text-slate-900" : "bg-slate-900 text-white";
+    const cardBg = isLight ? "bg-white border-slate-200" : "bg-slate-900/70 border-slate-800";
+    const subtleText = isLight ? "text-slate-600" : "text-slate-400";
+    const subtleText2 = isLight ? "text-slate-500" : "text-slate-500";
+    const stageInnerBg = isLight ? "bg-white" : "bg-white";
+    const stageInnerText = "text-slate-700";
+    const rightPanelBg = isLight ? "bg-white border-slate-200 text-slate-900" : "bg-slate-900/60 border-slate-800 text-white";
+    const rightSectionBg = isLight ? "bg-slate-50 border-slate-200" : "bg-slate-900/70 border-slate-800";
+
     return (
-        <div className="min-h-screen bg-slate-900 text-white flex justify-center">
+        <div className={`min-h-screen ${pageBg} flex justify-center`}>
             <div className="max-w-[1720px] w-full px-5 py-5 space-y-5">
-                {/* TOP STAGE CARD */}
-                <div className="rounded-2xl border border-slate-800 bg-slate-900/70 shadow-lg p-4">
-                    <div className="flex justify-between mb-3">
-                        <span className="text-slate-400">{session.title}</span>
-                        <span className="text-xs text-slate-500">
-                            Stage {currentStage + 1} / {stages.length || 0}
-                        </span>
+                {/* TOP BAR + THEME TOGGLE */}
+                <div className={`rounded-2xl border shadow-sm p-4 ${cardBg}`}>
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="flex flex-col">
+                            <span className={subtleText}>{session.title}</span>
+                            <span className={`text-xs ${subtleText2}`}>
+                                Stage {currentStage + 1} / {stages.length || 0}
+                            </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            {/* Reload Jitsi (for debugging / applying new server config) */}
+                            <button
+                                onClick={forceReloadJitsi}
+                                className={
+                                    isLight
+                                        ? "px-3 py-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 text-xs"
+                                        : "px-3 py-2 rounded-lg bg-white/10 border border-white/10 hover:bg-white/15 text-xs"
+                                }
+                                title="Reload video engine"
+                            >
+                                Reload
+                            </button>
+
+                            {/* Theme toggle */}
+                            <button
+                                onClick={() => setTheme(isLight ? "dark" : "light")}
+                                className={
+                                    isLight
+                                        ? "px-3 py-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 text-xs"
+                                        : "px-3 py-2 rounded-lg bg-white/10 border border-white/10 hover:bg-white/15 text-xs"
+                                }
+                            >
+                                {isLight ? "🌙 Dark" : "☀️ Light"}
+                            </button>
+                        </div>
                     </div>
 
-                    <div className="bg-white p-4 rounded-2xl space-y-3 shadow-sm">
+                    <div className={`p-4 rounded-2xl space-y-3 shadow-sm ${stageInnerBg}`}>
                         <SessionStageBar
                             stages={stages}
                             startTime={session.start_time}
                             onHoverStage={setHoveredStage}
                         />
-                        <div className="flex justify-between text-sm text-slate-700">
+                        <div className={`flex justify-between text-sm ${stageInnerText}`}>
                             <span>
                                 {hoveredStage
                                     ? `${hoveredStage.name} • ${hoveredStage.duration} min`
@@ -444,7 +519,7 @@ export default function RoomPageIFrame() {
                     {session.host_profile && (
                         <p
                             onClick={() => setSelectedUser(session.host_profile)}
-                            className="cursor-pointer text-sm text-slate-400 hover:text-blue-400 mt-3"
+                            className={`cursor-pointer text-sm mt-3 ${subtleText} hover:text-blue-500`}
                         >
                             👤 Hosted by {session.host_profile.full_name}
                         </p>
@@ -455,7 +530,8 @@ export default function RoomPageIFrame() {
                 <div className="grid lg:grid-cols-[1fr,370px] gap-5">
                     {/* LEFT: JITSI */}
                     <div
-                        className="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg overflow-hidden relative h-[77vh]"
+                        className={`rounded-2xl border shadow-lg overflow-hidden relative h-[77vh] ${isLight ? "bg-white border-slate-200" : "bg-slate-900/60 border-slate-800"
+                            }`}
                         style={{ minHeight: "70vh" }}
                     >
                         <div
@@ -468,50 +544,53 @@ export default function RoomPageIFrame() {
                         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3">
                             <button
                                 onClick={toggleMic}
-                                className="h-11 w-11 rounded-full bg-white/10 hover:bg-white/15 border border-white/10 flex items-center justify-center"
+                                className={
+                                    isLight
+                                        ? "h-11 w-11 rounded-full bg-white hover:bg-slate-50 border border-slate-200 flex items-center justify-center"
+                                        : "h-11 w-11 rounded-full bg-white/10 hover:bg-white/15 border border-white/10 flex items-center justify-center"
+                                }
                                 title={mutedAudio ? "Unmute mic" : "Mute mic"}
                             >
                                 <img
                                     src={mutedAudio ? ICONS.micOff : ICONS.micOn}
                                     className="w-5 h-5"
                                     alt="mic"
-                                    onError={(e) => {
-                                        (e.currentTarget as HTMLImageElement).style.display = "none";
-                                    }}
+                                    onError={() => { /* keep silent; assets should exist */ }}
                                 />
-                                <span className="text-xs">{mutedAudio ? "🎙️✖" : "🎙️"}</span>
                             </button>
 
                             <button
                                 onClick={toggleCam}
-                                className="h-11 w-11 rounded-full bg-white/10 hover:bg-white/15 border border-white/10 flex items-center justify-center"
+                                className={
+                                    isLight
+                                        ? "h-11 w-11 rounded-full bg-white hover:bg-slate-50 border border-slate-200 flex items-center justify-center"
+                                        : "h-11 w-11 rounded-full bg-white/10 hover:bg-white/15 border border-white/10 flex items-center justify-center"
+                                }
                                 title={mutedVideo ? "Turn camera on" : "Turn camera off"}
                             >
                                 <img
                                     src={mutedVideo ? ICONS.camOff : ICONS.camOn}
                                     className="w-5 h-5"
                                     alt="cam"
-                                    onError={(e) => {
-                                        (e.currentTarget as HTMLImageElement).style.display = "none";
-                                    }}
+                                    onError={() => { }}
                                 />
-                                <span className="text-xs">{mutedVideo ? "📷✖" : "📷"}</span>
                             </button>
 
                             <button
                                 onClick={toggleTile}
-                                className="h-11 w-11 rounded-full bg-white/10 hover:bg-white/15 border border-white/10 flex items-center justify-center"
+                                className={
+                                    isLight
+                                        ? "h-11 w-11 rounded-full bg-white hover:bg-slate-50 border border-slate-200 flex items-center justify-center"
+                                        : "h-11 w-11 rounded-full bg-white/10 hover:bg-white/15 border border-white/10 flex items-center justify-center"
+                                }
                                 title={tile ? "Disable tile view" : "Enable tile view"}
                             >
                                 <img
                                     src={tile ? ICONS.tileOn : ICONS.tileOff}
                                     className="w-5 h-5"
                                     alt="tile"
-                                    onError={(e) => {
-                                        (e.currentTarget as HTMLImageElement).style.display = "none";
-                                    }}
+                                    onError={() => { }}
                                 />
-                                <span className="text-xs">{tile ? "▦" : "▢"}</span>
                             </button>
 
                             <button
@@ -523,11 +602,9 @@ export default function RoomPageIFrame() {
                                     src={ICONS.leave}
                                     className="w-5 h-5"
                                     alt="leave"
-                                    onError={(e) => {
-                                        (e.currentTarget as HTMLImageElement).style.display = "none";
-                                    }}
+                                    onError={() => { }}
                                 />
-                                <span className="text-sm font-semibold">Leave</span>
+                                <span className="text-sm font-semibold text-white">Leave</span>
                             </button>
                         </div>
 
@@ -538,12 +615,15 @@ export default function RoomPageIFrame() {
                         )}
                     </div>
 
-                    {/* RIGHT: DARK PANEL */}
-                    <div className="rounded-2xl border border-slate-800 bg-slate-900/60 text-white shadow-lg h-[77vh] overflow-hidden">
+                    {/* RIGHT PANEL */}
+                    <div className={`rounded-2xl border shadow-lg h-[77vh] overflow-hidden ${rightPanelBg}`}>
                         <div className="p-4 h-full flex flex-col gap-4">
-                            {/* Intentions (dark container) */}
-                            <div className="flex-1 min-h-0 rounded-2xl border border-slate-800 bg-slate-900/70 overflow-hidden">
-                                <div className="px-4 py-3 border-b border-slate-800 text-xs font-semibold text-slate-300">
+                            {/* Intentions */}
+                            <div className={`flex-1 min-h-0 rounded-2xl border overflow-hidden ${rightSectionBg}`}>
+                                <div
+                                    className={`px-4 py-3 border-b text-xs font-semibold ${isLight ? "border-slate-200 text-slate-700" : "border-slate-800 text-slate-300"
+                                        }`}
+                                >
                                     Intentions
                                 </div>
                                 <div className="p-3 h-full overflow-auto">
@@ -551,9 +631,12 @@ export default function RoomPageIFrame() {
                                 </div>
                             </div>
 
-                            {/* ✅ Your custom chat */}
-                            <div className="h-[42%] min-h-[220px] rounded-2xl border border-slate-800 bg-slate-900/70 overflow-hidden">
-                                <div className="px-4 py-3 border-b border-slate-800 text-xs font-semibold text-slate-300">
+                            {/* Chat */}
+                            <div className={`h-[42%] min-h-[220px] rounded-2xl border overflow-hidden ${rightSectionBg}`}>
+                                <div
+                                    className={`px-4 py-3 border-b text-xs font-semibold ${isLight ? "border-slate-200 text-slate-700" : "border-slate-800 text-slate-300"
+                                        }`}
+                                >
                                     Chat
                                 </div>
                                 <div className="h-[calc(100%-44px)]">
