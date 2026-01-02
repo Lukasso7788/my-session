@@ -1,24 +1,21 @@
 // src/pages/RoomPageIFrame.tsx
-// ROOMPAGE (IFRAME) + JITSI EXTERNAL API + OUR UI CONTROLS
+// ROOMPAGE (IFRAME) + JITSI EXTERNAL API + SETTINGS-ONLY UI
 //
-// ✅ CHANGE (as requested):
-// - NO native Jitsi controls visible inside iframe (toolbar/filmstrip/etc fully hidden)
-// - Settings still available via OUR button -> api.executeCommand("toggleSettings")
-// - Keep "mount" toolbarButtons in configOverwrite to ensure settings module/commands work on more builds
+// ✅ GOAL:
+// - Hide ALL native Jitsi UI inside iframe (toolbar/filmstrip/menus)
+// - Keep ONLY one button in OUR UI: "Settings" -> api.executeCommand("toggleSettings")
+// - Keep toolbarButtons "mount list" so settings module/commands work on more builds
 //
 // Note:
-// - Visibility is enforced by BOTH:
-//   (1) interfaceConfigOverwrite.TOOLBAR_BUTTONS = [] (no visible native buttons)
-//   (2) /public/jitsi-custom.css hides toolbar containers entirely (hard guarantee)
+// - Native UI is hidden by /public/jitsi-custom.css (hard guarantee)
+// - interfaceConfigOverwrite.TOOLBAR_BUTTONS = [] to avoid mounting visible buttons in many builds
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 
-import { IntentionsPanel } from "../components/IntentionsPanel";
 import { SessionStageBar } from "../components/SessionStageBar";
 import { UserProfileModal } from "../components/UserProfileModal";
-import ChatPanel from "../components/ChatPanel";
 
 type Stage = {
     name: string;
@@ -28,7 +25,6 @@ type Stage = {
     durationSeconds?: number;
 };
 
-type RightPanelTab = "chat" | "intentions" | null;
 type RoomTheme = "dark" | "light";
 
 declare global {
@@ -193,21 +189,7 @@ function Icon({
     className = "w-5 h-5",
     alt = "",
 }: {
-    name:
-    | "mic-on"
-    | "mic-off"
-    | "camera-on"
-    | "camera-off"
-    | "screen-share"
-    | "leave"
-    | "chat"
-    | "intentions"
-    | "settings"
-    | "tile-on"
-    | "tile-off"
-    | "theme-sun"
-    | "theme-moon"
-    | "timer";
+    name: "settings" | "leave" | "theme-sun" | "theme-moon" | "timer";
     theme: RoomTheme;
     className?: string;
     alt?: string;
@@ -271,29 +253,6 @@ export default function RoomPageIFrame() {
     const [userName, setUserName] = useState<string>("");
 
     const [lastErr, setLastErr] = useState<string>("");
-
-    // iframe state
-    const [tile, setTile] = useState(true);
-    const [mutedAudio, setMutedAudio] = useState(false);
-    const [mutedVideo, setMutedVideo] = useState(false);
-    const [isScreenSharing, setIsScreenSharing] = useState(false);
-
-    // right panel (for chat/intentions only)
-    const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(false);
-    const [rightTab, setRightTab] = useState<RightPanelTab>(null);
-
-    const openRightTab = (tab: RightPanelTab) => {
-        if (!tab) {
-            setRightPanelOpen(false);
-            setRightTab(null);
-            return;
-        }
-        setRightTab((prevTab) => {
-            const same = prevTab === tab;
-            setRightPanelOpen((prevOpen) => (same ? !prevOpen : true));
-            return tab;
-        });
-    };
 
     const roomName = useMemo(() => (id ? `session-${id}` : "session-unknown"), [id]);
 
@@ -518,10 +477,7 @@ export default function RoomPageIFrame() {
                     setStages(formatted);
 
                     const anchor = String(
-                        (parsed as any)?.anchor_ts ||
-                        (parsed as any)?.anchorTs ||
-                        data?.start_time ||
-                        fallbackStart
+                        (parsed as any)?.anchor_ts || (parsed as any)?.anchorTs || data?.start_time || fallbackStart
                     );
                     setStagebarStartTime(anchor);
 
@@ -605,9 +561,7 @@ export default function RoomPageIFrame() {
             const diffSecRaw = (now - startMs) / 1000;
 
             const diffSec =
-                loopSeconds > 0 && isInfiniteRoom
-                    ? ((diffSecRaw % loopSeconds) + loopSeconds) % loopSeconds
-                    : diffSecRaw;
+                loopSeconds > 0 && isInfiniteRoom ? ((diffSecRaw % loopSeconds) + loopSeconds) % loopSeconds : diffSecRaw;
 
             let total = 0;
             let active = 0;
@@ -723,14 +677,14 @@ export default function RoomPageIFrame() {
                         startWithAudioMuted: false,
                         startWithVideoMuted: false,
 
-                        // ✅ Keep modules mounted on more builds (commands like toggleSettings work)
+                        // ✅ keep settings module/commands available
                         toolbarButtons: TOOLBAR_MOUNT_BUTTONS,
 
                         ...(customCssUrl ? { customCssUrl } : {}),
                     },
 
                     interfaceConfigOverwrite: {
-                        // ✅ NO visible native buttons (toolbar hidden anyway by CSS)
+                        // ✅ no visible native buttons
                         TOOLBAR_BUTTONS: [],
                         TOOLBAR_ALWAYS_VISIBLE: false,
                         TOOLBAR_TIMEOUT: 1,
@@ -750,40 +704,18 @@ export default function RoomPageIFrame() {
 
                 apiRef.current = api;
 
-                // Tile view on start
-                try {
-                    api.executeCommand("setTileView", true);
-                    setTile(true);
-                } catch { }
-
                 api.addEventListener?.("readyToClose", leaveToSessions);
                 api.addEventListener?.("videoConferenceLeft", leaveToSessions);
-
-                api.addEventListener?.("audioMuteStatusChanged", (e: any) => {
-                    if (destroyed) return;
-                    setMutedAudio(!!e?.muted);
-                });
-
-                api.addEventListener?.("videoMuteStatusChanged", (e: any) => {
-                    if (destroyed) return;
-                    setMutedVideo(!!e?.muted);
-                });
-
-                api.addEventListener?.("tileViewChanged", (e: any) => {
-                    if (destroyed) return;
-                    if (typeof e?.enabled === "boolean") setTile(!!e.enabled);
-                });
-
-                api.addEventListener?.("screenSharingStatusChanged", (e: any) => {
-                    if (destroyed) return;
-                    if (typeof e?.on === "boolean") setIsScreenSharing(!!e.on);
-                    if (typeof e?.enabled === "boolean") setIsScreenSharing(!!e.enabled);
-                });
 
                 api.addEventListener?.("errorOccurred", (e: any) => {
                     if (destroyed) return;
                     setLastErr(String(e?.error || e?.message || "Jitsi error"));
                 });
+
+                // Optional: start in tile view (doesn't expose UI)
+                try {
+                    api.executeCommand("setTileView", true);
+                } catch { }
             } catch (e: any) {
                 if (destroyed) return;
                 setLastErr(String(e?.message || e || "Jitsi init error"));
@@ -798,43 +730,8 @@ export default function RoomPageIFrame() {
     }, [session, id, userName, roomName, navigate, jitsiKey]);
 
     // ============================================
-    // Controls (bottom bar)
+    // Settings (only control)
     // ============================================
-    const toggleTile = () => {
-        const api = apiRef.current;
-        if (!api) return;
-        const next = !tile;
-        setTile(next);
-        try {
-            api.executeCommand("setTileView", next);
-        } catch { }
-    };
-
-    const toggleMic = () => {
-        const api = apiRef.current;
-        if (!api) return;
-        try {
-            api.executeCommand("toggleAudio");
-        } catch { }
-    };
-
-    const toggleCam = () => {
-        const api = apiRef.current;
-        if (!api) return;
-        try {
-            api.executeCommand("toggleVideo");
-        } catch { }
-    };
-
-    const toggleScreenShare = () => {
-        const api = apiRef.current;
-        if (!api) return;
-        try {
-            api.executeCommand("toggleShareScreen");
-        } catch { }
-    };
-
-    // ✅ Settings modal (only native thing we keep доступным)
     const openNativeSettings = () => {
         const api = apiRef.current;
         if (!api) return;
@@ -875,13 +772,13 @@ export default function RoomPageIFrame() {
     const chipBg = isLight ? "bg-black/5 border border-black/10" : "bg-[#0B1220]/70 border border-white/5";
     const subtleText = isLight ? "text-black/55" : "text-[#9CA3AF]";
     const strongText = isLight ? "text-black/85" : "text-[#F3F4F6]/90";
-    const panelBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#0B1220]/55 border border-white/5";
     const bottomBarBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#07101E]/85 border border-white/10";
     const ctlBtnBase = isLight ? "bg-black/5 hover:bg-black/10" : "bg-[#111827] hover:bg-[#1f2937]";
 
-    // Theme switcher
     const switchTrack = "w-[84px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
-    const switchTrackCls = isLight ? "bg-black/5 border-black/10 hover:bg-black/10" : "bg-white/5 border-white/10 hover:bg-white/10";
+    const switchTrackCls = isLight
+        ? "bg-black/5 border-black/10 hover:bg-black/10"
+        : "bg-white/5 border-white/10 hover:bg-white/10";
     const switchThumb =
         "absolute top-[2px] w-[26px] h-[26px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center";
     const thumbTranslate = isLight ? "translateX(0px)" : "translateX(50px)";
@@ -931,7 +828,12 @@ export default function RoomPageIFrame() {
                                     aria-label="Toggle theme"
                                 >
                                     <div className={switchThumb} style={{ transform: thumbTranslate }}>
-                                        <Icon name={isLight ? "theme-sun" : "theme-moon"} theme={theme} className="w-4 h-4" alt={isLight ? "Light" : "Dark"} />
+                                        <Icon
+                                            name={isLight ? "theme-sun" : "theme-moon"}
+                                            theme={theme}
+                                            className="w-4 h-4"
+                                            alt={isLight ? "Light" : "Dark"}
+                                        />
                                     </div>
                                 </button>
 
@@ -985,144 +887,47 @@ export default function RoomPageIFrame() {
                     </div>
                 </div>
 
-                {/* MAIN AREA */}
-                <div className={"grid gap-5 flex-1 min-h-0 " + (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")}>
-                    {/* VIDEO */}
-                    <div className={`rounded-2xl overflow-hidden min-h-0 relative ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"}`}>
-                        <div ref={iframeContainerRef} className="w-full h-full min-h-[60vh]" />
-                        {lastErr && (
-                            <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow z-30">
-                                {lastErr}
-                            </div>
-                        )}
-                    </div>
+                {/* VIDEO */}
+                <div
+                    className={`rounded-2xl overflow-hidden min-h-0 relative flex-1 ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
+                        }`}
+                >
+                    <div ref={iframeContainerRef} className="w-full h-full min-h-[60vh]" />
 
-                    {/* RIGHT PANEL (chat/intentions) */}
-                    {rightPanelOpen && (
-                        <div className={`rounded-2xl shadow-lg overflow-hidden min-h-0 ${panelBg}`}>
-                            {rightTab === "chat" && (
-                                <div className="h-full">
-                                    <div className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
-                                        <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Chat</div>
-                                        <button
-                                            onClick={() => openRightTab(null)}
-                                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
-                                                }`}
-                                            title="Close"
-                                        >
-                                            ✕
-                                        </button>
-                                    </div>
-                                    <div className="p-4 h-[calc(100%-64px)]">{id ? <ChatPanel sessionId={id} /> : null}</div>
-                                </div>
-                            )}
-
-                            {rightTab === "intentions" && (
-                                <div className="h-full">
-                                    <div className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
-                                        <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Intentions</div>
-                                        <button
-                                            onClick={() => openRightTab(null)}
-                                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
-                                                }`}
-                                            title="Close"
-                                        >
-                                            ✕
-                                        </button>
-                                    </div>
-                                    <div className="h-[calc(100%-64px)]">
-                                        <IntentionsPanel />
-                                    </div>
-                                </div>
-                            )}
+                    {lastErr && (
+                        <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow z-30">
+                            {lastErr}
                         </div>
                     )}
                 </div>
             </div>
 
-            {/* FIXED BOTTOM CONTROLS */}
+            {/* FIXED BOTTOM: SETTINGS ONLY (+ LEAVE) */}
             <div className="fixed inset-x-0 bottom-0 z-50">
                 <div className="w-full px-3 sm:px-5 pb-[calc(12px+env(safe-area-inset-bottom))]">
-                    <div className={`h-[64px] sm:h-[74px] rounded-2xl shadow-2xl backdrop-blur grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4 ${bottomBarBg}`}>
-                        {/* LEFT GROUP */}
-                        <div className="flex items-center gap-2">
-                            <button
-                                onClick={() => openRightTab("chat")}
-                                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                                title="Chat"
-                            >
-                                <Icon name="chat" theme={theme} className="w-5 h-5" />
-                            </button>
-
-                            <button
-                                onClick={() => openRightTab("intentions")}
-                                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                                title="Intentions"
-                            >
-                                <Icon name="intentions" theme={theme} className="w-5 h-5" />
-                            </button>
-
+                    <div
+                        className={`h-[64px] sm:h-[74px] rounded-2xl shadow-2xl backdrop-blur grid grid-cols-[1fr,auto] items-center px-2 sm:px-4 ${bottomBarBg}`}
+                    >
+                        <div className="flex items-center justify-center gap-2">
                             <button
                                 onClick={openNativeSettings}
-                                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                                className={`w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
                                 title="Settings (Jitsi)"
                             >
-                                <Icon name="settings" theme={theme} className="w-5 h-5" />
+                                <Icon name="settings" theme={theme} className="w-6 h-6" />
                             </button>
                         </div>
 
-                        {/* CENTER GROUP */}
-                        <div className="flex items-center justify-center gap-2 sm:gap-3">
-                            <button
-                                onClick={toggleMic}
-                                className={"w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " + (mutedAudio ? "bg-red-600 hover:bg-red-700" : ctlBtnBase)}
-                                title={mutedAudio ? "Unmute mic" : "Mute mic"}
-                            >
-                                <Icon name={mutedAudio ? "mic-off" : "mic-on"} theme={mutedAudio ? "dark" : theme} className="w-5 h-5" />
-                            </button>
-
-                            <button
-                                onClick={toggleCam}
-                                className={"w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " + (mutedVideo ? "bg-red-600 hover:bg-red-700" : ctlBtnBase)}
-                                title={mutedVideo ? "Turn camera on" : "Turn camera off"}
-                            >
-                                <Icon name={mutedVideo ? "camera-off" : "camera-on"} theme={theme} className="w-5 h-5" />
-                            </button>
-
-                            <button
-                                onClick={toggleScreenShare}
-                                className={"w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " + (isScreenSharing ? "bg-blue-600 hover:bg-blue-700" : ctlBtnBase)}
-                                title="Share screen"
-                            >
-                                <Icon name="screen-share" theme={theme} className="w-5 h-5" />
-                            </button>
-
-                            <button
-                                onClick={toggleTile}
-                                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                                title={tile ? "Disable tile view" : "Enable tile view"}
-                            >
-                                <Icon name={tile ? "tile-on" : "tile-off"} theme={theme} className="w-5 h-5" />
-                            </button>
-                        </div>
-
-                        {/* RIGHT GROUP */}
-                        <div className="flex items-center justify-end gap-2 sm:gap-3">
+                        {/* Leave (если хочешь прям 100% only settings — скажи, уберу и это) */}
+                        <div className="flex items-center justify-end">
                             <button
                                 onClick={hangup}
-                                className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${isLight ? "bg-red-600 hover:bg-red-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"}`}
+                                className={`h-11 px-5 rounded-2xl font-semibold items-center justify-center gap-2 flex ${isLight ? "bg-red-600 hover:bg-red-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"
+                                    }`}
                                 title="Leave"
                             >
                                 <Icon name="leave" theme={theme} className="w-5 h-5" />
                                 <span className="text-[14px]">Leave</span>
-                            </button>
-
-                            <button
-                                onClick={hangup}
-                                className="sm:hidden w-10 h-10 rounded-2xl bg-red-600 hover:bg-red-700 text-white flex items-center justify-center"
-                                title="Leave"
-                            >
-                                <Icon name="leave" theme={theme} className="w-5 h-5" />
                             </button>
                         </div>
                     </div>
