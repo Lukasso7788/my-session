@@ -16,10 +16,10 @@
 // - Silent-room detection preserved
 // - Right panel (Chat/Intentions) preserved
 //
-// ✅ NEW FIXES (YOU ASKED):
-// - Kill native Jitsi hover controls on iframe (hard overlay mask inside our container)
-// - Settings now WORK 100% from bottom bar via our own modal + set*Device commands
-//   (native Jitsi settings modal is flaky across builds)
+// ✅ NEW (requested):
+// - Remove the ugly blurred bottom overlay inside the Jitsi iframe (handled via /public/jitsi-custom.css)
+// - Mic/Camera controls now mimic Jitsi split buttons: main toggle + small chevron (device selection / settings)
+// - Keep YOUR icons & UI, only behavior mimics Jitsi
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -108,24 +108,14 @@ function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: numbe
     if (!anyPhases) return [];
 
     const toSeconds = (raw: any): number => {
-        const explicitSeconds =
-            Number(raw?.seconds) ||
-            Number(raw?.duration_seconds) ||
-            Number(raw?.durationSeconds);
+        const explicitSeconds = Number(raw?.seconds) || Number(raw?.duration_seconds) || Number(raw?.durationSeconds);
         if (explicitSeconds > 0) return explicitSeconds;
 
         const explicitMinutes =
-            Number(raw?.minutes) ||
-            Number(raw?.mins) ||
-            Number(raw?.duration_minutes) ||
-            Number(raw?.durationMinutes);
+            Number(raw?.minutes) || Number(raw?.mins) || Number(raw?.duration_minutes) || Number(raw?.durationMinutes);
         if (explicitMinutes > 0) return explicitMinutes * 60;
 
-        const n =
-            typeof raw === "number"
-                ? raw
-                : Number(raw?.duration ?? raw?.value ?? raw ?? 0);
-
+        const n = typeof raw === "number" ? raw : Number(raw?.duration ?? raw?.value ?? raw ?? 0);
         if (!Number.isFinite(n) || n <= 0) return 0;
 
         // heuristic: <=180 means minutes, else seconds
@@ -147,12 +137,7 @@ function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: numbe
         return Object.entries(anyPhases)
             .map(([k, v]: any) => {
                 const name = String(k || "");
-                const seconds =
-                    typeof v === "number"
-                        ? v <= 180
-                            ? Number(v) * 60
-                            : Number(v)
-                        : toSeconds(v);
+                const seconds = typeof v === "number" ? (v <= 180 ? Number(v) * 60 : Number(v)) : toSeconds(v);
                 return { name, seconds };
             })
             .filter((x) => x.seconds > 0);
@@ -255,6 +240,26 @@ function Icon({
     );
 }
 
+function ChevronDown({ theme }: { theme: RoomTheme }) {
+    return (
+        <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            className={theme === "light" ? "opacity-70" : "opacity-80"}
+        >
+            <path
+                d="M6 9l6 6 6-6"
+                stroke={theme === "light" ? "rgba(0,0,0,0.7)" : "rgba(255,255,255,0.85)"}
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+        </svg>
+    );
+}
+
 export default function RoomPageIFrame() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
@@ -304,18 +309,6 @@ export default function RoomPageIFrame() {
     const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(false);
     const [rightTab, setRightTab] = useState<RightPanelTab>(null);
 
-    // ✅ Our Settings modal (device selection)
-    const [settingsOpen, setSettingsOpen] = useState(false);
-    const [devAudioIn, setDevAudioIn] = useState<MediaDeviceInfo[]>([]);
-    const [devVideoIn, setDevVideoIn] = useState<MediaDeviceInfo[]>([]);
-    const [devAudioOut, setDevAudioOut] = useState<MediaDeviceInfo[]>([]);
-
-    const [selAudioIn, setSelAudioIn] = useState<string>("");
-    const [selVideoIn, setSelVideoIn] = useState<string>("");
-    const [selAudioOut, setSelAudioOut] = useState<string>("");
-
-    const [settingsErr, setSettingsErr] = useState<string>("");
-
     const openRightTab = (tab: RightPanelTab) => {
         if (!tab) {
             setRightPanelOpen(false);
@@ -355,18 +348,11 @@ export default function RoomPageIFrame() {
         const title = String(session?.title || "").toLowerCase();
 
         const tpl = session?.session_templates;
-        const tplName =
-            Array.isArray(tpl)
-                ? String(tpl?.[0]?.name || tpl?.[0]?.title || "")
-                : String(tpl?.name || tpl?.title || "");
-        const tplKey =
-            Array.isArray(tpl)
-                ? String(tpl?.[0]?.key || tpl?.[0]?.slug || tpl?.[0]?.type || "")
-                : String(tpl?.key || tpl?.slug || tpl?.type || "");
-        const tplFmt =
-            Array.isArray(tpl)
-                ? String(tpl?.[0]?.format || "")
-                : String(tpl?.format || "");
+        const tplName = Array.isArray(tpl) ? String(tpl?.[0]?.name || tpl?.[0]?.title || "") : String(tpl?.name || tpl?.title || "");
+        const tplKey = Array.isArray(tpl)
+            ? String(tpl?.[0]?.key || tpl?.[0]?.slug || tpl?.[0]?.type || "")
+            : String(tpl?.key || tpl?.slug || tpl?.type || "");
+        const tplFmt = Array.isArray(tpl) ? String(tpl?.[0]?.format || "") : String(tpl?.format || "");
 
         const hay = `${fmt} ${title} ${tplName} ${tplKey} ${tplFmt}`.toLowerCase();
         return hay.includes("silent");
@@ -449,9 +435,7 @@ export default function RoomPageIFrame() {
 
             const { data, error } = await supabase
                 .from("sessions")
-                .select(
-                    "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)"
-                )
+                .select("*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)")
                 .eq("id", id)
                 .single();
 
@@ -462,9 +446,7 @@ export default function RoomPageIFrame() {
                 setStagebarCycleSeconds(undefined);
                 setStagebarStartTime("");
 
-                const fallbackStart = String(
-                    data?.start_time || data?.created_at || new Date().toISOString()
-                );
+                const fallbackStart = String(data?.start_time || data?.created_at || new Date().toISOString());
 
                 let parsed: any = safeParseJson(data.schedule);
 
@@ -560,12 +542,7 @@ export default function RoomPageIFrame() {
 
                     setStages(formatted);
 
-                    const anchor = String(
-                        (parsed as any)?.anchor_ts ||
-                        (parsed as any)?.anchorTs ||
-                        data?.start_time ||
-                        fallbackStart
-                    );
+                    const anchor = String((parsed as any)?.anchor_ts || (parsed as any)?.anchorTs || data?.start_time || fallbackStart);
                     setStagebarStartTime(anchor);
 
                     const sumSeconds = phases.reduce((acc, p) => acc + (Number(p.seconds) || 0), 0);
@@ -606,11 +583,7 @@ export default function RoomPageIFrame() {
                 (u?.email ? u.email.split("@")[0] : "");
 
             if (!name && u?.id) {
-                const { data: p } = await supabase
-                    .from("profiles")
-                    .select("full_name")
-                    .eq("id", u.id)
-                    .single();
+                const { data: p } = await supabase.from("profiles").select("full_name").eq("id", u.id).single();
                 name = p?.full_name || "";
             }
 
@@ -644,19 +617,14 @@ export default function RoomPageIFrame() {
         });
 
         const sumStageSeconds = stageSeconds.reduce((acc, v) => acc + v, 0);
-        const loopSeconds =
-            (Number(stagebarCycleSeconds) || 0) > 0
-                ? Number(stagebarCycleSeconds)
-                : Math.max(1, sumStageSeconds);
+        const loopSeconds = (Number(stagebarCycleSeconds) || 0) > 0 ? Number(stagebarCycleSeconds) : Math.max(1, sumStageSeconds);
 
         const timer = window.setInterval(() => {
             const now = Date.now();
             const diffSecRaw = (now - startMs) / 1000;
 
             const diffSec =
-                loopSeconds > 0 && isInfiniteRoom
-                    ? ((diffSecRaw % loopSeconds) + loopSeconds) % loopSeconds
-                    : diffSecRaw;
+                loopSeconds > 0 && isInfiniteRoom ? ((diffSecRaw % loopSeconds) + loopSeconds) % loopSeconds : diffSecRaw;
 
             let total = 0;
             let active = 0;
@@ -670,9 +638,7 @@ export default function RoomPageIFrame() {
                 if (diffSec < next) {
                     active = i;
                     const rem = next - diffSec;
-                    setRemainingTime(
-                        `${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`
-                    );
+                    setRemainingTime(`${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`);
                     break;
                 }
                 total = next;
@@ -750,8 +716,7 @@ export default function RoomPageIFrame() {
 
                 iframeContainerRef.current!.innerHTML = "";
 
-                const customCssUrl =
-                    typeof window !== "undefined" ? `${window.location.origin}/jitsi-custom.css` : undefined;
+                const customCssUrl = typeof window !== "undefined" ? `${window.location.origin}/jitsi-custom.css` : undefined;
 
                 const api = new window.JitsiMeetExternalAPI(JITSI_DOMAIN, {
                     roomName,
@@ -777,7 +742,7 @@ export default function RoomPageIFrame() {
                         // ✅ IMPORTANT: enable buttons in config too (some builds rely on config.toolbarButtons)
                         toolbarButtons: NATIVE_TOOLBAR_BUTTONS,
 
-                        // ✅ Inter + hide toolbox/filmstrip via CSS loaded into Jitsi
+                        // ✅ CSS inside Jitsi (also removes the ugly bottom blur overlay)
                         ...(customCssUrl ? { customCssUrl } : {}),
                     },
 
@@ -848,77 +813,6 @@ export default function RoomPageIFrame() {
     }, [session, id, userName, roomName, navigate, jitsiKey]);
 
     // ============================================
-    // SETTINGS (device selection modal)
-    // ============================================
-    useEffect(() => {
-        if (!settingsOpen) return;
-
-        let cancelled = false;
-
-        (async () => {
-            setSettingsErr("");
-
-            try {
-                // ✅ to see labels in enumerateDevices, we need permission at least once
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-                stream.getTracks().forEach((t) => t.stop());
-
-                const list = await navigator.mediaDevices.enumerateDevices();
-                if (cancelled) return;
-
-                const aIn = list.filter((d) => d.kind === "audioinput");
-                const vIn = list.filter((d) => d.kind === "videoinput");
-                const aOut = list.filter((d) => d.kind === "audiooutput");
-
-                setDevAudioIn(aIn);
-                setDevVideoIn(vIn);
-                setDevAudioOut(aOut);
-
-                if (!selAudioIn && aIn[0]?.deviceId) setSelAudioIn(aIn[0].deviceId);
-                if (!selVideoIn && vIn[0]?.deviceId) setSelVideoIn(vIn[0].deviceId);
-                if (!selAudioOut && aOut[0]?.deviceId) setSelAudioOut(aOut[0].deviceId);
-            } catch (e: any) {
-                if (cancelled) return;
-                setSettingsErr(e?.message || String(e));
-            }
-        })();
-
-        return () => {
-            cancelled = true;
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [settingsOpen]);
-
-    const applyDevicesToJitsi = () => {
-        const api = apiRef.current;
-        if (!api) {
-            setSettingsOpen(false);
-            return;
-        }
-
-        setSettingsErr("");
-
-        try {
-            if (selAudioIn) api.executeCommand("setAudioInputDevice", selAudioIn);
-        } catch (e: any) {
-            setSettingsErr((prev) => prev || `Audio input failed: ${e?.message || e}`);
-        }
-
-        try {
-            if (selVideoIn) api.executeCommand("setVideoInputDevice", selVideoIn);
-        } catch (e: any) {
-            setSettingsErr((prev) => prev || `Video input failed: ${e?.message || e}`);
-        }
-
-        // Output device often not supported; ignore errors
-        try {
-            if (selAudioOut) api.executeCommand("setAudioOutputDevice", selAudioOut);
-        } catch { }
-
-        setSettingsOpen(false);
-    };
-
-    // ============================================
     // Controls (bottom bar)
     // ============================================
     const toggleTile = () => {
@@ -962,12 +856,62 @@ export default function RoomPageIFrame() {
 
         try {
             api.executeCommand("toggleParticipantsPane");
+            return;
         } catch { }
 
-        // fallback for forks/older builds
         try {
             api.executeCommand("toggleParticipants");
         } catch { }
+    };
+
+    // ✅ Native Settings modal exactly like on your screenshot (with fallbacks)
+    const openNativeSettings = () => {
+        const api = apiRef.current;
+        if (!api) return;
+
+        try {
+            api.executeCommand("toggleSettings");
+            return;
+        } catch { }
+
+        try {
+            api.executeCommand("toggleDeviceSelection");
+        } catch { }
+
+        try {
+            api.executeCommand("openSettings");
+        } catch { }
+    };
+
+    // ✅ “Chevron” behavior (Jitsi-like)
+    // We can’t reliably select Audio/Video tab cross-origin, so we use best-effort commands.
+    const openNativeDeviceSelection = () => {
+        const api = apiRef.current;
+        if (!api) return;
+
+        try {
+            api.executeCommand("toggleDeviceSelection");
+            return;
+        } catch { }
+
+        // fallback to settings modal
+        try {
+            api.executeCommand("toggleSettings");
+        } catch { }
+
+        try {
+            api.executeCommand("openSettings");
+        } catch { }
+    };
+
+    const openNativeAudioDevices = () => {
+        // best effort: Jitsi usually shows audio/camera selectors from this dialog
+        openNativeDeviceSelection();
+    };
+
+    const openNativeVideoDevices = () => {
+        // best effort: same dialog covers camera too on most builds
+        openNativeDeviceSelection();
     };
 
     const hangup = () => {
@@ -987,28 +931,17 @@ export default function RoomPageIFrame() {
     // UI TOKENS
     // ============================================
     const pageBg = isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white";
-    const topBarBg = isLight
-        ? "bg-white/85 border border-black/10"
-        : "bg-[#111827]/40 border border-white/5";
-    const chipBg = isLight
-        ? "bg-black/5 border border-black/10"
-        : "bg-[#0B1220]/70 border border-white/5";
+    const topBarBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#111827]/40 border border-white/5";
+    const chipBg = isLight ? "bg-black/5 border border-black/10" : "bg-[#0B1220]/70 border border-white/5";
     const subtleText = isLight ? "text-black/55" : "text-[#9CA3AF]";
     const strongText = isLight ? "text-black/85" : "text-[#F3F4F6]/90";
-    const panelBg = isLight
-        ? "bg-white/85 border border-black/10"
-        : "bg-[#0B1220]/55 border border-white/5";
-    const bottomBarBg = isLight
-        ? "bg-white/85 border border-black/10"
-        : "bg-[#07101E]/85 border border-white/10";
+    const panelBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#0B1220]/55 border border-white/5";
+    const bottomBarBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#07101E]/85 border border-white/10";
     const ctlBtnBase = isLight ? "bg-black/5 hover:bg-black/10" : "bg-[#111827] hover:bg-[#1f2937]";
 
     // Theme switcher
-    const switchTrack =
-        "w-[84px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
-    const switchTrackCls = isLight
-        ? "bg-black/5 border-black/10 hover:bg-black/10"
-        : "bg-white/5 border-white/10 hover:bg-white/10";
+    const switchTrack = "w-[84px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
+    const switchTrackCls = isLight ? "bg-black/5 border-black/10 hover:bg-black/10" : "bg-white/5 border-white/10 hover:bg-white/10";
     const switchThumb =
         "absolute top-[2px] w-[26px] h-[26px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center";
     const thumbTranslate = isLight ? "translateX(0px)" : "translateX(50px)";
@@ -1017,11 +950,7 @@ export default function RoomPageIFrame() {
     // RENDER
     // ============================================
     if (loading) {
-        return (
-            <div className={`flex h-screen justify-center items-center ${pageBg}`}>
-                Loading session...
-            </div>
-        );
+        return <div className={`flex h-screen justify-center items-center ${pageBg}`}>Loading session...</div>;
     }
 
     if (!session) {
@@ -1032,6 +961,9 @@ export default function RoomPageIFrame() {
         );
     }
 
+    const micBtnBg = mutedAudio ? "bg-red-600 hover:bg-red-700" : ctlBtnBase;
+    const camBtnBg = mutedVideo ? "bg-red-600 hover:bg-red-700" : ctlBtnBase;
+
     return (
         <div className={`min-h-screen ${pageBg}`}>
             <div className="w-full px-3 sm:px-5 pt-5 pb-[calc(110px+env(safe-area-inset-bottom))] flex flex-col gap-5 min-h-screen">
@@ -1040,12 +972,8 @@ export default function RoomPageIFrame() {
                     <div className="flex-1 px-6 py-4">
                         <div className="flex items-start justify-between gap-4">
                             <div className="min-w-0">
-                                <p className={`font-inter font-semibold text-[18px] truncate ${strongText}`}>
-                                    {session.title}
-                                </p>
-                                <p className={`font-inter text-[13px] ${subtleText}`}>
-                                    {isSilentRoom ? "Silent room" : "Video session"}
-                                </p>
+                                <p className={`font-inter font-semibold text-[18px] truncate ${strongText}`}>{session.title}</p>
+                                <p className={`font-inter text-[13px] ${subtleText}`}>{isSilentRoom ? "Silent room" : "Video session"}</p>
                             </div>
 
                             <div className="flex items-center gap-2 shrink-0">
@@ -1066,12 +994,7 @@ export default function RoomPageIFrame() {
                                     aria-label="Toggle theme"
                                 >
                                     <div className={switchThumb} style={{ transform: thumbTranslate }}>
-                                        <Icon
-                                            name={isLight ? "theme-sun" : "theme-moon"}
-                                            theme={theme}
-                                            className="w-4 h-4"
-                                            alt={isLight ? "Light" : "Dark"}
-                                        />
+                                        <Icon name={isLight ? "theme-sun" : "theme-moon"} theme={theme} className="w-4 h-4" alt={isLight ? "Light" : "Dark"} />
                                     </div>
                                 </button>
 
@@ -1079,8 +1002,8 @@ export default function RoomPageIFrame() {
                                 <button
                                     onClick={forceReloadJitsi}
                                     className={`px-3 py-2 rounded-xl border transition font-inter text-[13px] ${isLight
-                                        ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                        : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                         }`}
                                     title="Reload video engine"
                                 >
@@ -1092,14 +1015,12 @@ export default function RoomPageIFrame() {
                                     <button
                                         onClick={() => setSelectedUser(session.host_profile)}
                                         className={`max-[520px]:hidden flex items-center gap-2 px-3 py-2 rounded-xl border transition font-inter text-[13px] ${isLight
-                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                                : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                             }`}
                                     >
                                         <span className="flex items-center gap-1 leading-none">
-                                            <span className={isLight ? "font-normal text-black/55" : "font-normal text-white/70"}>
-                                                Host:
-                                            </span>
+                                            <span className={isLight ? "font-normal text-black/55" : "font-normal text-white/70"}>Host:</span>
                                             <span className="font-semibold">{session.host_profile.full_name}</span>
                                         </span>
                                     </button>
@@ -1110,12 +1031,7 @@ export default function RoomPageIFrame() {
                         {/* StageBar */}
                         {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
                             <div className="mt-3 w-full overflow-hidden">
-                                <SessionStageBar
-                                    stages={stages as any}
-                                    startTime={stagebarStartTime}
-                                    cycleSeconds={stagebarCycleSeconds}
-                                    onHoverStage={setHoveredStage as any}
-                                />
+                                <SessionStageBar stages={stages as any} startTime={stagebarStartTime} cycleSeconds={stagebarCycleSeconds} onHoverStage={setHoveredStage as any} />
                             </div>
                         )}
 
@@ -1128,33 +1044,13 @@ export default function RoomPageIFrame() {
                 </div>
 
                 {/* MAIN AREA */}
-                <div
-                    className={
-                        "grid gap-5 flex-1 min-h-0 " +
-                        (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
-                    }
-                >
+                <div className={"grid gap-5 flex-1 min-h-0 " + (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")}>
                     {/* VIDEO */}
-                    <div
-                        className={`rounded-2xl overflow-hidden min-h-0 relative ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
-                            }`}
-                    >
+                    <div className={`rounded-2xl overflow-hidden min-h-0 relative ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"}`}>
                         <div ref={iframeContainerRef} className="w-full h-full min-h-[60vh]" />
 
-                        {/* ✅ HARD-KILL native Jitsi hover toolbar by masking bottom area */}
-                        <div
-                            className={`pointer-events-none absolute left-0 right-0 bottom-0 h-[92px] ${isLight ? "bg-white/80" : "bg-[#0B1220]/80"
-                                } backdrop-blur`}
-                            style={{
-                                maskImage: "linear-gradient(to top, black 70%, transparent 100%)",
-                                WebkitMaskImage: "linear-gradient(to top, black 70%, transparent 100%)",
-                            }}
-                        />
-
                         {lastErr && (
-                            <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow z-30">
-                                {lastErr}
-                            </div>
+                            <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow z-30">{lastErr}</div>
                         )}
                     </div>
 
@@ -1232,9 +1128,9 @@ export default function RoomPageIFrame() {
                             </button>
 
                             <button
-                                onClick={() => setSettingsOpen(true)}
+                                onClick={openNativeSettings}
                                 className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                                title="Settings"
+                                title="Settings (Jitsi)"
                             >
                                 <Icon name="settings" theme={theme} className="w-5 h-5" />
                             </button>
@@ -1242,27 +1138,43 @@ export default function RoomPageIFrame() {
 
                         {/* CENTER GROUP */}
                         <div className="flex items-center justify-center gap-2 sm:gap-3">
-                            <button
-                                onClick={toggleMic}
-                                className={
-                                    "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
-                                    (mutedAudio ? "bg-red-600 hover:bg-red-700" : ctlBtnBase)
-                                }
-                                title={mutedAudio ? "Unmute mic" : "Mute mic"}
-                            >
-                                <Icon name={mutedAudio ? "mic-off" : "mic-on"} theme={mutedAudio ? "dark" : theme} className="w-5 h-5" />
-                            </button>
+                            {/* MIC split button (toggle + chevron like Jitsi) */}
+                            <div className="flex items-center gap-1">
+                                <button
+                                    onClick={toggleMic}
+                                    className={"w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " + micBtnBg}
+                                    title={mutedAudio ? "Unmute mic" : "Mute mic"}
+                                >
+                                    <Icon name={mutedAudio ? "mic-off" : "mic-on"} theme={mutedAudio ? "dark" : theme} className="w-5 h-5" />
+                                </button>
+                                <button
+                                    onClick={openNativeAudioDevices}
+                                    className={"w-8 h-10 sm:w-9 sm:h-11 rounded-2xl flex items-center justify-center transition " + micBtnBg}
+                                    title="Mic devices / settings"
+                                    aria-label="Mic devices / settings"
+                                >
+                                    <ChevronDown theme={theme} />
+                                </button>
+                            </div>
 
-                            <button
-                                onClick={toggleCam}
-                                className={
-                                    "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
-                                    (mutedVideo ? "bg-red-600 hover:bg-red-700" : ctlBtnBase)
-                                }
-                                title={mutedVideo ? "Turn camera on" : "Turn camera off"}
-                            >
-                                <Icon name={mutedVideo ? "camera-off" : "camera-on"} theme={theme} className="w-5 h-5" />
-                            </button>
+                            {/* CAM split button (toggle + chevron like Jitsi) */}
+                            <div className="flex items-center gap-1">
+                                <button
+                                    onClick={toggleCam}
+                                    className={"w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " + camBtnBg}
+                                    title={mutedVideo ? "Turn camera on" : "Turn camera off"}
+                                >
+                                    <Icon name={mutedVideo ? "camera-off" : "camera-on"} theme={theme} className="w-5 h-5" />
+                                </button>
+                                <button
+                                    onClick={openNativeVideoDevices}
+                                    className={"w-8 h-10 sm:w-9 sm:h-11 rounded-2xl flex items-center justify-center transition " + camBtnBg}
+                                    title="Camera devices / settings"
+                                    aria-label="Camera devices / settings"
+                                >
+                                    <ChevronDown theme={theme} />
+                                </button>
+                            </div>
 
                             <button
                                 onClick={toggleScreenShare}
@@ -1288,7 +1200,8 @@ export default function RoomPageIFrame() {
                         <div className="flex items-center justify-end gap-2 sm:gap-3">
                             <button
                                 onClick={hangup}
-                                className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${isLight ? "bg-red-600 hover:bg-red-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"}`}
+                                className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${isLight ? "bg-red-600 hover:bg-red-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"
+                                    }`}
                                 title="Leave"
                             >
                                 <Icon name="leave" theme={theme} className="w-5 h-5" />
@@ -1308,124 +1221,6 @@ export default function RoomPageIFrame() {
             </div>
 
             {selectedUser && <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />}
-
-            {/* ✅ OUR SETTINGS MODAL (device selection) */}
-            {settingsOpen && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center px-4">
-                    <div
-                        className="absolute inset-0 bg-black/60"
-                        onClick={() => setSettingsOpen(false)}
-                    />
-                    <div
-                        className={`relative w-full max-w-lg rounded-2xl p-5 shadow-2xl ${isLight ? "bg-white text-black" : "bg-[#0B1220] text-white"
-                            } border ${isLight ? "border-black/10" : "border-white/10"}`}
-                    >
-                        <div className="flex items-center justify-between mb-4">
-                            <div className="font-inter font-semibold text-lg">Settings</div>
-                            <button
-                                onClick={() => setSettingsOpen(false)}
-                                className={`w-9 h-9 rounded-xl flex items-center justify-center ${isLight ? "bg-black/5 hover:bg-black/10" : "bg-white/5 hover:bg-white/10"
-                                    }`}
-                                title="Close"
-                            >
-                                ✕
-                            </button>
-                        </div>
-
-                        {settingsErr && (
-                            <div className="mb-3 text-sm px-3 py-2 rounded-xl bg-red-600 text-white">
-                                {settingsErr}
-                            </div>
-                        )}
-
-                        <div className="space-y-3">
-                            <div>
-                                <div className="text-sm opacity-70 mb-1">Microphone</div>
-                                <select
-                                    value={selAudioIn}
-                                    onChange={(e) => setSelAudioIn(e.target.value)}
-                                    className={`w-full rounded-xl px-3 py-2 ${isLight ? "bg-black/5" : "bg-white/5"
-                                        }`}
-                                >
-                                    {devAudioIn.map((d) => (
-                                        <option key={d.deviceId} value={d.deviceId}>
-                                            {d.label || `Mic (${d.deviceId.slice(0, 6)})`}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div>
-                                <div className="text-sm opacity-70 mb-1">Camera</div>
-                                <select
-                                    value={selVideoIn}
-                                    onChange={(e) => setSelVideoIn(e.target.value)}
-                                    className={`w-full rounded-xl px-3 py-2 ${isLight ? "bg-black/5" : "bg-white/5"
-                                        }`}
-                                >
-                                    {devVideoIn.map((d) => (
-                                        <option key={d.deviceId} value={d.deviceId}>
-                                            {d.label || `Camera (${d.deviceId.slice(0, 6)})`}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div>
-                                <div className="text-sm opacity-70 mb-1">Speaker (optional)</div>
-                                <select
-                                    value={selAudioOut}
-                                    onChange={(e) => setSelAudioOut(e.target.value)}
-                                    className={`w-full rounded-xl px-3 py-2 ${isLight ? "bg-black/5" : "bg-white/5"
-                                        }`}
-                                >
-                                    {devAudioOut.length === 0 ? (
-                                        <option value="">Not supported</option>
-                                    ) : (
-                                        devAudioOut.map((d) => (
-                                            <option key={d.deviceId} value={d.deviceId}>
-                                                {d.label || `Speaker (${d.deviceId.slice(0, 6)})`}
-                                            </option>
-                                        ))
-                                    )}
-                                </select>
-                            </div>
-                        </div>
-
-                        <div className="mt-5 flex gap-2 justify-end">
-                            <button
-                                onClick={() => setSettingsOpen(false)}
-                                className={`h-10 px-4 rounded-xl ${isLight ? "bg-black/5 hover:bg-black/10" : "bg-white/5 hover:bg-white/10"
-                                    }`}
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={applyDevicesToJitsi}
-                                className="h-10 px-5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold"
-                            >
-                                Apply
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/*
-        ✅ REQUIRED FILE: /public/jitsi-custom.css
-
-        Example content:
-
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        * { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important; }
-
-        // hide bottom toolbar + filmstrip, keep modals/panes visible
-        .toolbox, .toolbox-content, .new-toolbox, #new-toolbox, #toolbox, #toolbox-content { display:none !important; }
-        .filmstrip, .filmstrip__toolbar, .videogrid_filmstrip { display:none !important; }
-
-        // optional: hide top-left watermark area if still visible in some builds
-        .watermark, .leftwatermark, .rightwatermark { display:none !important; }
-      */}
         </div>
     );
 }
