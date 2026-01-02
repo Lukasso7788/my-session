@@ -1,6 +1,6 @@
 // src/components/SessionCard.tsx
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 interface SessionCardProps {
     session: any;
@@ -54,19 +54,19 @@ export default function SessionCard({
     onJoin,
     onDelete,
 }: SessionCardProps) {
+    const navigate = useNavigate();
+
     const isHost = session.host_id === userId;
 
     // ✅ booking status from sessions.session_bookings
-    const initialIsBooked = session.session_bookings?.some(
-        (b: any) => b.user_id === userId
-    );
+    const initialIsBooked = session.session_bookings?.some((b: any) => b.user_id === userId);
 
-    const [isBookingConfirmed, setIsBookingConfirmed] =
-        useState<boolean>(initialIsBooked);
+    const [isBookingConfirmed, setIsBookingConfirmed] = useState<boolean>(initialIsBooked);
 
     const [isHoveringCancel, setIsHoveringCancel] = useState(false);
     const [isHoveringBook, setIsHoveringBook] = useState(false);
     const [isHoveringJoin, setIsHoveringJoin] = useState(false);
+    const [isHoveringJoinIframe, setIsHoveringJoinIframe] = useState(false); // ✅ NEW
     const [isHoveringCard, setIsHoveringCard] = useState(false);
 
     // ✅ Figma-like hover delay
@@ -89,8 +89,7 @@ export default function SessionCard({
     // ✅ REAL live count must come from presence aggregation in SessionsPage.
     // We support it here if SessionsPage passes it as session.live_count.
     // If it's not provided, we DO NOT show "live" numbers to avoid lying.
-    const liveCount: number | null =
-        typeof session?.live_count === "number" ? session.live_count : null;
+    const liveCount: number | null = typeof session?.live_count === "number" ? session.live_count : null;
 
     // your “title -> type” mapping (OK)
     const nameToTypeMap: Record<string, string> = {
@@ -146,10 +145,7 @@ export default function SessionCard({
 
     const onEnterBooked = () => {
         if (cancelHoverTimer) window.clearTimeout(cancelHoverTimer);
-        const t = window.setTimeout(
-            () => setIsHoveringCancel(true),
-            CANCEL_HOVER_DELAY_MS
-        );
+        const t = window.setTimeout(() => setIsHoveringCancel(true), CANCEL_HOVER_DELAY_MS);
         setCancelHoverTimer(t);
     };
 
@@ -157,6 +153,12 @@ export default function SessionCard({
         if (cancelHoverTimer) window.clearTimeout(cancelHoverTimer);
         setCancelHoverTimer(null);
         setIsHoveringCancel(false);
+    };
+
+    // ✅ NEW: Join via iFrame page without touching existing lib-jitsi flow.
+    // We reuse the same :id param as /room/:id (your RoomPage uses session.id).
+    const handleJoinIframe = () => {
+        navigate(`/room-iframe/${session.id}`);
     };
 
     const bookSessionButton = (
@@ -235,21 +237,14 @@ export default function SessionCard({
         "
             >
                 <div className="flex flex-col gap-3">
-                    <h3 className="text-[24px] md:text-[29px] font-bold leading-tight">
-                        {session.title}
-                    </h3>
+                    <h3 className="text-[24px] md:text-[29px] font-bold leading-tight">{session.title}</h3>
 
                     <div className="flex flex-wrap items-center gap-4 text-[12px] text-[#606060]">
                         {/* Host link */}
-                        <Link
-                            to={`/profile/${session.host_id}`}
-                            className="flex items-center gap-1 hover:opacity-70"
-                        >
+                        <Link to={`/profile/${session.host_id}`} className="flex items-center gap-1 hover:opacity-70">
                             <img src="/icons/host.svg" className="w-4 h-4 opacity-70" alt="" />
                             <span>Host</span>
-                            <span className="underline underline-offset-2">
-                                {session.host_name}
-                            </span>
+                            <span className="underline underline-offset-2">{session.host_name}</span>
                         </Link>
 
                         {/* Duration */}
@@ -291,9 +286,7 @@ export default function SessionCard({
                 <div className="hidden xl:flex items-center gap-6">
                     <div className="w-px h-10 bg-[#D9D9D9]" />
                     <div className="text-center">
-                        <div className="text-[32px] font-bold text-brandBlack">
-                            {liveCount ?? "—"}
-                        </div>
+                        <div className="text-[32px] font-bold text-brandBlack">{liveCount ?? "—"}</div>
                         <div className="text-[10px] text-[#606060] font-light -mt-1">
                             {liveCount == null ? "live count soon" : "in the session now"}
                         </div>
@@ -312,6 +305,7 @@ export default function SessionCard({
             >
                 {isBookingConfirmed ? confirmedBookingButton : bookSessionButton}
 
+                {/* existing join */}
                 <button
                     onClick={() => onJoin(session.id)}
                     onMouseEnter={() => setIsHoveringJoin(true)}
@@ -326,6 +320,28 @@ export default function SessionCard({
                     style={{ backgroundColor: isHoveringJoin ? joinHoverBg : "#111827" }}
                 >
                     Join session
+                </button>
+
+                {/* ✅ NEW: join via iFrame */}
+                <button
+                    onClick={handleJoinIframe}
+                    onMouseEnter={() => setIsHoveringJoinIframe(true)}
+                    onMouseLeave={() => setIsHoveringJoinIframe(false)}
+                    className="
+            h-12 rounded-full px-6 text-[14px] font-semibold
+            flex items-center justify-center
+            transition-all duration-200 ease-in-out
+            w-full xl:w-auto
+            border
+          "
+                    style={{
+                        borderColor: isHoveringJoinIframe ? joinHoverBg : "#111827",
+                        color: isHoveringJoinIframe ? "white" : "#111827",
+                        backgroundColor: isHoveringJoinIframe ? joinHoverBg : "transparent",
+                    }}
+                    title="Join using Jitsi iFrame / External API"
+                >
+                    Join (iFrame)
                 </button>
 
                 {isHost && (

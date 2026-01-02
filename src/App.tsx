@@ -4,6 +4,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { SessionsPage } from "./pages/SessionsPage";
 import LandingPage from "./pages/LandingPage"; // ✅ NEW
 import RoomPage from "./pages/RoomPage";
+import RoomPageIFrame from "./pages/RoomPageIFrame"; // ✅ NEW (Jitsi iFrame / External API)
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import ProfilePage from "./pages/ProfilePage";
@@ -44,6 +45,7 @@ export default function App() {
 
         {/* Routes WITHOUT header (обычно так лучше) */}
         <Route path="/room/:id" element={<RoomPage />} />
+        <Route path="/room-iframe/:id" element={<RoomPageIFrame />} /> {/* ✅ NEW */}
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
 
