@@ -36,8 +36,9 @@ declare global {
     }
 }
 
-// ====== JITSI DOMAIN ======
-const JITSI_DOMAIN = "meet.mysession.club";
+// ====== JITSI DOMAINS (PRIMARY + FALLBACK) ======
+const JITSI_DOMAINS = ["meet2.mysession.club", "meet.mysession.club"] as const;
+type JitsiDomain = (typeof JITSI_DOMAINS)[number];
 
 // ✅ INTERNAL: keep modules mounted / commands working on more Jitsi builds
 const TOOLBAR_MOUNT_BUTTONS = [
@@ -158,12 +159,18 @@ const STAGE_COLORS: Record<string, string> = {
     outro: "#80DF86",
 };
 
+// ===============================
+// JITSI EXTERNAL API LOADER
+// - loads external_api.js from chosen domain
+// - does NOT bail out early just because window.JitsiMeetExternalAPI already exists
+//   (we still want to try domains in order and have reliable behavior)
+// ===============================
 async function loadJitsiExternalApi(domain: string) {
     if (typeof window === "undefined") return;
-    if (window.JitsiMeetExternalAPI) return;
 
     await new Promise<void>((resolve, reject) => {
         const src = `https://${domain}/external_api.js?v=1`;
+
         const existing = document.querySelector(`script[src^="https://${domain}/external_api.js"]`);
         if (existing) {
             const t = setInterval(() => {
@@ -175,7 +182,7 @@ async function loadJitsiExternalApi(domain: string) {
 
             setTimeout(() => {
                 clearInterval(t);
-                if (!window.JitsiMeetExternalAPI) reject(new Error("external_api.js loaded but API missing"));
+                if (!window.JitsiMeetExternalAPI) reject(new Error(`external_api.js present but API missing (${domain})`));
             }, 6000);
 
             return;
@@ -184,10 +191,102 @@ async function loadJitsiExternalApi(domain: string) {
         const s = document.createElement("script");
         s.src = src;
         s.async = true;
-        s.onload = () => resolve();
-        s.onerror = () => reject(new Error("Failed to load Jitsi external_api.js"));
+
+        s.onload = () => {
+            const t = setInterval(() => {
+                if (window.JitsiMeetExternalAPI) {
+                    clearInterval(t);
+                    resolve();
+                }
+            }, 50);
+
+            setTimeout(() => {
+                clearInterval(t);
+                if (!window.JitsiMeetExternalAPI) reject(new Error(`external_api.js loaded but API missing (${domain})`));
+            }, 3000);
+        };
+
+        s.onerror = () => reject(new Error(`Failed to load Jitsi external_api.js (${domain})`));
         document.head.appendChild(s);
     });
+}
+
+async function createJitsiApiWithFallback(args: {
+    domains: readonly string[];
+    roomName: string;
+    parentNode: HTMLElement;
+    userName: string;
+    customCssUrl?: string;
+    onDomainChosen?: (d: string) => void;
+}) {
+    let lastError: any = null;
+
+    for (const domain of args.domains) {
+        try {
+            await loadJitsiExternalApi(domain);
+
+            // Clear container before creating iframe
+            args.parentNode.innerHTML = "";
+
+            const api = new window.JitsiMeetExternalAPI(domain, {
+                roomName: args.roomName,
+                parentNode: args.parentNode,
+                width: "100%",
+                height: "100%",
+                userInfo: { displayName: args.userName },
+
+                configOverwrite: {
+                    disableWelcomePage: true,
+                    enableWelcomePage: false,
+
+                    prejoinPageEnabled: false,
+                    prejoinConfig: { enabled: false },
+                    requireDisplayName: false,
+
+                    disableDeepLinking: true,
+                    disableInviteFunctions: true,
+
+                    startWithAudioMuted: false,
+                    startWithVideoMuted: false,
+
+                    // ✅ Keep modules mounted on more builds
+                    toolbarButtons: TOOLBAR_MOUNT_BUTTONS,
+
+                    ...(args.customCssUrl ? { customCssUrl: args.customCssUrl } : {}),
+                },
+
+                interfaceConfigOverwrite: {
+                    // ✅ Show ONLY settings in the iframe UI
+                    TOOLBAR_BUTTONS: TOOLBAR_VISIBLE_BUTTONS,
+                    TOOLBAR_ALWAYS_VISIBLE: true,
+                    TOOLBAR_TIMEOUT: 0,
+                    TOOLBAR_TIMEOUT_NO_HOVER: 0,
+
+                    SHOW_JITSI_WATERMARK: false,
+                    SHOW_WATERMARK_FOR_GUESTS: false,
+                    SHOW_BRAND_WATERMARK: false,
+                    JITSI_WATERMARK_LINK: "",
+
+                    HIDE_INVITE_MORE_HEADER: true,
+                    DISABLE_FOCUS_INDICATOR: true,
+                    DISABLE_DOMINANT_SPEAKER_INDICATOR: true,
+
+                    DEFAULT_REMOTE_DISPLAY_NAME: "Guest",
+                },
+            });
+
+            args.onDomainChosen?.(domain);
+            return { api, domain: domain as JitsiDomain };
+        } catch (e) {
+            lastError = e;
+            try {
+                args.parentNode.innerHTML = "";
+            } catch { }
+            continue;
+        }
+    }
+
+    throw lastError || new Error("Failed to create Jitsi API on all domains");
 }
 
 function Icon({
@@ -413,7 +512,9 @@ export default function RoomPageIFrame() {
 
             const { data, error } = await supabase
                 .from("sessions")
-                .select("*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)")
+                .select(
+                    "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)"
+                )
                 .eq("id", id)
                 .single();
 
@@ -477,7 +578,9 @@ export default function RoomPageIFrame() {
                     parsed &&
                     typeof parsed === "object" &&
                     !Array.isArray(parsed) &&
-                    (String((parsed as any)?.kind || "").toLowerCase().includes("infinite") ||
+                    (String((parsed as any)?.kind || "")
+                        .toLowerCase()
+                        .includes("infinite") ||
                         (parsed as any)?.timer?.phases ||
                         (parsed as any)?.timer?.segments ||
                         (parsed as any)?.phases ||
@@ -671,7 +774,7 @@ export default function RoomPageIFrame() {
     }, [stagebarStartTime, stages, isSilentRoom, isInfiniteRoom, stagebarCycleSeconds]);
 
     // ============================================
-    // JITSI INIT (External API)
+    // JITSI INIT (External API) with fallback domains
     // ============================================
     useEffect(() => {
         if (!session || !id) return;
@@ -697,60 +800,24 @@ export default function RoomPageIFrame() {
 
         (async () => {
             try {
-                await loadJitsiExternalApi(JITSI_DOMAIN);
-                if (destroyed) return;
-
-                iframeContainerRef.current!.innerHTML = "";
-
                 const customCssUrl =
                     typeof window !== "undefined" ? `${window.location.origin}/jitsi-custom.css` : undefined;
 
-                const api = new window.JitsiMeetExternalAPI(JITSI_DOMAIN, {
+                const { api, domain } = await createJitsiApiWithFallback({
+                    domains: JITSI_DOMAINS,
                     roomName,
-                    parentNode: iframeContainerRef.current,
-                    width: "100%",
-                    height: "100%",
-                    userInfo: { displayName: userName },
-
-                    configOverwrite: {
-                        disableWelcomePage: true,
-                        enableWelcomePage: false,
-
-                        prejoinPageEnabled: false,
-                        prejoinConfig: { enabled: false },
-                        requireDisplayName: false,
-
-                        disableDeepLinking: true,
-                        disableInviteFunctions: true,
-
-                        startWithAudioMuted: false,
-                        startWithVideoMuted: false,
-
-                        // ✅ Keep modules mounted on more builds
-                        toolbarButtons: TOOLBAR_MOUNT_BUTTONS,
-
-                        ...(customCssUrl ? { customCssUrl } : {}),
-                    },
-
-                    interfaceConfigOverwrite: {
-                        // ✅ Show ONLY settings in the iframe UI
-                        TOOLBAR_BUTTONS: TOOLBAR_VISIBLE_BUTTONS,
-                        TOOLBAR_ALWAYS_VISIBLE: true,
-                        TOOLBAR_TIMEOUT: 0,
-                        TOOLBAR_TIMEOUT_NO_HOVER: 0,
-
-                        SHOW_JITSI_WATERMARK: false,
-                        SHOW_WATERMARK_FOR_GUESTS: false,
-                        SHOW_BRAND_WATERMARK: false,
-                        JITSI_WATERMARK_LINK: "",
-
-                        HIDE_INVITE_MORE_HEADER: true,
-                        DISABLE_FOCUS_INDICATOR: true,
-                        DISABLE_DOMINANT_SPEAKER_INDICATOR: true,
-
-                        DEFAULT_REMOTE_DISPLAY_NAME: "Guest",
-                    },
+                    parentNode: iframeContainerRef.current!,
+                    userName,
+                    customCssUrl,
+                    onDomainChosen: (d) => console.log("[JITSI] Using domain:", d),
                 });
+
+                if (destroyed) {
+                    try {
+                        api?.dispose?.();
+                    } catch { }
+                    return;
+                }
 
                 apiRef.current = api;
 
@@ -759,6 +826,9 @@ export default function RoomPageIFrame() {
                     api.executeCommand("setTileView", true);
                     setTile(true);
                 } catch { }
+
+                // Optional: store chosen domain in console only (for debugging)
+                console.log("[JITSI] Domain chosen:", domain);
 
                 api.addEventListener?.("readyToClose", leaveToSessions);
                 api.addEventListener?.("videoConferenceLeft", leaveToSessions);
@@ -886,7 +956,9 @@ export default function RoomPageIFrame() {
 
     // Theme switcher
     const switchTrack = "w-[84px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
-    const switchTrackCls = isLight ? "bg-black/5 border-black/10 hover:bg-black/10" : "bg-white/5 border-white/10 hover:bg-white/10";
+    const switchTrackCls = isLight
+        ? "bg-black/5 border-black/10 hover:bg-black/10"
+        : "bg-white/5 border-white/10 hover:bg-white/10";
     const switchThumb =
         "absolute top-[2px] w-[26px] h-[26px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center";
     const thumbTranslate = isLight ? "translateX(0px)" : "translateX(50px)";
@@ -936,7 +1008,12 @@ export default function RoomPageIFrame() {
                                     aria-label="Toggle theme"
                                 >
                                     <div className={switchThumb} style={{ transform: thumbTranslate }}>
-                                        <Icon name={isLight ? "theme-sun" : "theme-moon"} theme={theme} className="w-4 h-4" alt={isLight ? "Light" : "Dark"} />
+                                        <Icon
+                                            name={isLight ? "theme-sun" : "theme-moon"}
+                                            theme={theme}
+                                            className="w-4 h-4"
+                                            alt={isLight ? "Light" : "Dark"}
+                                        />
                                     </div>
                                 </button>
 
@@ -944,8 +1021,8 @@ export default function RoomPageIFrame() {
                                 <button
                                     onClick={forceReloadJitsi}
                                     className={`px-3 py-2 rounded-xl border transition font-inter text-[13px] ${isLight
-                                        ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                        : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                         }`}
                                     title="Reload video engine"
                                 >
@@ -957,8 +1034,8 @@ export default function RoomPageIFrame() {
                                     <button
                                         onClick={() => setSelectedUser(session.host_profile)}
                                         className={`max-[520px]:hidden flex items-center gap-2 px-3 py-2 rounded-xl border transition font-inter text-[13px] ${isLight
-                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                                : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                             }`}
                                     >
                                         <span className="flex items-center gap-1 leading-none">
@@ -1080,7 +1157,10 @@ export default function RoomPageIFrame() {
                         <div className="flex items-center justify-center gap-2 sm:gap-3">
                             <button
                                 onClick={toggleMic}
-                                className={"w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " + (mutedAudio ? "bg-red-600 hover:bg-red-700" : ctlBtnBase)}
+                                className={
+                                    "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
+                                    (mutedAudio ? "bg-red-600 hover:bg-red-700" : ctlBtnBase)
+                                }
                                 title={mutedAudio ? "Unmute mic" : "Mute mic"}
                             >
                                 <Icon name={mutedAudio ? "mic-off" : "mic-on"} theme={mutedAudio ? "dark" : theme} className="w-5 h-5" />
@@ -1088,7 +1168,10 @@ export default function RoomPageIFrame() {
 
                             <button
                                 onClick={toggleCam}
-                                className={"w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " + (mutedVideo ? "bg-red-600 hover:bg-red-700" : ctlBtnBase)}
+                                className={
+                                    "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
+                                    (mutedVideo ? "bg-red-600 hover:bg-red-700" : ctlBtnBase)
+                                }
                                 title={mutedVideo ? "Turn camera on" : "Turn camera off"}
                             >
                                 <Icon name={mutedVideo ? "camera-off" : "camera-on"} theme={theme} className="w-5 h-5" />
@@ -1096,7 +1179,10 @@ export default function RoomPageIFrame() {
 
                             <button
                                 onClick={toggleScreenShare}
-                                className={"w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " + (isScreenSharing ? "bg-blue-600 hover:bg-blue-700" : ctlBtnBase)}
+                                className={
+                                    "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
+                                    (isScreenSharing ? "bg-blue-600 hover:bg-blue-700" : ctlBtnBase)
+                                }
                                 title="Share screen"
                             >
                                 <Icon name="screen-share" theme={theme} className="w-5 h-5" />
@@ -1115,7 +1201,8 @@ export default function RoomPageIFrame() {
                         <div className="flex items-center justify-end gap-2 sm:gap-3">
                             <button
                                 onClick={hangup}
-                                className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${isLight ? "bg-red-600 hover:bg-red-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"}`}
+                                className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${isLight ? "bg-red-600 hover:bg-red-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"
+                                    }`}
                                 title="Leave"
                             >
                                 <Icon name="leave" theme={theme} className="w-5 h-5" />
