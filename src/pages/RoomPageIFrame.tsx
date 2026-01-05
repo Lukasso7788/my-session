@@ -1,15 +1,11 @@
 // src/pages/RoomPageIFrame.tsx
 // ROOMPAGE (IFRAME) + JITSI EXTERNAL API + OUR UI CONTROLS
 //
-// ✅ Goal now:
-// - Hide ALL native Jitsi UI inside iframe (CSS from SAME Jitsi domain)
-// - Use our own controls only
-// - Provide Virtual Background dialog + Blur toggle from our UI
-//
-// Notes:
-// - CSS MUST be served from the SAME Jitsi domain, e.g.:
-//   https://meet2.mysession.club/mysession-hide-all.css
-// - We pass it via configOverwrite.customCssUrl as absolute SAME-domain URL (with cache-bust)
+// ✅ Goal:
+// - Inside Jitsi iframe: show ONLY native "Settings" button
+// - Hide the rest via interfaceConfigOverwrite + CSS
+// - Our bottom "Settings" button opens native Jitsi settings dialog/panel via executeCommand
+// - No extra buttons (blur/plus removed)
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -41,15 +37,23 @@ declare global {
 const JITSI_DOMAINS = ["meet2.mysession.club", "meet.mysession.club"] as const;
 type JitsiDomain = (typeof JITSI_DOMAINS)[number];
 
-// ✅ Mount minimal buttons (optional).
-// Some Jitsi builds lazily mount certain dialogs. Keeping "settings" here is a cheap insurance.
-const TOOLBAR_MOUNT_BUTTONS = ["settings"];
+// CSS file MUST be accessible on the SAME Jitsi domain root:
+// https://meet2.mysession.club/mysession-jitsi.css
+const JITSI_CUSTOM_CSS_PATH = "/mysession-jitsi.css";
 
-// ✅ Show NONE in the iframe UI
-const TOOLBAR_VISIBLE_BUTTONS: string[] = [];
+// ✅ INTERNAL: keep modules mounted / commands working on more Jitsi builds
+const TOOLBAR_MOUNT_BUTTONS = [
+    "microphone",
+    "camera",
+    "desktop",
+    "participants-pane",
+    "settings",
+    "tileview",
+    "hangup",
+];
 
-// ✅ CSS file that hides all native UI (must exist on each Jitsi domain root)
-const JITSI_HIDE_ALL_CSS_PATH = "/mysession-hide-all.css";
+// ✅ DISPLAY ONLY THIS in the iframe (native UI)
+const TOOLBAR_VISIBLE_BUTTONS = ["settings"];
 
 // ====== AUDIO ======
 const STAGE_SOUND_MAP: Record<string, string> = {
@@ -208,7 +212,7 @@ async function createJitsiApiWithFallback(args: {
     roomName: string;
     parentNode: HTMLElement;
     userName: string;
-    cssPathOnJitsiDomain?: string; // like "/mysession-hide-all.css"
+    cssPathOnJitsiDomain?: string; // e.g. "/mysession-jitsi.css"
     onDomainChosen?: (d: string) => void;
 }) {
     let lastError: any = null;
@@ -220,11 +224,10 @@ async function createJitsiApiWithFallback(args: {
             // Clear container before creating iframe
             args.parentNode.innerHTML = "";
 
-            // ✅ SAME-domain CSS URL (+ cache bust)
-            const cssUrl =
-                args.cssPathOnJitsiDomain && args.cssPathOnJitsiDomain.startsWith("/")
-                    ? `https://${domain}${args.cssPathOnJitsiDomain}?v=${Date.now()}`
-                    : undefined;
+            // ✅ SAME-domain CSS (+ cache bust)
+            const customCssUrl = args.cssPathOnJitsiDomain
+                ? `https://${domain}${args.cssPathOnJitsiDomain}?v=${Date.now()}`
+                : undefined;
 
             const api = new window.JitsiMeetExternalAPI(domain, {
                 roomName: args.roomName,
@@ -247,16 +250,16 @@ async function createJitsiApiWithFallback(args: {
                     startWithAudioMuted: false,
                     startWithVideoMuted: false,
 
-                    // Keep just enough mounted if some builds need it
+                    // ✅ Keep modules mounted on more builds
                     toolbarButtons: TOOLBAR_MOUNT_BUTTONS,
 
-                    ...(cssUrl ? { customCssUrl: cssUrl } : {}),
+                    ...(customCssUrl ? { customCssUrl } : {}),
                 },
 
                 interfaceConfigOverwrite: {
-                    // ✅ Show NONE in the iframe UI
+                    // ✅ Show ONLY settings in the iframe UI
                     TOOLBAR_BUTTONS: TOOLBAR_VISIBLE_BUTTONS,
-                    TOOLBAR_ALWAYS_VISIBLE: false,
+                    TOOLBAR_ALWAYS_VISIBLE: true,
                     TOOLBAR_TIMEOUT: 0,
                     TOOLBAR_TIMEOUT_NO_HOVER: 0,
 
@@ -340,8 +343,6 @@ export default function RoomPageIFrame() {
     const iframeContainerRef = useRef<HTMLDivElement>(null);
     const apiRef = useRef<any>(null);
 
-    const supportedCmdsRef = useRef<string[] | null>(null);
-
     const [session, setSession] = useState<any>(null);
     const [loading, setLoading] = useState(true);
 
@@ -380,11 +381,8 @@ export default function RoomPageIFrame() {
     const [mutedVideo, setMutedVideo] = useState(false);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
 
-    // ✅ readiness gate for commands like dialogs
+    // ✅ readiness gate for commands like Settings
     const [apiReady, setApiReady] = useState(false);
-
-    // background UI state
-    const [bgBlur, setBgBlur] = useState(false);
 
     // right panel (for chat/intentions only)
     const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(false);
@@ -448,7 +446,6 @@ export default function RoomPageIFrame() {
             apiRef.current?.dispose?.();
         } catch { }
         apiRef.current = null;
-        supportedCmdsRef.current = null;
         setApiReady(false);
         if (iframeContainerRef.current) iframeContainerRef.current.innerHTML = "";
         setLastErr("");
@@ -798,7 +795,6 @@ export default function RoomPageIFrame() {
                 apiRef.current?.dispose?.();
             } catch { }
             apiRef.current = null;
-            supportedCmdsRef.current = null;
         };
 
         const leaveToSessions = () => {
@@ -810,12 +806,12 @@ export default function RoomPageIFrame() {
 
         (async () => {
             try {
-                const { api, domain } = await createJitsiApiWithFallback({
+                const { api } = await createJitsiApiWithFallback({
                     domains: JITSI_DOMAINS,
                     roomName,
                     parentNode: iframeContainerRef.current!,
                     userName,
-                    cssPathOnJitsiDomain: JITSI_HIDE_ALL_CSS_PATH,
+                    cssPathOnJitsiDomain: JITSI_CUSTOM_CSS_PATH,
                     onDomainChosen: (d) => console.log("[JITSI] Using domain:", d),
                 });
 
@@ -829,24 +825,18 @@ export default function RoomPageIFrame() {
                 apiRef.current = api;
                 setApiReady(false);
 
-                // Supported commands (best-effort)
+                // Debug: supported commands (best-effort)
                 try {
                     const cmds =
                         api.getSupportedCommands?.() ||
                         api.getAvailableCommands?.() ||
                         api._getSupportedCommands?.() ||
                         null;
-
-                    const arr = Array.isArray(cmds) ? cmds : null;
-                    supportedCmdsRef.current = arr;
-
-                    console.log("[JITSI] supported commands:", arr);
+                    console.log("[JITSI] supported commands:", cmds);
                 } catch (e) {
                     console.log("[JITSI] cannot read supported commands", e);
-                    supportedCmdsRef.current = null;
                 }
 
-                // ✅ consider API "ready" only after joined
                 api.addEventListener?.("videoConferenceJoined", () => {
                     if (destroyed) return;
                     setApiReady(true);
@@ -862,9 +852,7 @@ export default function RoomPageIFrame() {
                     setTile(true);
                 } catch { }
 
-                console.log("[JITSI] Domain chosen:", domain);
-
-                // ✅ Do NOT auto-leave on "readyToClose" (can be noisy on some builds)
+                // ✅ Leave ONLY when actually left
                 api.addEventListener?.("videoConferenceLeft", leaveToSessions);
 
                 api.addEventListener?.("audioMuteStatusChanged", (e: any) => {
@@ -942,14 +930,8 @@ export default function RoomPageIFrame() {
         } catch { }
     };
 
-    const hasCmd = (cmd: string) => {
-        const list = supportedCmdsRef.current;
-        if (!list) return true; // if unknown, still try
-        return list.includes(cmd);
-    };
-
-    // ✅ Virtual Background dialog
-    const openVirtualBackgroundDialog = () => {
+    // Our Settings button -> open native Jitsi settings
+    const openNativeSettings = () => {
         const api = apiRef.current;
         if (!api) return;
 
@@ -958,44 +940,37 @@ export default function RoomPageIFrame() {
             return;
         }
 
-        // Prefer the exact supported command
-        if (hasCmd("toggleVirtualBackgroundDialog")) {
+        const candidates: Array<{ name: string; args?: any[] }> = [
+            // most common
+            { name: "toggleSettings" },
+
+            // sometimes present
+            { name: "openSettings" },
+            { name: "toggleDeviceSelection" },
+
+            // some deployments expose dialog commands
+            { name: "openDialog", args: ["settings"] },
+            { name: "openDialog", args: ["SettingsDialog"] },
+            { name: "toggleDialog", args: ["settings"] },
+            { name: "toggleDialog", args: ["SettingsDialog"] },
+
+            // rare/custom
+            { name: "toggleSettingsDialog" },
+            { name: "openSettingsDialog" },
+        ];
+
+        for (const c of candidates) {
             try {
-                api.executeCommand("toggleVirtualBackgroundDialog");
+                api.executeCommand(c.name, ...(c.args ?? []));
+                console.log("[JITSI] settings opened via:", c.name, c.args ?? []);
                 setLastErr("");
                 return;
             } catch (e) {
-                console.log("[JITSI] toggleVirtualBackgroundDialog failed", e);
+                console.log("[JITSI] settings cmd failed:", c.name, c.args ?? [], e);
             }
         }
 
-        setLastErr("Virtual Background dialog command not supported on this Jitsi build/domain.");
-    };
-
-    // ✅ Blur toggle (if supported)
-    const toggleBlurBackground = () => {
-        const api = apiRef.current;
-        if (!api) return;
-
-        if (!apiReady) {
-            setLastErr("Jitsi not ready yet — wait 1-2 seconds after join.");
-            return;
-        }
-
-        const next = !bgBlur;
-
-        if (hasCmd("setBlurredBackground")) {
-            try {
-                api.executeCommand("setBlurredBackground", next);
-                setBgBlur(next);
-                setLastErr("");
-                return;
-            } catch (e) {
-                console.log("[JITSI] setBlurredBackground failed", e);
-            }
-        }
-
-        setLastErr("Blur background command not supported on this Jitsi build/domain.");
+        setLastErr("Settings command not supported on this Jitsi build/domain.");
     };
 
     const hangup = () => {
@@ -1213,26 +1188,14 @@ export default function RoomPageIFrame() {
                                 <Icon name="intentions" theme={theme} className="w-5 h-5" />
                             </button>
 
-                            {/* Virtual Background dialog */}
                             <button
-                                onClick={openVirtualBackgroundDialog}
+                                onClick={openNativeSettings}
                                 disabled={!apiReady}
                                 className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase} ${!apiReady ? "opacity-50 pointer-events-none" : ""
                                     }`}
-                                title={!apiReady ? "Connecting..." : "Background (Jitsi)"}
+                                title={!apiReady ? "Connecting..." : "Settings (Jitsi)"}
                             >
                                 <Icon name="settings" theme={theme} className="w-5 h-5" />
-                            </button>
-
-                            {/* Blur toggle */}
-                            <button
-                                onClick={toggleBlurBackground}
-                                disabled={!apiReady}
-                                className={`h-10 sm:h-11 px-3 rounded-2xl flex items-center justify-center transition font-inter text-[13px] ${bgBlur ? "bg-blue-600 hover:bg-blue-700 text-white" : ctlBtnBase
-                                    } ${!apiReady ? "opacity-50 pointer-events-none" : ""}`}
-                                title={!apiReady ? "Connecting..." : bgBlur ? "Disable blur" : "Enable blur"}
-                            >
-                                Blur
                             </button>
                         </div>
 
