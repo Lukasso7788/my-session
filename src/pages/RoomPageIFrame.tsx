@@ -1,15 +1,14 @@
 // src/pages/RoomPageIFrame.tsx
 // ROOMPAGE (IFRAME) + JITSI EXTERNAL API + OUR UI CONTROLS
 //
-// ✅ VARIANT C (supported-commands only):
-// - Inside Jitsi iframe: show ONLY native "Settings" button
-// - Hide all other native Jitsi UI chrome via interfaceConfigOverwrite + /public/jitsi-custom.css
-// - Our bottom bar uses ONLY commands confirmed in getSupportedCommands()
-//   (✅ includes: toggleVirtualBackgroundDialog)
+// ✅ VARIANT (hide all native UI in iframe):
+// - Inside Jitsi iframe: hide ALL native UI (toolbar, filmstrip, header) via interfaceConfigOverwrite + /public/jitsi-custom.css
+// - Keep internal toolbarButtons mounted in configOverwrite to ensure dialogs/commands load on more builds
+// - Use our own bottom controls
 //
-// Note:
-// - We do NOT attempt toggleSettings/openSettings/toggleDeviceSelection anymore (not supported on your build).
-// - Settings stays accessible via native iframe Settings button (only visible native UI).
+// ✅ IMPORTANT FIX:
+// - Do NOT use readyToClose -> navigate() because some dialogs may trigger it and "kick" you out.
+// - Use videoConferenceLeft only for real leave.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -52,8 +51,8 @@ const TOOLBAR_MOUNT_BUTTONS = [
     "hangup",
 ];
 
-// ✅ DISPLAY ONLY THIS in the iframe (native UI)
-const TOOLBAR_VISIBLE_BUTTONS = ["settings"];
+// ✅ DISPLAY NOTHING in the iframe UI (native UI fully hidden)
+const TOOLBAR_VISIBLE_BUTTONS: string[] = [];
 
 // ====== AUDIO ======
 const STAGE_SOUND_MAP: Record<string, string> = {
@@ -102,8 +101,7 @@ function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: numbe
     if (!anyPhases) return [];
 
     const toSeconds = (raw: any): number => {
-        const explicitSeconds =
-            Number(raw?.seconds) || Number(raw?.duration_seconds) || Number(raw?.durationSeconds);
+        const explicitSeconds = Number(raw?.seconds) || Number(raw?.duration_seconds) || Number(raw?.durationSeconds);
         if (explicitSeconds > 0) return explicitSeconds;
 
         const explicitMinutes =
@@ -135,8 +133,7 @@ function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: numbe
         return Object.entries(anyPhases)
             .map(([k, v]: any) => {
                 const name = String(k || "");
-                const seconds =
-                    typeof v === "number" ? (v <= 180 ? Number(v) * 60 : Number(v)) : toSeconds(v);
+                const seconds = typeof v === "number" ? (v <= 180 ? Number(v) * 60 : Number(v)) : toSeconds(v);
                 return { name, seconds };
             })
             .filter((x) => x.seconds > 0);
@@ -180,8 +177,7 @@ async function loadJitsiExternalApi(domain: string) {
 
             setTimeout(() => {
                 clearInterval(t);
-                if (!window.JitsiMeetExternalAPI)
-                    reject(new Error(`external_api.js present but API missing (${domain})`));
+                if (!window.JitsiMeetExternalAPI) reject(new Error(`external_api.js present but API missing (${domain})`));
             }, 6000);
 
             return;
@@ -201,8 +197,7 @@ async function loadJitsiExternalApi(domain: string) {
 
             setTimeout(() => {
                 clearInterval(t);
-                if (!window.JitsiMeetExternalAPI)
-                    reject(new Error(`external_api.js loaded but API missing (${domain})`));
+                if (!window.JitsiMeetExternalAPI) reject(new Error(`external_api.js loaded but API missing (${domain})`));
             }, 3000);
         };
 
@@ -249,6 +244,10 @@ async function createJitsiApiWithFallback(args: {
                     startWithAudioMuted: false,
                     startWithVideoMuted: false,
 
+                    // Optional: reduce accidental native interactions
+                    // (some builds support this)
+                    // disableShortcuts: true,
+
                     // ✅ Keep modules mounted on more builds
                     toolbarButtons: TOOLBAR_MOUNT_BUTTONS,
 
@@ -256,9 +255,9 @@ async function createJitsiApiWithFallback(args: {
                 },
 
                 interfaceConfigOverwrite: {
-                    // ✅ Show ONLY settings in the iframe UI
+                    // ✅ Hide all toolbar buttons (and then CSS hides containers)
                     TOOLBAR_BUTTONS: TOOLBAR_VISIBLE_BUTTONS,
-                    TOOLBAR_ALWAYS_VISIBLE: true,
+                    TOOLBAR_ALWAYS_VISIBLE: false,
                     TOOLBAR_TIMEOUT: 0,
                     TOOLBAR_TIMEOUT_NO_HOVER: 0,
 
@@ -309,8 +308,7 @@ function Icon({
     | "tile-off"
     | "theme-sun"
     | "theme-moon"
-    | "timer"
-    | "vb"; // ✅ new icon name for Virtual Background button (optional)
+    | "timer";
     theme: RoomTheme;
     className?: string;
     alt?: string;
@@ -342,6 +340,8 @@ export default function RoomPageIFrame() {
 
     const iframeContainerRef = useRef<HTMLDivElement>(null);
     const apiRef = useRef<any>(null);
+
+    const supportedCommandsRef = useRef<Set<string> | null>(null);
 
     const [session, setSession] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -381,9 +381,15 @@ export default function RoomPageIFrame() {
     const [mutedVideo, setMutedVideo] = useState(false);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
 
+    // ✅ readiness gate for commands
+    const [apiReady, setApiReady] = useState(false);
+
     // right panel (for chat/intentions only)
     const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(false);
     const [rightTab, setRightTab] = useState<RightPanelTab>(null);
+
+    // plus menu
+    const [moreOpen, setMoreOpen] = useState(false);
 
     const openRightTab = (tab: RightPanelTab) => {
         if (!tab) {
@@ -443,6 +449,8 @@ export default function RoomPageIFrame() {
             apiRef.current?.dispose?.();
         } catch { }
         apiRef.current = null;
+        supportedCommandsRef.current = null;
+        setApiReady(false);
         if (iframeContainerRef.current) iframeContainerRef.current.innerHTML = "";
         setLastErr("");
         setJitsiKey((x) => x + 1);
@@ -513,7 +521,9 @@ export default function RoomPageIFrame() {
 
             const { data, error } = await supabase
                 .from("sessions")
-                .select("*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)")
+                .select(
+                    "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)"
+                )
                 .eq("id", id)
                 .single();
 
@@ -710,7 +720,9 @@ export default function RoomPageIFrame() {
             const diffSecRaw = (now - startMs) / 1000;
 
             const diffSec =
-                loopSeconds > 0 && isInfiniteRoom ? ((diffSecRaw % loopSeconds) + loopSeconds) % loopSeconds : diffSecRaw;
+                loopSeconds > 0 && isInfiniteRoom
+                    ? ((diffSecRaw % loopSeconds) + loopSeconds) % loopSeconds
+                    : diffSecRaw;
 
             let total = 0;
             let active = 0;
@@ -773,9 +785,6 @@ export default function RoomPageIFrame() {
     // ============================================
     // JITSI INIT (External API) with fallback domains
     // ============================================
-    const supportedCommandsRef = useRef<string[]>([]);
-    const [supportsVB, setSupportsVB] = useState(false);
-
     useEffect(() => {
         if (!session || !id) return;
         if (!iframeContainerRef.current) return;
@@ -785,6 +794,9 @@ export default function RoomPageIFrame() {
 
         const cleanup = () => {
             stopWelcomeLoop();
+            setApiReady(false);
+            setMoreOpen(false);
+            supportedCommandsRef.current = null;
             try {
                 apiRef.current?.dispose?.();
             } catch { }
@@ -820,19 +832,39 @@ export default function RoomPageIFrame() {
                 }
 
                 apiRef.current = api;
+                supportedCommandsRef.current = null;
+                setApiReady(false);
 
-                // ✅ Get supported commands once
+                // Debug: supported commands (best-effort)
                 try {
-                    const cmds = api.getSupportedCommands?.() || [];
-                    supportedCommandsRef.current = Array.isArray(cmds) ? cmds : [];
-                    console.log("[JITSI] supported commands:", supportedCommandsRef.current);
+                    const cmds =
+                        api.getSupportedCommands?.() ||
+                        api.getAvailableCommands?.() ||
+                        api._getSupportedCommands?.() ||
+                        null;
 
-                    const vbOk = supportedCommandsRef.current.includes("toggleVirtualBackgroundDialog");
-                    setSupportsVB(vbOk);
-                } catch {
-                    supportedCommandsRef.current = [];
-                    setSupportsVB(false);
+                    console.log("[JITSI] supported commands:", cmds);
+
+                    if (Array.isArray(cmds)) {
+                        supportedCommandsRef.current = new Set(cmds.map((x) => String(x)));
+                    } else {
+                        supportedCommandsRef.current = null;
+                    }
+                } catch (e) {
+                    console.log("[JITSI] cannot read supported commands", e);
+                    supportedCommandsRef.current = null;
                 }
+
+                // ✅ API ready only after joined
+                api.addEventListener?.("videoConferenceJoined", () => {
+                    if (destroyed) return;
+                    setApiReady(true);
+                });
+
+                api.addEventListener?.("videoConferenceLeft", () => {
+                    if (destroyed) return;
+                    setApiReady(false);
+                });
 
                 // Tile view on start
                 try {
@@ -840,8 +872,12 @@ export default function RoomPageIFrame() {
                     setTile(true);
                 } catch { }
 
-                console.log("[JITSI] Domain chosen:", domain as JitsiDomain);
+                console.log("[JITSI] Domain chosen:", domain);
 
+                // ✅ IMPORTANT: do NOT bind readyToClose -> leave (it can fire on dialogs / internal close)
+                // api.addEventListener?.("readyToClose", leaveToSessions);
+
+                // ✅ Only leave on actual conference left
                 api.addEventListener?.("videoConferenceLeft", leaveToSessions);
 
                 api.addEventListener?.("audioMuteStatusChanged", (e: any) => {
@@ -869,6 +905,12 @@ export default function RoomPageIFrame() {
                     if (destroyed) return;
                     setLastErr(String(e?.error || e?.message || "Jitsi error"));
                 });
+
+                // Optional: handle conference failures gracefully
+                api.addEventListener?.("conferenceFailed", (e: any) => {
+                    if (destroyed) return;
+                    setLastErr(String(e?.error || e?.message || "Conference failed"));
+                });
             } catch (e: any) {
                 if (destroyed) return;
                 setLastErr(String(e?.message || e || "Jitsi init error"));
@@ -882,80 +924,103 @@ export default function RoomPageIFrame() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [session, id, userName, roomName, navigate, jitsiKey]);
 
-    const isCommandSupported = (cmd: string) => {
-        const cmds = supportedCommandsRef.current || [];
-        return Array.isArray(cmds) && cmds.includes(cmd);
+    // ============================================
+    // Command helpers
+    // ============================================
+    const isCmdSupported = (name: string) => {
+        const set = supportedCommandsRef.current;
+        if (!set) return true; // unknown => try anyway
+        return set.has(name);
     };
 
-    const execIfSupported = (cmd: string, ...args: any[]) => {
+    const execCmd = (name: string, ...args: any[]) => {
         const api = apiRef.current;
         if (!api) return false;
-        if (!isCommandSupported(cmd)) return false;
+
+        if (!apiReady) {
+            setLastErr("Jitsi not ready yet — wait 1-2 seconds after join.");
+            return false;
+        }
+
+        if (!isCmdSupported(name)) {
+            setLastErr(`Command not supported: ${name}`);
+            return false;
+        }
+
         try {
-            api.executeCommand(cmd, ...args);
+            api.executeCommand(name, ...args);
+            setLastErr("");
             return true;
-        } catch {
+        } catch (e: any) {
+            setLastErr(String(e?.message || e || `Failed command: ${name}`));
             return false;
         }
     };
 
     // ============================================
-    // Controls (bottom bar) — supported commands only
+    // Controls (bottom bar)
     // ============================================
     const toggleTile = () => {
         const api = apiRef.current;
         if (!api) return;
         const next = !tile;
         setTile(next);
-
-        // Prefer setTileView if available; else fallback toggleTileView
-        if (execIfSupported("setTileView", next)) return;
-        if (execIfSupported("toggleTileView")) return;
-
-        // last resort: try anyway
         try {
             api.executeCommand("setTileView", next);
         } catch { }
     };
 
     const toggleMic = () => {
-        // supported: toggleAudio
-        if (execIfSupported("toggleAudio")) return;
-        try {
-            apiRef.current?.executeCommand?.("toggleAudio");
-        } catch { }
+        execCmd("toggleAudio");
     };
 
     const toggleCam = () => {
-        // supported: toggleVideo (you also have toggleCamera but toggleVideo is fine)
-        if (execIfSupported("toggleVideo")) return;
-        if (execIfSupported("toggleCamera")) return;
-        try {
-            apiRef.current?.executeCommand?.("toggleVideo");
-        } catch { }
+        execCmd("toggleVideo");
     };
 
     const toggleScreenShare = () => {
-        // supported: toggleShareScreen
-        if (execIfSupported("toggleShareScreen")) return;
-        try {
-            apiRef.current?.executeCommand?.("toggleShareScreen");
-        } catch { }
+        execCmd("toggleShareScreen");
     };
 
-    // ✅ THE ONE YOU WANT:
-    const toggleVirtualBackground = () => {
-        const ok = execIfSupported("toggleVirtualBackgroundDialog");
-        if (!ok) {
-            setLastErr("Virtual Background is not supported on this Jitsi build.");
-            window.setTimeout(() => setLastErr(""), 3500);
+    // ✅ MAIN "Settings" button now opens Virtual Background dialog
+    const openVirtualBackground = () => {
+        // best option
+        if (execCmd("toggleVirtualBackgroundDialog")) return;
+
+        // fallback: some deployments allow applying directly
+        // (won't open dialog, but at least something)
+        execCmd("setBlurredBackground", true);
+    };
+
+    // Optional: try open native settings dialog (rarely supported as command)
+    const openNativeSettings = () => {
+        const candidates: Array<{ name: string; args?: any[] }> = [
+            { name: "toggleSettings" },
+            { name: "openSettings" },
+            { name: "toggleDeviceSelection" },
+            { name: "openDialog", args: ["settings"] },
+            { name: "openDialog", args: ["SettingsDialog"] },
+            { name: "toggleDialog", args: ["settings"] },
+            { name: "toggleDialog", args: ["SettingsDialog"] },
+            { name: "toggleSettingsDialog" },
+            { name: "openSettingsDialog" },
+        ];
+
+        for (const c of candidates) {
+            const ok = execCmd(c.name, ...(c.args ?? []));
+            if (ok) return;
         }
+        setLastErr("Native Settings command not supported on this Jitsi build/domain.");
     };
 
     const hangup = () => {
-        if (execIfSupported("hangup")) return;
+        const api = apiRef.current;
+        if (!api) {
+            navigate("/sessions", { replace: true });
+            return;
+        }
         try {
-            apiRef.current?.executeCommand?.("hangup");
+            api.executeCommand("hangup");
         } catch {
             navigate("/sessions", { replace: true });
         }
@@ -996,6 +1061,30 @@ export default function RoomPageIFrame() {
             </div>
         );
     }
+
+    // plus menu items (only show supported ones if we know the list)
+    const actionItem = (label: string, cmd: string, args: any[] = []) => {
+        const supported = isCmdSupported(cmd);
+        return (
+            <button
+                key={cmd + label}
+                disabled={!apiReady || !supported}
+                onClick={() => {
+                    execCmd(cmd, ...args);
+                    setMoreOpen(false);
+                }}
+                className={
+                    "w-full text-left px-3 py-2 rounded-lg text-[13px] font-inter transition " +
+                    (isLight
+                        ? "bg-black/5 hover:bg-black/10 text-black/80"
+                        : "bg-white/5 hover:bg-white/10 text-white/85") +
+                    (!apiReady || !supported ? " opacity-50 pointer-events-none" : "")
+                }
+            >
+                {label}
+            </button>
+        );
+    };
 
     return (
         <div className={`min-h-screen ${pageBg}`}>
@@ -1040,8 +1129,8 @@ export default function RoomPageIFrame() {
                                 <button
                                     onClick={forceReloadJitsi}
                                     className={`px-3 py-2 rounded-xl border transition font-inter text-[13px] ${isLight
-                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                        ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                        : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                         }`}
                                     title="Reload video engine"
                                 >
@@ -1053,8 +1142,8 @@ export default function RoomPageIFrame() {
                                     <button
                                         onClick={() => setSelectedUser(session.host_profile)}
                                         className={`max-[520px]:hidden flex items-center gap-2 px-3 py-2 rounded-xl border transition font-inter text-[13px] ${isLight
-                                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                                : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                             }`}
                                     >
                                         <span className="flex items-center gap-1 leading-none">
@@ -1143,7 +1232,42 @@ export default function RoomPageIFrame() {
 
             {/* FIXED BOTTOM CONTROLS */}
             <div className="fixed inset-x-0 bottom-0 z-50">
-                <div className="w-full px-3 sm:px-5 pb-[calc(12px+env(safe-area-inset-bottom))]">
+                <div className="w-full px-3 sm:px-5 pb-[calc(12px+env(safe-area-inset-bottom))] relative">
+                    {/* "+" MENU */}
+                    {moreOpen && (
+                        <div
+                            className={`absolute left-3 sm:left-5 bottom-[calc(92px+env(safe-area-inset-bottom))] w-[260px] rounded-2xl shadow-2xl p-2 ${isLight ? "bg-white border border-black/10" : "bg-[#0B1220] border border-white/10"
+                                }`}
+                        >
+                            <div className={`px-2 pt-2 pb-1 text-[12px] font-inter ${isLight ? "text-black/60" : "text-white/60"}`}>
+                                Quick actions
+                            </div>
+                            <div className="flex flex-col gap-1 p-1">
+                                {actionItem("Virtual Background…", "toggleVirtualBackgroundDialog")}
+                                {actionItem("Noise suppression", "toggleNoiseSuppression")}
+                                {actionItem("Subtitles", "toggleSubtitles")}
+                                {actionItem("Participants pane", "toggleParticipantsPane")}
+                                {actionItem("Device selection", "toggleDeviceSelection")}
+                                <button
+                                    disabled={!apiReady}
+                                    onClick={() => {
+                                        openNativeSettings();
+                                        setMoreOpen(false);
+                                    }}
+                                    className={
+                                        "w-full text-left px-3 py-2 rounded-lg text-[13px] font-inter transition " +
+                                        (isLight
+                                            ? "bg-black/5 hover:bg-black/10 text-black/80"
+                                            : "bg-white/5 hover:bg-white/10 text-white/85") +
+                                        (!apiReady ? " opacity-50 pointer-events-none" : "")
+                                    }
+                                >
+                                    Try native Settings (if supported)
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     <div className={`h-[64px] sm:h-[74px] rounded-2xl shadow-2xl backdrop-blur grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4 ${bottomBarBg}`}>
                         {/* LEFT GROUP */}
                         <div className="flex items-center gap-2">
@@ -1163,18 +1287,26 @@ export default function RoomPageIFrame() {
                                 <Icon name="intentions" theme={theme} className="w-5 h-5" />
                             </button>
 
-                            {/* ✅ Virtual Background (only if supported) */}
+                            {/* SETTINGS (NOW: VIRTUAL BACKGROUND) */}
                             <button
-                                onClick={toggleVirtualBackground}
-                                disabled={!supportsVB}
-                                className={
-                                    `w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase} ` +
-                                    (supportsVB ? "" : "opacity-40 cursor-not-allowed")
-                                }
-                                title={supportsVB ? "Virtual Background" : "Virtual Background not supported"}
+                                onClick={openVirtualBackground}
+                                disabled={!apiReady}
+                                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase} ${!apiReady ? "opacity-50 pointer-events-none" : ""
+                                    }`}
+                                title={!apiReady ? "Connecting..." : "Virtual Background"}
                             >
-                                {/* If you don't have /icons/vb-*.svg, create them or replace with "settings"/"camera-on" */}
-                                <Icon name="vb" theme={theme} className="w-5 h-5" alt="Virtual Background" />
+                                <Icon name="settings" theme={theme} className="w-5 h-5" />
+                            </button>
+
+                            {/* PLUS MENU */}
+                            <button
+                                onClick={() => setMoreOpen((v) => !v)}
+                                disabled={!apiReady}
+                                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase} ${!apiReady ? "opacity-50 pointer-events-none" : ""
+                                    }`}
+                                title={!apiReady ? "Connecting..." : "More actions"}
+                            >
+                                <span className={`font-bold text-[18px] ${isLight ? "text-black/70" : "text-white/85"}`}>+</span>
                             </button>
                         </div>
 

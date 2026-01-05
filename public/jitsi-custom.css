@@ -1,10 +1,5 @@
 /* /public/jitsi-custom.css
    Injected into Jitsi iframe via configOverwrite.customCssUrl
-
-   GOAL (Variant A):
-   - Keep ONLY native Settings button visible inside iframe
-   - Hide everything else native (toolbar buttons, filmstrip, headers, watermarks, etc.)
-   - IMPORTANT: Do NOT hide the toolbar containers entirely, иначе settings исчезнет
 */
 
 /* Inter font */
@@ -15,171 +10,86 @@
     font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important;
 }
 
-/* =========================================================
-   1) Kill watermarks / branding
-   ========================================================= */
+/* =========================
+   HIDE ALL NATIVE JITSI UI
+   (keep dialogs/panes working)
+   ========================= */
+
+/* Hide top header / subject / room name */
+.header,
+#header,
+.subject,
+.subject-info-container,
+.subject-info,
 .watermark,
 .leftwatermark,
 .rightwatermark,
-.jitsi-watermark,
-#poweredby,
-#watermark,
-#jitsi-watermark,
-a[href*="jitsi.org"] {
+.brand,
+.branding,
+.welcome-page,
+#layout_wrapper .header,
+#videoconference_page .header {
     display: none !important;
 }
 
-/* =========================================================
-   2) Hide filmstrip / thumbnails (optional but usually desired)
-   ========================================================= */
-.filmstrip,
-#filmstrip,
-.horizontal-filmstrip,
-.vertical-filmstrip,
-#filmstripRemoteVideos,
-#filmstripLocalVideo,
-.remote-videos,
-.local-video-container,
-#remoteVideos {
-    display: none !important;
-}
-
-/* If some builds place thumbnails in a different wrapper */
-[data-testid*="filmstrip" i],
-[class*="filmstrip" i] {
-    display: none !important;
-}
-
-/* =========================================================
-   3) Hide top/header elements (room title, subject, etc.)
-   ========================================================= */
-#subject,
-.subject,
-.header,
-.header-container,
-#header,
-.new-toolbox__header,
-#new-toolbox .subject,
-#new-toolbox .header {
-    display: none !important;
-}
-
-/* =========================================================
-   4) Toolbar: show ONLY Settings
-   ========================================================= */
-
-/* Keep toolbar container present but minimal/transparent */
+/* Hide toolbars (bottom) */
+.toolbox,
+.toolbox-content,
+.new-toolbox,
 #new-toolbox,
 #toolbox,
-.new-toolbox,
-.toolbox {
-    background: transparent !important;
-    box-shadow: none !important;
-}
-
-/* Make toolbar sit top-right (best-effort; harmless if selectors don't match) */
-#new-toolbox,
-.new-toolbox {
-    justify-content: flex-end !important;
-}
-
-/* ---- Hide ALL toolbar buttons by default (broad net) ---- */
-#new-toolbox button,
-#toolbox button,
-.new-toolbox button,
-.toolbox button,
-[role="toolbar"] button {
+#toolbox-content,
+.toolbox__content,
+.toolbox__container,
+.toolbar,
+#toolbar,
+#toolbar-content,
+#newToolbar {
     display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
 }
 
-/* Some builds use div wrappers for buttons */
-.toolbox-button,
-.toolbar-button,
-.new-toolbox__button,
-.tool-box-button,
-.toolbox-content button,
-.toolbox__content button,
-.toolbox__container button {
+/* Hide filmstrip (thumbnails) */
+.filmstrip,
+#filmstrip,
+.filmstrip__toolbar,
+.filmstrip__toolbox,
+.filmstrip__videos,
+.videogrid,
+#videogrid {
     display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
 }
 
-/* ---- Re-enable ONLY Settings button (multiple selector fallbacks) ---- */
-/* aria-label (EN/RU/UA) */
-button[aria-label*="Settings" i],
-button[aria-label*="Настройки" i],
-button[aria-label*="Налаштування" i],
-button[title*="Settings" i],
-button[title*="Настройки" i],
-button[title*="Налаштування" i] {
-    display: inline-flex !important;
-}
-
-/* data-testid fallbacks (varies by build) */
-button[data-testid*="toolbar.settings" i],
-button[data-testid*="settings" i] {
-    display: inline-flex !important;
-}
-
-/* If settings button is an <a> (rare) */
-a[aria-label*="Settings" i],
-a[aria-label*="Настройки" i],
-a[aria-label*="Налаштування" i] {
-    display: inline-flex !important;
-}
-
-/* ---- Hide overflow / more actions / profile / reactions just in case ---- */
-button[aria-label*="More actions" i],
-button[aria-label*="More" i],
-button[aria-label*="Ещё" i],
-button[aria-label*="Ще" i],
-button[aria-label*="Reactions" i],
-button[aria-label*="Raise hand" i],
-button[aria-label*="Participants" i],
-button[aria-label*="Invite" i],
-button[aria-label*="Chat" i],
-button[aria-label*="Tile view" i],
-button[aria-label*="Hang up" i] {
-    display: none !important;
-}
-
-/* ---- Make Settings button look clean (optional) ---- */
-button[aria-label*="Settings" i],
-button[aria-label*="Настройки" i],
-button[aria-label*="Налаштування" i],
-button[data-testid*="toolbar.settings" i],
-button[data-testid*="settings" i] {
-    border-radius: 12px !important;
-    background: rgba(15, 23, 42, 0.45) !important;
-    border: 1px solid rgba(255, 255, 255, 0.14) !important;
-    backdrop-filter: blur(10px) !important;
-    padding: 8px 10px !important;
-    margin: 10px 10px 0 0 !important;
-}
-
-/* =========================================================
-   5) Hide other native overlays/buttons (best-effort)
-   ========================================================= */
+/* Hide extra overlays/buttons that sometimes remain */
+.notifications,
 #notifications,
-.notifications-container,
-[aria-label*="Notifications" i] {
-    display: none !important;
-}
-
-#raisehand,
+.participants-pane,
+#participants-pane,
+.settings-toolbar,
+.raised-hands,
 .reactions-menu,
-.reaction-menu,
-.reactions-panel,
-[aria-label*="Reactions" i] {
-    display: none !important;
+.reactions,
+.lobby-button,
+.invite-more,
+.security-dialog,
+.recording-dialog {
+    /* NOTE: do not hide actual modals - only misc UI; if something breaks, comment line-by-line */
 }
 
-/* =========================================================
-   6) Keep video area clean
-   ========================================================= */
-/* Some builds add "dominant speaker" or focus borders */
-.dominant-speaker,
-#dominantSpeaker,
-[class*="dominant" i],
-[class*="focus-indicator" i] {
-    display: none !important;
+/* Make sure the main video canvas fills */
+#videoconference_page,
+#layout_wrapper,
+.large-video-container,
+#largeVideoContainer,
+.large-video-background,
+#largeVideoWrapper {
+    height: 100% !important;
+}
+
+/* Avoid random focus outlines inside iframe */
+*:focus {
+    outline: none !important;
 }
