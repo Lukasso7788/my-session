@@ -1,19 +1,15 @@
-/* public/jitsi-custom.css  (SERVE FROM SAME JITSI DOMAIN ROOT!)
-   URL must work like:
+/* jitsi-custom.css
+   MUST be served from the SAME Jitsi domain:
    https://meet2.mysession.club/jitsi-custom.css
-
-   ✅ Includes:
-   - Self-hosted Inter font
-   - Force Inter everywhere (including Settings dialogs)
-   - Hide ALL native Jitsi UI (toolbars/filmstrip/header/sidepanels/etc)
-   - Keep modals/dialogs visible (Settings / Virtual Background)
 */
 
 /* =========================
-   Inter font (SELF-HOSTED)
-   Put files on the SAME domain:
+   Inter font (SELF-HOST attempt)
+   Put files on:
+   /usr/share/jitsi-meet/fonts/inter/Inter-roman.var.woff2
+   /usr/share/jitsi-meet/fonts/inter/Inter-italic.var.woff2
+   And they must be reachable as:
    https://meet2.mysession.club/fonts/inter/Inter-roman.var.woff2
-   https://meet2.mysession.club/fonts/inter/Inter-italic.var.woff2
    ========================= */
 
 @font-face {
@@ -21,7 +17,7 @@
     font-style: normal;
     font-weight: 100 900;
     font-display: swap;
-    src: url("/fonts/inter/Inter-roman.var.woff2?v=1") format("woff2");
+    src: url("/fonts/inter/Inter-roman.var.woff2") format("woff2");
 }
 
 @font-face {
@@ -29,67 +25,30 @@
     font-style: italic;
     font-weight: 100 900;
     font-display: swap;
-    src: url("/fonts/inter/Inter-italic.var.woff2?v=1") format("woff2");
+    src: url("/fonts/inter/Inter-italic.var.woff2") format("woff2");
 }
 
+/* Force Inter as best-effort everywhere */
 :root {
     --mysession-font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
 }
 
-/* Force Inter everywhere (including dialogs/modals) */
 html,
-body,
-#react-root,
-#videoconference_page,
-#layout_wrapper {
+body {
     font-family: var(--mysession-font) !important;
 }
 
-/* Aggressive override for text elements (avoid breaking SVG icons) */
-body,
-button,
-input,
-textarea,
-select,
-option,
-label,
-span,
-div,
-p,
-a,
-li,
-h1,
-h2,
-h3,
-h4,
-h5,
-h6,
-small,
-strong,
-em,
-b,
-i {
+body *:not(svg):not(path) {
     font-family: var(--mysession-font) !important;
 }
 
-/* Jitsi often uses Material UI */
-.MuiTypography-root,
-.MuiButton-root,
-.MuiInputBase-root,
-.MuiFormLabel-root,
-.MuiMenuItem-root,
-.MuiDialog-root,
-.MuiDialog-root * {
-    font-family: var(--mysession-font) !important;
-}
-
-/* Sometimes portals (atlaskit) */
+/* Atlaskit portals (settings dialogs etc.) */
 .atlaskit-portal,
 .atlaskit-portal * {
     font-family: var(--mysession-font) !important;
 }
 
-/* base */
+/* base sizing */
 html,
 body,
 #react-root,
@@ -102,27 +61,30 @@ body,
     overflow: hidden !important;
 }
 
-/* =========================
-   HIDE ALL JITSI UI CHROME
-   ========================= */
+/* ====== KILL ALL TOOLBARS / STRIPS / HEADERS ====== */
 
-/* Bottom toolbar containers */
+/* bottom toolbars */
 .toolbox,
 .toolbox-content,
 .toolbox__content,
 .toolbox__container,
 #toolbox,
 #toolbox-content,
+.toolbar,
+#toolbar,
+#toolbar-content,
 .new-toolbox,
 #new-toolbox,
 #newToolbar,
-#new-toolbox-container {
+#new-toolbox-container,
+.toolbars,
+#toolbars {
     display: none !important;
     visibility: hidden !important;
     pointer-events: none !important;
 }
 
-/* Filmstrip / thumbnails */
+/* filmstrip / thumbnails */
 .filmstrip,
 #filmstrip,
 .filmstrip__videos,
@@ -139,25 +101,7 @@ body,
     pointer-events: none !important;
 }
 
-/* Top header / subject / watermarks */
-.header,
-#header,
-.subject,
-.subject-info-container,
-.subject-info,
-.leftwatermark,
-.rightwatermark,
-.watermark,
-.brand,
-.branding,
-#poweredby,
-.poweredby {
-    display: none !important;
-    visibility: hidden !important;
-    pointer-events: none !important;
-}
-
-/* Side panels (chat/participants/etc) */
+/* side panels containers (chat/participants inside iframe) */
 .sidebar,
 #sidebar,
 .sideToolbarContainer,
@@ -173,7 +117,7 @@ body,
     pointer-events: none !important;
 }
 
-/* Misc overlays we don't want */
+/* misc UI overlays */
 .notifications,
 #notifications,
 .knocking-participant,
@@ -186,7 +130,45 @@ body,
     pointer-events: none !important;
 }
 
-/* Keep video area fullscreen */
+/* ====== KILL WATERMARKS (YOUR SCREENSHOT CASE) ======
+   In your DOM it is:
+   <a class="watermark leftwatermark" ...>
+     <div class="watermark leftwatermark" style="background-image:url(images/watermark.svg)">
+*/
+a.watermark,
+a.leftwatermark,
+a.rightwatermark,
+.watermark,
+.leftwatermark,
+.rightwatermark,
+#watermark,
+#poweredby,
+.poweredby,
+.brand,
+.branding {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* extra aggressive (when watermark is inside large video container) */
+#largeVideoContainer .watermark,
+#largeVideoContainer .leftwatermark,
+#largeVideoContainer .rightwatermark,
+#largeVideoWrapper .watermark,
+#largeVideoWrapper .leftwatermark,
+#largeVideoWrapper .rightwatermark,
+#videospace .watermark,
+#videospace .leftwatermark,
+#videospace .rightwatermark {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* ====== KEEP VIDEO AREA FULLSCREEN ====== */
 .large-video-container,
 #largeVideoContainer,
 .large-video-background,
@@ -198,6 +180,5 @@ body,
 }
 
 /* IMPORTANT:
-   Do NOT hide modals/dialogs
-   (Settings + Virtual Background are modals)
+   do NOT hide modals/dialogs (Settings, Virtual Background etc.)
 */
