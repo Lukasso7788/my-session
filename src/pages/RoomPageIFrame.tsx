@@ -251,7 +251,7 @@ async function createJitsiApiWithFallback(args: {
                     // ✅ Keep modules mounted on more builds
                     toolbarButtons: TOOLBAR_MOUNT_BUTTONS,
 
-                    ...(args.customCssUrl ? { customCssUrl: args.customCssUrl } : {}),
+                    customCssUrl: `https://${domain}/mysession-hide-all.css?v=3`,
                 },
 
                 interfaceConfigOverwrite: {
