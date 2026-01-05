@@ -101,8 +101,7 @@ function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: numbe
     if (!anyPhases) return [];
 
     const toSeconds = (raw: any): number => {
-        const explicitSeconds =
-            Number(raw?.seconds) || Number(raw?.duration_seconds) || Number(raw?.durationSeconds);
+        const explicitSeconds = Number(raw?.seconds) || Number(raw?.duration_seconds) || Number(raw?.durationSeconds);
         if (explicitSeconds > 0) return explicitSeconds;
 
         const explicitMinutes =
@@ -134,8 +133,7 @@ function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: numbe
         return Object.entries(anyPhases)
             .map(([k, v]: any) => {
                 const name = String(k || "");
-                const seconds =
-                    typeof v === "number" ? (v <= 180 ? Number(v) * 60 : Number(v)) : toSeconds(v);
+                const seconds = typeof v === "number" ? (v <= 180 ? Number(v) * 60 : Number(v)) : toSeconds(v);
                 return { name, seconds };
             })
             .filter((x) => x.seconds > 0);
@@ -380,6 +378,9 @@ export default function RoomPageIFrame() {
     const [mutedVideo, setMutedVideo] = useState(false);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
 
+    // ✅ readiness gate for commands like Settings
+    const [apiReady, setApiReady] = useState(false);
+
     // right panel (for chat/intentions only)
     const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(false);
     const [rightTab, setRightTab] = useState<RightPanelTab>(null);
@@ -442,6 +443,7 @@ export default function RoomPageIFrame() {
             apiRef.current?.dispose?.();
         } catch { }
         apiRef.current = null;
+        setApiReady(false);
         if (iframeContainerRef.current) iframeContainerRef.current.innerHTML = "";
         setLastErr("");
         setJitsiKey((x) => x + 1);
@@ -785,6 +787,7 @@ export default function RoomPageIFrame() {
 
         const cleanup = () => {
             stopWelcomeLoop();
+            setApiReady(false);
             try {
                 apiRef.current?.dispose?.();
             } catch { }
@@ -800,8 +803,7 @@ export default function RoomPageIFrame() {
 
         (async () => {
             try {
-                const customCssUrl =
-                    typeof window !== "undefined" ? `${window.location.origin}/jitsi-custom.css` : undefined;
+                const customCssUrl = typeof window !== "undefined" ? `${window.location.origin}/jitsi-custom.css` : undefined;
 
                 const { api, domain } = await createJitsiApiWithFallback({
                     domains: JITSI_DOMAINS,
@@ -820,6 +822,29 @@ export default function RoomPageIFrame() {
                 }
 
                 apiRef.current = api;
+                setApiReady(false);
+
+                // Debug: supported commands (best-effort)
+                try {
+                    const cmds =
+                        api.getSupportedCommands?.() ||
+                        api.getAvailableCommands?.() ||
+                        api._getSupportedCommands?.() ||
+                        null;
+                    console.log("[JITSI] supported commands:", cmds);
+                } catch (e) {
+                    console.log("[JITSI] cannot read supported commands", e);
+                }
+
+                // ✅ consider API "ready" only after joined
+                api.addEventListener?.("videoConferenceJoined", () => {
+                    if (destroyed) return;
+                    setApiReady(true);
+                });
+                api.addEventListener?.("videoConferenceLeft", () => {
+                    if (destroyed) return;
+                    setApiReady(false);
+                });
 
                 // Tile view on start
                 try {
@@ -908,25 +933,48 @@ export default function RoomPageIFrame() {
         } catch { }
     };
 
-    // Our button - try to open settings via command (not guaranteed on all builds),
-    // BUT native settings button exists in iframe anyway (Variant A), so we're safe.
+    // Our Settings button:
+    // - gate until joined (apiReady)
+    // - try known commands + dialog variants
+    // - log what actually worked
     const openNativeSettings = () => {
         const api = apiRef.current;
         if (!api) return;
 
-        try {
-            api.executeCommand("toggleSettings");
+        if (!apiReady) {
+            setLastErr("Jitsi not ready yet — wait 1-2 seconds after join.");
             return;
-        } catch { }
+        }
 
-        try {
-            api.executeCommand("toggleDeviceSelection");
-            return;
-        } catch { }
+        const candidates: Array<{ name: string; args?: any[] }> = [
+            { name: "toggleSettings" },
+            { name: "openSettings" },
+            { name: "toggleDeviceSelection" },
 
-        try {
-            api.executeCommand("openSettings");
-        } catch { }
+            // Some deployments expose dialog commands
+            { name: "openDialog", args: ["settings"] },
+            { name: "openDialog", args: ["SettingsDialog"] },
+            { name: "toggleDialog", args: ["settings"] },
+            { name: "toggleDialog", args: ["SettingsDialog"] },
+
+            // Rare / custom
+            { name: "toggleSettingsDialog" },
+            { name: "openSettingsDialog" },
+        ];
+
+        for (const c of candidates) {
+            try {
+                api.executeCommand(c.name, ...(c.args ?? []));
+                console.log("[JITSI] settings opened via:", c.name, c.args ?? []);
+                setLastErr("");
+                return;
+            } catch (e) {
+                // Keep console noise, but do not break UX
+                console.log("[JITSI] settings cmd failed:", c.name, c.args ?? [], e);
+            }
+        }
+
+        setLastErr("Settings command not supported on this Jitsi build/domain.");
     };
 
     const hangup = () => {
@@ -1146,8 +1194,10 @@ export default function RoomPageIFrame() {
 
                             <button
                                 onClick={openNativeSettings}
-                                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                                title="Settings (Jitsi)"
+                                disabled={!apiReady}
+                                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase} ${!apiReady ? "opacity-50 pointer-events-none" : ""
+                                    }`}
+                                title={!apiReady ? "Connecting..." : "Settings (Jitsi)"}
                             >
                                 <Icon name="settings" theme={theme} className="w-5 h-5" />
                             </button>
