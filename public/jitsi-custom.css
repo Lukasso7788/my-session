@@ -130,26 +130,31 @@ body,
     pointer-events: none !important;
 }
 
-/* ====== KILL WATERMARKS (YOUR SCREENSHOT CASE) ======
-   In your DOM it is:
-   <a class="watermark leftwatermark" ...>
-     <div class="watermark leftwatermark" style="background-image:url(images/watermark.svg)">
-*/
+/* ===== MYSESSION: KILL JITSI WATERMARK (NUCLEAR) ===== */
 a.watermark,
 a.leftwatermark,
 a.rightwatermark,
+div.watermark,
+div.leftwatermark,
+div.rightwatermark,
 .watermark,
 .leftwatermark,
-.rightwatermark,
-#watermark,
-#poweredby,
-.poweredby,
-.brand,
-.branding {
+.rightwatermark {
     display: none !important;
     visibility: hidden !important;
     opacity: 0 !important;
     pointer-events: none !important;
+}
+
+#largeVideoContainer a.watermark,
+#largeVideoContainer div.watermark,
+#largeVideoContainer .watermark,
+#videospace a.watermark,
+#videospace div.watermark,
+#videospace .watermark {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
 }
 
 /* extra aggressive (when watermark is inside large video container) */
@@ -182,3 +187,4 @@ a.rightwatermark,
 /* IMPORTANT:
    do NOT hide modals/dialogs (Settings, Virtual Background etc.)
 */
+
