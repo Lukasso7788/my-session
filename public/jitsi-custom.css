@@ -1,95 +1,118 @@
-/* /public/jitsi-custom.css
-   Injected into Jitsi iframe via configOverwrite.customCssUrl
+/* mysession-hide-all.css
+   MUST be served from the SAME Jitsi domain:
+   https://meet2.mysession.club/mysession-hide-all.css
 */
 
-/* Inter font */
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
-
-/* Force Inter everywhere inside Jitsi */
-* {
-    font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important;
+/* base */
+html,
+body,
+#react-root,
+#videoconference_page,
+#layout_wrapper {
+    height: 100% !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
 }
 
-/* =========================
-   HIDE ALL NATIVE JITSI UI
-   (keep dialogs/panes working)
-   ========================= */
+/* ====== KILL ALL TOOLBARS / STRIPS / HEADERS ====== */
 
-/* Hide top header / subject / room name */
+/* bottom toolbars */
+.toolbox,
+.toolbox-content,
+.toolbox__content,
+.toolbox__container,
+#toolbox,
+#toolbox-content,
+.toolbar,
+#toolbar,
+#toolbar-content,
+.new-toolbox,
+#new-toolbox,
+#newToolbar,
+#new-toolbox-container,
+.toolbars,
+#toolbars {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
+/* filmstrip / thumbnails */
+.filmstrip,
+#filmstrip,
+.filmstrip__videos,
+.filmstrip__toolbar,
+.filmstrip__toolbox,
+.thumbnail-filmstrip,
+#thumbnail-filmstrip,
+.videogrid,
+#videogrid,
+.remote-videos,
+#remote-videos {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
+/* top header / subject / watermarks */
 .header,
 #header,
 .subject,
 .subject-info-container,
 .subject-info,
-.watermark,
 .leftwatermark,
 .rightwatermark,
+.watermark,
 .brand,
 .branding,
-.welcome-page,
-#layout_wrapper .header,
-#videoconference_page .header {
-    display: none !important;
-}
-
-/* Hide toolbars (bottom) */
-.toolbox,
-.toolbox-content,
-.new-toolbox,
-#new-toolbox,
-#toolbox,
-#toolbox-content,
-.toolbox__content,
-.toolbox__container,
-.toolbar,
-#toolbar,
-#toolbar-content,
-#newToolbar {
+#poweredby,
+.poweredby {
     display: none !important;
     visibility: hidden !important;
     pointer-events: none !important;
 }
 
-/* Hide filmstrip (thumbnails) */
-.filmstrip,
-#filmstrip,
-.filmstrip__toolbar,
-.filmstrip__toolbox,
-.filmstrip__videos,
-.videogrid,
-#videogrid {
-    display: none !important;
-    visibility: hidden !important;
-    pointer-events: none !important;
-}
-
-/* Hide extra overlays/buttons that sometimes remain */
-.notifications,
-#notifications,
+/* side panels containers (chat/participants inside iframe) */
+.sidebar,
+#sidebar,
+.sideToolbarContainer,
+#sideToolbarContainer,
+.sideToolbar,
+#sideToolbar,
 .participants-pane,
 #participants-pane,
-.settings-toolbar,
-.raised-hands,
-.reactions-menu,
-.reactions,
-.lobby-button,
-.invite-more,
-.security-dialog,
-.recording-dialog {
-    /* NOTE: do not hide actual modals - only misc UI; if something breaks, comment line-by-line */
+.chat-container,
+#chat-container {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
 }
 
-/* Make sure the main video canvas fills */
-#videoconference_page,
-#layout_wrapper,
+/* misc UI overlays */
+.notifications,
+#notifications,
+.knocking-participant,
+.prejoin,
+#prejoin,
+.lobby-screen,
+#lobby-screen {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
+/* ====== KEEP VIDEO AREA FULLSCREEN ====== */
 .large-video-container,
 #largeVideoContainer,
 .large-video-background,
-#largeVideoWrapper {
+#largeVideoWrapper,
+#videospace,
+.videospace {
     height: 100% !important;
+    width: 100% !important;
 }
 
-/* Avoid random focus outlines inside iframe */
-*:focus {
-    outline: none !important;
-}
+/* IMPORTANT: do NOT hide modals/dialogs
+   (virtual background dialog is a modal) */
