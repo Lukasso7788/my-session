@@ -233,7 +233,6 @@ async function createJitsiApiWithFallback(args: {
                 configOverwrite: {
                     disableWelcomePage: true,
                     enableWelcomePage: false,
-
                     prejoinPageEnabled: false,
                     prejoinConfig: { enabled: false },
                     requireDisplayName: false,
@@ -244,19 +243,15 @@ async function createJitsiApiWithFallback(args: {
                     startWithAudioMuted: false,
                     startWithVideoMuted: false,
 
-                    // Optional: reduce accidental native interactions
-                    // (some builds support this)
-                    // disableShortcuts: true,
-
-                    // ✅ Keep modules mounted on more builds
+                    // keep modules mounted
                     toolbarButtons: TOOLBAR_MOUNT_BUTTONS,
 
+                    // ✅ CRITICAL: CSS MUST BE ON THE SAME JITSI DOMAIN
                     customCssUrl: `https://${domain}/mysession-hide-all.css?v=3`,
                 },
 
                 interfaceConfigOverwrite: {
-                    // ✅ Hide all toolbar buttons (and then CSS hides containers)
-                    TOOLBAR_BUTTONS: TOOLBAR_VISIBLE_BUTTONS,
+                    TOOLBAR_BUTTONS: [],
                     TOOLBAR_ALWAYS_VISIBLE: false,
                     TOOLBAR_TIMEOUT: 0,
                     TOOLBAR_TIMEOUT_NO_HOVER: 0,
@@ -269,6 +264,9 @@ async function createJitsiApiWithFallback(args: {
                     HIDE_INVITE_MORE_HEADER: true,
                     DISABLE_FOCUS_INDICATOR: true,
                     DISABLE_DOMINANT_SPEAKER_INDICATOR: true,
+
+                    // (часто помогает прибить пленку)
+                    FILM_STRIP_MAX_HEIGHT: 0,
 
                     DEFAULT_REMOTE_DISPLAY_NAME: "Guest",
                 },
