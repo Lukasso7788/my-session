@@ -842,7 +842,6 @@ export default function RoomPageIFrame() {
 
                 console.log("[JITSI] Domain chosen:", domain as JitsiDomain);
 
-                api.addEventListener?.("readyToClose", leaveToSessions);
                 api.addEventListener?.("videoConferenceLeft", leaveToSessions);
 
                 api.addEventListener?.("audioMuteStatusChanged", (e: any) => {
