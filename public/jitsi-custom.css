@@ -1,33 +1,46 @@
-/* mysession-jitsi.css
-   Serve from the SAME Jitsi domain:
-   https://meet2.mysession.club/mysession-jitsi.css
-*/
+/* =========================
+   Inter font (LOCAL, same domain)
+   Put files on: https://meet2.mysession.club/fonts/inter/...
+   ========================= */
 
-/* Inter (Google Fonts). Ð•ÑÐ»Ð¸ Ð²Ð´Ñ€ÑƒÐ³ CSP Ñ€ÐµÐ¶ÐµÑ‚ â€” ÑÐºÐ°Ð¶Ð¸, Ð´Ð°Ð¼ Ð²Ð°Ñ€Ð¸Ð°Ð½Ñ‚ self-host woff2. */
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+/* Variable font (recommended) */
+@font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url("/fonts/inter/Inter-roman.var.woff2") format("woff2");
+}
 
-/* Apply Inter to Jitsi UI texts/inputs (Ð±ÐµÐ· Ð°Ð³Ñ€ÐµÑÑÐ¸Ð²Ð½Ð¾Ð³Ð¾ * Ñ‡Ñ‚Ð¾Ð±Ñ‹ Ð½Ðµ Ñ€Ð¸ÑÐºÐ¾Ð²Ð°Ñ‚ÑŒ Ð¸ÐºÐ¾Ð½ÐºÐ°Ð¼Ð¸) */
+@font-face {
+    font-family: "Inter";
+    font-style: italic;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url("/fonts/inter/Inter-italic.var.woff2") format("woff2");
+}
+
+/* Force Inter everywhere (including dialogs/modals) */
+:root,
 html,
 body,
 #react-root,
 #videoconference_page,
-#layout_wrapper,
-button,
-input,
-select,
-textarea,
-label,
-p,
-span,
-div,
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
-    font-family: "Inter", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important;
+#layout_wrapper {
+    font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif !important;
 }
+
+/* Apply to all text-bearing elements (safe + aggressive) */
+body *:not(svg):not(path) {
+    font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif !important;
+}
+
+/* If dialogs are rendered in portals */
+.atlaskit-portal,
+.atlaskit-portal * {
+    font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif !important;
+}
+
 
 /* mysession-hide-all.css
    MUST be served from the SAME Jitsi domain:
@@ -147,3 +160,31 @@ body,
 
 /* IMPORTANT: do NOT hide modals/dialogs
    (virtual background dialog is a modal) */
+
+/* ====== Inter font (self-hosted) ====== */
+@font-face {
+    font-family: "Inter var";
+    src: url("/fonts/inter/Inter-roman.var.woff2") format("woff2");
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Inter var";
+    src: url("/fonts/inter/Inter-italic.var.woff2") format("woff2");
+    font-weight: 100 900;
+    font-style: italic;
+    font-display: swap;
+}
+
+/* brute-force override everywhere (Ð²ÐºÐ»ÑŽÑ‡Ð°Ñ Ð¼Ð¾Ð´Ð°Ð»ÐºÐ¸ Settings) */
+:root {
+    --mysession-font: "Inter var", Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+}
+
+html,
+body,
+* {
+    font-family: var(--mysession-font) !important;
+}
