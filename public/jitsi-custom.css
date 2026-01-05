@@ -1,15 +1,27 @@
+/* public/jitsi-custom.css  (SERVE FROM SAME JITSI DOMAIN ROOT!)
+   URL must work like:
+   https://meet2.mysession.club/jitsi-custom.css
+
+   ✅ Includes:
+   - Self-hosted Inter font
+   - Force Inter everywhere (including Settings dialogs)
+   - Hide ALL native Jitsi UI (toolbars/filmstrip/header/sidepanels/etc)
+   - Keep modals/dialogs visible (Settings / Virtual Background)
+*/
+
 /* =========================
-   Inter font (LOCAL, same domain)
-   Put files on: https://meet2.mysession.club/fonts/inter/...
+   Inter font (SELF-HOSTED)
+   Put files on the SAME domain:
+   https://meet2.mysession.club/fonts/inter/Inter-roman.var.woff2
+   https://meet2.mysession.club/fonts/inter/Inter-italic.var.woff2
    ========================= */
 
-/* Variable font (recommended) */
 @font-face {
     font-family: "Inter";
     font-style: normal;
     font-weight: 100 900;
     font-display: swap;
-    src: url("/fonts/inter/Inter-roman.var.woff2") format("woff2");
+    src: url("/fonts/inter/Inter-roman.var.woff2?v=1") format("woff2");
 }
 
 @font-face {
@@ -17,35 +29,65 @@
     font-style: italic;
     font-weight: 100 900;
     font-display: swap;
-    src: url("/fonts/inter/Inter-italic.var.woff2") format("woff2");
+    src: url("/fonts/inter/Inter-italic.var.woff2?v=1") format("woff2");
+}
+
+:root {
+    --mysession-font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
 }
 
 /* Force Inter everywhere (including dialogs/modals) */
-:root,
 html,
 body,
 #react-root,
 #videoconference_page,
 #layout_wrapper {
-    font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif !important;
+    font-family: var(--mysession-font) !important;
 }
 
-/* Apply to all text-bearing elements (safe + aggressive) */
-body *:not(svg):not(path) {
-    font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif !important;
+/* Aggressive override for text elements (avoid breaking SVG icons) */
+body,
+button,
+input,
+textarea,
+select,
+option,
+label,
+span,
+div,
+p,
+a,
+li,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+small,
+strong,
+em,
+b,
+i {
+    font-family: var(--mysession-font) !important;
 }
 
-/* If dialogs are rendered in portals */
+/* Jitsi often uses Material UI */
+.MuiTypography-root,
+.MuiButton-root,
+.MuiInputBase-root,
+.MuiFormLabel-root,
+.MuiMenuItem-root,
+.MuiDialog-root,
+.MuiDialog-root * {
+    font-family: var(--mysession-font) !important;
+}
+
+/* Sometimes portals (atlaskit) */
 .atlaskit-portal,
 .atlaskit-portal * {
-    font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif !important;
+    font-family: var(--mysession-font) !important;
 }
-
-
-/* mysession-hide-all.css
-   MUST be served from the SAME Jitsi domain:
-   https://meet2.mysession.club/mysession-hide-all.css
-*/
 
 /* base */
 html,
@@ -60,30 +102,27 @@ body,
     overflow: hidden !important;
 }
 
-/* ====== KILL ALL TOOLBARS / STRIPS / HEADERS ====== */
+/* =========================
+   HIDE ALL JITSI UI CHROME
+   ========================= */
 
-/* bottom toolbars */
+/* Bottom toolbar containers */
 .toolbox,
 .toolbox-content,
 .toolbox__content,
 .toolbox__container,
 #toolbox,
 #toolbox-content,
-.toolbar,
-#toolbar,
-#toolbar-content,
 .new-toolbox,
 #new-toolbox,
 #newToolbar,
-#new-toolbox-container,
-.toolbars,
-#toolbars {
+#new-toolbox-container {
     display: none !important;
     visibility: hidden !important;
     pointer-events: none !important;
 }
 
-/* filmstrip / thumbnails */
+/* Filmstrip / thumbnails */
 .filmstrip,
 #filmstrip,
 .filmstrip__videos,
@@ -100,7 +139,7 @@ body,
     pointer-events: none !important;
 }
 
-/* top header / subject / watermarks */
+/* Top header / subject / watermarks */
 .header,
 #header,
 .subject,
@@ -118,7 +157,7 @@ body,
     pointer-events: none !important;
 }
 
-/* side panels containers (chat/participants inside iframe) */
+/* Side panels (chat/participants/etc) */
 .sidebar,
 #sidebar,
 .sideToolbarContainer,
@@ -134,7 +173,7 @@ body,
     pointer-events: none !important;
 }
 
-/* misc UI overlays */
+/* Misc overlays we don't want */
 .notifications,
 #notifications,
 .knocking-participant,
@@ -147,7 +186,7 @@ body,
     pointer-events: none !important;
 }
 
-/* ====== KEEP VIDEO AREA FULLSCREEN ====== */
+/* Keep video area fullscreen */
 .large-video-container,
 #largeVideoContainer,
 .large-video-background,
@@ -158,33 +197,7 @@ body,
     width: 100% !important;
 }
 
-/* IMPORTANT: do NOT hide modals/dialogs
-   (virtual background dialog is a modal) */
-
-/* ====== Inter font (self-hosted) ====== */
-@font-face {
-    font-family: "Inter var";
-    src: url("/fonts/inter/Inter-roman.var.woff2") format("woff2");
-    font-weight: 100 900;
-    font-style: normal;
-    font-display: swap;
-}
-
-@font-face {
-    font-family: "Inter var";
-    src: url("/fonts/inter/Inter-italic.var.woff2") format("woff2");
-    font-weight: 100 900;
-    font-style: italic;
-    font-display: swap;
-}
-
-/* brute-force override everywhere (Ð²ÐºÐ»ÑŽÑ‡Ð°Ñ Ð¼Ð¾Ð´Ð°Ð»ÐºÐ¸ Settings) */
-:root {
-    --mysession-font: "Inter var", Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-}
-
-html,
-body,
-* {
-    font-family: var(--mysession-font) !important;
-}
+/* IMPORTANT:
+   Do NOT hide modals/dialogs
+   (Settings + Virtual Background are modals)
+*/

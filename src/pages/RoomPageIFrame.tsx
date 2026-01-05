@@ -4,11 +4,11 @@
 // ✅ Goal now:
 // - Hide ALL native Jitsi UI inside iframe (CSS from SAME Jitsi domain)
 // - Use our own controls only
-// - Provide Virtual Background dialog + Blur toggle from our UI
+// - Open Jitsi Settings + Virtual Background dialog from our UI
 //
 // Notes:
 // - CSS MUST be served from the SAME Jitsi domain, e.g.:
-//   https://meet2.mysession.club/mysession-hide-all.css
+//   https://meet2.mysession.club/jitsi-custom.css
 // - We pass it via configOverwrite.customCssUrl as absolute SAME-domain URL (with cache-bust)
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -42,14 +42,14 @@ const JITSI_DOMAINS = ["meet2.mysession.club", "meet.mysession.club"] as const;
 type JitsiDomain = (typeof JITSI_DOMAINS)[number];
 
 // ✅ Mount minimal buttons (optional).
-// Some Jitsi builds lazily mount certain dialogs. Keeping "settings" here is a cheap insurance.
+// Some Jitsi builds lazily mount certain dialogs. Keeping "settings" here is cheap insurance.
 const TOOLBAR_MOUNT_BUTTONS = ["settings"];
 
 // ✅ Show NONE in the iframe UI
 const TOOLBAR_VISIBLE_BUTTONS: string[] = [];
 
-// ✅ CSS file that hides all native UI (must exist on each Jitsi domain root)
-const JITSI_HIDE_ALL_CSS_PATH = "/mysession-hide-all.css";
+// ✅ CSS file that hides all native UI + enforces Inter (must exist on each Jitsi domain root)
+const JITSI_CUSTOM_CSS_PATH = "/jitsi-custom.css";
 
 // ====== AUDIO ======
 const STAGE_SOUND_MAP: Record<string, string> = {
@@ -208,7 +208,7 @@ async function createJitsiApiWithFallback(args: {
     roomName: string;
     parentNode: HTMLElement;
     userName: string;
-    cssPathOnJitsiDomain?: string; // like "/mysession-hide-all.css"
+    cssPathOnJitsiDomain?: string; // like "/jitsi-custom.css"
     onDomainChosen?: (d: string) => void;
 }) {
     let lastError: any = null;
@@ -383,9 +383,6 @@ export default function RoomPageIFrame() {
     // ✅ readiness gate for commands like dialogs
     const [apiReady, setApiReady] = useState(false);
 
-    // background UI state
-    const [bgBlur, setBgBlur] = useState(false);
-
     // right panel (for chat/intentions only)
     const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(false);
     const [rightTab, setRightTab] = useState<RightPanelTab>(null);
@@ -520,9 +517,7 @@ export default function RoomPageIFrame() {
 
             const { data, error } = await supabase
                 .from("sessions")
-                .select(
-                    "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)"
-                )
+                .select("*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)")
                 .eq("id", id)
                 .single();
 
@@ -586,9 +581,7 @@ export default function RoomPageIFrame() {
                     parsed &&
                     typeof parsed === "object" &&
                     !Array.isArray(parsed) &&
-                    (String((parsed as any)?.kind || "")
-                        .toLowerCase()
-                        .includes("infinite") ||
+                    (String((parsed as any)?.kind || "").toLowerCase().includes("infinite") ||
                         (parsed as any)?.timer?.phases ||
                         (parsed as any)?.timer?.segments ||
                         (parsed as any)?.phases ||
@@ -631,12 +624,7 @@ export default function RoomPageIFrame() {
 
                     setStages(formatted);
 
-                    const anchor = String(
-                        (parsed as any)?.anchor_ts ||
-                        (parsed as any)?.anchorTs ||
-                        data?.start_time ||
-                        fallbackStart
-                    );
+                    const anchor = String((parsed as any)?.anchor_ts || (parsed as any)?.anchorTs || data?.start_time || fallbackStart);
                     setStagebarStartTime(anchor);
 
                     const sumSeconds = phases.reduce((acc, p) => acc + (Number(p.seconds) || 0), 0);
@@ -815,7 +803,7 @@ export default function RoomPageIFrame() {
                     roomName,
                     parentNode: iframeContainerRef.current!,
                     userName,
-                    cssPathOnJitsiDomain: JITSI_HIDE_ALL_CSS_PATH,
+                    cssPathOnJitsiDomain: JITSI_CUSTOM_CSS_PATH,
                     onDomainChosen: (d) => console.log("[JITSI] Using domain:", d),
                 });
 
@@ -864,7 +852,7 @@ export default function RoomPageIFrame() {
 
                 console.log("[JITSI] Domain chosen:", domain);
 
-                // ✅ Do NOT auto-leave on "readyToClose" (can be noisy on some builds)
+                // ✅ Leave on conference left
                 api.addEventListener?.("videoConferenceLeft", leaveToSessions);
 
                 api.addEventListener?.("audioMuteStatusChanged", (e: any) => {
@@ -948,7 +936,44 @@ export default function RoomPageIFrame() {
         return list.includes(cmd);
     };
 
-    // ✅ Virtual Background dialog
+    // ✅ Open Jitsi Settings dialog from our button
+    const openJitsiSettings = () => {
+        const api = apiRef.current;
+        if (!api) return;
+
+        if (!apiReady) {
+            setLastErr("Jitsi not ready yet — wait 1-2 seconds after join.");
+            return;
+        }
+
+        const candidates = [
+            "toggleSettings",
+            "openSettings",
+            "toggleSettingsDialog",
+            "toggleDeviceSelection",
+            "toggleDeviceSelectionDialog",
+        ];
+
+        for (const cmd of candidates) {
+            if (!hasCmd(cmd)) continue;
+            try {
+                api.executeCommand(cmd);
+                setLastErr("");
+                return;
+            } catch { }
+        }
+
+        // as a last resort: try toggleSettings even if not advertised
+        try {
+            api.executeCommand("toggleSettings");
+            setLastErr("");
+            return;
+        } catch { }
+
+        setLastErr("Settings command not supported on this Jitsi build/domain.");
+    };
+
+    // ✅ Virtual Background dialog (if supported)
     const openVirtualBackgroundDialog = () => {
         const api = apiRef.current;
         if (!api) return;
@@ -958,44 +983,22 @@ export default function RoomPageIFrame() {
             return;
         }
 
-        // Prefer the exact supported command
-        if (hasCmd("toggleVirtualBackgroundDialog")) {
+        const candidates = [
+            "toggleVirtualBackgroundDialog",
+            "toggleVirtualBackground",
+            "openVirtualBackgroundDialog",
+        ];
+
+        for (const cmd of candidates) {
+            if (!hasCmd(cmd)) continue;
             try {
-                api.executeCommand("toggleVirtualBackgroundDialog");
+                api.executeCommand(cmd);
                 setLastErr("");
                 return;
-            } catch (e) {
-                console.log("[JITSI] toggleVirtualBackgroundDialog failed", e);
-            }
+            } catch { }
         }
 
         setLastErr("Virtual Background dialog command not supported on this Jitsi build/domain.");
-    };
-
-    // ✅ Blur toggle (if supported)
-    const toggleBlurBackground = () => {
-        const api = apiRef.current;
-        if (!api) return;
-
-        if (!apiReady) {
-            setLastErr("Jitsi not ready yet — wait 1-2 seconds after join.");
-            return;
-        }
-
-        const next = !bgBlur;
-
-        if (hasCmd("setBlurredBackground")) {
-            try {
-                api.executeCommand("setBlurredBackground", next);
-                setBgBlur(next);
-                setLastErr("");
-                return;
-            } catch (e) {
-                console.log("[JITSI] setBlurredBackground failed", e);
-            }
-        }
-
-        setLastErr("Blur background command not supported on this Jitsi build/domain.");
     };
 
     const hangup = () => {
@@ -1025,9 +1028,7 @@ export default function RoomPageIFrame() {
 
     // Theme switcher
     const switchTrack = "w-[84px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
-    const switchTrackCls = isLight
-        ? "bg-black/5 border-black/10 hover:bg-black/10"
-        : "bg-white/5 border-white/10 hover:bg-white/10";
+    const switchTrackCls = isLight ? "bg-black/5 border-black/10 hover:bg-black/10" : "bg-white/5 border-white/10 hover:bg-white/10";
     const switchThumb =
         "absolute top-[2px] w-[26px] h-[26px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center";
     const thumbTranslate = isLight ? "translateX(0px)" : "translateX(50px)";
@@ -1077,12 +1078,7 @@ export default function RoomPageIFrame() {
                                     aria-label="Toggle theme"
                                 >
                                     <div className={switchThumb} style={{ transform: thumbTranslate }}>
-                                        <Icon
-                                            name={isLight ? "theme-sun" : "theme-moon"}
-                                            theme={theme}
-                                            className="w-4 h-4"
-                                            alt={isLight ? "Light" : "Dark"}
-                                        />
+                                        <Icon name={isLight ? "theme-sun" : "theme-moon"} theme={theme} className="w-4 h-4" alt={isLight ? "Light" : "Dark"} />
                                     </div>
                                 </button>
 
@@ -1213,26 +1209,24 @@ export default function RoomPageIFrame() {
                                 <Icon name="intentions" theme={theme} className="w-5 h-5" />
                             </button>
 
-                            {/* Virtual Background dialog */}
+                            {/* Settings (Jitsi) */}
                             <button
-                                onClick={openVirtualBackgroundDialog}
+                                onClick={openJitsiSettings}
                                 disabled={!apiReady}
-                                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase} ${!apiReady ? "opacity-50 pointer-events-none" : ""
-                                    }`}
-                                title={!apiReady ? "Connecting..." : "Background (Jitsi)"}
+                                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase} ${!apiReady ? "opacity-50 pointer-events-none" : ""}`}
+                                title={!apiReady ? "Connecting..." : "Settings (Jitsi)"}
                             >
                                 <Icon name="settings" theme={theme} className="w-5 h-5" />
                             </button>
 
-                            {/* Blur toggle */}
+                            {/* Backgrounds (Jitsi) */}
                             <button
-                                onClick={toggleBlurBackground}
+                                onClick={openVirtualBackgroundDialog}
                                 disabled={!apiReady}
-                                className={`h-10 sm:h-11 px-3 rounded-2xl flex items-center justify-center transition font-inter text-[13px] ${bgBlur ? "bg-blue-600 hover:bg-blue-700 text-white" : ctlBtnBase
-                                    } ${!apiReady ? "opacity-50 pointer-events-none" : ""}`}
-                                title={!apiReady ? "Connecting..." : bgBlur ? "Disable blur" : "Enable blur"}
+                                className={`h-10 sm:h-11 px-3 rounded-2xl flex items-center justify-center transition font-inter text-[13px] ${ctlBtnBase} ${!apiReady ? "opacity-50 pointer-events-none" : ""}`}
+                                title={!apiReady ? "Connecting..." : "Backgrounds (Jitsi)"}
                             >
-                                Blur
+                                BG
                             </button>
                         </div>
 
@@ -1240,10 +1234,7 @@ export default function RoomPageIFrame() {
                         <div className="flex items-center justify-center gap-2 sm:gap-3">
                             <button
                                 onClick={toggleMic}
-                                className={
-                                    "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
-                                    (mutedAudio ? "bg-red-600 hover:bg-red-700" : ctlBtnBase)
-                                }
+                                className={"w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " + (mutedAudio ? "bg-red-600 hover:bg-red-700" : ctlBtnBase)}
                                 title={mutedAudio ? "Unmute mic" : "Mute mic"}
                             >
                                 <Icon name={mutedAudio ? "mic-off" : "mic-on"} theme={mutedAudio ? "dark" : theme} className="w-5 h-5" />
@@ -1251,10 +1242,7 @@ export default function RoomPageIFrame() {
 
                             <button
                                 onClick={toggleCam}
-                                className={
-                                    "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
-                                    (mutedVideo ? "bg-red-600 hover:bg-red-700" : ctlBtnBase)
-                                }
+                                className={"w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " + (mutedVideo ? "bg-red-600 hover:bg-red-700" : ctlBtnBase)}
                                 title={mutedVideo ? "Turn camera on" : "Turn camera off"}
                             >
                                 <Icon name={mutedVideo ? "camera-off" : "camera-on"} theme={theme} className="w-5 h-5" />
@@ -1262,10 +1250,7 @@ export default function RoomPageIFrame() {
 
                             <button
                                 onClick={toggleScreenShare}
-                                className={
-                                    "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
-                                    (isScreenSharing ? "bg-blue-600 hover:bg-blue-700" : ctlBtnBase)
-                                }
+                                className={"w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " + (isScreenSharing ? "bg-blue-600 hover:bg-blue-700" : ctlBtnBase)}
                                 title="Share screen"
                             >
                                 <Icon name="screen-share" theme={theme} className="w-5 h-5" />
@@ -1284,8 +1269,7 @@ export default function RoomPageIFrame() {
                         <div className="flex items-center justify-end gap-2 sm:gap-3">
                             <button
                                 onClick={hangup}
-                                className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${isLight ? "bg-red-600 hover:bg-red-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"
-                                    }`}
+                                className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${isLight ? "bg-red-600 hover:bg-red-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"}`}
                                 title="Leave"
                             >
                                 <Icon name="leave" theme={theme} className="w-5 h-5" />
