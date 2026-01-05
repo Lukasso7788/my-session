@@ -1,3 +1,34 @@
+/* mysession-jitsi.css
+   Serve from the SAME Jitsi domain:
+   https://meet2.mysession.club/mysession-jitsi.css
+*/
+
+/* Inter (Google Fonts). Ð•ÑÐ»Ð¸ Ð²Ð´Ñ€ÑƒÐ³ CSP Ñ€ÐµÐ¶ÐµÑ‚ â€” ÑÐºÐ°Ð¶Ð¸, Ð´Ð°Ð¼ Ð²Ð°Ñ€Ð¸Ð°Ð½Ñ‚ self-host woff2. */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+
+/* Apply Inter to Jitsi UI texts/inputs (Ð±ÐµÐ· Ð°Ð³Ñ€ÐµÑÑÐ¸Ð²Ð½Ð¾Ð³Ð¾ * Ñ‡Ñ‚Ð¾Ð±Ñ‹ Ð½Ðµ Ñ€Ð¸ÑÐºÐ¾Ð²Ð°Ñ‚ÑŒ Ð¸ÐºÐ¾Ð½ÐºÐ°Ð¼Ð¸) */
+html,
+body,
+#react-root,
+#videoconference_page,
+#layout_wrapper,
+button,
+input,
+select,
+textarea,
+label,
+p,
+span,
+div,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    font-family: "Inter", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important;
+}
+
 /* mysession-hide-all.css
    MUST be served from the SAME Jitsi domain:
    https://meet2.mysession.club/mysession-hide-all.css
