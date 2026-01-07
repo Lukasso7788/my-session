@@ -140,10 +140,10 @@ div.rightwatermark,
 .watermark,
 .leftwatermark,
 .rightwatermark {
-    display: none !important;
-    visibility: hidden !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 
 #largeVideoContainer a.watermark,
@@ -152,9 +152,9 @@ div.rightwatermark,
 #videospace a.watermark,
 #videospace div.watermark,
 #videospace .watermark {
-    display: none !important;
-    visibility: hidden !important;
-    opacity: 0 !important;
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
 }
 
 /* extra aggressive (when watermark is inside large video container) */
