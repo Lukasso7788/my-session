@@ -60,7 +60,29 @@ export type JitsiEngineOptions = {
   libPath?: string;
 };
 
-const DEFAULT_JITSI_DOMAIN = "meet.mysession.club";
+// ----------------------------------------------------------------------------
+// Default Jitsi domain (EU by default)
+// Priority:
+// 1) Vite env:  VITE_JITSI_DOMAIN
+// 2) runtime:   window.__JITSI_DOMAIN / globalThis.__JITSI_DOMAIN
+// 3) fallback:  "meet-eu.mysession.club"
+// ----------------------------------------------------------------------------
+function pickDefaultJitsiDomain(): string {
+  const g: any = typeof globalThis !== "undefined" ? (globalThis as any) : (window as any);
+
+  const fromGlobal = (g?.__JITSI_DOMAIN || g?.JITSI_DOMAIN || "").toString().trim();
+
+  let fromVite = "";
+  try {
+    fromVite = ((import.meta as any)?.env?.VITE_JITSI_DOMAIN || "").toString().trim();
+  } catch {
+    // ignore
+  }
+
+  return (fromVite || fromGlobal || "meet-eu.mysession.club").trim();
+}
+
+const DEFAULT_JITSI_DOMAIN = pickDefaultJitsiDomain();
 const DEFAULT_CONFIG_PATH = "/config.js";
 const DEFAULT_LIB_PATH = "/libs/lib-jitsi-meet.min.js";
 
