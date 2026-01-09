@@ -8,8 +8,10 @@
 //
 // Notes:
 // - CSS MUST be served from the SAME Jitsi domain, e.g.:
-//   https://meet2.mysession.club/jitsi-custom.css
+//   https://meet-eu.mysession.club/jitsi-custom.css
 // - We pass it via configOverwrite.customCssUrl (absolute SAME-domain URL + cache-bust)
+// - ✅ Each session should store its chosen Jitsi domain in DB: sessions.jitsi_domain
+//   (all participants must join the same domain for the same room!)
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -37,9 +39,29 @@ declare global {
     }
 }
 
-// ====== JITSI DOMAINS (PRIMARY + FALLBACK) ======
-const JITSI_DOMAINS = ["meet2.mysession.club", "meet.mysession.club"] as const;
-type JitsiDomain = (typeof JITSI_DOMAINS)[number];
+// ===============================
+// JITSI DOMAINS (PRIMARY + FALLBACK)
+// ===============================
+// ✅ Your regional Jitsi servers
+const ALL_JITSI_DOMAINS = [
+    "meet-eu.mysession.club",
+    "meet-us-east.mysession.club",
+    "meet-apac.mysession.club",
+] as const;
+
+type JitsiDomain = (typeof ALL_JITSI_DOMAINS)[number];
+
+// ✅ Decide the ordered domain list for the current session
+function domainsForSession(session: any): readonly string[] {
+    const preferred = String(session?.jitsi_domain || "").trim();
+
+    if (preferred && (ALL_JITSI_DOMAINS as readonly string[]).includes(preferred)) {
+        return [preferred, ...ALL_JITSI_DOMAINS.filter((d) => d !== preferred)];
+    }
+
+    // Default/fallback
+    return ALL_JITSI_DOMAINS;
+}
 
 // ✅ Keep minimal mounted buttons (insurance that dialogs exist in some builds)
 const TOOLBAR_MOUNT_BUTTONS = ["settings"];
@@ -430,9 +452,7 @@ export default function RoomPageIFrame() {
         const title = String(session?.title || "").toLowerCase();
 
         const tpl = session?.session_templates;
-        const tplName = Array.isArray(tpl)
-            ? String(tpl?.[0]?.name || tpl?.[0]?.title || "")
-            : String(tpl?.name || tpl?.title || "");
+        const tplName = Array.isArray(tpl) ? String(tpl?.[0]?.name || tpl?.[0]?.title || "") : String(tpl?.name || tpl?.title || "");
         const tplKey = Array.isArray(tpl)
             ? String(tpl?.[0]?.key || tpl?.[0]?.slug || tpl?.[0]?.type || "")
             : String(tpl?.key || tpl?.slug || tpl?.type || "");
@@ -628,9 +648,7 @@ export default function RoomPageIFrame() {
 
                     setStages(formatted);
 
-                    const anchor = String(
-                        (parsed as any)?.anchor_ts || (parsed as any)?.anchorTs || data?.start_time || fallbackStart
-                    );
+                    const anchor = String((parsed as any)?.anchor_ts || (parsed as any)?.anchorTs || data?.start_time || fallbackStart);
                     setStagebarStartTime(anchor);
 
                     const sumSeconds = phases.reduce((acc, p) => acc + (Number(p.seconds) || 0), 0);
@@ -705,7 +723,8 @@ export default function RoomPageIFrame() {
         });
 
         const sumStageSeconds = stageSeconds.reduce((acc, v) => acc + v, 0);
-        const loopSeconds = (Number(stagebarCycleSeconds) || 0) > 0 ? Number(stagebarCycleSeconds) : Math.max(1, sumStageSeconds);
+        const loopSeconds =
+            (Number(stagebarCycleSeconds) || 0) > 0 ? Number(stagebarCycleSeconds) : Math.max(1, sumStageSeconds);
 
         const timer = window.setInterval(() => {
             const now = Date.now();
@@ -775,7 +794,7 @@ export default function RoomPageIFrame() {
     }, [stagebarStartTime, stages, isSilentRoom, isInfiniteRoom, stagebarCycleSeconds]);
 
     // ============================================
-    // JITSI INIT (External API) with fallback domains
+    // JITSI INIT (External API) with session domain + fallback
     // ============================================
     useEffect(() => {
         if (!session || !id) return;
@@ -803,8 +822,10 @@ export default function RoomPageIFrame() {
 
         (async () => {
             try {
+                const domainList = domainsForSession(session);
+
                 const { api, domain } = await createJitsiApiWithFallback({
-                    domains: JITSI_DOMAINS,
+                    domains: domainList,
                     roomName,
                     parentNode: iframeContainerRef.current!,
                     userName,
@@ -824,11 +845,7 @@ export default function RoomPageIFrame() {
 
                 // Supported commands (best-effort)
                 try {
-                    const cmds =
-                        api.getSupportedCommands?.() ||
-                        api.getAvailableCommands?.() ||
-                        api._getSupportedCommands?.() ||
-                        null;
+                    const cmds = api.getSupportedCommands?.() || api.getAvailableCommands?.() || api._getSupportedCommands?.() || null;
 
                     const arr = Array.isArray(cmds) ? cmds : null;
                     supportedCmdsRef.current = arr;
@@ -1025,9 +1042,7 @@ export default function RoomPageIFrame() {
 
     // Theme switcher
     const switchTrack = "w-[84px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
-    const switchTrackCls = isLight
-        ? "bg-black/5 border-black/10 hover:bg-black/10"
-        : "bg-white/5 border-white/10 hover:bg-white/10";
+    const switchTrackCls = isLight ? "bg-black/5 border-black/10 hover:bg-black/10" : "bg-white/5 border-white/10 hover:bg-white/10";
     const switchThumb =
         "absolute top-[2px] w-[26px] h-[26px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center";
     const thumbTranslate = isLight ? "translateX(0px)" : "translateX(50px)";
@@ -1139,7 +1154,10 @@ export default function RoomPageIFrame() {
                 {/* MAIN AREA */}
                 <div className={"grid gap-5 flex-1 min-h-0 " + (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")}>
                     {/* VIDEO */}
-                    <div className={`rounded-2xl overflow-hidden min-h-0 relative ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"}`}>
+                    <div
+                        className={`rounded-2xl overflow-hidden min-h-0 relative ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
+                            }`}
+                    >
                         <div ref={iframeContainerRef} className="w-full h-full min-h-[60vh]" />
                         {lastErr && (
                             <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow z-30">
