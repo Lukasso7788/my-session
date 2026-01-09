@@ -50,23 +50,87 @@ export type JitsiEngineCallbacks = {
 
 export type BgMode = "none" | "blur" | "image";
 
-const JITSI_DOMAIN = "meet.mysession.club";
-const JITSI_CONFIG_URL = "/config.js";
-const JITSI_LIB_URL = "/libs/lib-jitsi-meet.min.js";
+// ✅ NEW: configurable domain + script paths
+export type JitsiEngineOptions = {
+  /** Can be host ("meet2.mysession.club") or origin ("https://meet2.mysession.club") */
+  jitsiDomain?: string;
+  /** Default: "/config.js" */
+  configPath?: string;
+  /** Default: "/libs/lib-jitsi-meet.min.js" */
+  libPath?: string;
+};
+
+const DEFAULT_JITSI_DOMAIN = "meet.mysession.club";
+const DEFAULT_CONFIG_PATH = "/config.js";
+const DEFAULT_LIB_PATH = "/libs/lib-jitsi-meet.min.js";
+
 const DISABLE_P2P = true;
 
-let jitsiLoaderPromise: Promise<void> | null = null;
+// ============================================================================
+// URL helpers (NEW)
+// ============================================================================
+type ResolvedJitsiEndpoints = {
+  origin: string; // "https://meet.example.com"
+  host: string; // "meet.example.com"
+  configSrc: string; // absolute
+  libSrc: string; // absolute
+};
+
+function resolveOriginAndHost(domainOrOrigin: string): { origin: string; host: string } {
+  const raw = (domainOrOrigin || "").trim() || DEFAULT_JITSI_DOMAIN;
+
+  // Accept:
+  // - "meet2.mysession.club"
+  // - "https://meet2.mysession.club"
+  // - "//meet2.mysession.club"
+  try {
+    const asUrl =
+      raw.startsWith("http://") || raw.startsWith("https://")
+        ? new URL(raw)
+        : raw.startsWith("//")
+          ? new URL("https:" + raw)
+          : new URL("https://" + raw);
+
+    return { origin: asUrl.origin, host: asUrl.host };
+  } catch {
+    // fallback
+    const host = raw.replace(/^https?:\/\//i, "").replace(/^\/\//, "").replace(/\/+$/, "");
+    return { origin: "https://" + host, host };
+  }
+}
+
+function buildAbsoluteFromOrigin(origin: string, pathOrUrl: string): string {
+  const p = (pathOrUrl || "").trim();
+  if (!p) return origin;
+
+  if (/^https?:\/\//i.test(p)) return p;
+  if (p.startsWith("//")) return "https:" + p;
+  if (p.startsWith("/")) return origin + p;
+  return origin + "/" + p;
+}
+
+function resolveJitsiEndpoints(opts: { domainOrOrigin: string; configPath: string; libPath: string }): ResolvedJitsiEndpoints {
+  const { origin, host } = resolveOriginAndHost(opts.domainOrOrigin);
+  const configSrc = buildAbsoluteFromOrigin(origin, opts.configPath);
+  const libSrc = buildAbsoluteFromOrigin(origin, opts.libPath);
+  return { origin, host, configSrc, libSrc };
+}
 
 // ============================================================================
-// SCRIPT LOADER
+// SCRIPT LOADER (UPDATED: per-domain config/lib)
 // ============================================================================
-async function loadJitsiScripts(): Promise<void> {
+const jitsiLoaderPromises = new Map<string, Promise<void>>();
+
+async function loadJitsiScripts(endpoints: ResolvedJitsiEndpoints): Promise<void> {
   if (typeof window === "undefined") throw new Error("Jitsi can only be loaded in browser");
-  if (window.JitsiMeetJS && window.config) return;
-  if (jitsiLoaderPromise) return jitsiLoaderPromise;
 
-  jitsiLoaderPromise = new Promise<void>((resolve, reject) => {
+  const key = `${endpoints.configSrc}|${endpoints.libSrc}`;
+  const existing = jitsiLoaderPromises.get(key);
+  if (existing) return existing;
+
+  const p = new Promise<void>((resolve, reject) => {
     let loaded = 0;
+
     const done = () => {
       loaded += 1;
       if (loaded === 2) {
@@ -74,28 +138,38 @@ async function loadJitsiScripts(): Promise<void> {
         else reject(new Error("Jitsi scripts loaded but globals are missing"));
       }
     };
+
     const onError = (src: string) => reject(new Error("Failed to load Jitsi script: " + src));
 
-    if (!document.querySelector(`script[src="${JITSI_CONFIG_URL}"]`)) {
+    // ✅ Always ensure config.js for the requested domain is present (it overwrites window.config)
+    if (!document.querySelector(`script[src="${endpoints.configSrc}"]`)) {
       const sc = document.createElement("script");
-      sc.src = JITSI_CONFIG_URL;
+      sc.src = endpoints.configSrc;
       sc.async = true;
       sc.onload = done;
-      sc.onerror = () => onError(JITSI_CONFIG_URL);
+      sc.onerror = () => onError(endpoints.configSrc);
       document.head.appendChild(sc);
-    } else done();
+    } else {
+      done();
+    }
 
-    if (!document.querySelector(`script[src="${JITSI_LIB_URL}"]`)) {
+    // ✅ Load lib-jitsi-meet only if not already loaded
+    if (window.JitsiMeetJS) {
+      done();
+    } else if (!document.querySelector(`script[src="${endpoints.libSrc}"]`)) {
       const sc = document.createElement("script");
-      sc.src = JITSI_LIB_URL;
+      sc.src = endpoints.libSrc;
       sc.async = true;
       sc.onload = done;
-      sc.onerror = () => onError(JITSI_LIB_URL);
+      sc.onerror = () => onError(endpoints.libSrc);
       document.head.appendChild(sc);
-    } else done();
+    } else {
+      done();
+    }
   });
 
-  return jitsiLoaderPromise;
+  jitsiLoaderPromises.set(key, p);
+  return p;
 }
 
 // ============================================================================
@@ -241,8 +315,36 @@ export class JitsiEngine {
     }
   >();
 
-  constructor(callbacks: JitsiEngineCallbacks = {}) {
+  // ✅ NEW: runtime-configurable jitsi endpoints
+  private jitsiDomainOrOrigin: string = DEFAULT_JITSI_DOMAIN;
+  private jitsiConfigPath: string = DEFAULT_CONFIG_PATH;
+  private jitsiLibPath: string = DEFAULT_LIB_PATH;
+
+  constructor(callbacks: JitsiEngineCallbacks = {}, opts: JitsiEngineOptions = {}) {
     this.callbacks = callbacks;
+
+    if (opts.jitsiDomain) this.jitsiDomainOrOrigin = opts.jitsiDomain;
+    if (opts.configPath) this.jitsiConfigPath = opts.configPath;
+    if (opts.libPath) this.jitsiLibPath = opts.libPath;
+  }
+
+  // ✅ NEW: allow changing domain (ideally BEFORE initAndJoin)
+  public setJitsiDomain(domainOrOrigin: string) {
+    this.jitsiDomainOrOrigin = (domainOrOrigin || "").trim() || DEFAULT_JITSI_DOMAIN;
+  }
+
+  // ✅ NEW: allow changing script paths if needed
+  public setJitsiScriptPaths(paths: { configPath?: string; libPath?: string }) {
+    if (paths.configPath) this.jitsiConfigPath = paths.configPath;
+    if (paths.libPath) this.jitsiLibPath = paths.libPath;
+  }
+
+  private getJitsiEndpoints(): ResolvedJitsiEndpoints {
+    return resolveJitsiEndpoints({
+      domainOrOrigin: this.jitsiDomainOrOrigin,
+      configPath: this.jitsiConfigPath,
+      libPath: this.jitsiLibPath,
+    });
   }
 
   // ============================================================================
@@ -509,9 +611,6 @@ export class JitsiEngine {
     this.safe(() => anyConf?.rtc?._requestKeyframe?.(pid));
     this.safe(() => anyConf?._room?.requestKeyframe?.(pid));
     this.safe(() => anyConf?._room?.sendKeyframeRequest?.(pid));
-
-    // keep silent by default
-    // console.debug("[keyframe]", pid, kind, reason);
   }
 
   private requestKeyframesForSubscribed(reason: string) {
@@ -724,8 +823,13 @@ export class JitsiEngine {
   // ============================================================================
   // Join / Conference lifecycle
   // ============================================================================
-  async initAndJoin(roomName: string, userName: string): Promise<void> {
-    await loadJitsiScripts();
+  async initAndJoin(roomName: string, userName: string, opts?: JitsiEngineOptions): Promise<void> {
+    // ✅ allow passing domain/paths here too
+    if (opts?.jitsiDomain) this.setJitsiDomain(opts.jitsiDomain);
+    if (opts?.configPath || opts?.libPath) this.setJitsiScriptPaths({ configPath: opts.configPath, libPath: opts.libPath });
+
+    const endpoints = this.getJitsiEndpoints();
+    await loadJitsiScripts(endpoints);
 
     // store args for safe rejoin
     this.lastJoinRoomName = roomName;
@@ -751,7 +855,8 @@ export class JitsiEngine {
 
     this.JitsiMeetJS.init({ disableP2P: true, disableAudioLevels: true });
 
-    const serviceUrl = this.config.websocket || this.config.bosh || `wss://${JITSI_DOMAIN}/xmpp-websocket`;
+    // ✅ UPDATED fallback uses current endpoints.host
+    const serviceUrl = this.config.websocket || this.config.bosh || `wss://${endpoints.host}/xmpp-websocket`;
     const options = { hosts: this.config.hosts, serviceUrl, clientNode: this.config.clientNode, p2p: { enabled: false } };
 
     const connection = new this.JitsiMeetJS.JitsiConnection(null, undefined, options);
@@ -1322,6 +1427,11 @@ export class JitsiEngine {
     const savedQuality = this.qualityMode;
     const savedSelected = [...(this.selectedVideoIds || [])];
 
+    // ✅ keep current domain/paths too
+    const savedJitsiDomain = this.jitsiDomainOrOrigin;
+    const savedConfigPath = this.jitsiConfigPath;
+    const savedLibPath = this.jitsiLibPath;
+
     await this.dispose().catch(() => { });
     this.disposed = false;
 
@@ -1330,6 +1440,10 @@ export class JitsiEngine {
     this.bgStrategy = savedBgStrategy;
     this.qualityMode = savedQuality;
     this.selectedVideoIds = savedSelected;
+
+    this.jitsiDomainOrOrigin = savedJitsiDomain;
+    this.jitsiConfigPath = savedConfigPath;
+    this.jitsiLibPath = savedLibPath;
 
     this.lastSubsKey = "";
     this.lastSubsAppliedAt = 0;
