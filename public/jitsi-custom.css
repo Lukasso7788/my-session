@@ -140,10 +140,10 @@ div.rightwatermark,
 .watermark,
 .leftwatermark,
 .rightwatermark {
-  display: none !important;
-  visibility: hidden !important;
-  opacity: 0 !important;
-  pointer-events: none !important;
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
 }
 
 #largeVideoContainer a.watermark,
@@ -152,9 +152,9 @@ div.rightwatermark,
 #videospace a.watermark,
 #videospace div.watermark,
 #videospace .watermark {
-  display: none !important;
-  visibility: hidden !important;
-  opacity: 0 !important;
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
 }
 
 /* extra aggressive (when watermark is inside large video container) */
@@ -173,6 +173,67 @@ div.rightwatermark,
     pointer-events: none !important;
 }
 
+/* ===== MYSESSION: KILL TOP OVERLAY (ROOM NAME / TIMER / PERFORMANCE ICON) =====
+   Different Jitsi builds use different classnames, so we go wide.
+   Goal: hide "Session ID", conference timer, and the clickable performance/stats icon on hover.
+*/
+
+/* common header containers */
+#header,
+.header,
+.header-content,
+.header-container,
+.subject,
+.subject-info-container,
+.subject-text,
+.subject-info,
+.room-name,
+.roomname,
+.room-name-container,
+.conference-timer,
+.clock,
+#clock,
+.live-streaming-indicator {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* brand / powered-by blocks (some builds place them in header) */
+.poweredby,
+.poweredBy,
+#poweredby,
+#poweredBy {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* "info"/"stats"/"performance" buttons often live in header/toolbox on hover */
+[aria-label*="Performance" i],
+[aria-label*="Stats" i],
+[aria-label*="Statistics" i],
+[aria-label*="Info" i],
+[aria-label*="Настройки" i],
+[aria-label*="Параметры" i],
+[aria-label*="Производ" i],
+[aria-label*="Статист" i] {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* some builds render an overlay wrapper on hover */
+div[class*="overlay" i],
+div[class*="chrome" i],
+div[class*="header" i] {
+    /* don't fully hide overlays to avoid breaking dialogs, but disable pointer events */
+    pointer-events: none !important;
+}
+
 /* ====== KEEP VIDEO AREA FULLSCREEN ====== */
 .large-video-container,
 #largeVideoContainer,
@@ -187,4 +248,3 @@ div.rightwatermark,
 /* IMPORTANT:
    do NOT hide modals/dialogs (Settings, Virtual Background etc.)
 */
-

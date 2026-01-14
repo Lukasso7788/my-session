@@ -4,7 +4,7 @@
 // ✅ Goal now:
 // - Hide ALL native Jitsi UI inside iframe (CSS from SAME Jitsi domain)
 // - Use our own controls only
-// - Provide Jitsi Settings dialog + Virtual Background dialog from our UI
+// - Tile view ON by default
 //
 // Notes:
 // - CSS MUST be served from the SAME Jitsi domain, e.g.:
@@ -268,7 +268,7 @@ async function createJitsiApiWithFallback(args: {
                     startWithAudioMuted: false,
                     startWithVideoMuted: false,
 
-                    // ✅ Ensure tile view is default inside iframe
+                    // ✅ Ensure tile view is default inside iframe (supported on many builds)
                     startWithTileView: true,
 
                     // Keep just enough mounted if some builds need it
@@ -331,7 +331,6 @@ function Icon({
     | "leave"
     | "chat"
     | "intentions"
-    | "settings"
     | "tile-on"
     | "tile-off"
     | "theme-sun"
@@ -409,7 +408,7 @@ export default function RoomPageIFrame() {
     const [mutedVideo, setMutedVideo] = useState(false);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
 
-    // ✅ readiness gate for commands like dialogs
+    // ✅ readiness gate (kept even if we don't show settings buttons)
     const [apiReady, setApiReady] = useState(false);
 
     // right panel (for chat/intentions only)
@@ -455,7 +454,9 @@ export default function RoomPageIFrame() {
         const title = String(session?.title || "").toLowerCase();
 
         const tpl = session?.session_templates;
-        const tplName = Array.isArray(tpl) ? String(tpl?.[0]?.name || tpl?.[0]?.title || "") : String(tpl?.name || tpl?.title || "");
+        const tplName = Array.isArray(tpl)
+            ? String(tpl?.[0]?.name || tpl?.[0]?.title || "")
+            : String(tpl?.name || tpl?.title || "");
         const tplKey = Array.isArray(tpl)
             ? String(tpl?.[0]?.key || tpl?.[0]?.slug || tpl?.[0]?.type || "")
             : String(tpl?.key || tpl?.slug || tpl?.type || "");
@@ -651,7 +652,12 @@ export default function RoomPageIFrame() {
 
                     setStages(formatted);
 
-                    const anchor = String((parsed as any)?.anchor_ts || (parsed as any)?.anchorTs || data?.start_time || fallbackStart);
+                    const anchor = String(
+                        (parsed as any)?.anchor_ts ||
+                        (parsed as any)?.anchorTs ||
+                        data?.start_time ||
+                        fallbackStart
+                    );
                     setStagebarStartTime(anchor);
 
                     const sumSeconds = phases.reduce((acc, p) => acc + (Number(p.seconds) || 0), 0);
@@ -867,7 +873,7 @@ export default function RoomPageIFrame() {
                     if (destroyed) return;
                     setApiReady(true);
 
-                    // ✅ Ensure tile view is ON by default (extra safety)
+                    // ✅ Ensure tile view ON by default (belt & suspenders)
                     try {
                         api.executeCommand("setTileView", true);
                         setTile(true);
@@ -1016,8 +1022,9 @@ export default function RoomPageIFrame() {
             <div className="w-full px-3 sm:px-5 pt-5 pb-[calc(110px+env(safe-area-inset-bottom))] flex flex-col gap-5 min-h-screen">
                 {/* TOP BAR */}
                 <div className={`flex w-full rounded-2xl overflow-hidden ${topBarBg}`}>
-                    <div className="flex-1 px-6 py-4">
-                        <div className="flex items-start justify-between gap-4">
+                    {/* ✅ min-w-0 is critical so StageBar can shrink on small widths */}
+                    <div className="flex-1 min-w-0 px-4 sm:px-6 py-4">
+                        <div className="flex items-start justify-between gap-3 sm:gap-4">
                             <div className="min-w-0">
                                 <p className={`font-inter font-semibold text-[18px] truncate ${strongText}`}>{session.title}</p>
                                 <p className={`font-inter text-[13px] ${subtleText}`}>{isSilentRoom ? "Silent room" : "Video session"}</p>
@@ -1082,13 +1089,15 @@ export default function RoomPageIFrame() {
 
                         {/* StageBar */}
                         {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
-                            <div className="mt-3 w-full overflow-hidden">
-                                <SessionStageBar
-                                    stages={stages as any}
-                                    startTime={stagebarStartTime}
-                                    cycleSeconds={stagebarCycleSeconds}
-                                    onHoverStage={setHoveredStage as any}
-                                />
+                            <div className="mt-3 w-full max-w-full min-w-0 overflow-hidden">
+                                <div className="w-full max-w-full min-w-0 overflow-hidden">
+                                    <SessionStageBar
+                                        stages={stages as any}
+                                        startTime={stagebarStartTime}
+                                        cycleSeconds={stagebarCycleSeconds}
+                                        onHoverStage={setHoveredStage as any}
+                                    />
+                                </div>
                             </div>
                         )}
 
