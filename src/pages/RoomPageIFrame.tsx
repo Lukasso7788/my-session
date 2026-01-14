@@ -268,6 +268,9 @@ async function createJitsiApiWithFallback(args: {
                     startWithAudioMuted: false,
                     startWithVideoMuted: false,
 
+                    // ✅ Ensure tile view is default inside iframe
+                    startWithTileView: true,
+
                     // Keep just enough mounted if some builds need it
                     toolbarButtons: TOOLBAR_MOUNT_BUTTONS,
 
@@ -401,7 +404,7 @@ export default function RoomPageIFrame() {
     const [lastErr, setLastErr] = useState<string>("");
 
     // iframe state
-    const [tile, setTile] = useState(true);
+    const [tile, setTile] = useState(true); // ✅ default tile view ON
     const [mutedAudio, setMutedAudio] = useState(false);
     const [mutedVideo, setMutedVideo] = useState(false);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
@@ -845,7 +848,11 @@ export default function RoomPageIFrame() {
 
                 // Supported commands (best-effort)
                 try {
-                    const cmds = api.getSupportedCommands?.() || api.getAvailableCommands?.() || api._getSupportedCommands?.() || null;
+                    const cmds =
+                        api.getSupportedCommands?.() ||
+                        api.getAvailableCommands?.() ||
+                        api._getSupportedCommands?.() ||
+                        null;
 
                     const arr = Array.isArray(cmds) ? cmds : null;
                     supportedCmdsRef.current = arr;
@@ -859,13 +866,20 @@ export default function RoomPageIFrame() {
                 api.addEventListener?.("videoConferenceJoined", () => {
                     if (destroyed) return;
                     setApiReady(true);
+
+                    // ✅ Ensure tile view is ON by default (extra safety)
+                    try {
+                        api.executeCommand("setTileView", true);
+                        setTile(true);
+                    } catch { }
                 });
+
                 api.addEventListener?.("videoConferenceLeft", () => {
                     if (destroyed) return;
                     setApiReady(false);
                 });
 
-                // Tile view on start
+                // Tile view on start (best-effort)
                 try {
                     api.executeCommand("setTileView", true);
                     setTile(true);
@@ -948,71 +962,6 @@ export default function RoomPageIFrame() {
         try {
             api.executeCommand("toggleShareScreen");
         } catch { }
-    };
-
-    const hasCmd = (cmd: string) => {
-        const list = supportedCmdsRef.current;
-        if (!list) return true; // if unknown, still try
-        return list.includes(cmd);
-    };
-
-    const openJitsiSettingsDialog = () => {
-        const api = apiRef.current;
-        if (!api) return;
-
-        if (!apiReady) {
-            setLastErr("Jitsi not ready yet — wait 1-2 seconds after join.");
-            return;
-        }
-
-        // Most builds support toggleSettings
-        if (hasCmd("toggleSettings")) {
-            try {
-                api.executeCommand("toggleSettings");
-                setLastErr("");
-                return;
-            } catch (e) {
-                console.log("[JITSI] toggleSettings failed", e);
-            }
-        }
-
-        // Fallback attempt (some builds don't list supported commands)
-        try {
-            api.executeCommand("toggleSettings");
-            setLastErr("");
-            return;
-        } catch { }
-
-        setLastErr("Settings dialog command not supported on this Jitsi build/domain.");
-    };
-
-    const openVirtualBackgroundDialog = () => {
-        const api = apiRef.current;
-        if (!api) return;
-
-        if (!apiReady) {
-            setLastErr("Jitsi not ready yet — wait 1-2 seconds after join.");
-            return;
-        }
-
-        if (hasCmd("toggleVirtualBackgroundDialog")) {
-            try {
-                api.executeCommand("toggleVirtualBackgroundDialog");
-                setLastErr("");
-                return;
-            } catch (e) {
-                console.log("[JITSI] toggleVirtualBackgroundDialog failed", e);
-            }
-        }
-
-        // fallback attempt
-        try {
-            api.executeCommand("toggleVirtualBackgroundDialog");
-            setLastErr("");
-            return;
-        } catch { }
-
-        setLastErr("Virtual Background dialog command not supported on this Jitsi build/domain.");
     };
 
     const hangup = () => {
@@ -1105,8 +1054,8 @@ export default function RoomPageIFrame() {
                                 <button
                                     onClick={forceReloadJitsi}
                                     className={`px-3 py-2 rounded-xl border transition font-inter text-[13px] ${isLight
-                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                        ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                        : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                         }`}
                                     title="Reload video engine"
                                 >
@@ -1118,8 +1067,8 @@ export default function RoomPageIFrame() {
                                     <button
                                         onClick={() => setSelectedUser(session.host_profile)}
                                         className={`max-[520px]:hidden flex items-center gap-2 px-3 py-2 rounded-xl border transition font-inter text-[13px] ${isLight
-                                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                                : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                             }`}
                                     >
                                         <span className="flex items-center gap-1 leading-none">
@@ -1229,26 +1178,6 @@ export default function RoomPageIFrame() {
                                 title="Intentions"
                             >
                                 <Icon name="intentions" theme={theme} className="w-5 h-5" />
-                            </button>
-
-                            {/* Settings dialog */}
-                            <button
-                                onClick={openJitsiSettingsDialog}
-                                disabled={!apiReady}
-                                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase} ${!apiReady ? "opacity-50 pointer-events-none" : ""}`}
-                                title={!apiReady ? "Connecting..." : "Jitsi Settings"}
-                            >
-                                <Icon name="settings" theme={theme} className="w-5 h-5" />
-                            </button>
-
-                            {/* Virtual Background dialog */}
-                            <button
-                                onClick={openVirtualBackgroundDialog}
-                                disabled={!apiReady}
-                                className={`h-10 sm:h-11 px-3 rounded-2xl flex items-center justify-center transition font-inter text-[13px] ${ctlBtnBase} ${!apiReady ? "opacity-50 pointer-events-none" : ""}`}
-                                title={!apiReady ? "Connecting..." : "Background (Jitsi)"}
-                            >
-                                BG
                             </button>
                         </div>
 
