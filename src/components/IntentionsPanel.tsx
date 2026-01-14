@@ -86,32 +86,13 @@ export function IntentionsPanel({ sessionId: sessionIdProp, theme = "dark" }: In
       outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
     `;
 
-  // ✅ NEW: completed styles (green tint + green-ish line-through)
-  const completedCardCls = isLight
-    ? "border-emerald-600/20 bg-emerald-500/10 hover:bg-emerald-500/14"
-    : "border-emerald-400/15 bg-emerald-500/10 hover:bg-emerald-500/14";
+  const myCardCls = isLight
+    ? "group rounded-xl border border-black/10 px-3 py-2.5 bg-white/70 hover:bg-white transition cursor-pointer"
+    : "group rounded-xl border border-white/5 px-3 py-2.5 bg-[#0B1220]/55 hover:bg-[#0B1220]/75 transition cursor-pointer";
 
-  const completedTextCls = isLight
-    ? "text-emerald-800/55 line-through"
-    : "text-emerald-200/55 line-through";
-
-  const activeTextCls = isLight ? "text-black/80" : "text-white/80";
-
-  const baseMyCardCls = isLight
-    ? "group rounded-xl border px-3 py-2.5 transition cursor-pointer"
-    : "group rounded-xl border px-3 py-2.5 transition cursor-pointer";
-
-  const baseTeamCardCls = isLight
-    ? "rounded-xl border px-3 py-2.5 transition"
-    : "rounded-xl border px-3 py-2.5 transition";
-
-  const myCardDefault = isLight
-    ? "border-black/10 bg-white/70 hover:bg-white"
-    : "border-white/5 bg-[#0B1220]/55 hover:bg-[#0B1220]/75";
-
-  const teamCardDefault = isLight
-    ? "border-black/10 bg-white/70 hover:bg-white"
-    : "border-white/5 bg-[#0B1220]/55 hover:bg-[#0B1220]/75";
+  const teamCardCls = isLight
+    ? "rounded-xl border border-black/10 px-3 py-2.5 bg-white/70 hover:bg-white transition"
+    : "rounded-xl border border-white/5 px-3 py-2.5 bg-[#0B1220]/55 hover:bg-[#0B1220]/75 transition";
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
@@ -267,9 +248,10 @@ export function IntentionsPanel({ sessionId: sessionIdProp, theme = "dark" }: In
             <div className="flex flex-col gap-2">
               {myIntentions.map((i) => {
                 const isEditing = editingId === i.id;
-                const isDone = !!i.completed;
 
                 const circleCls = isLight ? "text-black/40" : "text-white/45";
+                const textDoneCls = isLight ? "text-black/45 line-through" : "text-white/50 line-through";
+                const textActiveCls = isLight ? "text-black/80" : "text-white/80";
 
                 const editInputCls = isLight
                   ? `
@@ -283,16 +265,11 @@ export function IntentionsPanel({ sessionId: sessionIdProp, theme = "dark" }: In
                     outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
                   `;
 
-                const cardCls =
-                  baseMyCardCls +
-                  " " +
-                  (isDone ? completedCardCls : myCardDefault);
-
                 return (
-                  <div key={i.id} onClick={() => toggleCompleted(i)} className={cardCls}>
+                  <div key={i.id} onClick={() => toggleCompleted(i)} className={myCardCls}>
                     <div className="flex items-center gap-2">
                       <div className="shrink-0">
-                        {isDone ? (
+                        {i.completed ? (
                           <CheckCircle size={18} className="text-emerald-500" />
                         ) : (
                           <Circle size={18} className={circleCls} />
@@ -304,7 +281,7 @@ export function IntentionsPanel({ sessionId: sessionIdProp, theme = "dark" }: In
                           <div
                             className={
                               "text-[13px] break-words leading-5 " +
-                              (isDone ? completedTextCls : activeTextCls)
+                              (i.completed ? textDoneCls : textActiveCls)
                             }
                           >
                             {i.text}
@@ -401,19 +378,13 @@ export function IntentionsPanel({ sessionId: sessionIdProp, theme = "dark" }: In
           <div className="flex flex-col gap-2">
             {teamIntentions.map((item) => {
               const isMine = item.user_id === user?.id;
-              const isDone = !!item.completed;
-
               const nameCls = isLight ? "text-black/85" : "text-white/85";
               const bodyActive = isLight ? "text-black/75" : "text-white/75";
+              const bodyDone = isLight ? "text-black/45 line-through" : "text-white/50 line-through";
               const circleCls = isLight ? "text-black/30" : "text-white/30";
 
-              const cardCls =
-                baseTeamCardCls +
-                " " +
-                (isDone ? completedCardCls : teamCardDefault);
-
               return (
-                <div key={item.id} className={cardCls}>
+                <div key={item.id} className={teamCardCls}>
                   <div className="flex items-center gap-3">
                     <img
                       src={getAvatar(item.profiles)}
@@ -425,11 +396,10 @@ export function IntentionsPanel({ sessionId: sessionIdProp, theme = "dark" }: In
                       <div className={"text-[13px] font-medium truncate " + nameCls}>
                         {isMine ? "You" : item.profiles?.full_name || "Participant"}
                       </div>
-
                       <div
                         className={
                           "text-[13px] break-words leading-5 " +
-                          (isDone ? completedTextCls : bodyActive)
+                          (item.completed ? bodyDone : bodyActive)
                         }
                       >
                         {item.text}
@@ -437,7 +407,7 @@ export function IntentionsPanel({ sessionId: sessionIdProp, theme = "dark" }: In
                     </div>
 
                     <div className="shrink-0">
-                      {isDone ? (
+                      {item.completed ? (
                         <CheckCircle size={16} className="text-emerald-500" />
                       ) : (
                         <Circle size={16} className={circleCls} />
