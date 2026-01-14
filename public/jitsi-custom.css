@@ -130,7 +130,60 @@ body,
     pointer-events: none !important;
 }
 
-/* ===== MYSESSION: KILL JITSI WATERMARK (NUCLEAR) ===== */
+/* =========================================================
+   ✅ EXACT MATCH FROM YOUR DEVTOOLS:
+   - top pill is inside:
+     div.details-container
+       div#autoHide.subject.visible
+         div.subject-info-container
+           span.css-xxxx-timer
+   So we kill those containers directly.
+   ========================================================= */
+
+/* kill the whole "details/header overlay" area */
+.details-container,
+#autoHide,
+.subject.visible,
+.subject,
+.subject-info-container {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* timer text class is dynamic like css-1zfuz4-timer -> match by substring */
+span[class*="timer" i],
+div[class*="timer" i] {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* common header containers (keep wide net too) */
+#header,
+.header,
+.header-content,
+.header-container,
+.subject-text,
+.subject-info,
+.room-name,
+.roomname,
+.room-name-container,
+.conference-timer,
+.clock,
+#clock,
+.live-streaming-indicator {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* ===== MYSESSION: KILL JITSI WATERMARK (SUPER WIDE) ===== */
+
+/* classic watermarks */
 a.watermark,
 a.leftwatermark,
 a.rightwatermark,
@@ -146,6 +199,24 @@ div.rightwatermark,
     pointer-events: none !important;
 }
 
+/* id-based watermarks (often used) */
+#watermark,
+a#watermark,
+#jitsi-watermark,
+#brand-watermark,
+#poweredby,
+#poweredBy,
+.poweredby,
+.poweredBy,
+[data-testid*="watermark" i],
+[class*="watermark" i] {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* some builds place watermark in videospace/large video container */
 #largeVideoContainer a.watermark,
 #largeVideoContainer div.watermark,
 #largeVideoContainer .watermark,
@@ -167,44 +238,6 @@ div.rightwatermark,
 #videospace .watermark,
 #videospace .leftwatermark,
 #videospace .rightwatermark {
-    display: none !important;
-    visibility: hidden !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
-}
-
-/* ===== MYSESSION: KILL TOP OVERLAY (ROOM NAME / TIMER / PERFORMANCE ICON) =====
-   Different Jitsi builds use different classnames, so we go wide.
-   Goal: hide "Session ID", conference timer, and the clickable performance/stats icon on hover.
-*/
-
-/* common header containers */
-#header,
-.header,
-.header-content,
-.header-container,
-.subject,
-.subject-info-container,
-.subject-text,
-.subject-info,
-.room-name,
-.roomname,
-.room-name-container,
-.conference-timer,
-.clock,
-#clock,
-.live-streaming-indicator {
-    display: none !important;
-    visibility: hidden !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
-}
-
-/* brand / powered-by blocks (some builds place them in header) */
-.poweredby,
-.poweredBy,
-#poweredby,
-#poweredBy {
     display: none !important;
     visibility: hidden !important;
     opacity: 0 !important;

@@ -271,6 +271,12 @@ async function createJitsiApiWithFallback(args: {
                     // ✅ Ensure tile view is default inside iframe (supported on many builds)
                     startWithTileView: true,
 
+                    // ✅ Kill “subject + timer” overlay via config (many builds respect it)
+                    subject: "",
+                    hideConferenceSubject: true,
+                    hideConferenceTimer: true,
+                    conferenceInfo: { alwaysVisible: [], autoHide: [] },
+
                     // Keep just enough mounted if some builds need it
                     toolbarButtons: TOOLBAR_MOUNT_BUTTONS,
 
@@ -284,7 +290,7 @@ async function createJitsiApiWithFallback(args: {
                     TOOLBAR_TIMEOUT: 0,
                     TOOLBAR_TIMEOUT_NO_HOVER: 0,
 
-                    // ✅ Try to disable watermarks via config too (some builds ignore — CSS will still kill it)
+                    // ✅ Disable watermarks via config too (CSS will finish the job)
                     SHOW_JITSI_WATERMARK: false,
                     SHOW_WATERMARK_FOR_GUESTS: false,
                     SHOW_BRAND_WATERMARK: false,
@@ -301,6 +307,11 @@ async function createJitsiApiWithFallback(args: {
                     DEFAULT_REMOTE_DISPLAY_NAME: "Guest",
                 },
             });
+
+            // ✅ Extra safety: clear subject through command too (some builds ignore config)
+            try {
+                api.executeCommand?.("subject", "");
+            } catch { }
 
             args.onDomainChosen?.(domain);
             return { api, domain: domain as JitsiDomain };
@@ -652,12 +663,7 @@ export default function RoomPageIFrame() {
 
                     setStages(formatted);
 
-                    const anchor = String(
-                        (parsed as any)?.anchor_ts ||
-                        (parsed as any)?.anchorTs ||
-                        data?.start_time ||
-                        fallbackStart
-                    );
+                    const anchor = String((parsed as any)?.anchor_ts || (parsed as any)?.anchorTs || data?.start_time || fallbackStart);
                     setStagebarStartTime(anchor);
 
                     const sumSeconds = phases.reduce((acc, p) => acc + (Number(p.seconds) || 0), 0);
@@ -878,6 +884,11 @@ export default function RoomPageIFrame() {
                         api.executeCommand("setTileView", true);
                         setTile(true);
                     } catch { }
+
+                    // ✅ Clear subject again (some builds re-apply it)
+                    try {
+                        api.executeCommand("subject", "");
+                    } catch { }
                 });
 
                 api.addEventListener?.("videoConferenceLeft", () => {
@@ -889,6 +900,11 @@ export default function RoomPageIFrame() {
                 try {
                     api.executeCommand("setTileView", true);
                     setTile(true);
+                } catch { }
+
+                // Clear subject early too
+                try {
+                    api.executeCommand("subject", "");
                 } catch { }
 
                 console.log("[JITSI] Domain chosen:", domain);
@@ -1063,8 +1079,8 @@ export default function RoomPageIFrame() {
                                 <button
                                     onClick={forceReloadJitsi}
                                     className={`px-3 py-2 rounded-xl border transition font-inter text-[13px] ${isLight
-                                        ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                        : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                         }`}
                                     title="Reload video engine"
                                 >
@@ -1076,8 +1092,8 @@ export default function RoomPageIFrame() {
                                     <button
                                         onClick={() => setSelectedUser(session.host_profile)}
                                         className={`max-[520px]:hidden flex items-center gap-2 px-3 py-2 rounded-xl border transition font-inter text-[13px] ${isLight
-                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                                : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                             }`}
                                     >
                                         <span className="flex items-center gap-1 leading-none">
@@ -1112,7 +1128,11 @@ export default function RoomPageIFrame() {
                 </div>
 
                 {/* MAIN AREA */}
-                <div className={"grid gap-5 flex-1 min-h-0 " + (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")}>
+                <div
+                    className={
+                        "grid gap-5 flex-1 min-h-0 " + (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
+                    }
+                >
                     {/* VIDEO */}
                     <div
                         className={`rounded-2xl overflow-hidden min-h-0 relative ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
@@ -1131,13 +1151,18 @@ export default function RoomPageIFrame() {
                         <div className={`rounded-2xl shadow-lg overflow-hidden min-h-0 ${panelBg}`}>
                             {rightTab === "chat" && (
                                 <div className="h-full">
-                                    <div className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
-                                        <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Chat</div>
+                                    <div
+                                        className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
+                                            }`}
+                                    >
+                                        <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>
+                                            Chat
+                                        </div>
                                         <button
                                             onClick={() => openRightTab(null)}
                                             className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                                                ? "bg-black/5 hover:bg-black/10 text-black/60"
-                                                : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                                                    ? "bg-black/5 hover:bg-black/10 text-black/60"
+                                                    : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
                                                 }`}
                                             title="Close"
                                         >
@@ -1145,22 +1170,24 @@ export default function RoomPageIFrame() {
                                         </button>
                                     </div>
 
-                                    {/* ✅ Pass theme down so Chat can render properly in light mode */}
-                                    <div className="p-4 h-[calc(100%-64px)]">
-                                        {id ? <ChatPanel sessionId={id} theme={theme} /> : null}
-                                    </div>
+                                    <div className="p-4 h-[calc(100%-64px)]">{id ? <ChatPanel sessionId={id} theme={theme} /> : null}</div>
                                 </div>
                             )}
 
                             {rightTab === "intentions" && (
                                 <div className="h-full">
-                                    <div className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
-                                        <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Intentions</div>
+                                    <div
+                                        className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
+                                            }`}
+                                    >
+                                        <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>
+                                            Intentions
+                                        </div>
                                         <button
                                             onClick={() => openRightTab(null)}
                                             className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                                                ? "bg-black/5 hover:bg-black/10 text-black/60"
-                                                : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                                                    ? "bg-black/5 hover:bg-black/10 text-black/60"
+                                                    : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
                                                 }`}
                                             title="Close"
                                         >
@@ -1168,7 +1195,6 @@ export default function RoomPageIFrame() {
                                         </button>
                                     </div>
 
-                                    {/* ✅ Pass theme down so Intentions panel renders properly in light mode */}
                                     <div className="h-[calc(100%-64px)]">
                                         <IntentionsPanel theme={theme} />
                                     </div>
@@ -1182,7 +1208,9 @@ export default function RoomPageIFrame() {
             {/* FIXED BOTTOM CONTROLS */}
             <div className="fixed inset-x-0 bottom-0 z-50">
                 <div className="w-full px-3 sm:px-5 pb-[calc(12px+env(safe-area-inset-bottom))]">
-                    <div className={`h-[64px] sm:h-[74px] rounded-2xl shadow-2xl backdrop-blur grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4 ${bottomBarBg}`}>
+                    <div
+                        className={`h-[64px] sm:h-[74px] rounded-2xl shadow-2xl backdrop-blur grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4 ${bottomBarBg}`}
+                    >
                         {/* LEFT GROUP */}
                         <div className="flex items-center gap-2">
                             <button
@@ -1250,9 +1278,7 @@ export default function RoomPageIFrame() {
                         <div className="flex items-center justify-end gap-2 sm:gap-3">
                             <button
                                 onClick={hangup}
-                                className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${isLight
-                                    ? "bg-red-600 hover:bg-red-700 text-white"
-                                    : "bg-red-600 hover:bg-red-700 text-white"
+                                className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${isLight ? "bg-red-600 hover:bg-red-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"
                                     }`}
                                 title="Leave"
                             >
