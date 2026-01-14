@@ -5,6 +5,8 @@ import { CheckCircle, Circle, Trash2, Pencil, X, Check } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useParams } from "react-router-dom";
 
+type RoomTheme = "dark" | "light";
+
 interface Intention {
   id: string;
   text: string;
@@ -20,6 +22,7 @@ interface Intention {
 
 type IntentionsPanelProps = {
   sessionId?: string;
+  theme?: RoomTheme;
 };
 
 function IconButton({
@@ -27,21 +30,24 @@ function IconButton({
   onClick,
   children,
   className = "",
+  theme = "dark",
 }: {
   title: string;
   onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
   children: React.ReactNode;
   className?: string;
+  theme?: RoomTheme;
 }) {
+  const isLight = theme === "light";
+  const base = isLight
+    ? "bg-black/5 hover:bg-black/10 text-black/70"
+    : "bg-[#111827] hover:bg-[#1f2937] text-white/80";
+
   return (
     <button
       title={title}
       onClick={onClick}
-      className={
-        "w-9 h-9 rounded-xl flex items-center justify-center transition " +
-        "bg-[#111827] hover:bg-[#1f2937] text-white/80 " +
-        className
-      }
+      className={"w-9 h-9 rounded-xl flex items-center justify-center transition " + base + " " + className}
       type="button"
     >
       {children}
@@ -49,9 +55,11 @@ function IconButton({
   );
 }
 
-export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelProps) {
+export function IntentionsPanel({ sessionId: sessionIdProp, theme = "dark" }: IntentionsPanelProps) {
   const { id: sessionIdFromUrl } = useParams<{ id: string }>();
   const sessionId = sessionIdProp || sessionIdFromUrl;
+
+  const isLight = theme === "light";
 
   const [user, setUser] = useState<any>(null);
   const [intentions, setIntentions] = useState<Intention[]>([]);
@@ -60,6 +68,31 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState<string>("");
+
+  // tokens
+  const titleText = isLight ? "text-black/85" : "text-white/85";
+  const mutedText = isLight ? "text-black/50" : "text-white/45";
+  const divider = isLight ? "bg-black/10" : "bg-white/5";
+
+  const inputCls = isLight
+    ? `
+      bg-white border border-black/10 rounded-xl
+      px-3 py-3 text-[13px] text-black/85 placeholder:text-black/35
+      outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
+    `
+    : `
+      bg-[#0B1220]/70 border border-white/10 rounded-xl
+      px-3 py-3 text-[13px] text-white/85 placeholder:text-white/35
+      outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
+    `;
+
+  const myCardCls = isLight
+    ? "group rounded-xl border border-black/10 px-3 py-2.5 bg-white/70 hover:bg-white transition cursor-pointer"
+    : "group rounded-xl border border-white/5 px-3 py-2.5 bg-[#0B1220]/55 hover:bg-[#0B1220]/75 transition cursor-pointer";
+
+  const teamCardCls = isLight
+    ? "rounded-xl border border-black/10 px-3 py-2.5 bg-white/70 hover:bg-white transition"
+    : "rounded-xl border border-white/5 px-3 py-2.5 bg-[#0B1220]/55 hover:bg-[#0B1220]/75 transition";
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
@@ -181,9 +214,7 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
     <div className="h-full flex flex-col min-h-0">
       <div className="p-4 min-h-0 flex-1 overflow-y-auto custom-scrollbar">
         <div className="mb-5">
-          <div className="text-white/85 font-inter font-semibold text-[13px] mb-3">
-            My intentions
-          </div>
+          <div className={titleText + " font-inter font-semibold text-[13px] mb-3"}>My intentions</div>
 
           <div className="flex items-center gap-2 mb-3">
             <input
@@ -192,11 +223,7 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
               onChange={(e) => setNewIntention(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleAddIntention()}
               placeholder="Add an intention..."
-              className="
-                flex-1 bg-[#0B1220]/70 border border-white/10 rounded-xl
-                px-3 py-3 text-[13px] text-white/85 placeholder:text-white/35
-                outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
-              "
+              className={"flex-1 " + inputCls}
             />
 
             <button
@@ -214,30 +241,38 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
           </div>
 
           {loading ? (
-            <div className="text-[12px] text-white/45 italic">Loading...</div>
+            <div className={"text-[12px] italic " + mutedText}>Loading...</div>
           ) : myIntentions.length === 0 ? (
-            <div className="text-[12px] text-white/45 italic">No intentions yet</div>
+            <div className={"text-[12px] italic " + mutedText}>No intentions yet</div>
           ) : (
             <div className="flex flex-col gap-2">
               {myIntentions.map((i) => {
                 const isEditing = editingId === i.id;
 
+                const circleCls = isLight ? "text-black/40" : "text-white/45";
+                const textDoneCls = isLight ? "text-black/45 line-through" : "text-white/50 line-through";
+                const textActiveCls = isLight ? "text-black/80" : "text-white/80";
+
+                const editInputCls = isLight
+                  ? `
+                    w-full bg-white border border-black/10 rounded-xl
+                    px-3 py-2 text-[13px] text-black/85
+                    outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
+                  `
+                  : `
+                    w-full bg-[#0B1220]/80 border border-white/10 rounded-xl
+                    px-3 py-2 text-[13px] text-white/85
+                    outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
+                  `;
+
                 return (
-                  <div
-                    key={i.id}
-                    onClick={() => toggleCompleted(i)}
-                    className={
-                      "group rounded-xl border border-white/5 px-3 py-2.5 " +
-                      "bg-[#0B1220]/55 hover:bg-[#0B1220]/75 transition cursor-pointer"
-                    }
-                  >
-                    {/* align icon + text on same baseline */}
+                  <div key={i.id} onClick={() => toggleCompleted(i)} className={myCardCls}>
                     <div className="flex items-center gap-2">
                       <div className="shrink-0">
                         {i.completed ? (
-                          <CheckCircle size={18} className="text-emerald-400" />
+                          <CheckCircle size={18} className="text-emerald-500" />
                         ) : (
-                          <Circle size={18} className="text-white/45" />
+                          <Circle size={18} className={circleCls} />
                         )}
                       </div>
 
@@ -246,7 +281,7 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
                           <div
                             className={
                               "text-[13px] break-words leading-5 " +
-                              (i.completed ? "text-white/50 line-through" : "text-white/80")
+                              (i.completed ? textDoneCls : textActiveCls)
                             }
                           >
                             {i.text}
@@ -259,11 +294,7 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
                               if (e.key === "Enter") saveEdit();
                               if (e.key === "Escape") cancelEdit();
                             }}
-                            className="
-                              w-full bg-[#0B1220]/80 border border-white/10 rounded-xl
-                              px-3 py-2 text-[13px] text-white/85
-                              outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
-                            "
+                            className={editInputCls}
                             autoFocus
                             onClick={(e) => e.stopPropagation()}
                           />
@@ -275,6 +306,7 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
                           <>
                             <div className="opacity-0 group-hover:opacity-100 transition-opacity">
                               <IconButton
+                                theme={theme}
                                 title="Edit"
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -287,12 +319,13 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
 
                             <div className="opacity-0 group-hover:opacity-100 transition-opacity">
                               <IconButton
+                                theme={theme}
                                 title="Delete"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleDelete(i.id);
                                 }}
-                                className="hover:text-red-300"
+                                className="hover:text-red-500"
                               >
                                 <Trash2 size={16} />
                               </IconButton>
@@ -301,17 +334,19 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
                         ) : (
                           <>
                             <IconButton
+                              theme={theme}
                               title="Save"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 saveEdit();
                               }}
-                              className="hover:text-emerald-300"
+                              className="hover:text-emerald-600"
                             >
                               <Check size={18} />
                             </IconButton>
 
                             <IconButton
+                              theme={theme}
                               title="Cancel"
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -331,29 +366,25 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
           )}
         </div>
 
-        <div className="h-px bg-white/5 my-5" />
+        <div className={"h-px my-5 " + divider} />
 
-        <div className="text-white/85 font-inter font-semibold text-[13px] mb-3">
-          Team intentions
-        </div>
+        <div className={titleText + " font-inter font-semibold text-[13px] mb-3"}>Team intentions</div>
 
         {loading ? (
-          <div className="text-[12px] text-white/45 italic">Loading...</div>
+          <div className={"text-[12px] italic " + mutedText}>Loading...</div>
         ) : teamIntentions.length === 0 ? (
-          <div className="text-[12px] text-white/45 italic">No team intentions</div>
+          <div className={"text-[12px] italic " + mutedText}>No team intentions</div>
         ) : (
           <div className="flex flex-col gap-2">
             {teamIntentions.map((item) => {
               const isMine = item.user_id === user?.id;
+              const nameCls = isLight ? "text-black/85" : "text-white/85";
+              const bodyActive = isLight ? "text-black/75" : "text-white/75";
+              const bodyDone = isLight ? "text-black/45 line-through" : "text-white/50 line-through";
+              const circleCls = isLight ? "text-black/30" : "text-white/30";
 
               return (
-                <div
-                  key={item.id}
-                  className={
-                    "rounded-xl border border-white/5 px-3 py-2.5 " +
-                    "bg-[#0B1220]/55 hover:bg-[#0B1220]/75 transition"
-                  }
-                >
+                <div key={item.id} className={teamCardCls}>
                   <div className="flex items-center gap-3">
                     <img
                       src={getAvatar(item.profiles)}
@@ -362,13 +393,13 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
                     />
 
                     <div className="flex-1 min-w-0">
-                      <div className="text-[13px] text-white/85 font-medium truncate">
+                      <div className={"text-[13px] font-medium truncate " + nameCls}>
                         {isMine ? "You" : item.profiles?.full_name || "Participant"}
                       </div>
                       <div
                         className={
                           "text-[13px] break-words leading-5 " +
-                          (item.completed ? "text-white/50 line-through" : "text-white/75")
+                          (item.completed ? bodyDone : bodyActive)
                         }
                       >
                         {item.text}
@@ -377,9 +408,9 @@ export function IntentionsPanel({ sessionId: sessionIdProp }: IntentionsPanelPro
 
                     <div className="shrink-0">
                       {item.completed ? (
-                        <CheckCircle size={16} className="text-emerald-400" />
+                        <CheckCircle size={16} className="text-emerald-500" />
                       ) : (
-                        <Circle size={16} className="text-white/30" />
+                        <Circle size={16} className={circleCls} />
                       )}
                     </div>
                   </div>

@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { CornerUpLeft, X, Smile } from "lucide-react";
 
+type RoomTheme = "dark" | "light";
+
 type Profile = { id: string; full_name?: string | null; avatar_url?: string | null };
 
 type MsgRow = {
@@ -60,12 +62,14 @@ function MessageCard({
     onReply,
     reactionsCounts,
     onAddReaction,
+    isLight,
 }: {
     msg: Msg;
     mine: boolean;
     onReply: (m: Msg) => void;
     reactionsCounts: Record<string, number> | undefined;
     onAddReaction: (messageId: string, emoji: string) => void;
+    isLight: boolean;
 }) {
     const name = mine ? "You" : msg.profile?.full_name || "Participant";
     const time = formatTime(msg.created_at);
@@ -86,6 +90,32 @@ function MessageCard({
 
     const hasReactions = reactionsCounts && Object.keys(reactionsCounts).length > 0;
 
+    const metaNameCls = isLight ? "text-black/55" : "text-white/55";
+    const metaTimeCls = isLight ? "text-black/35" : "text-white/35";
+    const actionBtnCls = isLight
+        ? "text-black/45 hover:text-emerald-700"
+        : "text-white/45 hover:text-emerald-300";
+
+    const menuCls = isLight
+        ? "bg-white border border-black/10"
+        : "bg-[#020617] border border-white/10";
+
+    const bubbleCls =
+        "rounded-2xl px-3 py-2 text-[13px] leading-snug border whitespace-pre-wrap break-words " +
+        (mine
+            ? isLight
+                ? "bg-emerald-500/15 border-emerald-600/25 text-black/85"
+                : "bg-emerald-500/15 border-emerald-400/20 text-white/90"
+            : isLight
+                ? "bg-black/5 border-black/10 text-black/80"
+                : "bg-white/5 border-white/10 text-white/85");
+
+    const reactionPillCls = isLight
+        ? "px-2 py-1 rounded-xl bg-black/5 border border-black/10 text-[12px] text-black/70 flex items-center gap-1"
+        : "px-2 py-1 rounded-xl bg-white/5 border border-white/10 text-[12px] text-white/80 flex items-center gap-1";
+
+    const reactionCountCls = isLight ? "text-black/50" : "text-white/60";
+
     return (
         <div className={"flex items-start gap-3 " + (mine ? "justify-end" : "justify-start")}>
             {!mine && (
@@ -98,13 +128,13 @@ function MessageCard({
 
             <div className="max-w-[82%] min-w-0">
                 <div className={"flex items-center gap-2 mb-1 " + (mine ? "justify-end" : "justify-start")}>
-                    <div className="text-[11px] text-white/55 truncate">{name}</div>
-                    <div className="text-[11px] text-white/35">{time}</div>
+                    <div className={"text-[11px] truncate " + metaNameCls}>{name}</div>
+                    <div className={"text-[11px] " + metaTimeCls}>{time}</div>
 
                     <button
                         type="button"
                         onClick={() => onReply(msg)}
-                        className="ml-1 inline-flex items-center gap-1 text-[11px] text-white/45 hover:text-emerald-300 transition"
+                        className={"ml-1 inline-flex items-center gap-1 text-[11px] transition " + actionBtnCls}
                         title="Reply"
                     >
                         <CornerUpLeft size={14} />
@@ -116,7 +146,7 @@ function MessageCard({
                         <button
                             type="button"
                             onClick={() => setOpenReactions((v) => !v)}
-                            className="ml-1 inline-flex items-center gap-1 text-[11px] text-white/45 hover:text-emerald-300 transition"
+                            className={"ml-1 inline-flex items-center gap-1 text-[11px] transition " + actionBtnCls}
                             title="React"
                         >
                             <Smile size={14} />
@@ -124,7 +154,7 @@ function MessageCard({
                         </button>
 
                         {openReactions && (
-                            <div className="absolute z-50 mt-2 right-0 bg-[#020617] border border-white/10 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl">
+                            <div className={"absolute z-50 mt-2 right-0 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl " + menuCls}>
                                 {REACTION_EMOJIS.map((e) => (
                                     <button
                                         key={e}
@@ -144,32 +174,15 @@ function MessageCard({
                     </div>
                 </div>
 
-                <div
-                    className={
-                        "rounded-2xl px-3 py-2 text-[13px] leading-snug border whitespace-pre-wrap break-words " +
-                        (mine
-                            ? "bg-emerald-500/15 border-emerald-400/20 text-white/90"
-                            : "bg-white/5 border-white/10 text-white/85")
-                    }
-                >
-                    {msg.body}
-                </div>
+                <div className={bubbleCls}>{msg.body}</div>
 
                 {/* reactions row */}
                 {hasReactions && (
                     <div className={"mt-2 flex flex-wrap gap-2 " + (mine ? "justify-end" : "justify-start")}>
                         {Object.entries(reactionsCounts!).map(([emoji, count]) => (
-                            <div
-                                key={emoji}
-                                className="
-                  px-2 py-1 rounded-xl
-                  bg-white/5 border border-white/10
-                  text-[12px] text-white/80
-                  flex items-center gap-1
-                "
-                            >
+                            <div key={emoji} className={reactionPillCls}>
                                 <span>{emoji}</span>
-                                <span className="text-white/60">{count}</span>
+                                <span className={reactionCountCls}>{count}</span>
                             </div>
                         ))}
                     </div>
@@ -187,7 +200,15 @@ function MessageCard({
     );
 }
 
-export function ChatPanel({ sessionId }: { sessionId: string }) {
+export function ChatPanel({
+    sessionId,
+    theme = "dark",
+}: {
+    sessionId: string;
+    theme?: RoomTheme;
+}) {
+    const isLight = theme === "light";
+
     const [userId, setUserId] = useState<string | null>(null);
 
     const [profilesById, setProfilesById] = useState<Record<string, Profile>>({});
@@ -218,6 +239,33 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
     const bottomRef = useRef<HTMLDivElement | null>(null);
 
     const pollingRef = useRef<number | null>(null);
+
+    // ---------- theme tokens
+    const headerBorder = isLight ? "border-black/10" : "border-white/5";
+    const titleText = isLight ? "text-black/85" : "text-white/85";
+    const subText = isLight ? "text-black/50" : "text-white/45";
+
+    const replyBoxCls = isLight ? "bg-black/5 border-black/10" : "bg-white/5 border-white/10";
+    const replyingLabel = "text-[11px] text-emerald-500/90 font-medium";
+    const replyingText = isLight ? "text-black/55" : "text-white/55";
+
+    const cancelBtnCls = isLight
+        ? "bg-black/5 hover:bg-black/10 text-black/60"
+        : "bg-[#111827] hover:bg-[#1f2937] text-white/70";
+
+    const textareaCls = isLight
+        ? `
+      bg-white border border-black/10
+      text-black/85 placeholder:text-black/35
+      focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
+    `
+        : `
+      bg-[#0B1220]/70 border border-white/10
+      text-white/85 placeholder:text-white/35
+      focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
+    `;
+
+    const hintText = isLight ? "text-black/40" : "text-white/35";
 
     // ---------- auth user + my profile
     useEffect(() => {
@@ -344,14 +392,11 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
                 const row = payload?.new as MsgRow | undefined;
                 if (!row?.id) return;
 
-                // профили на лету
                 await ensureProfiles([row.user_id]);
 
                 setMessages((prev) => {
-                    // если уже есть — не дублируем
                     if (prev.some((m) => m.id === row.id)) return prev;
 
-                    // если есть оптимистик от этого же пользователя и тем же body — заменим
                     const idxOptimistic = prev.findIndex(
                         (m) => m.id.startsWith("optimistic-") && m.user_id === row.user_id && m.body === row.body
                     );
@@ -395,11 +440,10 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
         channel.subscribe((status) => {
             console.log("chat channel status:", status);
 
-            // Fallback: если realtime не завёлся — поллим, чтобы люди не “одинокие”
+            // fallback polling
             if (status !== "SUBSCRIBED") {
                 if (!pollingRef.current) {
                     pollingRef.current = window.setInterval(() => {
-                        // не спамим бесконечно: only if something looks stale
                         loadMessages();
                         loadReactions();
                     }, 2500);
@@ -437,7 +481,6 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
                     filter: `session_id=eq.${sessionId}`,
                 },
                 () => {
-                    // реакции проще и безопаснее перезагрузить (их мало)
                     loadReactions();
                 }
             )
@@ -488,20 +531,15 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
 
         if (error) {
             console.error("chat send error:", error);
-            // rollback optimistic
             setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
-            // возвращаем текст
             setText(composed);
             return;
         }
-
-        // если realtime вдруг не сработает — fallback polling подтянет
     };
 
     const addReaction = async (messageId: string, emoji: string) => {
         if (!userId || !sessionId) return;
 
-        // upsert-like: благодаря уникальному индексу (message_id, user_id, emoji)
         const { error } = await supabase.from(REACTIONS_TABLE).insert({
             session_id: sessionId,
             message_id: messageId,
@@ -510,8 +548,6 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
         });
 
         if (error) {
-            // если дубль — это окей (уникальный индекс), можно игнорить
-            // но пусть лог будет
             console.warn("addReaction error (maybe duplicate):", error);
         }
     };
@@ -521,17 +557,17 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
     return (
         <div className="h-full flex flex-col bg-transparent min-h-0">
             {/* HEADER */}
-            <div className="px-5 py-4 border-b border-white/5">
-                <div className="text-white/85 font-inter font-semibold">Chat</div>
-                <div className="text-white/45 text-[12px]">All messages for this session</div>
+            <div className={"px-5 py-4 border-b " + headerBorder}>
+                <div className={titleText + " font-inter font-semibold"}>Chat</div>
+                <div className={subText + " text-[12px]"}>All messages for this session</div>
             </div>
 
             {/* LIST */}
             <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3 custom-scrollbar">
-                {loading && <div className="text-white/40 text-sm italic">Loading…</div>}
+                {loading && <div className={(isLight ? "text-black/45" : "text-white/40") + " text-sm italic"}>Loading…</div>}
 
                 {!loading && uiMessages.length === 0 && (
-                    <div className="text-white/40 text-sm italic">No messages yet</div>
+                    <div className={(isLight ? "text-black/45" : "text-white/40") + " text-sm italic"}>No messages yet</div>
                 )}
 
                 {uiMessages.map((m) => (
@@ -542,26 +578,27 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
                         onReply={(msg) => setReplyTo(msg)}
                         reactionsCounts={reactions[m.id]}
                         onAddReaction={addReaction}
+                        isLight={isLight}
                     />
                 ))}
 
                 <div ref={bottomRef} />
             </div>
 
-            {/* COMPOSER (FULL WIDTH) */}
-            <div className="p-4 border-t border-white/5">
+            {/* COMPOSER */}
+            <div className={"p-4 border-t " + headerBorder}>
                 {replyTo && (
-                    <div className="mb-2 flex items-center justify-between gap-2 rounded-xl bg-white/5 border border-white/10 px-3 py-2">
+                    <div className={"mb-2 flex items-center justify-between gap-2 rounded-xl border px-3 py-2 " + replyBoxCls}>
                         <div className="min-w-0">
-                            <div className="text-[11px] text-emerald-300/90 font-medium">Replying</div>
-                            <div className="text-[11px] text-white/55 truncate">
+                            <div className={replyingLabel}>Replying</div>
+                            <div className={"text-[11px] truncate " + replyingText}>
                                 {(replyTo.profile?.full_name || "Participant") + ": " + replyTo.body}
                             </div>
                         </div>
                         <button
                             type="button"
                             onClick={() => setReplyTo(null)}
-                            className="w-8 h-8 rounded-lg bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center text-white/70"
+                            className={"w-8 h-8 rounded-lg flex items-center justify-center transition " + cancelBtnCls}
                             title="Cancel reply"
                         >
                             <X size={16} />
@@ -569,20 +606,17 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
                     </div>
                 )}
 
-                {/* textarea full width */}
                 <textarea
                     value={text}
                     onChange={(e) => setText(e.target.value)}
                     placeholder="Write a message…"
-                    className="
+                    className={`
             w-full min-h-[48px] max-h-[160px]
             rounded-xl resize-none
-            bg-[#0B1220]/70 border border-white/10
             px-3 py-3 text-[13px]
-            text-white/85 placeholder:text-white/35
             outline-none focus:outline-none
-            focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
-          "
+            ${textareaCls}
+          `}
                     onKeyDown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey) {
                             e.preventDefault();
@@ -592,7 +626,7 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
                 />
 
                 <div className="mt-2 flex items-center justify-between">
-                    <div className="text-[11px] text-white/35">Enter — send • Shift+Enter — new line</div>
+                    <div className={"text-[11px] " + hintText}>Enter — send • Shift+Enter — new line</div>
 
                     <button
                         onClick={send}
