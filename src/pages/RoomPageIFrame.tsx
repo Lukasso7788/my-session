@@ -997,7 +997,9 @@ export default function RoomPageIFrame() {
 
     // Theme switcher
     const switchTrack = "w-[84px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
-    const switchTrackCls = isLight ? "bg-black/5 border-black/10 hover:bg-black/10" : "bg-white/5 border-white/10 hover:bg-white/10";
+    const switchTrackCls = isLight
+        ? "bg-black/5 border-black/10 hover:bg-black/10"
+        : "bg-white/5 border-white/10 hover:bg-white/10";
     const switchThumb =
         "absolute top-[2px] w-[26px] h-[26px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center";
     const thumbTranslate = isLight ? "translateX(0px)" : "translateX(50px)";
@@ -1133,14 +1135,20 @@ export default function RoomPageIFrame() {
                                         <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Chat</div>
                                         <button
                                             onClick={() => openRightTab(null)}
-                                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
+                                                ? "bg-black/5 hover:bg-black/10 text-black/60"
+                                                : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
                                                 }`}
                                             title="Close"
                                         >
                                             ✕
                                         </button>
                                     </div>
-                                    <div className="p-4 h-[calc(100%-64px)]">{id ? <ChatPanel sessionId={id} /> : null}</div>
+
+                                    {/* ✅ Pass theme down so Chat can render properly in light mode */}
+                                    <div className="p-4 h-[calc(100%-64px)]">
+                                        {id ? <ChatPanel sessionId={id} theme={theme} /> : null}
+                                    </div>
                                 </div>
                             )}
 
@@ -1150,15 +1158,19 @@ export default function RoomPageIFrame() {
                                         <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Intentions</div>
                                         <button
                                             onClick={() => openRightTab(null)}
-                                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
+                                                ? "bg-black/5 hover:bg-black/10 text-black/60"
+                                                : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
                                                 }`}
                                             title="Close"
                                         >
                                             ✕
                                         </button>
                                     </div>
+
+                                    {/* ✅ Pass theme down so Intentions panel renders properly in light mode */}
                                     <div className="h-[calc(100%-64px)]">
-                                        <IntentionsPanel />
+                                        <IntentionsPanel theme={theme} />
                                     </div>
                                 </div>
                             )}
@@ -1238,7 +1250,9 @@ export default function RoomPageIFrame() {
                         <div className="flex items-center justify-end gap-2 sm:gap-3">
                             <button
                                 onClick={hangup}
-                                className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${isLight ? "bg-red-600 hover:bg-red-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"
+                                className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${isLight
+                                    ? "bg-red-600 hover:bg-red-700 text-white"
+                                    : "bg-red-600 hover:bg-red-700 text-white"
                                     }`}
                                 title="Leave"
                             >
