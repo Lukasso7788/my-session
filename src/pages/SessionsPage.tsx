@@ -87,65 +87,30 @@ function resolveSessionType(s: SessionWithRelations): "group" | "infinite" | "bo
 // UI: Infinite intro card
 // =====================
 function InfinityIcon({ className = "w-5 h-5" }: { className?: string }) {
-  return (
-    <img
-      src="/icons/infinite.svg"
-      className={className}
-      alt=""
-      draggable={false}
-    />
-  );
+  return <img src="/icons/infinite.svg" className={className} alt="" draggable={false} />;
 }
 
 function ClockIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
-  return (
-    <img
-      src="/icons/always-open.svg"
-      className={className}
-      alt=""
-      draggable={false}
-    />
-  );
+  return <img src="/icons/always-open.svg" className={className} alt="" draggable={false} />;
 }
 
 function EyeIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
-  return (
-    <img
-      src="/icons/stay-accountable.svg"
-      className={className}
-      alt=""
-      draggable={false}
-    />
-  );
+  return <img src="/icons/stay-accountable.svg" className={className} alt="" draggable={false} />;
 }
 
 function WorkflowIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
-  return (
-    <img
-      src="/icons/structured-flow.svg"
-      className={className}
-      alt=""
-      draggable={false}
-    />
-  );
+  return <img src="/icons/structured-flow.svg" className={className} alt="" draggable={false} />;
 }
 
 function RocketIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
-  return (
-    <img
-      src="/icons/keep-momentum.svg"
-      className={className}
-      alt=""
-      draggable={false}
-    />
-  );
+  return <img src="/icons/keep-momentum.svg" className={className} alt="" draggable={false} />;
 }
 
 type Feature = {
   title: string;
   subtitle: string;
   color: string; // border + icon
-  bg20: string;  // 20% fill
+  bg20: string; // 20% fill
   Icon: (p: { className?: string }) => JSX.Element;
 };
 
@@ -184,9 +149,7 @@ function InfiniteRoomsIntroCard() {
   return (
     <div className="w-full flex justify-center">
       <div className="w-full max-w-[980px]">
-        {/* px=32 py=24, gap=32, radius усилен */}
         <div className="border border-[#DBD8D8] rounded-[24px] bg-white px-8 py-6 flex flex-col gap-8">
-          {/* title row: icon padding 16/16, icon 20, gap 10 */}
           <div className="flex items-center justify-center gap-[10px]">
             <div className="p-4 rounded-[20px] bg-[#111827] text-white inline-flex items-center justify-center">
               <InfinityIcon className="w-5 h-5" />
@@ -197,19 +160,16 @@ function InfiniteRoomsIntroCard() {
             </h2>
           </div>
 
-          {/* body text: 16 light, 160% */}
           <p className="font-inter font-light text-[16px] leading-[160%] text-brandBlack text-center max-w-[860px] mx-auto">
             24/7 Infinite Rooms are always open, giving you a structured space to focus whenever inspiration strikes.
             Join at any time, follow the built-in workflow (Pomodoro or Deep Work), stay accountable with others,
             and keep your momentum going — day or night.
           </p>
 
-          {/* 4 icon blocks */}
           <div className="w-full flex justify-center">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
               {features.map((f) => (
                 <div key={f.title} className="flex items-center gap-4">
-                  {/* p=13.5, radius 13.5, icon 27 */}
                   <div
                     className="border rounded-[13.5px] inline-flex items-center justify-center"
                     style={{
@@ -221,7 +181,6 @@ function InfiniteRoomsIntroCard() {
                     <f.Icon className="w-[27px] h-[27px]" />
                   </div>
 
-                  {/* title 14 semibold, subtitle 12 light, gap 8 */}
                   <div className="flex flex-col" style={{ gap: "8px" }}>
                     <div className="font-inter font-semibold text-[14px] text-brandBlack">
                       {f.title}
@@ -299,9 +258,6 @@ export function SessionsPage() {
     try {
       setIsLoading(true);
 
-      // ✅ ВАЖНО:
-      // - НЕ выбираем session_attendance (это история, даёт "максимум за всё время")
-      // - выбираем schedule (fallback для старых infinite)
       const { data, error } = await supabase
         .from("sessions")
         .select(`
@@ -329,10 +285,8 @@ export function SessionsPage() {
 
       if (DEBUG) console.log("[DEBUG Sessions] Loaded:", rows);
 
-      // set base sessions first
       setSessions(rows);
 
-      // then fetch live counts (online now)
       const ids = rows.map((s) => s.id).filter(Boolean);
       await fetchLiveCounts(ids);
     } catch (err) {
@@ -446,7 +400,11 @@ export function SessionsPage() {
   return (
     <div className="min-h-screen bg-white text-brandBlack font-inter">
       <main className="w-full px-3 md:px-6 lg:px-10 pb-12">
-        <div className="pt-[100px] pb-[50px] text-center">
+        {/* ✅ FIX: уменьшаем вертикальный отступ сверху ТОЛЬКО на Infinite tab */}
+        <div
+          className={`text-center ${sessionTypeTab === "infinite" ? "pt-[56px] pb-[18px]" : "pt-[100px] pb-[50px]"
+            }`}
+        >
           {/* ✅ Убираем большой заголовок только для infinite */}
           {sessionTypeTab !== "infinite" && (
             <h1 className="text-[24px] md:text-[28px] xl:text-[36px] font-normal leading-tight mx-auto">
@@ -473,11 +431,7 @@ export function SessionsPage() {
 
           {sessionTypeTab !== "infinite" && (
             <div className="mb-6 w-full">
-              <SessionsDateFilter
-                value={dateFilter}
-                onChange={setDateFilter}
-                weeksAhead={3}
-              />
+              <SessionsDateFilter value={dateFilter} onChange={setDateFilter} weeksAhead={3} />
             </div>
           )}
 
@@ -494,10 +448,7 @@ export function SessionsPage() {
                 </p>
 
                 {user && (
-                  <button
-                    onClick={() => modal.open()}
-                    className="text-sm underline underline-offset-4"
-                  >
+                  <button onClick={() => modal.open()} className="text-sm underline underline-offset-4">
                     Create the first session
                   </button>
                 )}
