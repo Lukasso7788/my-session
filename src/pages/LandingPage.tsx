@@ -773,5 +773,217 @@ export default function LandingPage() {
                             className="absolute -right-24 -top-24 w-72 h-72 rounded-full blur-3xl opacity-25"
                             style={{ backgroundColor: MS_BLUE }}
                         />
-                        <div className="max-w-[980px] mx-auto
-::contentReference[oaicite:0]{index=0}
+                        <div className="max-w-[980px] mx-auto text-center relative">
+                            <div className="text-[12px] tracking-wide text-[#606060] mb-3">Hosts</div>
+                            <div className="text-[24px] md:text-[32px] font-normal leading-tight">
+                                Host sessions — get <span className="font-semibold">50% off</span>.
+                            </div>
+                            <p className="mt-4 text-[14px] md:text-[16px] text-[#606060] leading-relaxed">
+                                Hosting grows the ecosystem. You bring structure — we reward it.
+                            </p>
+
+                            <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
+                                <button
+                                    onClick={() => navigate("/sessions?create=1")}
+                                    className="h-12 rounded-full px-7 text-[14px] font-semibold bg-[#111827] text-white hover:opacity-90 transition w-full sm:w-auto"
+                                >
+                                    Host your first session
+                                </button>
+                                <button
+                                    onClick={() => navigate("/pricing")}
+                                    className="h-12 rounded-full px-7 text-[14px] font-semibold border border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition w-full sm:w-auto"
+                                >
+                                    See pricing
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                {/* LIVE PREVIEW */}
+                <section className="py-12">
+                    <SectionTitle
+                        kicker="Explore"
+                        title="See sessions — join in seconds."
+                        subtitle="This is the core product. Simple, fast, and structured."
+                    />
+
+                    <div className="mt-10 border border-[#DBD8D8] rounded-[32px] p-4 md:p-8 bg-white/70 backdrop-blur-[6px]">
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                            <MiniSessionCard
+                                title="50/5/5 Deep work — 2 hours"
+                                tag="Deep work"
+                                tagColor="blue"
+                                host="Yaro"
+                                minutes={120}
+                                startsIn="44 mins"
+                                people={6}
+                            />
+                            <MiniSessionCard
+                                title="25/5 Pomodoro — 2 hours"
+                                tag="Pomodoro 25/5"
+                                tagColor="red"
+                                host="Yaro"
+                                minutes={120}
+                                startsIn="1 hour"
+                                people={4}
+                            />
+                            <MiniSessionCard
+                                title="15/3 Short sprints — 2 hours"
+                                tag="Short sprints"
+                                tagColor="green"
+                                host="Yaro"
+                                minutes={120}
+                                startsIn="2 hours"
+                                people={5}
+                            />
+                        </div>
+
+                        <div className="mt-6 flex justify-center">
+                            <button
+                                onClick={() => navigate("/sessions")}
+                                className={`
+                  h-12 rounded-full px-7 text-[14px] font-semibold
+                  bg-[#111827] text-white hover:opacity-90 transition
+                  w-full sm:w-auto
+                  ${sessionCtaClass}
+                `}
+                                style={{ ["--cta-grad" as any]: GRADIENT }}
+                            >
+                                <span className="relative z-10">Open full schedule</span>
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+                {/* FAQ */}
+                <section className="py-12">
+                    <SectionTitle
+                        kicker="FAQ"
+                        title="Quick answers."
+                        subtitle="If you still have doubts — start with one session. That’s the best demo."
+                    />
+
+                    <div className="mt-10 max-w-[980px] mx-auto grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {[
+                            {
+                                q: "Is MySession free?",
+                                a: "There is a free tier. Paid plans unlock more structure and AI-assisted workflows.",
+                            },
+                            {
+                                q: "What makes it different from a normal call?",
+                                a: "Sessions are structured by default: intentions → format stages → recap. That structure creates real accountability.",
+                            },
+                            { q: "Do I need to download anything?", a: "No. It’s browser-based." },
+                            {
+                                q: "Is Buddy Tripling easier to join than big group sessions?",
+                                a: "Yes — it’s often easier to fill a cozy 3-person session than a larger group, so you can start faster with less friction.",
+                            },
+                            {
+                                q: "Can AI help with any task?",
+                                a: "Yes: planning, breaking down tasks, and screenshare-guided help when you’re stuck — without derailing focus.",
+                            },
+                            {
+                                q: "What do hosts get?",
+                                a: "Hosts receive a discount and build trust by running consistent sessions that help others show up.",
+                            },
+                        ].map((item) => (
+                            <div key={item.q} className="border border-[#DBD8D8] rounded-[24px] p-6 bg-white/80 backdrop-blur-[4px]">
+                                <div className="text-[14px] font-semibold">{item.q}</div>
+                                <div className="mt-2 text-[13px] text-[#606060] leading-relaxed">{item.a}</div>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+
+                {/* FINAL CTA */}
+                <section className="pt-6 pb-4">
+                    <div className="border border-[#DBD8D8] rounded-[32px] p-6 md:p-10 bg-[#111827] text-white relative overflow-hidden">
+                        <div
+                            aria-hidden="true"
+                            className="absolute -inset-20 opacity-70"
+                            style={{
+                                background:
+                                    `radial-gradient(600px 260px at 20% 40%, rgba(101,212,108,0.35), rgba(101,212,108,0.00) 70%),
+                   radial-gradient(520px 240px at 55% 30%, rgba(82,134,246,0.32), rgba(82,134,246,0.00) 70%),
+                   radial-gradient(520px 240px at 80% 60%, rgba(246,82,82,0.28), rgba(246,82,82,0.00) 70%)`,
+                            }}
+                        />
+                        <div className="max-w-[980px] mx-auto text-center relative">
+                            <div className="text-[24px] md:text-[32px] font-normal leading-tight">
+                                Start with one session. Ship something today.
+                            </div>
+                            <div className="mt-3 text-[14px] md:text-[16px] text-white/80">
+                                Join a session, set intentions, stay accountable — and keep momentum going.
+                            </div>
+
+                            <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
+                                <button
+                                    onClick={() => navigate("/sessions")}
+                                    className={`
+                    h-12 rounded-full px-7 text-[14px] font-semibold
+                    bg-white text-[#111827] hover:opacity-90 transition
+                    w-full sm:w-auto
+                    ${sessionCtaClass}
+                  `}
+                                    style={{ ["--cta-grad" as any]: GRADIENT }}
+                                >
+                                    <span className="relative z-10">Join now</span>
+                                </button>
+
+                                <button
+                                    onClick={() => navigate("/pricing")}
+                                    className="h-12 rounded-full px-7 text-[14px] font-semibold border border-white text-white hover:bg-white hover:text-[#111827] transition w-full sm:w-auto"
+                                >
+                                    Subscribe $10/mo
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                {/* Local CSS: CTA sheen + animated hero mesh */}
+                <style>{`
+          /* CTA sheen background */
+          .session-cta::before { background: var(--cta-grad); }
+
+          @keyframes gradMove {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+          }
+
+          /* HERO animated mesh (3-color palette, soft + airy) */
+          .hero-mesh {
+            border-radius: 9999px;
+            filter: blur(28px);
+            opacity: 0.9;
+            background:
+              radial-gradient(520px 320px at 18% 35%, rgba(101,212,108,0.55), rgba(101,212,108,0.00) 70%),
+              radial-gradient(520px 320px at 55% 28%, rgba(82,134,246,0.50), rgba(82,134,246,0.00) 70%),
+              radial-gradient(520px 320px at 82% 58%, rgba(246,82,82,0.46), rgba(246,82,82,0.00) 70%);
+            animation: meshFloat 14s ease-in-out infinite;
+            transform: translate3d(0,0,0);
+            /* fade out toward the bottom of hero block */
+            -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.65) 45%, rgba(0,0,0,0.0) 95%);
+            mask-image: linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.65) 45%, rgba(0,0,0,0.0) 95%);
+          }
+
+          @keyframes meshFloat {
+            0%   { transform: translate3d(-10px, 0px, 0) scale(1.02); }
+            25%  { transform: translate3d(18px, 10px, 0) scale(1.05); }
+            50%  { transform: translate3d(8px, -8px, 0) scale(1.03); }
+            75%  { transform: translate3d(-14px, 8px, 0) scale(1.06); }
+            100% { transform: translate3d(-10px, 0px, 0) scale(1.02); }
+          }
+
+          /* Reduce motion */
+          @media (prefers-reduced-motion: reduce) {
+            .session-cta:hover::before { animation: none !important; }
+            .hero-mesh { animation: none !important; }
+          }
+        `}</style>
+            </main>
+        </div>
+    );
+}
