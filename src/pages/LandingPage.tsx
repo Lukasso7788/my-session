@@ -1,13 +1,54 @@
 // src/pages/LandingPage.tsx
 import { useNavigate } from "react-router-dom";
 
-const GRADIENT =
-    "linear-gradient(90deg, #5BF367 0%, #3369CB 33%, #E23C7C 66%, #FED234 100%)";
-
-// MySession brand colors (used subtly across the page)
+/**
+ * Palette (MySession)
+ * Use colors as “soft wash” + accents (not hard blocks).
+ */
 const MS_BLUE = "#5286F6";
 const MS_GREEN = "#65D46C";
 const MS_RED = "#F65252";
+
+const GRADIENT =
+    "linear-gradient(90deg, #65D46C 0%, #5286F6 45%, #F65252 100%)";
+
+/**
+ * Light SVG pattern (no external assets)
+ * Used as a subtle background texture with fade.
+ */
+const BG_PATTERN = `data:image/svg+xml,${encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="${MS_GREEN}" stop-opacity="0.35"/>
+      <stop offset="0.5" stop-color="${MS_BLUE}" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="${MS_RED}" stop-opacity="0.35"/>
+    </linearGradient>
+    <filter id="b" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="0.6"/>
+    </filter>
+  </defs>
+
+  <!-- soft arcs -->
+  <g fill="none" stroke="url(#g)" stroke-width="2" opacity="0.28" filter="url(#b)">
+    <path d="M-50 140 C 180 40, 360 220, 600 140 S 980 40, 1250 160" />
+    <path d="M-50 260 C 240 150, 380 360, 620 260 S 980 150, 1250 280" />
+    <path d="M-50 380 C 220 300, 430 460, 670 380 S 980 300, 1250 420" />
+  </g>
+
+  <!-- tiny dots -->
+  <g opacity="0.22">
+    ${Array.from({ length: 70 })
+        .map((_, i) => {
+            const x = (i * 73) % 1200;
+            const y = (i * 41) % 600;
+            const c = i % 3 === 0 ? MS_GREEN : i % 3 === 1 ? MS_BLUE : MS_RED;
+            return `<circle cx="${x}" cy="${y}" r="2" fill="${c}" />`;
+        })
+        .join("\n")}
+  </g>
+</svg>
+`)}`;
 
 /**
  * Apply ONLY to session-related CTAs:
@@ -41,7 +82,7 @@ function SectionTitle({
     subtitle?: string;
 }) {
     return (
-        <div className="text-center max-w-[860px] mx-auto">
+        <div className="text-center max-w-[880px] mx-auto">
             {kicker && (
                 <div className="text-[12px] tracking-wide text-[#606060] mb-3">
                     {kicker}
@@ -61,29 +102,55 @@ function SectionTitle({
 
 function AccentPill({
     text,
-    color,
+    tone,
 }: {
     text: string;
-    color: "blue" | "green" | "red" | "neutral";
+    tone: "blue" | "green" | "red" | "neutral";
 }) {
     const cfg =
-        color === "blue"
-            ? { border: "#A7C2FF", bg: "#E4EDFF", fg: "#2563EB" }
-            : color === "green"
-                ? { border: "#A7F3B3", bg: "#E9FBEF", fg: "#16A34A" }
-                : color === "red"
-                    ? { border: "#FFB3B3", bg: "#FFECEC", fg: "#DC2626" }
-                    : { border: "#DBD8D8", bg: "#FFFFFF", fg: "#606060" };
+        tone === "blue"
+            ? {
+                dot: MS_BLUE,
+                border: "#C9D9FF",
+                bg: "linear-gradient(180deg, rgba(82,134,246,0.16), rgba(82,134,246,0.06))",
+                fg: "#1D4ED8",
+            }
+            : tone === "green"
+                ? {
+                    dot: MS_GREEN,
+                    border: "#C9F2D0",
+                    bg: "linear-gradient(180deg, rgba(101,212,108,0.18), rgba(101,212,108,0.07))",
+                    fg: "#15803D",
+                }
+                : tone === "red"
+                    ? {
+                        dot: MS_RED,
+                        border: "#FFD0D0",
+                        bg: "linear-gradient(180deg, rgba(246,82,82,0.16), rgba(246,82,82,0.06))",
+                        fg: "#B91C1C",
+                    }
+                    : {
+                        dot: "#9CA3AF",
+                        border: "#DBD8D8",
+                        bg: "linear-gradient(180deg, rgba(0,0,0,0.03), rgba(0,0,0,0.01))",
+                        fg: "#606060",
+                    };
 
     return (
         <span
-            className="text-[12px] px-3 py-1 rounded-full border"
+            className="inline-flex items-center gap-2 text-[12px] px-3 py-1 rounded-full border"
             style={{
                 borderColor: cfg.border,
-                backgroundColor: cfg.bg,
+                background: cfg.bg,
                 color: cfg.fg,
+                boxShadow: "0 1px 0 rgba(0,0,0,0.03) inset",
             }}
         >
+            <span
+                className="w-[7px] h-[7px] rounded-full"
+                style={{ backgroundColor: cfg.dot }}
+                aria-hidden="true"
+            />
             {text}
         </span>
     );
@@ -103,22 +170,46 @@ function FeatureCard({
     comingSoon?: boolean;
 }) {
     const accentColor =
-        accent === "blue" ? MS_BLUE : accent === "green" ? MS_GREEN : accent === "red" ? MS_RED : null;
+        accent === "blue"
+            ? MS_BLUE
+            : accent === "green"
+                ? MS_GREEN
+                : accent === "red"
+                    ? MS_RED
+                    : null;
+
+    const softWash =
+        accent === "blue"
+            ? "radial-gradient(1200px 600px at 0% 0%, rgba(82,134,246,0.10) 0%, rgba(82,134,246,0.00) 55%)"
+            : accent === "green"
+                ? "radial-gradient(1200px 600px at 0% 0%, rgba(101,212,108,0.11) 0%, rgba(101,212,108,0.00) 55%)"
+                : accent === "red"
+                    ? "radial-gradient(1200px 600px at 0% 0%, rgba(246,82,82,0.10) 0%, rgba(246,82,82,0.00) 55%)"
+                    : "none";
 
     return (
-        <div className="border border-[#DBD8D8] rounded-[24px] p-6 bg-white hover:bg-[#FAFAFA] transition">
+        <div
+            className="border border-[#DBD8D8] rounded-[24px] p-6 bg-white hover:bg-[#FAFAFA] transition relative overflow-hidden"
+            style={{
+                backgroundImage: softWash,
+            }}
+        >
+            {accentColor && (
+                <div
+                    className="absolute left-0 top-0 h-full w-[3px] opacity-90"
+                    style={{ backgroundColor: accentColor }}
+                    aria-hidden="true"
+                />
+            )}
+
             <div className="flex items-center justify-between gap-3">
                 <div className="text-[16px] font-semibold text-[#2F2F2F]">{title}</div>
                 {comingSoon && (
-                    <span className="text-[11px] px-2 py-[2px] rounded-full border border-[#DBD8D8] text-[#606060]">
+                    <span className="text-[11px] px-2 py-[2px] rounded-full border border-[#DBD8D8] text-[#606060] bg-white/70">
                         Coming soon
                     </span>
                 )}
             </div>
-
-            {accentColor && (
-                <div className="mt-3 h-[2px] rounded-full" style={{ backgroundColor: accentColor, opacity: 0.9 }} />
-            )}
 
             <div className="mt-3 text-[14px] text-[#606060] leading-relaxed">{desc}</div>
 
@@ -148,44 +239,54 @@ function FormatCard({
     accent: "blue" | "green" | "red";
 }) {
     const accentColor = accent === "blue" ? MS_BLUE : accent === "green" ? MS_GREEN : MS_RED;
-    const bg20 =
+
+    const wash =
         accent === "blue"
-            ? "#5286F61F"
+            ? "radial-gradient(900px 400px at 20% 0%, rgba(82,134,246,0.14) 0%, rgba(82,134,246,0.00) 55%)"
             : accent === "green"
-                ? "#65D46C1F"
-                : "#F652521F";
+                ? "radial-gradient(900px 400px at 20% 0%, rgba(101,212,108,0.16) 0%, rgba(101,212,108,0.00) 55%)"
+                : "radial-gradient(900px 400px at 20% 0%, rgba(246,82,82,0.14) 0%, rgba(246,82,82,0.00) 55%)";
 
     return (
-        <div className="border border-[#DBD8D8] rounded-[24px] bg-white p-6">
-            <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                    <div className="text-[16px] font-semibold text-[#2F2F2F]">{title}</div>
-                    <div className="mt-2 text-[14px] text-[#606060] leading-relaxed">{desc}</div>
+        <div
+            className="border border-[#DBD8D8] rounded-[24px] bg-white p-6 relative overflow-hidden"
+            style={{
+                backgroundImage: wash,
+            }}
+        >
+            <div
+                className="absolute -top-12 -right-12 w-40 h-40 rounded-full blur-2xl opacity-60"
+                style={{ backgroundColor: accentColor }}
+                aria-hidden="true"
+            />
+            <div className="relative">
+                <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                        <div className="text-[16px] font-semibold text-[#2F2F2F]">{title}</div>
+                        <div className="mt-2 text-[14px] text-[#606060] leading-relaxed">{desc}</div>
+                    </div>
+
+                    <div
+                        className="shrink-0 border rounded-[16px] w-12 h-12 flex items-center justify-center bg-white/60"
+                        style={{ borderColor: accentColor }}
+                        aria-hidden="true"
+                    >
+                        <div className="w-5 h-5 rounded-full" style={{ backgroundColor: accentColor }} />
+                    </div>
                 </div>
 
-                <div
-                    className="shrink-0 border rounded-[14px] w-12 h-12 flex items-center justify-center"
-                    style={{
-                        borderColor: accentColor,
-                        backgroundColor: bg20,
-                    }}
-                    aria-hidden="true"
-                >
-                    <div className="w-5 h-5 rounded-full" style={{ backgroundColor: accentColor }} />
-                </div>
+                <ul className="mt-4 space-y-2 text-[13px] text-[#606060]">
+                    {bullets.map((b) => (
+                        <li key={b} className="flex gap-2">
+                            <span
+                                className="mt-[6px] w-[6px] h-[6px] rounded-full shrink-0"
+                                style={{ backgroundColor: accentColor }}
+                            />
+                            <span>{b}</span>
+                        </li>
+                    ))}
+                </ul>
             </div>
-
-            <ul className="mt-4 space-y-2 text-[13px] text-[#606060]">
-                {bullets.map((b) => (
-                    <li key={b} className="flex gap-2">
-                        <span
-                            className="mt-[6px] w-[6px] h-[6px] rounded-full shrink-0"
-                            style={{ backgroundColor: accentColor }}
-                        />
-                        <span>{b}</span>
-                    </li>
-                ))}
-            </ul>
         </div>
     );
 }
@@ -209,10 +310,10 @@ function MiniSessionCard({
 }) {
     const tagCfg =
         tagColor === "blue"
-            ? { border: "#A7C2FF", bg: "#E4EDFF", fg: "#2563EB" }
+            ? { border: "#C9D9FF", bg: "rgba(82,134,246,0.12)", fg: "#1D4ED8" }
             : tagColor === "green"
-                ? { border: "#A7F3B3", bg: "#E9FBEF", fg: "#16A34A" }
-                : { border: "#FFB3B3", bg: "#FFECEC", fg: "#DC2626" };
+                ? { border: "#C9F2D0", bg: "rgba(101,212,108,0.14)", fg: "#15803D" }
+                : { border: "#FFD0D0", bg: "rgba(246,82,82,0.12)", fg: "#B91C1C" };
 
     return (
         <div className="border border-[#DBD8D8] rounded-[28px] bg-white p-5 flex flex-col gap-4">
@@ -234,7 +335,7 @@ function MiniSessionCard({
 
                         <span
                             className="ml-0 md:ml-2 inline-flex items-center px-3 py-1 rounded-full border"
-                            style={{ borderColor: tagCfg.border, backgroundColor: tagCfg.bg, color: tagCfg.fg }}
+                            style={{ borderColor: tagCfg.border, background: tagCfg.bg, color: tagCfg.fg }}
                         >
                             {tag}
                         </span>
@@ -255,7 +356,6 @@ function MiniSessionCard({
                     Book session
                 </button>
 
-                {/* session-related CTA: hover gradient sheen */}
                 <button
                     className={`
             h-12 rounded-full px-6 text-[14px] font-semibold
@@ -263,9 +363,7 @@ function MiniSessionCard({
             w-full sm:w-auto
             ${sessionCtaClass}
           `}
-                    style={{
-                        ["--cta-grad" as any]: GRADIENT,
-                    }}
+                    style={{ ["--cta-grad" as any]: GRADIENT }}
                 >
                     <span className="relative z-10">Join session</span>
                 </button>
@@ -278,16 +376,43 @@ export default function LandingPage() {
     const navigate = useNavigate();
 
     return (
-        <div className="min-h-screen bg-white text-[#2F2F2F] font-inter">
-            {/* NOTE: Header у тебя уже есть глобально, поэтому тут только контент */}
-            <main className="w-full px-3 md:px-6 lg:px-10 pb-16">
+        <div className="min-h-screen bg-white text-[#2F2F2F] font-inter relative overflow-hidden">
+            {/* Background pattern that fades out toward the bottom */}
+            <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 opacity-[0.55]"
+                style={{
+                    backgroundImage: `url("${BG_PATTERN}")`,
+                    backgroundRepeat: "repeat",
+                    backgroundSize: "1200px 600px",
+                    // Fade out near the bottom (so it doesn't fight the CTA/footer)
+                    WebkitMaskImage:
+                        "linear-gradient(to bottom, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.35) 55%, rgba(0,0,0,0.0) 92%)",
+                    maskImage:
+                        "linear-gradient(to bottom, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.35) 55%, rgba(0,0,0,0.0) 92%)",
+                }}
+            />
+
+            <main className="relative w-full px-3 md:px-6 lg:px-10 pb-16">
                 {/* HERO */}
-                <section className="pt-[92px] md:pt-[110px] pb-10">
-                    <div className="max-w-[980px] mx-auto text-center">
+                <section className="pt-[92px] md:pt-[110px] pb-10 relative">
+                    {/* Animated mesh background */}
+                    <div aria-hidden="true" className="hero-mesh pointer-events-none absolute -inset-x-24 -top-40 h-[520px] md:h-[580px]" />
+                    {/* Soft vignette to keep text readable */}
+                    <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute -inset-x-24 -top-40 h-[520px] md:h-[580px]"
+                        style={{
+                            background:
+                                "radial-gradient(900px 420px at 50% 30%, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.86) 45%, rgba(255,255,255,1) 70%)",
+                        }}
+                    />
+
+                    <div className="max-w-[980px] mx-auto text-center relative">
                         <div className="flex flex-wrap items-center justify-center gap-2 mb-5">
-                            <AccentPill text="Cheapest on the market" color="green" />
-                            <AccentPill text="$10/month" color="blue" />
-                            <AccentPill text="AI support" color="red" />
+                            <AccentPill text="Cheapest on the market" tone="green" />
+                            <AccentPill text="$10/month" tone="blue" />
+                            <AccentPill text="AI support" tone="red" />
                         </div>
 
                         <h1 className="text-[30px] md:text-[40px] xl:text-[52px] font-normal leading-tight">
@@ -302,7 +427,6 @@ export default function LandingPage() {
                         </p>
 
                         <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-                            {/* session-related CTA */}
                             <button
                                 onClick={() => navigate("/sessions")}
                                 className={`
@@ -316,7 +440,6 @@ export default function LandingPage() {
                                 <span className="relative z-10">Join now</span>
                             </button>
 
-                            {/* not session-related */}
                             <button
                                 onClick={() => navigate("/pricing")}
                                 className="h-12 rounded-full px-7 text-[14px] font-semibold border border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition w-full sm:w-auto"
@@ -326,65 +449,82 @@ export default function LandingPage() {
                         </div>
 
                         <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-                            <AccentPill text="Group sessions" color="neutral" />
-                            <AccentPill text="24/7 Infinite rooms" color="blue" />
-                            <AccentPill text="Buddy tripling (3 people)" color="green" />
-                            <AccentPill text="Browser-based" color="neutral" />
-                            <AccentPill text="Host sessions (discounts)" color="neutral" />
+                            <AccentPill text="Group sessions" tone="neutral" />
+                            <AccentPill text="24/7 Infinite rooms" tone="blue" />
+                            <AccentPill text="Buddy tripling (3 people)" tone="green" />
+                            <AccentPill text="Browser-based" tone="neutral" />
+                            <AccentPill text="Host sessions (discounts)" tone="neutral" />
                         </div>
                     </div>
 
-                    {/* HERO VISUAL (маркетинговый мок: intentions + PiP panel) */}
-                    <div className="mt-10 max-w-[1100px] mx-auto">
-                        <div className="border border-[#DBD8D8] rounded-[32px] bg-[#FAFAFA] p-4 md:p-6">
+                    {/* HERO VISUAL */}
+                    <div className="mt-10 max-w-[1100px] mx-auto relative">
+                        <div className="border border-[#DBD8D8] rounded-[32px] bg-white/70 backdrop-blur-[6px] p-4 md:p-6 shadow-[0_10px_30px_rgba(0,0,0,0.05)]">
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                                 {/* Left: Intentions / progress */}
-                                <div className="bg-white border border-[#EAEAEA] rounded-[24px] p-5">
-                                    <div className="flex items-center justify-between">
-                                        <div className="text-[14px] font-semibold">Intentions</div>
-                                        <div className="text-[12px] text-[#606060]">
-                                            Bird’s-eye intentions view <span className="opacity-70">(coming soon)</span>
-                                        </div>
-                                    </div>
-
-                                    <div className="mt-4 space-y-3">
-                                        <div className="rounded-[16px] border border-[#DBD8D8] p-4">
-                                            <div className="text-[13px] font-semibold">
-                                                Today: “Ship sessions page polish”
-                                            </div>
-                                            <div className="mt-2 text-[12px] text-[#606060]">
-                                                Intention → stages → recap • progress tracked
-                                            </div>
-                                            <div className="mt-3 h-2 rounded-full bg-[#F1F1F1] overflow-hidden">
-                                                <div className="h-2 w-[62%] bg-[#111827]" />
-                                            </div>
-                                            <div className="mt-2 text-[12px] text-[#606060]">62% complete</div>
-                                        </div>
-
-                                        <div className="rounded-[16px] border border-[#DBD8D8] p-4">
-                                            <div className="text-[13px] font-semibold">AI plan (auto-generated)</div>
-                                            <div className="mt-2 text-[12px] text-[#606060] leading-relaxed">
-                                                Break down the goal → schedule focus sessions → track completion → adapt next steps.
+                                <div className="bg-white border border-[#EAEAEA] rounded-[24px] p-5 relative overflow-hidden">
+                                    <div
+                                        aria-hidden="true"
+                                        className="absolute -top-20 -left-20 w-56 h-56 rounded-full blur-3xl opacity-40"
+                                        style={{ backgroundColor: MS_GREEN }}
+                                    />
+                                    <div
+                                        aria-hidden="true"
+                                        className="absolute -bottom-24 -right-24 w-64 h-64 rounded-full blur-3xl opacity-35"
+                                        style={{ backgroundColor: MS_BLUE }}
+                                    />
+                                    <div className="relative">
+                                        <div className="flex items-center justify-between">
+                                            <div className="text-[14px] font-semibold">Intentions</div>
+                                            <div className="text-[12px] text-[#606060]">
+                                                Bird’s-eye intentions view <span className="opacity-70">(coming soon)</span>
                                             </div>
                                         </div>
 
-                                        <div className="rounded-[16px] border border-[#DBD8D8] p-4">
-                                            <div className="text-[13px] font-semibold">Session formats</div>
-                                            <div className="mt-2 text-[12px] text-[#606060] leading-relaxed">
-                                                Deep Work, Pomodoro, Short Sprints — plus 24/7 Infinite Rooms and Buddy Tripling (3 people).
+                                        <div className="mt-4 space-y-3">
+                                            <div className="rounded-[16px] border border-[#DBD8D8] p-4 bg-white/70">
+                                                <div className="text-[13px] font-semibold">
+                                                    Today: “Ship sessions page polish”
+                                                </div>
+                                                <div className="mt-2 text-[12px] text-[#606060]">
+                                                    Intention → stages → recap • progress tracked
+                                                </div>
+                                                <div className="mt-3 h-2 rounded-full bg-[#F1F1F1] overflow-hidden">
+                                                    <div className="h-2 w-[62%] bg-[#111827]" />
+                                                </div>
+                                                <div className="mt-2 text-[12px] text-[#606060]">62% complete</div>
+                                            </div>
+
+                                            <div className="rounded-[16px] border border-[#DBD8D8] p-4 bg-white/70">
+                                                <div className="text-[13px] font-semibold">AI plan (auto-generated)</div>
+                                                <div className="mt-2 text-[12px] text-[#606060] leading-relaxed">
+                                                    Break down the goal → schedule focus sessions → track completion → adapt next steps.
+                                                </div>
+                                            </div>
+
+                                            <div className="rounded-[16px] border border-[#DBD8D8] p-4 bg-white/70">
+                                                <div className="text-[13px] font-semibold">Session formats</div>
+                                                <div className="mt-2 text-[12px] text-[#606060] leading-relaxed">
+                                                    Deep Work, Pomodoro, Short Sprints — plus 24/7 Infinite Rooms and Buddy Tripling (3 people).
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
 
                                 {/* Right: PiP intentions panel */}
-                                <div className="bg-white border border-[#EAEAEA] rounded-[24px] p-5 flex flex-col">
-                                    <div className="flex items-center justify-between">
+                                <div className="bg-white border border-[#EAEAEA] rounded-[24px] p-5 flex flex-col relative overflow-hidden">
+                                    <div
+                                        aria-hidden="true"
+                                        className="absolute -top-24 -right-24 w-72 h-72 rounded-full blur-3xl opacity-35"
+                                        style={{ backgroundColor: MS_RED }}
+                                    />
+                                    <div className="relative flex items-center justify-between">
                                         <div className="text-[14px] font-semibold">Intentions Panel</div>
                                         <div className="text-[12px] text-[#606060]">Picture-in-picture</div>
                                     </div>
 
-                                    <div className="mt-4 flex-1 rounded-[20px] border border-[#DBD8D8] bg-[#F6F6F6] p-4">
+                                    <div className="relative mt-4 flex-1 rounded-[20px] border border-[#DBD8D8] bg-[#F6F6F6]/70 p-4">
                                         <div className="text-[12px] text-[#606060]">
                                             Pin your intentions on top of any window — like picture-in-picture — so the goal stays visible while you work.
                                         </div>
@@ -410,8 +550,7 @@ export default function LandingPage() {
                                         </div>
                                     </div>
 
-                                    <div className="mt-4 flex flex-col sm:flex-row gap-3">
-                                        {/* session-related CTA */}
+                                    <div className="mt-4 flex flex-col sm:flex-row gap-3 relative">
                                         <button
                                             onClick={() => navigate("/sessions")}
                                             className={`
@@ -425,7 +564,6 @@ export default function LandingPage() {
                                             <span className="relative z-10">Browse sessions</span>
                                         </button>
 
-                                        {/* not session-related */}
                                         <button
                                             onClick={() => navigate("/pricing")}
                                             className="h-12 rounded-full px-6 text-[14px] font-semibold border border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition w-full sm:w-auto"
@@ -481,7 +619,7 @@ export default function LandingPage() {
                     </div>
                 </section>
 
-                {/* OUTCOMES / POSITIONING */}
+                {/* OUTCOMES */}
                 <section className="py-12">
                     <SectionTitle
                         kicker="Outcome, not vibes"
@@ -546,7 +684,7 @@ export default function LandingPage() {
                     </div>
                 </section>
 
-                {/* AI POWERED FOCUS */}
+                {/* AI + ROADMAP */}
                 <section className="py-12">
                     <SectionTitle
                         kicker="AI powered focus"
@@ -573,10 +711,21 @@ export default function LandingPage() {
                         />
                     </div>
 
-                    {/* ROADMAP */}
-                    <div className="mt-8 border border-[#DBD8D8] rounded-[32px] p-6 md:p-10 bg-[#FAFAFA]">
-                        <div className="max-w-[980px] mx-auto text-center">
-                            <div className="text-[12px] tracking-wide text-[#606060] mb-3">Always evolving</div>
+                    <div className="mt-8 border border-[#DBD8D8] rounded-[32px] p-6 md:p-10 bg-white/70 backdrop-blur-[6px] relative overflow-hidden">
+                        <div
+                            aria-hidden="true"
+                            className="absolute -top-24 left-1/2 -translate-x-1/2 w-[820px] h-[320px] blur-3xl opacity-40"
+                            style={{
+                                background:
+                                    `radial-gradient(closest-side at 30% 40%, rgba(101,212,108,0.50), rgba(101,212,108,0.00) 70%),
+                   radial-gradient(closest-side at 55% 25%, rgba(82,134,246,0.45), rgba(82,134,246,0.00) 70%),
+                   radial-gradient(closest-side at 75% 60%, rgba(246,82,82,0.42), rgba(246,82,82,0.00) 70%)`,
+                            }}
+                        />
+                        <div className="relative max-w-[980px] mx-auto text-center">
+                            <div className="text-[12px] tracking-wide text-[#606060] mb-3">
+                                Always evolving
+                            </div>
                             <div className="text-[24px] md:text-[32px] font-normal leading-tight">
                                 New formats & features are coming постоянно.
                             </div>
@@ -611,188 +760,18 @@ export default function LandingPage() {
                     </div>
                 </section>
 
-                {/* HOSTING INCENTIVE */}
+                {/* HOSTING */}
                 <section className="py-12">
-                    <div className="border border-[#DBD8D8] rounded-[32px] p-6 md:p-10 bg-[#FAFAFA]">
-                        <div className="max-w-[980px] mx-auto text-center">
-                            <div className="text-[12px] tracking-wide text-[#606060] mb-3">Hosts</div>
-                            <div className="text-[24px] md:text-[32px] font-normal leading-tight">
-                                Host sessions — get <span className="font-semibold">50% off</span>.
-                            </div>
-                            <p className="mt-4 text-[14px] md:text-[16px] text-[#606060] leading-relaxed">
-                                Hosting grows the ecosystem. You bring structure — we reward it.
-                            </p>
-
-                            <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
-                                <button
-                                    onClick={() => navigate("/sessions?create=1")}
-                                    className="h-12 rounded-full px-7 text-[14px] font-semibold bg-[#111827] text-white hover:opacity-90 transition w-full sm:w-auto"
-                                >
-                                    Host your first session
-                                </button>
-                                <button
-                                    onClick={() => navigate("/pricing")}
-                                    className="h-12 rounded-full px-7 text-[14px] font-semibold border border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition w-full sm:w-auto"
-                                >
-                                    See pricing
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
-                {/* LIVE SESSIONS PREVIEW */}
-                <section className="py-12">
-                    <SectionTitle
-                        kicker="Explore"
-                        title="See sessions — join in seconds."
-                        subtitle="This is the core product. Simple, fast, and structured."
-                    />
-
-                    <div className="mt-10 border border-[#DBD8D8] rounded-[32px] p-4 md:p-8">
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                            <MiniSessionCard
-                                title="50/5/5 Deep work — 2 hours"
-                                tag="Deep work"
-                                tagColor="blue"
-                                host="Yaro"
-                                minutes={120}
-                                startsIn="44 mins"
-                                people={6}
-                            />
-                            <MiniSessionCard
-                                title="25/5 Pomodoro — 2 hours"
-                                tag="Pomodoro 25/5"
-                                tagColor="red"
-                                host="Yaro"
-                                minutes={120}
-                                startsIn="1 hour"
-                                people={4}
-                            />
-                            <MiniSessionCard
-                                title="15/3 Short sprints — 2 hours"
-                                tag="Short sprints"
-                                tagColor="green"
-                                host="Yaro"
-                                minutes={120}
-                                startsIn="2 hours"
-                                people={5}
-                            />
-                        </div>
-
-                        <div className="mt-6 flex justify-center">
-                            {/* session-related CTA: hover gradient sheen */}
-                            <button
-                                onClick={() => navigate("/sessions")}
-                                className={`
-                  h-12 rounded-full px-7 text-[14px] font-semibold
-                  bg-[#111827] text-white hover:opacity-90 transition
-                  w-full sm:w-auto
-                  ${sessionCtaClass}
-                `}
-                                style={{ ["--cta-grad" as any]: GRADIENT }}
-                            >
-                                <span className="relative z-10">Open full schedule</span>
-                            </button>
-                        </div>
-                    </div>
-                </section>
-
-                {/* FAQ */}
-                <section className="py-12">
-                    <SectionTitle
-                        kicker="FAQ"
-                        title="Quick answers."
-                        subtitle="If you still have doubts — start with one session. That’s the best demo."
-                    />
-
-                    <div className="mt-10 max-w-[980px] mx-auto grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {[
-                            {
-                                q: "Is MySession free?",
-                                a: "There is a free tier. Paid plans unlock more structure and AI-assisted workflows.",
-                            },
-                            {
-                                q: "What makes it different from a normal call?",
-                                a: "Sessions are structured by default: intentions → format stages → recap. That structure creates real accountability.",
-                            },
-                            { q: "Do I need to download anything?", a: "No. It’s browser-based." },
-                            {
-                                q: "Is Buddy Tripling easier to join than big group sessions?",
-                                a: "Yes — it’s often easier to fill a cozy 3-person session than a larger group, so you can start faster with less friction.",
-                            },
-                            {
-                                q: "Can AI help with any task?",
-                                a: "Yes: planning, breaking down tasks, and screenshare-guided help when you’re stuck — without derailing focus.",
-                            },
-                            {
-                                q: "What do hosts get?",
-                                a: "Hosts receive a discount and build trust by running consistent sessions that help others show up.",
-                            },
-                        ].map((item) => (
-                            <div key={item.q} className="border border-[#DBD8D8] rounded-[24px] p-6 bg-white">
-                                <div className="text-[14px] font-semibold">{item.q}</div>
-                                <div className="mt-2 text-[13px] text-[#606060] leading-relaxed">{item.a}</div>
-                            </div>
-                        ))}
-                    </div>
-                </section>
-
-                {/* FINAL CTA */}
-                <section className="pt-6 pb-4">
-                    <div className="border border-[#DBD8D8] rounded-[32px] p-6 md:p-10 bg-[#111827] text-white">
-                        <div className="max-w-[980px] mx-auto text-center">
-                            <div className="text-[24px] md:text-[32px] font-normal leading-tight">
-                                Start with one session. Ship something today.
-                            </div>
-                            <div className="mt-3 text-[14px] md:text-[16px] text-white/80">
-                                Join a session, set intentions, stay accountable — and keep momentum going.
-                            </div>
-
-                            <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
-                                {/* session-related CTA: hover gradient sheen */}
-                                <button
-                                    onClick={() => navigate("/sessions")}
-                                    className={`
-                    h-12 rounded-full px-7 text-[14px] font-semibold
-                    bg-white text-[#111827] hover:opacity-90 transition
-                    w-full sm:w-auto
-                    ${sessionCtaClass}
-                  `}
-                                    style={{ ["--cta-grad" as any]: GRADIENT }}
-                                >
-                                    <span className="relative z-10">Join now</span>
-                                </button>
-
-                                {/* not session-related */}
-                                <button
-                                    onClick={() => navigate("/pricing")}
-                                    className="h-12 rounded-full px-7 text-[14px] font-semibold border border-white text-white hover:bg-white hover:text-[#111827] transition w-full sm:w-auto"
-                                >
-                                    Subscribe $10/mo
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
-                {/* Only local CSS for sheen overlay */}
-                <style>{`
-          /* Make the sheen background work ONLY for CTA buttons */
-          .session-cta::before { background: var(--cta-grad); }
-
-          @keyframes gradMove {
-            0% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-            100% { background-position: 0% 50%; }
-          }
-
-          /* Safety: reduce motion */
-          @media (prefers-reduced-motion: reduce) {
-            .session-cta:hover::before { animation: none !important; }
-          }
-        `}</style>
-            </main>
-        </div>
-    );
-}
+                    <div className="border border-[#DBD8D8] rounded-[32px] p-6 md:p-10 bg-[#FAFAFA] relative overflow-hidden">
+                        <div
+                            aria-hidden="true"
+                            className="absolute -left-24 -bottom-24 w-72 h-72 rounded-full blur-3xl opacity-30"
+                            style={{ backgroundColor: MS_GREEN }}
+                        />
+                        <div
+                            aria-hidden="true"
+                            className="absolute -right-24 -top-24 w-72 h-72 rounded-full blur-3xl opacity-25"
+                            style={{ backgroundColor: MS_BLUE }}
+                        />
+                        <div className="max-w-[980px] mx-auto
+::contentReference[oaicite:0]{index=0}
