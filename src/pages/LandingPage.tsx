@@ -1,4 +1,5 @@
 // src/pages/LandingPage.tsx
+import { useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 
 /**
@@ -9,8 +10,7 @@ const MS_BLUE = "#5286F6";
 const MS_GREEN = "#65D46C";
 const MS_RED = "#F65252";
 
-const GRADIENT =
-    "linear-gradient(90deg, #65D46C 0%, #5286F6 45%, #F65252 100%)";
+const GRADIENT = "linear-gradient(90deg, #65D46C 0%, #5286F6 45%, #F65252 100%)";
 
 /**
  * Light SVG pattern (no external assets)
@@ -84,9 +84,7 @@ function SectionTitle({
     return (
         <div className="text-center max-w-[880px] mx-auto">
             {kicker && (
-                <div className="text-[12px] tracking-wide text-[#606060] mb-3">
-                    {kicker}
-                </div>
+                <div className="text-[12px] tracking-wide text-[#606060] mb-3">{kicker}</div>
             )}
             <h2 className="text-[26px] md:text-[32px] xl:text-[38px] font-normal text-[#2F2F2F] leading-tight">
                 {title}
@@ -146,11 +144,7 @@ function AccentPill({
                 boxShadow: "0 1px 0 rgba(0,0,0,0.03) inset",
             }}
         >
-            <span
-                className="w-[7px] h-[7px] rounded-full"
-                style={{ backgroundColor: cfg.dot }}
-                aria-hidden="true"
-            />
+            <span className="w-[7px] h-[7px] rounded-full" style={{ backgroundColor: cfg.dot }} />
             {text}
         </span>
     );
@@ -170,13 +164,7 @@ function FeatureCard({
     comingSoon?: boolean;
 }) {
     const accentColor =
-        accent === "blue"
-            ? MS_BLUE
-            : accent === "green"
-                ? MS_GREEN
-                : accent === "red"
-                    ? MS_RED
-                    : null;
+        accent === "blue" ? MS_BLUE : accent === "green" ? MS_GREEN : accent === "red" ? MS_RED : null;
 
     const softWash =
         accent === "blue"
@@ -190,15 +178,12 @@ function FeatureCard({
     return (
         <div
             className="border border-[#DBD8D8] rounded-[24px] p-6 bg-white hover:bg-[#FAFAFA] transition relative overflow-hidden"
-            style={{
-                backgroundImage: softWash,
-            }}
+            style={{ backgroundImage: softWash }}
         >
             {accentColor && (
                 <div
                     className="absolute left-0 top-0 h-full w-[3px] opacity-90"
                     style={{ backgroundColor: accentColor }}
-                    aria-hidden="true"
                 />
             )}
 
@@ -248,16 +233,10 @@ function FormatCard({
                 : "radial-gradient(900px 400px at 20% 0%, rgba(246,82,82,0.14) 0%, rgba(246,82,82,0.00) 55%)";
 
     return (
-        <div
-            className="border border-[#DBD8D8] rounded-[24px] bg-white p-6 relative overflow-hidden"
-            style={{
-                backgroundImage: wash,
-            }}
-        >
+        <div className="border border-[#DBD8D8] rounded-[24px] bg-white p-6 relative overflow-hidden" style={{ backgroundImage: wash }}>
             <div
                 className="absolute -top-12 -right-12 w-40 h-40 rounded-full blur-2xl opacity-60"
                 style={{ backgroundColor: accentColor }}
-                aria-hidden="true"
             />
             <div className="relative">
                 <div className="flex items-start justify-between gap-4">
@@ -269,7 +248,6 @@ function FormatCard({
                     <div
                         className="shrink-0 border rounded-[16px] w-12 h-12 flex items-center justify-center bg-white/60"
                         style={{ borderColor: accentColor }}
-                        aria-hidden="true"
                     >
                         <div className="w-5 h-5 rounded-full" style={{ backgroundColor: accentColor }} />
                     </div>
@@ -278,10 +256,7 @@ function FormatCard({
                 <ul className="mt-4 space-y-2 text-[13px] text-[#606060]">
                     {bullets.map((b) => (
                         <li key={b} className="flex gap-2">
-                            <span
-                                className="mt-[6px] w-[6px] h-[6px] rounded-full shrink-0"
-                                style={{ backgroundColor: accentColor }}
-                            />
+                            <span className="mt-[6px] w-[6px] h-[6px] rounded-full shrink-0" style={{ backgroundColor: accentColor }} />
                             <span>{b}</span>
                         </li>
                     ))}
@@ -319,9 +294,7 @@ function MiniSessionCard({
         <div className="border border-[#DBD8D8] rounded-[28px] bg-white p-5 flex flex-col gap-4">
             <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                    <div className="text-[18px] md:text-[20px] font-semibold text-[#2F2F2F] leading-snug">
-                        {title}
-                    </div>
+                    <div className="text-[18px] md:text-[20px] font-semibold text-[#2F2F2F] leading-snug">{title}</div>
 
                     <div className="mt-2 flex flex-wrap items-center gap-3 text-[12px] text-[#606060]">
                         <span className="flex items-center gap-1">
@@ -333,10 +306,7 @@ function MiniSessionCard({
                         <span className="opacity-60">•</span>
                         <span>Starts in {startsIn}</span>
 
-                        <span
-                            className="ml-0 md:ml-2 inline-flex items-center px-3 py-1 rounded-full border"
-                            style={{ borderColor: tagCfg.border, background: tagCfg.bg, color: tagCfg.fg }}
-                        >
+                        <span className="ml-0 md:ml-2 inline-flex items-center px-3 py-1 rounded-full border" style={{ borderColor: tagCfg.border, background: tagCfg.bg, color: tagCfg.fg }}>
                             {tag}
                         </span>
                     </div>
@@ -372,6 +342,92 @@ function MiniSessionCard({
     );
 }
 
+/**
+ * Hero animation: “focus particles”
+ * Small dots orbit & drift like “people/presence” moving into a session.
+ * - Pure CSS, no libs
+ * - Low opacity, never fights the copy
+ * - Respects prefers-reduced-motion
+ */
+function FocusParticles({
+    count = 26,
+}: {
+    count?: number;
+}) {
+    const dots = useMemo(() => {
+        // Deterministic "random" so it doesn't jump on re-renders
+        let seed = 1337;
+        const rand = () => {
+            seed = (seed * 9301 + 49297) % 233280;
+            return seed / 233280;
+        };
+
+        const colors = [
+            { c: MS_GREEN, a: 0.55 },
+            { c: MS_BLUE, a: 0.5 },
+            { c: MS_RED, a: 0.45 },
+        ];
+
+        return Array.from({ length: count }).map((_, i) => {
+            const col = colors[i % colors.length];
+            const size = 4 + Math.round(rand() * 5); // 4..9
+            const x = 6 + rand() * 88; // %
+            const y = 8 + rand() * 62; // %
+            const dur = 10 + rand() * 12; // 10..22s
+            const delay = -(rand() * 18); // start mid-animation
+            const drift = 18 + rand() * 38; // px
+            const blur = rand() > 0.7 ? 6 : 0; // sometimes blurred for depth
+            const ring = rand() > 0.55; // some nodes are "rings"
+            const glow = rand() > 0.55;
+
+            return {
+                key: `p-${i}`,
+                size,
+                x,
+                y,
+                dur,
+                delay,
+                drift,
+                blur,
+                ring,
+                glow,
+                color: col.c,
+                alpha: col.a,
+            };
+        });
+    }, [count]);
+
+    // Use a ref so React doesn't consider it interactive; purely decorative.
+    const rootRef = useRef<HTMLDivElement | null>(null);
+
+    return (
+        <div ref={rootRef} aria-hidden="true" className="focus-particles pointer-events-none absolute -inset-x-24 -top-40 h-[520px] md:h-[580px] overflow-hidden">
+            {dots.map((d) => (
+                <span
+                    key={d.key}
+                    className={`focus-dot ${d.ring ? "is-ring" : ""} ${d.glow ? "is-glow" : ""}`}
+                    style={
+                        {
+                            left: `${d.x}%`,
+                            top: `${d.y}%`,
+                            width: `${d.size}px`,
+                            height: `${d.size}px`,
+                            ["--dot-c" as any]: d.color,
+                            ["--dot-a" as any]: d.alpha,
+                            ["--dot-dur" as any]: `${d.dur}s`,
+                            ["--dot-delay" as any]: `${d.delay}s`,
+                            ["--dot-drift" as any]: `${d.drift}px`,
+                            filter: d.blur ? `blur(${d.blur}px)` : undefined,
+                        } as any
+                    }
+                />
+            ))}
+            {/* A very subtle "session flow line" that sweeps slowly */}
+            <div className="focus-sweep" />
+        </div>
+    );
+}
+
 export default function LandingPage() {
     const navigate = useNavigate();
 
@@ -396,8 +452,12 @@ export default function LandingPage() {
             <main className="relative w-full px-3 md:px-6 lg:px-10 pb-16">
                 {/* HERO */}
                 <section className="pt-[92px] md:pt-[110px] pb-10 relative">
+                    {/* Animated theme background: particles */}
+                    <FocusParticles count={28} />
+
                     {/* Animated mesh background */}
                     <div aria-hidden="true" className="hero-mesh pointer-events-none absolute -inset-x-24 -top-40 h-[520px] md:h-[580px]" />
+
                     {/* Soft vignette to keep text readable */}
                     <div
                         aria-hidden="true"
@@ -483,9 +543,7 @@ export default function LandingPage() {
 
                                         <div className="mt-4 space-y-3">
                                             <div className="rounded-[16px] border border-[#DBD8D8] p-4 bg-white/70">
-                                                <div className="text-[13px] font-semibold">
-                                                    Today: “Ship sessions page polish”
-                                                </div>
+                                                <div className="text-[13px] font-semibold">Today: “Ship sessions page polish”</div>
                                                 <div className="mt-2 text-[12px] text-[#606060]">
                                                     Intention → stages → recap • progress tracked
                                                 </div>
@@ -639,11 +697,7 @@ export default function LandingPage() {
                             accent="green"
                             title="Guided session structure"
                             desc="Not a random call. Sessions follow a clean structure that keeps you moving."
-                            bullets={[
-                                "Pick a format (Pomodoro / Deep Work / Sprints)",
-                                "Stage-based momentum",
-                                "Simple recap → real closure",
-                            ]}
+                            bullets={["Pick a format (Pomodoro / Deep Work / Sprints)", "Stage-based momentum", "Simple recap → real closure"]}
                         />
                         <FeatureCard
                             accent="red"
@@ -697,11 +751,7 @@ export default function LandingPage() {
                             accent="green"
                             title="AI-created plans for any goal"
                             desc="Studying, career growth, building a product — AI turns goals into steps and sessions."
-                            bullets={[
-                                "Goal → milestones → steps",
-                                "Convert steps into focus sessions",
-                                "Adjust plan based on real progress",
-                            ]}
+                            bullets={["Goal → milestones → steps", "Convert steps into focus sessions", "Adjust plan based on real progress"]}
                         />
                         <FeatureCard
                             accent="blue"
@@ -716,16 +766,13 @@ export default function LandingPage() {
                             aria-hidden="true"
                             className="absolute -top-24 left-1/2 -translate-x-1/2 w-[820px] h-[320px] blur-3xl opacity-40"
                             style={{
-                                background:
-                                    `radial-gradient(closest-side at 30% 40%, rgba(101,212,108,0.50), rgba(101,212,108,0.00) 70%),
-                   radial-gradient(closest-side at 55% 25%, rgba(82,134,246,0.45), rgba(82,134,246,0.00) 70%),
-                   radial-gradient(closest-side at 75% 60%, rgba(246,82,82,0.42), rgba(246,82,82,0.00) 70%)`,
+                                background: `radial-gradient(closest-side at 30% 40%, rgba(101,212,108,0.50), rgba(101,212,108,0.00) 70%),
+                           radial-gradient(closest-side at 55% 25%, rgba(82,134,246,0.45), rgba(82,134,246,0.00) 70%),
+                           radial-gradient(closest-side at 75% 60%, rgba(246,82,82,0.42), rgba(246,82,82,0.00) 70%)`,
                             }}
                         />
                         <div className="relative max-w-[980px] mx-auto text-center">
-                            <div className="text-[12px] tracking-wide text-[#606060] mb-3">
-                                Always evolving
-                            </div>
+                            <div className="text-[12px] tracking-wide text-[#606060] mb-3">Always evolving</div>
                             <div className="text-[24px] md:text-[32px] font-normal leading-tight">
                                 New formats & features are coming постоянно.
                             </div>
@@ -903,10 +950,9 @@ export default function LandingPage() {
                             aria-hidden="true"
                             className="absolute -inset-20 opacity-70"
                             style={{
-                                background:
-                                    `radial-gradient(600px 260px at 20% 40%, rgba(101,212,108,0.35), rgba(101,212,108,0.00) 70%),
-                   radial-gradient(520px 240px at 55% 30%, rgba(82,134,246,0.32), rgba(82,134,246,0.00) 70%),
-                   radial-gradient(520px 240px at 80% 60%, rgba(246,82,82,0.28), rgba(246,82,82,0.00) 70%)`,
+                                background: `radial-gradient(600px 260px at 20% 40%, rgba(101,212,108,0.35), rgba(101,212,108,0.00) 70%),
+                           radial-gradient(520px 240px at 55% 30%, rgba(82,134,246,0.32), rgba(82,134,246,0.00) 70%),
+                           radial-gradient(520px 240px at 80% 60%, rgba(246,82,82,0.28), rgba(246,82,82,0.00) 70%)`,
                             }}
                         />
                         <div className="max-w-[980px] mx-auto text-center relative">
@@ -942,7 +988,7 @@ export default function LandingPage() {
                     </div>
                 </section>
 
-                {/* Local CSS: CTA sheen + animated hero mesh */}
+                {/* Local CSS: CTA sheen + animated hero mesh + focus particles */}
                 <style>{`
           /* CTA sheen background */
           .session-cta::before { background: var(--cta-grad); }
@@ -964,7 +1010,6 @@ export default function LandingPage() {
               radial-gradient(520px 320px at 82% 58%, rgba(246,82,82,0.46), rgba(246,82,82,0.00) 70%);
             animation: meshFloat 14s ease-in-out infinite;
             transform: translate3d(0,0,0);
-            /* fade out toward the bottom of hero block */
             -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.65) 45%, rgba(0,0,0,0.0) 95%);
             mask-image: linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.65) 45%, rgba(0,0,0,0.0) 95%);
           }
@@ -977,10 +1022,75 @@ export default function LandingPage() {
             100% { transform: translate3d(-10px, 0px, 0) scale(1.02); }
           }
 
+          /* Focus particles (theme animation) */
+          .focus-particles {
+            -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.65) 45%, rgba(0,0,0,0.0) 95%);
+            mask-image: linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.65) 45%, rgba(0,0,0,0.0) 95%);
+          }
+
+          .focus-dot {
+            position: absolute;
+            border-radius: 9999px;
+            background: color-mix(in srgb, var(--dot-c) calc(var(--dot-a) * 100%), transparent);
+            opacity: 0.75;
+            transform: translate3d(0,0,0);
+            animation:
+              dotDrift var(--dot-dur) ease-in-out infinite,
+              dotPulse 4.8s ease-in-out infinite;
+            animation-delay: var(--dot-delay), var(--dot-delay);
+            box-shadow: 0 0 0 0 rgba(0,0,0,0);
+          }
+
+          .focus-dot.is-ring {
+            background: transparent;
+            border: 1px solid color-mix(in srgb, var(--dot-c) 55%, transparent);
+          }
+
+          .focus-dot.is-glow {
+            box-shadow:
+              0 0 16px color-mix(in srgb, var(--dot-c) 30%, transparent),
+              0 0 32px color-mix(in srgb, var(--dot-c) 18%, transparent);
+          }
+
+          @keyframes dotDrift {
+            0%   { transform: translate3d(0px, 0px, 0) scale(1); }
+            40%  { transform: translate3d(calc(var(--dot-drift) * 0.6), calc(var(--dot-drift) * -0.35), 0) scale(1.05); }
+            70%  { transform: translate3d(calc(var(--dot-drift) * -0.35), calc(var(--dot-drift) * 0.55), 0) scale(0.98); }
+            100% { transform: translate3d(0px, 0px, 0) scale(1); }
+          }
+
+          @keyframes dotPulse {
+            0%, 100% { opacity: 0.55; }
+            50%      { opacity: 0.85; }
+          }
+
+          /* Subtle sweeping flow line */
+          .focus-sweep {
+            position: absolute;
+            left: -20%;
+            top: 20%;
+            width: 140%;
+            height: 2px;
+            opacity: 0.15;
+            background: ${GRADIENT};
+            filter: blur(0.4px);
+            transform: rotate(-8deg);
+            animation: sweep 9s ease-in-out infinite;
+          }
+
+          @keyframes sweep {
+            0%   { transform: translateX(-8%) rotate(-8deg); opacity: 0.0; }
+            15%  { opacity: 0.18; }
+            50%  { transform: translateX(8%) rotate(-8deg); opacity: 0.14; }
+            85%  { opacity: 0.18; }
+            100% { transform: translateX(-8%) rotate(-8deg); opacity: 0.0; }
+          }
+
           /* Reduce motion */
           @media (prefers-reduced-motion: reduce) {
             .session-cta:hover::before { animation: none !important; }
             .hero-mesh { animation: none !important; }
+            .focus-dot, .focus-sweep { animation: none !important; }
           }
         `}</style>
             </main>
