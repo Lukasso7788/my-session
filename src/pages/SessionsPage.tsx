@@ -88,70 +88,56 @@ function resolveSessionType(s: SessionWithRelations): "group" | "infinite" | "bo
 // =====================
 function InfinityIcon({ className = "w-5 h-5" }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M8.2 15.4c-1.6 0-3-1.3-3-3s1.4-3 3-3c2.5 0 4.4 5.2 7.6 5.2 1.6 0 3-1.3 3-3s-1.4-3-3-3c-2.5 0-4.4 5.2-7.6 5.2Z"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+    <img
+      src="/icons/infinite.svg"
+      className={className}
+      alt=""
+      draggable={false}
+    />
   );
 }
 
 function ClockIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M12 7v5l3 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      <path
-        d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
-        stroke="currentColor"
-        strokeWidth="2"
-      />
-    </svg>
+    <img
+      src="/icons/always-open.svg"
+      className={className}
+      alt=""
+      draggable={false}
+    />
   );
 }
 
 function EyeIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M2.5 12s3.5-7 9.5-7 9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7Z"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinejoin="round"
-      />
-      <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" stroke="currentColor" strokeWidth="2" />
-    </svg>
+    <img
+      src="/icons/stay-accountable.svg"
+      className={className}
+      alt=""
+      draggable={false}
+    />
   );
 }
 
 function WorkflowIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M8 7h8M8 12h8M8 17h5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      <path
-        d="M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"
-        stroke="currentColor"
-        strokeWidth="2"
-      />
-    </svg>
+    <img
+      src="/icons/structured-flow.svg"
+      className={className}
+      alt=""
+      draggable={false}
+    />
   );
 }
 
 function RocketIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M14 4c-3.8 1-6.7 4-7.9 7.8L5 16l4.2-1.1C13 13.7 16 10.8 17 7c.3-1.2.4-2.1.4-3-.9 0-1.8.1-3 .4Z"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinejoin="round"
-      />
-      <path d="M10 14l-1 5 2.2-2.2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      <path d="M13.2 10.8a1.2 1.2 0 1 0 0-2.4 1.2 1.2 0 0 0 0 2.4Z" fill="currentColor" />
-    </svg>
+    <img
+      src="/icons/keep-momentum.svg"
+      className={className}
+      alt=""
+      draggable={false}
+    />
   );
 }
 
@@ -198,8 +184,8 @@ function InfiniteRoomsIntroCard() {
   return (
     <div className="w-full flex justify-center">
       <div className="w-full max-w-[980px]">
-        {/* px=32 py=24, gap=32, radius=12 */}
-        <div className="border border-[#DBD8D8] rounded-xl bg-white px-8 py-6 flex flex-col gap-8">
+        {/* px=32 py=24, gap=32, radius усилен */}
+        <div className="border border-[#DBD8D8] rounded-[24px] bg-white px-8 py-6 flex flex-col gap-8">
           {/* title row: icon padding 16/16, icon 20, gap 10 */}
           <div className="flex items-center justify-center gap-[10px]">
             <div className="p-4 rounded-[20px] bg-[#111827] text-white inline-flex items-center justify-center">
@@ -232,13 +218,11 @@ function InfiniteRoomsIntroCard() {
                       padding: "13.5px",
                     }}
                   >
-                    <div style={{ color: f.color }}>
-                      <f.Icon className="w-[27px] h-[27px]" />
-                    </div>
+                    <f.Icon className="w-[27px] h-[27px]" />
                   </div>
 
-                  {/* title 14 semibold, subtitle 12 light, gap 12 */}
-                  <div className="flex flex-col" style={{ gap: "12px" }}>
+                  {/* title 14 semibold, subtitle 12 light, gap 8 */}
+                  <div className="flex flex-col" style={{ gap: "8px" }}>
                     <div className="font-inter font-semibold text-[14px] text-brandBlack">
                       {f.title}
                     </div>
@@ -463,9 +447,12 @@ export function SessionsPage() {
     <div className="min-h-screen bg-white text-brandBlack font-inter">
       <main className="w-full px-3 md:px-6 lg:px-10 pb-12">
         <div className="pt-[100px] pb-[50px] text-center">
-          <h1 className="text-[24px] md:text-[28px] xl:text-[36px] font-normal leading-tight mx-auto">
-            Join a focus session to stay accountable
-          </h1>
+          {/* ✅ Убираем большой заголовок только для infinite */}
+          {sessionTypeTab !== "infinite" && (
+            <h1 className="text-[24px] md:text-[28px] xl:text-[36px] font-normal leading-tight mx-auto">
+              Join a focus session to stay accountable
+            </h1>
+          )}
         </div>
 
         <div className="w-full">
@@ -486,7 +473,11 @@ export function SessionsPage() {
 
           {sessionTypeTab !== "infinite" && (
             <div className="mb-6 w-full">
-              <SessionsDateFilter value={dateFilter} onChange={setDateFilter} weeksAhead={3} />
+              <SessionsDateFilter
+                value={dateFilter}
+                onChange={setDateFilter}
+                weeksAhead={3}
+              />
             </div>
           )}
 
@@ -503,7 +494,10 @@ export function SessionsPage() {
                 </p>
 
                 {user && (
-                  <button onClick={() => modal.open()} className="text-sm underline underline-offset-4">
+                  <button
+                    onClick={() => modal.open()}
+                    className="text-sm underline underline-offset-4"
+                  >
                     Create the first session
                   </button>
                 )}
