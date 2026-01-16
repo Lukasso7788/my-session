@@ -83,6 +83,182 @@ function resolveSessionType(s: SessionWithRelations): "group" | "infinite" | "bo
   return "group";
 }
 
+// =====================
+// UI: Infinite intro card
+// =====================
+function InfinityIcon({ className = "w-5 h-5" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M8.2 15.4c-1.6 0-3-1.3-3-3s1.4-3 3-3c2.5 0 4.4 5.2 7.6 5.2 1.6 0 3-1.3 3-3s-1.4-3-3-3c-2.5 0-4.4 5.2-7.6 5.2Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function ClockIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 7v5l3 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path
+        d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+        stroke="currentColor"
+        strokeWidth="2"
+      />
+    </svg>
+  );
+}
+
+function EyeIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M2.5 12s3.5-7 9.5-7 9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  );
+}
+
+function WorkflowIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M8 7h8M8 12h8M8 17h5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path
+        d="M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"
+        stroke="currentColor"
+        strokeWidth="2"
+      />
+    </svg>
+  );
+}
+
+function RocketIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M14 4c-3.8 1-6.7 4-7.9 7.8L5 16l4.2-1.1C13 13.7 16 10.8 17 7c.3-1.2.4-2.1.4-3-.9 0-1.8.1-3 .4Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      <path d="M10 14l-1 5 2.2-2.2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M13.2 10.8a1.2 1.2 0 1 0 0-2.4 1.2 1.2 0 0 0 0 2.4Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+type Feature = {
+  title: string;
+  subtitle: string;
+  color: string; // border + icon
+  bg20: string;  // 20% fill
+  Icon: (p: { className?: string }) => JSX.Element;
+};
+
+function InfiniteRoomsIntroCard() {
+  const features: Feature[] = [
+    {
+      title: "Always Open",
+      subtitle: "24/7 Access",
+      color: "#5286F6",
+      bg20: "#5286F633",
+      Icon: ClockIcon,
+    },
+    {
+      title: "Stay accountable",
+      subtitle: "With others",
+      color: "#65D46C",
+      bg20: "#65D46C33",
+      Icon: EyeIcon,
+    },
+    {
+      title: "Structured Flow",
+      subtitle: "Built-in Workflow",
+      color: "#F65252",
+      bg20: "#F6525233",
+      Icon: WorkflowIcon,
+    },
+    {
+      title: "Keep momentum",
+      subtitle: "Day & Night",
+      color: "#5286F6",
+      bg20: "#5286F633",
+      Icon: RocketIcon,
+    },
+  ];
+
+  return (
+    <div className="w-full flex justify-center">
+      <div className="w-full max-w-[980px]">
+        {/* px=32 py=24, gap=32, radius=12 */}
+        <div className="border border-[#DBD8D8] rounded-xl bg-white px-8 py-6 flex flex-col gap-8">
+          {/* title row: icon padding 16/16, icon 20, gap 10 */}
+          <div className="flex items-center justify-center gap-[10px]">
+            <div className="p-4 rounded-[20px] bg-[#111827] text-white inline-flex items-center justify-center">
+              <InfinityIcon className="w-5 h-5" />
+            </div>
+
+            <h2 className="font-inter font-semibold text-[24px] text-brandBlack">
+              24/7 Infinite Rooms
+            </h2>
+          </div>
+
+          {/* body text: 16 light, 160% */}
+          <p className="font-inter font-light text-[16px] leading-[160%] text-brandBlack text-center max-w-[860px] mx-auto">
+            24/7 Infinite Rooms are always open, giving you a structured space to focus whenever inspiration strikes.
+            Join at any time, follow the built-in workflow (Pomodoro or Deep Work), stay accountable with others,
+            and keep your momentum going — day or night.
+          </p>
+
+          {/* 4 icon blocks */}
+          <div className="w-full flex justify-center">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
+              {features.map((f) => (
+                <div key={f.title} className="flex items-center gap-4">
+                  {/* p=13.5, radius 13.5, icon 27 */}
+                  <div
+                    className="border rounded-[13.5px] inline-flex items-center justify-center"
+                    style={{
+                      borderColor: f.color,
+                      backgroundColor: f.bg20,
+                      padding: "13.5px",
+                    }}
+                  >
+                    <div style={{ color: f.color }}>
+                      <f.Icon className="w-[27px] h-[27px]" />
+                    </div>
+                  </div>
+
+                  {/* title 14 semibold, subtitle 12 light, gap 12 */}
+                  <div className="flex flex-col" style={{ gap: "12px" }}>
+                    <div className="font-inter font-semibold text-[14px] text-brandBlack">
+                      {f.title}
+                    </div>
+                    <div className="font-inter font-light text-[12px] text-brandBlack/70">
+                      {f.subtitle}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* distance to switcher: 48px */}
+        <div className="h-12" />
+      </div>
+    </div>
+  );
+}
+
 export function SessionsPage() {
   const navigate = useNavigate();
   const modal = useCreateSessionModal();
@@ -293,6 +469,9 @@ export function SessionsPage() {
         </div>
 
         <div className="w-full">
+          {/* ✅ Infinite rooms intro block (above switcher) */}
+          {sessionTypeTab === "infinite" && <InfiniteRoomsIntroCard />}
+
           <div className="w-full flex justify-center mb-[55px]">
             <SessionTypeSwitcher
               value={sessionTypeTab}
@@ -307,11 +486,7 @@ export function SessionsPage() {
 
           {sessionTypeTab !== "infinite" && (
             <div className="mb-6 w-full">
-              <SessionsDateFilter
-                value={dateFilter}
-                onChange={setDateFilter}
-                weeksAhead={3}
-              />
+              <SessionsDateFilter value={dateFilter} onChange={setDateFilter} weeksAhead={3} />
             </div>
           )}
 
@@ -328,10 +503,7 @@ export function SessionsPage() {
                 </p>
 
                 {user && (
-                  <button
-                    onClick={() => modal.open()}
-                    className="text-sm underline underline-offset-4"
-                  >
+                  <button onClick={() => modal.open()} className="text-sm underline underline-offset-4">
                     Create the first session
                   </button>
                 )}
