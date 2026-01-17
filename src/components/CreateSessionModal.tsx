@@ -1,13 +1,11 @@
 // src/components/CreateSessionModal.tsx
-// Full file replacement (adds Scheduling in advance: single OR daily series up to 14 days ahead)
+// Full file replacement
 // Keeps: Custom link slug + Max participants + Session Timeline + fixed Create button logic for Studio
-// NEW:
-// ✅ Schedule mode: Single / Daily series
-// ✅ Quick presets: 7 days / 14 days + slider 1–14
-// ✅ Creates N sessions: start_time = base + i days
-// ✅ For each occurrence: invokes create-daily-room -> unique daily_room_url
-// ✅ Hard cap: first + last occurrence must be within 14 days from now
-// ✅ If custom slug provided in series: auto-suffixes with date (yyyy-mm-dd) and checks collisions
+// NEW (scheduling in advance):
+// ✅ Schedule mode: Single / Daily series / Weekly series
+// ✅ Weekly series = same weekday + same time (base start_time), repeats every 7 days
+// ✅ Hard cap: last occurrence must be within 14 days from "now" (2 weeks ahead)
+// ✅ Series + custom slug: auto-suffixes with date (yyyy-mm-dd) to avoid collisions + checks collisions
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import {
@@ -59,7 +57,11 @@ function guessJitsiDomainByTimezone(): { domain: JitsiDomain; reason: string } {
     return { domain: "meet-us-east.mysession.club", reason: `timezone=${tz}` };
   }
 
-  if (t.startsWith("asia/") || t.startsWith("australia/") || t.startsWith("pacific/")) {
+  if (
+    t.startsWith("asia/") ||
+    t.startsWith("australia/") ||
+    t.startsWith("pacific/")
+  ) {
     return { domain: "meet-apac.mysession.club", reason: `timezone=${tz}` };
   }
 
@@ -78,7 +80,7 @@ function nowLocalForDatetimeInput(): string {
 // ===============================
 // Scheduling in advance helpers
 // ===============================
-type ScheduleMode = "single" | "daily";
+type ScheduleMode = "single" | "daily" | "weekly";
 const MAX_ADVANCE_DAYS = 14;
 
 function addDaysLocal(base: Date, days: number) {
@@ -91,6 +93,26 @@ function advanceLimitDate(now: Date) {
   const d = new Date(now);
   d.setDate(d.getDate() + MAX_ADVANCE_DAYS);
   return d;
+}
+
+function stepDaysForMode(mode: ScheduleMode) {
+  if (mode === "daily") return 1;
+  if (mode === "weekly") return 7;
+  return 0; // single
+}
+
+function toLocalPreview(d: Date) {
+  try {
+    return d.toLocaleString(undefined, {
+      weekday: "short",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return d.toString();
+  }
 }
 
 // ===============================
@@ -127,7 +149,8 @@ function makeDatedSlug(baseSlug: string, dateLocal: Date) {
   const suffix = ymdLocal(dateLocal); // yyyy-mm-dd
   const extra = 1 + suffix.length; // "-" + suffix
   const maxBase = Math.max(1, SLUG_MAX - extra);
-  const trimmedBase = baseSlug.length > maxBase ? baseSlug.slice(0, maxBase) : baseSlug;
+  const trimmedBase =
+    baseSlug.length > maxBase ? baseSlug.slice(0, maxBase) : baseSlug;
   const out = `${trimmedBase}-${suffix}`;
   return out.slice(0, SLUG_MAX);
 }
@@ -190,9 +213,17 @@ function normalizeTemplateBlocks(rawBlocks: any): StudioBlock[] {
 
   const arr = Array.isArray(parsed) ? parsed : [];
   return arr.map((b: any) => {
-    const title = String(b?.title || b?.name || b?.label || b?.kind || b?.type || "Block").trim();
+    const title = String(
+      b?.title || b?.name || b?.label || b?.kind || b?.type || "Block"
+    ).trim();
 
-    const minutesRaw = b?.minutes ?? b?.duration_minutes ?? b?.duration ?? b?.len ?? b?.time ?? 5;
+    const minutesRaw =
+      b?.minutes ??
+      b?.duration_minutes ??
+      b?.duration ??
+      b?.len ??
+      b?.time ??
+      5;
 
     const minutes = clamp(Number(minutesRaw) || 5, 1, 24 * 60);
 
@@ -236,14 +267,62 @@ function exportStudioToSchedule(blocks: StudioBlock[]) {
 }
 
 const STUDIO_LIBRARY: StudioBlock[] = [
-  { id: "lib_welcome", kind: "welcome", title: "Welcome", note: "Quick intro / rules / vibe", minutes: 3 },
-  { id: "lib_intentions", kind: "intentions", title: "Intentions", note: "Say what you’ll finish", minutes: 5 },
-  { id: "lib_focus", kind: "focus", title: "Focus", note: "Deep work block", minutes: 50 },
-  { id: "lib_break", kind: "break", title: "Break", note: "Recharge / stretch", minutes: 10 },
-  { id: "lib_checkin", kind: "checkin", title: "Check-in", note: "Short accountability checkpoint", minutes: 3 },
-  { id: "lib_recap", kind: "recap", title: "Recap", note: "What got done / what’s next", minutes: 5 },
-  { id: "lib_celebrate", kind: "celebrate", title: "Celebrate", note: "Closure + positive finish", minutes: 3 },
-  { id: "lib_custom", kind: "custom", title: "Custom", note: "Any special block", minutes: 5 },
+  {
+    id: "lib_welcome",
+    kind: "welcome",
+    title: "Welcome",
+    note: "Quick intro / rules / vibe",
+    minutes: 3,
+  },
+  {
+    id: "lib_intentions",
+    kind: "intentions",
+    title: "Intentions",
+    note: "Say what you’ll finish",
+    minutes: 5,
+  },
+  {
+    id: "lib_focus",
+    kind: "focus",
+    title: "Focus",
+    note: "Deep work block",
+    minutes: 50,
+  },
+  {
+    id: "lib_break",
+    kind: "break",
+    title: "Break",
+    note: "Recharge / stretch",
+    minutes: 10,
+  },
+  {
+    id: "lib_checkin",
+    kind: "checkin",
+    title: "Check-in",
+    note: "Short accountability checkpoint",
+    minutes: 3,
+  },
+  {
+    id: "lib_recap",
+    kind: "recap",
+    title: "Recap",
+    note: "What got done / what’s next",
+    minutes: 5,
+  },
+  {
+    id: "lib_celebrate",
+    kind: "celebrate",
+    title: "Celebrate",
+    note: "Closure + positive finish",
+    minutes: 3,
+  },
+  {
+    id: "lib_custom",
+    kind: "custom",
+    title: "Custom",
+    note: "Any special block",
+    minutes: 5,
+  },
 ];
 
 const QUICK_MINUTES = [3, 5, 10, 15, 25, 50];
@@ -298,9 +377,14 @@ function SessionTimeline({ blocks }: { blocks: StudioBlock[] }) {
   return (
     <div className="mt-3">
       <div className="flex items-center justify-between">
-        <div className="font-inter text-[12px] text-gray-600">Session timeline</div>
         <div className="font-inter text-[12px] text-gray-600">
-          Total: <span className="font-semibold text-brandBlack">{formatMinutes(total)}</span>
+          Session timeline
+        </div>
+        <div className="font-inter text-[12px] text-gray-600">
+          Total:{" "}
+          <span className="font-semibold text-brandBlack">
+            {formatMinutes(total)}
+          </span>
         </div>
       </div>
 
@@ -318,7 +402,9 @@ function SessionTimeline({ blocks }: { blocks: StudioBlock[] }) {
               return (
                 <div
                   key={b.id}
-                  className={`h-full ${kindBg(b.kind)} border-r border-white/70 flex items-center justify-center`}
+                  className={`h-full ${kindBg(
+                    b.kind
+                  )} border-r border-white/70 flex items-center justify-center`}
                   style={{ flexGrow: mins, flexBasis: 0, minWidth: 6 }}
                   title={`${b.title} • ${mins} min`}
                 >
@@ -348,7 +434,9 @@ function SessionTimeline({ blocks }: { blocks: StudioBlock[] }) {
               >
                 <div className="min-w-0 flex items-center gap-2">
                   <span className={`w-3 h-3 rounded-full ${kindBg(r.kind)}`} />
-                  <span className="text-[12px] font-inter text-brandBlack truncate">{r.title}</span>
+                  <span className="text-[12px] font-inter text-brandBlack truncate">
+                    {r.title}
+                  </span>
                 </div>
 
                 <div className="text-[12px] font-inter text-gray-600 whitespace-nowrap">
@@ -363,7 +451,11 @@ function SessionTimeline({ blocks }: { blocks: StudioBlock[] }) {
   );
 }
 
-export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: CreateSessionModalProps) {
+export function CreateSessionModal({
+  isOpen,
+  onClose,
+  onSessionCreated,
+}: CreateSessionModalProps) {
   const { user, profile, loading } = useAuth();
 
   const [title, setTitle] = useState("");
@@ -375,18 +467,25 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
 
   // ---------- Scheduling in advance ----------
   const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("single");
-  const [dailyDays, setDailyDays] = useState<number>(7);
+  const [dailyDays, setDailyDays] = useState<number>(7); // occurrences for daily mode
+  const [weeklyCount, setWeeklyCount] = useState<number>(3); // default: this + next + next (fits 2 weeks ahead)
 
   // ---------- Custom link slug ----------
   const [customSlugInput, setCustomSlugInput] = useState("");
-  const sanitizedSlug = useMemo(() => sanitizeSlug(customSlugInput), [customSlugInput]);
+  const sanitizedSlug = useMemo(
+    () => sanitizeSlug(customSlugInput),
+    [customSlugInput]
+  );
   const slugValid = useMemo(() => isValidSlug(sanitizedSlug), [sanitizedSlug]);
-  const [slugStatus, setSlugStatus] = useState<"idle" | "invalid" | "checking" | "taken" | "available">("idle");
+  const [slugStatus, setSlugStatus] = useState<
+    "idle" | "invalid" | "checking" | "taken" | "available"
+  >("idle");
 
   // ---------- JITSI DOMAIN (AUTO + OPTIONAL MANUAL) ----------
   const autoGuess = useMemo(() => guessJitsiDomainByTimezone(), [isOpen]);
   const [useAutoDomain, setUseAutoDomain] = useState(true);
-  const [manualDomain, setManualDomain] = useState<JitsiDomain>("meet-eu.mysession.club");
+  const [manualDomain, setManualDomain] =
+    useState<JitsiDomain>("meet-eu.mysession.club");
 
   useEffect(() => {
     if (!isOpen) return;
@@ -394,14 +493,18 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
     setManualDomain(autoGuess.domain);
   }, [isOpen, autoGuess.domain]);
 
-  const effectiveDomain: JitsiDomain = useAutoDomain ? autoGuess.domain : manualDomain;
+  const effectiveDomain: JitsiDomain = useAutoDomain
+    ? autoGuess.domain
+    : manualDomain;
 
   // ---------- SESSION STUDIO ----------
   const [studioEnabled, setStudioEnabled] = useState(false);
   const [studioBlocks, setStudioBlocks] = useState<StudioBlock[]>([]);
 
   // ✅ max participants (Studio can customize)
-  const [maxParticipants, setMaxParticipants] = useState<number>(DEFAULT_MAX_PARTICIPANTS);
+  const [maxParticipants, setMaxParticipants] = useState<number>(
+    DEFAULT_MAX_PARTICIPANTS
+  );
 
   useEffect(() => {
     if (!isOpen) return;
@@ -412,6 +515,7 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
 
     setScheduleMode("single");
     setDailyDays(7);
+    setWeeklyCount(3);
   }, [isOpen]);
 
   useEffect(() => {
@@ -443,7 +547,11 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
     setSlugStatus("checking");
     const t = window.setTimeout(async () => {
       try {
-        const { data, error } = await supabase.from("sessions").select("id").eq("custom_slug", s).limit(1);
+        const { data, error } = await supabase
+          .from("sessions")
+          .select("id")
+          .eq("custom_slug", s)
+          .limit(1);
 
         if (error) {
           console.log("[slug] availability check error:", error);
@@ -478,31 +586,106 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
       setStudioBlocks(blocks);
     } else {
       setStudioBlocks([
-        { id: uid(), kind: "welcome", title: "Welcome", note: "Quick intro / rules / vibe", minutes: 3 },
-        { id: uid(), kind: "intentions", title: "Intentions", note: "Say what you’ll finish", minutes: 5 },
-        { id: uid(), kind: "focus", title: "Focus", note: "Deep work block", minutes: 50 },
-        { id: uid(), kind: "recap", title: "Recap", note: "What got done / what’s next", minutes: 5 },
-        { id: uid(), kind: "celebrate", title: "Celebrate", note: "Closure + positive finish", minutes: 3 },
+        {
+          id: uid(),
+          kind: "welcome",
+          title: "Welcome",
+          note: "Quick intro / rules / vibe",
+          minutes: 3,
+        },
+        {
+          id: uid(),
+          kind: "intentions",
+          title: "Intentions",
+          note: "Say what you’ll finish",
+          minutes: 5,
+        },
+        {
+          id: uid(),
+          kind: "focus",
+          title: "Focus",
+          note: "Deep work block",
+          minutes: 50,
+        },
+        {
+          id: uid(),
+          kind: "recap",
+          title: "Recap",
+          note: "What got done / what’s next",
+          minutes: 5,
+        },
+        {
+          id: uid(),
+          kind: "celebrate",
+          title: "Celebrate",
+          note: "Closure + positive finish",
+          minutes: 3,
+        },
       ]);
     }
   }, [selectedTemplateObj]);
 
   const resetDefaultStudio = useCallback(() => {
     setStudioBlocks([
-      { id: uid(), kind: "welcome", title: "Welcome", note: "Quick intro / rules / vibe", minutes: 3 },
-      { id: uid(), kind: "intentions", title: "Intentions", note: "Say what you’ll finish", minutes: 5 },
-      { id: uid(), kind: "focus", title: "Focus", note: "Deep work block", minutes: 50 },
-      { id: uid(), kind: "break", title: "Break", note: "Recharge / stretch", minutes: 10 },
-      { id: uid(), kind: "focus", title: "Focus", note: "Second focus block", minutes: 50 },
-      { id: uid(), kind: "recap", title: "Recap", note: "What got done / what’s next", minutes: 5 },
-      { id: uid(), kind: "celebrate", title: "Celebrate", note: "Closure + positive finish", minutes: 3 },
+      {
+        id: uid(),
+        kind: "welcome",
+        title: "Welcome",
+        note: "Quick intro / rules / vibe",
+        minutes: 3,
+      },
+      {
+        id: uid(),
+        kind: "intentions",
+        title: "Intentions",
+        note: "Say what you’ll finish",
+        minutes: 5,
+      },
+      {
+        id: uid(),
+        kind: "focus",
+        title: "Focus",
+        note: "Deep work block",
+        minutes: 50,
+      },
+      {
+        id: uid(),
+        kind: "break",
+        title: "Break",
+        note: "Recharge / stretch",
+        minutes: 10,
+      },
+      {
+        id: uid(),
+        kind: "focus",
+        title: "Focus",
+        note: "Second focus block",
+        minutes: 50,
+      },
+      {
+        id: uid(),
+        kind: "recap",
+        title: "Recap",
+        note: "What got done / what’s next",
+        minutes: 5,
+      },
+      {
+        id: uid(),
+        kind: "celebrate",
+        title: "Celebrate",
+        note: "Closure + positive finish",
+        minutes: 3,
+      },
     ]);
   }, []);
 
   const clearStudio = useCallback(() => setStudioBlocks([]), []);
 
   const addFromLibrary = useCallback((b: StudioBlock) => {
-    setStudioBlocks((prev) => [...prev, { id: uid(), kind: b.kind, title: b.title, note: b.note, minutes: b.minutes }]);
+    setStudioBlocks((prev) => [
+      ...prev,
+      { id: uid(), kind: b.kind, title: b.title, note: b.note, minutes: b.minutes },
+    ]);
   }, []);
 
   const moveBlock = useCallback((id: string, dir: -1 | 1) => {
@@ -519,7 +702,9 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
   }, []);
 
   const updateBlock = useCallback((id: string, patch: Partial<StudioBlock>) => {
-    setStudioBlocks((prev) => prev.map((b) => (b.id === id ? { ...b, ...patch } : b)));
+    setStudioBlocks((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, ...patch } : b))
+    );
   }, []);
 
   const removeBlock = useCallback((id: string) => {
@@ -531,7 +716,8 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
     if (!studioEnabled) return;
 
     if (studioBlocks.length === 0) {
-      const hasTplBlocks = normalizeTemplateBlocks((selectedTemplateObj as any)?.blocks).length > 0;
+      const hasTplBlocks =
+        normalizeTemplateBlocks((selectedTemplateObj as any)?.blocks).length > 0;
       if (hasTplBlocks) importFromTemplate();
       else resetDefaultStudio();
     }
@@ -545,9 +731,10 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
     async function loadTemplates() {
       setError(null);
 
-      const { data, error } = await supabase.from("session_templates").select("*").order("total_duration", {
-        ascending: true,
-      });
+      const { data, error } = await supabase
+        .from("session_templates")
+        .select("*")
+        .order("total_duration", { ascending: true });
 
       if (error) {
         console.error("❌ Error loading templates:", error);
@@ -571,10 +758,51 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
     };
   }, [isOpen]);
 
+  const dynamicMaxOccurrences = useMemo(() => {
+    const hardCap =
+      scheduleMode === "weekly" ? 3 : scheduleMode === "daily" ? 14 : 1;
+
+    if (scheduleMode === "single") return 1;
+    if (!scheduledAt) return hardCap;
+
+    const base = new Date(scheduledAt);
+    if (Number.isNaN(base.getTime())) return hardCap;
+
+    const now = new Date();
+    const max = advanceLimitDate(now);
+
+    const step = stepDaysForMode(scheduleMode);
+    if (step <= 0) return 1;
+
+    const diffMs = max.getTime() - base.getTime();
+    if (diffMs < 0) return 1;
+
+    const stepMs = step * 24 * 60 * 60 * 1000;
+    const maxOcc = Math.floor(diffMs / stepMs) + 1;
+
+    return clamp(maxOcc, 1, hardCap);
+  }, [scheduleMode, scheduledAt]);
+
+  // Clamp user-selected counts when start_time is close to the edge
+  useEffect(() => {
+    if (!isOpen) return;
+    if (scheduleMode === "daily") {
+      setDailyDays((v) => clamp(Number(v) || 1, 1, dynamicMaxOccurrences));
+    }
+    if (scheduleMode === "weekly") {
+      setWeeklyCount((v) => clamp(Number(v) || 1, 1, dynamicMaxOccurrences));
+    }
+  }, [dynamicMaxOccurrences, scheduleMode, isOpen]);
+
   const occurrencesCount = useMemo(() => {
-    if (scheduleMode === "daily") return clamp(Number(dailyDays) || 7, 1, MAX_ADVANCE_DAYS);
+    if (scheduleMode === "daily") {
+      return clamp(Number(dailyDays) || 1, 1, dynamicMaxOccurrences);
+    }
+    if (scheduleMode === "weekly") {
+      return clamp(Number(weeklyCount) || 1, 1, dynamicMaxOccurrences);
+    }
     return 1;
-  }, [scheduleMode, dailyDays]);
+  }, [scheduleMode, dailyDays, weeklyCount, dynamicMaxOccurrences]);
 
   const scheduleAdvanceError = useMemo(() => {
     if (!scheduledAt) return null;
@@ -585,15 +813,33 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
     const now = new Date();
     const max = advanceLimitDate(now);
 
-    if (base.getTime() < now.getTime() - 60_000) return "Start time must be in the future.";
+    if (base.getTime() < now.getTime() - 60_000) {
+      return "Start time must be in the future.";
+    }
 
-    const last = addDaysLocal(base, occurrencesCount - 1);
+    const step = stepDaysForMode(scheduleMode);
+    const last =
+      scheduleMode === "single"
+        ? base
+        : addDaysLocal(base, step * (occurrencesCount - 1));
+
     if (last.getTime() > max.getTime()) {
-      return `You can schedule максимум на ${MAX_ADVANCE_DAYS} days ahead (last occurrence too far).`;
+      return `Max scheduling window is ${MAX_ADVANCE_DAYS} days ahead (last occurrence too far).`;
     }
 
     return null;
-  }, [scheduledAt, occurrencesCount]);
+  }, [scheduledAt, occurrencesCount, scheduleMode]);
+
+  const occurrencesPreview = useMemo(() => {
+    if (!scheduledAt) return [];
+    const base = new Date(scheduledAt);
+    if (Number.isNaN(base.getTime())) return [];
+    const step = stepDaysForMode(scheduleMode);
+    const ds = Array.from({ length: occurrencesCount }, (_, i) =>
+      scheduleMode === "single" ? base : addDaysLocal(base, step * i)
+    );
+    return ds.map(toLocalPreview);
+  }, [scheduledAt, scheduleMode, occurrencesCount]);
 
   // ---------- CREATE SESSION(S) ----------
   const handleCreate = async () => {
@@ -609,7 +855,9 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
     }
 
     if (studioEnabled && studioBlocks.length === 0) {
-      setError("Session Studio is enabled, but your script is empty. Add at least one block.");
+      setError(
+        "Session Studio is enabled, but your script is empty. Add at least one block."
+      );
       return;
     }
 
@@ -626,7 +874,9 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
     // slug validate (base)
     const baseSlug = sanitizedSlug;
     if (baseSlug && !isValidSlug(baseSlug)) {
-      setError(`Custom link is invalid. Use ${SLUG_MIN}-${SLUG_MAX} chars: a-z, 0-9, - or _.`);
+      setError(
+        `Custom link is invalid. Use ${SLUG_MIN}-${SLUG_MAX} chars: a-z, 0-9, - or _.`
+      );
       return;
     }
 
@@ -643,16 +893,23 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
     }
 
     // If Studio is ON and template isn't selected, silently pick a base template id (for DB compatibility).
-    const baseTemplateId = selectedTemplate || (studioEnabled ? (templates[0]?.id ?? "") : "");
+    const baseTemplateId =
+      selectedTemplate || (studioEnabled ? templates[0]?.id ?? "" : "");
 
     if (studioEnabled && !baseTemplateId) {
-      setError("No templates found in database. Create at least one template first.");
+      setError(
+        "No templates found in database. Create at least one template first."
+      );
       return;
     }
 
     // max participants
     const effectiveMaxParticipants = studioEnabled
-      ? clamp(Number(maxParticipants) || DEFAULT_MAX_PARTICIPANTS, MIN_PARTICIPANTS, MAX_PARTICIPANTS)
+      ? clamp(
+        Number(maxParticipants) || DEFAULT_MAX_PARTICIPANTS,
+        MIN_PARTICIPANTS,
+        MAX_PARTICIPANTS
+      )
       : DEFAULT_MAX_PARTICIPANTS;
 
     setIsCreating(true);
@@ -668,9 +925,13 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
 
       const template = templates.find((t) => t.id === baseTemplateId);
 
-      const durationMinutes = studioEnabled ? studioTotal : (template as any)?.total_duration ?? 60;
+      const durationMinutes = studioEnabled
+        ? studioTotal
+        : (template as any)?.total_duration ?? 60;
 
-      const schedulePayload = studioEnabled ? exportStudioToSchedule(studioBlocks) : (template as any)?.blocks || [];
+      const schedulePayload = studioEnabled
+        ? exportStudioToSchedule(studioBlocks)
+        : (template as any)?.blocks || [];
 
       const formatLabel = studioEnabled
         ? template?.name
@@ -678,18 +939,21 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
           : "Session Studio"
         : template?.name || "Unspecified";
 
-      // Build occurrences: dates + (optional) slugs
-      const datesLocal = Array.from({ length: occurrencesCount }, (_, i) => addDaysLocal(baseDateLocal, i));
+      const step = stepDaysForMode(scheduleMode);
+      const datesLocal = Array.from({ length: occurrencesCount }, (_, i) =>
+        scheduleMode === "single" ? baseDateLocal : addDaysLocal(baseDateLocal, step * i)
+      );
 
+      // Series slug collision check (only if we generated slugs)
+      const isSeries = scheduleMode !== "single";
       const slugsForInsert =
-        baseSlug && scheduleMode === "daily"
+        baseSlug && isSeries
           ? datesLocal.map((d) => makeDatedSlug(baseSlug, d))
           : baseSlug
             ? [baseSlug]
             : [];
 
-      // Series slug collision check (only if we generated slugs)
-      if (scheduleMode === "daily" && baseSlug) {
+      if (isSeries && baseSlug) {
         const checkList = slugsForInsert.filter(Boolean);
         if (checkList.length) {
           const { data: taken, error: takenErr } = await supabase
@@ -702,7 +966,9 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
             console.log("[slug] series collision check error:", takenErr);
             // non-blocking
           } else if (taken && taken.length > 0) {
-            setError("Some custom links for the series are already taken. Try a different base link.");
+            setError(
+              "Some custom links for the series are already taken. Try a different base link."
+            );
             setIsCreating(false);
             return;
           }
@@ -712,7 +978,8 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
       // Create a Daily room for each occurrence (unique URL)
       const dailyUrls: string[] = [];
       for (let i = 0; i < datesLocal.length; i++) {
-        const { data: fnData, error: fnError } = await supabase.functions.invoke("create-daily-room", { body: {} });
+        const { data: fnData, error: fnError } =
+          await supabase.functions.invoke("create-daily-room", { body: {} });
 
         if (fnError || !fnData?.url) {
           console.error("❌ Daily room creation failed:", fnData, fnError);
@@ -727,7 +994,7 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
         const scheduledISO = d.toISOString();
 
         const customSlugForRow =
-          baseSlug && scheduleMode === "daily" ? slugsForInsert[idx] || null : baseSlug || null;
+          baseSlug && isSeries ? slugsForInsert[idx] || null : baseSlug || null;
 
         return {
           title,
@@ -764,6 +1031,7 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
       setSlugStatus("idle");
       setScheduleMode("single");
       setDailyDays(7);
+      setWeeklyCount(3);
 
       onSessionCreated();
       onClose();
@@ -771,7 +1039,10 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
       console.error("❌ Error creating session(s):", err);
 
       const msg = String(err?.message || "");
-      if (msg.toLowerCase().includes("custom_slug") && msg.toLowerCase().includes("duplicate")) {
+      if (
+        msg.toLowerCase().includes("custom_slug") &&
+        msg.toLowerCase().includes("duplicate")
+      ) {
         setError("This custom link is already taken. Pick another one.");
       } else {
         setError(err.message || "Failed to create session(s)");
@@ -787,7 +1058,8 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
   const minDateTime = nowLocalForDatetimeInput();
 
   const effectiveDomainLabel =
-    JITSI_DOMAINS.find((d) => d.value === effectiveDomain)?.label || effectiveDomain;
+    JITSI_DOMAINS.find((d) => d.value === effectiveDomain)?.label ||
+    effectiveDomain;
 
   const panelClass = studioEnabled
     ? "bg-white w-[calc(100vw-24px)] h-[calc(100vh-24px)] max-w-none max-h-none rounded-[20px] shadow-2xl flex flex-col overflow-hidden"
@@ -797,20 +1069,27 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
     ? "fixed inset-0 bg-black/50 z-50 p-3 md:p-4 flex items-center justify-center"
     : "fixed inset-0 bg-black/50 flex items-center justify-center z-50";
 
-  const origin = typeof window !== "undefined" && window.location?.origin ? window.location.origin : "";
+  const origin =
+    typeof window !== "undefined" && window.location?.origin
+      ? window.location.origin
+      : "";
 
-  const linkPreview =
-    sanitizedSlug && scheduleMode === "daily"
-      ? `${origin}/room/${makeDatedSlug(sanitizedSlug, new Date(scheduledAt || Date.now()))} …`
-      : sanitizedSlug
-        ? `${origin}/room/${sanitizedSlug}`
-        : `${origin}/room/<your-link>`;
+  const isSeries = scheduleMode !== "single";
+
+  const linkPreview = sanitizedSlug
+    ? isSeries
+      ? `${origin}/room/${makeDatedSlug(
+        sanitizedSlug,
+        new Date(scheduledAt || Date.now())
+      )} …`
+      : `${origin}/room/${sanitizedSlug}`
+    : `${origin}/room/<your-link>`;
 
   const slugHint = !customSlugInput
     ? "Optional. Your own short link instead of UUID."
     : !slugValid
       ? `Invalid. Use ${SLUG_MIN}-${SLUG_MAX} chars: a-z, 0-9, - or _.`
-      : scheduleMode === "daily"
+      : isSeries
         ? "Series mode: date suffix will be added automatically (yyyy-mm-dd)."
         : slugStatus === "checking"
           ? "Checking availability…"
@@ -833,7 +1112,9 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
     (!studioEnabled && !selectedTemplate) ||
     (studioEnabled && studioBlocks.length === 0) ||
     (sanitizedSlug ? !slugValid : false) ||
-    (scheduleMode === "single" && sanitizedSlug ? slugStatus === "taken" || slugStatus === "checking" : false) ||
+    (scheduleMode === "single" && sanitizedSlug
+      ? slugStatus === "taken" || slugStatus === "checking"
+      : false) ||
     !!scheduleAdvanceError ||
     isCreating;
 
@@ -843,9 +1124,15 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
         {/* HEADER */}
         <div className={studioEnabled ? "px-6 pt-6" : ""}>
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-[20px] font-bold text-brandBlack font-inter">Create focus session</h2>
+            <h2 className="text-[20px] font-bold text-brandBlack font-inter">
+              Create focus session
+            </h2>
 
-            <button onClick={onClose} className="text-gray-500 hover:text-gray-700 transition" aria-label="Close">
+            <button
+              onClick={onClose}
+              className="text-gray-500 hover:text-gray-700 transition"
+              aria-label="Close"
+            >
               <X size={22} />
             </button>
           </div>
@@ -855,13 +1142,17 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
         <div className={studioEnabled ? "px-6 pb-4 flex-1 overflow-y-auto" : ""}>
           {loading || !user ? (
             <p className="text-sm text-gray-500 mb-4 font-inter px-6">
-              {loading ? "Checking your account..." : "You must be logged in to create a session."}
+              {loading
+                ? "Checking your account..."
+                : "You must be logged in to create a session."}
             </p>
           ) : (
             <div className="space-y-5">
               {/* Title */}
               <div>
-                <label className="block text-[14px] font-medium text-brandBlack mb-1 font-inter">Session title</label>
+                <label className="block text-[14px] font-medium text-brandBlack mb-1 font-inter">
+                  Session title
+                </label>
                 <input
                   type="text"
                   value={title}
@@ -873,7 +1164,9 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
 
               {/* Start Time */}
               <div>
-                <label className="block text-[14px] font-medium text-brandBlack mb-1 font-inter">Start time</label>
+                <label className="block text-[14px] font-medium text-brandBlack mb-1 font-inter">
+                  Start time
+                </label>
                 <input
                   type="datetime-local"
                   value={scheduledAt}
@@ -896,7 +1189,7 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
                         Scheduling (in advance)
                       </div>
                       <div className="font-inter text-[12px] text-gray-500">
-                        Max: {MAX_ADVANCE_DAYS} days ahead
+                        Max: {MAX_ADVANCE_DAYS} days (~2 weeks)
                       </div>
                     </div>
 
@@ -916,6 +1209,20 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
 
                       <button
                         type="button"
+                        onClick={() => setScheduleMode("weekly")}
+                        className={
+                          "px-3 py-2 rounded-full border text-[12px] font-inter transition inline-flex items-center gap-2 " +
+                          (scheduleMode === "weekly"
+                            ? "border-brandBlack bg-brandBlack text-white"
+                            : "border-gray-200 hover:bg-gray-50 text-brandBlack")
+                        }
+                      >
+                        <Repeat size={14} />
+                        Weekly
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={() => setScheduleMode("daily")}
                         className={
                           "px-3 py-2 rounded-full border text-[12px] font-inter transition inline-flex items-center gap-2 " +
@@ -925,13 +1232,77 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
                         }
                       >
                         <Repeat size={14} />
-                        Daily series
+                        Daily
                       </button>
 
                       <div className="ml-auto font-inter text-[12px] text-gray-500">
-                        Creates: <span className="font-semibold text-brandBlack">{occurrencesCount}</span>
+                        Creates:{" "}
+                        <span className="font-semibold text-brandBlack">
+                          {occurrencesCount}
+                        </span>
                       </div>
                     </div>
+
+                    {scheduleMode === "weekly" && (
+                      <div className="mt-3">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => setWeeklyCount(2)}
+                              className="px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
+                              disabled={dynamicMaxOccurrences < 2}
+                            >
+                              2 sessions
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setWeeklyCount(3)}
+                              className="px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
+                              disabled={dynamicMaxOccurrences < 3}
+                            >
+                              3 sessions (2 weeks)
+                            </button>
+                          </div>
+
+                          <div className="font-inter text-[12px] text-gray-600">
+                            Sessions:{" "}
+                            <span className="font-semibold text-brandBlack">
+                              {clamp(
+                                Number(weeklyCount) || 1,
+                                1,
+                                dynamicMaxOccurrences
+                              )}
+                            </span>
+                          </div>
+                        </div>
+
+                        <input
+                          type="range"
+                          min={1}
+                          max={dynamicMaxOccurrences}
+                          value={clamp(
+                            Number(weeklyCount) || 1,
+                            1,
+                            dynamicMaxOccurrences
+                          )}
+                          onChange={(e) =>
+                            setWeeklyCount(
+                              clamp(
+                                Number(e.target.value) || 1,
+                                1,
+                                dynamicMaxOccurrences
+                              )
+                            )
+                          }
+                          className="mt-3 w-full"
+                        />
+
+                        <div className="mt-2 text-[12px] font-inter text-gray-500">
+                          Same weekday and time every week.
+                        </div>
+                      </div>
+                    )}
 
                     {scheduleMode === "daily" && (
                       <div className="mt-3">
@@ -941,6 +1312,7 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
                               type="button"
                               onClick={() => setDailyDays(7)}
                               className="px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
+                              disabled={dynamicMaxOccurrences < 7}
                             >
                               7 days
                             </button>
@@ -948,6 +1320,7 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
                               type="button"
                               onClick={() => setDailyDays(14)}
                               className="px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
+                              disabled={dynamicMaxOccurrences < 14}
                             >
                               14 days
                             </button>
@@ -956,7 +1329,11 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
                           <div className="font-inter text-[12px] text-gray-600">
                             Days:{" "}
                             <span className="font-semibold text-brandBlack">
-                              {clamp(Number(dailyDays) || 7, 1, MAX_ADVANCE_DAYS)}
+                              {clamp(
+                                Number(dailyDays) || 1,
+                                1,
+                                dynamicMaxOccurrences
+                              )}
                             </span>
                           </div>
                         </div>
@@ -964,20 +1341,48 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
                         <input
                           type="range"
                           min={1}
-                          max={MAX_ADVANCE_DAYS}
-                          value={clamp(Number(dailyDays) || 7, 1, MAX_ADVANCE_DAYS)}
-                          onChange={(e) => setDailyDays(clamp(Number(e.target.value) || 7, 1, MAX_ADVANCE_DAYS))}
+                          max={dynamicMaxOccurrences}
+                          value={clamp(
+                            Number(dailyDays) || 1,
+                            1,
+                            dynamicMaxOccurrences
+                          )}
+                          onChange={(e) =>
+                            setDailyDays(
+                              clamp(
+                                Number(e.target.value) || 1,
+                                1,
+                                dynamicMaxOccurrences
+                              )
+                            )
+                          }
                           className="mt-3 w-full"
                         />
 
                         <div className="mt-2 text-[12px] font-inter text-gray-500">
-                          Same time each day, starting from the selected start time.
+                          Same time each day, starting from the selected start
+                          time.
+                        </div>
+                      </div>
+                    )}
+
+                    {occurrencesPreview.length > 1 && (
+                      <div className="mt-3 border border-gray-200 rounded-[14px] p-3 bg-gray-50">
+                        <div className="text-[12px] font-inter text-gray-600">
+                          Will create:
+                        </div>
+                        <div className="mt-1 text-[12px] font-inter text-gray-800 space-y-1">
+                          {occurrencesPreview.slice(0, 5).map((p, i) => (
+                            <div key={i}>• {p}</div>
+                          ))}
                         </div>
                       </div>
                     )}
 
                     {scheduleAdvanceError && (
-                      <div className="mt-2 text-[12px] font-inter text-red-600">{scheduleAdvanceError}</div>
+                      <div className="mt-2 text-[12px] font-inter text-red-600">
+                        {scheduleAdvanceError}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -991,8 +1396,13 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
                   </div>
 
                   <div className="flex-1">
-                    <div className="font-inter font-semibold text-[14px] text-brandBlack">Custom session link</div>
-                    <div className="font-inter text-[12px] text-gray-500">{slugHint || "Optional. Your own short link instead of UUID."}</div>
+                    <div className="font-inter font-semibold text-[14px] text-brandBlack">
+                      Custom session link
+                    </div>
+                    <div className="font-inter text-[12px] text-gray-500">
+                      {slugHint ||
+                        "Optional. Your own short link instead of UUID."}
+                    </div>
 
                     <div className="mt-3">
                       <input
@@ -1003,14 +1413,18 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
                       />
 
                       <div className="mt-2 flex items-center justify-between gap-3">
-                        <div className={`text-[12px] font-inter ${slugHintColor}`}>
+                        <div
+                          className={`text-[12px] font-inter ${slugHintColor}`}
+                        >
                           {customSlugInput
                             ? slugHint
-                            : scheduleMode === "daily"
+                            : isSeries
                               ? "Optional. In series mode, we auto-add date suffix (yyyy-mm-dd)."
                               : "Allowed: a-z, 0-9, - or _. Lowercase."}
                         </div>
-                        <div className="text-[12px] font-inter text-gray-500 truncate">{linkPreview}</div>
+                        <div className="text-[12px] font-inter text-gray-500 truncate">
+                          {linkPreview}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1031,18 +1445,24 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
                       onChange={(e) => setUseAutoDomain(e.target.checked)}
                       className="w-4 h-4"
                     />
-                    <span className="text-[14px] text-brandBlack font-inter">Auto (recommended)</span>
+                    <span className="text-[14px] text-brandBlack font-inter">
+                      Auto (recommended)
+                    </span>
                   </label>
 
                   <span className="text-[12px] text-gray-500 font-inter">
-                    {useAutoDomain ? `Picked: ${effectiveDomainLabel}` : `Manual: ${effectiveDomainLabel}`}
+                    {useAutoDomain
+                      ? `Picked: ${effectiveDomainLabel}`
+                      : `Manual: ${effectiveDomainLabel}`}
                   </span>
                 </div>
 
                 {!useAutoDomain && (
                   <select
                     value={manualDomain}
-                    onChange={(e) => setManualDomain(e.target.value as JitsiDomain)}
+                    onChange={(e) =>
+                      setManualDomain(e.target.value as JitsiDomain)
+                    }
                     className="mt-3 w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter bg-white"
                   >
                     {JITSI_DOMAINS.map((d) => (
@@ -1054,13 +1474,16 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
                 )}
 
                 <p className="mt-2 text-[12px] text-gray-500 font-inter">
-                  All participants will join the same Jitsi domain saved in the session.
+                  All participants will join the same Jitsi domain saved in the
+                  session.
                 </p>
               </div>
 
               {/* Templates */}
               <div>
-                <label className="block text-[14px] font-medium text-brandBlack mb-2 font-inter">Session format</label>
+                <label className="block text-[14px] font-medium text-brandBlack mb-2 font-inter">
+                  Session format
+                </label>
 
                 <div className="max-h-48 overflow-y-auto pr-2 space-y-3">
                   {templates.length > 0 ? (
@@ -1095,13 +1518,16 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
                       </label>
                     ))
                   ) : (
-                    <p className="text-sm text-gray-500 font-inter">Loading templates...</p>
+                    <p className="text-sm text-gray-500 font-inter">
+                      Loading templates...
+                    </p>
                   )}
                 </div>
 
                 {studioEnabled && (
                   <p className="mt-2 text-[12px] text-gray-500 font-inter">
-                    Tip: when Session Studio is enabled, selecting a format is optional.
+                    Tip: when Session Studio is enabled, selecting a format is
+                    optional.
                   </p>
                 )}
               </div>
@@ -1117,7 +1543,9 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
                     </div>
 
                     <div>
-                      <div className="font-inter font-semibold text-[14px] text-brandBlack">Session Studio</div>
+                      <div className="font-inter font-semibold text-[14px] text-brandBlack">
+                        Session Studio
+                      </div>
                       <div className="font-inter text-[12px] text-gray-500">
                         Build a custom session script (different UI than FlowN).
                       </div>
@@ -1142,16 +1570,20 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
                       onChange={(e) => setStudioEnabled(e.target.checked)}
                       className="w-4 h-4"
                     />
-                    <span className="text-[13px] text-brandBlack font-inter">Use Session Studio for this session</span>
+                    <span className="text-[13px] text-brandBlack font-inter">
+                      Use Session Studio for this session
+                    </span>
                   </label>
 
                   <div className="text-[12px] text-gray-600 font-inter">
-                    Length: <span className="font-semibold">{studioTotal}</span> min
+                    Length:{" "}
+                    <span className="font-semibold">{studioTotal}</span> min
                   </div>
                 </div>
 
                 <div className="mt-2 text-[12px] text-gray-500 font-inter">
-                  Script saved into <span className="font-medium">sessions.schedule</span>
+                  Script saved into{" "}
+                  <span className="font-medium">sessions.schedule</span>
                 </div>
 
                 {/* ✅ Participant limit */}
@@ -1161,10 +1593,12 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
                       <Users size={16} />
                     </div>
                     <div className="flex-1">
-                      <div className="font-inter font-semibold text-[13px] text-brandBlack">Participant limit</div>
+                      <div className="font-inter font-semibold text-[13px] text-brandBlack">
+                        Participant limit
+                      </div>
                       <div className="font-inter text-[12px] text-gray-500">
-                        Default for all templates is {DEFAULT_MAX_PARTICIPANTS}. Studio can set {MIN_PARTICIPANTS}–
-                        {MAX_PARTICIPANTS}.
+                        Default for all templates is {DEFAULT_MAX_PARTICIPANTS}.
+                        Studio can set {MIN_PARTICIPANTS}–{MAX_PARTICIPANTS}.
                       </div>
                     </div>
                   </div>
@@ -1187,10 +1621,14 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
                       }
                       className={
                         "w-28 px-3 py-2 border rounded-[14px] font-inter text-center " +
-                        (studioEnabled ? "border-gray-300" : "border-gray-200 bg-gray-50 text-gray-500")
+                        (studioEnabled
+                          ? "border-gray-300"
+                          : "border-gray-200 bg-gray-50 text-gray-500")
                       }
                     />
-                    <span className="font-inter text-[12px] text-gray-600">people</span>
+                    <span className="font-inter text-[12px] text-gray-600">
+                      people
+                    </span>
 
                     {!studioEnabled && (
                       <span className="ml-auto font-inter text-[12px] text-gray-500">
@@ -1243,7 +1681,9 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
                       {/* Library */}
                       <div className="border border-gray-200 rounded-[18px] p-4">
                         <div>
-                          <div className="font-inter font-semibold text-[13px] text-brandBlack">Block Library</div>
+                          <div className="font-inter font-semibold text-[13px] text-brandBlack">
+                            Block Library
+                          </div>
                           <div className="font-inter text-[12px] text-gray-500">
                             Add blocks to the script (cards, not rows).
                           </div>
@@ -1258,10 +1698,16 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
                               type="button"
                             >
                               <div className="flex items-start justify-between gap-2">
-                                <div className="font-inter font-semibold text-[12px] text-brandBlack">{b.title}</div>
-                                <div className="font-inter text-[12px] text-gray-500">{b.minutes}m</div>
+                                <div className="font-inter font-semibold text-[12px] text-brandBlack">
+                                  {b.title}
+                                </div>
+                                <div className="font-inter text-[12px] text-gray-500">
+                                  {b.minutes}m
+                                </div>
                               </div>
-                              <div className="mt-1 font-inter text-[12px] text-gray-500 leading-snug">{b.note}</div>
+                              <div className="mt-1 font-inter text-[12px] text-gray-500 leading-snug">
+                                {b.note}
+                              </div>
                             </button>
                           ))}
                         </div>
@@ -1271,15 +1717,21 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
                       <div className="border border-gray-200 rounded-[18px] p-4">
                         <div className="flex items-center justify-between">
                           <div>
-                            <div className="font-inter font-semibold text-[13px] text-brandBlack">Script</div>
+                            <div className="font-inter font-semibold text-[13px] text-brandBlack">
+                              Script
+                            </div>
                             <div className="font-inter text-[12px] text-gray-500">
                               Reorder with arrows. Edit titles & durations.
                             </div>
                           </div>
 
                           <div className="text-right">
-                            <div className="font-inter text-[12px] text-gray-500">Total:</div>
-                            <div className="font-inter font-semibold text-[12px] text-brandBlack">{studioTotal} min</div>
+                            <div className="font-inter text-[12px] text-gray-500">
+                              Total:
+                            </div>
+                            <div className="font-inter font-semibold text-[12px] text-brandBlack">
+                              {studioTotal} min
+                            </div>
                           </div>
                         </div>
 
@@ -1290,7 +1742,10 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
                         ) : (
                           <div className="mt-3 space-y-3">
                             {studioBlocks.map((b, idx) => (
-                              <div key={b.id} className="border border-gray-200 rounded-[16px] p-3">
+                              <div
+                                key={b.id}
+                                className="border border-gray-200 rounded-[16px] p-3"
+                              >
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="flex items-center gap-2 min-w-0">
                                     <span className="px-2 py-1 rounded-full border border-gray-200 text-[11px] font-inter text-gray-600">
@@ -1299,7 +1754,11 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
 
                                     <input
                                       value={b.title}
-                                      onChange={(e) => updateBlock(b.id, { title: e.target.value })}
+                                      onChange={(e) =>
+                                        updateBlock(b.id, {
+                                          title: e.target.value,
+                                        })
+                                      }
                                       className="min-w-0 flex-1 px-2 py-1 border border-gray-200 rounded-[12px] text-[13px] font-inter"
                                     />
                                   </div>
@@ -1337,11 +1796,21 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
                                 </div>
 
                                 <div className="mt-3 flex items-center gap-2 flex-wrap">
-                                  <span className="text-[12px] text-gray-500 font-inter">Minutes</span>
+                                  <span className="text-[12px] text-gray-500 font-inter">
+                                    Minutes
+                                  </span>
 
                                   <button
                                     type="button"
-                                    onClick={() => updateBlock(b.id, { minutes: clamp(b.minutes - 1, 1, 24 * 60) })}
+                                    onClick={() =>
+                                      updateBlock(b.id, {
+                                        minutes: clamp(
+                                          b.minutes - 1,
+                                          1,
+                                          24 * 60
+                                        ),
+                                      })
+                                    }
                                     className="w-9 h-9 rounded-[12px] border border-gray-200 hover:bg-gray-50 transition"
                                   >
                                     –
@@ -1352,7 +1821,11 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
                                     value={b.minutes}
                                     onChange={(e) =>
                                       updateBlock(b.id, {
-                                        minutes: clamp(Number(e.target.value) || 1, 1, 24 * 60),
+                                        minutes: clamp(
+                                          Number(e.target.value) || 1,
+                                          1,
+                                          24 * 60
+                                        ),
                                       })
                                     }
                                     className="w-16 h-9 px-2 border border-gray-200 rounded-[12px] text-[13px] font-inter text-center"
@@ -1360,13 +1833,23 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
 
                                   <button
                                     type="button"
-                                    onClick={() => updateBlock(b.id, { minutes: clamp(b.minutes + 1, 1, 24 * 60) })}
+                                    onClick={() =>
+                                      updateBlock(b.id, {
+                                        minutes: clamp(
+                                          b.minutes + 1,
+                                          1,
+                                          24 * 60
+                                        ),
+                                      })
+                                    }
                                     className="w-9 h-9 rounded-[12px] border border-gray-200 hover:bg-gray-50 transition"
                                   >
                                     +
                                   </button>
 
-                                  <span className="text-[12px] text-gray-500 font-inter">min</span>
+                                  <span className="text-[12px] text-gray-500 font-inter">
+                                    min
+                                  </span>
                                 </div>
 
                                 <div className="mt-2 flex items-center gap-2 flex-wrap">
@@ -1374,7 +1857,9 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
                                     <button
                                       key={m}
                                       type="button"
-                                      onClick={() => updateBlock(b.id, { minutes: m })}
+                                      onClick={() =>
+                                        updateBlock(b.id, { minutes: m })
+                                      }
                                       className="px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
                                     >
                                       {m}m
@@ -1391,20 +1876,32 @@ export function CreateSessionModal({ isOpen, onClose, onSessionCreated }: Create
                 )}
               </div>
 
-              {error && <p className="text-red-600 text-sm font-inter">{error}</p>}
+              {error && (
+                <p className="text-red-600 text-sm font-inter">{error}</p>
+              )}
             </div>
           )}
         </div>
 
         {/* FOOTER (sticky in studio mode) */}
         {!loading && user && (
-          <div className={studioEnabled ? "px-6 pb-6 pt-3 border-t border-gray-100 bg-white" : "mt-4"}>
+          <div
+            className={
+              studioEnabled
+                ? "px-6 pb-6 pt-3 border-t border-gray-100 bg-white"
+                : "mt-4"
+            }
+          >
             <button
               onClick={handleCreate}
               disabled={createDisabled}
               className="w-full bg-brandBlack text-white py-3 rounded-[42px] font-medium text-[15px] font-inter hover:bg-black disabled:bg-gray-300 transition"
             >
-              {isCreating ? "Creating..." : scheduleMode === "daily" ? "Create series" : "Create session"}
+              {isCreating
+                ? "Creating..."
+                : scheduleMode === "single"
+                  ? "Create session"
+                  : "Create series"}
             </button>
 
             <p className="text-xs text-gray-400 mt-3 text-center font-inter">
