@@ -287,7 +287,7 @@ function SessionTimeline({ blocks }: { blocks: StudioBlock[] }) {
 
       {/* pill bar */}
       <div className="mt-2 border border-gray-200 rounded-[999px] overflow-hidden bg-gray-50">
-        <div className="flex h-10">
+        <div className="flex h-4">
           {blocks.length === 0 ? (
             <div className="w-full h-full flex items-center justify-center text-[12px] text-gray-500 font-inter">
               Add blocks to build a timeline
