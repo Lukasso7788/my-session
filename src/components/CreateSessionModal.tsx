@@ -1,5 +1,5 @@
 // src/components/CreateSessionModal.tsx
-// Full file replacement (adds Session Timeline)
+// Full file replacement (adds Session Timeline + fixes Create button logic for Studio)
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import {
@@ -231,7 +231,7 @@ const QUICK_MINUTES = [3, 5, 10, 15, 25, 50];
 // SESSION TIMELINE (visual)
 // ===============================
 function kindBg(kind: StudioBlockKind) {
-  // deliberately NOT FlowN-like: thicker pill segments, calmer palette
+  // deliberately NOT FlowN-like: calmer palette
   switch (kind) {
     case "welcome":
       return "bg-slate-200";
@@ -281,13 +281,17 @@ function SessionTimeline({ blocks }: { blocks: StudioBlock[] }) {
           Session timeline
         </div>
         <div className="font-inter text-[12px] text-gray-600">
-          Total: <span className="font-semibold text-brandBlack">{formatMinutes(total)}</span>
+          Total:{" "}
+          <span className="font-semibold text-brandBlack">
+            {formatMinutes(total)}
+          </span>
         </div>
       </div>
 
       {/* pill bar */}
       <div className="mt-2 border border-gray-200 rounded-[999px] overflow-hidden bg-gray-50">
-        <div className="flex h-4">
+        {/* 👇 thickness control: change h-3 / h-4 / h-5 */}
+        <div className="flex h-3">
           {blocks.length === 0 ? (
             <div className="w-full h-full flex items-center justify-center text-[12px] text-gray-500 font-inter">
               Add blocks to build a timeline
@@ -299,7 +303,9 @@ function SessionTimeline({ blocks }: { blocks: StudioBlock[] }) {
               return (
                 <div
                   key={b.id}
-                  className={`h-full ${kindBg(b.kind)} border-r border-white/70 flex items-center justify-center`}
+                  className={`h-full ${kindBg(
+                    b.kind
+                  )} border-r border-white/70 flex items-center justify-center`}
                   style={{ flexGrow: mins, flexBasis: 0, minWidth: 6 }}
                   title={`${b.title} • ${mins} min`}
                 >
@@ -501,7 +507,8 @@ export function CreateSessionModal({
       return;
     }
 
-    if (!selectedTemplate) {
+    // ✅ FIX: template is required ONLY when Studio is OFF
+    if (!studioEnabled && !selectedTemplate) {
       setError("Please select a session format (template).");
       return;
     }
@@ -516,20 +523,35 @@ export function CreateSessionModal({
       return;
     }
 
+    // If Studio is ON and template isn't selected, silently pick a base template id (for DB compatibility).
+    // This prevents DB errors if template_id is NOT NULL.
+    const baseTemplateId =
+      selectedTemplate || (studioEnabled ? (templates[0]?.id ?? "") : "");
+
+    if (studioEnabled && !baseTemplateId) {
+      setError("No templates found in database. Create at least one template first.");
+      return;
+    }
+
     setIsCreating(true);
     setError(null);
 
     try {
       const scheduledISO = new Date(scheduledAt).toISOString();
-      const template = templates.find((t) => t.id === selectedTemplate);
+      const template = templates.find((t) => t.id === baseTemplateId);
 
-      const durationMinutes = studioEnabled ? studioTotal : (template as any)?.total_duration ?? 60;
+      const durationMinutes = studioEnabled
+        ? studioTotal
+        : (template as any)?.total_duration ?? 60;
+
       const schedulePayload = studioEnabled
         ? exportStudioToSchedule(studioBlocks)
         : (template as any)?.blocks || [];
 
       const formatLabel = studioEnabled
-        ? `${template?.name || "Session"} (Studio)`
+        ? template?.name
+          ? `${template.name} (Studio)`
+          : "Session Studio"
         : (template?.name || "Unspecified");
 
       // 1) Create Daily room via Supabase Edge Function
@@ -551,7 +573,10 @@ export function CreateSessionModal({
           title,
           host_id: profile.id,
           host_name: profile.full_name,
-          template_id: selectedTemplate,
+
+          // ✅ template_id still stored (auto-picks first template in Studio mode if none selected)
+          template_id: baseTemplateId,
+
           start_time: scheduledISO,
           duration_minutes: durationMinutes,
           format: formatLabel,
@@ -745,6 +770,13 @@ export function CreateSessionModal({
                     </p>
                   )}
                 </div>
+
+                {/* ✅ small hint: template becomes optional when Studio ON */}
+                {studioEnabled && (
+                  <p className="mt-2 text-[12px] text-gray-500 font-inter">
+                    Tip: when Session Studio is enabled, selecting a format is optional.
+                  </p>
+                )}
               </div>
 
               {/* =======================
@@ -1041,7 +1073,9 @@ export function CreateSessionModal({
               disabled={
                 !title ||
                 !scheduledAt ||
-                !selectedTemplate ||
+                // ✅ FIX: require template only when Studio OFF
+                (!studioEnabled && !selectedTemplate) ||
+                // Studio ON requires blocks
                 (studioEnabled && studioBlocks.length === 0) ||
                 isCreating
               }
