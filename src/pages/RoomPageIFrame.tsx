@@ -5,6 +5,8 @@
 // - Hide ALL native Jitsi UI inside iframe (CSS from SAME Jitsi domain)
 // - Use our own controls only
 // - Tile view ON by default
+// - ✅ Enforce participant limit from sessions.max_participants (default 16)
+// - ✅ Allow opening by UUID OR by sessions.custom_slug (no uuid cast error)
 //
 // Notes:
 // - CSS MUST be served from the SAME Jitsi domain, e.g.:
@@ -37,6 +39,19 @@ declare global {
     interface Window {
         JitsiMeetExternalAPI?: any;
     }
+}
+
+// ===============================
+// helpers: uuid / slug
+// ===============================
+const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function sanitizeSlug(input: string) {
+    const raw = String(input || "").trim().toLowerCase();
+    const spaced = raw.replace(/\s+/g, "-");
+    const clean = spaced.replace(/[^a-z0-9-_]/g, "");
+    return clean;
 }
 
 // ===============================
@@ -81,6 +96,11 @@ const STAGE_SOUND_MAP: Record<string, string> = {
 };
 const BREAK_END_SOUND = "/sounds/break_end.mp3";
 const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
+
+// ====== participants limit ======
+const DEFAULT_MAX_PARTICIPANTS = 16;
+const MIN_PARTICIPANTS = 3;
+const MAX_PARTICIPANTS = 64;
 
 // ====== helpers ======
 function safeParseJson(raw: any) {
@@ -291,29 +311,26 @@ async function createJitsiApiWithFallback(args: {
                     startWithAudioMuted: false,
                     startWithVideoMuted: false,
 
-                    // ✅ Ensure tile view is default inside iframe (supported on many builds)
+                    // ✅ Ensure tile view is default inside iframe
                     startWithTileView: true,
 
-                    // ✅ Kill “subject + timer” overlay via config (many builds respect it)
+                    // ✅ Kill “subject + timer” overlay
                     subject: "",
                     hideConferenceSubject: true,
                     hideConferenceTimer: true,
                     conferenceInfo: { alwaysVisible: [], autoHide: [] },
 
-                    // Keep just enough mounted if some builds need it
                     toolbarButtons: TOOLBAR_MOUNT_BUTTONS,
 
                     ...(cssUrl ? { customCssUrl: cssUrl } : {}),
                 },
 
                 interfaceConfigOverwrite: {
-                    // ✅ Show NONE in the iframe UI
                     TOOLBAR_BUTTONS: TOOLBAR_VISIBLE_BUTTONS,
                     TOOLBAR_ALWAYS_VISIBLE: false,
                     TOOLBAR_TIMEOUT: 0,
                     TOOLBAR_TIMEOUT_NO_HOVER: 0,
 
-                    // ✅ Disable watermarks via config too (CSS will finish the job)
                     SHOW_JITSI_WATERMARK: false,
                     SHOW_WATERMARK_FOR_GUESTS: false,
                     SHOW_BRAND_WATERMARK: false,
@@ -331,7 +348,6 @@ async function createJitsiApiWithFallback(args: {
                 },
             });
 
-            // ✅ Extra safety: clear subject through command too (some builds ignore config)
             try {
                 api.executeCommand?.("subject", "");
             } catch { }
@@ -399,9 +415,10 @@ export default function RoomPageIFrame() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
 
+    const idOrSlug = String(id || "").trim();
+
     const iframeContainerRef = useRef<HTMLDivElement>(null);
     const apiRef = useRef<any>(null);
-
     const supportedCmdsRef = useRef<string[] | null>(null);
 
     const [session, setSession] = useState<any>(null);
@@ -436,16 +453,19 @@ export default function RoomPageIFrame() {
 
     const [lastErr, setLastErr] = useState<string>("");
 
+    // capacity enforcement
+    const [capacityError, setCapacityError] = useState<string | null>(null);
+    const capacityTriggeredRef = useRef(false);
+
     // iframe state
-    const [tile, setTile] = useState(true); // ✅ default tile view ON
+    const [tile, setTile] = useState(true);
     const [mutedAudio, setMutedAudio] = useState(false);
     const [mutedVideo, setMutedVideo] = useState(false);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
 
-    // ✅ readiness gate (kept even if we don't show settings buttons)
     const [apiReady, setApiReady] = useState(false);
 
-    // right panel (for chat/intentions only)
+    // right panel
     const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(false);
     const [rightTab, setRightTab] = useState<RightPanelTab>(null);
 
@@ -462,9 +482,18 @@ export default function RoomPageIFrame() {
         });
     };
 
-    // ✅ Room name: keep consistent with other room pages (jitsi_room_name / daily_room_url / fallback)
+    // ✅ max participants from DB (default 16)
+    const maxParticipants = useMemo(() => {
+        const n = Number(session?.max_participants);
+        if (Number.isFinite(n) && n >= MIN_PARTICIPANTS) {
+            return Math.max(MIN_PARTICIPANTS, Math.min(MAX_PARTICIPANTS, Math.floor(n)));
+        }
+        return DEFAULT_MAX_PARTICIPANTS;
+    }, [session]);
+
+    // ✅ Room name
     const roomName = useMemo(() => {
-        const fallback = id ? `session-${id}` : "session-unknown";
+        const fallback = idOrSlug ? `session-${idOrSlug}` : "session-unknown";
 
         const rawFromDb = String(session?.jitsi_room_name || "").trim();
         if (rawFromDb) {
@@ -479,13 +508,11 @@ export default function RoomPageIFrame() {
                 const path = String(u.pathname || "").replace(/^\//, "").split("/")[0] || "";
                 const safe = path.toLowerCase().replace(/[^a-z0-9-_]/g, "");
                 return safe || fallback;
-            } catch {
-                // ignore
-            }
+            } catch { }
         }
 
         return fallback;
-    }, [session, id]);
+    }, [session, idOrSlug]);
 
     const isInfiniteRoom = useMemo(() => {
         const raw = session?.schedule;
@@ -534,6 +561,8 @@ export default function RoomPageIFrame() {
         setApiReady(false);
         if (iframeContainerRef.current) iframeContainerRef.current.innerHTML = "";
         setLastErr("");
+        setCapacityError(null);
+        capacityTriggeredRef.current = false;
         setJitsiKey((x) => x + 1);
     };
 
@@ -594,100 +623,157 @@ export default function RoomPageIFrame() {
     };
 
     // ============================================
-    // LOAD SESSION + BUILD STAGES
+    // LOAD SESSION + BUILD STAGES (UUID OR SLUG)
     // ============================================
     useEffect(() => {
         (async () => {
-            if (!id) return;
+            if (!idOrSlug) return;
 
-            const { data, error } = await supabase
-                .from("sessions")
-                .select("*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)")
-                .eq("id", id)
-                .single();
+            setLoading(true);
 
-            if (data && !error) {
-                setSession(data);
+            const selectStr =
+                "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)";
 
-                setStages([]);
-                setStagebarCycleSeconds(undefined);
-                setStagebarStartTime("");
+            try {
+                const isUuid = UUID_RE.test(idOrSlug);
+                const slug = sanitizeSlug(idOrSlug);
 
-                const fallbackStart = String(data?.start_time || data?.created_at || new Date().toISOString());
+                const q = supabase.from("sessions").select(selectStr);
 
-                let parsed: any = safeParseJson(data.schedule);
+                const { data, error } = isUuid
+                    ? await q.eq("id", idOrSlug).single()
+                    : await q.eq("custom_slug", slug).single();
 
-                // 50/50/50 legacy shorthand -> treat like infinite
-                if (!parsed) {
-                    const t = parse50505(data.schedule);
-                    if (t) {
-                        parsed = {
-                            kind: "infinite_room",
-                            timer: { phases: { focus: t.focus, break: t.break, intentions: t.intentions } },
-                            anchor_ts: data?.start_time || data?.created_at || fallbackStart,
-                        };
-                    }
-                }
+                if (data && !error) {
+                    setSession(data);
 
-                // ✅ unwrap Session Studio wrappers to get an array schedule if present
-                parsed = unwrapScheduleBlocks(parsed);
+                    setStages([]);
+                    setStagebarCycleSeconds(undefined);
+                    setStagebarStartTime("");
 
-                // legacy array schedule
-                if (Array.isArray(parsed)) {
-                    const formatted: Stage[] = parsed
-                        .map((b: any) => {
-                            const rawName = String(b?.name || b?.title || b?.label || b?.text || b?.key || "").trim();
+                    const fallbackStart = String(data?.start_time || data?.created_at || new Date().toISOString());
 
-                            const labelLower = rawName.toLowerCase();
-                            const rawType = String(b?.type || b?.kind || b?.stageType || "").toLowerCase().trim();
+                    let parsed: any = safeParseJson(data.schedule);
 
-                            const inferTypeFromText = (lower: string): Stage["type"] => {
-                                if (lower.includes("welcome") || lower.includes("intro")) return "intro";
-                                if (lower.includes("intention") || lower.includes("checkin") || lower.includes("check-in")) return "intentions";
-                                if (lower.includes("break") || lower.includes("rest") || lower.includes("pause")) return "break";
-                                if (lower.includes("outro") || lower.includes("wrap") || lower.includes("farewell") || lower.includes("end")) return "outro";
-                                if (lower.includes("focus")) return "focus";
-                                return "focus";
+                    // 50/50/50 legacy shorthand -> treat like infinite
+                    if (!parsed) {
+                        const t = parse50505(data.schedule);
+                        if (t) {
+                            parsed = {
+                                kind: "infinite_room",
+                                timer: { phases: { focus: t.focus, break: t.break, intentions: t.intentions } },
+                                anchor_ts: data?.start_time || data?.created_at || fallbackStart,
                             };
+                        }
+                    }
 
-                            const type: Stage["type"] =
-                                rawType && rawType !== "stage" && rawType !== "block"
-                                    ? inferTypeFromText(rawType)
-                                    : inferTypeFromText(labelLower);
+                    parsed = unwrapScheduleBlocks(parsed);
 
-                            // seconds first (if provided)
-                            const secondsExplicit =
-                                Number(b?.seconds) ||
-                                Number(b?.duration_seconds) ||
-                                Number(b?.durationSeconds) ||
-                                Number(b?.duration_sec) ||
-                                0;
+                    // legacy array schedule
+                    if (Array.isArray(parsed)) {
+                        const formatted: Stage[] = parsed
+                            .map((b: any) => {
+                                const rawName = String(b?.name || b?.title || b?.label || b?.text || b?.key || "").trim();
 
-                            // minutes-like fields
-                            const minsLike =
-                                Number(b?.minutes) ||
-                                Number(b?.mins) ||
-                                Number(b?.duration_minutes) ||
-                                Number(b?.durationMinutes) ||
-                                0;
+                                const labelLower = rawName.toLowerCase();
+                                const rawType = String(b?.type || b?.kind || b?.stageType || "").toLowerCase().trim();
 
-                            // duration might be minutes or seconds depending on source
-                            const n = typeof b === "number" ? b : Number(b?.duration ?? b?.value ?? 0);
+                                const inferTypeFromText = (lower: string): Stage["type"] => {
+                                    if (lower.includes("welcome") || lower.includes("intro")) return "intro";
+                                    if (lower.includes("intention") || lower.includes("checkin") || lower.includes("check-in")) return "intentions";
+                                    if (lower.includes("break") || lower.includes("rest") || lower.includes("pause")) return "break";
+                                    if (lower.includes("outro") || lower.includes("wrap") || lower.includes("farewell") || lower.includes("end")) return "outro";
+                                    if (lower.includes("focus")) return "focus";
+                                    return "focus";
+                                };
 
-                            let durationSeconds = 0;
+                                const type: Stage["type"] =
+                                    rawType && rawType !== "stage" && rawType !== "block"
+                                        ? inferTypeFromText(rawType)
+                                        : inferTypeFromText(labelLower);
 
-                            if (secondsExplicit > 0) {
-                                durationSeconds = secondsExplicit;
-                            } else if (minsLike > 0) {
-                                durationSeconds = minsLike * 60;
-                            } else if (Number.isFinite(n) && n > 0) {
-                                // heuristic: <=180 => minutes, else seconds
-                                durationSeconds = n <= 180 ? n * 60 : n;
-                            }
+                                const secondsExplicit =
+                                    Number(b?.seconds) ||
+                                    Number(b?.duration_seconds) ||
+                                    Number(b?.durationSeconds) ||
+                                    Number(b?.duration_sec) ||
+                                    0;
 
-                            if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return null;
+                                const minsLike =
+                                    Number(b?.minutes) ||
+                                    Number(b?.mins) ||
+                                    Number(b?.duration_minutes) ||
+                                    Number(b?.durationMinutes) ||
+                                    0;
 
-                            const minutes = Math.max(1, Math.round(durationSeconds / 60));
+                                const n = typeof b === "number" ? b : Number(b?.duration ?? b?.value ?? 0);
+
+                                let durationSeconds = 0;
+
+                                if (secondsExplicit > 0) {
+                                    durationSeconds = secondsExplicit;
+                                } else if (minsLike > 0) {
+                                    durationSeconds = minsLike * 60;
+                                } else if (Number.isFinite(n) && n > 0) {
+                                    durationSeconds = n <= 180 ? n * 60 : n;
+                                }
+
+                                if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return null;
+
+                                const minutes = Math.max(1, Math.round(durationSeconds / 60));
+
+                                const displayName =
+                                    type === "focus"
+                                        ? "Focus"
+                                        : type === "intentions"
+                                            ? "Intentions (spoken)"
+                                            : type === "break"
+                                                ? "Break"
+                                                : type === "intro"
+                                                    ? "Welcome"
+                                                    : type === "outro"
+                                                        ? "Outro"
+                                                        : rawName || "Stage";
+
+                                return {
+                                    name: displayName,
+                                    duration: minutes,
+                                    durationSeconds,
+                                    color: STAGE_COLORS[type] || "#F63135",
+                                    type,
+                                } as Stage;
+                            })
+                            .filter(Boolean) as Stage[];
+
+                        setStages(formatted);
+                        setStagebarStartTime(String(data.start_time || fallbackStart));
+                        setStagebarCycleSeconds(undefined);
+                    }
+
+                    // infinite object schedule
+                    const isInfiniteScheduleObject =
+                        parsed &&
+                        typeof parsed === "object" &&
+                        !Array.isArray(parsed) &&
+                        (String((parsed as any)?.kind || "").toLowerCase().includes("infinite") ||
+                            (parsed as any)?.timer?.phases ||
+                            (parsed as any)?.timer?.segments ||
+                            (parsed as any)?.phases ||
+                            (parsed as any)?.segments);
+
+                    if (isInfiniteScheduleObject) {
+                        const phasesRaw =
+                            (parsed as any)?.timer?.phases ||
+                            (parsed as any)?.timer?.segments ||
+                            (parsed as any)?.phases ||
+                            (parsed as any)?.segments ||
+                            null;
+
+                        const phases = normalizeInfinitePhases(phasesRaw);
+
+                        const formatted: Stage[] = phases.map((p) => {
+                            const lower = String(p.name || "").toLowerCase();
+                            const type = phaseToStageType(lower);
 
                             const displayName =
                                 type === "focus"
@@ -696,103 +782,54 @@ export default function RoomPageIFrame() {
                                         ? "Intentions (spoken)"
                                         : type === "break"
                                             ? "Break"
-                                            : type === "intro"
-                                                ? "Welcome"
-                                                : type === "outro"
-                                                    ? "Outro"
-                                                    : rawName || "Stage";
+                                            : String(p.name || "Stage");
+
+                            const seconds = Number(p.seconds) || 0;
+                            const minutes = Math.max(1, Math.round(seconds / 60));
 
                             return {
                                 name: displayName,
                                 duration: minutes,
-                                durationSeconds,
                                 color: STAGE_COLORS[type] || "#F63135",
                                 type,
-                            } as Stage;
-                        })
-                        .filter(Boolean) as Stage[];
+                                durationSeconds: seconds,
+                            };
+                        });
 
-                    setStages(formatted);
-                    setStagebarStartTime(String(data.start_time || fallbackStart));
-                    setStagebarCycleSeconds(undefined);
+                        setStages(formatted);
+
+                        const anchor = String(
+                            (parsed as any)?.anchor_ts || (parsed as any)?.anchorTs || data?.start_time || fallbackStart
+                        );
+                        setStagebarStartTime(anchor);
+
+                        const sumSeconds = phases.reduce((acc, p) => acc + (Number(p.seconds) || 0), 0);
+
+                        let cycleSeconds =
+                            Number((parsed as any)?.timer?.cycle_seconds) ||
+                            Number((parsed as any)?.timer?.cycleSeconds) ||
+                            Number((parsed as any)?.cycle_seconds) ||
+                            Number((parsed as any)?.cycleSeconds) ||
+                            0;
+
+                        if (!cycleSeconds || cycleSeconds <= 0) cycleSeconds = sumSeconds;
+                        if (cycleSeconds < sumSeconds) cycleSeconds = sumSeconds;
+
+                        setStagebarCycleSeconds(Math.max(1, cycleSeconds));
+                    }
+
+                    if (!parsed) setStagebarStartTime(fallbackStart);
+                } else {
+                    setSession(null);
                 }
-
-                // infinite object schedule
-                const isInfiniteScheduleObject =
-                    parsed &&
-                    typeof parsed === "object" &&
-                    !Array.isArray(parsed) &&
-                    (String((parsed as any)?.kind || "").toLowerCase().includes("infinite") ||
-                        (parsed as any)?.timer?.phases ||
-                        (parsed as any)?.timer?.segments ||
-                        (parsed as any)?.phases ||
-                        (parsed as any)?.segments);
-
-                if (isInfiniteScheduleObject) {
-                    const phasesRaw =
-                        (parsed as any)?.timer?.phases ||
-                        (parsed as any)?.timer?.segments ||
-                        (parsed as any)?.phases ||
-                        (parsed as any)?.segments ||
-                        null;
-
-                    const phases = normalizeInfinitePhases(phasesRaw);
-
-                    const formatted: Stage[] = phases.map((p) => {
-                        const lower = String(p.name || "").toLowerCase();
-                        const type = phaseToStageType(lower);
-
-                        const displayName =
-                            type === "focus"
-                                ? "Focus"
-                                : type === "intentions"
-                                    ? "Intentions (spoken)"
-                                    : type === "break"
-                                        ? "Break"
-                                        : String(p.name || "Stage");
-
-                        const seconds = Number(p.seconds) || 0;
-                        const minutes = Math.max(1, Math.round(seconds / 60));
-
-                        return {
-                            name: displayName,
-                            duration: minutes,
-                            color: STAGE_COLORS[type] || "#F63135",
-                            type,
-                            durationSeconds: seconds,
-                        };
-                    });
-
-                    setStages(formatted);
-
-                    const anchor = String(
-                        (parsed as any)?.anchor_ts || (parsed as any)?.anchorTs || data?.start_time || fallbackStart
-                    );
-                    setStagebarStartTime(anchor);
-
-                    const sumSeconds = phases.reduce((acc, p) => acc + (Number(p.seconds) || 0), 0);
-
-                    let cycleSeconds =
-                        Number((parsed as any)?.timer?.cycle_seconds) ||
-                        Number((parsed as any)?.timer?.cycleSeconds) ||
-                        Number((parsed as any)?.cycle_seconds) ||
-                        Number((parsed as any)?.cycleSeconds) ||
-                        0;
-
-                    if (!cycleSeconds || cycleSeconds <= 0) cycleSeconds = sumSeconds;
-                    if (cycleSeconds < sumSeconds) cycleSeconds = sumSeconds;
-
-                    setStagebarCycleSeconds(Math.max(1, cycleSeconds));
-                }
-
-                if (!parsed) setStagebarStartTime(fallbackStart);
-            } else {
+            } catch (e) {
+                console.log("Failed to load session:", e);
                 setSession(null);
+            } finally {
+                setLoading(false);
             }
-
-            setLoading(false);
         })();
-    }, [id]);
+    }, [idOrSlug]);
 
     // ============================================
     // RESOLVE USER NAME (no prompt)
@@ -913,10 +950,10 @@ export default function RoomPageIFrame() {
     }, [stagebarStartTime, stages, isSilentRoom, isInfiniteRoom, stagebarCycleSeconds]);
 
     // ============================================
-    // JITSI INIT (External API) with session domain + fallback
+    // JITSI INIT + capacity enforcement
     // ============================================
     useEffect(() => {
-        if (!session || !id) return;
+        if (!session || !idOrSlug) return;
         if (!iframeContainerRef.current) return;
         if (!userName) return;
 
@@ -937,6 +974,40 @@ export default function RoomPageIFrame() {
             destroyed = true;
             cleanup();
             navigate("/sessions", { replace: true });
+        };
+
+        const getApproxParticipants = (api: any): number | null => {
+            const counts: number[] = [];
+            try {
+                const n = api?.getNumberOfParticipants?.();
+                if (Number.isFinite(n)) counts.push(Number(n));
+            } catch { }
+            try {
+                const info = api?.getParticipantsInfo?.();
+                if (Array.isArray(info)) counts.push(info.length + 1); // remote + local
+            } catch { }
+            if (!counts.length) return null;
+            return Math.max(...counts);
+        };
+
+        const enforceCapacity = (api: any, why: string) => {
+            if (capacityTriggeredRef.current) return;
+            const count = getApproxParticipants(api);
+            if (count == null) return;
+
+            if (count > maxParticipants) {
+                capacityTriggeredRef.current = true;
+                setCapacityError(`Room is full (max ${maxParticipants}).`);
+                console.log("[capacity] over limit:", { why, count, maxParticipants });
+
+                window.setTimeout(() => {
+                    try {
+                        api?.executeCommand?.("hangup");
+                    } catch {
+                        navigate("/sessions", { replace: true });
+                    }
+                }, 900);
+            }
         };
 
         (async () => {
@@ -961,12 +1032,14 @@ export default function RoomPageIFrame() {
 
                 apiRef.current = api;
                 setApiReady(false);
+                setCapacityError(null);
+                capacityTriggeredRef.current = false;
 
-                // ✅ Best-effort: persist chosen domain to DB (do NOT block join)
+                // ✅ persist chosen domain to DB (do NOT block join)
                 try {
                     const prev = String(session?.jitsi_domain || "").trim();
-                    if (id && domain && prev !== domain) {
-                        supabase.from("sessions").update({ jitsi_domain: domain }).eq("id", id);
+                    if (session?.id && domain && prev !== domain) {
+                        supabase.from("sessions").update({ jitsi_domain: domain }).eq("id", session.id);
                     }
                 } catch { }
 
@@ -991,16 +1064,24 @@ export default function RoomPageIFrame() {
                     if (destroyed) return;
                     setApiReady(true);
 
-                    // ✅ Ensure tile view ON by default (belt & suspenders)
+                    // tile view ON
                     try {
                         api.executeCommand("setTileView", true);
                         setTile(true);
                     } catch { }
 
-                    // ✅ Clear subject again (some builds re-apply it)
+                    // clear subject
                     try {
                         api.executeCommand("subject", "");
                     } catch { }
+
+                    // enforce capacity after join (so we can count)
+                    enforceCapacity(api, "videoConferenceJoined");
+                });
+
+                api.addEventListener?.("participantJoined", () => {
+                    if (destroyed) return;
+                    enforceCapacity(api, "participantJoined");
                 });
 
                 api.addEventListener?.("videoConferenceLeft", () => {
@@ -1008,13 +1089,11 @@ export default function RoomPageIFrame() {
                     setApiReady(false);
                 });
 
-                // Tile view on start (best-effort)
+                // initial commands
                 try {
                     api.executeCommand("setTileView", true);
                     setTile(true);
                 } catch { }
-
-                // Clear subject early too
                 try {
                     api.executeCommand("subject", "");
                 } catch { }
@@ -1059,7 +1138,7 @@ export default function RoomPageIFrame() {
             cleanup();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [session, id, userName, roomName, navigate, jitsiKey]);
+    }, [session, idOrSlug, userName, roomName, navigate, jitsiKey, maxParticipants]);
 
     // ============================================
     // Controls (bottom bar)
@@ -1147,17 +1226,20 @@ export default function RoomPageIFrame() {
         );
     }
 
+    const sessionId = String(session?.id || "");
+
     return (
         <div className={`min-h-screen ${pageBg}`}>
             <div className="w-full px-3 sm:px-5 pt-5 pb-[calc(110px+env(safe-area-inset-bottom))] flex flex-col gap-5 min-h-screen">
                 {/* TOP BAR */}
                 <div className={`flex w-full rounded-2xl overflow-hidden ${topBarBg}`}>
-                    {/* ✅ min-w-0 is critical so StageBar can shrink on small widths */}
                     <div className="flex-1 min-w-0 px-4 sm:px-6 py-4">
                         <div className="flex items-start justify-between gap-3 sm:gap-4">
                             <div className="min-w-0">
                                 <p className={`font-inter font-semibold text-[18px] truncate ${strongText}`}>{session.title}</p>
-                                <p className={`font-inter text-[13px] ${subtleText}`}>{isSilentRoom ? "Silent room" : "Video session"}</p>
+                                <p className={`font-inter text-[13px] ${subtleText}`}>
+                                    {isSilentRoom ? "Silent room" : "Video session"} · max {maxParticipants}
+                                </p>
                             </div>
 
                             <div className="flex items-center gap-2 shrink-0">
@@ -1247,6 +1329,26 @@ export default function RoomPageIFrame() {
                             }`}
                     >
                         <div ref={iframeContainerRef} className="w-full h-full min-h-[60vh]" />
+
+                        {capacityError && (
+                            <div className="absolute inset-0 z-40 flex items-center justify-center p-6 bg-black/55">
+                                <div className="max-w-md w-full bg-white rounded-2xl p-5 shadow-2xl">
+                                    <div className="font-inter font-semibold text-[16px] text-brandBlack">Room is full</div>
+                                    <div className="mt-1 font-inter text-[13px] text-gray-600">
+                                        {capacityError} You’ll be redirected.
+                                    </div>
+                                    <div className="mt-4 flex gap-2 justify-end">
+                                        <button
+                                            onClick={() => navigate("/sessions")}
+                                            className="px-4 py-2 rounded-xl bg-black text-white font-inter text-[13px] hover:bg-black/90"
+                                        >
+                                            Back to sessions
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {lastErr && (
                             <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow z-30">
                                 {lastErr}
@@ -1276,7 +1378,9 @@ export default function RoomPageIFrame() {
                                         </button>
                                     </div>
 
-                                    <div className="p-4 h-[calc(100%-64px)]">{id ? <ChatPanel sessionId={id} theme={theme} /> : null}</div>
+                                    <div className="p-4 h-[calc(100%-64px)]">
+                                        {sessionId ? <ChatPanel sessionId={sessionId} theme={theme} /> : null}
+                                    </div>
                                 </div>
                             )}
 

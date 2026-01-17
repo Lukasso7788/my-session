@@ -1,5 +1,5 @@
 // src/components/CreateSessionModal.tsx
-// Full file replacement (adds Session Timeline + fixes Create button logic for Studio)
+// Full file replacement (adds Custom link slug + Max participants + keeps Session Timeline + fixes Create button logic for Studio)
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import {
@@ -11,6 +11,8 @@ import {
   Wand2,
   RotateCcw,
   Eraser,
+  Link2,
+  Users,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import type { SessionTemplate } from "../types/session";
@@ -68,6 +70,39 @@ function nowLocalForDatetimeInput(): string {
 }
 
 // ===============================
+// Custom slug helpers
+// ===============================
+const SLUG_MIN = 3;
+const SLUG_MAX = 40;
+
+// allowed: a-z 0-9 - _
+function sanitizeSlug(input: string) {
+  const raw = String(input || "").trim().toLowerCase();
+  // replace spaces with dash, then drop disallowed chars
+  const spaced = raw.replace(/\s+/g, "-");
+  const clean = spaced.replace(/[^a-z0-9-_]/g, "");
+  return clean;
+}
+
+function isValidSlug(slug: string) {
+  if (!slug) return true; // empty = not used
+  if (slug.length < SLUG_MIN || slug.length > SLUG_MAX) return false;
+  // must start with alnum, then alnum/_/-
+  return /^[a-z0-9][a-z0-9-_]*$/.test(slug);
+}
+
+// ===============================
+// participants limit helpers
+// ===============================
+const DEFAULT_MAX_PARTICIPANTS = 16;
+const MIN_PARTICIPANTS = 3;
+const MAX_PARTICIPANTS = 64;
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+// ===============================
 // SESSION STUDIO (builder) types
 // ===============================
 type StudioBlockKind =
@@ -94,10 +129,6 @@ function uid() {
   const c: any = (globalThis as any)?.crypto;
   if (c?.randomUUID) return c.randomUUID();
   return `b_${Math.random().toString(36).slice(2)}_${Date.now().toString(36)}`;
-}
-
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n));
 }
 
 function safeJson(raw: any) {
@@ -290,7 +321,6 @@ function SessionTimeline({ blocks }: { blocks: StudioBlock[] }) {
 
       {/* pill bar */}
       <div className="mt-2 border border-gray-200 rounded-[999px] overflow-hidden bg-gray-50">
-        {/* 👇 thickness control: change h-3 / h-4 / h-5 */}
         <div className="flex h-3">
           {blocks.length === 0 ? (
             <div className="w-full h-full flex items-center justify-center text-[12px] text-gray-500 font-inter">
@@ -299,7 +329,7 @@ function SessionTimeline({ blocks }: { blocks: StudioBlock[] }) {
           ) : (
             blocks.map((b) => {
               const mins = clamp(Number(b.minutes) || 1, 1, 24 * 60);
-              const showText = mins >= 10; // avoid cramped labels
+              const showText = mins >= 10;
               return (
                 <div
                   key={b.id}
@@ -321,7 +351,6 @@ function SessionTimeline({ blocks }: { blocks: StudioBlock[] }) {
         </div>
       </div>
 
-      {/* optional breakdown (kept compact) */}
       {blocks.length > 0 && (
         <details className="mt-2">
           <summary className="cursor-pointer select-none text-[12px] text-gray-600 font-inter hover:text-gray-800">
@@ -367,6 +396,17 @@ export function CreateSessionModal({
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // ---------- Custom link slug ----------
+  const [customSlugInput, setCustomSlugInput] = useState("");
+  const sanitizedSlug = useMemo(
+    () => sanitizeSlug(customSlugInput),
+    [customSlugInput]
+  );
+  const slugValid = useMemo(() => isValidSlug(sanitizedSlug), [sanitizedSlug]);
+  const [slugStatus, setSlugStatus] = useState<
+    "idle" | "invalid" | "checking" | "taken" | "available"
+  >("idle");
+
   // ---------- JITSI DOMAIN (AUTO + OPTIONAL MANUAL) ----------
   const autoGuess = useMemo(() => guessJitsiDomainByTimezone(), [isOpen]);
   const [useAutoDomain, setUseAutoDomain] = useState(true);
@@ -379,11 +419,72 @@ export function CreateSessionModal({
     setManualDomain(autoGuess.domain);
   }, [isOpen, autoGuess.domain]);
 
-  const effectiveDomain: JitsiDomain = useAutoDomain ? autoGuess.domain : manualDomain;
+  const effectiveDomain: JitsiDomain = useAutoDomain
+    ? autoGuess.domain
+    : manualDomain;
 
   // ---------- SESSION STUDIO ----------
   const [studioEnabled, setStudioEnabled] = useState(false);
   const [studioBlocks, setStudioBlocks] = useState<StudioBlock[]>([]);
+
+  // ✅ max participants (Studio can customize)
+  const [maxParticipants, setMaxParticipants] = useState<number>(
+    DEFAULT_MAX_PARTICIPANTS
+  );
+
+  useEffect(() => {
+    if (!isOpen) return;
+    // reset every time modal opens
+    setMaxParticipants(DEFAULT_MAX_PARTICIPANTS);
+    setCustomSlugInput("");
+    setSlugStatus("idle");
+  }, [isOpen]);
+
+  useEffect(() => {
+    // when Studio OFF: force default 16
+    if (!studioEnabled) setMaxParticipants(DEFAULT_MAX_PARTICIPANTS);
+  }, [studioEnabled]);
+
+  // slug availability check (best-effort)
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const s = sanitizedSlug;
+
+    if (!s) {
+      setSlugStatus("idle");
+      return;
+    }
+
+    if (!slugValid) {
+      setSlugStatus("invalid");
+      return;
+    }
+
+    setSlugStatus("checking");
+    const t = window.setTimeout(async () => {
+      try {
+        const { data, error } = await supabase
+          .from("sessions")
+          .select("id")
+          .eq("custom_slug", s)
+          .limit(1);
+
+        if (error) {
+          console.log("[slug] availability check error:", error);
+          setSlugStatus("idle");
+          return;
+        }
+
+        setSlugStatus(data && data.length > 0 ? "taken" : "available");
+      } catch (e) {
+        console.log("[slug] availability check exception:", e);
+        setSlugStatus("idle");
+      }
+    }, 450);
+
+    return () => window.clearTimeout(t);
+  }, [sanitizedSlug, slugValid, isOpen]);
 
   const studioTotal = useMemo(
     () => studioBlocks.reduce((sum, b) => sum + (Number(b.minutes) || 0), 0),
@@ -402,8 +503,20 @@ export function CreateSessionModal({
       setStudioBlocks(blocks);
     } else {
       setStudioBlocks([
-        { id: uid(), kind: "welcome", title: "Welcome", note: "Quick intro / rules / vibe", minutes: 3 },
-        { id: uid(), kind: "intentions", title: "Intentions", note: "Say what you’ll finish", minutes: 5 },
+        {
+          id: uid(),
+          kind: "welcome",
+          title: "Welcome",
+          note: "Quick intro / rules / vibe",
+          minutes: 3,
+        },
+        {
+          id: uid(),
+          kind: "intentions",
+          title: "Intentions",
+          note: "Say what you’ll finish",
+          minutes: 5,
+        },
         { id: uid(), kind: "focus", title: "Focus", note: "Deep work block", minutes: 50 },
         { id: uid(), kind: "recap", title: "Recap", note: "What got done / what’s next", minutes: 5 },
         { id: uid(), kind: "celebrate", title: "Celebrate", note: "Closure + positive finish", minutes: 3 },
@@ -523,8 +636,22 @@ export function CreateSessionModal({
       return;
     }
 
+    // slug validate
+    const finalSlug = sanitizedSlug;
+    if (finalSlug && !isValidSlug(finalSlug)) {
+      setError(`Custom link is invalid. Use ${SLUG_MIN}-${SLUG_MAX} chars: a-z, 0-9, - or _.`);
+      return;
+    }
+    if (finalSlug && slugStatus === "taken") {
+      setError("This custom link is already taken. Pick another one.");
+      return;
+    }
+    if (finalSlug && slugStatus === "checking") {
+      setError("Checking custom link… please wait 1 second and try again.");
+      return;
+    }
+
     // If Studio is ON and template isn't selected, silently pick a base template id (for DB compatibility).
-    // This prevents DB errors if template_id is NOT NULL.
     const baseTemplateId =
       selectedTemplate || (studioEnabled ? (templates[0]?.id ?? "") : "");
 
@@ -532,6 +659,11 @@ export function CreateSessionModal({
       setError("No templates found in database. Create at least one template first.");
       return;
     }
+
+    // max participants
+    const effectiveMaxParticipants = studioEnabled
+      ? clamp(Number(maxParticipants) || DEFAULT_MAX_PARTICIPANTS, MIN_PARTICIPANTS, MAX_PARTICIPANTS)
+      : DEFAULT_MAX_PARTICIPANTS;
 
     setIsCreating(true);
     setError(null);
@@ -574,7 +706,6 @@ export function CreateSessionModal({
           host_id: profile.id,
           host_name: profile.full_name,
 
-          // ✅ template_id still stored (auto-picks first template in Studio mode if none selected)
           template_id: baseTemplateId,
 
           start_time: scheduledISO,
@@ -585,6 +716,10 @@ export function CreateSessionModal({
           status: "planned",
           created_at: new Date().toISOString(),
           jitsi_domain: effectiveDomain,
+
+          // ✅ NEW:
+          max_participants: effectiveMaxParticipants,
+          custom_slug: finalSlug || null,
         },
       ]);
 
@@ -595,12 +730,22 @@ export function CreateSessionModal({
       setSelectedTemplate("");
       setStudioEnabled(false);
       setStudioBlocks([]);
+      setMaxParticipants(DEFAULT_MAX_PARTICIPANTS);
+      setCustomSlugInput("");
+      setSlugStatus("idle");
 
       onSessionCreated();
       onClose();
     } catch (err: any) {
       console.error("❌ Error creating session:", err);
-      setError(err.message || "Failed to create session");
+
+      // optional: friendly message for unique constraint
+      const msg = String(err?.message || "");
+      if (msg.toLowerCase().includes("custom_slug") && msg.toLowerCase().includes("duplicate")) {
+        setError("This custom link is already taken. Pick another one.");
+      } else {
+        setError(err.message || "Failed to create session");
+      }
     } finally {
       setIsCreating(false);
     }
@@ -614,7 +759,6 @@ export function CreateSessionModal({
   const effectiveDomainLabel =
     JITSI_DOMAINS.find((d) => d.value === effectiveDomain)?.label || effectiveDomain;
 
-  // ✅ expands to near-fullscreen when Session Studio enabled
   const panelClass = studioEnabled
     ? "bg-white w-[calc(100vw-24px)] h-[calc(100vh-24px)] max-w-none max-h-none rounded-[20px] shadow-2xl flex flex-col overflow-hidden"
     : "bg-white rounded-[16px] p-6 w-full max-w-md shadow-xl";
@@ -622,6 +766,34 @@ export function CreateSessionModal({
   const overlayClass = studioEnabled
     ? "fixed inset-0 bg-black/50 z-50 p-3 md:p-4 flex items-center justify-center"
     : "fixed inset-0 bg-black/50 flex items-center justify-center z-50";
+
+  const origin =
+    typeof window !== "undefined" && window.location?.origin
+      ? window.location.origin
+      : "";
+
+  const linkPreview = sanitizedSlug
+    ? `${origin}/room/${sanitizedSlug}`
+    : `${origin}/room/<your-link>`;
+
+  const slugHint = !customSlugInput
+    ? "Optional. Your own short link instead of UUID."
+    : slugStatus === "invalid"
+      ? `Invalid. Use ${SLUG_MIN}-${SLUG_MAX} chars: a-z, 0-9, - or _.`
+      : slugStatus === "checking"
+        ? "Checking availability…"
+        : slugStatus === "taken"
+          ? "Taken. Pick another."
+          : slugStatus === "available"
+            ? "Available ✓"
+            : "";
+
+  const slugHintColor =
+    slugStatus === "taken" || slugStatus === "invalid"
+      ? "text-red-600"
+      : slugStatus === "available"
+        ? "text-emerald-600"
+        : "text-gray-500";
 
   return (
     <div className={overlayClass}>
@@ -679,6 +851,42 @@ export function CreateSessionModal({
                   min={minDateTime}
                   className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter"
                 />
+              </div>
+
+              {/* Custom link */}
+              <div className="border border-gray-200 rounded-[18px] bg-white p-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-[14px] bg-[#111827] text-white flex items-center justify-center">
+                    <Link2 size={18} />
+                  </div>
+
+                  <div className="flex-1">
+                    <div className="font-inter font-semibold text-[14px] text-brandBlack">
+                      Custom session link
+                    </div>
+                    <div className="font-inter text-[12px] text-gray-500">
+                      {slugHint || "Optional. Your own short link instead of UUID."}
+                    </div>
+
+                    <div className="mt-3">
+                      <input
+                        value={customSlugInput}
+                        onChange={(e) => setCustomSlugInput(e.target.value)}
+                        placeholder="e.g., yaro-deep-work"
+                        className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter"
+                      />
+
+                      <div className="mt-2 flex items-center justify-between gap-3">
+                        <div className={`text-[12px] font-inter ${slugHintColor}`}>
+                          {customSlugInput ? slugHint : "Allowed: a-z, 0-9, - or _. Lowercase."}
+                        </div>
+                        <div className="text-[12px] font-inter text-gray-500 truncate">
+                          {linkPreview}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* JITSI REGION */}
@@ -771,7 +979,6 @@ export function CreateSessionModal({
                   )}
                 </div>
 
-                {/* ✅ small hint: template becomes optional when Studio ON */}
                 {studioEnabled && (
                   <p className="mt-2 text-[12px] text-gray-500 font-inter">
                     Tip: when Session Studio is enabled, selecting a format is optional.
@@ -823,14 +1030,62 @@ export function CreateSessionModal({
                   </label>
 
                   <div className="text-[12px] text-gray-600 font-inter">
-                    Length:{" "}
-                    <span className="font-semibold">{studioTotal}</span> min
+                    Length: <span className="font-semibold">{studioTotal}</span> min
                   </div>
                 </div>
 
                 <div className="mt-2 text-[12px] text-gray-500 font-inter">
                   Script saved into{" "}
                   <span className="font-medium">sessions.schedule</span>
+                </div>
+
+                {/* ✅ Participant limit */}
+                <div className="mt-4 border border-gray-200 rounded-[16px] p-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-9 h-9 rounded-[12px] bg-black/5 flex items-center justify-center">
+                      <Users size={16} />
+                    </div>
+                    <div className="flex-1">
+                      <div className="font-inter font-semibold text-[13px] text-brandBlack">
+                        Participant limit
+                      </div>
+                      <div className="font-inter text-[12px] text-gray-500">
+                        Default for all templates is {DEFAULT_MAX_PARTICIPANTS}. Studio can set {MIN_PARTICIPANTS}–{MAX_PARTICIPANTS}.
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={MIN_PARTICIPANTS}
+                      max={MAX_PARTICIPANTS}
+                      value={maxParticipants}
+                      disabled={!studioEnabled}
+                      onChange={(e) =>
+                        setMaxParticipants(
+                          clamp(
+                            Number(e.target.value) || DEFAULT_MAX_PARTICIPANTS,
+                            MIN_PARTICIPANTS,
+                            MAX_PARTICIPANTS
+                          )
+                        )
+                      }
+                      className={
+                        "w-28 px-3 py-2 border rounded-[14px] font-inter text-center " +
+                        (studioEnabled
+                          ? "border-gray-300"
+                          : "border-gray-200 bg-gray-50 text-gray-500")
+                      }
+                    />
+                    <span className="font-inter text-[12px] text-gray-600">people</span>
+
+                    {!studioEnabled && (
+                      <span className="ml-auto font-inter text-[12px] text-gray-500">
+                        (Locked at {DEFAULT_MAX_PARTICIPANTS} when Studio is off)
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* ✅ Timeline appears only when Studio enabled */}
@@ -1073,10 +1328,9 @@ export function CreateSessionModal({
               disabled={
                 !title ||
                 !scheduledAt ||
-                // ✅ FIX: require template only when Studio OFF
                 (!studioEnabled && !selectedTemplate) ||
-                // Studio ON requires blocks
                 (studioEnabled && studioBlocks.length === 0) ||
+                (sanitizedSlug ? !slugValid || slugStatus === "taken" || slugStatus === "checking" : false) ||
                 isCreating
               }
               className="w-full bg-brandBlack text-white py-3 rounded-[42px] font-medium text-[15px] font-inter hover:bg-black disabled:bg-gray-300 transition"
