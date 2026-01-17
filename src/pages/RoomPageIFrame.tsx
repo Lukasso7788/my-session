@@ -115,6 +115,29 @@ function parse50505(raw: any): { focus: number; break: number; intentions: numbe
     return { focus, break: br, intentions };
 }
 
+// ✅ Session Studio / builder wrappers can be like { blocks: [...] } / { agenda: [...] } etc
+function unwrapScheduleBlocks(parsed: any): any {
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return parsed;
+
+    const candidates: any[] = [
+        (parsed as any)?.blocks,
+        (parsed as any)?.script,
+        (parsed as any)?.agenda,
+        (parsed as any)?.items,
+        (parsed as any)?.stages,
+        (parsed as any)?.data?.blocks,
+        (parsed as any)?.data?.script,
+        (parsed as any)?.data?.agenda,
+        (parsed as any)?.data?.items,
+        (parsed as any)?.data?.stages,
+    ];
+
+    for (const c of candidates) {
+        if (Array.isArray(c)) return c;
+    }
+    return parsed;
+}
+
 function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: number }[] {
     if (!anyPhases) return [];
 
@@ -439,7 +462,30 @@ export default function RoomPageIFrame() {
         });
     };
 
-    const roomName = useMemo(() => (id ? `session-${id}` : "session-unknown"), [id]);
+    // ✅ Room name: keep consistent with other room pages (jitsi_room_name / daily_room_url / fallback)
+    const roomName = useMemo(() => {
+        const fallback = id ? `session-${id}` : "session-unknown";
+
+        const rawFromDb = String(session?.jitsi_room_name || "").trim();
+        if (rawFromDb) {
+            const safe = rawFromDb.toLowerCase().replace(/[^a-z0-9-_]/g, "");
+            return safe || fallback;
+        }
+
+        const dailyUrl = String(session?.daily_room_url || "").trim();
+        if (dailyUrl) {
+            try {
+                const u = new URL(dailyUrl);
+                const path = String(u.pathname || "").replace(/^\//, "").split("/")[0] || "";
+                const safe = path.toLowerCase().replace(/[^a-z0-9-_]/g, "");
+                return safe || fallback;
+            } catch {
+                // ignore
+            }
+        }
+
+        return fallback;
+    }, [session, id]);
 
     const isInfiniteRoom = useMemo(() => {
         const raw = session?.schedule;
@@ -571,6 +617,7 @@ export default function RoomPageIFrame() {
 
                 let parsed: any = safeParseJson(data.schedule);
 
+                // 50/50/50 legacy shorthand -> treat like infinite
                 if (!parsed) {
                     const t = parse50505(data.schedule);
                     if (t) {
@@ -582,33 +629,88 @@ export default function RoomPageIFrame() {
                     }
                 }
 
+                // ✅ unwrap Session Studio wrappers to get an array schedule if present
+                parsed = unwrapScheduleBlocks(parsed);
+
                 // legacy array schedule
                 if (Array.isArray(parsed)) {
                     const formatted: Stage[] = parsed
                         .map((b: any) => {
-                            const lower = String(b?.name || "").toLowerCase();
+                            const rawName = String(b?.name || b?.title || b?.label || b?.text || b?.key || "").trim();
+
+                            const labelLower = rawName.toLowerCase();
+                            const rawType = String(b?.type || b?.kind || b?.stageType || "").toLowerCase().trim();
+
+                            const inferTypeFromText = (lower: string): Stage["type"] => {
+                                if (lower.includes("welcome") || lower.includes("intro")) return "intro";
+                                if (lower.includes("intention") || lower.includes("checkin") || lower.includes("check-in")) return "intentions";
+                                if (lower.includes("break") || lower.includes("rest") || lower.includes("pause")) return "break";
+                                if (lower.includes("outro") || lower.includes("wrap") || lower.includes("farewell") || lower.includes("end")) return "outro";
+                                if (lower.includes("focus")) return "focus";
+                                return "focus";
+                            };
+
                             const type: Stage["type"] =
-                                b.type ||
-                                (lower.includes("welcome") || lower.includes("intro")
-                                    ? "intro"
-                                    : lower.includes("intention")
-                                        ? "intentions"
-                                        : lower.includes("focus")
-                                            ? "focus"
-                                            : lower.includes("break") || lower.includes("pause")
-                                                ? "break"
-                                                : lower.includes("farewell") || lower.includes("celebrat")
-                                                    ? "outro"
-                                                    : "focus");
+                                rawType && rawType !== "stage" && rawType !== "block"
+                                    ? inferTypeFromText(rawType)
+                                    : inferTypeFromText(labelLower);
+
+                            // seconds first (if provided)
+                            const secondsExplicit =
+                                Number(b?.seconds) ||
+                                Number(b?.duration_seconds) ||
+                                Number(b?.durationSeconds) ||
+                                Number(b?.duration_sec) ||
+                                0;
+
+                            // minutes-like fields
+                            const minsLike =
+                                Number(b?.minutes) ||
+                                Number(b?.mins) ||
+                                Number(b?.duration_minutes) ||
+                                Number(b?.durationMinutes) ||
+                                0;
+
+                            // duration might be minutes or seconds depending on source
+                            const n = typeof b === "number" ? b : Number(b?.duration ?? b?.value ?? 0);
+
+                            let durationSeconds = 0;
+
+                            if (secondsExplicit > 0) {
+                                durationSeconds = secondsExplicit;
+                            } else if (minsLike > 0) {
+                                durationSeconds = minsLike * 60;
+                            } else if (Number.isFinite(n) && n > 0) {
+                                // heuristic: <=180 => minutes, else seconds
+                                durationSeconds = n <= 180 ? n * 60 : n;
+                            }
+
+                            if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return null;
+
+                            const minutes = Math.max(1, Math.round(durationSeconds / 60));
+
+                            const displayName =
+                                type === "focus"
+                                    ? "Focus"
+                                    : type === "intentions"
+                                        ? "Intentions (spoken)"
+                                        : type === "break"
+                                            ? "Break"
+                                            : type === "intro"
+                                                ? "Welcome"
+                                                : type === "outro"
+                                                    ? "Outro"
+                                                    : rawName || "Stage";
 
                             return {
-                                name: b.name,
-                                duration: Number(b.minutes) || 0,
+                                name: displayName,
+                                duration: minutes,
+                                durationSeconds,
                                 color: STAGE_COLORS[type] || "#F63135",
                                 type,
-                            };
+                            } as Stage;
                         })
-                        .filter((s) => Number.isFinite(s.duration) && s.duration > 0);
+                        .filter(Boolean) as Stage[];
 
                     setStages(formatted);
                     setStagebarStartTime(String(data.start_time || fallbackStart));
@@ -663,7 +765,9 @@ export default function RoomPageIFrame() {
 
                     setStages(formatted);
 
-                    const anchor = String((parsed as any)?.anchor_ts || (parsed as any)?.anchorTs || data?.start_time || fallbackStart);
+                    const anchor = String(
+                        (parsed as any)?.anchor_ts || (parsed as any)?.anchorTs || data?.start_time || fallbackStart
+                    );
                     setStagebarStartTime(anchor);
 
                     const sumSeconds = phases.reduce((acc, p) => acc + (Number(p.seconds) || 0), 0);
@@ -857,6 +961,14 @@ export default function RoomPageIFrame() {
 
                 apiRef.current = api;
                 setApiReady(false);
+
+                // ✅ Best-effort: persist chosen domain to DB (do NOT block join)
+                try {
+                    const prev = String(session?.jitsi_domain || "").trim();
+                    if (id && domain && prev !== domain) {
+                        supabase.from("sessions").update({ jitsi_domain: domain }).eq("id", id);
+                    }
+                } catch { }
 
                 // Supported commands (best-effort)
                 try {
@@ -1128,11 +1240,7 @@ export default function RoomPageIFrame() {
                 </div>
 
                 {/* MAIN AREA */}
-                <div
-                    className={
-                        "grid gap-5 flex-1 min-h-0 " + (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
-                    }
-                >
+                <div className={"grid gap-5 flex-1 min-h-0 " + (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")}>
                     {/* VIDEO */}
                     <div
                         className={`rounded-2xl overflow-hidden min-h-0 relative ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
@@ -1155,9 +1263,7 @@ export default function RoomPageIFrame() {
                                         className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
                                             }`}
                                     >
-                                        <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>
-                                            Chat
-                                        </div>
+                                        <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Chat</div>
                                         <button
                                             onClick={() => openRightTab(null)}
                                             className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
