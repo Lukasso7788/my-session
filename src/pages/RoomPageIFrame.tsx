@@ -8,12 +8,11 @@
 // - ✅ Enforce participant limit from sessions.max_participants (default 16)
 // - ✅ Allow opening by UUID OR by sessions.custom_slug (no uuid cast error)
 //
-// Notes:
-// - CSS MUST be served from the SAME Jitsi domain, e.g.:
-//   https://meet-eu.mysession.club/jitsi-custom.css
-// - We pass it via configOverwrite.customCssUrl (absolute SAME-domain URL + cache-bust)
-// - ✅ Each session should store its chosen Jitsi domain in DB: sessions.jitsi_domain
-//   (all participants must join the same domain for the same room!)
+// Fixes in this version:
+// - ✅ Prevent "everyone gets kicked" when capacity is reached:
+//    * Only the *new joiner* self-leaves if over capacity (checked on videoConferenceJoined)
+//    * Host (if possible) kicks only the extra participant on participantJoined
+// - ✅ More reliable participant counting (no naive +1)
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -57,7 +56,6 @@ function sanitizeSlug(input: string) {
 // ===============================
 // JITSI DOMAINS (PRIMARY + FALLBACK)
 // ===============================
-// ✅ Your regional Jitsi servers
 const ALL_JITSI_DOMAINS = [
     "meet-eu.mysession.club",
     "meet-us-east.mysession.club",
@@ -66,25 +64,16 @@ const ALL_JITSI_DOMAINS = [
 
 type JitsiDomain = (typeof ALL_JITSI_DOMAINS)[number];
 
-// ✅ Decide the ordered domain list for the current session
 function domainsForSession(session: any): readonly string[] {
     const preferred = String(session?.jitsi_domain || "").trim();
-
     if (preferred && (ALL_JITSI_DOMAINS as readonly string[]).includes(preferred)) {
         return [preferred, ...ALL_JITSI_DOMAINS.filter((d) => d !== preferred)];
     }
-
-    // Default/fallback
     return ALL_JITSI_DOMAINS;
 }
 
-// ✅ Keep minimal mounted buttons (insurance that dialogs exist in some builds)
 const TOOLBAR_MOUNT_BUTTONS = ["settings"];
-
-// ✅ Show NONE in the iframe UI
 const TOOLBAR_VISIBLE_BUTTONS: string[] = [];
-
-// ✅ CSS file that hides native UI + kills watermark (must exist on each Jitsi domain root)
 const JITSI_CUSTOM_CSS_PATH = "/jitsi-custom.css";
 
 // ====== AUDIO ======
@@ -281,10 +270,8 @@ async function createJitsiApiWithFallback(args: {
         try {
             await loadJitsiExternalApi(domain);
 
-            // Clear container before creating iframe
             args.parentNode.innerHTML = "";
 
-            // ✅ SAME-domain CSS URL (+ cache bust)
             const cssUrl =
                 args.cssPathOnJitsiDomain && args.cssPathOnJitsiDomain.startsWith("/")
                     ? `https://${domain}${args.cssPathOnJitsiDomain}?v=${Date.now()}`
@@ -311,10 +298,8 @@ async function createJitsiApiWithFallback(args: {
                     startWithAudioMuted: false,
                     startWithVideoMuted: false,
 
-                    // ✅ Ensure tile view is default inside iframe
                     startWithTileView: true,
 
-                    // ✅ Kill “subject + timer” overlay
                     subject: "",
                     hideConferenceSubject: true,
                     hideConferenceTimer: true,
@@ -450,12 +435,18 @@ export default function RoomPageIFrame() {
 
     const [selectedUser, setSelectedUser] = useState<any>(null);
     const [userName, setUserName] = useState<string>("");
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
     const [lastErr, setLastErr] = useState<string>("");
 
-    // capacity enforcement
+    // capacity enforcement UI (only for the client who is being rejected)
     const [capacityError, setCapacityError] = useState<string | null>(null);
     const capacityTriggeredRef = useRef(false);
+    const localJoinedRef = useRef(false);
+    const localParticipantIdRef = useRef<string | null>(null);
+    const overLimitHitsRef = useRef(0);
+    const kickedIdsRef = useRef<Set<string>>(new Set());
+    const localIsModeratorRef = useRef<boolean>(false);
 
     // iframe state
     const [tile, setTile] = useState(true);
@@ -481,6 +472,11 @@ export default function RoomPageIFrame() {
             return tab;
         });
     };
+
+    const isHost = useMemo(() => {
+        const sid = String(session?.host_id || "");
+        return !!currentUserId && !!sid && currentUserId === sid;
+    }, [currentUserId, session?.host_id]);
 
     // ✅ max participants from DB (default 16)
     const maxParticipants = useMemo(() => {
@@ -561,8 +557,15 @@ export default function RoomPageIFrame() {
         setApiReady(false);
         if (iframeContainerRef.current) iframeContainerRef.current.innerHTML = "";
         setLastErr("");
+
         setCapacityError(null);
         capacityTriggeredRef.current = false;
+        localJoinedRef.current = false;
+        localParticipantIdRef.current = null;
+        overLimitHitsRef.current = 0;
+        kickedIdsRef.current = new Set();
+        localIsModeratorRef.current = false;
+
         setJitsiKey((x) => x + 1);
     };
 
@@ -839,6 +842,8 @@ export default function RoomPageIFrame() {
             const { data } = await supabase.auth.getUser();
             const u = data.user;
 
+            setCurrentUserId(u?.id || null);
+
             let name =
                 (u?.user_metadata?.full_name as string) ||
                 (u?.user_metadata?.name as string) ||
@@ -950,7 +955,7 @@ export default function RoomPageIFrame() {
     }, [stagebarStartTime, stages, isSilentRoom, isInfiniteRoom, stagebarCycleSeconds]);
 
     // ============================================
-    // JITSI INIT + capacity enforcement
+    // JITSI INIT + capacity enforcement (fixed)
     // ============================================
     useEffect(() => {
         if (!session || !idOrSlug) return;
@@ -958,6 +963,8 @@ export default function RoomPageIFrame() {
         if (!userName) return;
 
         let destroyed = false;
+
+        const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
         const cleanup = () => {
             stopWelcomeLoop();
@@ -967,6 +974,13 @@ export default function RoomPageIFrame() {
             } catch { }
             apiRef.current = null;
             supportedCmdsRef.current = null;
+
+            capacityTriggeredRef.current = false;
+            localJoinedRef.current = false;
+            localParticipantIdRef.current = null;
+            overLimitHitsRef.current = 0;
+            kickedIdsRef.current = new Set();
+            localIsModeratorRef.current = false;
         };
 
         const leaveToSessions = () => {
@@ -976,37 +990,133 @@ export default function RoomPageIFrame() {
             navigate("/sessions", { replace: true });
         };
 
-        const getApproxParticipants = (api: any): number | null => {
-            const counts: number[] = [];
-            try {
-                const n = api?.getNumberOfParticipants?.();
-                if (Number.isFinite(n)) counts.push(Number(n));
-            } catch { }
-            try {
-                const info = api?.getParticipantsInfo?.();
-                if (Array.isArray(info)) counts.push(info.length + 1); // remote + local
-            } catch { }
-            if (!counts.length) return null;
-            return Math.max(...counts);
+        const canUseKickCommand = () => {
+            const cmds = supportedCmdsRef.current;
+            if (!Array.isArray(cmds)) return true; // unknown -> try
+            return cmds.includes("kickParticipant");
         };
 
-        const enforceCapacity = (api: any, why: string) => {
+        const getParticipantCount = async (api: any): Promise<number | null> => {
+            // 1) Preferred: getNumberOfParticipants (sync)
+            try {
+                const n = api?.getNumberOfParticipants?.();
+                if (Number.isFinite(n) && Number(n) > 0) return Number(n);
+            } catch { }
+
+            // 2) getRoomsInfo (promise) - main room participants + maybe local
+            try {
+                const res = await api?.getRoomsInfo?.();
+                const rooms = Array.isArray(res) ? res : res?.rooms;
+                const main = Array.isArray(rooms) ? (rooms.find((r) => r?.isMainRoom) || rooms[0]) : null;
+                const arr = main?.participants;
+                if (Array.isArray(arr)) {
+                    // We don't know if local is included; try to infer using getParticipantsInfo if possible.
+                    let roomsCount = arr.length;
+
+                    // If we can detect local inside getParticipantsInfo, prefer that inference
+                    try {
+                        const info = api?.getParticipantsInfo?.();
+                        if (Array.isArray(info)) {
+                            const localId = localParticipantIdRef.current;
+                            const hasLocal =
+                                !!localId &&
+                                info.some((p: any) => String(p?.participantId || p?.id || "") === String(localId));
+                            // If info includes local -> likely arrays include local too (but not guaranteed).
+                            if (hasLocal) return Math.max(1, info.length);
+                            // else assume info excludes local
+                            return Math.max(1, info.length + 1);
+                        }
+                    } catch { }
+
+                    // Fallback heuristic: assume roomsInfo excludes local => +1
+                    return Math.max(1, roomsCount + 1);
+                }
+            } catch { }
+
+            // 3) Deprecated fallback: getParticipantsInfo
+            try {
+                const info = api?.getParticipantsInfo?.();
+                if (Array.isArray(info)) {
+                    const localId = localParticipantIdRef.current;
+                    const hasLocal =
+                        !!localId && info.some((p: any) => String(p?.participantId || p?.id || "") === String(localId));
+                    return hasLocal ? Math.max(1, info.length) : Math.max(1, info.length + 1);
+                }
+            } catch { }
+
+            return null;
+        };
+
+        const selfLeaveIfOverCapacity = async (api: any, why: string) => {
+            if (destroyed) return;
             if (capacityTriggeredRef.current) return;
-            const count = getApproxParticipants(api);
+
+            const count = await getParticipantCount(api);
             if (count == null) return;
 
             if (count > maxParticipants) {
-                capacityTriggeredRef.current = true;
-                setCapacityError(`Room is full (max ${maxParticipants}).`);
-                console.log("[capacity] over limit:", { why, count, maxParticipants });
+                overLimitHitsRef.current += 1;
+            } else {
+                overLimitHitsRef.current = 0;
+                return;
+            }
 
-                window.setTimeout(() => {
-                    try {
-                        api?.executeCommand?.("hangup");
-                    } catch {
-                        navigate("/sessions", { replace: true });
-                    }
-                }, 900);
+            // Require 2 consecutive confirmations to reduce false positives
+            if (overLimitHitsRef.current < 2) return;
+
+            capacityTriggeredRef.current = true;
+            setCapacityError(`Room is full (max ${maxParticipants}).`);
+            console.log("[capacity][self-leave] over limit:", { why, count, maxParticipants });
+
+            window.setTimeout(() => {
+                try {
+                    api?.executeCommand?.("hangup");
+                } catch {
+                    navigate("/sessions", { replace: true });
+                }
+            }, 600);
+        };
+
+        const scheduleSelfChecks = async (api: any, why: string) => {
+            // Only the *joining client* does self-checks; existing users must not self-kick on someone joining.
+            // We run a few delayed checks to let Jitsi counts stabilize.
+            const delays = [250, 700, 1400, 2200];
+            for (const d of delays) {
+                if (destroyed || capacityTriggeredRef.current) return;
+                await sleep(d);
+                await selfLeaveIfOverCapacity(api, `${why}@${d}ms`);
+            }
+        };
+
+        const hostKickIfOverCapacity = async (api: any, joinedId: string, why: string) => {
+            if (destroyed) return;
+            if (!isHost) return;
+            if (!joinedId) return;
+
+            // avoid kicking self just in case
+            if (localParticipantIdRef.current && joinedId === localParticipantIdRef.current) return;
+
+            if (kickedIdsRef.current.has(joinedId)) return;
+
+            // only try kick if command is supported (or unknown)
+            if (!canUseKickCommand()) return;
+
+            // give Jitsi time to update counts
+            await sleep(250);
+
+            const count = await getParticipantCount(api);
+            if (count == null) return;
+
+            if (count > maxParticipants) {
+                kickedIdsRef.current.add(joinedId);
+
+                console.log("[capacity][host-kick] over limit:", { why, count, maxParticipants, joinedId });
+
+                try {
+                    api?.executeCommand?.("kickParticipant", joinedId);
+                } catch (e) {
+                    console.log("[capacity][host-kick] failed:", e);
+                }
             }
         };
 
@@ -1033,7 +1143,13 @@ export default function RoomPageIFrame() {
                 apiRef.current = api;
                 setApiReady(false);
                 setCapacityError(null);
+
                 capacityTriggeredRef.current = false;
+                localJoinedRef.current = false;
+                localParticipantIdRef.current = null;
+                overLimitHitsRef.current = 0;
+                kickedIdsRef.current = new Set();
+                localIsModeratorRef.current = false;
 
                 // ✅ persist chosen domain to DB (do NOT block join)
                 try {
@@ -1060,9 +1176,26 @@ export default function RoomPageIFrame() {
                     supportedCmdsRef.current = null;
                 }
 
-                api.addEventListener?.("videoConferenceJoined", () => {
+                // initial commands
+                try {
+                    api.executeCommand("setTileView", true);
+                    setTile(true);
+                } catch { }
+                try {
+                    api.executeCommand("subject", "");
+                } catch { }
+
+                console.log("[JITSI] Domain chosen:", domain);
+
+                // --------------------------
+                // Events
+                // --------------------------
+                api.addEventListener?.("videoConferenceJoined", async (e: any) => {
                     if (destroyed) return;
+
                     setApiReady(true);
+                    localJoinedRef.current = true;
+                    localParticipantIdRef.current = String(e?.id || "") || null;
 
                     // tile view ON
                     try {
@@ -1075,32 +1208,40 @@ export default function RoomPageIFrame() {
                         api.executeCommand("subject", "");
                     } catch { }
 
-                    // enforce capacity after join (so we can count)
-                    enforceCapacity(api, "videoConferenceJoined");
-                });
-
-                api.addEventListener?.("participantJoined", () => {
-                    if (destroyed) return;
-                    enforceCapacity(api, "participantJoined");
+                    // Self-capacity check ONLY for the client who just joined.
+                    // This prevents "everyone gets kicked" when another participant joins.
+                    await scheduleSelfChecks(api, "videoConferenceJoined");
                 });
 
                 api.addEventListener?.("videoConferenceLeft", () => {
                     if (destroyed) return;
                     setApiReady(false);
+                    leaveToSessions();
                 });
 
-                // initial commands
-                try {
-                    api.executeCommand("setTileView", true);
-                    setTile(true);
-                } catch { }
-                try {
-                    api.executeCommand("subject", "");
-                } catch { }
+                api.addEventListener?.("participantRoleChanged", (e: any) => {
+                    // Track whether we are moderator (helps host-kick)
+                    // Event shape: { id, role } for the participant whose role changed.
+                    try {
+                        const pid = String(e?.id || "");
+                        const role = String(e?.role || "").toLowerCase();
+                        if (pid && localParticipantIdRef.current && pid === localParticipantIdRef.current) {
+                            localIsModeratorRef.current = role === "moderator";
+                        }
+                    } catch { }
+                });
 
-                console.log("[JITSI] Domain chosen:", domain);
+                api.addEventListener?.("participantJoined", (e: any) => {
+                    if (destroyed) return;
 
-                api.addEventListener?.("videoConferenceLeft", leaveToSessions);
+                    const joinedId = String(e?.id || "");
+                    // Only host tries to kick the newly joined participant if room is full.
+                    // Non-host clients must NOT self-leave here.
+                    if (isHost && joinedId) {
+                        // If host isn't moderator, this may fail silently; extra participant will still self-leave.
+                        hostKickIfOverCapacity(api, joinedId, "participantJoined");
+                    }
+                });
 
                 api.addEventListener?.("audioMuteStatusChanged", (e: any) => {
                     if (destroyed) return;
@@ -1138,7 +1279,7 @@ export default function RoomPageIFrame() {
             cleanup();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [session, idOrSlug, userName, roomName, navigate, jitsiKey, maxParticipants]);
+    }, [session, idOrSlug, userName, roomName, navigate, jitsiKey, maxParticipants, isHost]);
 
     // ============================================
     // Controls (bottom bar)
@@ -1202,7 +1343,6 @@ export default function RoomPageIFrame() {
     const bottomBarBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#07101E]/85 border border-white/10";
     const ctlBtnBase = isLight ? "bg-black/5 hover:bg-black/10" : "bg-[#111827] hover:bg-[#1f2937]";
 
-    // Theme switcher
     const switchTrack = "w-[84px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
     const switchTrackCls = isLight
         ? "bg-black/5 border-black/10 hover:bg-black/10"
