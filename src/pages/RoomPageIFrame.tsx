@@ -370,9 +370,7 @@ function Icon({
     | "tile-off"
     | "theme-sun"
     | "theme-moon"
-    | "timer"
-    | "participants"
-    | "reload";
+    | "timer";
     theme: RoomTheme;
     className?: string;
     alt?: string;
@@ -393,6 +391,167 @@ function Icon({
             }}
             className={className}
             alt={alt}
+            draggable={false}
+        />
+    );
+}
+
+// ✅ Inline icons to avoid missing assets on mobile
+function UsersInlineIcon({ className = "w-4 h-4" }: { className?: string }) {
+    return (
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            className={className}
+            aria-hidden="true"
+        >
+            <path
+                d="M16 11a3.5 3.5 0 1 0-3.5-3.5A3.5 3.5 0 0 0 16 11Z"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+            <path
+                d="M4.5 11.5a3 3 0 1 0-3-3 3 3 0 0 0 3 3Z"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+            <path
+                d="M10.5 20c0-3 2.5-5.5 5.5-5.5S21.5 17 21.5 20"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+            <path
+                d="M1.5 20c0-2.2 1.6-4.1 3.7-4.5"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+        </svg>
+    );
+}
+
+function RefreshInlineIcon({ className = "w-4 h-4" }: { className?: string }) {
+    return (
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            className={className}
+            aria-hidden="true"
+        >
+            <path
+                d="M21 12a9 9 0 0 1-15.4 6.4"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+            <path
+                d="M3 12a9 9 0 0 1 15.4-6.4"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+            <path
+                d="M21 7v5h-5"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+            <path
+                d="M3 17v-5h5"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+        </svg>
+    );
+}
+
+// ✅ Smart icon: participants (tries existing assets, then inline fallback)
+function ParticipantsSmartIcon({
+    theme,
+    className = "w-4 h-4",
+}: {
+    theme: RoomTheme;
+    className?: string;
+}) {
+    const candidates = [
+        `/icons/participants-${theme}.svg`,
+        `/icons/participants.svg`,
+        `/icons/users-${theme}.svg`,
+        `/icons/users.svg`,
+    ];
+    const [idx, setIdx] = useState(0);
+    const [inline, setInline] = useState(false);
+
+    useEffect(() => {
+        setIdx(0);
+        setInline(false);
+    }, [theme]);
+
+    if (inline) return <UsersInlineIcon className={className} />;
+
+    const src = candidates[idx] || candidates[candidates.length - 1];
+
+    return (
+        <img
+            src={src}
+            onError={() => {
+                if (idx < candidates.length - 1) setIdx((x) => x + 1);
+                else setInline(true);
+            }}
+            className={className}
+            alt=""
+            draggable={false}
+        />
+    );
+}
+
+// ✅ Smart icon: reload (expects /icons/reload.svg, then inline fallback)
+function ReloadSmartIcon({
+    theme,
+    className = "w-4 h-4",
+}: {
+    theme: RoomTheme;
+    className?: string;
+}) {
+    const candidates = [
+        `/icons/reload-${theme}.svg`,
+        `/icons/reload.svg`,
+        `/icons/refresh-${theme}.svg`,
+        `/icons/refresh.svg`,
+    ];
+    const [idx, setIdx] = useState(0);
+    const [inline, setInline] = useState(false);
+
+    useEffect(() => {
+        setIdx(0);
+        setInline(false);
+    }, [theme]);
+
+    if (inline) return <RefreshInlineIcon className={className} />;
+
+    const src = candidates[idx] || candidates[candidates.length - 1];
+
+    return (
+        <img
+            src={src}
+            onError={() => {
+                if (idx < candidates.length - 1) setIdx((x) => x + 1);
+                else setInline(true);
+            }}
+            className={className}
+            alt=""
             draggable={false}
         />
     );
@@ -457,6 +616,9 @@ export default function RoomPageIFrame() {
     const [isScreenSharing, setIsScreenSharing] = useState(false);
 
     const [apiReady, setApiReady] = useState(false);
+
+    // ✅ live participant count for UI (current/max)
+    const [participantsNow, setParticipantsNow] = useState<number>(0);
 
     // right panel
     const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(false);
@@ -567,6 +729,8 @@ export default function RoomPageIFrame() {
         overLimitHitsRef.current = 0;
         kickedIdsRef.current = new Set();
         localIsModeratorRef.current = false;
+
+        setParticipantsNow(0);
 
         setJitsiKey((x) => x + 1);
     };
@@ -968,6 +1132,8 @@ export default function RoomPageIFrame() {
 
         const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+        let participantsPollTimer: number | null = null;
+
         const cleanup = () => {
             stopWelcomeLoop();
             setApiReady(false);
@@ -983,6 +1149,13 @@ export default function RoomPageIFrame() {
             overLimitHitsRef.current = 0;
             kickedIdsRef.current = new Set();
             localIsModeratorRef.current = false;
+
+            setParticipantsNow(0);
+
+            if (participantsPollTimer) {
+                window.clearInterval(participantsPollTimer);
+                participantsPollTimer = null;
+            }
         };
 
         const leaveToSessions = () => {
@@ -1005,17 +1178,14 @@ export default function RoomPageIFrame() {
                 if (Number.isFinite(n) && Number(n) > 0) return Number(n);
             } catch { }
 
-            // 2) getRoomsInfo (promise) - main room participants + maybe local
+            // 2) getRoomsInfo (promise)
             try {
                 const res = await api?.getRoomsInfo?.();
                 const rooms = Array.isArray(res) ? res : res?.rooms;
                 const main = Array.isArray(rooms) ? (rooms.find((r) => r?.isMainRoom) || rooms[0]) : null;
                 const arr = main?.participants;
                 if (Array.isArray(arr)) {
-                    // We don't know if local is included; try to infer using getParticipantsInfo if possible.
-                    let roomsCount = arr.length;
-
-                    // If we can detect local inside getParticipantsInfo, prefer that inference
+                    // Try infer local presence via getParticipantsInfo
                     try {
                         const info = api?.getParticipantsInfo?.();
                         if (Array.isArray(info)) {
@@ -1023,15 +1193,13 @@ export default function RoomPageIFrame() {
                             const hasLocal =
                                 !!localId &&
                                 info.some((p: any) => String(p?.participantId || p?.id || "") === String(localId));
-                            // If info includes local -> likely arrays include local too (but not guaranteed).
                             if (hasLocal) return Math.max(1, info.length);
-                            // else assume info excludes local
                             return Math.max(1, info.length + 1);
                         }
                     } catch { }
 
                     // Fallback heuristic: assume roomsInfo excludes local => +1
-                    return Math.max(1, roomsCount + 1);
+                    return Math.max(1, arr.length + 1);
                 }
             } catch { }
 
@@ -1047,6 +1215,12 @@ export default function RoomPageIFrame() {
             } catch { }
 
             return null;
+        };
+
+        const refreshParticipants = async (api: any) => {
+            if (destroyed) return;
+            const n = await getParticipantCount(api);
+            if (n != null && Number.isFinite(n)) setParticipantsNow(n);
         };
 
         const selfLeaveIfOverCapacity = async (api: any, why: string) => {
@@ -1080,8 +1254,6 @@ export default function RoomPageIFrame() {
         };
 
         const scheduleSelfChecks = async (api: any, why: string) => {
-            // Only the *joining client* does self-checks; existing users must not self-kick on someone joining.
-            // We run a few delayed checks to let Jitsi counts stabilize.
             const delays = [250, 700, 1400, 2200];
             for (const d of delays) {
                 if (destroyed || capacityTriggeredRef.current) return;
@@ -1095,15 +1267,10 @@ export default function RoomPageIFrame() {
             if (!isHost) return;
             if (!joinedId) return;
 
-            // avoid kicking self just in case
             if (localParticipantIdRef.current && joinedId === localParticipantIdRef.current) return;
-
             if (kickedIdsRef.current.has(joinedId)) return;
-
-            // only try kick if command is supported (or unknown)
             if (!canUseKickCommand()) return;
 
-            // give Jitsi time to update counts
             await sleep(250);
 
             const count = await getParticipantCount(api);
@@ -1145,6 +1312,7 @@ export default function RoomPageIFrame() {
                 apiRef.current = api;
                 setApiReady(false);
                 setCapacityError(null);
+                setParticipantsNow(0);
 
                 capacityTriggeredRef.current = false;
                 localJoinedRef.current = false;
@@ -1189,6 +1357,12 @@ export default function RoomPageIFrame() {
 
                 console.log("[JITSI] Domain chosen:", domain);
 
+                // ✅ lightweight poll to keep participants accurate (desktop UX)
+                participantsPollTimer = window.setInterval(() => {
+                    if (destroyed) return;
+                    void refreshParticipants(api);
+                }, 5000);
+
                 // --------------------------
                 // Events
                 // --------------------------
@@ -1199,19 +1373,18 @@ export default function RoomPageIFrame() {
                     localJoinedRef.current = true;
                     localParticipantIdRef.current = String(e?.id || "") || null;
 
-                    // tile view ON
                     try {
                         api.executeCommand("setTileView", true);
                         setTile(true);
                     } catch { }
 
-                    // clear subject
                     try {
                         api.executeCommand("subject", "");
                     } catch { }
 
-                    // Self-capacity check ONLY for the client who just joined.
-                    // This prevents "everyone gets kicked" when another participant joins.
+                    // refresh participants
+                    window.setTimeout(() => void refreshParticipants(api), 250);
+
                     await scheduleSelfChecks(api, "videoConferenceJoined");
                 });
 
@@ -1222,8 +1395,6 @@ export default function RoomPageIFrame() {
                 });
 
                 api.addEventListener?.("participantRoleChanged", (e: any) => {
-                    // Track whether we are moderator (helps host-kick)
-                    // Event shape: { id, role } for the participant whose role changed.
                     try {
                         const pid = String(e?.id || "");
                         const role = String(e?.role || "").toLowerCase();
@@ -1237,12 +1408,18 @@ export default function RoomPageIFrame() {
                     if (destroyed) return;
 
                     const joinedId = String(e?.id || "");
-                    // Only host tries to kick the newly joined participant if room is full.
-                    // Non-host clients must NOT self-leave here.
+
+                    // update UI count (after Jitsi settles)
+                    window.setTimeout(() => void refreshParticipants(api), 350);
+
                     if (isHost && joinedId) {
-                        // If host isn't moderator, this may fail silently; extra participant will still self-leave.
                         hostKickIfOverCapacity(api, joinedId, "participantJoined");
                     }
+                });
+
+                api.addEventListener?.("participantLeft", () => {
+                    if (destroyed) return;
+                    window.setTimeout(() => void refreshParticipants(api), 350);
                 });
 
                 api.addEventListener?.("audioMuteStatusChanged", (e: any) => {
@@ -1353,6 +1530,8 @@ export default function RoomPageIFrame() {
         "absolute top-[2px] w-[26px] h-[26px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center";
     const thumbTranslate = isLight ? "translateX(0px)" : "translateX(50px)";
 
+    const participantsLabel = `${Math.max(0, participantsNow)}/${maxParticipants} participants`;
+
     // ============================================
     // RENDER
     // ============================================
@@ -1376,95 +1555,166 @@ export default function RoomPageIFrame() {
                 {/* TOP BAR */}
                 <div className={`flex w-full rounded-2xl overflow-hidden ${topBarBg}`}>
                     <div className="flex-1 min-w-0 px-4 sm:px-6 py-4">
-                        {/* ✅ Row 1: title (left) + participants (right, same line) */}
-                        <div className="flex items-start justify-between gap-3">
+                        {/* ✅ DESKTOP (sm+): like your screenshot */}
+                        <div className="hidden sm:flex items-start justify-between gap-4">
+                            {/* LEFT: title + participants under title */}
                             <div className="min-w-0">
                                 <p className={`font-inter font-semibold text-[18px] truncate ${strongText}`}>
                                     {session.title}
                                 </p>
-
-                                {isSilentRoom && (
-                                    <div className={`mt-1 font-inter text-[13px] ${subtleText}`}>
-                                        Silent room
-                                    </div>
-                                )}
+                                <div className={`mt-1 font-inter text-[13px] ${subtleText}`}>
+                                    {participantsLabel}
+                                    {isSilentRoom ? <span className="ml-2">• Silent room</span> : null}
+                                </div>
                             </div>
 
-                            <div
-                                className={`shrink-0 h-[32px] inline-flex items-center gap-2 px-3 rounded-xl ${chipBg}`}
-                                title="Max participants"
-                                aria-label={`Max participants ${maxParticipants}`}
-                            >
-                                <Icon
-                                    name="participants"
-                                    theme={theme}
-                                    className={`w-4 h-4 ${isLight ? "opacity-70" : "opacity-85"}`}
-                                    alt="Participants"
-                                />
-                                <span className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"}`}>
-                                    {maxParticipants}
-                                </span>
+                            {/* RIGHT: timer + theme + reload + host */}
+                            <div className="flex items-center gap-2 shrink-0">
+                                {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
+                                    <div className={`h-[32px] flex items-center gap-2 px-3 rounded-xl ${chipBg}`}>
+                                        <Icon name="timer" theme={theme} className="w-4 h-4 opacity-80" alt="Timer" />
+                                        <span className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"}`}>
+                                            {remainingTime || "--:--"}
+                                        </span>
+                                    </div>
+                                )}
+
+                                {/* Theme switcher */}
+                                <button
+                                    onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+                                    className={`${switchTrack} ${switchTrackCls}`}
+                                    title="Toggle theme"
+                                    aria-label="Toggle theme"
+                                >
+                                    <div className={switchThumb} style={{ transform: thumbTranslate }}>
+                                        <Icon
+                                            name={isLight ? "theme-sun" : "theme-moon"}
+                                            theme={theme}
+                                            className="w-4 h-4"
+                                            alt={isLight ? "Light" : "Dark"}
+                                        />
+                                    </div>
+                                </button>
+
+                                {/* Reload */}
+                                <button
+                                    onClick={forceReloadJitsi}
+                                    className={
+                                        `h-[32px] w-[32px] rounded-xl border transition inline-flex items-center justify-center ` +
+                                        (isLight
+                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70"
+                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-white/80")
+                                    }
+                                    title="Reload video engine"
+                                    aria-label="Reload video engine"
+                                >
+                                    <ReloadSmartIcon theme={theme} className="w-4 h-4" />
+                                </button>
+
+                                {/* Host */}
+                                {session.host_profile && (
+                                    <button
+                                        onClick={() => setSelectedUser(session.host_profile)}
+                                        className={`flex items-center gap-2 px-3 h-[32px] rounded-xl border transition font-inter text-[13px] ${isLight
+                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                            }`}
+                                    >
+                                        <span className="flex items-center gap-2 leading-none">
+                                            <span className={isLight ? "text-black/60" : "text-white/70"}>
+                                                <ParticipantsSmartIcon theme={theme} className="w-4 h-4" />
+                                            </span>
+                                            <span className="flex items-center gap-1">
+                                                <span className={isLight ? "font-normal text-black/55" : "font-normal text-white/70"}>Host:</span>
+                                                <span className="font-semibold">{session.host_profile.full_name}</span>
+                                            </span>
+                                        </span>
+                                    </button>
+                                )}
                             </div>
                         </div>
 
-                        {/* ✅ Row 2: 3 controls LEFT (timer + theme + reload) */}
-                        <div className="mt-3 flex items-center gap-2 flex-wrap justify-start">
-                            {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
-                                <div className={`h-[32px] flex items-center gap-2 px-3 rounded-xl ${chipBg}`}>
-                                    <Icon name="timer" theme={theme} className="w-4 h-4 opacity-80" alt="Timer" />
-                                    <span className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"}`}>
-                                        {remainingTime || "--:--"}
-                                    </span>
+                        {/* ✅ MOBILE (<sm): keep the “acceptable” layout */}
+                        <div className="sm:hidden">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <p className={`font-inter font-semibold text-[18px] truncate ${strongText}`}>
+                                        {session.title}
+                                    </p>
+                                    {isSilentRoom && (
+                                        <div className={`mt-1 font-inter text-[13px] ${subtleText}`}>Silent room</div>
+                                    )}
                                 </div>
-                            )}
 
-                            {/* Theme switcher */}
-                            <button
-                                onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-                                className={`${switchTrack} ${switchTrackCls}`}
-                                title="Toggle theme"
-                                aria-label="Toggle theme"
-                            >
-                                <div className={switchThumb} style={{ transform: thumbTranslate }}>
-                                    <Icon
-                                        name={isLight ? "theme-sun" : "theme-moon"}
-                                        theme={theme}
-                                        className="w-4 h-4"
-                                        alt={isLight ? "Light" : "Dark"}
-                                    />
-                                </div>
-                            </button>
-
-                            {/* Reload */}
-                            <button
-                                onClick={() => forceReloadJitsi()}
-                                className={
-                                    `h-[32px] w-[32px] rounded-xl border transition inline-flex items-center justify-center ` +
-                                    (isLight
-                                        ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70"
-                                        : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-white/80")
-                                }
-                                title="Reload video engine"
-                                aria-label="Reload video engine"
-                            >
-                                <Icon name="reload" theme={theme} className="w-4 h-4" alt="Reload" />
-                            </button>
-
-                            {/* Host (пусть уезжает вправо на широких экранах, не мешая трём контролам слева) */}
-                            {session.host_profile && (
-                                <button
-                                    onClick={() => setSelectedUser(session.host_profile)}
-                                    className={`ml-auto max-[520px]:hidden flex items-center gap-2 px-3 h-[32px] rounded-xl border transition font-inter text-[13px] ${isLight
-                                        ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                        : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
-                                        }`}
+                                <div
+                                    className={`inline-flex items-center gap-2 h-[32px] px-3 rounded-xl ${chipBg}`}
+                                    title="Participants"
+                                    aria-label={`Participants ${participantsLabel}`}
                                 >
-                                    <span className="flex items-center gap-1 leading-none">
-                                        <span className={isLight ? "font-normal text-black/55" : "font-normal text-white/70"}>Host:</span>
-                                        <span className="font-semibold">{session.host_profile.full_name}</span>
+                                    <span className={isLight ? "text-black/70" : "text-white/80"}>
+                                        <ParticipantsSmartIcon theme={theme} className="w-4 h-4" />
                                     </span>
+                                    <span className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"}`}>
+                                        {Math.max(0, participantsNow)}/{maxParticipants}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="mt-3 flex items-center gap-2 justify-start flex-wrap">
+                                {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
+                                    <div className={`h-[32px] flex items-center gap-2 px-3 rounded-xl ${chipBg}`}>
+                                        <Icon name="timer" theme={theme} className="w-4 h-4 opacity-80" alt="Timer" />
+                                        <span className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"}`}>
+                                            {remainingTime || "--:--"}
+                                        </span>
+                                    </div>
+                                )}
+
+                                <button
+                                    onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+                                    className={`${switchTrack} ${switchTrackCls}`}
+                                    title="Toggle theme"
+                                    aria-label="Toggle theme"
+                                >
+                                    <div className={switchThumb} style={{ transform: thumbTranslate }}>
+                                        <Icon
+                                            name={isLight ? "theme-sun" : "theme-moon"}
+                                            theme={theme}
+                                            className="w-4 h-4"
+                                            alt={isLight ? "Light" : "Dark"}
+                                        />
+                                    </div>
                                 </button>
-                            )}
+
+                                <button
+                                    onClick={forceReloadJitsi}
+                                    className={
+                                        `h-[32px] w-[32px] rounded-xl border transition inline-flex items-center justify-center ` +
+                                        (isLight
+                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70"
+                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-white/80")
+                                    }
+                                    title="Reload video engine"
+                                    aria-label="Reload video engine"
+                                >
+                                    <ReloadSmartIcon theme={theme} className="w-4 h-4" />
+                                </button>
+
+                                {session.host_profile && (
+                                    <button
+                                        onClick={() => setSelectedUser(session.host_profile)}
+                                        className={`max-[520px]:hidden flex items-center gap-2 px-3 h-[32px] rounded-xl border transition font-inter text-[13px] ${isLight
+                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                            }`}
+                                    >
+                                        <span className="flex items-center gap-1 leading-none">
+                                            <span className={isLight ? "font-normal text-black/55" : "font-normal text-white/70"}>Host:</span>
+                                            <span className="font-semibold">{session.host_profile.full_name}</span>
+                                        </span>
+                                    </button>
+                                )}
+                            </div>
                         </div>
 
                         {/* StageBar */}
