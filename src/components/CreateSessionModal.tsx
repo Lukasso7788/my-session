@@ -12,7 +12,9 @@
 // ✅ Mobile 360px overflow fixed (min-w-0 + wrapping + stacked hint/preview)
 // ✅ Icon padding consistent (Scheduling / Custom link / Studio)
 // ✅ Remove "(different UI than FlowN)" text
-// ✅ Studio "Minutes" controls: [-][input][+] always in one row
+// ✅ Studio: "kind + title input" always on top (especially mobile)
+// ✅ Studio minutes controls: [-][input][+] always one row on 360px
+// ✅ Reduced paddings/gaps on mobile
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import {
@@ -131,7 +133,6 @@ const SLUG_MAX = 40;
 // allowed: a-z 0-9 - _
 function sanitizeSlug(input: string) {
   const raw = String(input || "").trim().toLowerCase();
-  // replace spaces with dash, then drop disallowed chars
   const spaced = raw.replace(/\s+/g, "-");
   const clean = spaced.replace(/[^a-z0-9-_]/g, "");
   return clean;
@@ -140,7 +141,6 @@ function sanitizeSlug(input: string) {
 function isValidSlug(slug: string) {
   if (!slug) return true; // empty = not used
   if (slug.length < SLUG_MIN || slug.length > SLUG_MAX) return false;
-  // must start with alnum, then alnum/_/-
   return /^[a-z0-9][a-z0-9-_]*$/.test(slug);
 }
 
@@ -195,7 +195,6 @@ type StudioBlock = {
 };
 
 function uid() {
-  // crypto.randomUUID if available, else fallback
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const c: any = (globalThis as any)?.crypto;
   if (c?.randomUUID) return c.randomUUID();
@@ -338,7 +337,6 @@ const QUICK_MINUTES = [3, 5, 10, 15, 25, 50];
 // SESSION TIMELINE (visual)
 // ===============================
 function kindBg(kind: StudioBlockKind) {
-  // deliberately NOT FlowN-like: calmer palette
   switch (kind) {
     case "welcome":
       return "bg-slate-200";
@@ -395,7 +393,6 @@ function SessionTimeline({ blocks }: { blocks: StudioBlock[] }) {
         </div>
       </div>
 
-      {/* pill bar */}
       <div className="mt-2 border border-gray-200 rounded-[999px] overflow-hidden bg-gray-50">
         <div className="flex h-3">
           {blocks.length === 0 ? (
@@ -474,8 +471,8 @@ export function CreateSessionModal({
 
   // ---------- Scheduling in advance ----------
   const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("single");
-  const [dailyDays, setDailyDays] = useState<number>(7); // occurrences for daily mode
-  const [weeklyCount, setWeeklyCount] = useState<number>(3); // default: this + next + next
+  const [dailyDays, setDailyDays] = useState<number>(7);
+  const [weeklyCount, setWeeklyCount] = useState<number>(3);
 
   // ---------- Custom link slug ----------
   const [customSlugInput, setCustomSlugInput] = useState("");
@@ -488,7 +485,7 @@ export function CreateSessionModal({
     "idle" | "invalid" | "checking" | "taken" | "available"
   >("idle");
 
-  // ---------- JITSI DOMAIN (AUTO + OPTIONAL MANUAL) ----------
+  // ---------- JITSI DOMAIN ----------
   const autoGuess = useMemo(() => guessJitsiDomainByTimezone(), [isOpen]);
   const [useAutoDomain, setUseAutoDomain] = useState(true);
   const [manualDomain, setManualDomain] =
@@ -508,14 +505,12 @@ export function CreateSessionModal({
   const [studioEnabled, setStudioEnabled] = useState(false);
   const [studioBlocks, setStudioBlocks] = useState<StudioBlock[]>([]);
 
-  // ✅ max participants (Studio can customize)
   const [maxParticipants, setMaxParticipants] = useState<number>(
     DEFAULT_MAX_PARTICIPANTS
   );
 
   useEffect(() => {
     if (!isOpen) return;
-    // reset every time modal opens
     setMaxParticipants(DEFAULT_MAX_PARTICIPANTS);
     setCustomSlugInput("");
     setSlugStatus("idle");
@@ -526,11 +521,9 @@ export function CreateSessionModal({
   }, [isOpen]);
 
   useEffect(() => {
-    // when Studio OFF: force default 16
     if (!studioEnabled) setMaxParticipants(DEFAULT_MAX_PARTICIPANTS);
   }, [studioEnabled]);
 
-  // slug availability check (best-effort) — only for SINGLE mode (series uses date-suffixed slugs)
   useEffect(() => {
     if (!isOpen) return;
 
@@ -796,7 +789,6 @@ export function CreateSessionModal({
     return clamp(maxOcc, 1, hardCap);
   }, [scheduleMode, scheduledAt]);
 
-  // Clamp user-selected counts when start_time is close to the edge
   useEffect(() => {
     if (!isOpen) return;
     if (scheduleMode === "daily") {
@@ -820,7 +812,7 @@ export function CreateSessionModal({
   const scheduleAdvanceError = useMemo(() => {
     if (!scheduledAt) return null;
 
-    const base = new Date(scheduledAt); // local time
+    const base = new Date(scheduledAt);
     if (Number.isNaN(base.getTime())) return "Invalid start time.";
 
     const now = new Date();
@@ -861,7 +853,6 @@ export function CreateSessionModal({
       return;
     }
 
-    // ✅ FIX: template is required ONLY when Studio is OFF
     if (!studioEnabled && !selectedTemplate) {
       setError("Please select a session format (template).");
       return;
@@ -884,7 +875,6 @@ export function CreateSessionModal({
       return;
     }
 
-    // slug validate (base)
     const baseSlug = sanitizedSlug;
     if (baseSlug && !isValidSlug(baseSlug)) {
       setError(
@@ -893,7 +883,6 @@ export function CreateSessionModal({
       return;
     }
 
-    // SINGLE mode slug rules (existing behavior)
     if (scheduleMode === "single") {
       if (baseSlug && slugStatus === "taken") {
         setError("This custom link is already taken. Pick another one.");
@@ -905,7 +894,6 @@ export function CreateSessionModal({
       }
     }
 
-    // If Studio is ON and template isn't selected, silently pick a base template id (for DB compatibility).
     const baseTemplateId =
       selectedTemplate || (studioEnabled ? templates[0]?.id ?? "" : "");
 
@@ -916,7 +904,6 @@ export function CreateSessionModal({
       return;
     }
 
-    // max participants
     const effectiveMaxParticipants = studioEnabled
       ? clamp(
         Number(maxParticipants) || DEFAULT_MAX_PARTICIPANTS,
@@ -959,7 +946,6 @@ export function CreateSessionModal({
           : addDaysLocal(baseDateLocal, step * i)
       );
 
-      // Series slug collision check (only if we generated slugs)
       const isSeries = scheduleMode !== "single";
       const slugsForInsert =
         baseSlug && isSeries
@@ -979,7 +965,6 @@ export function CreateSessionModal({
 
           if (takenErr) {
             console.log("[slug] series collision check error:", takenErr);
-            // non-blocking
           } else if (taken && taken.length > 0) {
             setError(
               "Some custom links for the series are already taken. Try a different base link."
@@ -990,7 +975,6 @@ export function CreateSessionModal({
         }
       }
 
-      // Create a Daily room for each occurrence (unique URL)
       const dailyUrls: string[] = [];
       for (let i = 0; i < datesLocal.length; i++) {
         const { data: fnData, error: fnError } =
@@ -1004,7 +988,6 @@ export function CreateSessionModal({
         dailyUrls.push(String(fnData.url));
       }
 
-      // Insert sessions (bulk)
       const rows = datesLocal.map((d, idx) => {
         const scheduledISO = d.toISOString();
 
@@ -1076,9 +1059,9 @@ export function CreateSessionModal({
     JITSI_DOMAINS.find((d) => d.value === effectiveDomain)?.label ||
     effectiveDomain;
 
-  // ✅ Wide / near-fullscreen modal on desktop + safe mobile layout with internal scroll
+  // ✅ tighter on mobile, still roomy on desktop
   const overlayClass =
-    "fixed inset-0 bg-black/50 z-50 p-3 md:p-4 flex items-center justify-center";
+    "fixed inset-0 bg-black/50 z-50 p-2 sm:p-3 md:p-4 flex items-center justify-center";
 
   const panelClass =
     "bg-white w-full h-full rounded-[20px] shadow-2xl flex flex-col overflow-hidden";
@@ -1136,7 +1119,7 @@ export function CreateSessionModal({
     <div className={overlayClass}>
       <div className={panelClass}>
         {/* HEADER */}
-        <div className="px-4 sm:px-6 pt-5">
+        <div className="px-3 sm:px-6 pt-4 sm:pt-5">
           <div className="flex justify-between items-center">
             <h2 className="text-[20px] font-bold text-brandBlack font-inter">
               Create focus session
@@ -1154,7 +1137,7 @@ export function CreateSessionModal({
         </div>
 
         {/* BODY (scrolls) */}
-        <div className="px-4 sm:px-6 pb-4 pt-4 flex-1 overflow-y-auto">
+        <div className="px-3 sm:px-6 pb-3 sm:pb-4 pt-3 sm:pt-4 flex-1 overflow-y-auto">
           {loading || !user ? (
             <p className="text-sm text-gray-500 font-inter">
               {loading
@@ -1162,9 +1145,9 @@ export function CreateSessionModal({
                 : "You must be logged in to create a session."}
             </p>
           ) : (
-            <div className="space-y-5">
+            <div className="space-y-4 sm:space-y-5">
               {/* Row 1: Title + Start time */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
                 <div>
                   <label className="block text-[14px] font-medium text-brandBlack mb-1 font-inter">
                     Session title
@@ -1193,9 +1176,9 @@ export function CreateSessionModal({
               </div>
 
               {/* Row 2: Scheduling + Custom link + Region */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                {/* ✅ Scheduling in advance */}
-                <div className="border border-gray-200 rounded-[18px] bg-white p-4">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
+                {/* Scheduling */}
+                <div className="border border-gray-200 rounded-[18px] bg-white p-3 sm:p-4">
                   <div className="flex items-start gap-3">
                     <div className="w-10 h-10 p-2 rounded-[14px] bg-[#111827] text-white flex items-center justify-center shrink-0">
                       <CalendarDays size={18} />
@@ -1207,7 +1190,7 @@ export function CreateSessionModal({
                           Scheduling (in advance)
                         </div>
                         <div className="font-inter text-[12px] text-gray-500 whitespace-nowrap">
-                          Max: {MAX_ADVANCE_DAYS} days (~2 weeks)
+                          Max: {MAX_ADVANCE_DAYS} days
                         </div>
                       </div>
 
@@ -1279,7 +1262,7 @@ export function CreateSessionModal({
                                 className="px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
                                 disabled={dynamicMaxOccurrences < 3}
                               >
-                                3 sessions (2 weeks)
+                                3 sessions
                               </button>
                             </div>
 
@@ -1378,8 +1361,7 @@ export function CreateSessionModal({
                           />
 
                           <div className="mt-2 text-[12px] font-inter text-gray-500">
-                            Same time each day, starting from the selected start
-                            time.
+                            Same time each day.
                           </div>
                         </div>
                       )}
@@ -1407,7 +1389,7 @@ export function CreateSessionModal({
                 </div>
 
                 {/* Custom link */}
-                <div className="border border-gray-200 rounded-[18px] bg-white p-4 overflow-hidden">
+                <div className="border border-gray-200 rounded-[18px] bg-white p-3 sm:p-4 overflow-hidden">
                   <div className="flex items-start gap-3">
                     <div className="w-10 h-10 p-2 rounded-[14px] bg-[#111827] text-white flex items-center justify-center shrink-0">
                       <Link2 size={18} />
@@ -1418,7 +1400,8 @@ export function CreateSessionModal({
                         Custom session link
                       </div>
                       <div className="font-inter text-[12px] text-gray-500">
-                        {slugHint || "Optional. Your own short link instead of UUID."}
+                        {slugHint ||
+                          "Optional. Your own short link instead of UUID."}
                       </div>
 
                       <div className="mt-3 min-w-0">
@@ -1429,7 +1412,6 @@ export function CreateSessionModal({
                           className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter"
                         />
 
-                        {/* ✅ Mobile overflow fix: stack on small, truncate safely */}
                         <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3 min-w-0">
                           <div
                             className={`text-[12px] font-inter ${slugHintColor} min-w-0`}
@@ -1451,7 +1433,7 @@ export function CreateSessionModal({
                 </div>
 
                 {/* JITSI REGION */}
-                <div className="border border-gray-200 rounded-[18px] bg-white p-4">
+                <div className="border border-gray-200 rounded-[18px] bg-white p-3 sm:p-4">
                   <label className="block text-[14px] font-medium text-brandBlack mb-2 font-inter">
                     Video server region
                   </label>
@@ -1526,7 +1508,8 @@ export function CreateSessionModal({
                         />
 
                         <img
-                          src={`/icons/${(t as any).icon || t.name.toLowerCase()}.svg`}
+                          src={`/icons/${(t as any).icon || t.name.toLowerCase()
+                            }.svg`}
                           className="w-4 h-4"
                           alt=""
                           draggable={false}
@@ -1552,10 +1535,8 @@ export function CreateSessionModal({
                 )}
               </div>
 
-              {/* =======================
-                  SESSION STUDIO (builder)
-                  ======================= */}
-              <div className="border border-[#DBD8D8] rounded-[18px] bg-white p-4">
+              {/* SESSION STUDIO */}
+              <div className="border border-[#DBD8D8] rounded-[18px] bg-white p-3 sm:p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3 min-w-0">
                     <div className="w-10 h-10 p-2 rounded-[14px] bg-[#111827] text-white flex items-center justify-center shrink-0">
@@ -1566,7 +1547,6 @@ export function CreateSessionModal({
                       <div className="font-inter font-semibold text-[14px] text-brandBlack">
                         Session Studio
                       </div>
-                      {/* ✅ removed "(different UI than FlowN)" */}
                       <div className="font-inter text-[12px] text-gray-500">
                         Build a custom session script.
                       </div>
@@ -1608,7 +1588,7 @@ export function CreateSessionModal({
                   <span className="font-medium">sessions.schedule</span>
                 </div>
 
-                {/* ✅ Participant limit */}
+                {/* Participant limit */}
                 <div className="mt-4 border border-gray-200 rounded-[16px] p-3">
                   <div className="flex items-center gap-2">
                     <div className="w-9 h-9 rounded-[12px] bg-black/5 flex items-center justify-center shrink-0">
@@ -1660,12 +1640,10 @@ export function CreateSessionModal({
                   </div>
                 </div>
 
-                {/* ✅ Timeline appears only when Studio enabled */}
                 {studioEnabled && <SessionTimeline blocks={studioBlocks} />}
 
                 {studioEnabled && (
                   <div className="mt-3">
-                    {/* actions row */}
                     <div className="flex items-center justify-end gap-2 flex-wrap">
                       <button
                         onClick={importFromTemplate}
@@ -1698,10 +1676,9 @@ export function CreateSessionModal({
                       </button>
                     </div>
 
-                    {/* two panels */}
-                    <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
                       {/* Library */}
-                      <div className="border border-gray-200 rounded-[18px] p-4">
+                      <div className="border border-gray-200 rounded-[18px] p-3 sm:p-4">
                         <div>
                           <div className="font-inter font-semibold text-[13px] text-brandBlack">
                             Block Library
@@ -1711,7 +1688,7 @@ export function CreateSessionModal({
                           </div>
                         </div>
 
-                        <div className="mt-3 grid grid-cols-2 gap-3">
+                        <div className="mt-3 grid grid-cols-2 gap-2 sm:gap-3">
                           {STUDIO_LIBRARY.map((b) => (
                             <button
                               key={b.id}
@@ -1736,7 +1713,7 @@ export function CreateSessionModal({
                       </div>
 
                       {/* Script */}
-                      <div className="border border-gray-200 rounded-[18px] p-4">
+                      <div className="border border-gray-200 rounded-[18px] p-3 sm:p-4">
                         <div className="flex items-center justify-between gap-3">
                           <div className="min-w-0">
                             <div className="font-inter font-semibold text-[13px] text-brandBlack">
@@ -1762,28 +1739,17 @@ export function CreateSessionModal({
                             No blocks yet. Add from the library on the left.
                           </div>
                         ) : (
-                          <div className="mt-3 space-y-3">
+                          <div className="mt-3 space-y-2 sm:space-y-3">
                             {studioBlocks.map((b, idx) => (
                               <div
                                 key={b.id}
-                                className="border border-gray-200 rounded-[16px] p-3"
+                                className="border border-gray-200 rounded-[16px] p-2.5 sm:p-3"
                               >
-                                <div className="flex items-start justify-between gap-3">
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <span className="px-2 py-1 rounded-full border border-gray-200 text-[10px] sm:text-[11px] font-inter text-gray-600 whitespace-nowrap">
-                                      {b.kind}
-                                    </span>
-
-                                    <input
-                                      value={b.title}
-                                      onChange={(e) =>
-                                        updateBlock(b.id, {
-                                          title: e.target.value,
-                                        })
-                                      }
-                                      className="min-w-0 flex-1 px-2 py-1 border border-gray-200 rounded-[12px] text-[13px] font-inter"
-                                    />
-                                  </div>
+                                {/* ✅ Top: kind pill + actions */}
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="px-2 py-1 rounded-full border border-gray-200 text-[10px] sm:text-[11px] font-inter text-gray-600 whitespace-nowrap">
+                                    {b.kind}
+                                  </span>
 
                                   <div className="flex items-center gap-2 shrink-0">
                                     <button
@@ -1817,22 +1783,30 @@ export function CreateSessionModal({
                                   </div>
                                 </div>
 
-                                {/* ✅ Minutes controls: keep [-][input][+] in one row */}
-                                <div className="mt-3 flex items-center justify-between gap-2">
+                                {/* ✅ Title input ALWAYS full width and on top */}
+                                <div className="mt-2">
+                                  <input
+                                    value={b.title}
+                                    onChange={(e) =>
+                                      updateBlock(b.id, { title: e.target.value })
+                                    }
+                                    className="w-full px-3 py-2.5 border border-gray-200 rounded-[14px] text-[13px] font-inter"
+                                    placeholder="Block title…"
+                                  />
+                                </div>
+
+                                {/* ✅ Minutes controls: one row even on 360px */}
+                                <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                                   <span className="text-[12px] text-gray-500 font-inter shrink-0">
                                     Minutes
                                   </span>
 
-                                  <div className="flex items-center gap-2 flex-nowrap shrink-0">
+                                  <div className="flex items-center gap-1 sm:gap-2 flex-nowrap shrink-0">
                                     <button
                                       type="button"
                                       onClick={() =>
                                         updateBlock(b.id, {
-                                          minutes: clamp(
-                                            b.minutes - 1,
-                                            1,
-                                            24 * 60
-                                          ),
+                                          minutes: clamp(b.minutes - 1, 1, 24 * 60),
                                         })
                                       }
                                       className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 hover:bg-gray-50 transition"
@@ -1859,11 +1833,7 @@ export function CreateSessionModal({
                                       type="button"
                                       onClick={() =>
                                         updateBlock(b.id, {
-                                          minutes: clamp(
-                                            b.minutes + 1,
-                                            1,
-                                            24 * 60
-                                          ),
+                                          minutes: clamp(b.minutes + 1, 1, 24 * 60),
                                         })
                                       }
                                       className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 hover:bg-gray-50 transition"
@@ -1871,21 +1841,20 @@ export function CreateSessionModal({
                                       +
                                     </button>
 
-                                    <span className="text-[12px] text-gray-500 font-inter">
+                                    <span className="hidden sm:inline text-[12px] text-gray-500 font-inter whitespace-nowrap">
                                       min
                                     </span>
                                   </div>
                                 </div>
 
+                                {/* Quick minutes */}
                                 <div className="mt-2 flex items-center gap-2 flex-wrap">
                                   {QUICK_MINUTES.map((m) => (
                                     <button
                                       key={m}
                                       type="button"
-                                      onClick={() =>
-                                        updateBlock(b.id, { minutes: m })
-                                      }
-                                      className="px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
+                                      onClick={() => updateBlock(b.id, { minutes: m })}
+                                      className="px-2.5 py-1.5 rounded-full border border-gray-200 text-[11px] sm:text-[12px] font-inter hover:bg-gray-50 transition"
                                     >
                                       {m}m
                                     </button>
@@ -1908,9 +1877,9 @@ export function CreateSessionModal({
           )}
         </div>
 
-        {/* FOOTER (always visible, panel is flex-col) */}
+        {/* FOOTER */}
         {!loading && user && (
-          <div className="px-4 sm:px-6 pb-5 pt-3 border-t border-gray-100 bg-white">
+          <div className="px-3 sm:px-6 pb-4 sm:pb-5 pt-3 border-t border-gray-100 bg-white">
             <button
               onClick={handleCreate}
               disabled={createDisabled}
