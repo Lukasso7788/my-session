@@ -370,7 +370,9 @@ function Icon({
     | "tile-off"
     | "theme-sun"
     | "theme-moon"
-    | "timer";
+    | "timer"
+    | "participants"
+    | "reload";
     theme: RoomTheme;
     className?: string;
     alt?: string;
@@ -393,87 +395,6 @@ function Icon({
             alt={alt}
             draggable={false}
         />
-    );
-}
-
-// ✅ Inline icons to avoid missing assets on mobile
-function UsersInlineIcon({ className = "w-4 h-4" }: { className?: string }) {
-    return (
-        <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            className={className}
-            aria-hidden="true"
-        >
-            <path
-                d="M16 11a3.5 3.5 0 1 0-3.5-3.5A3.5 3.5 0 0 0 16 11Z"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-            />
-            <path
-                d="M4.5 11.5a3 3 0 1 0-3-3 3 3 0 0 0 3 3Z"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-            />
-            <path
-                d="M10.5 20c0-3 2.5-5.5 5.5-5.5S21.5 17 21.5 20"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-            />
-            <path
-                d="M1.5 20c0-2.2 1.6-4.1 3.7-4.5"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-            />
-        </svg>
-    );
-}
-
-function RefreshInlineIcon({ className = "w-4 h-4" }: { className?: string }) {
-    return (
-        <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            className={className}
-            aria-hidden="true"
-        >
-            <path
-                d="M21 12a9 9 0 0 1-15.4 6.4"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-            />
-            <path
-                d="M3 12a9 9 0 0 1 15.4-6.4"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-            />
-            <path
-                d="M21 7v5h-5"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-            />
-            <path
-                d="M3 17v-5h5"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-            />
-        </svg>
     );
 }
 
@@ -1455,94 +1376,95 @@ export default function RoomPageIFrame() {
                 {/* TOP BAR */}
                 <div className={`flex w-full rounded-2xl overflow-hidden ${topBarBg}`}>
                     <div className="flex-1 min-w-0 px-4 sm:px-6 py-4">
-                        {/* ✅ Mobile: stack; Desktop: row */}
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-                            {/* LEFT: title + minimal meta */}
+                        {/* ✅ Row 1: title (left) + participants (right, same line) */}
+                        <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
                                 <p className={`font-inter font-semibold text-[18px] truncate ${strongText}`}>
                                     {session.title}
                                 </p>
 
-                                {/* ✅ Remove "Video session", keep minimal meta + participants */}
-                                <div className="mt-1 flex items-center gap-2 flex-wrap">
-                                    {isSilentRoom && (
-                                        <span className={`font-inter text-[13px] ${subtleText}`}>Silent room</span>
-                                    )}
-
-                                    <div
-                                        className={`inline-flex items-center gap-2 h-[32px] px-3 rounded-xl ${chipBg}`}
-                                        title="Max participants"
-                                        aria-label={`Max participants ${maxParticipants}`}
-                                    >
-                                        <span className={isLight ? "text-black/70" : "text-white/80"}>
-                                            <UsersInlineIcon className="w-4 h-4" />
-                                        </span>
-                                        <span className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"}`}>
-                                            {maxParticipants}
-                                        </span>
+                                {isSilentRoom && (
+                                    <div className={`mt-1 font-inter text-[13px] ${subtleText}`}>
+                                        Silent room
                                     </div>
+                                )}
+                            </div>
+
+                            <div
+                                className={`shrink-0 h-[32px] inline-flex items-center gap-2 px-3 rounded-xl ${chipBg}`}
+                                title="Max participants"
+                                aria-label={`Max participants ${maxParticipants}`}
+                            >
+                                <Icon
+                                    name="participants"
+                                    theme={theme}
+                                    className={`w-4 h-4 ${isLight ? "opacity-70" : "opacity-85"}`}
+                                    alt="Participants"
+                                />
+                                <span className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"}`}>
+                                    {maxParticipants}
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* ✅ Row 2: 3 controls LEFT (timer + theme + reload) */}
+                        <div className="mt-3 flex items-center gap-2 flex-wrap justify-start">
+                            {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
+                                <div className={`h-[32px] flex items-center gap-2 px-3 rounded-xl ${chipBg}`}>
+                                    <Icon name="timer" theme={theme} className="w-4 h-4 opacity-80" alt="Timer" />
+                                    <span className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"}`}>
+                                        {remainingTime || "--:--"}
+                                    </span>
                                 </div>
-                            </div>
+                            )}
 
-                            {/* RIGHT: actions (timer + theme + reload) — goes to 2nd row on mobile */}
-                            <div className="flex items-center gap-2 justify-end sm:justify-start sm:shrink-0">
-                                {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
-                                    <div className={`h-[32px] flex items-center gap-2 px-3 rounded-xl ${chipBg}`}>
-                                        <Icon name="timer" theme={theme} className="w-4 h-4 opacity-80" alt="Timer" />
-                                        <span className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"}`}>
-                                            {remainingTime || "--:--"}
-                                        </span>
-                                    </div>
-                                )}
+                            {/* Theme switcher */}
+                            <button
+                                onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+                                className={`${switchTrack} ${switchTrackCls}`}
+                                title="Toggle theme"
+                                aria-label="Toggle theme"
+                            >
+                                <div className={switchThumb} style={{ transform: thumbTranslate }}>
+                                    <Icon
+                                        name={isLight ? "theme-sun" : "theme-moon"}
+                                        theme={theme}
+                                        className="w-4 h-4"
+                                        alt={isLight ? "Light" : "Dark"}
+                                    />
+                                </div>
+                            </button>
 
-                                {/* Theme switcher */}
+                            {/* Reload */}
+                            <button
+                                onClick={() => forceReloadJitsi()}
+                                className={
+                                    `h-[32px] w-[32px] rounded-xl border transition inline-flex items-center justify-center ` +
+                                    (isLight
+                                        ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70"
+                                        : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-white/80")
+                                }
+                                title="Reload video engine"
+                                aria-label="Reload video engine"
+                            >
+                                <Icon name="reload" theme={theme} className="w-4 h-4" alt="Reload" />
+                            </button>
+
+                            {/* Host (пусть уезжает вправо на широких экранах, не мешая трём контролам слева) */}
+                            {session.host_profile && (
                                 <button
-                                    onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-                                    className={`${switchTrack} ${switchTrackCls}`}
-                                    title="Toggle theme"
-                                    aria-label="Toggle theme"
+                                    onClick={() => setSelectedUser(session.host_profile)}
+                                    className={`ml-auto max-[520px]:hidden flex items-center gap-2 px-3 h-[32px] rounded-xl border transition font-inter text-[13px] ${isLight
+                                        ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                        : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                        }`}
                                 >
-                                    <div className={switchThumb} style={{ transform: thumbTranslate }}>
-                                        <Icon
-                                            name={isLight ? "theme-sun" : "theme-moon"}
-                                            theme={theme}
-                                            className="w-4 h-4"
-                                            alt={isLight ? "Light" : "Dark"}
-                                        />
-                                    </div>
+                                    <span className="flex items-center gap-1 leading-none">
+                                        <span className={isLight ? "font-normal text-black/55" : "font-normal text-white/70"}>Host:</span>
+                                        <span className="font-semibold">{session.host_profile.full_name}</span>
+                                    </span>
                                 </button>
-
-                                {/* ✅ Reload as icon-only, same height as neighbors */}
-                                <button
-                                    onClick={forceReloadJitsi}
-                                    className={
-                                        `h-[32px] w-[32px] rounded-xl border transition inline-flex items-center justify-center ` +
-                                        (isLight
-                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70"
-                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-white/80")
-                                    }
-                                    title="Reload video engine"
-                                    aria-label="Reload video engine"
-                                >
-                                    <RefreshInlineIcon className="w-4 h-4" />
-                                </button>
-
-                                {/* Host */}
-                                {session.host_profile && (
-                                    <button
-                                        onClick={() => setSelectedUser(session.host_profile)}
-                                        className={`max-[520px]:hidden flex items-center gap-2 px-3 h-[32px] rounded-xl border transition font-inter text-[13px] ${isLight
-                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
-                                            }`}
-                                    >
-                                        <span className="flex items-center gap-1 leading-none">
-                                            <span className={isLight ? "font-normal text-black/55" : "font-normal text-white/70"}>Host:</span>
-                                            <span className="font-semibold">{session.host_profile.full_name}</span>
-                                        </span>
-                                    </button>
-                                )}
-                            </div>
+                            )}
                         </div>
 
                         {/* StageBar */}
