@@ -684,7 +684,13 @@ export function CreateSessionModal({
   const addFromLibrary = useCallback((b: StudioBlock) => {
     setStudioBlocks((prev) => [
       ...prev,
-      { id: uid(), kind: b.kind, title: b.title, note: b.note, minutes: b.minutes },
+      {
+        id: uid(),
+        kind: b.kind,
+        title: b.title,
+        note: b.note,
+        minutes: b.minutes,
+      },
     ]);
   }, []);
 
@@ -941,7 +947,9 @@ export function CreateSessionModal({
 
       const step = stepDaysForMode(scheduleMode);
       const datesLocal = Array.from({ length: occurrencesCount }, (_, i) =>
-        scheduleMode === "single" ? baseDateLocal : addDaysLocal(baseDateLocal, step * i)
+        scheduleMode === "single"
+          ? baseDateLocal
+          : addDaysLocal(baseDateLocal, step * i)
       );
 
       // Series slug collision check (only if we generated slugs)
@@ -1061,13 +1069,15 @@ export function CreateSessionModal({
     JITSI_DOMAINS.find((d) => d.value === effectiveDomain)?.label ||
     effectiveDomain;
 
+  // ✅ Wider modal (about +50%) in non-studio mode
   const panelClass = studioEnabled
     ? "bg-white w-[calc(100vw-24px)] h-[calc(100vh-24px)] max-w-none max-h-none rounded-[20px] shadow-2xl flex flex-col overflow-hidden"
-    : "bg-white rounded-[16px] p-6 w-full max-w-md shadow-xl";
+    : "bg-white rounded-[16px] p-6 w-full max-w-2xl shadow-xl";
 
+  // ✅ Keep existing behavior, just add padding; studio already has it
   const overlayClass = studioEnabled
     ? "fixed inset-0 bg-black/50 z-50 p-3 md:p-4 flex items-center justify-center"
-    : "fixed inset-0 bg-black/50 flex items-center justify-center z-50";
+    : "fixed inset-0 bg-black/50 z-50 p-3 md:p-4 flex items-center justify-center";
 
   const origin =
     typeof window !== "undefined" && window.location?.origin
@@ -1148,335 +1158,341 @@ export function CreateSessionModal({
             </p>
           ) : (
             <div className="space-y-5">
-              {/* Title */}
-              <div>
-                <label className="block text-[14px] font-medium text-brandBlack mb-1 font-inter">
-                  Session title
-                </label>
-                <input
-                  type="text"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g., Deep Work Session"
-                  className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter"
-                />
+              {/* ✅ Row 1: Title + Start time */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Title */}
+                <div>
+                  <label className="block text-[14px] font-medium text-brandBlack mb-1 font-inter">
+                    Session title
+                  </label>
+                  <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="e.g., Deep Work Session"
+                    className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter"
+                  />
+                </div>
+
+                {/* Start Time */}
+                <div>
+                  <label className="block text-[14px] font-medium text-brandBlack mb-1 font-inter">
+                    Start time
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={scheduledAt}
+                    onChange={(e) => setScheduledAt(e.target.value)}
+                    min={minDateTime}
+                    className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter"
+                  />
+                </div>
               </div>
 
-              {/* Start Time */}
-              <div>
-                <label className="block text-[14px] font-medium text-brandBlack mb-1 font-inter">
-                  Start time
-                </label>
-                <input
-                  type="datetime-local"
-                  value={scheduledAt}
-                  onChange={(e) => setScheduledAt(e.target.value)}
-                  min={minDateTime}
-                  className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter"
-                />
-              </div>
+              {/* ✅ Row 2: Scheduling + Custom link + Video region */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* ✅ Scheduling in advance */}
+                <div className="border border-gray-200 rounded-[18px] bg-white p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-[14px] bg-[#111827] text-white flex items-center justify-center">
+                      <CalendarDays size={18} />
+                    </div>
 
-              {/* ✅ Scheduling in advance */}
-              <div className="border border-gray-200 rounded-[18px] bg-white p-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-[14px] bg-[#111827] text-white flex items-center justify-center">
-                    <CalendarDays size={18} />
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="font-inter font-semibold text-[14px] text-brandBlack">
+                          Scheduling (in advance)
+                        </div>
+                        <div className="font-inter text-[12px] text-gray-500">
+                          Max: {MAX_ADVANCE_DAYS} days
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex items-center gap-2 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => setScheduleMode("single")}
+                          className={
+                            "px-3 py-2 rounded-full border text-[12px] font-inter transition " +
+                            (scheduleMode === "single"
+                              ? "border-brandBlack bg-brandBlack text-white"
+                              : "border-gray-200 hover:bg-gray-50 text-brandBlack")
+                          }
+                        >
+                          Single
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setScheduleMode("weekly")}
+                          className={
+                            "px-3 py-2 rounded-full border text-[12px] font-inter transition inline-flex items-center gap-2 " +
+                            (scheduleMode === "weekly"
+                              ? "border-brandBlack bg-brandBlack text-white"
+                              : "border-gray-200 hover:bg-gray-50 text-brandBlack")
+                          }
+                        >
+                          <Repeat size={14} />
+                          Weekly
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setScheduleMode("daily")}
+                          className={
+                            "px-3 py-2 rounded-full border text-[12px] font-inter transition inline-flex items-center gap-2 " +
+                            (scheduleMode === "daily"
+                              ? "border-brandBlack bg-brandBlack text-white"
+                              : "border-gray-200 hover:bg-gray-50 text-brandBlack")
+                          }
+                        >
+                          <Repeat size={14} />
+                          Daily
+                        </button>
+
+                        <div className="ml-auto font-inter text-[12px] text-gray-500">
+                          Creates:{" "}
+                          <span className="font-semibold text-brandBlack">
+                            {occurrencesCount}
+                          </span>
+                        </div>
+                      </div>
+
+                      {scheduleMode === "weekly" && (
+                        <div className="mt-3">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() => setWeeklyCount(2)}
+                                className="px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
+                                disabled={dynamicMaxOccurrences < 2}
+                              >
+                                2 sessions
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setWeeklyCount(3)}
+                                className="px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
+                                disabled={dynamicMaxOccurrences < 3}
+                              >
+                                3 sessions (2 weeks)
+                              </button>
+                            </div>
+
+                            <div className="font-inter text-[12px] text-gray-600">
+                              Sessions:{" "}
+                              <span className="font-semibold text-brandBlack">
+                                {clamp(
+                                  Number(weeklyCount) || 1,
+                                  1,
+                                  dynamicMaxOccurrences
+                                )}
+                              </span>
+                            </div>
+                          </div>
+
+                          <input
+                            type="range"
+                            min={1}
+                            max={dynamicMaxOccurrences}
+                            value={clamp(
+                              Number(weeklyCount) || 1,
+                              1,
+                              dynamicMaxOccurrences
+                            )}
+                            onChange={(e) =>
+                              setWeeklyCount(
+                                clamp(
+                                  Number(e.target.value) || 1,
+                                  1,
+                                  dynamicMaxOccurrences
+                                )
+                              )
+                            }
+                            className="mt-3 w-full"
+                          />
+
+                          <div className="mt-2 text-[12px] font-inter text-gray-500">
+                            Same weekday and time every week.
+                          </div>
+                        </div>
+                      )}
+
+                      {scheduleMode === "daily" && (
+                        <div className="mt-3">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() => setDailyDays(7)}
+                                className="px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
+                                disabled={dynamicMaxOccurrences < 7}
+                              >
+                                7 days
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDailyDays(14)}
+                                className="px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
+                                disabled={dynamicMaxOccurrences < 14}
+                              >
+                                14 days
+                              </button>
+                            </div>
+
+                            <div className="font-inter text-[12px] text-gray-600">
+                              Days:{" "}
+                              <span className="font-semibold text-brandBlack">
+                                {clamp(
+                                  Number(dailyDays) || 1,
+                                  1,
+                                  dynamicMaxOccurrences
+                                )}
+                              </span>
+                            </div>
+                          </div>
+
+                          <input
+                            type="range"
+                            min={1}
+                            max={dynamicMaxOccurrences}
+                            value={clamp(
+                              Number(dailyDays) || 1,
+                              1,
+                              dynamicMaxOccurrences
+                            )}
+                            onChange={(e) =>
+                              setDailyDays(
+                                clamp(
+                                  Number(e.target.value) || 1,
+                                  1,
+                                  dynamicMaxOccurrences
+                                )
+                              )
+                            }
+                            className="mt-3 w-full"
+                          />
+
+                          <div className="mt-2 text-[12px] font-inter text-gray-500">
+                            Same time each day, starting from the selected start
+                            time.
+                          </div>
+                        </div>
+                      )}
+
+                      {occurrencesPreview.length > 1 && (
+                        <div className="mt-3 border border-gray-200 rounded-[14px] p-3 bg-gray-50">
+                          <div className="text-[12px] font-inter text-gray-600">
+                            Will create:
+                          </div>
+                          <div className="mt-1 text-[12px] font-inter text-gray-800 space-y-1">
+                            {occurrencesPreview.slice(0, 5).map((p, i) => (
+                              <div key={i}>• {p}</div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {scheduleAdvanceError && (
+                        <div className="mt-2 text-[12px] font-inter text-red-600">
+                          {scheduleAdvanceError}
+                        </div>
+                      )}
+                    </div>
                   </div>
+                </div>
 
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between gap-3">
+                {/* Custom link */}
+                <div className="border border-gray-200 rounded-[18px] bg-white p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-[14px] bg-[#111827] text-white flex items-center justify-center">
+                      <Link2 size={18} />
+                    </div>
+
+                    <div className="flex-1">
                       <div className="font-inter font-semibold text-[14px] text-brandBlack">
-                        Scheduling (in advance)
+                        Custom session link
                       </div>
                       <div className="font-inter text-[12px] text-gray-500">
-                        Max: {MAX_ADVANCE_DAYS} days (~2 weeks)
+                        {slugHint ||
+                          "Optional. Your own short link instead of UUID."}
                       </div>
-                    </div>
 
-                    <div className="mt-3 flex items-center gap-2 flex-wrap">
-                      <button
-                        type="button"
-                        onClick={() => setScheduleMode("single")}
-                        className={
-                          "px-3 py-2 rounded-full border text-[12px] font-inter transition " +
-                          (scheduleMode === "single"
-                            ? "border-brandBlack bg-brandBlack text-white"
-                            : "border-gray-200 hover:bg-gray-50 text-brandBlack")
-                        }
-                      >
-                        Single
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setScheduleMode("weekly")}
-                        className={
-                          "px-3 py-2 rounded-full border text-[12px] font-inter transition inline-flex items-center gap-2 " +
-                          (scheduleMode === "weekly"
-                            ? "border-brandBlack bg-brandBlack text-white"
-                            : "border-gray-200 hover:bg-gray-50 text-brandBlack")
-                        }
-                      >
-                        <Repeat size={14} />
-                        Weekly
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setScheduleMode("daily")}
-                        className={
-                          "px-3 py-2 rounded-full border text-[12px] font-inter transition inline-flex items-center gap-2 " +
-                          (scheduleMode === "daily"
-                            ? "border-brandBlack bg-brandBlack text-white"
-                            : "border-gray-200 hover:bg-gray-50 text-brandBlack")
-                        }
-                      >
-                        <Repeat size={14} />
-                        Daily
-                      </button>
-
-                      <div className="ml-auto font-inter text-[12px] text-gray-500">
-                        Creates:{" "}
-                        <span className="font-semibold text-brandBlack">
-                          {occurrencesCount}
-                        </span>
-                      </div>
-                    </div>
-
-                    {scheduleMode === "weekly" && (
                       <div className="mt-3">
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <button
-                              type="button"
-                              onClick={() => setWeeklyCount(2)}
-                              className="px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
-                              disabled={dynamicMaxOccurrences < 2}
-                            >
-                              2 sessions
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setWeeklyCount(3)}
-                              className="px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
-                              disabled={dynamicMaxOccurrences < 3}
-                            >
-                              3 sessions (2 weeks)
-                            </button>
-                          </div>
-
-                          <div className="font-inter text-[12px] text-gray-600">
-                            Sessions:{" "}
-                            <span className="font-semibold text-brandBlack">
-                              {clamp(
-                                Number(weeklyCount) || 1,
-                                1,
-                                dynamicMaxOccurrences
-                              )}
-                            </span>
-                          </div>
-                        </div>
-
                         <input
-                          type="range"
-                          min={1}
-                          max={dynamicMaxOccurrences}
-                          value={clamp(
-                            Number(weeklyCount) || 1,
-                            1,
-                            dynamicMaxOccurrences
-                          )}
-                          onChange={(e) =>
-                            setWeeklyCount(
-                              clamp(
-                                Number(e.target.value) || 1,
-                                1,
-                                dynamicMaxOccurrences
-                              )
-                            )
-                          }
-                          className="mt-3 w-full"
+                          value={customSlugInput}
+                          onChange={(e) => setCustomSlugInput(e.target.value)}
+                          placeholder="e.g., yaro-deep-work"
+                          className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter"
                         />
 
-                        <div className="mt-2 text-[12px] font-inter text-gray-500">
-                          Same weekday and time every week.
-                        </div>
-                      </div>
-                    )}
-
-                    {scheduleMode === "daily" && (
-                      <div className="mt-3">
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <button
-                              type="button"
-                              onClick={() => setDailyDays(7)}
-                              className="px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
-                              disabled={dynamicMaxOccurrences < 7}
-                            >
-                              7 days
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setDailyDays(14)}
-                              className="px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
-                              disabled={dynamicMaxOccurrences < 14}
-                            >
-                              14 days
-                            </button>
+                        <div className="mt-2 flex items-center justify-between gap-3">
+                          <div className={`text-[12px] font-inter ${slugHintColor}`}>
+                            {customSlugInput
+                              ? slugHint
+                              : isSeries
+                                ? "Optional. In series mode, we auto-add date suffix (yyyy-mm-dd)."
+                                : "Allowed: a-z, 0-9, - or _. Lowercase."}
                           </div>
-
-                          <div className="font-inter text-[12px] text-gray-600">
-                            Days:{" "}
-                            <span className="font-semibold text-brandBlack">
-                              {clamp(
-                                Number(dailyDays) || 1,
-                                1,
-                                dynamicMaxOccurrences
-                              )}
-                            </span>
+                          <div className="text-[12px] font-inter text-gray-500 truncate">
+                            {linkPreview}
                           </div>
                         </div>
-
-                        <input
-                          type="range"
-                          min={1}
-                          max={dynamicMaxOccurrences}
-                          value={clamp(
-                            Number(dailyDays) || 1,
-                            1,
-                            dynamicMaxOccurrences
-                          )}
-                          onChange={(e) =>
-                            setDailyDays(
-                              clamp(
-                                Number(e.target.value) || 1,
-                                1,
-                                dynamicMaxOccurrences
-                              )
-                            )
-                          }
-                          className="mt-3 w-full"
-                        />
-
-                        <div className="mt-2 text-[12px] font-inter text-gray-500">
-                          Same time each day, starting from the selected start
-                          time.
-                        </div>
                       </div>
-                    )}
-
-                    {occurrencesPreview.length > 1 && (
-                      <div className="mt-3 border border-gray-200 rounded-[14px] p-3 bg-gray-50">
-                        <div className="text-[12px] font-inter text-gray-600">
-                          Will create:
-                        </div>
-                        <div className="mt-1 text-[12px] font-inter text-gray-800 space-y-1">
-                          {occurrencesPreview.slice(0, 5).map((p, i) => (
-                            <div key={i}>• {p}</div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {scheduleAdvanceError && (
-                      <div className="mt-2 text-[12px] font-inter text-red-600">
-                        {scheduleAdvanceError}
-                      </div>
-                    )}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Custom link */}
-              <div className="border border-gray-200 rounded-[18px] bg-white p-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-[14px] bg-[#111827] text-white flex items-center justify-center">
-                    <Link2 size={18} />
+                {/* ✅ Video server region (card-style to fit row) */}
+                <div className="border border-gray-200 rounded-[18px] bg-white p-4">
+                  <div className="font-inter font-semibold text-[14px] text-brandBlack">
+                    Video server region
+                  </div>
+                  <div className="mt-1 font-inter text-[12px] text-gray-500">
+                    All participants will join the same Jitsi domain saved in
+                    the session.
                   </div>
 
-                  <div className="flex-1">
-                    <div className="font-inter font-semibold text-[14px] text-brandBlack">
-                      Custom session link
-                    </div>
-                    <div className="font-inter text-[12px] text-gray-500">
-                      {slugHint ||
-                        "Optional. Your own short link instead of UUID."}
-                    </div>
-
-                    <div className="mt-3">
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input
-                        value={customSlugInput}
-                        onChange={(e) => setCustomSlugInput(e.target.value)}
-                        placeholder="e.g., yaro-deep-work"
-                        className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter"
+                        type="checkbox"
+                        checked={useAutoDomain}
+                        onChange={(e) => setUseAutoDomain(e.target.checked)}
+                        className="w-4 h-4"
                       />
+                      <span className="text-[14px] text-brandBlack font-inter">
+                        Auto
+                      </span>
+                      <span className="text-[12px] text-gray-500 font-inter">
+                        (recommended)
+                      </span>
+                    </label>
 
-                      <div className="mt-2 flex items-center justify-between gap-3">
-                        <div
-                          className={`text-[12px] font-inter ${slugHintColor}`}
-                        >
-                          {customSlugInput
-                            ? slugHint
-                            : isSeries
-                              ? "Optional. In series mode, we auto-add date suffix (yyyy-mm-dd)."
-                              : "Allowed: a-z, 0-9, - or _. Lowercase."}
-                        </div>
-                        <div className="text-[12px] font-inter text-gray-500 truncate">
-                          {linkPreview}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* JITSI REGION */}
-              <div>
-                <label className="block text-[14px] font-medium text-brandBlack mb-2 font-inter">
-                  Video server region
-                </label>
-
-                <div className="flex items-center justify-between gap-3">
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={useAutoDomain}
-                      onChange={(e) => setUseAutoDomain(e.target.checked)}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-[14px] text-brandBlack font-inter">
-                      Auto (recommended)
+                    <span className="text-[12px] text-gray-500 font-inter">
+                      {useAutoDomain
+                        ? `Picked: ${effectiveDomainLabel}`
+                        : `Manual: ${effectiveDomainLabel}`}
                     </span>
-                  </label>
+                  </div>
 
-                  <span className="text-[12px] text-gray-500 font-inter">
-                    {useAutoDomain
-                      ? `Picked: ${effectiveDomainLabel}`
-                      : `Manual: ${effectiveDomainLabel}`}
-                  </span>
+                  {!useAutoDomain && (
+                    <select
+                      value={manualDomain}
+                      onChange={(e) =>
+                        setManualDomain(e.target.value as JitsiDomain)
+                      }
+                      className="mt-3 w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter bg-white"
+                    >
+                      {JITSI_DOMAINS.map((d) => (
+                        <option key={d.value} value={d.value}>
+                          {d.label} — {d.value}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
-
-                {!useAutoDomain && (
-                  <select
-                    value={manualDomain}
-                    onChange={(e) =>
-                      setManualDomain(e.target.value as JitsiDomain)
-                    }
-                    className="mt-3 w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter bg-white"
-                  >
-                    {JITSI_DOMAINS.map((d) => (
-                      <option key={d.value} value={d.value}>
-                        {d.label} — {d.value}
-                      </option>
-                    ))}
-                  </select>
-                )}
-
-                <p className="mt-2 text-[12px] text-gray-500 font-inter">
-                  All participants will join the same Jitsi domain saved in the
-                  session.
-                </p>
               </div>
 
               {/* Templates */}
