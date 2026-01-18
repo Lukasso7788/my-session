@@ -69,7 +69,9 @@ function isInfiniteBySchedule(s: SessionWithRelations) {
 }
 
 // ✅ главный резолвер типа (с fallback)
-function resolveSessionType(s: SessionWithRelations): "group" | "infinite" | "body" {
+function resolveSessionType(
+  s: SessionWithRelations
+): "group" | "infinite" | "body" {
   const t = String(s.session_format_type || "").toLowerCase();
 
   if (t === "infinite") return "infinite";
@@ -87,23 +89,66 @@ function resolveSessionType(s: SessionWithRelations): "group" | "infinite" | "bo
 // UI: Infinite intro card
 // =====================
 function InfinityIcon({ className = "w-5 h-5" }: { className?: string }) {
-  return <img src="/icons/infinite.svg" className={className} alt="" draggable={false} />;
+  return (
+    <img
+      src="/icons/infinite.svg"
+      className={className}
+      alt=""
+      draggable={false}
+    />
+  );
 }
 
 function ClockIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
-  return <img src="/icons/always-open.svg" className={className} alt="" draggable={false} />;
+  return (
+    <img
+      src="/icons/always-open.svg"
+      className={className}
+      alt=""
+      draggable={false}
+    />
+  );
 }
 
 function EyeIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
-  return <img src="/icons/stay-accountable.svg" className={className} alt="" draggable={false} />;
+  return (
+    <img
+      src="/icons/stay-accountable.svg"
+      className={className}
+      alt=""
+      draggable={false}
+    />
+  );
 }
 
-function WorkflowIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
-  return <img src="/icons/structured-flow.svg" className={className} alt="" draggable={false} />;
+function WorkflowIcon({
+  className = "w-[27px] h-[27px]",
+}: {
+  className?: string;
+}) {
+  return (
+    <img
+      src="/icons/structured-flow.svg"
+      className={className}
+      alt=""
+      draggable={false}
+    />
+  );
 }
 
-function RocketIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
-  return <img src="/icons/keep-momentum.svg" className={className} alt="" draggable={false} />;
+function RocketIcon({
+  className = "w-[27px] h-[27px]",
+}: {
+  className?: string;
+}) {
+  return (
+    <img
+      src="/icons/keep-momentum.svg"
+      className={className}
+      alt=""
+      draggable={false}
+    />
+  );
 }
 
 type Feature = {
@@ -149,43 +194,51 @@ function InfiniteRoomsIntroCard() {
   return (
     <div className="w-full flex justify-center">
       <div className="w-full max-w-[980px]">
-        <div className="border border-[#DBD8D8] rounded-[24px] bg-white px-8 py-6 flex flex-col gap-8">
+        {/* ✅ mobile padding + spacing tightened */}
+        <div className="border border-[#DBD8D8] rounded-[24px] bg-white px-5 py-5 sm:px-8 sm:py-6 flex flex-col gap-6 sm:gap-8">
           <div className="flex items-center justify-center gap-[10px]">
-            <div className="p-4 rounded-[20px] bg-[#111827] text-white inline-flex items-center justify-center">
+            {/* ✅ a bit smaller on mobile */}
+            <div className="p-3 sm:p-4 rounded-[20px] bg-[#111827] text-white inline-flex items-center justify-center">
               <InfinityIcon className="w-5 h-5" />
             </div>
 
-            <h2 className="font-inter font-semibold text-[24px] text-brandBlack">
+            <h2 className="font-inter font-semibold text-[20px] sm:text-[24px] text-brandBlack">
               24/7 Infinite Rooms
             </h2>
           </div>
 
-          <p className="font-inter font-light text-[16px] leading-[160%] text-brandBlack text-center max-w-[860px] mx-auto">
-            24/7 Infinite Rooms are always open, giving you a structured space to focus whenever inspiration strikes.
-            Join at any time, follow the built-in workflow (Pomodoro or Deep Work), stay accountable with others,
-            and keep your momentum going — day or night.
+          {/* ✅ text smaller on mobile */}
+          <p className="font-inter font-light text-[14px] sm:text-[16px] leading-[160%] text-brandBlack text-center max-w-[860px] mx-auto">
+            24/7 Infinite Rooms are always open, giving you a structured space to
+            focus whenever inspiration strikes. Join at any time, follow the
+            built-in workflow (Pomodoro or Deep Work), stay accountable with
+            others, and keep your momentum going — day or night.
           </p>
 
           <div className="w-full flex justify-center">
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
+            {/* ✅ gaps smaller on mobile */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-5 sm:gap-8">
               {features.map((f) => (
-                <div key={f.title} className="flex items-center gap-4">
+                <div
+                  key={f.title}
+                  className="flex items-center gap-3 sm:gap-4 min-w-0"
+                >
+                  {/* ✅ HARD FIX: prevent shrink + fixed size box so icon is always visible */}
                   <div
-                    className="border rounded-[13.5px] inline-flex items-center justify-center"
+                    className="shrink-0 border rounded-[13.5px] inline-flex items-center justify-center w-[44px] h-[44px] sm:w-[54px] sm:h-[54px]"
                     style={{
                       borderColor: f.color,
                       backgroundColor: f.bg20,
-                      padding: "13.5px",
                     }}
                   >
-                    <f.Icon className="w-[27px] h-[27px]" />
+                    <f.Icon className="w-5 h-5 sm:w-[27px] sm:h-[27px]" />
                   </div>
 
-                  <div className="flex flex-col" style={{ gap: "8px" }}>
-                    <div className="font-inter font-semibold text-[14px] text-brandBlack">
+                  <div className="flex flex-col min-w-0 gap-1.5 sm:gap-2">
+                    <div className="font-inter font-semibold text-[13px] sm:text-[14px] text-brandBlack leading-snug">
                       {f.title}
                     </div>
-                    <div className="font-inter font-light text-[12px] text-brandBlack/70">
+                    <div className="font-inter font-light text-[11px] sm:text-[12px] text-brandBlack/70 leading-snug">
                       {f.subtitle}
                     </div>
                   </div>
@@ -211,7 +264,9 @@ export function SessionsPage() {
   const [sessions, setSessions] = useState<SessionWithRelations[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const [sessionTypeTab, setSessionTypeTab] = useState<"group" | "infinite" | "body">("group");
+  const [sessionTypeTab, setSessionTypeTab] = useState<
+    "group" | "infinite" | "body"
+  >("group");
   const [dateFilter, setDateFilter] = useState<string | null>(null);
 
   // Sync tab from querystring: /sessions?tab=group|infinite|body
@@ -307,7 +362,10 @@ export function SessionsPage() {
   }, [modal, fetchSessions]);
 
   // ✅ Poll ONLY live counts every 10s (cheap)
-  const sessionIds = useMemo(() => sessions.map((s) => s.id).filter(Boolean), [sessions]);
+  const sessionIds = useMemo(
+    () => sessions.map((s) => s.id).filter(Boolean),
+    [sessions]
+  );
 
   useEffect(() => {
     const t = window.setInterval(() => {
@@ -331,10 +389,15 @@ export function SessionsPage() {
     return Date.now() > new Date(s.start_time).getTime() + dur * 60_000;
   };
 
-  const activeSessions = useMemo(() => sessions.filter((s) => !isExpired(s)), [sessions]);
+  const activeSessions = useMemo(
+    () => sessions.filter((s) => !isExpired(s)),
+    [sessions]
+  );
 
   const typeFilteredSessions = useMemo(() => {
-    return activeSessions.filter((s) => resolveSessionType(s) === sessionTypeTab);
+    return activeSessions.filter(
+      (s) => resolveSessionType(s) === sessionTypeTab
+    );
   }, [sessionTypeTab, activeSessions]);
 
   // ✅ Date filtering (only for group/body; infinite ignores date filter)
@@ -402,7 +465,9 @@ export function SessionsPage() {
       <main className="w-full px-3 md:px-6 lg:px-10 pb-12">
         {/* ✅ FIX: уменьшаем вертикальный отступ сверху ТОЛЬКО на Infinite tab */}
         <div
-          className={`text-center ${sessionTypeTab === "infinite" ? "pt-[56px] pb-[18px]" : "pt-[100px] pb-[50px]"
+          className={`text-center ${sessionTypeTab === "infinite"
+              ? "pt-[56px] pb-[18px]"
+              : "pt-[100px] pb-[50px]"
             }`}
         >
           {/* ✅ Убираем большой заголовок только для infinite */}
@@ -431,7 +496,11 @@ export function SessionsPage() {
 
           {sessionTypeTab !== "infinite" && (
             <div className="mb-6 w-full">
-              <SessionsDateFilter value={dateFilter} onChange={setDateFilter} weeksAhead={3} />
+              <SessionsDateFilter
+                value={dateFilter}
+                onChange={setDateFilter}
+                weeksAhead={3}
+              />
             </div>
           )}
 
@@ -444,11 +513,16 @@ export function SessionsPage() {
               <div className="p-2 text-center">
                 <p className="text-sm text-slate-600 mb-4">
                   No active sessions{" "}
-                  {dateFilter && sessionTypeTab !== "infinite" ? "for this date" : "available"}
+                  {dateFilter && sessionTypeTab !== "infinite"
+                    ? "for this date"
+                    : "available"}
                 </p>
 
                 {user && (
-                  <button onClick={() => modal.open()} className="text-sm underline underline-offset-4">
+                  <button
+                    onClick={() => modal.open()}
+                    className="text-sm underline underline-offset-4"
+                  >
                     Create the first session
                   </button>
                 )}
