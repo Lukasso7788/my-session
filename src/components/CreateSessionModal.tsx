@@ -6,6 +6,13 @@
 // ✅ Weekly series = same weekday + same time (base start_time), repeats every 7 days
 // ✅ Hard cap: last occurrence must be within 14 days from "now" (2 weeks ahead)
 // ✅ Series + custom slug: auto-suffixes with date (yyyy-mm-dd) to avoid collisions + checks collisions
+//
+// UI FIXES:
+// ✅ Desktop modal is wide / near full-screen with internal scroll
+// ✅ Mobile 360px overflow fixed (min-w-0 + wrapping + stacked hint/preview)
+// ✅ Icon padding consistent (Scheduling / Custom link / Studio)
+// ✅ Remove "(different UI than FlowN)" text
+// ✅ Studio "Minutes" controls: [-][input][+] always in one row
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import {
@@ -468,7 +475,7 @@ export function CreateSessionModal({
   // ---------- Scheduling in advance ----------
   const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("single");
   const [dailyDays, setDailyDays] = useState<number>(7); // occurrences for daily mode
-  const [weeklyCount, setWeeklyCount] = useState<number>(3); // default: this + next + next (fits 2 weeks ahead)
+  const [weeklyCount, setWeeklyCount] = useState<number>(3); // default: this + next + next
 
   // ---------- Custom link slug ----------
   const [customSlugInput, setCustomSlugInput] = useState("");
@@ -1069,15 +1076,12 @@ export function CreateSessionModal({
     JITSI_DOMAINS.find((d) => d.value === effectiveDomain)?.label ||
     effectiveDomain;
 
-  // ✅ Wider modal (about +50%) in non-studio mode
-  const panelClass = studioEnabled
-    ? "bg-white w-[calc(100vw-24px)] h-[calc(100vh-24px)] max-w-none max-h-none rounded-[20px] shadow-2xl flex flex-col overflow-hidden"
-    : "bg-white rounded-[16px] p-6 w-full max-w-2xl shadow-xl";
+  // ✅ Wide / near-fullscreen modal on desktop + safe mobile layout with internal scroll
+  const overlayClass =
+    "fixed inset-0 bg-black/50 z-50 p-3 md:p-4 flex items-center justify-center";
 
-  // ✅ Keep existing behavior, just add padding; studio already has it
-  const overlayClass = studioEnabled
-    ? "fixed inset-0 bg-black/50 z-50 p-3 md:p-4 flex items-center justify-center"
-    : "fixed inset-0 bg-black/50 z-50 p-3 md:p-4 flex items-center justify-center";
+  const panelClass =
+    "bg-white w-full h-full rounded-[20px] shadow-2xl flex flex-col overflow-hidden";
 
   const origin =
     typeof window !== "undefined" && window.location?.origin
@@ -1132,8 +1136,8 @@ export function CreateSessionModal({
     <div className={overlayClass}>
       <div className={panelClass}>
         {/* HEADER */}
-        <div className={studioEnabled ? "px-6 pt-6" : ""}>
-          <div className="flex justify-between items-center mb-4">
+        <div className="px-4 sm:px-6 pt-5">
+          <div className="flex justify-between items-center">
             <h2 className="text-[20px] font-bold text-brandBlack font-inter">
               Create focus session
             </h2>
@@ -1142,6 +1146,7 @@ export function CreateSessionModal({
               onClick={onClose}
               className="text-gray-500 hover:text-gray-700 transition"
               aria-label="Close"
+              type="button"
             >
               <X size={22} />
             </button>
@@ -1149,18 +1154,17 @@ export function CreateSessionModal({
         </div>
 
         {/* BODY (scrolls) */}
-        <div className={studioEnabled ? "px-6 pb-4 flex-1 overflow-y-auto" : ""}>
+        <div className="px-4 sm:px-6 pb-4 pt-4 flex-1 overflow-y-auto">
           {loading || !user ? (
-            <p className="text-sm text-gray-500 mb-4 font-inter px-6">
+            <p className="text-sm text-gray-500 font-inter">
               {loading
                 ? "Checking your account..."
                 : "You must be logged in to create a session."}
             </p>
           ) : (
             <div className="space-y-5">
-              {/* ✅ Row 1: Title + Start time */}
+              {/* Row 1: Title + Start time */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Title */}
                 <div>
                   <label className="block text-[14px] font-medium text-brandBlack mb-1 font-inter">
                     Session title
@@ -1174,7 +1178,6 @@ export function CreateSessionModal({
                   />
                 </div>
 
-                {/* Start Time */}
                 <div>
                   <label className="block text-[14px] font-medium text-brandBlack mb-1 font-inter">
                     Start time
@@ -1189,22 +1192,22 @@ export function CreateSessionModal({
                 </div>
               </div>
 
-              {/* ✅ Row 2: Scheduling + Custom link + Video region */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {/* Row 2: Scheduling + Custom link + Region */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 {/* ✅ Scheduling in advance */}
                 <div className="border border-gray-200 rounded-[18px] bg-white p-4">
                   <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-[14px] bg-[#111827] text-white flex items-center justify-center">
+                    <div className="w-10 h-10 p-2 rounded-[14px] bg-[#111827] text-white flex items-center justify-center shrink-0">
                       <CalendarDays size={18} />
                     </div>
 
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-3">
                         <div className="font-inter font-semibold text-[14px] text-brandBlack">
                           Scheduling (in advance)
                         </div>
-                        <div className="font-inter text-[12px] text-gray-500">
-                          Max: {MAX_ADVANCE_DAYS} days
+                        <div className="font-inter text-[12px] text-gray-500 whitespace-nowrap">
+                          Max: {MAX_ADVANCE_DAYS} days (~2 weeks)
                         </div>
                       </div>
 
@@ -1250,7 +1253,7 @@ export function CreateSessionModal({
                           Daily
                         </button>
 
-                        <div className="ml-auto font-inter text-[12px] text-gray-500">
+                        <div className="w-full sm:w-auto sm:ml-auto font-inter text-[12px] text-gray-500">
                           Creates:{" "}
                           <span className="font-semibold text-brandBlack">
                             {occurrencesCount}
@@ -1404,22 +1407,21 @@ export function CreateSessionModal({
                 </div>
 
                 {/* Custom link */}
-                <div className="border border-gray-200 rounded-[18px] bg-white p-4">
+                <div className="border border-gray-200 rounded-[18px] bg-white p-4 overflow-hidden">
                   <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-[14px] bg-[#111827] text-white flex items-center justify-center">
+                    <div className="w-10 h-10 p-2 rounded-[14px] bg-[#111827] text-white flex items-center justify-center shrink-0">
                       <Link2 size={18} />
                     </div>
 
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       <div className="font-inter font-semibold text-[14px] text-brandBlack">
                         Custom session link
                       </div>
                       <div className="font-inter text-[12px] text-gray-500">
-                        {slugHint ||
-                          "Optional. Your own short link instead of UUID."}
+                        {slugHint || "Optional. Your own short link instead of UUID."}
                       </div>
 
-                      <div className="mt-3">
+                      <div className="mt-3 min-w-0">
                         <input
                           value={customSlugInput}
                           onChange={(e) => setCustomSlugInput(e.target.value)}
@@ -1427,15 +1429,19 @@ export function CreateSessionModal({
                           className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter"
                         />
 
-                        <div className="mt-2 flex items-center justify-between gap-3">
-                          <div className={`text-[12px] font-inter ${slugHintColor}`}>
+                        {/* ✅ Mobile overflow fix: stack on small, truncate safely */}
+                        <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3 min-w-0">
+                          <div
+                            className={`text-[12px] font-inter ${slugHintColor} min-w-0`}
+                          >
                             {customSlugInput
                               ? slugHint
                               : isSeries
                                 ? "Optional. In series mode, we auto-add date suffix (yyyy-mm-dd)."
                                 : "Allowed: a-z, 0-9, - or _. Lowercase."}
                           </div>
-                          <div className="text-[12px] font-inter text-gray-500 truncate">
+
+                          <div className="text-[12px] font-inter text-gray-500 min-w-0 truncate">
                             {linkPreview}
                           </div>
                         </div>
@@ -1444,18 +1450,14 @@ export function CreateSessionModal({
                   </div>
                 </div>
 
-                {/* ✅ Video server region (card-style to fit row) */}
+                {/* JITSI REGION */}
                 <div className="border border-gray-200 rounded-[18px] bg-white p-4">
-                  <div className="font-inter font-semibold text-[14px] text-brandBlack">
+                  <label className="block text-[14px] font-medium text-brandBlack mb-2 font-inter">
                     Video server region
-                  </div>
-                  <div className="mt-1 font-inter text-[12px] text-gray-500">
-                    All participants will join the same Jitsi domain saved in
-                    the session.
-                  </div>
+                  </label>
 
-                  <div className="mt-3 flex items-center justify-between gap-3">
-                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="flex items-center gap-2 cursor-pointer select-none min-w-0">
                       <input
                         type="checkbox"
                         checked={useAutoDomain}
@@ -1463,14 +1465,11 @@ export function CreateSessionModal({
                         className="w-4 h-4"
                       />
                       <span className="text-[14px] text-brandBlack font-inter">
-                        Auto
-                      </span>
-                      <span className="text-[12px] text-gray-500 font-inter">
-                        (recommended)
+                        Auto (recommended)
                       </span>
                     </label>
 
-                    <span className="text-[12px] text-gray-500 font-inter">
+                    <span className="text-[12px] text-gray-500 font-inter whitespace-nowrap">
                       {useAutoDomain
                         ? `Picked: ${effectiveDomainLabel}`
                         : `Manual: ${effectiveDomainLabel}`}
@@ -1492,6 +1491,11 @@ export function CreateSessionModal({
                       ))}
                     </select>
                   )}
+
+                  <p className="mt-2 text-[12px] text-gray-500 font-inter">
+                    All participants will join the same Jitsi domain saved in the
+                    session.
+                  </p>
                 </div>
               </div>
 
@@ -1553,17 +1557,18 @@ export function CreateSessionModal({
                   ======================= */}
               <div className="border border-[#DBD8D8] rounded-[18px] bg-white p-4">
                 <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-[14px] bg-[#111827] text-white flex items-center justify-center">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <div className="w-10 h-10 p-2 rounded-[14px] bg-[#111827] text-white flex items-center justify-center shrink-0">
                       <Layers size={18} />
                     </div>
 
-                    <div>
+                    <div className="min-w-0">
                       <div className="font-inter font-semibold text-[14px] text-brandBlack">
                         Session Studio
                       </div>
+                      {/* ✅ removed "(different UI than FlowN)" */}
                       <div className="font-inter text-[12px] text-gray-500">
-                        Build a custom session script (different UI than FlowN).
+                        Build a custom session script.
                       </div>
                     </div>
                   </div>
@@ -1571,7 +1576,8 @@ export function CreateSessionModal({
                   {studioEnabled && (
                     <button
                       onClick={() => setStudioEnabled(false)}
-                      className="px-4 py-2 rounded-full bg-brandBlack text-white text-[12px] font-inter hover:bg-black transition"
+                      className="px-4 py-2 rounded-full bg-brandBlack text-white text-[12px] font-inter hover:bg-black transition shrink-0"
+                      type="button"
                     >
                       Close
                     </button>
@@ -1579,7 +1585,7 @@ export function CreateSessionModal({
                 </div>
 
                 <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <label className="flex items-center gap-2 cursor-pointer select-none min-w-0">
                     <input
                       type="checkbox"
                       checked={studioEnabled}
@@ -1591,7 +1597,7 @@ export function CreateSessionModal({
                     </span>
                   </label>
 
-                  <div className="text-[12px] text-gray-600 font-inter">
+                  <div className="text-[12px] text-gray-600 font-inter whitespace-nowrap">
                     Length:{" "}
                     <span className="font-semibold">{studioTotal}</span> min
                   </div>
@@ -1605,10 +1611,10 @@ export function CreateSessionModal({
                 {/* ✅ Participant limit */}
                 <div className="mt-4 border border-gray-200 rounded-[16px] p-3">
                   <div className="flex items-center gap-2">
-                    <div className="w-9 h-9 rounded-[12px] bg-black/5 flex items-center justify-center">
+                    <div className="w-9 h-9 rounded-[12px] bg-black/5 flex items-center justify-center shrink-0">
                       <Users size={16} />
                     </div>
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       <div className="font-inter font-semibold text-[13px] text-brandBlack">
                         Participant limit
                       </div>
@@ -1717,7 +1723,7 @@ export function CreateSessionModal({
                                 <div className="font-inter font-semibold text-[12px] text-brandBlack">
                                   {b.title}
                                 </div>
-                                <div className="font-inter text-[12px] text-gray-500">
+                                <div className="font-inter text-[12px] text-gray-500 whitespace-nowrap">
                                   {b.minutes}m
                                 </div>
                               </div>
@@ -1731,8 +1737,8 @@ export function CreateSessionModal({
 
                       {/* Script */}
                       <div className="border border-gray-200 rounded-[18px] p-4">
-                        <div className="flex items-center justify-between">
-                          <div>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
                             <div className="font-inter font-semibold text-[13px] text-brandBlack">
                               Script
                             </div>
@@ -1741,11 +1747,11 @@ export function CreateSessionModal({
                             </div>
                           </div>
 
-                          <div className="text-right">
+                          <div className="text-right shrink-0">
                             <div className="font-inter text-[12px] text-gray-500">
                               Total:
                             </div>
-                            <div className="font-inter font-semibold text-[12px] text-brandBlack">
+                            <div className="font-inter font-semibold text-[12px] text-brandBlack whitespace-nowrap">
                               {studioTotal} min
                             </div>
                           </div>
@@ -1764,7 +1770,7 @@ export function CreateSessionModal({
                               >
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="flex items-center gap-2 min-w-0">
-                                    <span className="px-2 py-1 rounded-full border border-gray-200 text-[11px] font-inter text-gray-600">
+                                    <span className="px-2 py-1 rounded-full border border-gray-200 text-[10px] sm:text-[11px] font-inter text-gray-600 whitespace-nowrap">
                                       {b.kind}
                                     </span>
 
@@ -1779,11 +1785,11 @@ export function CreateSessionModal({
                                     />
                                   </div>
 
-                                  <div className="flex items-center gap-2">
+                                  <div className="flex items-center gap-2 shrink-0">
                                     <button
                                       onClick={() => moveBlock(b.id, -1)}
                                       disabled={idx === 0}
-                                      className="w-9 h-9 rounded-[12px] border border-gray-200 flex items-center justify-center disabled:opacity-40 hover:bg-gray-50 transition"
+                                      className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 flex items-center justify-center disabled:opacity-40 hover:bg-gray-50 transition"
                                       type="button"
                                       title="Move up"
                                     >
@@ -1793,7 +1799,7 @@ export function CreateSessionModal({
                                     <button
                                       onClick={() => moveBlock(b.id, 1)}
                                       disabled={idx === studioBlocks.length - 1}
-                                      className="w-9 h-9 rounded-[12px] border border-gray-200 flex items-center justify-center disabled:opacity-40 hover:bg-gray-50 transition"
+                                      className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 flex items-center justify-center disabled:opacity-40 hover:bg-gray-50 transition"
                                       type="button"
                                       title="Move down"
                                     >
@@ -1802,7 +1808,7 @@ export function CreateSessionModal({
 
                                     <button
                                       onClick={() => removeBlock(b.id)}
-                                      className="w-9 h-9 rounded-[12px] border border-gray-200 flex items-center justify-center hover:bg-gray-50 transition"
+                                      className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 flex items-center justify-center hover:bg-gray-50 transition"
                                       type="button"
                                       title="Remove"
                                     >
@@ -1811,61 +1817,64 @@ export function CreateSessionModal({
                                   </div>
                                 </div>
 
-                                <div className="mt-3 flex items-center gap-2 flex-wrap">
-                                  <span className="text-[12px] text-gray-500 font-inter">
+                                {/* ✅ Minutes controls: keep [-][input][+] in one row */}
+                                <div className="mt-3 flex items-center justify-between gap-2">
+                                  <span className="text-[12px] text-gray-500 font-inter shrink-0">
                                     Minutes
                                   </span>
 
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      updateBlock(b.id, {
-                                        minutes: clamp(
-                                          b.minutes - 1,
-                                          1,
-                                          24 * 60
-                                        ),
-                                      })
-                                    }
-                                    className="w-9 h-9 rounded-[12px] border border-gray-200 hover:bg-gray-50 transition"
-                                  >
-                                    –
-                                  </button>
+                                  <div className="flex items-center gap-2 flex-nowrap shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        updateBlock(b.id, {
+                                          minutes: clamp(
+                                            b.minutes - 1,
+                                            1,
+                                            24 * 60
+                                          ),
+                                        })
+                                      }
+                                      className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 hover:bg-gray-50 transition"
+                                    >
+                                      –
+                                    </button>
 
-                                  <input
-                                    type="number"
-                                    value={b.minutes}
-                                    onChange={(e) =>
-                                      updateBlock(b.id, {
-                                        minutes: clamp(
-                                          Number(e.target.value) || 1,
-                                          1,
-                                          24 * 60
-                                        ),
-                                      })
-                                    }
-                                    className="w-16 h-9 px-2 border border-gray-200 rounded-[12px] text-[13px] font-inter text-center"
-                                  />
+                                    <input
+                                      type="number"
+                                      value={b.minutes}
+                                      onChange={(e) =>
+                                        updateBlock(b.id, {
+                                          minutes: clamp(
+                                            Number(e.target.value) || 1,
+                                            1,
+                                            24 * 60
+                                          ),
+                                        })
+                                      }
+                                      className="w-14 sm:w-16 h-8 sm:h-9 px-2 border border-gray-200 rounded-[12px] text-[13px] font-inter text-center"
+                                    />
 
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      updateBlock(b.id, {
-                                        minutes: clamp(
-                                          b.minutes + 1,
-                                          1,
-                                          24 * 60
-                                        ),
-                                      })
-                                    }
-                                    className="w-9 h-9 rounded-[12px] border border-gray-200 hover:bg-gray-50 transition"
-                                  >
-                                    +
-                                  </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        updateBlock(b.id, {
+                                          minutes: clamp(
+                                            b.minutes + 1,
+                                            1,
+                                            24 * 60
+                                          ),
+                                        })
+                                      }
+                                      className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 hover:bg-gray-50 transition"
+                                    >
+                                      +
+                                    </button>
 
-                                  <span className="text-[12px] text-gray-500 font-inter">
-                                    min
-                                  </span>
+                                    <span className="text-[12px] text-gray-500 font-inter">
+                                      min
+                                    </span>
+                                  </div>
                                 </div>
 
                                 <div className="mt-2 flex items-center gap-2 flex-wrap">
@@ -1899,19 +1908,14 @@ export function CreateSessionModal({
           )}
         </div>
 
-        {/* FOOTER (sticky in studio mode) */}
+        {/* FOOTER (always visible, panel is flex-col) */}
         {!loading && user && (
-          <div
-            className={
-              studioEnabled
-                ? "px-6 pb-6 pt-3 border-t border-gray-100 bg-white"
-                : "mt-4"
-            }
-          >
+          <div className="px-4 sm:px-6 pb-5 pt-3 border-t border-gray-100 bg-white">
             <button
               onClick={handleCreate}
               disabled={createDisabled}
               className="w-full bg-brandBlack text-white py-3 rounded-[42px] font-medium text-[15px] font-inter hover:bg-black disabled:bg-gray-300 transition"
+              type="button"
             >
               {isCreating
                 ? "Creating..."
