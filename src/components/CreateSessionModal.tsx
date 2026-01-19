@@ -15,6 +15,11 @@
 // ✅ Studio: "kind + title input" always on top (especially mobile)
 // ✅ Studio minutes controls: [-][input][+] always one row on 360px
 // ✅ Reduced paddings/gaps on mobile
+//
+// NEW (Session Studio reordering UX):
+// ✅ Click a block to select it, then use keyboard ↑ / ↓ to move it
+// ✅ Optional: Delete/Backspace removes selected block
+// ✅ Drag & drop reordering (drag the block itself; no special handle)
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import {
@@ -504,6 +509,11 @@ export function CreateSessionModal({
   // ---------- SESSION STUDIO ----------
   const [studioEnabled, setStudioEnabled] = useState(false);
   const [studioBlocks, setStudioBlocks] = useState<StudioBlock[]>([]);
+  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
+
+  // DnD state
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   const [maxParticipants, setMaxParticipants] = useState<number>(
     DEFAULT_MAX_PARTICIPANTS
@@ -518,6 +528,10 @@ export function CreateSessionModal({
     setScheduleMode("single");
     setDailyDays(7);
     setWeeklyCount(3);
+
+    setSelectedBlockId(null);
+    setDraggingId(null);
+    setDragOverId(null);
   }, [isOpen]);
 
   useEffect(() => {
@@ -694,18 +708,61 @@ export function CreateSessionModal({
     ]);
   }, []);
 
-  const moveBlock = useCallback((id: string, dir: -1 | 1) => {
-    setStudioBlocks((prev) => {
-      const idx = prev.findIndex((b) => b.id === id);
-      if (idx < 0) return prev;
-      const nextIdx = idx + dir;
-      if (nextIdx < 0 || nextIdx >= prev.length) return prev;
-      const copy = [...prev];
-      const [item] = copy.splice(idx, 1);
-      copy.splice(nextIdx, 0, item);
-      return copy;
+  const focusBlock = useCallback((id: string) => {
+    if (!id) return;
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`studio-block-${id}`) as
+        | HTMLElement
+        | null;
+      if (!el) return;
+      el.focus();
+      try {
+        el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      } catch {
+        // ignore
+      }
     });
   }, []);
+
+  const moveBlock = useCallback(
+    (id: string, dir: -1 | 1) => {
+      setStudioBlocks((prev) => {
+        const idx = prev.findIndex((b) => b.id === id);
+        if (idx < 0) return prev;
+        const nextIdx = idx + dir;
+        if (nextIdx < 0 || nextIdx >= prev.length) return prev;
+        const copy = [...prev];
+        const [item] = copy.splice(idx, 1);
+        copy.splice(nextIdx, 0, item);
+        return copy;
+      });
+
+      setSelectedBlockId(id);
+      focusBlock(id);
+    },
+    [focusBlock]
+  );
+
+  const moveBlockTo = useCallback(
+    (dragId: string, overId: string) => {
+      if (!dragId || !overId || dragId === overId) return;
+
+      setStudioBlocks((prev) => {
+        const from = prev.findIndex((b) => b.id === dragId);
+        const to = prev.findIndex((b) => b.id === overId);
+        if (from < 0 || to < 0 || from === to) return prev;
+
+        const copy = [...prev];
+        const [item] = copy.splice(from, 1);
+        copy.splice(to, 0, item);
+        return copy;
+      });
+
+      setSelectedBlockId(dragId);
+      focusBlock(dragId);
+    },
+    [focusBlock]
+  );
 
   const updateBlock = useCallback((id: string, patch: Partial<StudioBlock>) => {
     setStudioBlocks((prev) =>
@@ -715,6 +772,7 @@ export function CreateSessionModal({
 
   const removeBlock = useCallback((id: string) => {
     setStudioBlocks((prev) => prev.filter((b) => b.id !== id));
+    setSelectedBlockId((cur) => (cur === id ? null : cur));
   }, []);
 
   useEffect(() => {
@@ -1030,6 +1088,7 @@ export function CreateSessionModal({
       setScheduleMode("single");
       setDailyDays(7);
       setWeeklyCount(3);
+      setSelectedBlockId(null);
 
       onSessionCreated();
       onClose();
@@ -1114,6 +1173,19 @@ export function CreateSessionModal({
       : false) ||
     !!scheduleAdvanceError ||
     isCreating;
+
+  // DnD helpers (avoid dragging from inputs/buttons)
+  const isInteractiveEl = (el: EventTarget | null) => {
+    const t = el as HTMLElement | null;
+    if (!t) return false;
+    const tag = (t.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select") return true;
+    if (tag === "button") return true;
+    if (t.isContentEditable) return true;
+    // Also treat elements inside interactive controls as interactive
+    const closest = t.closest?.("input,textarea,select,button,[contenteditable='true']");
+    return !!closest;
+  };
 
   return (
     <div className={overlayClass}>
@@ -1508,8 +1580,7 @@ export function CreateSessionModal({
                         />
 
                         <img
-                          src={`/icons/${(t as any).icon || t.name.toLowerCase()
-                            }.svg`}
+                          src={`/icons/${(t as any).icon || t.name.toLowerCase()}.svg`}
                           className="w-4 h-4"
                           alt=""
                           draggable={false}
@@ -1676,6 +1747,10 @@ export function CreateSessionModal({
                       </button>
                     </div>
 
+                    <div className="mt-2 text-[12px] text-gray-500 font-inter">
+                      Tip: drag blocks to reorder. Or click a block and use ↑ / ↓.
+                    </div>
+
                     <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
                       {/* Library */}
                       <div className="border border-gray-200 rounded-[18px] p-3 sm:p-4">
@@ -1720,7 +1795,7 @@ export function CreateSessionModal({
                               Script
                             </div>
                             <div className="font-inter text-[12px] text-gray-500">
-                              Reorder with arrows. Edit titles & durations.
+                              Reorder with drag & drop, keyboard ↑/↓, or arrows.
                             </div>
                           </div>
 
@@ -1740,128 +1815,222 @@ export function CreateSessionModal({
                           </div>
                         ) : (
                           <div className="mt-3 space-y-2 sm:space-y-3">
-                            {studioBlocks.map((b, idx) => (
-                              <div
-                                key={b.id}
-                                className="border border-gray-200 rounded-[16px] p-2.5 sm:p-3"
-                              >
-                                {/* ✅ Top: kind pill + actions */}
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="px-2 py-1 rounded-full border border-gray-200 text-[10px] sm:text-[11px] font-inter text-gray-600 whitespace-nowrap">
-                                    {b.kind}
-                                  </span>
+                            {studioBlocks.map((b, idx) => {
+                              const selected = selectedBlockId === b.id;
+                              const isDragging = draggingId === b.id;
+                              const isOver = dragOverId === b.id && draggingId && draggingId !== b.id;
 
-                                  <div className="flex items-center gap-2 shrink-0">
-                                    <button
-                                      onClick={() => moveBlock(b.id, -1)}
-                                      disabled={idx === 0}
-                                      className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 flex items-center justify-center disabled:opacity-40 hover:bg-gray-50 transition"
-                                      type="button"
-                                      title="Move up"
-                                    >
-                                      <ArrowUp size={16} />
-                                    </button>
-
-                                    <button
-                                      onClick={() => moveBlock(b.id, 1)}
-                                      disabled={idx === studioBlocks.length - 1}
-                                      className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 flex items-center justify-center disabled:opacity-40 hover:bg-gray-50 transition"
-                                      type="button"
-                                      title="Move down"
-                                    >
-                                      <ArrowDown size={16} />
-                                    </button>
-
-                                    <button
-                                      onClick={() => removeBlock(b.id)}
-                                      className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 flex items-center justify-center hover:bg-gray-50 transition"
-                                      type="button"
-                                      title="Remove"
-                                    >
-                                      <Trash2 size={16} />
-                                    </button>
-                                  </div>
-                                </div>
-
-                                {/* ✅ Title input ALWAYS full width and on top */}
-                                <div className="mt-2">
-                                  <input
-                                    value={b.title}
-                                    onChange={(e) =>
-                                      updateBlock(b.id, { title: e.target.value })
+                              return (
+                                <div
+                                  key={b.id}
+                                  id={`studio-block-${b.id}`}
+                                  tabIndex={0}
+                                  draggable
+                                  onClick={() => {
+                                    setSelectedBlockId(b.id);
+                                    focusBlock(b.id);
+                                  }}
+                                  onFocus={() => setSelectedBlockId(b.id)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "ArrowUp") {
+                                      e.preventDefault();
+                                      moveBlock(b.id, -1);
+                                    } else if (e.key === "ArrowDown") {
+                                      e.preventDefault();
+                                      moveBlock(b.id, 1);
+                                    } else if (e.key === "Delete" || e.key === "Backspace") {
+                                      // only if user isn't typing inside an input
+                                      if (!isInteractiveEl(e.target)) {
+                                        e.preventDefault();
+                                        removeBlock(b.id);
+                                      }
                                     }
-                                    className="w-full px-3 py-2.5 border border-gray-200 rounded-[14px] text-[13px] font-inter"
-                                    placeholder="Block title…"
-                                  />
-                                </div>
-
-                                {/* ✅ Minutes controls: one row even on 360px */}
-                                <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                  <span className="text-[12px] text-gray-500 font-inter shrink-0">
-                                    Minutes
-                                  </span>
-
-                                  <div className="flex items-center gap-1 sm:gap-2 flex-nowrap shrink-0">
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        updateBlock(b.id, {
-                                          minutes: clamp(b.minutes - 1, 1, 24 * 60),
-                                        })
+                                  }}
+                                  onDragStart={(e) => {
+                                    if (isInteractiveEl(e.target)) {
+                                      e.preventDefault();
+                                      return;
+                                    }
+                                    setDraggingId(b.id);
+                                    setDragOverId(null);
+                                    try {
+                                      e.dataTransfer.effectAllowed = "move";
+                                      e.dataTransfer.setData("text/plain", b.id);
+                                    } catch {
+                                      // ignore
+                                    }
+                                  }}
+                                  onDragOver={(e) => {
+                                    e.preventDefault();
+                                    if (!draggingId) return;
+                                    if (dragOverId !== b.id) setDragOverId(b.id);
+                                  }}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    const dragIdFromData = (() => {
+                                      try {
+                                        return e.dataTransfer.getData("text/plain") || "";
+                                      } catch {
+                                        return "";
                                       }
-                                      className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 hover:bg-gray-50 transition"
-                                    >
-                                      –
-                                    </button>
+                                    })();
+                                    const dragId = draggingId || dragIdFromData;
+                                    if (dragId) moveBlockTo(dragId, b.id);
 
-                                    <input
-                                      type="number"
-                                      value={b.minutes}
-                                      onChange={(e) =>
-                                        updateBlock(b.id, {
-                                          minutes: clamp(
-                                            Number(e.target.value) || 1,
-                                            1,
-                                            24 * 60
-                                          ),
-                                        })
-                                      }
-                                      className="w-14 sm:w-16 h-8 sm:h-9 px-2 border border-gray-200 rounded-[12px] text-[13px] font-inter text-center"
-                                    />
-
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        updateBlock(b.id, {
-                                          minutes: clamp(b.minutes + 1, 1, 24 * 60),
-                                        })
-                                      }
-                                      className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 hover:bg-gray-50 transition"
-                                    >
-                                      +
-                                    </button>
-
-                                    <span className="hidden sm:inline text-[12px] text-gray-500 font-inter whitespace-nowrap">
-                                      min
+                                    setDraggingId(null);
+                                    setDragOverId(null);
+                                  }}
+                                  onDragEnd={() => {
+                                    setDraggingId(null);
+                                    setDragOverId(null);
+                                  }}
+                                  className={
+                                    "border rounded-[16px] p-2.5 sm:p-3 outline-none transition " +
+                                    (selected
+                                      ? "border-brandBlack ring-2 ring-black/10"
+                                      : "border-gray-200") +
+                                    (isDragging ? " opacity-60" : "") +
+                                    (isOver ? " ring-2 ring-emerald-200 border-emerald-300" : "") +
+                                    " hover:bg-gray-50"
+                                  }
+                                  title="Drag to reorder. Click + use ↑/↓ to move."
+                                >
+                                  {/* ✅ Top: kind pill + actions */}
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="px-2 py-1 rounded-full border border-gray-200 text-[10px] sm:text-[11px] font-inter text-gray-600 whitespace-nowrap">
+                                      {b.kind}
                                     </span>
+
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          moveBlock(b.id, -1);
+                                        }}
+                                        disabled={idx === 0}
+                                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 flex items-center justify-center disabled:opacity-40 hover:bg-gray-50 transition"
+                                        type="button"
+                                        title="Move up"
+                                      >
+                                        <ArrowUp size={16} />
+                                      </button>
+
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          moveBlock(b.id, 1);
+                                        }}
+                                        disabled={idx === studioBlocks.length - 1}
+                                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 flex items-center justify-center disabled:opacity-40 hover:bg-gray-50 transition"
+                                        type="button"
+                                        title="Move down"
+                                      >
+                                        <ArrowDown size={16} />
+                                      </button>
+
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          removeBlock(b.id);
+                                        }}
+                                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 flex items-center justify-center hover:bg-gray-50 transition"
+                                        type="button"
+                                        title="Remove"
+                                      >
+                                        <Trash2 size={16} />
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* ✅ Title input ALWAYS full width and on top */}
+                                  <div className="mt-2">
+                                    <input
+                                      value={b.title}
+                                      onChange={(e) =>
+                                        updateBlock(b.id, { title: e.target.value })
+                                      }
+                                      className="w-full px-3 py-2.5 border border-gray-200 rounded-[14px] text-[13px] font-inter"
+                                      placeholder="Block title…"
+                                      onClick={(e) => e.stopPropagation()}
+                                      onFocus={() => setSelectedBlockId(b.id)}
+                                    />
+                                  </div>
+
+                                  {/* ✅ Minutes controls: one row even on 360px */}
+                                  <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                    <span className="text-[12px] text-gray-500 font-inter shrink-0">
+                                      Minutes
+                                    </span>
+
+                                    <div
+                                      className="flex items-center gap-1 sm:gap-2 flex-nowrap shrink-0"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          updateBlock(b.id, {
+                                            minutes: clamp(b.minutes - 1, 1, 24 * 60),
+                                          })
+                                        }
+                                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 hover:bg-gray-50 transition"
+                                      >
+                                        –
+                                      </button>
+
+                                      <input
+                                        type="number"
+                                        value={b.minutes}
+                                        onChange={(e) =>
+                                          updateBlock(b.id, {
+                                            minutes: clamp(
+                                              Number(e.target.value) || 1,
+                                              1,
+                                              24 * 60
+                                            ),
+                                          })
+                                        }
+                                        className="w-14 sm:w-16 h-8 sm:h-9 px-2 border border-gray-200 rounded-[12px] text-[13px] font-inter text-center"
+                                        onFocus={() => setSelectedBlockId(b.id)}
+                                      />
+
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          updateBlock(b.id, {
+                                            minutes: clamp(b.minutes + 1, 1, 24 * 60),
+                                          })
+                                        }
+                                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 hover:bg-gray-50 transition"
+                                      >
+                                        +
+                                      </button>
+
+                                      <span className="hidden sm:inline text-[12px] text-gray-500 font-inter whitespace-nowrap">
+                                        min
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* Quick minutes */}
+                                  <div
+                                    className="mt-2 flex items-center gap-2 flex-wrap"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    {QUICK_MINUTES.map((m) => (
+                                      <button
+                                        key={m}
+                                        type="button"
+                                        onClick={() => updateBlock(b.id, { minutes: m })}
+                                        className="px-2.5 py-1.5 rounded-full border border-gray-200 text-[11px] sm:text-[12px] font-inter hover:bg-gray-50 transition"
+                                      >
+                                        {m}m
+                                      </button>
+                                    ))}
                                   </div>
                                 </div>
-
-                                {/* Quick minutes */}
-                                <div className="mt-2 flex items-center gap-2 flex-wrap">
-                                  {QUICK_MINUTES.map((m) => (
-                                    <button
-                                      key={m}
-                                      type="button"
-                                      onClick={() => updateBlock(b.id, { minutes: m })}
-                                      className="px-2.5 py-1.5 rounded-full border border-gray-200 text-[11px] sm:text-[12px] font-inter hover:bg-gray-50 transition"
-                                    >
-                                      {m}m
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                       </div>
