@@ -20,8 +20,20 @@
 // ✅ Click a block to select it, then use keyboard ↑ / ↓ to move it
 // ✅ Optional: Delete/Backspace removes selected block
 // ✅ Drag & drop reordering (drag the block itself; no special handle)
+//
+// NEW (Flow-like drag improvements):
+// ✅ Auto-scroll modal content while dragging near top/bottom
+// ✅ Trello-style drop indicator line (before/after card + end-of-list)
+// ✅ Smooth reorder animation (FLIP) for keyboard moves + drops
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+  useLayoutEffect,
+} from "react";
 import {
   X,
   Layers,
@@ -514,10 +526,24 @@ export function CreateSessionModal({
   // DnD state
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [dropEdge, setDropEdge] = useState<"before" | "after">("after"); // Trello-style insertion line
+  const END_DROP_ID = "__end__";
 
   const [maxParticipants, setMaxParticipants] = useState<number>(
     DEFAULT_MAX_PARTICIPANTS
   );
+
+  // Scroll container ref (modal body)
+  const modalScrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Auto-scroll while dragging (refs to avoid re-render spam)
+  const autoScrollRafRef = useRef<number | null>(null);
+  const autoScrollVelRef = useRef<number>(0);
+  const draggingRef = useRef<boolean>(false);
+
+  // FLIP animation bookkeeping (only when we reorder)
+  const flipPrevTopsRef = useRef<Record<string, number>>({});
+  const flipArmedRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -532,6 +558,14 @@ export function CreateSessionModal({
     setSelectedBlockId(null);
     setDraggingId(null);
     setDragOverId(null);
+    setDropEdge("after");
+
+    autoScrollVelRef.current = 0;
+    draggingRef.current = false;
+    if (autoScrollRafRef.current) {
+      cancelAnimationFrame(autoScrollRafRef.current);
+      autoScrollRafRef.current = null;
+    }
   }, [isOpen]);
 
   useEffect(() => {
@@ -724,8 +758,149 @@ export function CreateSessionModal({
     });
   }, []);
 
+  // DnD helpers (avoid dragging from inputs/buttons)
+  const isInteractiveEl = (el: EventTarget | null) => {
+    const t = el as HTMLElement | null;
+    if (!t) return false;
+    const tag = (t.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select") return true;
+    if (tag === "button") return true;
+    if (t.isContentEditable) return true;
+    const closest = t.closest?.(
+      "input,textarea,select,button,[contenteditable='true']"
+    );
+    return !!closest;
+  };
+
+  const setTransparentDragImage = (dt: DataTransfer) => {
+    try {
+      const img = new Image();
+      // 1x1 transparent gif
+      img.src =
+        "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+      dt.setDragImage(img, 0, 0);
+    } catch {
+      // ignore
+    }
+  };
+
+  // ---------- Auto-scroll while dragging ----------
+  const startAutoScrollLoop = useCallback(() => {
+    if (autoScrollRafRef.current) return;
+    draggingRef.current = true;
+
+    const tick = () => {
+      if (!draggingRef.current) {
+        autoScrollRafRef.current = null;
+        return;
+      }
+
+      const scroller = modalScrollRef.current;
+      const v = autoScrollVelRef.current;
+
+      if (scroller && v !== 0) {
+        scroller.scrollTop += v;
+      }
+
+      autoScrollRafRef.current = requestAnimationFrame(tick);
+    };
+
+    autoScrollRafRef.current = requestAnimationFrame(tick);
+  }, []);
+
+  const stopAutoScrollLoop = useCallback(() => {
+    draggingRef.current = false;
+    autoScrollVelRef.current = 0;
+    if (autoScrollRafRef.current) {
+      cancelAnimationFrame(autoScrollRafRef.current);
+      autoScrollRafRef.current = null;
+    }
+  }, []);
+
+  const updateAutoScrollFromClientY = useCallback((clientY: number) => {
+    const scroller = modalScrollRef.current;
+    if (!scroller) {
+      autoScrollVelRef.current = 0;
+      return;
+    }
+
+    const rect = scroller.getBoundingClientRect();
+    const threshold = 80; // px near top/bottom to start scrolling
+    const maxSpeed = 18; // px per frame (tuned to feel "Flow-ish")
+
+    const topZone = rect.top + threshold;
+    const bottomZone = rect.bottom - threshold;
+
+    let vel = 0;
+
+    if (clientY < topZone) {
+      const t = clamp((topZone - clientY) / threshold, 0, 1);
+      vel = -Math.round(maxSpeed * t);
+    } else if (clientY > bottomZone) {
+      const t = clamp((clientY - bottomZone) / threshold, 0, 1);
+      vel = Math.round(maxSpeed * t);
+    } else {
+      vel = 0;
+    }
+
+    autoScrollVelRef.current = vel;
+  }, []);
+
+  // ---------- FLIP smooth reorder ----------
+  const armFlip = useCallback(() => {
+    const tops: Record<string, number> = {};
+    for (const b of studioBlocks) {
+      const el = document.getElementById(`studio-block-${b.id}`) as
+        | HTMLElement
+        | null;
+      if (!el) continue;
+      tops[b.id] = el.getBoundingClientRect().top;
+    }
+    flipPrevTopsRef.current = tops;
+    flipArmedRef.current = true;
+  }, [studioBlocks]);
+
+  useLayoutEffect(() => {
+    if (!flipArmedRef.current) return;
+
+    const prev = flipPrevTopsRef.current || {};
+    flipArmedRef.current = false;
+
+    for (const b of studioBlocks) {
+      const el = document.getElementById(`studio-block-${b.id}`) as
+        | HTMLElement
+        | null;
+      if (!el) continue;
+
+      const prevTop = prev[b.id];
+      if (typeof prevTop !== "number") continue;
+
+      const nextTop = el.getBoundingClientRect().top;
+      const dy = prevTop - nextTop;
+
+      if (Math.abs(dy) < 1) continue;
+
+      try {
+        el.animate(
+          [
+            { transform: `translateY(${dy}px)` },
+            { transform: "translateY(0px)" },
+          ],
+          {
+            duration: 180,
+            easing: "cubic-bezier(0.2, 0, 0, 1)",
+          }
+        );
+      } catch {
+        // ignore
+      }
+    }
+  }, [studioBlocks]);
+
   const moveBlock = useCallback(
     (id: string, dir: -1 | 1) => {
+      armFlip();
+
       setStudioBlocks((prev) => {
         const idx = prev.findIndex((b) => b.id === id);
         if (idx < 0) return prev;
@@ -740,28 +915,49 @@ export function CreateSessionModal({
       setSelectedBlockId(id);
       focusBlock(id);
     },
-    [focusBlock]
+    [armFlip, focusBlock]
   );
 
   const moveBlockTo = useCallback(
-    (dragId: string, overId: string) => {
-      if (!dragId || !overId || dragId === overId) return;
+    (dragId: string, overId: string, edge: "before" | "after") => {
+      if (!dragId || !overId) return;
+
+      armFlip();
 
       setStudioBlocks((prev) => {
         const from = prev.findIndex((b) => b.id === dragId);
+        if (from < 0) return prev;
+
+        // drop to end
+        if (overId === END_DROP_ID) {
+          const copy = [...prev];
+          const [item] = copy.splice(from, 1);
+          copy.push(item);
+          return copy;
+        }
+
         const to = prev.findIndex((b) => b.id === overId);
-        if (from < 0 || to < 0 || from === to) return prev;
+        if (to < 0) return prev;
+
+        if (dragId === overId) return prev;
 
         const copy = [...prev];
         const [item] = copy.splice(from, 1);
-        copy.splice(to, 0, item);
+
+        // after removal, the "to" index may shift
+        const toAfterRemoval = from < to ? to - 1 : to;
+        const insertIndex =
+          toAfterRemoval + (edge === "after" ? 1 : 0);
+
+        const finalIndex = clamp(insertIndex, 0, copy.length);
+        copy.splice(finalIndex, 0, item);
         return copy;
       });
 
       setSelectedBlockId(dragId);
       focusBlock(dragId);
     },
-    [focusBlock]
+    [armFlip, focusBlock]
   );
 
   const updateBlock = useCallback((id: string, patch: Partial<StudioBlock>) => {
@@ -1174,19 +1370,6 @@ export function CreateSessionModal({
     !!scheduleAdvanceError ||
     isCreating;
 
-  // DnD helpers (avoid dragging from inputs/buttons)
-  const isInteractiveEl = (el: EventTarget | null) => {
-    const t = el as HTMLElement | null;
-    if (!t) return false;
-    const tag = (t.tagName || "").toLowerCase();
-    if (tag === "input" || tag === "textarea" || tag === "select") return true;
-    if (tag === "button") return true;
-    if (t.isContentEditable) return true;
-    // Also treat elements inside interactive controls as interactive
-    const closest = t.closest?.("input,textarea,select,button,[contenteditable='true']");
-    return !!closest;
-  };
-
   return (
     <div className={overlayClass}>
       <div className={panelClass}>
@@ -1209,7 +1392,10 @@ export function CreateSessionModal({
         </div>
 
         {/* BODY (scrolls) */}
-        <div className="px-3 sm:px-6 pb-3 sm:pb-4 pt-3 sm:pt-4 flex-1 overflow-y-auto">
+        <div
+          ref={modalScrollRef}
+          className="px-3 sm:px-6 pb-3 sm:pb-4 pt-3 sm:pt-4 flex-1 overflow-y-auto"
+        >
           {loading || !user ? (
             <p className="text-sm text-gray-500 font-inter">
               {loading
@@ -1580,7 +1766,8 @@ export function CreateSessionModal({
                         />
 
                         <img
-                          src={`/icons/${(t as any).icon || t.name.toLowerCase()}.svg`}
+                          src={`/icons/${(t as any).icon || t.name.toLowerCase()
+                            }.svg`}
                           className="w-4 h-4"
                           alt=""
                           draggable={false}
@@ -1748,7 +1935,8 @@ export function CreateSessionModal({
                     </div>
 
                     <div className="mt-2 text-[12px] text-gray-500 font-inter">
-                      Tip: drag blocks to reorder. Or click a block and use ↑ / ↓.
+                      Tip: drag blocks to reorder (auto-scroll + insert line). Or
+                      click a block and use ↑ / ↓.
                     </div>
 
                     <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
@@ -1788,7 +1976,17 @@ export function CreateSessionModal({
                       </div>
 
                       {/* Script */}
-                      <div className="border border-gray-200 rounded-[18px] p-3 sm:p-4">
+                      <div
+                        className="border border-gray-200 rounded-[18px] p-3 sm:p-4"
+                        onDragOver={(e) => {
+                          if (!draggingId) return;
+                          updateAutoScrollFromClientY(e.clientY);
+                        }}
+                        onDragLeave={() => {
+                          if (!draggingId) return;
+                          autoScrollVelRef.current = 0;
+                        }}
+                      >
                         <div className="flex items-center justify-between gap-3">
                           <div className="min-w-0">
                             <div className="font-inter font-semibold text-[13px] text-brandBlack">
@@ -1818,7 +2016,9 @@ export function CreateSessionModal({
                             {studioBlocks.map((b, idx) => {
                               const selected = selectedBlockId === b.id;
                               const isDragging = draggingId === b.id;
-                              const isOver = dragOverId === b.id && draggingId && draggingId !== b.id;
+
+                              const isOverSelf =
+                                dragOverId === b.id && draggingId && draggingId !== b.id;
 
                               return (
                                 <div
@@ -1839,7 +2039,6 @@ export function CreateSessionModal({
                                       e.preventDefault();
                                       moveBlock(b.id, 1);
                                     } else if (e.key === "Delete" || e.key === "Backspace") {
-                                      // only if user isn't typing inside an input
                                       if (!isInteractiveEl(e.target)) {
                                         e.preventDefault();
                                         removeBlock(b.id);
@@ -1853,20 +2052,36 @@ export function CreateSessionModal({
                                     }
                                     setDraggingId(b.id);
                                     setDragOverId(null);
+                                    setDropEdge("after");
+
                                     try {
                                       e.dataTransfer.effectAllowed = "move";
                                       e.dataTransfer.setData("text/plain", b.id);
+                                      setTransparentDragImage(e.dataTransfer);
                                     } catch {
                                       // ignore
                                     }
+
+                                    startAutoScrollLoop();
                                   }}
                                   onDragOver={(e) => {
                                     e.preventDefault();
                                     if (!draggingId) return;
+
+                                    updateAutoScrollFromClientY(e.clientY);
+
+                                    // determine insert edge (before/after) from cursor position
+                                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                    const mid = rect.top + rect.height / 2;
+                                    const edge: "before" | "after" =
+                                      e.clientY < mid ? "before" : "after";
+
                                     if (dragOverId !== b.id) setDragOverId(b.id);
+                                    if (dropEdge !== edge) setDropEdge(edge);
                                   }}
                                   onDrop={(e) => {
                                     e.preventDefault();
+
                                     const dragIdFromData = (() => {
                                       try {
                                         return e.dataTransfer.getData("text/plain") || "";
@@ -1874,27 +2089,45 @@ export function CreateSessionModal({
                                         return "";
                                       }
                                     })();
+
                                     const dragId = draggingId || dragIdFromData;
-                                    if (dragId) moveBlockTo(dragId, b.id);
+                                    if (dragId) moveBlockTo(dragId, b.id, dropEdge);
 
                                     setDraggingId(null);
                                     setDragOverId(null);
+                                    setDropEdge("after");
+
+                                    stopAutoScrollLoop();
                                   }}
                                   onDragEnd={() => {
                                     setDraggingId(null);
                                     setDragOverId(null);
+                                    setDropEdge("after");
+                                    stopAutoScrollLoop();
                                   }}
                                   className={
-                                    "border rounded-[16px] p-2.5 sm:p-3 outline-none transition " +
+                                    "relative border rounded-[16px] p-2.5 sm:p-3 outline-none transition " +
+                                    "cursor-grab active:cursor-grabbing " +
                                     (selected
                                       ? "border-brandBlack ring-2 ring-black/10"
                                       : "border-gray-200") +
                                     (isDragging ? " opacity-60" : "") +
-                                    (isOver ? " ring-2 ring-emerald-200 border-emerald-300" : "") +
                                     " hover:bg-gray-50"
                                   }
                                   title="Drag to reorder. Click + use ↑/↓ to move."
                                 >
+                                  {/* Trello-style drop line */}
+                                  {isOverSelf && (
+                                    <div
+                                      className={
+                                        "pointer-events-none absolute left-3 right-3 h-[3px] rounded-full bg-brandBlack/80 " +
+                                        (dropEdge === "before"
+                                          ? "-top-[6px]"
+                                          : "-bottom-[6px]")
+                                      }
+                                    />
+                                  )}
+
                                   {/* ✅ Top: kind pill + actions */}
                                   <div className="flex items-center justify-between gap-2">
                                     <span className="px-2 py-1 rounded-full border border-gray-200 text-[10px] sm:text-[11px] font-inter text-gray-600 whitespace-nowrap">
@@ -2031,6 +2264,40 @@ export function CreateSessionModal({
                                 </div>
                               );
                             })}
+
+                            {/* End-of-list drop zone (so you can drop below the last card) */}
+                            {draggingId && (
+                              <div
+                                className="relative h-10 rounded-[14px] border border-dashed border-gray-200 bg-gray-50/60"
+                                onDragOver={(e) => {
+                                  e.preventDefault();
+                                  updateAutoScrollFromClientY(e.clientY);
+                                  if (dragOverId !== END_DROP_ID) setDragOverId(END_DROP_ID);
+                                  if (dropEdge !== "after") setDropEdge("after");
+                                }}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  const dragIdFromData = (() => {
+                                    try {
+                                      return e.dataTransfer.getData("text/plain") || "";
+                                    } catch {
+                                      return "";
+                                    }
+                                  })();
+                                  const dragId = draggingId || dragIdFromData;
+                                  if (dragId) moveBlockTo(dragId, END_DROP_ID, "after");
+
+                                  setDraggingId(null);
+                                  setDragOverId(null);
+                                  setDropEdge("after");
+                                  stopAutoScrollLoop();
+                                }}
+                              >
+                                {dragOverId === END_DROP_ID && (
+                                  <div className="pointer-events-none absolute left-3 right-3 top-1/2 -translate-y-1/2 h-[3px] rounded-full bg-brandBlack/70" />
+                                )}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -2039,9 +2306,7 @@ export function CreateSessionModal({
                 )}
               </div>
 
-              {error && (
-                <p className="text-red-600 text-sm font-inter">{error}</p>
-              )}
+              {error && <p className="text-red-600 text-sm font-inter">{error}</p>}
             </div>
           )}
         </div>
