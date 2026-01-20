@@ -202,7 +202,14 @@ function phaseToStageType(phaseNameLower: string): Stage["type"] {
 const STAGE_COLORS: Record<string, string> = {
     intro: "#80DF86",
     intentions: "#ADD3FF",
+    checkin: "#ADD3FF",
+
     focus: "#4CA0FF",
+
+    recap: "#A78BFA",
+    celebrate: "#F472B6",
+    custom: "#9CA3AF",
+
     break: "#F9ADA2",
     outro: "#80DF86",
 };
@@ -849,9 +856,20 @@ export default function RoomPageIFrame() {
 
                                 const inferTypeFromText = (lower: string): Stage["type"] => {
                                     if (lower.includes("welcome") || lower.includes("intro")) return "intro";
-                                    if (lower.includes("intention") || lower.includes("checkin") || lower.includes("check-in")) return "intentions";
+
+                                    if (lower.includes("checkin") || lower.includes("check-in")) return "checkin";
+                                    if (lower.includes("intention")) return "intentions";
+
+                                    if (lower.includes("recap")) return "recap";
+                                    if (lower.includes("celebrate") || lower.includes("celebration")) return "celebrate";
+                                    if (lower.includes("custom")) return "custom";
+
                                     if (lower.includes("break") || lower.includes("rest") || lower.includes("pause")) return "break";
-                                    if (lower.includes("outro") || lower.includes("wrap") || lower.includes("farewell") || lower.includes("end")) return "outro";
+
+                                    // раньше wrap/outro попадало в outro — оставляю как было
+                                    if (lower.includes("outro") || lower.includes("wrap") || lower.includes("farewell") || lower.includes("end"))
+                                        return "outro";
+
                                     if (lower.includes("focus")) return "focus";
                                     return "focus";
                                 };
@@ -944,14 +962,29 @@ export default function RoomPageIFrame() {
                             const lower = String(p.name || "").toLowerCase();
                             const type = phaseToStageType(lower);
 
-                            const displayName =
+                            const defaultLabel =
                                 type === "focus"
                                     ? "Focus"
                                     : type === "intentions"
                                         ? "Intentions (spoken)"
-                                        : type === "break"
-                                            ? "Break"
-                                            : String(p.name || "Stage");
+                                        : type === "checkin"
+                                            ? "Check-in"
+                                            : type === "break"
+                                                ? "Break"
+                                                : type === "intro"
+                                                    ? "Welcome"
+                                                    : type === "outro"
+                                                        ? "Outro"
+                                                        : type === "recap"
+                                                            ? "Recap"
+                                                            : type === "celebrate"
+                                                                ? "Celebrate"
+                                                                : type === "custom"
+                                                                    ? "Custom"
+                                                                    : "Stage";
+
+                            // ✅ если в студии задано кастомное имя — оно побеждает
+                            const displayName = rawName || defaultLabel;
 
                             const seconds = Number(p.seconds) || 0;
                             const minutes = Math.max(1, Math.round(seconds / 60));

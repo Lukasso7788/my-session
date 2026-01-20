@@ -85,6 +85,92 @@ function getStageLabelMinutes(stage: any): number {
   return 0;
 }
 
+// ===============================
+// ✅ Kind -> color + label mapping
+// ===============================
+type StageKind =
+  | "welcome"
+  | "intentions"
+  | "focus"
+  | "break"
+  | "checkin"
+  | "recap"
+  | "celebrate"
+  | "custom";
+
+const KIND_META: Record<StageKind, { label: string; color: string }> = {
+  welcome: { label: "Welcome", color: "#34D399" }, // emerald-400
+  intentions: { label: "Intentions", color: "#38BDF8" }, // sky-400
+  focus: { label: "Focus", color: "#3B82F6" }, // blue-500
+  break: { label: "Break", color: "#FDA4AF" }, // rose-300
+
+  // check-in можно оставить как intentions (как у тебя сейчас)
+  checkin: { label: "Check-in", color: "#38BDF8" }, // sky-400
+
+  recap: { label: "Recap", color: "#A78BFA" }, // violet-400
+  celebrate: { label: "Celebrate", color: "#F472B6" }, // pink-400
+  custom: { label: "Custom", color: "#9CA3AF" }, // gray-400
+};
+
+function normalizeKind(raw: any): StageKind {
+  const k = String(raw || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-");
+
+  if (k === "check-in" || k === "checkin" || k === "check_in") return "checkin";
+  if (k === "intention" || k === "intentions") return "intentions";
+  if (k === "welcome") return "welcome";
+  if (k === "focus") return "focus";
+  if (k === "break") return "break";
+  if (k === "recap") return "recap";
+  if (k === "celebrate" || k === "celebration") return "celebrate";
+  if (k === "custom") return "custom";
+
+  // ✅ unknown -> custom (не "focus")
+  return "custom";
+}
+
+function getStageKind(stage: any): StageKind {
+  // try common fields
+  return normalizeKind(
+    stage?.kind ??
+    stage?.type ??
+    stage?.stageKind ??
+    stage?.stage_kind ??
+    stage?.blockKind
+  );
+}
+
+function getDisplayName(stage: any, kind: StageKind) {
+  const name =
+    String(
+      stage?.title ??
+      stage?.label ??
+      stage?.displayName ??
+      stage?.name ??
+      ""
+    ).trim();
+
+  return name || KIND_META[kind].label;
+}
+
+function resolveStageColor(stage: any, kind: StageKind) {
+  const raw = stage?.color;
+
+  // if no color at all -> use kind color
+  if (!raw) return KIND_META[kind].color;
+
+  const s = String(raw).trim().toLowerCase();
+
+  // если раньше дефолт был "#4CA0FF", а теперь это recap/custom/etc — перекрываем
+  if ((s === "#4ca0ff" || s === "rgb(76,160,255)" || s === "rgba(76,160,255,1)") && kind !== "focus") {
+    return KIND_META[kind].color;
+  }
+
+  return raw;
+}
+
 export function SessionStageBar({
   stages,
   startTime,
@@ -172,11 +258,25 @@ export function SessionStageBar({
 
   return (
     <div className="w-full flex h-4 rounded-2xl overflow-hidden bg-white/10 shadow-inner">
-      {stages.map((stage, index) => {
+      {(stages || []).map((stage, index) => {
         const durSec = stageSecondsList[index] || 0;
         const width = durSec > 0 ? (durSec / totalStagesSeconds) * 100 : 0;
 
         if (width <= 0) return null;
+
+        const kind = getStageKind(stage as any);
+        const displayName = getDisplayName(stage as any, kind);
+        const bg = resolveStageColor(stage as any, kind);
+        const labelMins = getStageLabelMinutes(stage);
+
+        // ✅ normalized stage for hover label outside (RoomPage etc.)
+        const hoverStage = {
+          ...(stage as any),
+          // important: override name + color so external UI shows correct title/colors
+          name: displayName,
+          color: bg,
+          kind,
+        } as SessionStage;
 
         const isActive = index === currentStageIndex;
         const progressWidth = isActive
@@ -185,20 +285,18 @@ export function SessionStageBar({
             ? "100%"
             : "0%";
 
-        const bg = (stage as any).color || "#4CA0FF";
-        const labelMins = getStageLabelMinutes(stage);
-
         return (
           <div
-            key={index}
+            key={(stage as any)?.id || `${index}-${displayName}`}
             className="relative h-full group cursor-pointer transition-all duration-300"
             style={{
               width: `${width}%`,
               backgroundColor: bg,
               opacity: isActive ? 1 : 0.8,
             }}
-            onMouseEnter={() => onHoverStage?.(stage)}
+            onMouseEnter={() => onHoverStage?.(hoverStage)}
             onMouseLeave={() => onHoverStage?.(null)}
+            title={`${displayName}${labelMins ? ` • ${labelMins} min` : ""}`}
           >
             <div
               className="absolute left-0 top-0 bottom-0 bg-black/15 transition-all"
@@ -207,7 +305,7 @@ export function SessionStageBar({
 
             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center z-50">
               <div className="bg-slate-900 text-white text-[11px] px-2 py-1 rounded-md shadow-lg whitespace-nowrap">
-                {stage.name}
+                {displayName}
                 {labelMins ? ` • ${labelMins} min` : ""}
               </div>
               <div className="w-2 h-2 bg-slate-900 rotate-45 mt-[-3px]" />
