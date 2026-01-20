@@ -291,7 +291,9 @@ export function SessionStageBar({
             className="relative h-full group cursor-pointer transition-all duration-300"
             style={{
               width: `${width}%`,
-              backgroundColor: bg,
+              ...(typeof bg === "string" && bg.toLowerCase().includes("gradient")
+                ? { background: bg }
+                : { backgroundColor: bg }),
               opacity: isActive ? 1 : 0.8,
             }}
             onMouseEnter={() => onHoverStage?.(hoverStage)}

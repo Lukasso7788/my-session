@@ -193,6 +193,7 @@ function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: numbe
 }
 
 function phaseToStageType(phaseNameLower: string): Stage["type"] {
+    if (phaseNameLower.includes("custom")) return "custom";
     if (phaseNameLower.includes("focus")) return "focus";
     if (phaseNameLower.includes("checkin") || phaseNameLower.includes("intention")) return "intentions";
     if (phaseNameLower.includes("break") || phaseNameLower.includes("rest")) return "break";
@@ -208,11 +209,15 @@ const STAGE_COLORS: Record<string, string> = {
 
     recap: "#A78BFA",
     celebrate: "#F472B6",
-    custom: "#9CA3AF",
+    custom: CUSTOM_BLOCK_GRADIENT, // ✅ вот оно
 
     break: "#F9ADA2",
     outro: "#80DF86",
 };
+
+// ✅ Custom block gradient (4 stops; last color повторяем чтобы было 4 точки)
+const CUSTOM_BLOCK_GRADIENT =
+    "linear-gradient(90deg, #5286F6 0%, #65D46C 40%, #F65252 80%, #F65252 100%)";
 
 // ===============================
 // JITSI EXTERNAL API LOADER
@@ -862,7 +867,7 @@ export default function RoomPageIFrame() {
 
                                     if (lower.includes("recap")) return "recap";
                                     if (lower.includes("celebrate") || lower.includes("celebration")) return "celebrate";
-                                    if (lower.includes("custom")) return "custom";
+                                    if (lower.includes("custom")) return "custom"; // ✅
 
                                     if (lower.includes("break") || lower.includes("rest") || lower.includes("pause")) return "break";
 
