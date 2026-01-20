@@ -13,6 +13,11 @@
 //    * Only the *new joiner* self-leaves if over capacity (checked on videoConferenceJoined)
 //    * Host (if possible) kicks only the extra participant on participantJoined
 // - ✅ More reliable participant counting (no naive +1)
+//
+// ✅ FIXES ADDED (important):
+// 1) CUSTOM_BLOCK_GRADIENT declared BEFORE STAGE_COLORS (prevents ReferenceError on import)
+// 2) rawName defined in infinite schedule branch (prevents ReferenceError)
+// 3) Array schedule: preserve custom block names (don't overwrite focus/custom/recap etc with defaults)
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -27,7 +32,17 @@ type Stage = {
     name: string;
     duration: number; // minutes (display/legacy)
     color: string;
-    type: "intro" | "intentions" | "focus" | "break" | "outro" | string;
+    type:
+    | "intro"
+    | "intentions"
+    | "focus"
+    | "break"
+    | "outro"
+    | "checkin"
+    | "recap"
+    | "celebrate"
+    | "custom"
+    | string;
     durationSeconds?: number;
 };
 
@@ -194,11 +209,18 @@ function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: numbe
 
 function phaseToStageType(phaseNameLower: string): Stage["type"] {
     if (phaseNameLower.includes("custom")) return "custom";
+    if (phaseNameLower.includes("recap")) return "recap";
+    if (phaseNameLower.includes("celebrate") || phaseNameLower.includes("celebration")) return "celebrate";
     if (phaseNameLower.includes("focus")) return "focus";
-    if (phaseNameLower.includes("checkin") || phaseNameLower.includes("intention")) return "intentions";
+    if (phaseNameLower.includes("checkin") || phaseNameLower.includes("check-in")) return "checkin";
+    if (phaseNameLower.includes("intention")) return "intentions";
     if (phaseNameLower.includes("break") || phaseNameLower.includes("rest")) return "break";
     return "focus";
 }
+
+// ✅ FIX #1: define BEFORE STAGE_COLORS (const is not hoisted)
+const CUSTOM_BLOCK_GRADIENT =
+    "linear-gradient(90deg, #5286F6 0%, #65D46C 40%, #F65252 80%, #F65252 100%)";
 
 const STAGE_COLORS: Record<string, string> = {
     intro: "#80DF86",
@@ -209,15 +231,11 @@ const STAGE_COLORS: Record<string, string> = {
 
     recap: "#A78BFA",
     celebrate: "#F472B6",
-    custom: CUSTOM_BLOCK_GRADIENT, // ✅ вот оно
+    custom: CUSTOM_BLOCK_GRADIENT,
 
     break: "#F9ADA2",
     outro: "#80DF86",
 };
-
-// ✅ Custom block gradient (4 stops; last color повторяем чтобы было 4 точки)
-const CUSTOM_BLOCK_GRADIENT =
-    "linear-gradient(90deg, #5286F6 0%, #65D46C 40%, #F65252 80%, #F65252 100%)";
 
 // ===============================
 // JITSI EXTERNAL API LOADER
@@ -411,12 +429,7 @@ function Icon({
 // ✅ Inline icons to avoid missing assets on mobile
 function UsersInlineIcon({ className = "w-4 h-4" }: { className?: string }) {
     return (
-        <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            className={className}
-            aria-hidden="true"
-        >
+        <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
             <path
                 d="M16 11a3.5 3.5 0 1 0-3.5-3.5A3.5 3.5 0 0 0 16 11Z"
                 stroke="currentColor"
@@ -451,12 +464,7 @@ function UsersInlineIcon({ className = "w-4 h-4" }: { className?: string }) {
 
 function RefreshInlineIcon({ className = "w-4 h-4" }: { className?: string }) {
     return (
-        <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            className={className}
-            aria-hidden="true"
-        >
+        <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
             <path
                 d="M21 12a9 9 0 0 1-15.4 6.4"
                 stroke="currentColor"
@@ -471,20 +479,8 @@ function RefreshInlineIcon({ className = "w-4 h-4" }: { className?: string }) {
                 strokeLinecap="round"
                 strokeLinejoin="round"
             />
-            <path
-                d="M21 7v5h-5"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-            />
-            <path
-                d="M3 17v-5h5"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-            />
+            <path d="M21 7v5h-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M3 17v-5h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
     );
 }
@@ -530,19 +526,8 @@ function ParticipantsSmartIcon({
 }
 
 // ✅ Smart icon: reload (expects /icons/reload.svg, then inline fallback)
-function ReloadSmartIcon({
-    theme,
-    className = "w-4 h-4",
-}: {
-    theme: RoomTheme;
-    className?: string;
-}) {
-    const candidates = [
-        `/icons/reload-${theme}.svg`,
-        `/icons/reload.svg`,
-        `/icons/refresh-${theme}.svg`,
-        `/icons/refresh.svg`,
-    ];
+function ReloadSmartIcon({ theme, className = "w-4 h-4" }: { theme: RoomTheme; className?: string }) {
+    const candidates = [`/icons/reload-${theme}.svg`, `/icons/reload.svg`, `/icons/refresh-${theme}.svg`, `/icons/refresh.svg`];
     const [idx, setIdx] = useState(0);
     const [inline, setInline] = useState(false);
 
@@ -710,12 +695,8 @@ export default function RoomPageIFrame() {
         const title = String(session?.title || "").toLowerCase();
 
         const tpl = session?.session_templates;
-        const tplName = Array.isArray(tpl)
-            ? String(tpl?.[0]?.name || tpl?.[0]?.title || "")
-            : String(tpl?.name || tpl?.title || "");
-        const tplKey = Array.isArray(tpl)
-            ? String(tpl?.[0]?.key || tpl?.[0]?.slug || tpl?.[0]?.type || "")
-            : String(tpl?.key || tpl?.slug || tpl?.type || "");
+        const tplName = Array.isArray(tpl) ? String(tpl?.[0]?.name || tpl?.[0]?.title || "") : String(tpl?.name || tpl?.title || "");
+        const tplKey = Array.isArray(tpl) ? String(tpl?.[0]?.key || tpl?.[0]?.slug || tpl?.[0]?.type || "") : String(tpl?.key || tpl?.slug || tpl?.type || "");
         const tplFmt = Array.isArray(tpl) ? String(tpl?.[0]?.format || "") : String(tpl?.format || "");
 
         const hay = `${fmt} ${title} ${tplName} ${tplKey} ${tplFmt}`.toLowerCase();
@@ -812,8 +793,7 @@ export default function RoomPageIFrame() {
 
             setLoading(true);
 
-            const selectStr =
-                "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)";
+            const selectStr = "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)";
 
             try {
                 const isUuid = UUID_RE.test(idOrSlug);
@@ -821,9 +801,7 @@ export default function RoomPageIFrame() {
 
                 const q = supabase.from("sessions").select(selectStr);
 
-                const { data, error } = isUuid
-                    ? await q.eq("id", idOrSlug).single()
-                    : await q.eq("custom_slug", slug).single();
+                const { data, error } = isUuid ? await q.eq("id", idOrSlug).single() : await q.eq("custom_slug", slug).single();
 
                 if (data && !error) {
                     setSession(data);
@@ -867,36 +845,24 @@ export default function RoomPageIFrame() {
 
                                     if (lower.includes("recap")) return "recap";
                                     if (lower.includes("celebrate") || lower.includes("celebration")) return "celebrate";
-                                    if (lower.includes("custom")) return "custom"; // ✅
+                                    if (lower.includes("custom")) return "custom";
 
                                     if (lower.includes("break") || lower.includes("rest") || lower.includes("pause")) return "break";
 
                                     // раньше wrap/outro попадало в outro — оставляю как было
-                                    if (lower.includes("outro") || lower.includes("wrap") || lower.includes("farewell") || lower.includes("end"))
-                                        return "outro";
+                                    if (lower.includes("outro") || lower.includes("wrap") || lower.includes("farewell") || lower.includes("end")) return "outro";
 
                                     if (lower.includes("focus")) return "focus";
                                     return "focus";
                                 };
 
-                                const type: Stage["type"] =
-                                    rawType && rawType !== "stage" && rawType !== "block"
-                                        ? inferTypeFromText(rawType)
-                                        : inferTypeFromText(labelLower);
+                                const type: Stage["type"] = rawType && rawType !== "stage" && rawType !== "block" ? inferTypeFromText(rawType) : inferTypeFromText(labelLower);
 
                                 const secondsExplicit =
-                                    Number(b?.seconds) ||
-                                    Number(b?.duration_seconds) ||
-                                    Number(b?.durationSeconds) ||
-                                    Number(b?.duration_sec) ||
-                                    0;
+                                    Number(b?.seconds) || Number(b?.duration_seconds) || Number(b?.durationSeconds) || Number(b?.duration_sec) || 0;
 
                                 const minsLike =
-                                    Number(b?.minutes) ||
-                                    Number(b?.mins) ||
-                                    Number(b?.duration_minutes) ||
-                                    Number(b?.durationMinutes) ||
-                                    0;
+                                    Number(b?.minutes) || Number(b?.mins) || Number(b?.duration_minutes) || Number(b?.durationMinutes) || 0;
 
                                 const n = typeof b === "number" ? b : Number(b?.duration ?? b?.value ?? 0);
 
@@ -914,18 +880,29 @@ export default function RoomPageIFrame() {
 
                                 const minutes = Math.max(1, Math.round(durationSeconds / 60));
 
-                                const displayName =
+                                // ✅ FIX #3: preserve custom name if provided
+                                const defaultLabel =
                                     type === "focus"
                                         ? "Focus"
                                         : type === "intentions"
                                             ? "Intentions (spoken)"
-                                            : type === "break"
-                                                ? "Break"
-                                                : type === "intro"
-                                                    ? "Welcome"
-                                                    : type === "outro"
-                                                        ? "Outro"
-                                                        : rawName || "Stage";
+                                            : type === "checkin"
+                                                ? "Check-in"
+                                                : type === "break"
+                                                    ? "Break"
+                                                    : type === "intro"
+                                                        ? "Welcome"
+                                                        : type === "outro"
+                                                            ? "Outro"
+                                                            : type === "recap"
+                                                                ? "Recap"
+                                                                : type === "celebrate"
+                                                                    ? "Celebrate"
+                                                                    : type === "custom"
+                                                                        ? "Custom"
+                                                                        : "Stage";
+
+                                const displayName = rawName || defaultLabel;
 
                                 return {
                                     name: displayName,
@@ -964,7 +941,9 @@ export default function RoomPageIFrame() {
                         const phases = normalizeInfinitePhases(phasesRaw);
 
                         const formatted: Stage[] = phases.map((p) => {
-                            const lower = String(p.name || "").toLowerCase();
+                            // ✅ FIX #2: rawName must exist here
+                            const rawName = String(p.name || "").trim();
+                            const lower = rawName.toLowerCase();
                             const type = phaseToStageType(lower);
 
                             const defaultLabel =
@@ -1005,9 +984,7 @@ export default function RoomPageIFrame() {
 
                         setStages(formatted);
 
-                        const anchor = String(
-                            (parsed as any)?.anchor_ts || (parsed as any)?.anchorTs || data?.start_time || fallbackStart
-                        );
+                        const anchor = String((parsed as any)?.anchor_ts || (parsed as any)?.anchorTs || data?.start_time || fallbackStart);
                         setStagebarStartTime(anchor);
 
                         const sumSeconds = phases.reduce((acc, p) => acc + (Number(p.seconds) || 0), 0);
@@ -1088,17 +1065,13 @@ export default function RoomPageIFrame() {
         });
 
         const sumStageSeconds = stageSeconds.reduce((acc, v) => acc + v, 0);
-        const loopSeconds =
-            (Number(stagebarCycleSeconds) || 0) > 0 ? Number(stagebarCycleSeconds) : Math.max(1, sumStageSeconds);
+        const loopSeconds = (Number(stagebarCycleSeconds) || 0) > 0 ? Number(stagebarCycleSeconds) : Math.max(1, sumStageSeconds);
 
         const timer = window.setInterval(() => {
             const now = Date.now();
             const diffSecRaw = (now - startMs) / 1000;
 
-            const diffSec =
-                loopSeconds > 0 && isInfiniteRoom
-                    ? ((diffSecRaw % loopSeconds) + loopSeconds) % loopSeconds
-                    : diffSecRaw;
+            const diffSec = loopSeconds > 0 && isInfiniteRoom ? ((diffSecRaw % loopSeconds) + loopSeconds) % loopSeconds : diffSecRaw;
 
             let total = 0;
             let active = 0;
@@ -1220,7 +1193,7 @@ export default function RoomPageIFrame() {
             try {
                 const res = await api?.getRoomsInfo?.();
                 const rooms = Array.isArray(res) ? res : res?.rooms;
-                const main = Array.isArray(rooms) ? (rooms.find((r) => r?.isMainRoom) || rooms[0]) : null;
+                const main = Array.isArray(rooms) ? rooms.find((r) => r?.isMainRoom) || rooms[0] : null;
                 const arr = main?.participants;
                 if (Array.isArray(arr)) {
                     // Try infer local presence via getParticipantsInfo
@@ -1229,8 +1202,7 @@ export default function RoomPageIFrame() {
                         if (Array.isArray(info)) {
                             const localId = localParticipantIdRef.current;
                             const hasLocal =
-                                !!localId &&
-                                info.some((p: any) => String(p?.participantId || p?.id || "") === String(localId));
+                                !!localId && info.some((p: any) => String(p?.participantId || p?.id || "") === String(localId));
                             if (hasLocal) return Math.max(1, info.length);
                             return Math.max(1, info.length + 1);
                         }
@@ -1370,10 +1342,7 @@ export default function RoomPageIFrame() {
                 // Supported commands (best-effort)
                 try {
                     const cmds =
-                        api.getSupportedCommands?.() ||
-                        api.getAvailableCommands?.() ||
-                        api._getSupportedCommands?.() ||
-                        null;
+                        api.getSupportedCommands?.() || api.getAvailableCommands?.() || api._getSupportedCommands?.() || null;
 
                     const arr = Array.isArray(cmds) ? cmds : null;
                     supportedCmdsRef.current = arr;
@@ -1561,9 +1530,7 @@ export default function RoomPageIFrame() {
     const ctlBtnBase = isLight ? "bg-black/5 hover:bg-black/10" : "bg-[#111827] hover:bg-[#1f2937]";
 
     const switchTrack = "w-[84px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
-    const switchTrackCls = isLight
-        ? "bg-black/5 border-black/10 hover:bg-black/10"
-        : "bg-white/5 border-white/10 hover:bg-white/10";
+    const switchTrackCls = isLight ? "bg-black/5 border-black/10 hover:bg-black/10" : "bg-white/5 border-white/10 hover:bg-white/10";
     const switchThumb =
         "absolute top-[2px] w-[26px] h-[26px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center";
     const thumbTranslate = isLight ? "translateX(0px)" : "translateX(50px)";
@@ -1597,9 +1564,7 @@ export default function RoomPageIFrame() {
                         <div className="hidden sm:flex items-start justify-between gap-4">
                             {/* LEFT: title + participants under title */}
                             <div className="min-w-0">
-                                <p className={`font-inter font-semibold text-[18px] truncate ${strongText}`}>
-                                    {session.title}
-                                </p>
+                                <p className={`font-inter font-semibold text-[18px] truncate ${strongText}`}>{session.title}</p>
                                 <div className={`mt-1 font-inter text-[13px] ${subtleText}`}>
                                     {participantsLabel}
                                     {isSilentRoom ? <span className="ml-2">• Silent room</span> : null}
@@ -1654,8 +1619,8 @@ export default function RoomPageIFrame() {
                                     <button
                                         onClick={() => setSelectedUser(session.host_profile)}
                                         className={`flex items-center gap-2 px-3 h-[32px] rounded-xl border transition font-inter text-[13px] ${isLight
-                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                                : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                             }`}
                                     >
                                         <span className="flex items-center gap-2 leading-none">
@@ -1676,12 +1641,8 @@ export default function RoomPageIFrame() {
                         <div className="sm:hidden">
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
-                                    <p className={`font-inter font-semibold text-[18px] truncate ${strongText}`}>
-                                        {session.title}
-                                    </p>
-                                    {isSilentRoom && (
-                                        <div className={`mt-1 font-inter text-[13px] ${subtleText}`}>Silent room</div>
-                                    )}
+                                    <p className={`font-inter font-semibold text-[18px] truncate ${strongText}`}>{session.title}</p>
+                                    {isSilentRoom && <div className={`mt-1 font-inter text-[13px] ${subtleText}`}>Silent room</div>}
                                 </div>
 
                                 <div
@@ -1742,8 +1703,8 @@ export default function RoomPageIFrame() {
                                     <button
                                         onClick={() => setSelectedUser(session.host_profile)}
                                         className={`max-[520px]:hidden flex items-center gap-2 px-3 h-[32px] rounded-xl border transition font-inter text-[13px] ${isLight
-                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                                : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                             }`}
                                     >
                                         <span className="flex items-center gap-1 leading-none">
@@ -1790,9 +1751,7 @@ export default function RoomPageIFrame() {
                             <div className="absolute inset-0 z-40 flex items-center justify-center p-6 bg-black/55">
                                 <div className="max-w-md w-full bg-white rounded-2xl p-5 shadow-2xl">
                                     <div className="font-inter font-semibold text-[16px] text-brandBlack">Room is full</div>
-                                    <div className="mt-1 font-inter text-[13px] text-gray-600">
-                                        {capacityError} You’ll be redirected.
-                                    </div>
+                                    <div className="mt-1 font-inter text-[13px] text-gray-600">{capacityError} You’ll be redirected.</div>
                                     <div className="mt-4 flex gap-2 justify-end">
                                         <button
                                             onClick={() => navigate("/sessions")}
@@ -1817,16 +1776,11 @@ export default function RoomPageIFrame() {
                         <div className={`rounded-2xl shadow-lg overflow-hidden min-h-0 ${panelBg}`}>
                             {rightTab === "chat" && (
                                 <div className="h-full">
-                                    <div
-                                        className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
-                                            }`}
-                                    >
+                                    <div className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
                                         <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Chat</div>
                                         <button
                                             onClick={() => openRightTab(null)}
-                                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                                                ? "bg-black/5 hover:bg-black/10 text-black/60"
-                                                : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
                                                 }`}
                                             title="Close"
                                         >
@@ -1834,26 +1788,17 @@ export default function RoomPageIFrame() {
                                         </button>
                                     </div>
 
-                                    <div className="p-4 h-[calc(100%-64px)]">
-                                        {sessionId ? <ChatPanel sessionId={sessionId} theme={theme} /> : null}
-                                    </div>
+                                    <div className="p-4 h-[calc(100%-64px)]">{sessionId ? <ChatPanel sessionId={sessionId} theme={theme} /> : null}</div>
                                 </div>
                             )}
 
                             {rightTab === "intentions" && (
                                 <div className="h-full">
-                                    <div
-                                        className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
-                                            }`}
-                                    >
-                                        <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>
-                                            Intentions
-                                        </div>
+                                    <div className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
+                                        <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Intentions</div>
                                         <button
                                             onClick={() => openRightTab(null)}
-                                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                                                ? "bg-black/5 hover:bg-black/10 text-black/60"
-                                                : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
                                                 }`}
                                             title="Close"
                                         >

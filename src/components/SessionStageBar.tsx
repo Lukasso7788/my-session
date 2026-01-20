@@ -109,7 +109,7 @@ const KIND_META: Record<StageKind, { label: string; color: string }> = {
 
   recap: { label: "Recap", color: "#A78BFA" }, // violet-400
   celebrate: { label: "Celebrate", color: "#F472B6" }, // pink-400
-  custom: { label: "Custom", color: "#9CA3AF" }, // gray-400
+  custom: { label: "Custom", color: "#9CA3AF" }, // gray-400 (можно оставить тут, gradient задаём обычно из RoomPage)
 };
 
 function normalizeKind(raw: any): StageKind {
@@ -143,14 +143,13 @@ function getStageKind(stage: any): StageKind {
 }
 
 function getDisplayName(stage: any, kind: StageKind) {
-  const name =
-    String(
-      stage?.title ??
-      stage?.label ??
-      stage?.displayName ??
-      stage?.name ??
-      ""
-    ).trim();
+  const name = String(
+    stage?.title ??
+    stage?.label ??
+    stage?.displayName ??
+    stage?.name ??
+    ""
+  ).trim();
 
   return name || KIND_META[kind].label;
 }
@@ -164,7 +163,10 @@ function resolveStageColor(stage: any, kind: StageKind) {
   const s = String(raw).trim().toLowerCase();
 
   // если раньше дефолт был "#4CA0FF", а теперь это recap/custom/etc — перекрываем
-  if ((s === "#4ca0ff" || s === "rgb(76,160,255)" || s === "rgba(76,160,255,1)") && kind !== "focus") {
+  if (
+    (s === "#4ca0ff" || s === "rgb(76,160,255)" || s === "rgba(76,160,255,1)") &&
+    kind !== "focus"
+  ) {
     return KIND_META[kind].color;
   }
 
