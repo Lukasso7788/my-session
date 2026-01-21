@@ -269,6 +269,21 @@ export function SessionsPage() {
   >("group");
   const [dateFilter, setDateFilter] = useState<string | null>(null);
 
+  // ✅ NEW: How it works modal
+  const [howItWorksOpen, setHowItWorksOpen] = useState(false);
+
+  // Close on ESC
+  useEffect(() => {
+    if (!howItWorksOpen) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setHowItWorksOpen(false);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [howItWorksOpen]);
+
   // Sync tab from querystring: /sessions?tab=group|infinite|body
   useEffect(() => {
     const tab = (searchParams.get("tab") || "").toLowerCase();
@@ -545,6 +560,295 @@ export function SessionsPage() {
           </div>
         </div>
       </main>
+
+      {/* ============================
+          Floating: How it works
+         ============================ */}
+      <button
+        type="button"
+        onClick={() => setHowItWorksOpen(true)}
+        className="
+          fixed bottom-6 right-6 z-[60]
+          rounded-full border border-[#111827]
+          bg-white text-[#111827]
+          px-5 py-3
+          shadow-[0_10px_25px_rgba(0,0,0,0.12)]
+          hover:bg-[#111827] hover:text-white
+          transition
+          flex items-center gap-2
+        "
+        aria-label="How it works"
+        title="How it works"
+      >
+        {/* inline icon */}
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <path
+            d="M12 18h.01"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+          <path
+            d="M9.09 9a3 3 0 1 1 4.82 2.33c-.66.49-1.41 1.08-1.41 2.17V14"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path
+            d="M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10Z"
+            stroke="currentColor"
+            strokeWidth="2"
+          />
+        </svg>
+        <span className="text-[14px] font-semibold">How it works</span>
+      </button>
+
+      {/* ============================
+          Modal: How it works
+         ============================ */}
+      {howItWorksOpen && (
+        <div className="fixed inset-0 z-[70]">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setHowItWorksOpen(false)}
+          />
+
+          {/* Modal panel */}
+          <div className="absolute inset-0 flex items-center justify-center p-4">
+            <div
+              className="
+                w-full max-w-[860px]
+                rounded-[24px]
+                bg-white
+                border border-[#DBD8D8]
+                shadow-[0_30px_90px_rgba(0,0,0,0.22)]
+                overflow-hidden
+              "
+              role="dialog"
+              aria-modal="true"
+              aria-label="How it works"
+            >
+              {/* Header */}
+              <div className="px-6 py-5 sm:px-8 sm:py-6 flex items-start justify-between gap-4 border-b border-[#ECECEC]">
+                <div className="min-w-0">
+                  <h3 className="text-[18px] sm:text-[20px] font-semibold text-[#111827]">
+                    How MySession works
+                  </h3>
+                  <p className="text-[12px] sm:text-[13px] text-[#111827]/70 mt-1 leading-relaxed">
+                    Step-by-step: create → join → follow stages → finish.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setHowItWorksOpen(false)}
+                  className="
+                    shrink-0
+                    h-10 w-10 rounded-full
+                    border border-[#111827]
+                    text-[#111827]
+                    hover:bg-[#111827] hover:text-white
+                    transition
+                    flex items-center justify-center
+                  "
+                  aria-label="Close"
+                  title="Close"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="M18 6 6 18M6 6l12 12"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="px-6 py-6 sm:px-8 sm:py-8 max-h-[75vh] overflow-auto">
+                {/* Steps */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                  <div className="rounded-[18px] border border-[#E6E6E6] p-5">
+                    <div className="text-[13px] font-semibold text-[#111827] mb-3">
+                      1) Choose a session
+                    </div>
+                    <ul className="text-[13px] text-[#111827]/80 leading-relaxed list-disc pl-5 space-y-2">
+                      <li>
+                        Pick a tab: <b>Group</b>, <b>Infinite</b> (24/7), or{" "}
+                        <b>Body doubling</b>.
+                      </li>
+                      <li>
+                        Group/Body sessions are scheduled (date/time). Infinite
+                        rooms are always open.
+                      </li>
+                      <li>
+                        You can <b>Book session</b> (optional) to save it — or
+                        just join.
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div className="rounded-[18px] border border-[#E6E6E6] p-5">
+                    <div className="text-[13px] font-semibold text-[#111827] mb-3">
+                      2) Join & set up
+                    </div>
+                    <ul className="text-[13px] text-[#111827]/80 leading-relaxed list-disc pl-5 space-y-2">
+                      <li>
+                        Click <b>Join session</b>.
+                      </li>
+                      <li>
+                        Turn mic/cam on/off as you prefer. Screen-share is
+                        optional.
+                      </li>
+                      <li>
+                        You’ll see the session flow: timer/stages (depending on
+                        room type).
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div className="rounded-[18px] border border-[#E6E6E6] p-5">
+                    <div className="text-[13px] font-semibold text-[#111827] mb-3">
+                      3) Follow the workflow
+                    </div>
+                    <ul className="text-[13px] text-[#111827]/80 leading-relaxed list-disc pl-5 space-y-2">
+                      <li>
+                        Use stage prompts to stay aligned (check-in / intentions).
+                      </li>
+                      <li>
+                        During <b>Focus</b>, work silently or lightly co-work.
+                      </li>
+                      <li>
+                        During <b>Break</b>, rest/reset. Then go back to focus.
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div className="rounded-[18px] border border-[#E6E6E6] p-5">
+                    <div className="text-[13px] font-semibold text-[#111827] mb-3">
+                      4) Finish & leave
+                    </div>
+                    <ul className="text-[13px] text-[#111827]/80 leading-relaxed list-disc pl-5 space-y-2">
+                      <li>
+                        Wrap up at the end (or anytime in Infinite rooms).
+                      </li>
+                      <li>
+                        Quick self-reflection: what you did / what’s next.
+                      </li>
+                      <li>
+                        Leave the session — your work is done.
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+
+                {/* Divider */}
+                <div className="my-7 border-t border-[#ECECEC]" />
+
+                {/* Stages glossary */}
+                <div className="flex items-center justify-between gap-4">
+                  <h4 className="text-[14px] sm:text-[15px] font-semibold text-[#111827]">
+                    Stages glossary (what each block means)
+                  </h4>
+                  <span className="text-[12px] text-[#111827]/60">
+                    (Some rooms may hide stages — e.g. silent rooms)
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  <div className="rounded-[18px] border border-[#E6E6E6] p-5">
+                    <div className="text-[13px] font-semibold text-[#111827]">
+                      Check-in
+                    </div>
+                    <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
+                      Quick verbal sync: “What are you working on?” + “Any blockers?”.
+                      Short, supportive, no long stories.
+                    </p>
+                  </div>
+
+                  <div className="rounded-[18px] border border-[#E6E6E6] p-5">
+                    <div className="text-[13px] font-semibold text-[#111827]">
+                      Intentions
+                    </div>
+                    <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
+                      You state your goal for the next focus block. Keep it specific:
+                      1–3 concrete outcomes.
+                    </p>
+                  </div>
+
+                  <div className="rounded-[18px] border border-[#E6E6E6] p-5">
+                    <div className="text-[13px] font-semibold text-[#111827]">
+                      Focus
+                    </div>
+                    <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
+                      The working block. Usually quiet. Your only job: do the task.
+                    </p>
+                  </div>
+
+                  <div className="rounded-[18px] border border-[#E6E6E6] p-5">
+                    <div className="text-[13px] font-semibold text-[#111827]">
+                      Break
+                    </div>
+                    <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
+                      Rest/reset: stand up, water, stretch. Avoid doom-scrolling if you can.
+                    </p>
+                  </div>
+
+                  <div className="rounded-[18px] border border-[#E6E6E6] p-5">
+                    <div className="text-[13px] font-semibold text-[#111827]">
+                      Custom block
+                    </div>
+                    <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
+                      A flexible stage you can name anything: “Reading”, “Planning”,
+                      “Admin”, etc. Use it however you want.
+                    </p>
+                  </div>
+
+                  <div className="rounded-[18px] border border-[#E6E6E6] p-5">
+                    <div className="text-[13px] font-semibold text-[#111827]">
+                      Outro / Wrap-up
+                    </div>
+                    <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
+                      Quick closure: what you finished, what’s next, and one takeaway.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Bottom hint */}
+                <div className="mt-7 rounded-[18px] border border-[#E6E6E6] bg-[#F7F7F7] p-5">
+                  <div className="text-[13px] font-semibold text-[#111827]">
+                    Pro tip
+                  </div>
+                  <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
+                    If you’re joining a <b>Silent</b> room: keep mic off, use the stage
+                    timer as guidance, and focus. No pressure to talk.
+                  </p>
+                </div>
+
+                {/* Footer actions */}
+                <div className="mt-8 flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setHowItWorksOpen(false)}
+                    className="
+                      rounded-full border border-[#111827]
+                      px-5 py-2.5 text-[13px] font-semibold
+                      text-[#111827]
+                      hover:bg-[#111827] hover:text-white
+                      transition
+                    "
+                  >
+                    Got it
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
