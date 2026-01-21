@@ -15,6 +15,28 @@ function safeLower(x: any) {
     return String(x || "").toLowerCase();
 }
 
+// ✅ NEW: infer visual type from title for newer/infinite room titles
+function inferTypeFromTitle(title: any): "Deep work" | "Pomodoro" | "Short sprints" | null {
+    const t = safeLower(title);
+
+    // Silent / drop-in -> treat as Deep work (as requested)
+    if (t.includes("silent") || t.includes("drop-in") || t.includes("drop in")) return "Deep work";
+
+    // Common keywords
+    if (t.includes("deep work") || t.includes("deepwork") || t.includes("uninterrupted")) return "Deep work";
+    if (t.includes("pomodoro")) return "Pomodoro";
+
+    // Ratios (support "25/5", "25-5", with spaces)
+    if (/\b25\s*[/\-]\s*5\b/.test(t)) return "Pomodoro";
+    if (/\b15\s*[/\-]\s*3\b/.test(t)) return "Short sprints";
+
+    // Deep work style blocks (requested: 55/5 deepwork; also handle 50/5/5)
+    if (/\b55\s*[/\-]\s*5\b/.test(t)) return "Deep work";
+    if (/\b50\s*[/\-]\s*5(\s*[/\-]\s*5)?\b/.test(t)) return "Deep work";
+
+    return null;
+}
+
 // ✅ single place to resolve session type (matches SessionsPage logic)
 function resolveSessionType(session: any): "group" | "infinite" | "body" {
     const t = safeLower(session?.session_format_type);
@@ -100,7 +122,9 @@ export default function SessionCard({
         "2 Hours — 2x 50min Focus Blocks": "Deep work",
     };
 
-    const resolvedType = nameToTypeMap[session.title] || session.type;
+    // ✅ FIX: support infinite room naming like "25/5 Focus — Room A", "50/5/5 Focus — Room A", "Silent Drop-in — Room A"
+    const inferredType = inferTypeFromTitle(session.title);
+    const resolvedType = nameToTypeMap[session.title] || inferredType || session.type || "Deep work";
 
     const typeMap: Record<string, { color: string; bg: string; icon: string }> = {
         "Deep work": { color: "#3B82F6", bg: "#E4EDFF", icon: "/icons/deepwork.svg" },
