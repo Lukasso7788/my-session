@@ -18,8 +18,13 @@
 // 1) CUSTOM_BLOCK_GRADIENT declared BEFORE STAGE_COLORS (prevents ReferenceError on import)
 // 2) rawName defined in infinite schedule branch (prevents ReferenceError)
 // 3) Array schedule: preserve custom block names (don't overwrite focus/custom/recap etc with defaults)
+//
+// ✅ NEW FIX (audio for infinite rooms):
+// - Sounds now play on stage transitions in Infinite Rooms too
+// - Still prevents "gong on join mid-block" (first tick never plays current block sound)
+// - Adds check-in sound mapping (reuses intentions sound)
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 
@@ -93,22 +98,11 @@ const JITSI_CUSTOM_CSS_PATH = "/jitsi-custom.css";
 
 // ====== AUDIO ======
 const STAGE_SOUND_MAP: Record<string, string> = {
-    // ✅ check-in должен иметь звук старта
-    checkin: "/sounds/intentions.mp3",
-
-    // talking / planning
     intentions: "/sounds/intentions.mp3",
-
-    // work / rest
+    checkin: "/sounds/intentions.mp3", // ✅ reuse spoken sound (no new asset required)
     focus: "/sounds/focus.mp3",
     break: "/sounds/break_start.mp3",
-
-    // ending
     outro: "/sounds/outro.mp3",
-
-    // optional: если хочешь, можно задействовать существующий outro как “wrap-up”:
-    recap: "/sounds/outro.mp3",
-    celebrate: "/sounds/outro.mp3",
 };
 const BREAK_END_SOUND = "/sounds/break_end.mp3";
 const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
@@ -741,126 +735,102 @@ export default function RoomPageIFrame() {
     };
 
     // =========================
-    // AUDIO SYSTEM (FIXED)
+    // AUDIO SYSTEM
     // =========================
     const prevStageRef = useRef<number>(-1);
     const firstTickDoneRef = useRef<boolean>(false);
     const welcomeLoopRef = useRef<HTMLAudioElement | null>(null);
     const audioUnlockedRef = useRef<boolean>(false);
 
-    // ✅ cache audio so first play doesn't miss due to load
-    const audioCacheRef = useRef<Record<string, HTMLAudioElement>>({});
+    // ✅ Best-effort audio unlock (tries to catch the "Join" click in SPA via layout effect)
+    const tryUnlockAudio = async () => {
+        try {
+            const AnyWindow = window as any;
+            const AudioCtx = window.AudioContext || AnyWindow.webkitAudioContext;
+            if (AudioCtx) {
+                const ctx = new AudioCtx();
+                try {
+                    await ctx.resume?.();
+                } catch { }
 
-    const getCachedAudio = (url: string) => {
-        const key = String(url || "").trim();
-        if (!key) return null;
-        let a = audioCacheRef.current[key];
-        if (!a) {
-            a = new Audio(key);
-            a.preload = "auto";
-            audioCacheRef.current[key] = a;
-        }
-        return a;
+                // tiny silent-ish tick to satisfy some browsers
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                gain.gain.value = 0.0001;
+
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+
+                osc.start();
+                osc.stop(ctx.currentTime + 0.02);
+
+                window.setTimeout(() => {
+                    try {
+                        ctx.close?.();
+                    } catch { }
+                }, 80);
+            }
+        } catch { }
     };
+
+    useLayoutEffect(() => {
+        // best-effort: if Join click user-activation is still valid, this can unlock
+        void tryUnlockAudio();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => {
+        const unlock = () => {
+            if (audioUnlockedRef.current) return;
+
+            audioUnlockedRef.current = true;
+            void tryUnlockAudio();
+
+            window.removeEventListener("pointerdown", unlock, true);
+            window.removeEventListener("keydown", unlock, true);
+            window.removeEventListener("touchstart", unlock, true);
+            window.removeEventListener("click", unlock, true);
+        };
+
+        window.addEventListener("pointerdown", unlock, true);
+        window.addEventListener("keydown", unlock, true);
+        window.addEventListener("touchstart", unlock, true);
+        window.addEventListener("click", unlock, true);
+
+        return () => {
+            window.removeEventListener("pointerdown", unlock, true);
+            window.removeEventListener("keydown", unlock, true);
+            window.removeEventListener("touchstart", unlock, true);
+            window.removeEventListener("click", unlock, true);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const playOneShot = (url: string, volume = 0.9) => {
         if (!url) return;
-        try {
-            const a = getCachedAudio(url);
-            if (!a) return;
-            a.volume = volume;
-            try {
-                a.currentTime = 0;
-            } catch { }
-            const p = a.play();
-            // ignore autoplay rejections (gesture gating)
-            (p as any)?.catch?.(() => { });
-        } catch { }
+        const a = new Audio(url);
+        a.volume = volume;
+        a.play().catch(() => { });
+    };
+
+    const startWelcomeLoop = () => {
+        stopWelcomeLoop();
+        const a = new Audio(WELCOME_LOOP_SOUND);
+        a.loop = true;
+        a.volume = 0.6;
+        welcomeLoopRef.current = a;
+        a.play().catch(() => { });
     };
 
     const stopWelcomeLoop = () => {
         try {
             if (welcomeLoopRef.current) {
                 welcomeLoopRef.current.pause();
-                try {
-                    welcomeLoopRef.current.currentTime = 0;
-                } catch { }
-                // reset loop flag to be safe
-                welcomeLoopRef.current.loop = false;
+                welcomeLoopRef.current.currentTime = 0;
                 welcomeLoopRef.current = null;
             }
         } catch { }
     };
-
-    const startWelcomeLoop = () => {
-        stopWelcomeLoop();
-        try {
-            const a = getCachedAudio(WELCOME_LOOP_SOUND) || new Audio(WELCOME_LOOP_SOUND);
-            a.loop = true;
-            a.volume = 0.6;
-            welcomeLoopRef.current = a;
-            const p = a.play();
-            (p as any)?.catch?.(() => { });
-        } catch { }
-    };
-
-    // ✅ prime audio on first user gesture (much more reliable than empty Audio())
-    useEffect(() => {
-        const prime = () => {
-            if (audioUnlockedRef.current) return;
-            audioUnlockedRef.current = true;
-
-            const urls = Array.from(
-                new Set([
-                    ...Object.values(STAGE_SOUND_MAP),
-                    BREAK_END_SOUND,
-                    WELCOME_LOOP_SOUND,
-                ])
-            );
-
-            for (const u of urls) {
-                const a = getCachedAudio(u);
-                if (!a) continue;
-
-                try {
-                    const oldVol = a.volume;
-                    a.volume = 0.0001;
-                    try {
-                        a.currentTime = 0;
-                    } catch { }
-
-                    const p = a.play();
-                    (p as any)?.then?.(() => {
-                        try {
-                            a.pause();
-                            a.volume = oldVol;
-                            a.currentTime = 0;
-                        } catch { }
-                    });
-                    (p as any)?.catch?.(() => {
-                        try {
-                            a.volume = oldVol;
-                        } catch { }
-                    });
-                } catch { }
-            }
-
-            window.removeEventListener("pointerdown", prime, true);
-            window.removeEventListener("keydown", prime, true);
-            window.removeEventListener("touchstart", prime, true);
-        };
-
-        window.addEventListener("pointerdown", prime, true);
-        window.addEventListener("keydown", prime, true);
-        window.addEventListener("touchstart", prime, true);
-
-        return () => {
-            window.removeEventListener("pointerdown", prime, true);
-            window.removeEventListener("keydown", prime, true);
-            window.removeEventListener("touchstart", prime, true);
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
 
     // ============================================
     // LOAD SESSION + BUILD STAGES (UUID OR SLUG)
@@ -1118,10 +1088,9 @@ export default function RoomPageIFrame() {
     }, []);
 
     // ============================================
-    // STAGES TIMER + SOUND (FIXED)
+    // STAGES TIMER + SOUND
     // ============================================
     useEffect(() => {
-        // silent room => no timer/sounds
         if (isSilentRoom) {
             setRemainingTime("");
             setCurrentStage(0);
@@ -1131,20 +1100,7 @@ export default function RoomPageIFrame() {
             return;
         }
 
-        if (!stagebarStartTime || !stages.length) {
-            // reset refs so when stages appear we play start sound correctly
-            setRemainingTime("");
-            setCurrentStage(0);
-            firstTickDoneRef.current = false;
-            prevStageRef.current = -1;
-            stopWelcomeLoop();
-            return;
-        }
-
-        // ✅ reset on (re)start so “start check-in sound” works reliably
-        firstTickDoneRef.current = false;
-        prevStageRef.current = -1;
-        stopWelcomeLoop();
+        if (!stagebarStartTime || !stages.length) return;
 
         const startMs = new Date(stagebarStartTime).getTime();
         if (Number.isNaN(startMs)) return;
@@ -1159,14 +1115,11 @@ export default function RoomPageIFrame() {
         const sumStageSeconds = stageSeconds.reduce((acc, v) => acc + v, 0);
         const loopSeconds = (Number(stagebarCycleSeconds) || 0) > 0 ? Number(stagebarCycleSeconds) : Math.max(1, sumStageSeconds);
 
-        const tick = () => {
+        const timer = window.setInterval(() => {
             const now = Date.now();
             const diffSecRaw = (now - startMs) / 1000;
 
-            const diffSec =
-                loopSeconds > 0 && isInfiniteRoom
-                    ? ((diffSecRaw % loopSeconds) + loopSeconds) % loopSeconds
-                    : diffSecRaw;
+            const diffSec = loopSeconds > 0 && isInfiniteRoom ? ((diffSecRaw % loopSeconds) + loopSeconds) % loopSeconds : diffSecRaw;
 
             let total = 0;
             let active = 0;
@@ -1190,32 +1143,29 @@ export default function RoomPageIFrame() {
             setCurrentStage(active);
 
             const stage = stages[active];
-            const newType = String(stage?.type || "").toLowerCase();
+            if (!stage) return;
 
-            // ✅ First tick: play start sound for current stage (e.g. check-in), and/or start welcome loop
+            // ✅ CRITICAL: prevent playing "current block" sound when joining mid-block
             if (!firstTickDoneRef.current) {
-                if (newType === "intro") {
-                    startWelcomeLoop();
-                } else {
-                    stopWelcomeLoop();
-                    const startSound = STAGE_SOUND_MAP[newType];
-                    if (startSound) playOneShot(startSound);
-                }
+                // allow welcome loop only if stage is intro (kept behavior)
+                if (stage.type === "intro") startWelcomeLoop();
+                else stopWelcomeLoop();
 
                 prevStageRef.current = active;
                 firstTickDoneRef.current = true;
                 return;
             }
 
-            // Stage change: play end-of-break + new-stage sound
+            // ✅ play sounds on stage transitions (works for infinite AND non-infinite)
             if (prevStageRef.current !== active) {
                 const prev = stages[prevStageRef.current];
-                const prevType = String(prev?.type || "").toLowerCase();
+                const prevType = prev?.type;
+                const newType = stage.type;
 
-                if (prevType === "break" && newType !== "break") {
-                    playOneShot(BREAK_END_SOUND);
-                }
+                // break end gong
+                if (prevType === "break" && newType !== "break") playOneShot(BREAK_END_SOUND);
 
+                // intro loop (optional)
                 if (newType === "intro") {
                     startWelcomeLoop();
                 } else {
@@ -1227,13 +1177,9 @@ export default function RoomPageIFrame() {
                 prevStageRef.current = active;
             }
 
-            // safety: stop loop if we are not in intro anymore
-            if (newType !== "intro" && welcomeLoopRef.current) stopWelcomeLoop();
-        };
-
-        // ✅ run immediately (don’t wait 1s)
-        tick();
-        const timer = window.setInterval(tick, 1000);
+            // safety: don't keep welcome loop outside intro
+            if (stage.type !== "intro" && welcomeLoopRef.current) stopWelcomeLoop();
+        }, 1000);
 
         return () => window.clearInterval(timer);
     }, [stagebarStartTime, stages, isSilentRoom, isInfiniteRoom, stagebarCycleSeconds]);
