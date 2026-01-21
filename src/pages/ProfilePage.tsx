@@ -375,7 +375,7 @@ export default function ProfilePage() {
               autoComplete="name"
             />
             <p className="text-xs text-gray-500 mt-2">
-              This name will be saved to Supabase when you click “Save changes”.
+              This name will be saved when you click “Save changes”.
             </p>
           </div>
         )}
