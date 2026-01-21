@@ -65,8 +65,7 @@ export default function SessionCard({
 
     const [isHoveringCancel, setIsHoveringCancel] = useState(false);
     const [isHoveringBook, setIsHoveringBook] = useState(false);
-    const [isHoveringJoin, setIsHoveringJoin] = useState(false);
-    const [isHoveringJoinIframe, setIsHoveringJoinIframe] = useState(false); // ✅ NEW
+    const [isHoveringJoinIframe, setIsHoveringJoinIframe] = useState(false);
     const [isHoveringCard, setIsHoveringCard] = useState(false);
 
     // ✅ Figma-like hover delay
@@ -155,8 +154,7 @@ export default function SessionCard({
         setIsHoveringCancel(false);
     };
 
-    // ✅ NEW: Join via iFrame page without touching existing lib-jitsi flow.
-    // We reuse the same :id param as /room/:id (your RoomPage uses session.id).
+    // ✅ Join via iFrame page (RoomPageIFrame)
     const handleJoinIframe = () => {
         navigate(`/room-iframe/${session.id}`);
     };
@@ -305,24 +303,7 @@ export default function SessionCard({
             >
                 {isBookingConfirmed ? confirmedBookingButton : bookSessionButton}
 
-                {/* existing join */}
-                <button
-                    onClick={() => onJoin(session.id)}
-                    onMouseEnter={() => setIsHoveringJoin(true)}
-                    onMouseLeave={() => setIsHoveringJoin(false)}
-                    className="
-            h-12 rounded-full px-6 text-[14px] font-semibold
-            flex items-center justify-center
-            transition-colors duration-200 ease-in-out
-            w-full xl:w-auto
-            text-white
-          "
-                    style={{ backgroundColor: isHoveringJoin ? joinHoverBg : "#111827" }}
-                >
-                    Join session
-                </button>
-
-                {/* ✅ NEW: join via iFrame */}
+                {/* ✅ ONLY: join via iFrame (primary) */}
                 <button
                     onClick={handleJoinIframe}
                     onMouseEnter={() => setIsHoveringJoinIframe(true)}
@@ -339,9 +320,8 @@ export default function SessionCard({
                         color: isHoveringJoinIframe ? "white" : "#111827",
                         backgroundColor: isHoveringJoinIframe ? joinHoverBg : "transparent",
                     }}
-                    title="Join using Jitsi iFrame / External API"
                 >
-                    Join (iFrame)
+                    Join session
                 </button>
 
                 {isHost && (
