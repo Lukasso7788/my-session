@@ -93,10 +93,22 @@ const JITSI_CUSTOM_CSS_PATH = "/jitsi-custom.css";
 
 // ====== AUDIO ======
 const STAGE_SOUND_MAP: Record<string, string> = {
+    // ✅ check-in должен иметь звук старта
+    checkin: "/sounds/intentions.mp3",
+
+    // talking / planning
     intentions: "/sounds/intentions.mp3",
+
+    // work / rest
     focus: "/sounds/focus.mp3",
     break: "/sounds/break_start.mp3",
+
+    // ending
     outro: "/sounds/outro.mp3",
+
+    // optional: если хочешь, можно задействовать существующий outro как “wrap-up”:
+    recap: "/sounds/outro.mp3",
+    celebrate: "/sounds/outro.mp3",
 };
 const BREAK_END_SOUND = "/sounds/break_end.mp3";
 const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
@@ -729,60 +741,126 @@ export default function RoomPageIFrame() {
     };
 
     // =========================
-    // AUDIO SYSTEM
+    // AUDIO SYSTEM (FIXED)
     // =========================
     const prevStageRef = useRef<number>(-1);
     const firstTickDoneRef = useRef<boolean>(false);
     const welcomeLoopRef = useRef<HTMLAudioElement | null>(null);
     const audioUnlockedRef = useRef<boolean>(false);
 
-    useEffect(() => {
-        const unlock = () => {
-            if (audioUnlockedRef.current) return;
-            const a = new Audio();
-            a.play().catch(() => { });
-            audioUnlockedRef.current = true;
-            window.removeEventListener("click", unlock, true);
-            window.removeEventListener("keydown", unlock, true);
-            window.removeEventListener("touchstart", unlock, true);
-        };
+    // ✅ cache audio so first play doesn't miss due to load
+    const audioCacheRef = useRef<Record<string, HTMLAudioElement>>({});
 
-        window.addEventListener("click", unlock, true);
-        window.addEventListener("keydown", unlock, true);
-        window.addEventListener("touchstart", unlock, true);
-
-        return () => {
-            window.removeEventListener("click", unlock, true);
-            window.removeEventListener("keydown", unlock, true);
-            window.removeEventListener("touchstart", unlock, true);
-        };
-    }, []);
+    const getCachedAudio = (url: string) => {
+        const key = String(url || "").trim();
+        if (!key) return null;
+        let a = audioCacheRef.current[key];
+        if (!a) {
+            a = new Audio(key);
+            a.preload = "auto";
+            audioCacheRef.current[key] = a;
+        }
+        return a;
+    };
 
     const playOneShot = (url: string, volume = 0.9) => {
         if (!url) return;
-        const a = new Audio(url);
-        a.volume = volume;
-        a.play().catch(() => { });
-    };
-
-    const startWelcomeLoop = () => {
-        stopWelcomeLoop();
-        const a = new Audio(WELCOME_LOOP_SOUND);
-        a.loop = true;
-        a.volume = 0.6;
-        welcomeLoopRef.current = a;
-        a.play().catch(() => { });
+        try {
+            const a = getCachedAudio(url);
+            if (!a) return;
+            a.volume = volume;
+            try {
+                a.currentTime = 0;
+            } catch { }
+            const p = a.play();
+            // ignore autoplay rejections (gesture gating)
+            (p as any)?.catch?.(() => { });
+        } catch { }
     };
 
     const stopWelcomeLoop = () => {
         try {
             if (welcomeLoopRef.current) {
                 welcomeLoopRef.current.pause();
-                welcomeLoopRef.current.currentTime = 0;
+                try {
+                    welcomeLoopRef.current.currentTime = 0;
+                } catch { }
+                // reset loop flag to be safe
+                welcomeLoopRef.current.loop = false;
                 welcomeLoopRef.current = null;
             }
         } catch { }
     };
+
+    const startWelcomeLoop = () => {
+        stopWelcomeLoop();
+        try {
+            const a = getCachedAudio(WELCOME_LOOP_SOUND) || new Audio(WELCOME_LOOP_SOUND);
+            a.loop = true;
+            a.volume = 0.6;
+            welcomeLoopRef.current = a;
+            const p = a.play();
+            (p as any)?.catch?.(() => { });
+        } catch { }
+    };
+
+    // ✅ prime audio on first user gesture (much more reliable than empty Audio())
+    useEffect(() => {
+        const prime = () => {
+            if (audioUnlockedRef.current) return;
+            audioUnlockedRef.current = true;
+
+            const urls = Array.from(
+                new Set([
+                    ...Object.values(STAGE_SOUND_MAP),
+                    BREAK_END_SOUND,
+                    WELCOME_LOOP_SOUND,
+                ])
+            );
+
+            for (const u of urls) {
+                const a = getCachedAudio(u);
+                if (!a) continue;
+
+                try {
+                    const oldVol = a.volume;
+                    a.volume = 0.0001;
+                    try {
+                        a.currentTime = 0;
+                    } catch { }
+
+                    const p = a.play();
+                    (p as any)?.then?.(() => {
+                        try {
+                            a.pause();
+                            a.volume = oldVol;
+                            a.currentTime = 0;
+                        } catch { }
+                    });
+                    (p as any)?.catch?.(() => {
+                        try {
+                            a.volume = oldVol;
+                        } catch { }
+                    });
+                } catch { }
+            }
+
+            window.removeEventListener("pointerdown", prime, true);
+            window.removeEventListener("keydown", prime, true);
+            window.removeEventListener("touchstart", prime, true);
+        };
+
+        window.addEventListener("pointerdown", prime, true);
+        window.addEventListener("keydown", prime, true);
+        window.addEventListener("touchstart", prime, true);
+
+        return () => {
+            window.removeEventListener("pointerdown", prime, true);
+            window.removeEventListener("keydown", prime, true);
+            window.removeEventListener("touchstart", prime, true);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // ============================================
     // LOAD SESSION + BUILD STAGES (UUID OR SLUG)
@@ -1040,9 +1118,10 @@ export default function RoomPageIFrame() {
     }, []);
 
     // ============================================
-    // STAGES TIMER + SOUND
+    // STAGES TIMER + SOUND (FIXED)
     // ============================================
     useEffect(() => {
+        // silent room => no timer/sounds
         if (isSilentRoom) {
             setRemainingTime("");
             setCurrentStage(0);
@@ -1052,7 +1131,20 @@ export default function RoomPageIFrame() {
             return;
         }
 
-        if (!stagebarStartTime || !stages.length) return;
+        if (!stagebarStartTime || !stages.length) {
+            // reset refs so when stages appear we play start sound correctly
+            setRemainingTime("");
+            setCurrentStage(0);
+            firstTickDoneRef.current = false;
+            prevStageRef.current = -1;
+            stopWelcomeLoop();
+            return;
+        }
+
+        // ✅ reset on (re)start so “start check-in sound” works reliably
+        firstTickDoneRef.current = false;
+        prevStageRef.current = -1;
+        stopWelcomeLoop();
 
         const startMs = new Date(stagebarStartTime).getTime();
         if (Number.isNaN(startMs)) return;
@@ -1067,11 +1159,14 @@ export default function RoomPageIFrame() {
         const sumStageSeconds = stageSeconds.reduce((acc, v) => acc + v, 0);
         const loopSeconds = (Number(stagebarCycleSeconds) || 0) > 0 ? Number(stagebarCycleSeconds) : Math.max(1, sumStageSeconds);
 
-        const timer = window.setInterval(() => {
+        const tick = () => {
             const now = Date.now();
             const diffSecRaw = (now - startMs) / 1000;
 
-            const diffSec = loopSeconds > 0 && isInfiniteRoom ? ((diffSecRaw % loopSeconds) + loopSeconds) % loopSeconds : diffSecRaw;
+            const diffSec =
+                loopSeconds > 0 && isInfiniteRoom
+                    ? ((diffSecRaw % loopSeconds) + loopSeconds) % loopSeconds
+                    : diffSecRaw;
 
             let total = 0;
             let active = 0;
@@ -1094,39 +1189,51 @@ export default function RoomPageIFrame() {
 
             setCurrentStage(active);
 
-            if (!isInfiniteRoom) {
-                const stage = stages[active];
+            const stage = stages[active];
+            const newType = String(stage?.type || "").toLowerCase();
 
-                if (!firstTickDoneRef.current) {
-                    if (stage.type === "intro") startWelcomeLoop();
-                    else stopWelcomeLoop();
-
-                    prevStageRef.current = active;
-                    firstTickDoneRef.current = true;
-                    return;
+            // ✅ First tick: play start sound for current stage (e.g. check-in), and/or start welcome loop
+            if (!firstTickDoneRef.current) {
+                if (newType === "intro") {
+                    startWelcomeLoop();
+                } else {
+                    stopWelcomeLoop();
+                    const startSound = STAGE_SOUND_MAP[newType];
+                    if (startSound) playOneShot(startSound);
                 }
 
-                if (prevStageRef.current !== active) {
-                    const prev = stages[prevStageRef.current];
-                    const prevType = prev?.type;
-                    const newType = stage.type;
-
-                    if (prevType === "break" && newType !== "break") playOneShot(BREAK_END_SOUND);
-
-                    if (newType === "intro") {
-                        startWelcomeLoop();
-                    } else {
-                        stopWelcomeLoop();
-                        const sound = STAGE_SOUND_MAP[newType];
-                        if (sound) playOneShot(sound);
-                    }
-
-                    prevStageRef.current = active;
-                }
-
-                if (stage.type !== "intro" && welcomeLoopRef.current) stopWelcomeLoop();
+                prevStageRef.current = active;
+                firstTickDoneRef.current = true;
+                return;
             }
-        }, 1000);
+
+            // Stage change: play end-of-break + new-stage sound
+            if (prevStageRef.current !== active) {
+                const prev = stages[prevStageRef.current];
+                const prevType = String(prev?.type || "").toLowerCase();
+
+                if (prevType === "break" && newType !== "break") {
+                    playOneShot(BREAK_END_SOUND);
+                }
+
+                if (newType === "intro") {
+                    startWelcomeLoop();
+                } else {
+                    stopWelcomeLoop();
+                    const sound = STAGE_SOUND_MAP[newType];
+                    if (sound) playOneShot(sound);
+                }
+
+                prevStageRef.current = active;
+            }
+
+            // safety: stop loop if we are not in intro anymore
+            if (newType !== "intro" && welcomeLoopRef.current) stopWelcomeLoop();
+        };
+
+        // ✅ run immediately (don’t wait 1s)
+        tick();
+        const timer = window.setInterval(tick, 1000);
 
         return () => window.clearInterval(timer);
     }, [stagebarStartTime, stages, isSilentRoom, isInfiniteRoom, stagebarCycleSeconds]);
