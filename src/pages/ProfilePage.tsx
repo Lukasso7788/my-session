@@ -1,5 +1,5 @@
 // src/pages/ProfilePage.tsx
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
@@ -27,9 +27,6 @@ export default function ProfilePage() {
   // ✅ comes from `profiles.attended_sessions_count`
   const [attendedCount, setAttendedCount] = useState<number>(0);
 
-  // ✅ track if name is being edited (separate UX from bio if desired)
-  const [nameDirty, setNameDirty] = useState(false);
-
   const displayName = useMemo(() => fullName || "User", [fullName]);
 
   const avatarFallback = useMemo(() => {
@@ -52,16 +49,11 @@ export default function ProfilePage() {
             ? JSON.parse(session.schedule)
             : session.schedule;
 
-        // ✅ keep old behavior, but be defensive: parsed may not be array
-        if (Array.isArray(parsed)) {
-          durationMinutes = parsed.reduce(
-            (sum: number, block: any) => sum + (Number(block?.minutes) || 0),
-            0
-          );
-        }
-      } catch {
-        // ignore
-      }
+        durationMinutes = parsed.reduce(
+          (sum: number, block: any) => sum + (block.minutes || 0),
+          0
+        );
+      } catch { }
     }
 
     const end = start + durationMinutes * 60 * 1000;
@@ -94,14 +86,6 @@ export default function ProfilePage() {
     }).format(d);
   };
 
-  // ✅ basic input sanitization
-  const sanitizeFullName = (value: string) => {
-    // trim and collapse whitespace
-    const v = value.replace(/\s+/g, " ").trim();
-    // reasonable max length (avoid accidental huge payloads)
-    return v.slice(0, 60);
-  };
-
   // Redirect
   useEffect(() => {
     if (!loading && !user) navigate("/login", { replace: true });
@@ -112,7 +96,6 @@ export default function ProfilePage() {
     if (!profile) return;
 
     setFullName(profile.full_name || "");
-    setBio((profile as any)?.bio || ""); // ✅ include bio too if present in context
     setAvatarUrl(profile.avatar_url || null);
 
     const p: any = profile as any;
@@ -126,11 +109,9 @@ export default function ProfilePage() {
     if (typeof p.created_at === "string" && p.created_at) {
       setCreatedAt(formatSince(p.created_at));
     }
-
-    setNameDirty(false);
   }, [profile]);
 
-  // ✅ Load profile fields from supabase (BIO + attendedCount + created_at + full_name)
+  // ✅ Load profile fields from supabase (BIO + attendedCount + created_at)
   useEffect(() => {
     if (!user) return;
 
@@ -162,8 +143,6 @@ export default function ProfilePage() {
       // ✅ created_at from profiles -> Month Year
       if (data.created_at) setCreatedAt(formatSince(data.created_at));
       else setCreatedAt("—");
-
-      setNameDirty(false);
     };
 
     loadProfile();
@@ -227,40 +206,27 @@ export default function ProfilePage() {
     }
   };
 
-  // ✅ Save profile (updates full_name + bio + avatar_url; НЕ трогаем attended_sessions_count и created_at)
+  // Save profile (НЕ трогаем attended_sessions_count и created_at)
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
 
     try {
-      const safeName = sanitizeFullName(fullName);
-
-      // 1) update public profile row
-      const { error: profileError } = await supabase
+      await supabase
         .from("profiles")
         .update({
-          full_name: safeName,
+          full_name: fullName,
           bio,
           avatar_url: avatarUrl,
           updated_at: new Date().toISOString(),
         })
         .eq("id", user.id);
 
-      if (profileError) throw profileError;
-
-      // 2) also store into auth user_metadata (optional, but useful)
-      const { error: authError } = await supabase.auth.updateUser({
-        data: { full_name: safeName, avatar_url: avatarUrl },
+      await supabase.auth.updateUser({
+        data: { full_name: fullName, avatar_url: avatarUrl },
       });
 
-      if (authError) {
-        // not fatal if profile saved; log and continue
-        console.warn("Auth metadata update failed:", authError);
-      }
-
-      setFullName(safeName);
       setEditMode(false);
-      setNameDirty(false);
       await reloadProfile();
     } catch (error) {
       console.error("Save profile error:", error);
@@ -306,9 +272,9 @@ export default function ProfilePage() {
           ← Back
         </button>
 
-        {/* ✅ right side actions (preview icon + edit/save button) */}
+        {/* ✅ CHANGED: right side actions (preview icon + edit button) */}
         <div className="flex items-center gap-3">
-          {/* ✅ Profile preview icon (public) */}
+          {/* ✅ ADDED: Profile preview icon (public) */}
           <button
             type="button"
             onClick={() => navigate(`/profile/${user.id}`)}
@@ -374,7 +340,7 @@ export default function ProfilePage() {
 
           {editMode && (
             <label className="absolute -bottom-2 right-0 bg-white px-3 py-1 border rounded-full text-xs cursor-pointer shadow-sm hover:bg-gray-50">
-              {uploading ? "Uploading..." : "Change"}
+              Change
               <input
                 type="file"
                 className="hidden"
@@ -386,65 +352,58 @@ export default function ProfilePage() {
           )}
         </div>
 
-        {/* ✅ NAME (editable) */}
-        <div className="mt-4 w-full max-w-[520px] flex flex-col items-center">
-          {editMode ? (
-            <div className="w-full">
-              <label className="block text-sm text-gray-600 mb-2 text-center">
-                Display name
-              </label>
-              <input
-                value={fullName}
-                onChange={(e) => {
-                  setFullName(e.target.value);
-                  setNameDirty(true);
-                }}
-                onBlur={() => setFullName((v) => sanitizeFullName(v))}
-                className="
-                  w-full border border-gray-300 px-4 py-3 rounded-xl
-                  focus:ring-2 focus:ring-black outline-none transition
-                  text-[20px] text-[#2F2F2F] text-center
-                "
-                placeholder="Your name"
-                maxLength={60}
-                disabled={saving}
-              />
-              {/* small hint */}
-              <div className="mt-2 text-xs text-gray-500 text-center">
-                {nameDirty ? "Name will be saved when you click “Save changes”." : "\u00A0"}
-              </div>
-            </div>
-          ) : (
-            <h1 className="font-inter font-bold text-[32px] text-[#2F2F2F]">
-              {displayName}
-            </h1>
-          )}
+        {/* NAME */}
+        <h1 className="font-inter font-bold text-[32px] text-[#2F2F2F] mt-4">
+          {displayName}
+        </h1>
 
-          <div className="flex items-center justify-center gap-6 mt-2 text-sm">
-            {/* Created date */}
-            <span className="flex items-center gap-2">
-              <img
-                src="/icons/date_profile.svg"
-                alt="Account creation date"
-                className="w-[24px] h-[24px]"
-              />
-              <span className="text-[14px] font-light text-[#2F2F2F]">
-                Since: {createdAt}
-              </span>
-            </span>
-
-            {/* Sessions attended (from profiles.attended_sessions_count) */}
-            <span className="flex items-center gap-2">
-              <img
-                src="/icons/session_count.svg"
-                alt="Total sessions attended"
-                className="w-[24px] h-[24px]"
-              />
-              <span className="text-[14px] font-medium text-[#2F2F2F]">
-                {attendedCount} sessions
-              </span>
-            </span>
+        {/* ✅ ADDED: editable name input (only in edit mode) */}
+        {editMode && (
+          <div className="mt-3 w-full max-w-[520px]">
+            <label className="block text-sm font-medium text-[#2F2F2F] mb-2">
+              Name
+            </label>
+            <input
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              className="
+                w-full border border-gray-300 px-4 py-3 rounded-xl
+                focus:ring-2 focus:ring-black outline-none transition
+              "
+              placeholder="Your name"
+              disabled={saving}
+              autoComplete="name"
+            />
+            <p className="text-xs text-gray-500 mt-2">
+              This name will be saved to Supabase when you click “Save changes”.
+            </p>
           </div>
+        )}
+
+        <div className="flex items-center gap-6 mt-2 text-sm">
+          {/* Created date */}
+          <span className="flex items-center gap-2">
+            <img
+              src="/icons/date_profile.svg"
+              alt="Account creation date"
+              className="w-[24px] h-[24px]"
+            />
+            <span className="text-[14px] font-light text-[#2F2F2F]">
+              Since: {createdAt}
+            </span>
+          </span>
+
+          {/* Sessions attended (from profiles.attended_sessions_count) */}
+          <span className="flex items-center gap-2">
+            <img
+              src="/icons/session_count.svg"
+              alt="Total sessions attended"
+              className="w-[24px] h-[24px]"
+            />
+            <span className="text-[14px] font-medium text-[#2F2F2F]">
+              {attendedCount} sessions
+            </span>
+          </span>
         </div>
       </div>
 
@@ -465,7 +424,6 @@ export default function ProfilePage() {
               "
             rows={4}
             placeholder="Tell us about yourself..."
-            disabled={saving}
           />
         ) : (
           <p className="text-gray-800 text-lg">
