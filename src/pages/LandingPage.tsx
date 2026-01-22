@@ -443,40 +443,40 @@ export default function LandingPage() {
         { text: "ADHD productivity", tone: "neutral" as const, to: "/adhd-productivity" },
     ];
 
-    const productPill = { text: "Real-time AI assistant", tone: "red" as const, to: "/ai-assistant" };
+    const aiPillar = { text: "Real-time AI assistant", tone: "red" as const, to: "/ai-assistant" };
 
     const faqItems = [
         {
             q: "What is body doubling?",
-            a: "Body doubling is working alongside another person (in-person or online) to make it easier to start and stay on task — often with camera on and mic off for quiet accountability.",
+            a: "Body doubling is working alongside another person (in-person or online) to make it easier to start and stay on task — often with live presence and minimal talking.",
         },
         {
             q: "Does body doubling work online?",
-            a: "For many people, yes. Online body doubling uses live video coworking sessions so you get real-time presence and accountability without needing to talk.",
+            a: "For many people, yes. Online body doubling uses live coworking sessions so you get real-time presence and accountability without needing to chat.",
         },
         {
             q: "Are online coworking sessions silent?",
-            a: "Most sessions are silent coworking: camera optional, mic off by default, and everyone focuses on their own task.",
+            a: "Most sessions are silent coworking: mic off by default, and people work on their own tasks with a simple intention and recap.",
         },
         {
             q: "Do I need to talk during sessions?",
-            a: "No. Talking is optional. The default format is quiet focus with a simple intention at the start and a recap at the end.",
+            a: "No. Talking is optional. The default is quiet focus with a lightweight structure: intention → focus blocks → recap.",
         },
         {
             q: "Is MySession similar to Focusmate?",
-            a: "It’s related (same category), but MySession is optimized for group focus sessions and always-available rooms — not only 1-on-1 matching.",
+            a: "It’s the same category (body doubling / online coworking), but MySession focuses on group sessions and always-available rooms — plus an integrated real-time AI assistant.",
         },
         {
             q: "Can I join group focus sessions anytime?",
-            a: "Yes. You can join scheduled sessions or drop into always-open rooms (24/7) when you want a focus container right now.",
+            a: "Yes. Join scheduled sessions or drop into always-open rooms (24/7) whenever you need a focus container right now.",
         },
         {
             q: "Is body doubling good for ADHD?",
-            a: "Some people with ADHD say body doubling helps them start and stay engaged. MySession is not medical advice — it’s a productivity format that some people find supportive.",
+            a: "Some people with ADHD say body doubling helps them start and stay engaged. This is not medical advice — it’s a productivity format that some people find supportive.",
         },
         {
             q: "What makes the AI assistant different from “just ChatGPT”?",
-            a: "It’s built into the session loop: it helps you decide the next step, keep momentum, and (optionally) use screenshare context — without leaving the focus session.",
+            a: "It’s built into the session loop: it helps you decide the next step and keep momentum, and can optionally use screenshare context — without leaving the focus session.",
         },
     ];
 
@@ -517,24 +517,25 @@ export default function LandingPage() {
                             <AccentPill text="Online coworking" tone="blue" />
                             <AccentPill text="Group focus sessions" tone="red" />
                             <AccentPill text="Real-time AI assistant" tone="red" />
+                            <AccentPill text="$10/month" tone="neutral" />
                         </div>
 
                         <h1 className="text-[30px] md:text-[40px] xl:text-[52px] font-normal leading-tight">
                             Live online body doubling
                             <br className="hidden md:block" />
-                            &amp; group focus sessions
+                            &amp; group focus sessions — with real-time AI support.
                         </h1>
 
-                        <p className="mt-5 text-[14px] md:text-[16px] text-[#606060] leading-relaxed max-w-[920px] mx-auto">
+                        <p className="mt-5 text-[14px] md:text-[16px] text-[#606060] leading-relaxed max-w-[940px] mx-auto">
                             <span className="text-[#2F2F2F]">
                                 MySession is a platform for live online body doubling and group focus sessions.
                             </span>{" "}
                             Join silent coworking rooms (video-based accountability sessions), set a simple intention, and follow a
                             structured focus format.{" "}
                             <span className="text-[#2F2F2F]">
-                                Plus a built-in real-time AI assistant (screenshare included)
+                                Built-in real-time AI assistant (screenshare included)
                             </span>{" "}
-                            to unblock you mid-session and keep momentum.
+                            helps you unblock the next step mid-session — without leaving the focus container.
                         </p>
 
                         <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -564,7 +565,7 @@ export default function LandingPage() {
                             <AccentPill text="Focus sessions with video" tone="neutral" />
                             <AccentPill text="Virtual coworking sessions" tone="neutral" />
                             <AccentPill text="24/7 rooms" tone="blue" />
-                            <AccentPill text="Pricing: $10/mo" tone="neutral" />
+                            <AccentPill text="Buddy tripling (3 people)" tone="green" />
                         </div>
                     </div>
 
@@ -587,14 +588,12 @@ export default function LandingPage() {
                                     <div className="relative">
                                         <div className="flex items-center justify-between">
                                             <div className="text-[14px] font-semibold">Intention → focus → recap</div>
-                                            <div className="text-[12px] text-[#606060]">Simple structure that keeps you moving</div>
+                                            <div className="text-[12px] text-[#606060]">Structure that keeps you moving</div>
                                         </div>
 
                                         <div className="mt-4 space-y-3">
                                             <div className="rounded-[16px] border border-[#DBD8D8] p-4 bg-white/70">
-                                                <div className="text-[13px] font-semibold">
-                                                    Current intention: “Finish sessions page polish”
-                                                </div>
+                                                <div className="text-[13px] font-semibold">Current intention: “Ship sessions polish”</div>
                                                 <div className="mt-2 text-[12px] text-[#606060]">
                                                     Intention → stages → recap • progress tracked
                                                 </div>
@@ -607,14 +606,14 @@ export default function LandingPage() {
                                             <div className="rounded-[16px] border border-[#DBD8D8] p-4 bg-white/70">
                                                 <div className="text-[13px] font-semibold">Body doubling (live presence)</div>
                                                 <div className="mt-2 text-[12px] text-[#606060] leading-relaxed">
-                                                    Work alongside others. Less friction to start, more follow-through — without chatter.
+                                                    Work alongside others — less friction to start, more follow-through — without chatter.
                                                 </div>
                                             </div>
 
                                             <div className="rounded-[16px] border border-[#DBD8D8] p-4 bg-white/70">
                                                 <div className="text-[13px] font-semibold">AI assistant inside the loop</div>
                                                 <div className="mt-2 text-[12px] text-[#606060] leading-relaxed">
-                                                    If you get stuck mid-session: ask for the next step, break down tasks, or use screenshare context.
+                                                    If stuck mid-session: ask for the next step, break down tasks, or use screenshare context.
                                                 </div>
                                             </div>
                                         </div>
@@ -635,7 +634,7 @@ export default function LandingPage() {
 
                                     <div className="relative mt-4 flex-1 rounded-[20px] border border-[#DBD8D8] bg-[#F6F6F6]/70 p-4">
                                         <div className="text-[12px] text-[#606060]">
-                                            The assistant is built into your session workflow — it helps you decide “what next” without leaving the focus container.
+                                            Built into the session workflow — it helps you decide “what next” without leaving the focus container.
                                         </div>
 
                                         <div className="mt-4 rounded-[16px] bg-white border border-[#EAEAEA] p-4">
@@ -686,12 +685,12 @@ export default function LandingPage() {
                     </div>
                 </section>
 
-                {/* CORE CONCEPTS + PRODUCT PILLAR */}
+                {/* CORE CONCEPTS + EXPLICIT SECOND PILLAR LINE */}
                 <section className="py-10">
                     <SectionTitle
-                        kicker="Definitions that AI reuses"
-                        title="Two pillars: category + AI layer."
-                        subtitle="First, we define the category people search for. Second, we show the built-in real-time assistant that keeps momentum inside sessions."
+                        kicker="SEO + AEO foundation"
+                        title="We define the category first — then the AI layer."
+                        subtitle="This is deliberate: Google/AI need a clear category definition (body doubling / online coworking). The AI assistant is the second pillar that differentiates MySession."
                     />
 
                     <div className="mt-7 max-w-[980px] mx-auto flex flex-wrap items-center justify-center gap-2">
@@ -707,20 +706,31 @@ export default function LandingPage() {
                         ))}
                     </div>
 
-                    <div className="mt-4 flex items-center justify-center gap-2">
-                        <div className="text-[12px] text-[#606060]">Second pillar:</div>
-                        <button
-                            onClick={() => navigate(productPill.to)}
-                            className="focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#111827]/20 rounded-full"
-                            aria-label={`Open ${productPill.text}`}
-                        >
-                            <AccentPill text={productPill.text} tone={productPill.tone} />
-                        </button>
+                    {/* ✅ THIS IS THE EXPLICIT "SECOND PILLAR" LINE YOU SAID WAS MISSING */}
+                    <div className="mt-5 max-w-[980px] mx-auto">
+                        <div className="border border-[#DBD8D8] rounded-[20px] bg-white/80 backdrop-blur-[4px] px-5 py-4 flex flex-col md:flex-row items-center justify-between gap-3">
+                            <div className="text-[13px] text-[#606060]">
+                                <span className="font-semibold text-[#2F2F2F]">Second pillar:</span>{" "}
+                                Real-time AI assistant (screenshare included) — built into focus sessions.
+                            </div>
+
+                            <button
+                                onClick={() => navigate(aiPillar.to)}
+                                className={`
+                  h-10 rounded-full px-5 text-[13px] font-semibold
+                  bg-[#111827] text-white hover:opacity-90 transition
+                  ${sessionCtaClass}
+                `}
+                                style={{ ["--cta-grad" as any]: GRADIENT }}
+                            >
+                                <span className="relative z-10">Open /ai-assistant</span>
+                            </button>
+                        </div>
                     </div>
 
                     <div className="mt-4 text-center text-[12px] text-[#606060]">
-                        If you’re new, start with <span className="underline underline-offset-2">Body doubling</span>.
-                        If you’re stuck mid-task, open the <span className="underline underline-offset-2">AI assistant</span>.
+                        If you’re new: start with <span className="underline underline-offset-2">Body doubling</span>. If you’re stuck: open the{" "}
+                        <span className="underline underline-offset-2">AI assistant</span>.
                     </div>
                 </section>
 
@@ -728,25 +738,25 @@ export default function LandingPage() {
                 <section className="py-12">
                     <SectionTitle
                         kicker="Formats"
-                        title="Choose your body doubling format."
-                        subtitle="Group focus sessions for energy, silent coworking rooms for always-available focus, and small accountability circles when you want a cozy vibe."
+                        title="Choose the accountability level that fits your day."
+                        subtitle="Group sessions for energy, 24/7 rooms for always-available focus, and Buddy Tripling for a cozy circle of 3."
                     />
 
                     <div className="mt-10 grid grid-cols-1 lg:grid-cols-3 gap-4">
                         <FormatCard
                             accent="blue"
                             title="Group focus sessions"
-                            desc="Live online coworking with multiple people: a simple structure, clear intention, and quiet accountability."
+                            desc="Join structured sessions with multiple people and stay accountable through shared presence."
                             bullets={[
                                 "Best for energy + momentum",
-                                "Structured blocks (Pomodoro / Deep Work / Sprints)",
+                                "Clear structure (Pomodoro / Deep Work / Sprints)",
                                 "Join in seconds — no setup",
                             ]}
                         />
                         <FormatCard
                             accent="green"
-                            title="Silent coworking rooms (24/7)"
-                            desc="Always open. Drop in anytime and work alongside others in a quiet room — camera optional, mic off by default."
+                            title="24/7 Infinite Rooms"
+                            desc="Always open. Drop in anytime and focus inside a structured room — day or night."
                             bullets={[
                                 "No scheduling — just join",
                                 "Great for spontaneous motivation",
@@ -755,43 +765,13 @@ export default function LandingPage() {
                         />
                         <FormatCard
                             accent="red"
-                            title="Small-group accountability (3 people)"
-                            desc="A cozy circle for body doubling. Easier to fill than larger groups — less friction, faster start."
+                            title="Buddy Tripling (3 people)"
+                            desc="A small, cozy circle for accountability. Easier to fill than larger group sessions — less friction, faster start."
                             bullets={[
                                 "Higher comfort, still real accountability",
-                                "Easier to match than big groups",
+                                "Easier to match than big group sessions",
                                 "Great for recurring sessions + habit building",
                             ]}
-                        />
-                    </div>
-                </section>
-
-                {/* WHY IT HELPS */}
-                <section className="py-12">
-                    <SectionTitle
-                        kicker="Why it helps"
-                        title="Body doubling reduces start friction — and keeps you on track."
-                        subtitle="Not vibes. A repeatable loop: intention → shared presence → structured focus → recap."
-                    />
-
-                    <div className="mt-10 grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <FeatureCard
-                            accent="green"
-                            title="Shared presence (online body doubling)"
-                            desc="Working alongside others makes it easier to begin and harder to drift into avoidance — without pressure to perform."
-                            bullets={["Gentle accountability", "Less procrastination momentum", "Works well with video"]}
-                        />
-                        <FeatureCard
-                            accent="blue"
-                            title="Structured focus cycles"
-                            desc="A clean format creates momentum: you know what to do, for how long, and when to pause."
-                            bullets={["Pomodoro / Deep work / Sprints", "Clear start + end", "Less decision fatigue"]}
-                        />
-                        <FeatureCard
-                            accent="red"
-                            title="Intention → recap"
-                            desc="A tiny commitment at the start and a short recap at the end makes sessions feel real — and builds consistency."
-                            bullets={["Make the goal explicit", "Track completion", "Repeat daily"]}
                         />
                     </div>
                 </section>
@@ -800,74 +780,29 @@ export default function LandingPage() {
                 <section className="py-12">
                     <SectionTitle
                         kicker="How it works"
-                        title="A simple flow you can repeat every day."
+                        title="A simple flow that forces momentum."
                         subtitle="Join fast — then the structure keeps you honest."
                     />
 
-                    <div className="mt-10 grid grid-cols-1 lg:grid-cols-4 gap-4">
+                    <div className="mt-10 grid grid-cols-1 lg:grid-cols-3 gap-4">
                         <FeatureCard
                             accent="blue"
-                            title="1) Join a room"
-                            desc="Pick a format that matches your day: group sessions, 24/7 silent coworking, or a small circle."
-                            bullets={["Schedule + filters", "Join instantly", "Browser-based"]}
+                            title="1) Join a session"
+                            desc="Pick a format that matches your day: groups, 24/7 rooms, or Buddy Tripling."
+                            bullets={["Schedule + filters", "Join instantly", "Zero setup friction"]}
                         />
                         <FeatureCard
                             accent="green"
-                            title="2) Set an intention"
-                            desc="Write what you will work on. Keep it small enough to start within 60 seconds."
-                            bullets={["One clear goal", "Optional breakdown", "Less “where do I start?”"]}
+                            title="2) Set intentions"
+                            desc="Write what you will finish. Track progress. Make the goal real."
+                            bullets={["Clear intention", "Progress tracking", "AI can help break it down"]}
                         />
                         <FeatureCard
                             accent="red"
-                            title="3) Work quietly"
-                            desc="Most sessions are silent. Camera optional, mic off by default. Everyone focuses on their own task."
-                            bullets={["Silent coworking", "Focus sessions with video", "Real-time accountability"]}
+                            title="3) Execute with AI help"
+                            desc="Work through the session format. If stuck — use AI (including screenshare) to unblock the next step."
+                            bullets={["Structured stages", "Less context switching", "Stay focused until completion"]}
                         />
-                        <FeatureCard
-                            accent="blue"
-                            title="4) Recap & repeat"
-                            desc="Close the loop with a short recap. Then start the next block — momentum compounds."
-                            bullets={["Quick reflection", "Progress visibility", "Habit-friendly"]}
-                        />
-                    </div>
-                </section>
-
-                {/* AI PILLAR (MOVED UP) */}
-                <section className="py-12">
-                    <SectionTitle
-                        kicker="Second pillar"
-                        title="Built-in real-time AI assistant (screenshare included)."
-                        subtitle="Not a separate tab you forget. It’s inside the session loop — to unblock the next step and keep you moving."
-                    />
-
-                    <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <FeatureCard
-                            accent="red"
-                            title="Unblock the next step — instantly"
-                            desc="When you’re stuck, the assistant gives a concrete next action (not theory) so you can continue without context switching."
-                            bullets={["Next-step guidance", "Less doomscrolling", "Stay inside the focus container"]}
-                        />
-                        <FeatureCard
-                            accent="blue"
-                            title="Screenshare context (optional)"
-                            desc="Share your screen → ask what to do next → get a precise instruction based on what’s visible, then keep working."
-                            bullets={["Faster debugging/learning", "Less task drift", "Works during sessions"]}
-                        />
-                    </div>
-
-                    <div className="mt-8 flex justify-center">
-                        <button
-                            onClick={() => navigate("/ai-assistant")}
-                            className={`
-                h-12 rounded-full px-7 text-[14px] font-semibold
-                bg-[#111827] text-white hover:opacity-90 transition
-                w-full sm:w-auto
-                ${sessionCtaClass}
-              `}
-                            style={{ ["--cta-grad" as any]: GRADIENT }}
-                        >
-                            <span className="relative z-10">Open AI assistant page</span>
-                        </button>
                     </div>
                 </section>
 
@@ -948,46 +883,6 @@ export default function LandingPage() {
                     </div>
                 </section>
 
-                {/* HOSTING */}
-                <section className="py-12">
-                    <div className="border border-[#DBD8D8] rounded-[32px] p-6 md:p-10 bg-[#FAFAFA] relative overflow-hidden">
-                        <div
-                            aria-hidden="true"
-                            className="absolute -left-24 -bottom-24 w-72 h-72 rounded-full blur-3xl opacity-30"
-                            style={{ backgroundColor: MS_GREEN }}
-                        />
-                        <div
-                            aria-hidden="true"
-                            className="absolute -right-24 -top-24 w-72 h-72 rounded-full blur-3xl opacity-25"
-                            style={{ backgroundColor: MS_BLUE }}
-                        />
-                        <div className="max-w-[980px] mx-auto text-center relative">
-                            <div className="text-[12px] tracking-wide text-[#606060] mb-3">Hosts</div>
-                            <div className="text-[24px] md:text-[32px] font-normal leading-tight">
-                                Host sessions — get <span className="font-semibold">50% off</span>.
-                            </div>
-                            <p className="mt-4 text-[14px] md:text-[16px] text-[#606060] leading-relaxed">
-                                Hosting grows the ecosystem. You bring structure — we reward it.
-                            </p>
-
-                            <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
-                                <button
-                                    onClick={() => navigate("/sessions?create=1")}
-                                    className="h-12 rounded-full px-7 text-[14px] font-semibold bg-[#111827] text-white hover:opacity-90 transition w-full sm:w-auto"
-                                >
-                                    Host your first session
-                                </button>
-                                <button
-                                    onClick={() => navigate("/pricing")}
-                                    className="h-12 rounded-full px-7 text-[14px] font-semibold border border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition w-full sm:w-auto"
-                                >
-                                    See pricing
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
                 {/* FINAL CTA */}
                 <section className="pt-6 pb-4">
                     <div className="border border-[#DBD8D8] rounded-[32px] p-6 md:p-10 bg-[#111827] text-white relative overflow-hidden">
@@ -1005,7 +900,7 @@ export default function LandingPage() {
                                 Start with one session. Ship something today.
                             </div>
                             <div className="mt-3 text-[14px] md:text-[16px] text-white/80">
-                                Join a focus session, set an intention, stay accountable — and keep momentum going.
+                                Join a session, set intentions, stay accountable — and keep momentum going.
                             </div>
 
                             <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -1019,14 +914,14 @@ export default function LandingPage() {
                   `}
                                     style={{ ["--cta-grad" as any]: GRADIENT }}
                                 >
-                                    <span className="relative z-10">Join a focus session</span>
+                                    <span className="relative z-10">Join now</span>
                                 </button>
 
                                 <button
                                     onClick={() => navigate("/pricing")}
                                     className="h-12 rounded-full px-7 text-[14px] font-semibold border border-white text-white hover:bg-white hover:text-[#111827] transition w-full sm:w-auto"
                                 >
-                                    Pricing ($10/mo)
+                                    Subscribe $10/mo
                                 </button>
                             </div>
                         </div>
@@ -1035,6 +930,7 @@ export default function LandingPage() {
 
                 {/* Local CSS */}
                 <style>{`
+          /* CTA sheen background */
           .session-cta::before { background: var(--cta-grad); }
 
           @keyframes gradMove {
@@ -1043,6 +939,7 @@ export default function LandingPage() {
             100% { background-position: 0% 50%; }
           }
 
+          /* HERO animated mesh */
           .hero-mesh {
             border-radius: 9999px;
             filter: blur(28px);
@@ -1065,6 +962,7 @@ export default function LandingPage() {
             100% { transform: translate3d(-10px, 0px, 0) scale(1.02); }
           }
 
+          /* Focus particles */
           .focus-particles {
             -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.65) 45%, rgba(0,0,0,0.0) 95%);
             mask-image: linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.65) 45%, rgba(0,0,0,0.0) 95%);
@@ -1106,6 +1004,7 @@ export default function LandingPage() {
             50%      { opacity: 0.85; }
           }
 
+          /* Subtle sweeping flow line */
           .focus-sweep {
             position: absolute;
             left: -20%;
@@ -1127,6 +1026,7 @@ export default function LandingPage() {
             100% { transform: translateX(-8%) rotate(-8deg); opacity: 0.0; }
           }
 
+          /* Reduce motion */
           @media (prefers-reduced-motion: reduce) {
             .session-cta:hover::before { animation: none !important; }
             .hero-mesh { animation: none !important; }
