@@ -1,6 +1,6 @@
 // src/pages/LandingPage.tsx
 import { useMemo, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 
 /**
  * Palette (MySession)
@@ -333,21 +333,25 @@ function MiniSessionCard({
             </div>
 
             <div className="flex flex-col sm:flex-row gap-3">
-                <button className="h-12 rounded-full px-6 text-[14px] font-semibold border border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition w-full sm:w-auto">
+                <Link
+                    to="/sessions"
+                    className="h-12 rounded-full px-6 text-[14px] font-semibold border border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition w-full sm:w-auto inline-flex items-center justify-center"
+                >
                     Book session
-                </button>
+                </Link>
 
-                <button
+                <Link
+                    to="/sessions"
                     className={`
             h-12 rounded-full px-6 text-[14px] font-semibold
             bg-[#111827] text-white hover:opacity-90 transition
-            w-full sm:w-auto
+            w-full sm:w-auto inline-flex items-center justify-center
             ${sessionCtaClass}
           `}
                     style={{ ["--cta-grad" as any]: GRADIENT }}
                 >
                     <span className="relative z-10">Join session</span>
-                </button>
+                </Link>
             </div>
         </div>
     );
@@ -433,8 +437,6 @@ function FocusParticles({ count = 26 }: { count?: number }) {
 }
 
 export default function LandingPage() {
-    const navigate = useNavigate();
-
     const coreConceptLinks = [
         { text: "Body doubling", tone: "green" as const, to: "/body-doubling" },
         { text: "Online coworking", tone: "blue" as const, to: "/online-coworking" },
@@ -539,25 +541,25 @@ export default function LandingPage() {
                         </p>
 
                         <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-                            <button
-                                onClick={() => navigate("/sessions")}
+                            <Link
+                                to="/sessions"
                                 className={`
                   h-12 rounded-full px-7 text-[14px] font-semibold
                   bg-[#111827] text-white hover:opacity-90 transition
-                  w-full sm:w-auto
+                  w-full sm:w-auto inline-flex items-center justify-center
                   ${sessionCtaClass}
                 `}
                                 style={{ ["--cta-grad" as any]: GRADIENT }}
                             >
                                 <span className="relative z-10">Join a focus session</span>
-                            </button>
+                            </Link>
 
-                            <button
-                                onClick={() => navigate("/ai-assistant")}
-                                className="h-12 rounded-full px-7 text-[14px] font-semibold border border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition w-full sm:w-auto"
+                            <Link
+                                to="/ai-assistant"
+                                className="h-12 rounded-full px-7 text-[14px] font-semibold border border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition w-full sm:w-auto inline-flex items-center justify-center"
                             >
                                 See AI assistant
-                            </button>
+                            </Link>
                         </div>
 
                         <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
@@ -659,25 +661,25 @@ export default function LandingPage() {
                                     </div>
 
                                     <div className="mt-4 flex flex-col sm:flex-row gap-3 relative">
-                                        <button
-                                            onClick={() => navigate("/sessions")}
+                                        <Link
+                                            to="/sessions"
                                             className={`
                         h-12 rounded-full px-6 text-[14px] font-semibold
                         bg-[#111827] text-white hover:opacity-90 transition
-                        w-full sm:w-auto
+                        w-full sm:w-auto inline-flex items-center justify-center
                         ${sessionCtaClass}
                       `}
                                             style={{ ["--cta-grad" as any]: GRADIENT }}
                                         >
                                             <span className="relative z-10">Browse sessions</span>
-                                        </button>
+                                        </Link>
 
-                                        <button
-                                            onClick={() => navigate("/ai-assistant")}
-                                            className="h-12 rounded-full px-6 text-[14px] font-semibold border border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition w-full sm:w-auto"
+                                        <Link
+                                            to="/ai-assistant"
+                                            className="h-12 rounded-full px-6 text-[14px] font-semibold border border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition w-full sm:w-auto inline-flex items-center justify-center"
                                         >
                                             Learn AI assistant
-                                        </button>
+                                        </Link>
                                     </div>
                                 </div>
                             </div>
@@ -695,14 +697,14 @@ export default function LandingPage() {
 
                     <div className="mt-7 max-w-[980px] mx-auto flex flex-wrap items-center justify-center gap-2">
                         {coreConceptLinks.map((c) => (
-                            <button
+                            <Link
                                 key={c.to}
-                                onClick={() => navigate(c.to)}
+                                to={c.to}
                                 className="focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#111827]/20 rounded-full"
                                 aria-label={`Open ${c.text}`}
                             >
                                 <AccentPill text={c.text} tone={c.tone} />
-                            </button>
+                            </Link>
                         ))}
                     </div>
 
@@ -714,17 +716,17 @@ export default function LandingPage() {
                                 Real-time AI assistant (screenshare included) — built into focus sessions.
                             </div>
 
-                            <button
-                                onClick={() => navigate(aiPillar.to)}
+                            <Link
+                                to={aiPillar.to}
                                 className={`
                   h-10 rounded-full px-5 text-[13px] font-semibold
-                  bg-[#111827] text-white hover:opacity-90 transition
+                  bg-[#111827] text-white hover:opacity-90 transition inline-flex items-center justify-center
                   ${sessionCtaClass}
                 `}
                                 style={{ ["--cta-grad" as any]: GRADIENT }}
                             >
                                 <span className="relative z-10">Open /ai-assistant</span>
-                            </button>
+                            </Link>
                         </div>
                     </div>
 
@@ -846,18 +848,18 @@ export default function LandingPage() {
                         </div>
 
                         <div className="mt-6 flex justify-center">
-                            <button
-                                onClick={() => navigate("/sessions")}
+                            <Link
+                                to="/sessions"
                                 className={`
                   h-12 rounded-full px-7 text-[14px] font-semibold
                   bg-[#111827] text-white hover:opacity-90 transition
-                  w-full sm:w-auto
+                  w-full sm:w-auto inline-flex items-center justify-center
                   ${sessionCtaClass}
                 `}
                                 style={{ ["--cta-grad" as any]: GRADIENT }}
                             >
                                 <span className="relative z-10">Open full schedule</span>
-                            </button>
+                            </Link>
                         </div>
                     </div>
                 </section>
@@ -904,25 +906,25 @@ export default function LandingPage() {
                             </div>
 
                             <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
-                                <button
-                                    onClick={() => navigate("/sessions")}
+                                <Link
+                                    to="/sessions"
                                     className={`
                     h-12 rounded-full px-7 text-[14px] font-semibold
                     bg-white text-[#111827] hover:opacity-90 transition
-                    w-full sm:w-auto
+                    w-full sm:w-auto inline-flex items-center justify-center
                     ${sessionCtaClass}
                   `}
                                     style={{ ["--cta-grad" as any]: GRADIENT }}
                                 >
                                     <span className="relative z-10">Join now</span>
-                                </button>
+                                </Link>
 
-                                <button
-                                    onClick={() => navigate("/pricing")}
-                                    className="h-12 rounded-full px-7 text-[14px] font-semibold border border-white text-white hover:bg-white hover:text-[#111827] transition w-full sm:w-auto"
+                                <Link
+                                    to="/pricing"
+                                    className="h-12 rounded-full px-7 text-[14px] font-semibold border border-white text-white hover:bg-white hover:text-[#111827] transition w-full sm:w-auto inline-flex items-center justify-center"
                                 >
                                     Subscribe $10/mo
-                                </button>
+                                </Link>
                             </div>
                         </div>
                     </div>
