@@ -233,7 +233,10 @@ function FormatCard({
                 : "radial-gradient(900px 400px at 20% 0%, rgba(246,82,82,0.14) 0%, rgba(246,82,82,0.00) 55%)";
 
     return (
-        <div className="border border-[#DBD8D8] rounded-[24px] bg-white p-6 relative overflow-hidden" style={{ backgroundImage: wash }}>
+        <div
+            className="border border-[#DBD8D8] rounded-[24px] bg-white p-6 relative overflow-hidden"
+            style={{ backgroundImage: wash }}
+        >
             <div
                 className="absolute -top-12 -right-12 w-40 h-40 rounded-full blur-2xl opacity-60"
                 style={{ backgroundColor: accentColor }}
@@ -256,7 +259,10 @@ function FormatCard({
                 <ul className="mt-4 space-y-2 text-[13px] text-[#606060]">
                     {bullets.map((b) => (
                         <li key={b} className="flex gap-2">
-                            <span className="mt-[6px] w-[6px] h-[6px] rounded-full shrink-0" style={{ backgroundColor: accentColor }} />
+                            <span
+                                className="mt-[6px] w-[6px] h-[6px] rounded-full shrink-0"
+                                style={{ backgroundColor: accentColor }}
+                            />
                             <span>{b}</span>
                         </li>
                     ))}
@@ -294,7 +300,9 @@ function MiniSessionCard({
         <div className="border border-[#DBD8D8] rounded-[28px] bg-white p-5 flex flex-col gap-4">
             <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                    <div className="text-[18px] md:text-[20px] font-semibold text-[#2F2F2F] leading-snug">{title}</div>
+                    <div className="text-[18px] md:text-[20px] font-semibold text-[#2F2F2F] leading-snug">
+                        {title}
+                    </div>
 
                     <div className="mt-2 flex flex-wrap items-center gap-3 text-[12px] text-[#606060]">
                         <span className="flex items-center gap-1">
@@ -306,7 +314,10 @@ function MiniSessionCard({
                         <span className="opacity-60">•</span>
                         <span>Starts in {startsIn}</span>
 
-                        <span className="ml-0 md:ml-2 inline-flex items-center px-3 py-1 rounded-full border" style={{ borderColor: tagCfg.border, background: tagCfg.bg, color: tagCfg.fg }}>
+                        <span
+                            className="ml-0 md:ml-2 inline-flex items-center px-3 py-1 rounded-full border"
+                            style={{ borderColor: tagCfg.border, background: tagCfg.bg, color: tagCfg.fg }}
+                        >
                             {tag}
                         </span>
                     </div>
@@ -344,18 +355,9 @@ function MiniSessionCard({
 
 /**
  * Hero animation: “focus particles”
- * Small dots orbit & drift like “people/presence” moving into a session.
- * - Pure CSS, no libs
- * - Low opacity, never fights the copy
- * - Respects prefers-reduced-motion
  */
-function FocusParticles({
-    count = 26,
-}: {
-    count?: number;
-}) {
+function FocusParticles({ count = 26 }: { count?: number }) {
     const dots = useMemo(() => {
-        // Deterministic "random" so it doesn't jump on re-renders
         let seed = 1337;
         const rand = () => {
             seed = (seed * 9301 + 49297) % 233280;
@@ -370,14 +372,14 @@ function FocusParticles({
 
         return Array.from({ length: count }).map((_, i) => {
             const col = colors[i % colors.length];
-            const size = 4 + Math.round(rand() * 5); // 4..9
-            const x = 6 + rand() * 88; // %
-            const y = 8 + rand() * 62; // %
-            const dur = 10 + rand() * 12; // 10..22s
-            const delay = -(rand() * 18); // start mid-animation
-            const drift = 18 + rand() * 38; // px
-            const blur = rand() > 0.7 ? 6 : 0; // sometimes blurred for depth
-            const ring = rand() > 0.55; // some nodes are "rings"
+            const size = 4 + Math.round(rand() * 5);
+            const x = 6 + rand() * 88;
+            const y = 8 + rand() * 62;
+            const dur = 10 + rand() * 12;
+            const delay = -(rand() * 18);
+            const drift = 18 + rand() * 38;
+            const blur = rand() > 0.7 ? 6 : 0;
+            const ring = rand() > 0.55;
             const glow = rand() > 0.55;
 
             return {
@@ -397,11 +399,14 @@ function FocusParticles({
         });
     }, [count]);
 
-    // Use a ref so React doesn't consider it interactive; purely decorative.
     const rootRef = useRef<HTMLDivElement | null>(null);
 
     return (
-        <div ref={rootRef} aria-hidden="true" className="focus-particles pointer-events-none absolute -inset-x-24 -top-40 h-[520px] md:h-[580px] overflow-hidden">
+        <div
+            ref={rootRef}
+            aria-hidden="true"
+            className="focus-particles pointer-events-none absolute -inset-x-24 -top-40 h-[520px] md:h-[580px] overflow-hidden"
+        >
             {dots.map((d) => (
                 <span
                     key={d.key}
@@ -422,7 +427,6 @@ function FocusParticles({
                     }
                 />
             ))}
-            {/* A very subtle "session flow line" that sweeps slowly */}
             <div className="focus-sweep" />
         </div>
     );
@@ -430,6 +434,51 @@ function FocusParticles({
 
 export default function LandingPage() {
     const navigate = useNavigate();
+
+    const coreConceptLinks = [
+        { text: "Body doubling", tone: "green" as const, to: "/body-doubling" },
+        { text: "Online coworking", tone: "blue" as const, to: "/online-coworking" },
+        { text: "Group focus sessions", tone: "red" as const, to: "/group-focus-sessions" },
+        { text: "Silent coworking", tone: "neutral" as const, to: "/silent-coworking" },
+        { text: "ADHD productivity", tone: "neutral" as const, to: "/adhd-productivity" },
+    ];
+
+    const productPill = { text: "Real-time AI assistant", tone: "red" as const, to: "/ai-assistant" };
+
+    const faqItems = [
+        {
+            q: "What is body doubling?",
+            a: "Body doubling is working alongside another person (in-person or online) to make it easier to start and stay on task — often with camera on and mic off for quiet accountability.",
+        },
+        {
+            q: "Does body doubling work online?",
+            a: "For many people, yes. Online body doubling uses live video coworking sessions so you get real-time presence and accountability without needing to talk.",
+        },
+        {
+            q: "Are online coworking sessions silent?",
+            a: "Most sessions are silent coworking: camera optional, mic off by default, and everyone focuses on their own task.",
+        },
+        {
+            q: "Do I need to talk during sessions?",
+            a: "No. Talking is optional. The default format is quiet focus with a simple intention at the start and a recap at the end.",
+        },
+        {
+            q: "Is MySession similar to Focusmate?",
+            a: "It’s related (same category), but MySession is optimized for group focus sessions and always-available rooms — not only 1-on-1 matching.",
+        },
+        {
+            q: "Can I join group focus sessions anytime?",
+            a: "Yes. You can join scheduled sessions or drop into always-open rooms (24/7) when you want a focus container right now.",
+        },
+        {
+            q: "Is body doubling good for ADHD?",
+            a: "Some people with ADHD say body doubling helps them start and stay engaged. MySession is not medical advice — it’s a productivity format that some people find supportive.",
+        },
+        {
+            q: "What makes the AI assistant different from “just ChatGPT”?",
+            a: "It’s built into the session loop: it helps you decide the next step, keep momentum, and (optionally) use screenshare context — without leaving the focus session.",
+        },
+    ];
 
     return (
         <div className="min-h-screen bg-white text-[#2F2F2F] font-inter relative overflow-hidden">
@@ -441,7 +490,6 @@ export default function LandingPage() {
                     backgroundImage: `url("${BG_PATTERN}")`,
                     backgroundRepeat: "repeat",
                     backgroundSize: "1200px 600px",
-                    // Fade out near the bottom (so it doesn't fight the CTA/footer)
                     WebkitMaskImage:
                         "linear-gradient(to bottom, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.35) 55%, rgba(0,0,0,0.0) 92%)",
                     maskImage:
@@ -452,13 +500,8 @@ export default function LandingPage() {
             <main className="relative w-full px-3 md:px-6 lg:px-10 pb-16">
                 {/* HERO */}
                 <section className="pt-[92px] md:pt-[110px] pb-10 relative">
-                    {/* Animated theme background: particles */}
                     <FocusParticles count={28} />
-
-                    {/* Animated mesh background */}
                     <div aria-hidden="true" className="hero-mesh pointer-events-none absolute -inset-x-24 -top-40 h-[520px] md:h-[580px]" />
-
-                    {/* Soft vignette to keep text readable */}
                     <div
                         aria-hidden="true"
                         className="pointer-events-none absolute -inset-x-24 -top-40 h-[520px] md:h-[580px]"
@@ -470,20 +513,28 @@ export default function LandingPage() {
 
                     <div className="max-w-[980px] mx-auto text-center relative">
                         <div className="flex flex-wrap items-center justify-center gap-2 mb-5">
-                            <AccentPill text="Cheapest on the market" tone="green" />
-                            <AccentPill text="$10/month" tone="blue" />
-                            <AccentPill text="AI support" tone="red" />
+                            <AccentPill text="Body doubling" tone="green" />
+                            <AccentPill text="Online coworking" tone="blue" />
+                            <AccentPill text="Group focus sessions" tone="red" />
+                            <AccentPill text="Real-time AI assistant" tone="red" />
                         </div>
 
                         <h1 className="text-[30px] md:text-[40px] xl:text-[52px] font-normal leading-tight">
-                            High-accountability focus sessions —
+                            Live online body doubling
                             <br className="hidden md:block" />
-                            structured intentions with AI support.
+                            &amp; group focus sessions
                         </h1>
 
-                        <p className="mt-5 text-[14px] md:text-[16px] text-[#606060] leading-relaxed max-w-[860px] mx-auto">
-                            MySession turns “I should do it” into a guided flow: join a session, set clear intentions,
-                            follow a structured focus format, track completion, and use AI (including screenshare help) when stuck.
+                        <p className="mt-5 text-[14px] md:text-[16px] text-[#606060] leading-relaxed max-w-[920px] mx-auto">
+                            <span className="text-[#2F2F2F]">
+                                MySession is a platform for live online body doubling and group focus sessions.
+                            </span>{" "}
+                            Join silent coworking rooms (video-based accountability sessions), set a simple intention, and follow a
+                            structured focus format.{" "}
+                            <span className="text-[#2F2F2F]">
+                                Plus a built-in real-time AI assistant (screenshare included)
+                            </span>{" "}
+                            to unblock you mid-session and keep momentum.
                         </p>
 
                         <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -497,23 +548,23 @@ export default function LandingPage() {
                 `}
                                 style={{ ["--cta-grad" as any]: GRADIENT }}
                             >
-                                <span className="relative z-10">Join now</span>
+                                <span className="relative z-10">Join a focus session</span>
                             </button>
 
                             <button
-                                onClick={() => navigate("/pricing")}
+                                onClick={() => navigate("/ai-assistant")}
                                 className="h-12 rounded-full px-7 text-[14px] font-semibold border border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition w-full sm:w-auto"
                             >
-                                Subscribe $10/mo
+                                See AI assistant
                             </button>
                         </div>
 
                         <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-                            <AccentPill text="Group sessions" tone="neutral" />
-                            <AccentPill text="24/7 Infinite rooms" tone="blue" />
-                            <AccentPill text="Buddy tripling (3 people)" tone="green" />
-                            <AccentPill text="Browser-based" tone="neutral" />
-                            <AccentPill text="Host sessions (discounts)" tone="neutral" />
+                            <AccentPill text="Silent coworking" tone="neutral" />
+                            <AccentPill text="Focus sessions with video" tone="neutral" />
+                            <AccentPill text="Virtual coworking sessions" tone="neutral" />
+                            <AccentPill text="24/7 rooms" tone="blue" />
+                            <AccentPill text="Pricing: $10/mo" tone="neutral" />
                         </div>
                     </div>
 
@@ -521,7 +572,7 @@ export default function LandingPage() {
                     <div className="mt-10 max-w-[1100px] mx-auto relative">
                         <div className="border border-[#DBD8D8] rounded-[32px] bg-white/70 backdrop-blur-[6px] p-4 md:p-6 shadow-[0_10px_30px_rgba(0,0,0,0.05)]">
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                {/* Left: Intentions / progress */}
+                                {/* Left */}
                                 <div className="bg-white border border-[#EAEAEA] rounded-[24px] p-5 relative overflow-hidden">
                                     <div
                                         aria-hidden="true"
@@ -535,15 +586,15 @@ export default function LandingPage() {
                                     />
                                     <div className="relative">
                                         <div className="flex items-center justify-between">
-                                            <div className="text-[14px] font-semibold">Intentions</div>
-                                            <div className="text-[12px] text-[#606060]">
-                                                Bird’s-eye intentions view <span className="opacity-70">(coming soon)</span>
-                                            </div>
+                                            <div className="text-[14px] font-semibold">Intention → focus → recap</div>
+                                            <div className="text-[12px] text-[#606060]">Simple structure that keeps you moving</div>
                                         </div>
 
                                         <div className="mt-4 space-y-3">
                                             <div className="rounded-[16px] border border-[#DBD8D8] p-4 bg-white/70">
-                                                <div className="text-[13px] font-semibold">Today: “Ship sessions page polish”</div>
+                                                <div className="text-[13px] font-semibold">
+                                                    Current intention: “Finish sessions page polish”
+                                                </div>
                                                 <div className="mt-2 text-[12px] text-[#606060]">
                                                     Intention → stages → recap • progress tracked
                                                 </div>
@@ -554,23 +605,23 @@ export default function LandingPage() {
                                             </div>
 
                                             <div className="rounded-[16px] border border-[#DBD8D8] p-4 bg-white/70">
-                                                <div className="text-[13px] font-semibold">AI plan (auto-generated)</div>
+                                                <div className="text-[13px] font-semibold">Body doubling (live presence)</div>
                                                 <div className="mt-2 text-[12px] text-[#606060] leading-relaxed">
-                                                    Break down the goal → schedule focus sessions → track completion → adapt next steps.
+                                                    Work alongside others. Less friction to start, more follow-through — without chatter.
                                                 </div>
                                             </div>
 
                                             <div className="rounded-[16px] border border-[#DBD8D8] p-4 bg-white/70">
-                                                <div className="text-[13px] font-semibold">Session formats</div>
+                                                <div className="text-[13px] font-semibold">AI assistant inside the loop</div>
                                                 <div className="mt-2 text-[12px] text-[#606060] leading-relaxed">
-                                                    Deep Work, Pomodoro, Short Sprints — plus 24/7 Infinite Rooms and Buddy Tripling (3 people).
+                                                    If you get stuck mid-session: ask for the next step, break down tasks, or use screenshare context.
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Right: PiP intentions panel */}
+                                {/* Right */}
                                 <div className="bg-white border border-[#EAEAEA] rounded-[24px] p-5 flex flex-col relative overflow-hidden">
                                     <div
                                         aria-hidden="true"
@@ -578,18 +629,18 @@ export default function LandingPage() {
                                         style={{ backgroundColor: MS_RED }}
                                     />
                                     <div className="relative flex items-center justify-between">
-                                        <div className="text-[14px] font-semibold">Intentions Panel</div>
-                                        <div className="text-[12px] text-[#606060]">Picture-in-picture</div>
+                                        <div className="text-[14px] font-semibold">Real-time AI assistant</div>
+                                        <div className="text-[12px] text-[#606060]">Screenshare included</div>
                                     </div>
 
                                     <div className="relative mt-4 flex-1 rounded-[20px] border border-[#DBD8D8] bg-[#F6F6F6]/70 p-4">
                                         <div className="text-[12px] text-[#606060]">
-                                            Pin your intentions on top of any window — like picture-in-picture — so the goal stays visible while you work.
+                                            The assistant is built into your session workflow — it helps you decide “what next” without leaving the focus container.
                                         </div>
 
                                         <div className="mt-4 rounded-[16px] bg-white border border-[#EAEAEA] p-4">
                                             <div className="flex items-center justify-between">
-                                                <div className="text-[13px] font-semibold">Current intention</div>
+                                                <div className="text-[13px] font-semibold">Current block</div>
                                                 <div className="text-[12px] text-[#606060]">Deep work</div>
                                             </div>
                                             <div className="mt-3 h-2 rounded-full bg-[#F1F1F1] overflow-hidden">
@@ -601,9 +652,9 @@ export default function LandingPage() {
                                         </div>
 
                                         <div className="mt-4 rounded-[16px] bg-white border border-[#EAEAEA] p-4">
-                                            <div className="text-[13px] font-semibold">AI Screenshare Assistant</div>
+                                            <div className="text-[13px] font-semibold">Screenshare unblock</div>
                                             <div className="mt-2 text-[12px] text-[#606060]">
-                                                Share your screen → ask what to do next → unblock the next step without derailing focus.
+                                                Share your screen → ask what to do next → get a concrete next step, then continue the session.
                                             </div>
                                         </div>
                                     </div>
@@ -623,10 +674,10 @@ export default function LandingPage() {
                                         </button>
 
                                         <button
-                                            onClick={() => navigate("/pricing")}
+                                            onClick={() => navigate("/ai-assistant")}
                                             className="h-12 rounded-full px-6 text-[14px] font-semibold border border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition w-full sm:w-auto"
                                         >
-                                            See pricing
+                                            Learn AI assistant
                                         </button>
                                     </div>
                                 </div>
@@ -635,29 +686,67 @@ export default function LandingPage() {
                     </div>
                 </section>
 
+                {/* CORE CONCEPTS + PRODUCT PILLAR */}
+                <section className="py-10">
+                    <SectionTitle
+                        kicker="Definitions that AI reuses"
+                        title="Two pillars: category + AI layer."
+                        subtitle="First, we define the category people search for. Second, we show the built-in real-time assistant that keeps momentum inside sessions."
+                    />
+
+                    <div className="mt-7 max-w-[980px] mx-auto flex flex-wrap items-center justify-center gap-2">
+                        {coreConceptLinks.map((c) => (
+                            <button
+                                key={c.to}
+                                onClick={() => navigate(c.to)}
+                                className="focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#111827]/20 rounded-full"
+                                aria-label={`Open ${c.text}`}
+                            >
+                                <AccentPill text={c.text} tone={c.tone} />
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="mt-4 flex items-center justify-center gap-2">
+                        <div className="text-[12px] text-[#606060]">Second pillar:</div>
+                        <button
+                            onClick={() => navigate(productPill.to)}
+                            className="focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#111827]/20 rounded-full"
+                            aria-label={`Open ${productPill.text}`}
+                        >
+                            <AccentPill text={productPill.text} tone={productPill.tone} />
+                        </button>
+                    </div>
+
+                    <div className="mt-4 text-center text-[12px] text-[#606060]">
+                        If you’re new, start with <span className="underline underline-offset-2">Body doubling</span>.
+                        If you’re stuck mid-task, open the <span className="underline underline-offset-2">AI assistant</span>.
+                    </div>
+                </section>
+
                 {/* FORMATS */}
                 <section className="py-12">
                     <SectionTitle
                         kicker="Formats"
-                        title="Choose the accountability level that fits your day."
-                        subtitle="Group sessions for energy, 24/7 rooms for always-available focus, and Buddy Tripling for a cozy circle of 3."
+                        title="Choose your body doubling format."
+                        subtitle="Group focus sessions for energy, silent coworking rooms for always-available focus, and small accountability circles when you want a cozy vibe."
                     />
 
                     <div className="mt-10 grid grid-cols-1 lg:grid-cols-3 gap-4">
                         <FormatCard
                             accent="blue"
-                            title="Group sessions"
-                            desc="Join structured sessions with multiple people and stay accountable through shared presence."
+                            title="Group focus sessions"
+                            desc="Live online coworking with multiple people: a simple structure, clear intention, and quiet accountability."
                             bullets={[
                                 "Best for energy + momentum",
-                                "Clear structure (Pomodoro / Deep Work / Sprints)",
+                                "Structured blocks (Pomodoro / Deep Work / Sprints)",
                                 "Join in seconds — no setup",
                             ]}
                         />
                         <FormatCard
                             accent="green"
-                            title="24/7 Infinite Rooms"
-                            desc="Always open. Drop in anytime and focus inside a structured room — day or night."
+                            title="Silent coworking rooms (24/7)"
+                            desc="Always open. Drop in anytime and work alongside others in a quiet room — camera optional, mic off by default."
                             bullets={[
                                 "No scheduling — just join",
                                 "Great for spontaneous motivation",
@@ -666,44 +755,43 @@ export default function LandingPage() {
                         />
                         <FormatCard
                             accent="red"
-                            title="Buddy Tripling (3 people)"
-                            desc="A small, cozy circle for accountability. Easier to fill than larger group sessions — less friction, faster start."
+                            title="Small-group accountability (3 people)"
+                            desc="A cozy circle for body doubling. Easier to fill than larger groups — less friction, faster start."
                             bullets={[
                                 "Higher comfort, still real accountability",
-                                "Easier to match than big group sessions",
+                                "Easier to match than big groups",
                                 "Great for recurring sessions + habit building",
                             ]}
                         />
                     </div>
                 </section>
 
-                {/* OUTCOMES */}
+                {/* WHY IT HELPS */}
                 <section className="py-12">
                     <SectionTitle
-                        kicker="Outcome, not vibes"
-                        title="Designed for people who want real progress."
-                        subtitle="MySession is built around structured focus sessions — intentions, clear stages, visible progress, and AI help when needed."
+                        kicker="Why it helps"
+                        title="Body doubling reduces start friction — and keeps you on track."
+                        subtitle="Not vibes. A repeatable loop: intention → shared presence → structured focus → recap."
                     />
 
                     <div className="mt-10 grid grid-cols-1 md:grid-cols-3 gap-4">
                         <FeatureCard
-                            accent="blue"
-                            comingSoon
-                            title="Bird’s-eye intentions view"
-                            desc="A fast overview of intentions and progress — so accountability becomes visible at a glance."
-                            bullets={["Clear intentions per person", "Progress visibility", "Less silent drift"]}
+                            accent="green"
+                            title="Shared presence (online body doubling)"
+                            desc="Working alongside others makes it easier to begin and harder to drift into avoidance — without pressure to perform."
+                            bullets={["Gentle accountability", "Less procrastination momentum", "Works well with video"]}
                         />
                         <FeatureCard
-                            accent="green"
-                            title="Guided session structure"
-                            desc="Not a random call. Sessions follow a clean structure that keeps you moving."
-                            bullets={["Pick a format (Pomodoro / Deep Work / Sprints)", "Stage-based momentum", "Simple recap → real closure"]}
+                            accent="blue"
+                            title="Structured focus cycles"
+                            desc="A clean format creates momentum: you know what to do, for how long, and when to pause."
+                            bullets={["Pomodoro / Deep work / Sprints", "Clear start + end", "Less decision fatigue"]}
                         />
                         <FeatureCard
                             accent="red"
-                            title="Intentions Panel (PiP overlay)"
-                            desc="Pin your intentions over any window like picture-in-picture — stay aligned while working in any app."
-                            bullets={["Always visible intention", "Lightweight, non-distracting UI", "Works alongside your workflow"]}
+                            title="Intention → recap"
+                            desc="A tiny commitment at the start and a short recap at the end makes sessions feel real — and builds consistency."
+                            bullets={["Make the goal explicit", "Track completion", "Repeat daily"]}
                         />
                     </div>
                 </section>
@@ -712,138 +800,74 @@ export default function LandingPage() {
                 <section className="py-12">
                     <SectionTitle
                         kicker="How it works"
-                        title="A simple flow that forces momentum."
+                        title="A simple flow you can repeat every day."
                         subtitle="Join fast — then the structure keeps you honest."
                     />
 
-                    <div className="mt-10 grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    <div className="mt-10 grid grid-cols-1 lg:grid-cols-4 gap-4">
                         <FeatureCard
                             accent="blue"
-                            title="1) Join a session"
-                            desc="Pick a format that matches your day: groups, 24/7 rooms, or Buddy Tripling."
-                            bullets={["Schedule + filters", "Join instantly", "Zero setup friction"]}
+                            title="1) Join a room"
+                            desc="Pick a format that matches your day: group sessions, 24/7 silent coworking, or a small circle."
+                            bullets={["Schedule + filters", "Join instantly", "Browser-based"]}
                         />
                         <FeatureCard
                             accent="green"
-                            title="2) Set intentions"
-                            desc="Write what you will finish. Track progress. Make the goal real."
-                            bullets={["Clear intention", "Progress tracking", "AI can help break it down"]}
+                            title="2) Set an intention"
+                            desc="Write what you will work on. Keep it small enough to start within 60 seconds."
+                            bullets={["One clear goal", "Optional breakdown", "Less “where do I start?”"]}
                         />
                         <FeatureCard
                             accent="red"
-                            title="3) Execute with AI help"
-                            desc="Work through the session format. If stuck — use AI (including screenshare) to unblock the next step."
-                            bullets={["Structured stages", "Less context switching", "Stay focused until completion"]}
+                            title="3) Work quietly"
+                            desc="Most sessions are silent. Camera optional, mic off by default. Everyone focuses on their own task."
+                            bullets={["Silent coworking", "Focus sessions with video", "Real-time accountability"]}
+                        />
+                        <FeatureCard
+                            accent="blue"
+                            title="4) Recap & repeat"
+                            desc="Close the loop with a short recap. Then start the next block — momentum compounds."
+                            bullets={["Quick reflection", "Progress visibility", "Habit-friendly"]}
                         />
                     </div>
                 </section>
 
-                {/* AI + ROADMAP */}
+                {/* AI PILLAR (MOVED UP) */}
                 <section className="py-12">
                     <SectionTitle
-                        kicker="AI powered focus"
-                        title="Cheap, reliable, structured focus — with AI assistance."
-                        subtitle="AI isn’t the product — sessions are. AI plugs into the loop: plan → execute → track → improve."
+                        kicker="Second pillar"
+                        title="Built-in real-time AI assistant (screenshare included)."
+                        subtitle="Not a separate tab you forget. It’s inside the session loop — to unblock the next step and keep you moving."
                     />
 
                     <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-4">
                         <FeatureCard
-                            accent="green"
-                            title="AI-created plans for any goal"
-                            desc="Studying, career growth, building a product — AI turns goals into steps and sessions."
-                            bullets={["Goal → milestones → steps", "Convert steps into focus sessions", "Adjust plan based on real progress"]}
+                            accent="red"
+                            title="Unblock the next step — instantly"
+                            desc="When you’re stuck, the assistant gives a concrete next action (not theory) so you can continue without context switching."
+                            bullets={["Next-step guidance", "Less doomscrolling", "Stay inside the focus container"]}
                         />
                         <FeatureCard
                             accent="blue"
-                            title="AI Screenshare Assistant"
-                            desc="When you’re stuck, share your screen and ask for the next step — without breaking focus."
-                            bullets={["Unblock fast", "Keep momentum", "Reduce doomscrolling + context switching"]}
+                            title="Screenshare context (optional)"
+                            desc="Share your screen → ask what to do next → get a precise instruction based on what’s visible, then keep working."
+                            bullets={["Faster debugging/learning", "Less task drift", "Works during sessions"]}
                         />
                     </div>
 
-                    <div className="mt-8 border border-[#DBD8D8] rounded-[32px] p-6 md:p-10 bg-white/70 backdrop-blur-[6px] relative overflow-hidden">
-                        <div
-                            aria-hidden="true"
-                            className="absolute -top-24 left-1/2 -translate-x-1/2 w-[820px] h-[320px] blur-3xl opacity-40"
-                            style={{
-                                background: `radial-gradient(closest-side at 30% 40%, rgba(101,212,108,0.50), rgba(101,212,108,0.00) 70%),
-                           radial-gradient(closest-side at 55% 25%, rgba(82,134,246,0.45), rgba(82,134,246,0.00) 70%),
-                           radial-gradient(closest-side at 75% 60%, rgba(246,82,82,0.42), rgba(246,82,82,0.00) 70%)`,
-                            }}
-                        />
-                        <div className="relative max-w-[980px] mx-auto text-center">
-                            <div className="text-[12px] tracking-wide text-[#606060] mb-3">Always evolving</div>
-                            <div className="text-[24px] md:text-[32px] font-normal leading-tight">
-                                New formats & features are coming постоянно.
-                            </div>
-                            <p className="mt-4 text-[14px] md:text-[16px] text-[#606060] leading-relaxed">
-                                We keep testing new accountability mechanics — the platform evolves with what actually helps people ship.
-                            </p>
-
-                            <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4 text-left">
-                                <FeatureCard
-                                    accent="red"
-                                    comingSoon
-                                    title="Screenshare-only sessions"
-                                    desc="Extra high accountability: it’s harder to drift when others can see what you’re doing."
-                                    bullets={["Anti-procrastination by design", "Great for deep work", "Stronger commitment"]}
-                                />
-                                <FeatureCard
-                                    accent="blue"
-                                    comingSoon
-                                    title="Distraction blocking"
-                                    desc="Optional focus mode that blocks distracting sites during sessions."
-                                    bullets={["Less temptation", "More consistency", "Better session outcomes"]}
-                                />
-                                <FeatureCard
-                                    accent="green"
-                                    comingSoon
-                                    title="More session formats"
-                                    desc="We’ll keep expanding formats and experimenting with what creates the strongest results."
-                                    bullets={["New structures", "Better matching", "More ways to stay accountable"]}
-                                />
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
-                {/* HOSTING */}
-                <section className="py-12">
-                    <div className="border border-[#DBD8D8] rounded-[32px] p-6 md:p-10 bg-[#FAFAFA] relative overflow-hidden">
-                        <div
-                            aria-hidden="true"
-                            className="absolute -left-24 -bottom-24 w-72 h-72 rounded-full blur-3xl opacity-30"
-                            style={{ backgroundColor: MS_GREEN }}
-                        />
-                        <div
-                            aria-hidden="true"
-                            className="absolute -right-24 -top-24 w-72 h-72 rounded-full blur-3xl opacity-25"
-                            style={{ backgroundColor: MS_BLUE }}
-                        />
-                        <div className="max-w-[980px] mx-auto text-center relative">
-                            <div className="text-[12px] tracking-wide text-[#606060] mb-3">Hosts</div>
-                            <div className="text-[24px] md:text-[32px] font-normal leading-tight">
-                                Host sessions — get <span className="font-semibold">50% off</span>.
-                            </div>
-                            <p className="mt-4 text-[14px] md:text-[16px] text-[#606060] leading-relaxed">
-                                Hosting grows the ecosystem. You bring structure — we reward it.
-                            </p>
-
-                            <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
-                                <button
-                                    onClick={() => navigate("/sessions?create=1")}
-                                    className="h-12 rounded-full px-7 text-[14px] font-semibold bg-[#111827] text-white hover:opacity-90 transition w-full sm:w-auto"
-                                >
-                                    Host your first session
-                                </button>
-                                <button
-                                    onClick={() => navigate("/pricing")}
-                                    className="h-12 rounded-full px-7 text-[14px] font-semibold border border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition w-full sm:w-auto"
-                                >
-                                    See pricing
-                                </button>
-                            </div>
-                        </div>
+                    <div className="mt-8 flex justify-center">
+                        <button
+                            onClick={() => navigate("/ai-assistant")}
+                            className={`
+                h-12 rounded-full px-7 text-[14px] font-semibold
+                bg-[#111827] text-white hover:opacity-90 transition
+                w-full sm:w-auto
+                ${sessionCtaClass}
+              `}
+                            style={{ ["--cta-grad" as any]: GRADIENT }}
+                        >
+                            <span className="relative z-10">Open AI assistant page</span>
+                        </button>
                     </div>
                 </section>
 
@@ -912,34 +936,55 @@ export default function LandingPage() {
                     />
 
                     <div className="mt-10 max-w-[980px] mx-auto grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {[
-                            {
-                                q: "Is MySession free?",
-                                a: "There is a free tier. Paid plans unlock more structure and AI-assisted workflows.",
-                            },
-                            {
-                                q: "What makes it different from a normal call?",
-                                a: "Sessions are structured by default: intentions → format stages → recap. That structure creates real accountability.",
-                            },
-                            { q: "Do I need to download anything?", a: "No. It’s browser-based." },
-                            {
-                                q: "Is Buddy Tripling easier to join than big group sessions?",
-                                a: "Yes — it’s often easier to fill a cozy 3-person session than a larger group, so you can start faster with less friction.",
-                            },
-                            {
-                                q: "Can AI help with any task?",
-                                a: "Yes: planning, breaking down tasks, and screenshare-guided help when you’re stuck — without derailing focus.",
-                            },
-                            {
-                                q: "What do hosts get?",
-                                a: "Hosts receive a discount and build trust by running consistent sessions that help others show up.",
-                            },
-                        ].map((item) => (
-                            <div key={item.q} className="border border-[#DBD8D8] rounded-[24px] p-6 bg-white/80 backdrop-blur-[4px]">
+                        {faqItems.map((item) => (
+                            <div
+                                key={item.q}
+                                className="border border-[#DBD8D8] rounded-[24px] p-6 bg-white/80 backdrop-blur-[4px]"
+                            >
                                 <div className="text-[14px] font-semibold">{item.q}</div>
                                 <div className="mt-2 text-[13px] text-[#606060] leading-relaxed">{item.a}</div>
                             </div>
                         ))}
+                    </div>
+                </section>
+
+                {/* HOSTING */}
+                <section className="py-12">
+                    <div className="border border-[#DBD8D8] rounded-[32px] p-6 md:p-10 bg-[#FAFAFA] relative overflow-hidden">
+                        <div
+                            aria-hidden="true"
+                            className="absolute -left-24 -bottom-24 w-72 h-72 rounded-full blur-3xl opacity-30"
+                            style={{ backgroundColor: MS_GREEN }}
+                        />
+                        <div
+                            aria-hidden="true"
+                            className="absolute -right-24 -top-24 w-72 h-72 rounded-full blur-3xl opacity-25"
+                            style={{ backgroundColor: MS_BLUE }}
+                        />
+                        <div className="max-w-[980px] mx-auto text-center relative">
+                            <div className="text-[12px] tracking-wide text-[#606060] mb-3">Hosts</div>
+                            <div className="text-[24px] md:text-[32px] font-normal leading-tight">
+                                Host sessions — get <span className="font-semibold">50% off</span>.
+                            </div>
+                            <p className="mt-4 text-[14px] md:text-[16px] text-[#606060] leading-relaxed">
+                                Hosting grows the ecosystem. You bring structure — we reward it.
+                            </p>
+
+                            <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
+                                <button
+                                    onClick={() => navigate("/sessions?create=1")}
+                                    className="h-12 rounded-full px-7 text-[14px] font-semibold bg-[#111827] text-white hover:opacity-90 transition w-full sm:w-auto"
+                                >
+                                    Host your first session
+                                </button>
+                                <button
+                                    onClick={() => navigate("/pricing")}
+                                    className="h-12 rounded-full px-7 text-[14px] font-semibold border border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition w-full sm:w-auto"
+                                >
+                                    See pricing
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </section>
 
@@ -960,7 +1005,7 @@ export default function LandingPage() {
                                 Start with one session. Ship something today.
                             </div>
                             <div className="mt-3 text-[14px] md:text-[16px] text-white/80">
-                                Join a session, set intentions, stay accountable — and keep momentum going.
+                                Join a focus session, set an intention, stay accountable — and keep momentum going.
                             </div>
 
                             <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -974,23 +1019,22 @@ export default function LandingPage() {
                   `}
                                     style={{ ["--cta-grad" as any]: GRADIENT }}
                                 >
-                                    <span className="relative z-10">Join now</span>
+                                    <span className="relative z-10">Join a focus session</span>
                                 </button>
 
                                 <button
                                     onClick={() => navigate("/pricing")}
                                     className="h-12 rounded-full px-7 text-[14px] font-semibold border border-white text-white hover:bg-white hover:text-[#111827] transition w-full sm:w-auto"
                                 >
-                                    Subscribe $10/mo
+                                    Pricing ($10/mo)
                                 </button>
                             </div>
                         </div>
                     </div>
                 </section>
 
-                {/* Local CSS: CTA sheen + animated hero mesh + focus particles */}
+                {/* Local CSS */}
                 <style>{`
-          /* CTA sheen background */
           .session-cta::before { background: var(--cta-grad); }
 
           @keyframes gradMove {
@@ -999,7 +1043,6 @@ export default function LandingPage() {
             100% { background-position: 0% 50%; }
           }
 
-          /* HERO animated mesh (3-color palette, soft + airy) */
           .hero-mesh {
             border-radius: 9999px;
             filter: blur(28px);
@@ -1022,7 +1065,6 @@ export default function LandingPage() {
             100% { transform: translate3d(-10px, 0px, 0) scale(1.02); }
           }
 
-          /* Focus particles (theme animation) */
           .focus-particles {
             -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.65) 45%, rgba(0,0,0,0.0) 95%);
             mask-image: linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.65) 45%, rgba(0,0,0,0.0) 95%);
@@ -1064,7 +1106,6 @@ export default function LandingPage() {
             50%      { opacity: 0.85; }
           }
 
-          /* Subtle sweeping flow line */
           .focus-sweep {
             position: absolute;
             left: -20%;
@@ -1086,7 +1127,6 @@ export default function LandingPage() {
             100% { transform: translateX(-8%) rotate(-8deg); opacity: 0.0; }
           }
 
-          /* Reduce motion */
           @media (prefers-reduced-motion: reduce) {
             .session-cta:hover::before { animation: none !important; }
             .hero-mesh { animation: none !important; }
