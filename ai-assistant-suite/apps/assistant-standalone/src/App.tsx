@@ -15,8 +15,15 @@ type DockMode = "left" | "center" | "right" | "free" | "hidden";
 
 const BACKEND_URL = "http://localhost:3001";
 
+declare global {
+  interface Window {
+    webkitSpeechRecognition?: any;
+    SpeechRecognition?: any;
+  }
+}
+
 export default function App() {
-  // --- Vision hook (твоя существующая штука) ---
+  // --- Vision hook ---
   const vision = useAIVision({
     autoCaptureEveryMs: 0,
     jpegQuality: 0.75,
@@ -25,10 +32,10 @@ export default function App() {
 
   // --- UI state ---
   const [dock, setDock] = useState<DockMode>("right");
-  const [isExpanded, setIsExpanded] = useState(true); // expanded = как на скрине, collapsed = маленькая
+  const [isExpanded, setIsExpanded] = useState(true);
   const [explainMode, setExplainMode] = useState(false);
-  const [speakOutput, setSpeakOutput] = useState(false); // пока stub, позже TTS
-  const [modelLabel] = useState("Model"); // потом подключим реальный выбор моделей
+  const [speakOutput, setSpeakOutput] = useState(false);
+  const [modelLabel] = useState("Model");
 
   const [clipFrames, setClipFrames] = useState<CapturedFrame[]>([]);
   const [isRecordingClip, setIsRecordingClip] = useState(false);
@@ -41,7 +48,7 @@ export default function App() {
         role: "system",
         ts: now,
         text:
-          "Assistant ready. Toggle AI Vision (private) to let the assistant see your screen without sharing to others.",
+          "Assistant ready. Use AI Vision (private) to let the assistant see your screen. Voice input/output is browser-based (free).",
       },
     ];
   });
@@ -50,15 +57,15 @@ export default function App() {
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
 
-  // Attachments (простые файлы, без кнопок +code/+logs/+text пока)
+  // Attachments (files)
   const [attachments, setAttachments] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // --- free-move drag ---
-  const [freePos, setFreePos] = useState<{ x: number; y: number }>({
+  const [freePos, setFreePos] = useState<{ x: number; y: number }>(() => ({
     x: Math.max(16, window.innerWidth - 460),
     y: 16,
-  });
+  }));
 
   const dragRef = useRef<{
     dragging: boolean;
@@ -68,6 +75,146 @@ export default function App() {
     baseY: number;
   }>({ dragging: false, startX: 0, startY: 0, baseX: freePos.x, baseY: freePos.y });
 
+  // ---------------------------
+  // VOICE INPUT (STT) - FREE
+  // ---------------------------
+  const recognitionRef = useRef<any>(null);
+  const [isListening, setIsListening] = useState(false);
+  const [sttError, setSttError] = useState<string | null>(null);
+
+  const sttSupported = useMemo(() => {
+    return Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
+  }, []);
+
+  const initRecognitionIfNeeded = () => {
+    if (!sttSupported) return null;
+    if (recognitionRef.current) return recognitionRef.current;
+
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const rec = new SR();
+
+    rec.continuous = true; // держим пока не остановишь
+    rec.interimResults = true; // показываем серым (мы просто добавляем в input)
+    rec.lang = "ru-RU"; // можно потом сделать переключатель (ru/en/uk)
+
+    rec.onstart = () => {
+      setSttError(null);
+      setIsListening(true);
+    };
+
+    rec.onend = () => {
+      setIsListening(false);
+    };
+
+    rec.onerror = (e: any) => {
+      // типичные: "not-allowed", "audio-capture", "network"
+      setSttError(e?.error ? String(e.error) : "Speech recognition error");
+      setIsListening(false);
+    };
+
+    rec.onresult = (event: any) => {
+      // собираем текст из результатов
+      let interim = "";
+      let finalText = "";
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const r = event.results[i];
+        const transcript = r[0]?.transcript ?? "";
+        if (r.isFinal) finalText += transcript;
+        else interim += transcript;
+      }
+
+      // MVP: просто подмешиваем в input
+      // - финальный текст добавляем как обычный
+      // - interim тоже показываем, но аккуратно: обновляем хвост
+      setInput((prev) => {
+        // убираем предыдущий interim-хвост, если он был
+        // (простая стратегия: держим "live tail" отдельно)
+        return prev + (finalText ? (prev.endsWith(" ") || prev.length === 0 ? "" : " ") + finalText.trim() : "");
+      });
+
+      // interim показывать можно, но чтобы не засорять — делаем через отдельный state ниже
+      setInterimSTT(interim.trim());
+    };
+
+    recognitionRef.current = rec;
+    return rec;
+  };
+
+  const [interimSTT, setInterimSTT] = useState("");
+
+  const startListening = async () => {
+    setSttError(null);
+    if (!sttSupported) {
+      setSttError("STT not supported in this browser. Use Chrome/Edge.");
+      return;
+    }
+    try {
+      const rec = initRecognitionIfNeeded();
+      if (!rec) return;
+      setInterimSTT("");
+      rec.start();
+    } catch (e: any) {
+      setSttError(String(e?.message || e));
+      setIsListening(false);
+    }
+  };
+
+  const stopListening = () => {
+    try {
+      setInterimSTT("");
+      recognitionRef.current?.stop?.();
+    } catch {
+      // ignore
+    } finally {
+      setIsListening(false);
+    }
+  };
+
+  // ---------------------------
+  // VOICE OUTPUT (TTS) - FREE
+  // ---------------------------
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
+  const ttsSupported = useMemo(() => {
+    return typeof window !== "undefined" && "speechSynthesis" in window;
+  }, []);
+
+  const speak = (text: string) => {
+    if (!ttsSupported) return;
+    try {
+      window.speechSynthesis.cancel(); // чтобы не накладывалось
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = "ru-RU"; // можно сделать настройку позже
+      u.rate = 1.0;
+      u.pitch = 1.0;
+
+      u.onstart = () => setIsSpeaking(true);
+      u.onend = () => setIsSpeaking(false);
+      u.onerror = () => setIsSpeaking(false);
+
+      window.speechSynthesis.speak(u);
+    } catch {
+      setIsSpeaking(false);
+    }
+  };
+
+  const stopSpeak = () => {
+    if (!ttsSupported) return;
+    window.speechSynthesis.cancel();
+    setIsSpeaking(false);
+  };
+
+  // Stop voice when unmount
+  useEffect(() => {
+    return () => {
+      stopListening();
+      stopSpeak();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Window drag
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (!dragRef.current.dragging) return;
@@ -91,7 +238,7 @@ export default function App() {
     };
   }, []);
 
-  // Cleanup vision clip object URLs + stop
+  // Cleanup vision clip URLs + stop
   useEffect(() => {
     return () => {
       setClipFrames((prev) => {
@@ -146,9 +293,7 @@ export default function App() {
   };
 
   const mismatchVisible = useMemo(() => {
-    // Пока это просто “индикатор”: если vision ON и долго не было capture — считаем “не совпадает”
     if (!vision.isOn && !vision.isPaused) return false;
-    // очень грубо: если lastCaptureText "—" => не было захвата
     return lastCaptureText === "—";
   }, [vision.isOn, vision.isPaused, lastCaptureText]);
 
@@ -168,6 +313,7 @@ export default function App() {
 
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
+    setInterimSTT("");
     setIsSending(true);
 
     try {
@@ -187,12 +333,10 @@ export default function App() {
         fd.append("lastFrame", lastFrame.blob, `last-frame-${Date.now()}.jpg`);
       }
 
-      // clip frames (ограничиваем как и раньше)
       clipFrames.forEach((f, idx) => {
         fd.append("clipFrames", f.blob, `clip-${idx + 1}-${f.capturedAt}.jpg`);
       });
 
-      // file attachments
       attachments.forEach((f) => fd.append("attachments", f, f.name));
 
       const resp = await fetch(`${BACKEND_URL}/api/assistant/send`, {
@@ -206,9 +350,7 @@ export default function App() {
       }
 
       const json = await resp.json();
-
-      const assistantText =
-        (json?.assistantText as string) || "(empty response)";
+      const assistantText = (json?.assistantText as string) || "(empty response)";
 
       setMessages((prev) => [
         ...prev,
@@ -220,13 +362,13 @@ export default function App() {
         },
       ]);
 
-      // после удачной отправки — очищаем вложения
+      // clear attachments on success
       setAttachments([]);
       if (fileInputRef.current) fileInputRef.current.value = "";
 
-      // TTS пока не делаем, но оставляем флаг
+      // Auto speak if enabled
       if (speakOutput) {
-        // TODO: подключим позже
+        speak(assistantText);
       }
     } catch (e: any) {
       const msg = String(e?.message || e);
@@ -253,7 +395,7 @@ export default function App() {
     }
   };
 
-  // --- Dock/layout metrics (под скрин) ---
+  // --- Dock/layout metrics ---
   const panelStyle = useMemo(() => {
     if (dock === "hidden") return { display: "none" as const };
 
@@ -267,20 +409,17 @@ export default function App() {
       backdropFilter: "blur(18px)",
       boxShadow: "0 24px 90px rgba(0,0,0,0.55)",
       color: "white",
+      display: "flex",
+      flexDirection: "column",
     };
 
     const w = isExpanded ? 470 : 320;
     const top = 12;
     const bottom = 12;
 
-    if (dock === "left") {
-      return { ...base, left: 12, top, bottom, width: w };
-    }
-    if (dock === "right") {
-      return { ...base, right: 12, top, bottom, width: w };
-    }
+    if (dock === "left") return { ...base, left: 12, top, bottom, width: w };
+    if (dock === "right") return { ...base, right: 12, top, bottom, width: w };
     if (dock === "center") {
-      // центр — как “большая” панель по центру (скрин 1)
       return {
         ...base,
         left: "50%",
@@ -291,13 +430,7 @@ export default function App() {
       };
     }
     // free
-    return {
-      ...base,
-      left: freePos.x,
-      top: freePos.y,
-      width: w,
-      height: dock === "free" ? undefined : undefined,
-    };
+    return { ...base, left: freePos.x, top: freePos.y, width: w };
   }, [dock, isExpanded, freePos.x, freePos.y]);
 
   const sideControlsStyle: React.CSSProperties = {
@@ -313,14 +446,10 @@ export default function App() {
 
   return (
     <div style={pageStyle}>
-      {/* Side controls (как на скринах справа) */}
+      {/* Side controls */}
       <div style={sideControlsStyle}>
         <SideBtn label="⚙" title="Settings (stub)" onClick={() => alert("Settings позже")} />
-        <SideBtn
-          label="⤢"
-          title={isExpanded ? "Compact" : "Expand"}
-          onClick={() => setIsExpanded((v) => !v)}
-        />
+        <SideBtn label="⤢" title={isExpanded ? "Compact" : "Expand"} onClick={() => setIsExpanded((v) => !v)} />
         <SideBtn label="⟵" title="Dock left" onClick={() => setDock("left")} />
         <SideBtn label="◻" title="Dock center" onClick={() => setDock("center")} />
         <SideBtn label="⟶" title="Dock right" onClick={() => setDock("right")} />
@@ -328,7 +457,6 @@ export default function App() {
         <SideBtn label="🙈" title="Hide" onClick={() => setDock("hidden")} />
       </div>
 
-      {/* маленькая кнопка Show, если hidden */}
       {dock === "hidden" ? (
         <div style={showPillWrap}>
           <button style={showPillBtn} onClick={() => setDock("right")}>
@@ -339,7 +467,7 @@ export default function App() {
 
       {/* Main panel */}
       <div style={panelStyle}>
-        {/* Header (draggable в free-mode) */}
+        {/* Header (draggable in free-mode) */}
         <div
           style={headerStyle}
           onMouseDown={(e) => {
@@ -357,15 +485,14 @@ export default function App() {
 
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ fontWeight: 700 }}>ChatName</div>
-
-            <button style={modelBtn} title="Model (stub)">
-              {modelLabel} ▾
-            </button>
+            <button style={modelBtn} title="Model (stub)">{modelLabel} ▾</button>
           </div>
 
           <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center" }}>
-            <button style={reSyncBtn} onClick={() => void handleResync()} title="Re-sync">
-              ⟳ Re-Sync
+            <button style={reSyncBtn} onClick={() => void handleResync()} title="Re-sync">⟳ Re-Sync</button>
+
+            <button style={iconBtn} title="Stop speaking" onClick={stopSpeak} disabled={!isSpeaking}>
+              ⏹ Voice
             </button>
 
             <button style={iconBtn} title="Clear chat" onClick={() => setMessages((prev) => prev.filter((m) => m.role === "system"))}>
@@ -381,50 +508,45 @@ export default function App() {
         {/* Top status line */}
         <div style={topLineStyle}>
           <div style={{ fontSize: 12, opacity: 0.85 }}>
-            AI Vision:{" "}
-            <b>
-              {vision.isOn ? "ON" : vision.isPaused ? "PAUSED" : "OFF"}
-            </b>{" "}
-            · last capture: <b>{lastCaptureText}</b> · 🔒 <span style={{ opacity: 0.8 }}>private</span>
+            AI Vision: <b>{vision.isOn ? "ON" : vision.isPaused ? "PAUSED" : "OFF"}</b> · last capture: <b>{lastCaptureText}</b> · 🔒{" "}
+            <span style={{ opacity: 0.8 }}>private</span>
           </div>
+          <div style={{ fontSize: 12, opacity: 0.75, marginTop: 6, display: "flex", gap: 10, alignItems: "center" }}>
+            <b>Voice:</b>{" "}
+            {sttSupported ? (
+              <span>{isListening ? "🎙 listening" : "idle"}</span>
+            ) : (
+              <span style={{ color: "#ff6b6b" }}>STT unsupported (use Chrome/Edge)</span>
+            )}
+            {ttsSupported ? <span>{isSpeaking ? "🔊 speaking" : ""}</span> : <span style={{ color: "#ff6b6b" }}>TTS unsupported</span>}
+          </div>
+          {sttError ? (
+            <div style={{ fontSize: 12, color: "#ff6b6b", marginTop: 6 }}>
+              STT error: {sttError}
+            </div>
+          ) : null}
         </div>
 
         {/* Vision controls row */}
         <div style={controlRowStyle}>
           <div style={{ display: "flex", gap: 10 }}>
-            <MiniToggle
-              label="On"
-              active={vision.isOn}
-              onClick={() => void handleSource()}
-            />
+            <MiniToggle label="On" active={vision.isOn} onClick={() => void handleSource()} />
             <MiniToggle
               label={vision.isPaused ? "Resume" : "Pause"}
               active={vision.isPaused}
               disabled={!vision.isOn && !vision.isPaused}
               onClick={() => (vision.isPaused ? vision.resume() : vision.pause())}
             />
-            <MiniToggle
-              label="Off"
-              active={!vision.isOn && !vision.isPaused}
-              onClick={() => vision.stop()}
-            />
+            <MiniToggle label="Off" active={!vision.isOn && !vision.isPaused} onClick={() => vision.stop()} />
           </div>
 
           <div style={{ display: "flex", gap: 10, marginLeft: "auto" }}>
-            <ChipToggle
-              label="Explain step-by-step"
-              active={explainMode}
-              onClick={() => setExplainMode((v) => !v)}
-            />
-            <ChipToggle
-              label="Speak output"
-              active={speakOutput}
-              onClick={() => setSpeakOutput((v) => !v)}
-            />
+            <ChipToggle label="Explain step-by-step" active={explainMode} onClick={() => setExplainMode((v) => !v)} />
+            <ChipToggle label="Speak output" active={speakOutput} onClick={() => setSpeakOutput((v) => !v)} />
           </div>
         </div>
 
-        {/* Mismatch / resync warning */}
+        {/* Mismatch warning */}
         {mismatchVisible ? (
           <div style={mismatchStyle}>
             <span style={{ fontWeight: 700 }}>!</span>
@@ -435,17 +557,10 @@ export default function App() {
           </div>
         ) : null}
 
-        {/* Push-to-talk stub */}
-        <div style={pttRowStyle}>
-          <button style={pttBtn} disabled title="Voice позже">
-            🎙 Push-to-talk (stub)
-          </button>
-        </div>
-
         {/* Chat area */}
         <div style={chatAreaStyle}>
           {messages.map((m) => (
-            <MessageBubble key={m.id} msg={m} />
+            <MessageBubble key={m.id} msg={m} onSpeak={(t) => speak(t)} />
           ))}
           {sendError ? (
             <div style={{ marginTop: 10, color: "#ff6b6b", fontSize: 12 }}>
@@ -454,17 +569,13 @@ export default function App() {
           ) : null}
         </div>
 
-        {/* Bottom composer area (как на скрине — большая зона ввода) */}
+        {/* Bottom composer */}
         <div style={composerWrap}>
-          {/* Vision mini-strip inside composer (как твоя нижняя панелька: preview + source/resync/pause/stop/clip) */}
+          {/* Vision mini-strip */}
           <div style={visionStrip}>
             <div style={previewBox} title={vision.previewUrl ? "Preview (private)" : "No preview"}>
               {vision.previewUrl ? (
-                <img
-                  src={vision.previewUrl}
-                  alt="preview"
-                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                />
+                <img src={vision.previewUrl} alt="preview" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
               ) : null}
               <div
                 style={{
@@ -481,9 +592,7 @@ export default function App() {
               <div style={previewLabel}>PREVIEW</div>
             </div>
 
-            <button style={stripBtn} onClick={() => void handleSource()} title="Pick tab/window/screen">
-              ☐ Source
-            </button>
+            <button style={stripBtn} onClick={() => void handleSource()} title="Pick tab/window/screen">☐ Source</button>
             <button
               style={{ ...stripBtn, background: "rgba(40,160,80,0.18)" }}
               onClick={() => void handleResync()}
@@ -521,11 +630,7 @@ export default function App() {
             <div style={{ marginLeft: "auto", fontSize: 12, opacity: 0.8 }}>
               <div>
                 <b>Seeing:</b>{" "}
-                {vision.sourceInfo?.label
-                  ? vision.sourceInfo.label
-                  : vision.isRequesting
-                    ? "Selecting…"
-                    : "—"}
+                {vision.sourceInfo?.label ? vision.sourceInfo.label : vision.isRequesting ? "Selecting…" : "—"}
               </div>
               <div>
                 <b>{clipLabel}</b>
@@ -533,7 +638,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Attachments row (превью файлов) */}
+          {/* Attachments row */}
           <div style={attachmentsRow}>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {attachments.length ? (
@@ -555,13 +660,7 @@ export default function App() {
             </div>
 
             <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-              <button
-                style={attachBtn}
-                onClick={() => fileInputRef.current?.click()}
-                title="Attach file(s)"
-              >
-                +
-              </button>
+              <button style={attachBtn} onClick={() => fileInputRef.current?.click()} title="Attach file(s)">+</button>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -578,12 +677,34 @@ export default function App() {
           {/* Input row */}
           <div style={inputRow}>
             <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
+              value={input + (interimSTT ? (input.endsWith(" ") || input.length === 0 ? "" : " ") + interimSTT : "")}
+              onChange={(e) => {
+                // если пользователь руками правит — считаем что он редачит основной input
+                setInterimSTT("");
+                setInput(e.target.value);
+              }}
               onKeyDown={onKeyDown}
               placeholder="Type here or use voice… (input is always text)"
               style={textareaStyle}
             />
+
+            {/* Voice button */}
+            <button
+              style={{
+                ...voiceBtn,
+                opacity: sttSupported ? 1 : 0.4,
+                background: isListening ? "rgba(255,90,90,0.22)" : "rgba(255,255,255,0.06)",
+              }}
+              onClick={() => {
+                if (!sttSupported) return;
+                if (isListening) stopListening();
+                else void startListening();
+              }}
+              title={sttSupported ? (isListening ? "Stop listening" : "Start voice input") : "Use Chrome/Edge for STT"}
+              disabled={!sttSupported}
+            >
+              {isListening ? "⏹" : "🎙"}
+            </button>
 
             <button style={sendBtn} onClick={() => void send()} disabled={isSending}>
               {isSending ? "…" : "➜"}
@@ -603,7 +724,7 @@ export default function App() {
 
 /* ---------------- UI bits ---------------- */
 
-function MessageBubble({ msg }: { msg: ChatMsg }) {
+function MessageBubble({ msg, onSpeak }: { msg: ChatMsg; onSpeak: (t: string) => void }) {
   if (msg.role === "system") {
     return (
       <div style={sysBubble}>
@@ -624,27 +745,24 @@ function MessageBubble({ msg }: { msg: ChatMsg }) {
 
   return (
     <div style={assistantBubble}>
-      <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 6 }}>Assistant</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+        <div style={{ fontSize: 12, opacity: 0.85 }}>Assistant</div>
+        <button
+          style={{ ...miniSpeakBtn }}
+          onClick={() => onSpeak(msg.text)}
+          title="Speak this answer"
+        >
+          🔊
+        </button>
+      </div>
       <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.4 }}>{msg.text}</div>
     </div>
   );
 }
 
-function SideBtn({
-  label,
-  title,
-  onClick,
-}: {
-  label: string;
-  title: string;
-  onClick: () => void;
-}) {
+function SideBtn({ label, title, onClick }: { label: string; title: string; onClick: () => void }) {
   return (
-    <button
-      style={sideBtn}
-      onClick={onClick}
-      title={title}
-    >
+    <button style={sideBtn} onClick={onClick} title={title}>
       {label}
     </button>
   );
@@ -676,15 +794,7 @@ function MiniToggle({
   );
 }
 
-function ChipToggle({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
+function ChipToggle({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
     <button
       style={{
@@ -756,6 +866,16 @@ const iconBtn: React.CSSProperties = {
   fontSize: 13,
 };
 
+const miniSpeakBtn: React.CSSProperties = {
+  border: "1px solid rgba(255,255,255,0.12)",
+  background: "rgba(255,255,255,0.06)",
+  color: "white",
+  padding: "4px 8px",
+  borderRadius: 10,
+  cursor: "pointer",
+  fontSize: 12,
+};
+
 const modelBtn: React.CSSProperties = {
   border: "1px solid rgba(255,255,255,0.12)",
   background: "rgba(255,255,255,0.06)",
@@ -825,25 +945,10 @@ const mismatchBtn: React.CSSProperties = {
   textDecoration: "underline",
 };
 
-const pttRowStyle: React.CSSProperties = {
-  padding: "10px 14px",
-};
-
-const pttBtn: React.CSSProperties = {
-  width: "100%",
-  borderRadius: 12,
-  border: "1px solid rgba(255,255,255,0.10)",
-  background: "rgba(255,255,255,0.05)",
-  color: "rgba(255,255,255,0.85)",
-  padding: "10px 12px",
-  cursor: "not-allowed",
-};
-
 const chatAreaStyle: React.CSSProperties = {
   padding: "12px 14px",
   overflow: "auto",
   flex: 1,
-  height: "calc(100% - 340px)", // чтобы стабильно оставалось место под composer
 };
 
 const composerWrap: React.CSSProperties = {
@@ -952,6 +1057,16 @@ const textareaStyle: React.CSSProperties = {
   outline: "none",
   fontSize: 14,
   lineHeight: 1.35,
+};
+
+const voiceBtn: React.CSSProperties = {
+  width: 54,
+  borderRadius: 18,
+  border: "1px solid rgba(255,255,255,0.12)",
+  color: "white",
+  cursor: "pointer",
+  fontSize: 18,
+  fontWeight: 800,
 };
 
 const sendBtn: React.CSSProperties = {
