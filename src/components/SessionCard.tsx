@@ -6,10 +6,6 @@ interface SessionCardProps {
     session: any;
     userId?: string;
 
-    // ✅ NEW (optional): needed to send calendar invite email from the client
-    userEmail?: string;
-    userName?: string;
-
     // Existing callbacks (can be sync or async)
     onBook: (sessionId: string) => void | Promise<any>;
     onCancelBooking: (sessionId: string) => void | Promise<any>;
@@ -21,28 +17,22 @@ function safeLower(x: any) {
     return String(x || "").toLowerCase();
 }
 
-// ✅ NEW: infer visual type from title for newer/infinite room titles
 function inferTypeFromTitle(title: any): "Deep work" | "Pomodoro" | "Short sprints" | null {
     const t = safeLower(title);
 
-    // Silent / drop-in -> treat as Deep work
     if (t.includes("silent") || t.includes("drop-in") || t.includes("drop in")) return "Deep work";
-
     if (t.includes("deep work") || t.includes("deepwork") || t.includes("uninterrupted")) return "Deep work";
     if (t.includes("pomodoro")) return "Pomodoro";
 
-    // Ratios
     if (/\b25\s*[/\-]\s*5\b/.test(t)) return "Pomodoro";
     if (/\b15\s*[/\-]\s*3\b/.test(t)) return "Short sprints";
 
-    // Deep work style blocks
     if (/\b55\s*[/\-]\s*5\b/.test(t)) return "Deep work";
     if (/\b50\s*[/\-]\s*5(\s*[/\-]\s*5)?\b/.test(t)) return "Deep work";
 
     return null;
 }
 
-// ✅ single place to resolve session type
 function resolveSessionType(session: any): "group" | "infinite" | "body" {
     const t = safeLower(session?.session_format_type);
 
@@ -72,38 +62,89 @@ function resolveSessionType(session: any): "group" | "infinite" | "body" {
     return "group";
 }
 
-function toIsoMaybe(x: any): string | null {
-    if (!x) return null;
-    try {
-        const d = new Date(x);
-        if (Number.isNaN(d.getTime())) return null;
-        return d.toISOString();
-    } catch {
-        return null;
-    }
+function pad2(n: number) {
+    return String(n).padStart(2, "0");
 }
 
-function addMinutesIso(startIso: string, minutes: number): string {
-    const d = new Date(startIso);
-    d.setMinutes(d.getMinutes() + (Number(minutes) || 0));
-    return d.toISOString();
+function toIcsUtc(dt: Date) {
+    return (
+        dt.getUTCFullYear() +
+        pad2(dt.getUTCMonth() + 1) +
+        pad2(dt.getUTCDate()) +
+        "T" +
+        pad2(dt.getUTCHours()) +
+        pad2(dt.getUTCMinutes()) +
+        pad2(dt.getUTCSeconds()) +
+        "Z"
+    );
+}
+
+function icsEscape(s: string) {
+    return String(s || "")
+        .replace(/\\/g, "\\\\")
+        .replace(/\n/g, "\\n")
+        .replace(/,/g, "\\,")
+        .replace(/;/g, "\\;");
+}
+
+function buildClientIcs(args: {
+    uid: string;
+    title: string;
+    description: string;
+    location?: string;
+    start: Date;
+    end: Date;
+}) {
+    const dtstamp = toIcsUtc(new Date());
+    const dtstart = toIcsUtc(args.start);
+    const dtend = toIcsUtc(args.end);
+
+    return [
+        "BEGIN:VCALENDAR",
+        "PRODID:-//MySession//EN",
+        "VERSION:2.0",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        "BEGIN:VEVENT",
+        `UID:${args.uid}`,
+        `DTSTAMP:${dtstamp}`,
+        `DTSTART:${dtstart}`,
+        `DTEND:${dtend}`,
+        `SUMMARY:${icsEscape(args.title)}`,
+        `DESCRIPTION:${icsEscape(args.description)}`,
+        `LOCATION:${icsEscape(args.location || "")}`,
+        "STATUS:CONFIRMED",
+        "TRANSP:OPAQUE",
+        "END:VEVENT",
+        "END:VCALENDAR",
+        "",
+    ].join("\r\n");
+}
+
+function downloadTextFile(filename: string, content: string, mime = "text/plain") {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
 }
 
 export default function SessionCard({
     session,
     userId,
-    userEmail,
-    userName,
     onBook,
     onCancelBooking,
-    onJoin, // kept for compatibility (we still use iframe navigate as primary join)
+    onJoin, // kept for compatibility
     onDelete,
 }: SessionCardProps) {
     const navigate = useNavigate();
 
     const isHost = session.host_id === userId;
 
-    // ✅ booking status from sessions.session_bookings
     const initialIsBooked = session.session_bookings?.some((b: any) => b.user_id === userId);
     const [isBookingConfirmed, setIsBookingConfirmed] = useState<boolean>(!!initialIsBooked);
 
@@ -115,11 +156,7 @@ export default function SessionCard({
     const [isBookingLoading, setIsBookingLoading] = useState(false);
     const [isCancelLoading, setIsCancelLoading] = useState(false);
 
-    // Calendar invite status
-    const [inviteStatus, setInviteStatus] = useState<"idle" | "sending" | "sent" | "failed" | "skipped">("idle");
-    const [inviteError, setInviteError] = useState<string | null>(null);
-
-    // ✅ Figma-like hover delay
+    // ✅ hover delay
     const CANCEL_HOVER_DELAY_MS = 120;
     const [cancelHoverTimer, setCancelHoverTimer] = useState<number | null>(null);
 
@@ -136,7 +173,6 @@ export default function SessionCard({
     const sessionType = resolveSessionType(session);
     const isInfinite = sessionType === "infinite";
 
-    // REAL live count passed from SessionsPage presence aggregation (optional)
     const liveCount: number | null = typeof session?.live_count === "number" ? session.live_count : null;
 
     const nameToTypeMap: Record<string, string> = {
@@ -175,7 +211,6 @@ export default function SessionCard({
         })
         : "";
 
-    // ✅ join link used for calendar invite (prefer iframe join since that’s your primary UX)
     const joinUrl = useMemo(() => {
         try {
             return `${window.location.origin}/room-iframe/${session.id}`;
@@ -184,88 +219,51 @@ export default function SessionCard({
         }
     }, [session.id]);
 
-    const myExistingBookingId = useMemo(() => {
-        const b = session.session_bookings?.find((x: any) => x.user_id === userId);
-        return b?.id || b?.booking_id || session?.my_booking_id || session?.booking_id || null;
-    }, [session.session_bookings, session?.my_booking_id, session?.booking_id, userId]);
+    const myBooking = useMemo(() => {
+        if (!userId) return null;
+        return session.session_bookings?.find((b: any) => b.user_id === userId) || null;
+    }, [session.session_bookings, userId]);
 
-    const canSendInvite = useMemo(() => {
-        if (isInfinite) return false; // no start time
-        if (!userEmail) return false;
-        const startIso = toIsoMaybe(session.start_time);
-        if (!startIso) return false;
+    const inviteSentAt = myBooking?.invite_sent_at || null;
+
+    const canDownloadIcs = useMemo(() => {
+        if (isInfinite) return false;
+        if (!session.start_time) return false;
+        const d = new Date(session.start_time);
+        if (Number.isNaN(d.getTime())) return false;
         return true;
-    }, [isInfinite, userEmail, session.start_time]);
+    }, [isInfinite, session.start_time]);
 
-    async function sendCalendarInvite(opts?: { bookingIdOverride?: string }) {
-        setInviteError(null);
+    const handleDownloadIcs = (e: any) => {
+        e?.preventDefault?.();
+        if (!canDownloadIcs) return;
 
-        // If we can’t, mark as skipped (don’t silently “pretend”)
-        if (!canSendInvite) {
-            setInviteStatus("skipped");
-            return;
-        }
+        const start = new Date(session.start_time);
+        const duration = Math.max(1, Number(session.duration_minutes || 60));
+        const end = new Date(start.getTime() + duration * 60 * 1000);
 
-        const startIso = toIsoMaybe(session.start_time)!;
-        const endIso =
-            toIsoMaybe(session.end_time) ||
-            addMinutesIso(startIso, Number(session.duration_minutes) || 60);
+        const uid = `${session.id}-${userId || "user"}@mysession`;
+        const ics = buildClientIcs({
+            uid,
+            title: `MySession — ${session.title}`,
+            description: `Join link: ${joinUrl}`,
+            location: joinUrl,
+            start,
+            end,
+        });
 
-        const bookingId =
-            opts?.bookingIdOverride ||
-            myExistingBookingId ||
-            // fallback: stable enough for now, until you pass real booking.id back
-            `${session.id}-${userId || "user"}`;
-
-        setInviteStatus("sending");
-
-        try {
-            const resp = await fetch("/api/send-session-invite", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    attendeeEmail: userEmail,
-                    attendeeName: userName || undefined,
-                    sessionTitle: `MySession — ${session.title}`,
-                    sessionDescription: `Focus session (${resolvedType}) • intention → focus → recap`,
-                    startIso,
-                    endIso,
-                    joinUrl,
-                    bookingId,
-                }),
-            });
-
-            if (!resp.ok) {
-                const txt = await resp.text().catch(() => "");
-                throw new Error(txt || `Invite request failed (${resp.status})`);
-            }
-
-            setInviteStatus("sent");
-        } catch (e: any) {
-            setInviteStatus("failed");
-            setInviteError(e?.message || "Failed to send invite");
-        }
-    }
+        downloadTextFile("mysession-invite.ics", ics, "text/calendar");
+    };
 
     const handleBookSession = async () => {
         if (isBookingLoading) return;
         setIsBookingLoading(true);
-        setInviteStatus("idle");
-        setInviteError(null);
 
         try {
-            // Let onBook be sync or async
-            const result = await Promise.resolve(onBook(session.id));
-
+            await Promise.resolve(onBook(session.id));
             setIsBookingConfirmed(true);
             setIsHoveringBook(false);
-
-            // If your onBook returns booking info, we try to use it (non-breaking)
-            const bookingIdFromResult =
-                (result && (result.id || result.bookingId || result.booking_id)) || null;
-
-            // Send invite (best-effort)
-            await sendCalendarInvite({ bookingIdOverride: bookingIdFromResult || undefined });
+            // invite отправит сервер (если onBook дергает /api/book-session)
         } finally {
             setIsBookingLoading(false);
         }
@@ -279,11 +277,6 @@ export default function SessionCard({
             await Promise.resolve(onCancelBooking(session.id));
             setIsBookingConfirmed(false);
             setIsHoveringCancel(false);
-
-            // (Optional later) you can implement METHOD:CANCEL here to remove from calendar
-            // For now we just reset invite state.
-            setInviteStatus("idle");
-            setInviteError(null);
         } finally {
             setIsCancelLoading(false);
         }
@@ -291,8 +284,8 @@ export default function SessionCard({
 
     const onEnterBooked = () => {
         if (cancelHoverTimer) window.clearTimeout(cancelHoverTimer);
-        const t = window.setTimeout(() => setIsHoveringCancel(true), CANCEL_HOVER_DELAY_MS);
-        setCancelHoverTimer(t);
+        const tmr = window.setTimeout(() => setIsHoveringCancel(true), CANCEL_HOVER_DELAY_MS);
+        setCancelHoverTimer(tmr);
     };
 
     const onLeaveBooked = () => {
@@ -301,7 +294,6 @@ export default function SessionCard({
         setIsHoveringCancel(false);
     };
 
-    // ✅ Join via iFrame page (RoomPageIFrame)
     const handleJoinIframe = () => {
         navigate(`/room-iframe/${session.id}`);
     };
@@ -366,58 +358,44 @@ export default function SessionCard({
     const inviteLine = (() => {
         if (!isBookingConfirmed) return null;
 
-        // For infinite rooms: no calendar invite
         if (isInfinite) {
-            return <div className="text-[11px] text-[#606060]">Calendar invites are available for scheduled sessions only.</div>;
+            return (
+                <div className="text-[11px] text-[#606060]">
+                    Calendar invites are available for scheduled sessions only.
+                </div>
+            );
         }
 
-        // If userEmail missing: explain why not sent (without breaking flow)
-        if (!userEmail) {
-            return <div className="text-[11px] text-[#606060]">Tip: add userEmail to SessionCard props to auto-send calendar invite.</div>;
-        }
-
-        if (inviteStatus === "sending") {
-            return <div className="text-[11px] text-[#606060]">Sending calendar invite…</div>;
-        }
-
-        if (inviteStatus === "sent") {
+        if (inviteSentAt) {
             return (
                 <div className="text-[11px] text-[#15803D]">
-                    Calendar invite sent to <span className="underline underline-offset-2">{userEmail}</span> (Google often auto-adds it).
-                </div>
-            );
-        }
-
-        if (inviteStatus === "failed") {
-            return (
-                <div className="text-[11px] text-[#B91C1C] flex flex-wrap items-center gap-2">
-                    <span>Calendar invite failed.</span>
+                    Calendar invite sent (check email).{" "}
                     <button
                         type="button"
-                        onClick={() => sendCalendarInvite()}
-                        className="underline underline-offset-2 hover:opacity-80"
+                        onClick={handleDownloadIcs}
+                        className={`underline underline-offset-2 hover:opacity-80 ${canDownloadIcs ? "" : "opacity-40 cursor-not-allowed"
+                            }`}
+                        disabled={!canDownloadIcs}
+                        title="Download .ics (fallback)"
                     >
-                        Try again
+                        Download .ics
                     </button>
-                    {inviteError ? <span className="text-[#606060]">({inviteError})</span> : null}
                 </div>
             );
         }
 
-        if (inviteStatus === "skipped") {
-            return <div className="text-[11px] text-[#606060]">Invite not sent (missing email or time).</div>;
-        }
-
-        // idle state after booking (some users prefer explicit “resend”)
         return (
             <div className="text-[11px] text-[#606060] flex flex-wrap items-center gap-2">
-                <span>Calendar invite + reminders</span>
+                <span>Invite will be sent by email after booking (server-side).</span>
                 <button
                     type="button"
-                    onClick={() => sendCalendarInvite()}
-                    className="underline underline-offset-2 hover:opacity-80"
+                    onClick={handleDownloadIcs}
+                    className={`underline underline-offset-2 hover:opacity-80 ${canDownloadIcs ? "" : "opacity-40 cursor-not-allowed"
+                        }`}
+                    disabled={!canDownloadIcs}
+                    title="Download .ics (fallback)"
                 >
-                    Resend
+                    Add to calendar (.ics)
                 </button>
             </div>
         );
@@ -449,20 +427,17 @@ export default function SessionCard({
                     <h3 className="text-[24px] md:text-[29px] font-bold leading-tight">{session.title}</h3>
 
                     <div className="flex flex-wrap items-center gap-4 text-[12px] text-[#606060]">
-                        {/* Host link */}
                         <Link to={`/profile/${session.host_id}`} className="flex items-center gap-1 hover:opacity-70">
                             <img src="/icons/host.svg" className="w-4 h-4 opacity-70" alt="" />
                             <span>Host</span>
                             <span className="underline underline-offset-2">{session.host_name}</span>
                         </Link>
 
-                        {/* Duration */}
                         <div className="flex items-center gap-1">
                             <img src="/icons/duration.svg" className="w-4 h-4 opacity-70" alt="" />
                             <span>{isInfinite ? "Infinite" : `${session.duration_minutes} min`}</span>
                         </div>
 
-                        {/* Date */}
                         {!isInfinite && (
                             <div className="flex items-center gap-1">
                                 <img src="/icons/date.svg" className="w-4 h-4 opacity-70" alt="" />
@@ -470,7 +445,6 @@ export default function SessionCard({
                             </div>
                         )}
 
-                        {/* Type pill */}
                         <div
                             className="inline-flex items-center gap-1 px-3 py-1 rounded-full border"
                             style={{
@@ -489,9 +463,10 @@ export default function SessionCard({
                             {resolvedType}
                         </div>
                     </div>
+
+                    <div className="px-1">{inviteLine}</div>
                 </div>
 
-                {/* ✅ ONLY ONE participants indicator (desktop). No duplicate chip. */}
                 <div className="hidden xl:flex items-center gap-6">
                     <div className="w-px h-10 bg-[#D9D9D9]" />
                     <div className="text-center">
@@ -523,7 +498,6 @@ export default function SessionCard({
                 >
                     {isBookingConfirmed ? confirmedBookingButton : bookSessionButton}
 
-                    {/* ✅ Join via iFrame (primary) */}
                     <button
                         onClick={handleJoinIframe}
                         onMouseEnter={() => setIsHoveringJoinIframe(true)}
@@ -559,9 +533,6 @@ export default function SessionCard({
                         </button>
                     )}
                 </div>
-
-                {/* ✅ Calendar invite status line (small, but реально важная фича) */}
-                <div className="px-1">{inviteLine}</div>
             </div>
         </div>
     );
