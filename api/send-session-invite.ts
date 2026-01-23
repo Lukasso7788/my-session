@@ -1,7 +1,6 @@
 // api/send-session-invite.ts
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { Resend } from "resend";
-import { buildIcsInvite } from "./_lib/ics";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method !== "POST") {
@@ -9,6 +8,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     try {
+        // 1) ENV checks
         const apiKey = process.env.RESEND_API_KEY;
         if (!apiKey) {
             return res.status(500).json({ ok: false, error: "RESEND_API_KEY is not set (check Production env + redeploy)" });
@@ -19,8 +19,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return res.status(500).json({ ok: false, error: "EMAIL_FROM is not set" });
         }
 
-        const resend = new Resend(apiKey);
-
+        // 2) Parse body
         const {
             attendeeEmail,
             attendeeName,
@@ -35,6 +34,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!attendeeEmail || !sessionTitle || !startIso || !endIso || !joinUrl || !bookingId) {
             return res.status(400).json({ ok: false, error: "Missing required fields" });
         }
+
+        // 3) Import ICS builder safely (prevents import-time crash)
+        const mod = await import("./_lib/ics");
+        const buildIcsInvite = mod.buildIcsInvite as any;
+
+        const resend = new Resend(apiKey);
 
         const uid = `mysession-booking-${bookingId}@mysession.club`;
 
@@ -70,17 +75,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           <p style="margin:0;">A calendar invite (.ics) is attached.</p>
         </div>
       `,
-            attachments: [
-                {
-                    filename: "mysession-invite.ics",
-                    content: icsBase64,
-                },
-            ],
+            attachments: [{ filename: "mysession-invite.ics", content: icsBase64 }],
         });
 
         return res.status(200).json({ ok: true, id: result.data?.id });
     } catch (e: any) {
-        // Это теперь почти всегда будет нормальный JSON, а не "FUNCTION_INVOCATION_FAILED"
-        return res.status(500).json({ ok: false, error: e?.message || "Unknown error" });
+        return res.status(500).json({
+            ok: false,
+            error: e?.message || "Unknown error",
+            // временно для дебага:
+            stack: e?.stack ? String(e.stack).slice(0, 2000) : undefined,
+        });
     }
 }
