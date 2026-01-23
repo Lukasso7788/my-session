@@ -11,10 +11,7 @@ interface SessionCardProps {
     onJoin: (sessionId: string) => void;
     onDelete: (sessionId: string) => void;
 
-    /**
-     * ✅ NEW (optional): host actions
-     * Wire these later in SessionsPage if you want full functionality.
-     */
+    // ✅ NEW: чтобы edit реально синкался в Supabase — реализуешь в SessionsPage
     onEditSession?: (
         sessionId: string,
         updates: {
@@ -24,32 +21,17 @@ interface SessionCardProps {
         }
     ) => void | Promise<any>;
 
+    // ✅ NEW: пока UI-хук (email invite)
     onInviteToSession?: (
         sessionId: string,
-        payload: {
-            email?: string;
-            userId?: string;
-            message?: string;
-        }
+        payload: { email: string; message?: string }
     ) => void | Promise<any>;
 
-    /**
-     * ✅ NEW (optional): current user display info for nicer avatar when YOU book.
-     */
-    currentUser?: {
-        id: string;
-        name?: string;
-        avatar_url?: string;
-        email?: string;
-    };
+    // ✅ optional: чтобы “твоя” аватарка сразу появлялась при Book без ожидания refetch
+    currentUser?: { id: string; full_name?: string; avatar_url?: string; email?: string };
 }
 
-type BookedUser = {
-    id: string;
-    name?: string;
-    email?: string;
-    avatar_url?: string;
-};
+type BookedUser = { id: string; full_name?: string; email?: string; avatar_url?: string };
 
 function safeLower(x: any) {
     return String(x || "").toLowerCase();
@@ -64,12 +46,8 @@ function getInitials(nameOrId: string) {
 }
 
 /**
- * ✅ Best-effort extraction of booked users from session.session_bookings.
- * Supports shapes:
- * - { user_id, user_name, avatar_url, email }
- * - { user_id, profiles: { full_name, avatar_url, email, id } }
- * - { user_id, user: { name, avatar_url, email, id } }
- * - fallback: { user_id } only
+ * ✅ Extract bookers from nested select:
+ * session_bookings ( user_id, profiles:profiles ( id, full_name, avatar_url, email ) )
  */
 function extractBookers(session: any): BookedUser[] {
     const raw = session?.session_bookings || [];
@@ -77,30 +55,19 @@ function extractBookers(session: any): BookedUser[] {
 
     const users: BookedUser[] = raw
         .map((b: any) => {
-            const userId = b?.user_id || b?.userId || b?.attendee_id || b?.id || null;
+            const uid = b?.user_id || b?.userId;
+            const p = b?.profiles || b?.profile || b?.user || null;
 
-            const p = b?.profiles || b?.profile || b?.user || b?.attendee || null;
+            const full_name = p?.full_name ?? p?.name ?? b?.full_name ?? b?.name;
+            const avatar_url = p?.avatar_url ?? b?.avatar_url;
+            const email = p?.email ?? b?.email;
 
-            const name =
-                b?.user_name ||
-                b?.name ||
-                p?.full_name ||
-                p?.name ||
-                p?.display_name ||
-                p?.username ||
-                undefined;
-
-            const email = b?.email || p?.email || undefined;
-
-            const avatar_url =
-                b?.avatar_url || b?.avatarUrl || p?.avatar_url || p?.avatarUrl || undefined;
-
-            if (!userId) return null;
-            return { id: String(userId), name, email, avatar_url } as BookedUser;
+            if (!uid) return null;
+            return { id: String(uid), full_name, avatar_url, email } as BookedUser;
         })
         .filter(Boolean);
 
-    // de-dupe by id
+    // de-dupe
     const seen = new Set<string>();
     const out: BookedUser[] = [];
     for (const u of users) {
@@ -115,26 +82,18 @@ function extractBookers(session: any): BookedUser[] {
 // ✅ NEW: infer visual type from title for newer/infinite room titles
 function inferTypeFromTitle(title: any): "Deep work" | "Pomodoro" | "Short sprints" | null {
     const t = safeLower(title);
-
     if (t.includes("silent") || t.includes("drop-in") || t.includes("drop in")) return "Deep work";
-
-    if (t.includes("deep work") || t.includes("deepwork") || t.includes("uninterrupted"))
-        return "Deep work";
+    if (t.includes("deep work") || t.includes("deepwork") || t.includes("uninterrupted")) return "Deep work";
     if (t.includes("pomodoro")) return "Pomodoro";
-
     if (/\b25\s*[/\-]\s*5\b/.test(t)) return "Pomodoro";
     if (/\b15\s*[/\-]\s*3\b/.test(t)) return "Short sprints";
-
     if (/\b55\s*[/\-]\s*5\b/.test(t)) return "Deep work";
     if (/\b50\s*[/\-]\s*5(\s*[/\-]\s*5)?\b/.test(t)) return "Deep work";
-
     return null;
 }
 
-// ✅ single place to resolve session type (matches SessionsPage logic)
 function resolveSessionType(session: any): "group" | "infinite" | "body" {
     const t = safeLower(session?.session_format_type);
-
     if (t === "infinite") return "infinite";
     if (t === "body") return "body";
     if (t === "group") return "group";
@@ -143,11 +102,7 @@ function resolveSessionType(session: any): "group" | "infinite" | "body" {
         const raw = session?.schedule;
         if (!raw) return null;
         if (typeof raw === "string") {
-            try {
-                return JSON.parse(raw);
-            } catch {
-                return null;
-            }
+            try { return JSON.parse(raw); } catch { return null; }
         }
         return raw;
     })();
@@ -161,30 +116,18 @@ function resolveSessionType(session: any): "group" | "infinite" | "body" {
     return "group";
 }
 
-function AvatarCircle({
-    user,
-    size = 28,
-    className = "",
-}: {
-    user: BookedUser;
-    size?: number;
-    className?: string;
-}) {
-    const initials = getInitials(user?.name || user?.email || user?.id || "?");
+function AvatarCircle({ user, size = 28 }: { user: BookedUser; size?: number }) {
+    const label = user?.full_name || user?.email || user?.id || "?";
+    const initials = getInitials(label);
 
     return (
         <div
-            className={`rounded-full overflow-hidden flex items-center justify-center border border-[#E5E7EB] bg-white ${className}`}
+            className="rounded-full overflow-hidden flex items-center justify-center border border-[#E5E7EB] bg-white"
             style={{ width: size, height: size }}
-            title={user?.name || user?.email || user?.id}
+            title={label}
         >
             {user?.avatar_url ? (
-                <img
-                    src={user.avatar_url}
-                    alt={user?.name || "avatar"}
-                    className="w-full h-full object-cover"
-                    draggable={false}
-                />
+                <img src={user.avatar_url} alt={label} className="w-full h-full object-cover" draggable={false} />
             ) : (
                 <div className="text-[10px] font-semibold text-[#111827] select-none">{initials}</div>
             )}
@@ -197,7 +140,7 @@ function ModalShell({
     isOpen,
     onClose,
     children,
-    widthClass = "max-w-[520px]",
+    widthClass = "max-w-[560px]",
 }: {
     title: string;
     isOpen: boolean;
@@ -239,6 +182,67 @@ function DotsIcon({ size = 18 }: { size?: number }) {
     );
 }
 
+function IconEdit({ size = 16 }: { size?: number }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0 0-3L16.5 4.5a2.1 2.1 0 0 0-3 0L3 15v5Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+            <path d="M13.5 6.5l4 4" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+        </svg>
+    );
+}
+
+function IconInvite({ size = 16 }: { size?: number }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M4 6h16v12H4V6Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+            <path d="M4 7l8 6 8-6" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+        </svg>
+    );
+}
+
+function IconCancel({ size = 16 }: { size?: number }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z" stroke="currentColor" strokeWidth="2" />
+            <path d="M8 8l8 8M16 8l-8 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+    );
+}
+
+function IconTrash({ size = 16 }: { size?: number }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M4 7h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            <path d="M10 11v7M14 11v7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            <path d="M6 7l1 14h10l1-14" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+            <path d="M9 7V4h6v3" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+        </svg>
+    );
+}
+
+function MenuItem({
+    icon,
+    label,
+    danger,
+    onClick,
+}: {
+    icon: any;
+    label: string;
+    danger?: boolean;
+    onClick: () => void;
+}) {
+    return (
+        <button
+            className={`w-full text-left px-3 py-2 rounded-[12px] hover:bg-[#F3F4F6] text-[13px] font-semibold flex items-center gap-2 ${danger ? "text-[#F65252] hover:bg-[#FFF1F2]" : "text-[#111827]"
+                }`}
+            onClick={onClick}
+        >
+            <span className={`${danger ? "text-[#F65252]" : "text-[#111827]"}`}>{icon}</span>
+            <span>{label}</span>
+        </button>
+    );
+}
+
 export default function SessionCard({
     session,
     userId,
@@ -253,9 +257,7 @@ export default function SessionCard({
     const navigate = useNavigate();
     const isHost = session.host_id === userId;
 
-    // ✅ booking status from sessions.session_bookings
     const initialIsBooked = session.session_bookings?.some((b: any) => b.user_id === userId);
-
     const [isBookingConfirmed, setIsBookingConfirmed] = useState<boolean>(!!initialIsBooked);
 
     const [isHoveringCancel, setIsHoveringCancel] = useState(false);
@@ -263,15 +265,14 @@ export default function SessionCard({
     const [isHoveringJoinIframe, setIsHoveringJoinIframe] = useState(false);
     const [isHoveringCard, setIsHoveringCard] = useState(false);
 
-    // ✅ Figma-like hover delay
     const CANCEL_HOVER_DELAY_MS = 120;
     const [cancelHoverTimer, setCancelHoverTimer] = useState<number | null>(null);
 
-    // ✅ NEW: booked people avatars
+    // ✅ booked people
     const initialBookers = useMemo(() => extractBookers(session), [session]);
     const [bookers, setBookers] = useState<BookedUser[]>(initialBookers);
 
-    // ✅ NEW: modals & options
+    // ✅ modals / menu
     const [isBookersModalOpen, setIsBookersModalOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
@@ -279,27 +280,18 @@ export default function SessionCard({
     const [isOptionsOpen, setIsOptionsOpen] = useState(false);
     const optionsRef = useRef<HTMLDivElement | null>(null);
 
-    useEffect(() => {
-        setIsBookingConfirmed(!!initialIsBooked);
-    }, [session.id, initialIsBooked]);
+    useEffect(() => setIsBookingConfirmed(!!initialIsBooked), [session.id, initialIsBooked]);
+    useEffect(() => setBookers(initialBookers), [initialBookers]);
 
     useEffect(() => {
-        setBookers(initialBookers);
-    }, [initialBookers]);
-
-    useEffect(() => {
-        return () => {
-            if (cancelHoverTimer) window.clearTimeout(cancelHoverTimer);
-        };
+        return () => { if (cancelHoverTimer) window.clearTimeout(cancelHoverTimer); };
     }, [cancelHoverTimer]);
 
     useEffect(() => {
         function onDocClick(e: MouseEvent) {
             if (!isOptionsOpen) return;
             const t = e.target as any;
-            if (optionsRef.current && !optionsRef.current.contains(t)) {
-                setIsOptionsOpen(false);
-            }
+            if (optionsRef.current && !optionsRef.current.contains(t)) setIsOptionsOpen(false);
         }
         document.addEventListener("mousedown", onDocClick);
         return () => document.removeEventListener("mousedown", onDocClick);
@@ -307,8 +299,6 @@ export default function SessionCard({
 
     const sessionType = resolveSessionType(session);
     const isInfinite = sessionType === "infinite";
-
-    // ✅ REAL live count must come from presence aggregation in SessionsPage.
     const liveCount: number | null = typeof session?.live_count === "number" ? session.live_count : null;
 
     const nameToTypeMap: Record<string, string> = {
@@ -329,11 +319,7 @@ export default function SessionCard({
         "Short sprints": { color: "#22C55E", bg: "#E5FFE9", icon: "/icons/sprints.svg" },
     };
 
-    const t = typeMap[resolvedType] || {
-        color: "#111827",
-        bg: "#E5E7EB",
-        icon: "/icons/deepwork.svg",
-    };
+    const t = typeMap[resolvedType] || { color: "#111827", bg: "#E5E7EB", icon: "/icons/deepwork.svg" };
 
     const JOIN_HOVER_BG: Record<string, string> = {
         "Deep work": "#5286F6",
@@ -359,11 +345,11 @@ export default function SessionCard({
         const cu: BookedUser = currentUser?.id
             ? {
                 id: currentUser.id,
-                name: currentUser.name || "You",
+                full_name: currentUser.full_name || "You",
                 avatar_url: currentUser.avatar_url,
                 email: currentUser.email,
             }
-            : { id: userId, name: "You" };
+            : { id: userId, full_name: "You" };
 
         setBookers((prev) => [cu, ...prev]);
     };
@@ -389,8 +375,8 @@ export default function SessionCard({
 
     const onEnterBooked = () => {
         if (cancelHoverTimer) window.clearTimeout(cancelHoverTimer);
-        const t = window.setTimeout(() => setIsHoveringCancel(true), CANCEL_HOVER_DELAY_MS);
-        setCancelHoverTimer(t);
+        const tt = window.setTimeout(() => setIsHoveringCancel(true), CANCEL_HOVER_DELAY_MS);
+        setCancelHoverTimer(tt);
     };
 
     const onLeaveBooked = () => {
@@ -399,56 +385,42 @@ export default function SessionCard({
         setIsHoveringCancel(false);
     };
 
-    const handleJoinIframe = () => {
-        navigate(`/room-iframe/${session.id}`);
-    };
+    const handleJoinIframe = () => navigate(`/room-iframe/${session.id}`);
 
-    // ✅ NEW: stacked avatars preview
-    const maxStack = 5;
+    // ✅ avatars stack
+    const maxStack = 6;
     const bookedCount = bookers.length;
     const stackUsers = bookers.slice(0, maxStack);
     const remaining = bookedCount - stackUsers.length;
 
-    // ✅ NEW: edit modal state
+    // ✅ edit modal state
     const [editTitle, setEditTitle] = useState<string>(session?.title || "");
     const [editStartLocal, setEditStartLocal] = useState<string>(() => {
-        // datetime-local expects "YYYY-MM-DDTHH:mm"
         if (!session?.start_time) return "";
         try {
             const d = new Date(session.start_time);
             const pad = (n: number) => String(n).padStart(2, "0");
-            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
-                d.getMinutes()
-            )}`;
-        } catch {
-            return "";
-        }
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        } catch { return ""; }
     });
     const [editMaxParticipants, setEditMaxParticipants] = useState<string>(() => {
         const v = session?.max_participants;
-        if (v == null) return "";
-        return String(v);
+        return v == null ? "" : String(v);
     });
 
     useEffect(() => {
         setEditTitle(session?.title || "");
-        // don't aggressively reset editStartLocal to avoid annoying editing, but keep it in sync on session change
         if (session?.start_time) {
             try {
                 const d = new Date(session.start_time);
                 const pad = (n: number) => String(n).padStart(2, "0");
-                setEditStartLocal(
-                    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-                );
+                setEditStartLocal(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`);
             } catch { }
-        } else {
-            setEditStartLocal("");
-        }
-        const v = session?.max_participants;
-        setEditMaxParticipants(v == null ? "" : String(v));
+        } else setEditStartLocal("");
+        setEditMaxParticipants(session?.max_participants == null ? "" : String(session?.max_participants));
     }, [session?.id]);
 
-    // ✅ NEW: invite modal state
+    // ✅ invite modal state
     const [inviteEmail, setInviteEmail] = useState<string>("");
     const [inviteMessage, setInviteMessage] = useState<string>("");
 
@@ -465,11 +437,7 @@ export default function SessionCard({
         ${isHoveringBook ? "text-[#65D46C] border border-[#65D46C] bg-[#65D46C]/10" : "border border-brandBlack text-brandBlack bg-white"}
       `}
         >
-            <img
-                src={isHoveringBook ? "/icons/book-session-green.svg" : "/icons/book-session.svg"}
-                className="w-4 h-4"
-                alt=""
-            />
+            <img src={isHoveringBook ? "/icons/book-session-green.svg" : "/icons/book-session.svg"} className="w-4 h-4" alt="" />
             <span>Book session</span>
         </button>
     );
@@ -499,10 +467,10 @@ export default function SessionCard({
         </button>
     );
 
-    const canEdit = isHost;
-    const canInvite = isHost; // keep it host-only for now
-    const canCancelBooking = !!isBookingConfirmed; // user booked
-    const canCancelSession = isHost; // maps to onDelete
+    const canEdit = isHost && !!onEditSession;
+    const canInvite = isHost; // UI unlocked, реализация через onInviteToSession (опционально)
+    const canCancelBooking = !!isBookingConfirmed;
+    const canCancelSession = isHost;
 
     return (
         <>
@@ -519,32 +487,23 @@ export default function SessionCard({
         "
             >
                 {/* INFO */}
-                <div
-                    className="
-            flex flex-col xl:flex-row
-            items-start xl:items-center
-            justify-between
-            gap-4 flex-1
-          "
-                >
+                <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 flex-1">
                     <div className="flex flex-col gap-3">
                         <h3 className="text-[24px] md:text-[29px] font-bold leading-tight">{session.title}</h3>
 
+                        {/* meta row */}
                         <div className="flex flex-wrap items-center gap-4 text-[12px] text-[#606060]">
-                            {/* Host link */}
                             <Link to={`/profile/${session.host_id}`} className="flex items-center gap-1 hover:opacity-70">
                                 <img src="/icons/host.svg" className="w-4 h-4 opacity-70" alt="" />
                                 <span>Host</span>
                                 <span className="underline underline-offset-2">{session.host_name}</span>
                             </Link>
 
-                            {/* Duration */}
                             <div className="flex items-center gap-1">
                                 <img src="/icons/duration.svg" className="w-4 h-4 opacity-70" alt="" />
                                 <span>{isInfinite ? "Infinite" : `${session.duration_minutes} min`}</span>
                             </div>
 
-                            {/* Date */}
                             {!isInfinite && (
                                 <div className="flex items-center gap-1">
                                     <img src="/icons/date.svg" className="w-4 h-4 opacity-70" alt="" />
@@ -552,7 +511,6 @@ export default function SessionCard({
                                 </div>
                             )}
 
-                            {/* Type pill */}
                             <div
                                 className="inline-flex items-center gap-1 px-3 py-1 rounded-full border"
                                 style={{
@@ -563,74 +521,54 @@ export default function SessionCard({
                                     fontWeight: 500,
                                 }}
                             >
-                                <img
-                                    src={isHoveringCard ? t.icon.replace(".svg", "-white.svg") : t.icon}
-                                    className="w-4 h-4"
-                                    alt=""
-                                />
+                                <img src={isHoveringCard ? t.icon.replace(".svg", "-white.svg") : t.icon} className="w-4 h-4" alt="" />
                                 {resolvedType}
                             </div>
                         </div>
 
-                        {/* ✅ NEW: People who booked (avatars stack) */}
+                        {/* ✅ HERE: immediately after the info block */}
                         <button
                             type="button"
                             onClick={() => setIsBookersModalOpen(true)}
-                            className="
-                mt-1 inline-flex items-center gap-3
-                hover:opacity-80 transition
-                text-left
-              "
+                            className="mt-1 inline-flex items-center gap-3 hover:opacity-80 transition text-left"
                         >
-                            <div className="flex items-center">
-                                {stackUsers.length === 0 ? (
-                                    <div className="text-[12px] text-[#606060]">Be the first to book</div>
-                                ) : (
+                            {bookedCount === 0 ? (
+                                <div className="text-[12px] text-[#606060]">Be the first to book</div>
+                            ) : (
+                                <div className="flex items-center">
                                     <div className="flex items-center">
-                                        {/* stacked avatars */}
-                                        <div className="flex items-center">
-                                            {stackUsers.map((u, idx) => (
+                                        {stackUsers.map((u, idx) => (
+                                            <div
+                                                key={u.id}
+                                                className="relative"
+                                                style={{ marginLeft: idx === 0 ? 0 : -10, zIndex: 50 - idx }}
+                                            >
+                                                <AvatarCircle user={u} size={28} />
+                                            </div>
+                                        ))}
+                                        {remaining > 0 && (
+                                            <div className="relative" style={{ marginLeft: -10, zIndex: 0 }}>
                                                 <div
-                                                    key={u.id}
-                                                    className="relative"
-                                                    style={{
-                                                        marginLeft: idx === 0 ? 0 : -10,
-                                                        zIndex: 50 - idx,
-                                                    }}
+                                                    className="rounded-full border border-[#E5E7EB] bg-white flex items-center justify-center text-[10px] font-semibold text-[#111827]"
+                                                    style={{ width: 28, height: 28 }}
+                                                    title={`${remaining} more`}
                                                 >
-                                                    <AvatarCircle user={u} size={28} />
+                                                    +{remaining}
                                                 </div>
-                                            ))}
-                                            {remaining > 0 && (
-                                                <div
-                                                    className="relative"
-                                                    style={{
-                                                        marginLeft: -10,
-                                                        zIndex: 0,
-                                                    }}
-                                                >
-                                                    <div
-                                                        className="rounded-full border border-[#E5E7EB] bg-white flex items-center justify-center text-[10px] font-semibold text-[#111827]"
-                                                        style={{ width: 28, height: 28 }}
-                                                        title={`${remaining} more`}
-                                                    >
-                                                        +{remaining}
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        <div className="ml-3 flex flex-col leading-tight">
-                                            <div className="text-[12px] font-semibold text-[#111827]">People who booked this session</div>
-                                            <div className="text-[11px] text-[#606060]">{bookedCount} booked</div>
-                                        </div>
+                                            </div>
+                                        )}
                                     </div>
-                                )}
-                            </div>
+
+                                    <div className="ml-3 flex flex-col leading-tight">
+                                        <div className="text-[12px] font-semibold text-[#111827]">People who booked this session</div>
+                                        <div className="text-[11px] text-[#606060]">{bookedCount} booked</div>
+                                    </div>
+                                </div>
+                            )}
                         </button>
                     </div>
 
-                    {/* ✅ ONLY ONE participants indicator (desktop). No duplicate chip. */}
+                    {/* live count (desktop) */}
                     <div className="hidden xl:flex items-center gap-6">
                         <div className="w-px h-10 bg-[#D9D9D9]" />
                         <div className="text-center">
@@ -643,17 +581,9 @@ export default function SessionCard({
                 </div>
 
                 {/* BUTTONS */}
-                <div
-                    className="
-            flex flex-col sm:flex-row
-            max-[480px]:flex-col
-            gap-3 w-full xl:w-auto
-            items-center justify-center
-          "
-                >
+                <div className="flex flex-col sm:flex-row max-[480px]:flex-col gap-3 w-full xl:w-auto items-center justify-center">
                     {isBookingConfirmed ? confirmedBookingButton : bookSessionButton}
 
-                    {/* ✅ join via iFrame */}
                     <button
                         onClick={handleJoinIframe}
                         onMouseEnter={() => setIsHoveringJoinIframe(true)}
@@ -674,7 +604,7 @@ export default function SessionCard({
                         Join session
                     </button>
 
-                    {/* ✅ NEW: options menu instead of delete крестик */}
+                    {/* options */}
                     <div ref={optionsRef} className="relative w-full xl:w-auto">
                         <button
                             type="button"
@@ -698,7 +628,7 @@ export default function SessionCard({
                                 className="
                   absolute right-0 top-[52px]
                   z-[200]
-                  w-[240px]
+                  w-[260px]
                   rounded-[18px]
                   border border-[#E5E7EB]
                   bg-white
@@ -712,51 +642,49 @@ export default function SessionCard({
 
                                 <div className="p-2 flex flex-col gap-1">
                                     {canEdit && (
-                                        <button
-                                            className="w-full text-left px-3 py-2 rounded-[12px] hover:bg-[#F3F4F6] text-[13px] font-semibold text-[#111827]"
+                                        <MenuItem
+                                            icon={<IconEdit />}
+                                            label="Edit session"
                                             onClick={() => {
                                                 setIsOptionsOpen(false);
                                                 setIsEditModalOpen(true);
                                             }}
-                                        >
-                                            Edit session
-                                        </button>
+                                        />
                                     )}
 
                                     {canInvite && (
-                                        <button
-                                            className="w-full text-left px-3 py-2 rounded-[12px] hover:bg-[#F3F4F6] text-[13px] font-semibold text-[#111827]"
+                                        <MenuItem
+                                            icon={<IconInvite />}
+                                            label="Invite…"
                                             onClick={() => {
                                                 setIsOptionsOpen(false);
                                                 setIsInviteModalOpen(true);
                                             }}
-                                        >
-                                            Invite…
-                                        </button>
+                                        />
                                     )}
 
                                     {canCancelBooking && (
-                                        <button
-                                            className="w-full text-left px-3 py-2 rounded-[12px] hover:bg-[#FFF1F2] text-[13px] font-semibold text-[#F65252]"
+                                        <MenuItem
+                                            icon={<IconCancel />}
+                                            label="Cancel booking"
+                                            danger
                                             onClick={() => {
                                                 setIsOptionsOpen(false);
                                                 handleCancelBooking();
                                             }}
-                                        >
-                                            Cancel booking
-                                        </button>
+                                        />
                                     )}
 
                                     {canCancelSession && (
-                                        <button
-                                            className="w-full text-left px-3 py-2 rounded-[12px] hover:bg-[#FFF1F2] text-[13px] font-semibold text-[#F65252]"
+                                        <MenuItem
+                                            icon={<IconTrash />}
+                                            label="Cancel session"
+                                            danger
                                             onClick={() => {
                                                 setIsOptionsOpen(false);
                                                 onDelete(session.id);
                                             }}
-                                        >
-                                            Cancel session
-                                        </button>
+                                        />
                                     )}
 
                                     {!canEdit && !canInvite && !canCancelBooking && !canCancelSession && (
@@ -769,38 +697,25 @@ export default function SessionCard({
                 </div>
             </div>
 
-            {/* ✅ Bookers list modal */}
+            {/* bookers modal */}
             <ModalShell
                 title="People who booked this session"
                 isOpen={isBookersModalOpen}
                 onClose={() => setIsBookersModalOpen(false)}
-                widthClass="max-w-[560px]"
             >
-                <div className="flex items-center justify-between">
-                    <div className="text-[12px] text-[#606060]">{bookedCount} booked</div>
-                    <button
-                        className="text-[12px] font-semibold underline underline-offset-2 hover:opacity-70"
-                        onClick={() => {
-                            // quick UX: if no one booked, prompt booking
-                            if (!isBookingConfirmed) handleBookSession();
-                        }}
-                    >
-                        {!isBookingConfirmed ? "Book this session" : "You're booked"}
-                    </button>
-                </div>
+                <div className="text-[12px] text-[#606060]">{bookedCount} booked</div>
 
                 <div className="mt-4 flex flex-col gap-2">
                     {bookedCount === 0 ? (
                         <div className="text-[13px] text-[#606060]">No one booked yet. Be the first.</div>
                     ) : (
                         bookers.map((u) => (
-                            <div
-                                key={u.id}
-                                className="flex items-center gap-3 px-3 py-2 rounded-[16px] border border-[#F0F0F0]"
-                            >
+                            <div key={u.id} className="flex items-center gap-3 px-3 py-2 rounded-[16px] border border-[#F0F0F0]">
                                 <AvatarCircle user={u} size={34} />
                                 <div className="flex flex-col">
-                                    <div className="text-[13px] font-semibold text-[#111827]">{u.name || u.email || u.id}</div>
+                                    <div className="text-[13px] font-semibold text-[#111827]">
+                                        {u.full_name || u.email || u.id}
+                                    </div>
                                     <div className="text-[12px] text-[#606060]">{u.email ? u.email : `User: ${u.id}`}</div>
                                 </div>
                             </div>
@@ -809,13 +724,8 @@ export default function SessionCard({
                 </div>
             </ModalShell>
 
-            {/* ✅ Edit modal */}
-            <ModalShell
-                title="Edit session"
-                isOpen={isEditModalOpen}
-                onClose={() => setIsEditModalOpen(false)}
-                widthClass="max-w-[560px]"
-            >
+            {/* edit modal */}
+            <ModalShell title="Edit session" isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)}>
                 <div className="flex flex-col gap-4">
                     <div>
                         <div className="text-[12px] font-semibold text-[#111827] mb-1">Title</div>
@@ -846,7 +756,7 @@ export default function SessionCard({
                             type="number"
                             min={1}
                             className="w-full h-11 px-4 rounded-[14px] border border-[#E5E7EB] outline-none focus:border-[#111827]"
-                            placeholder="e.g. 12 (leave empty for unlimited)"
+                            placeholder="e.g. 12 (empty = unlimited)"
                         />
                     </div>
 
@@ -860,13 +770,13 @@ export default function SessionCard({
                         <button
                             className="h-11 px-6 rounded-full border border-[#111827] bg-[#111827] text-white hover:opacity-90 text-[13px] font-semibold"
                             onClick={async () => {
-                                const updates: any = {};
+                                setIsEditModalOpen(false);
 
+                                const updates: any = {};
                                 const title = String(editTitle || "").trim();
                                 if (title && title !== session?.title) updates.title = title;
 
                                 if (editStartLocal) {
-                                    // datetime-local gives local; convert to ISO
                                     try {
                                         const iso = new Date(editStartLocal).toISOString();
                                         if (iso !== session?.start_time) updates.start_time = iso;
@@ -874,7 +784,6 @@ export default function SessionCard({
                                 }
 
                                 if (editMaxParticipants.trim() === "") {
-                                    // treat as unlimited (null)
                                     if (session?.max_participants != null) updates.max_participants = null;
                                 } else {
                                     const n = Number(editMaxParticipants);
@@ -883,13 +792,10 @@ export default function SessionCard({
                                     }
                                 }
 
-                                setIsEditModalOpen(false);
-
                                 if (!onEditSession) return;
                                 try {
                                     await onEditSession(session.id, updates);
                                 } catch (e) {
-                                    // keep silent; wire toast later
                                     console.error("onEditSession failed:", e);
                                 }
                             }}
@@ -900,17 +806,10 @@ export default function SessionCard({
                 </div>
             </ModalShell>
 
-            {/* ✅ Invite modal */}
-            <ModalShell
-                title="Invite to session"
-                isOpen={isInviteModalOpen}
-                onClose={() => setIsInviteModalOpen(false)}
-                widthClass="max-w-[560px]"
-            >
+            {/* invite modal */}
+            <ModalShell title="Invite to session" isOpen={isInviteModalOpen} onClose={() => setIsInviteModalOpen(false)}>
                 <div className="flex flex-col gap-4">
-                    <div className="text-[12px] text-[#606060]">
-                        Invite someone by email (platform invites can be wired later).
-                    </div>
+                    <div className="text-[12px] text-[#606060]">Invite someone by email.</div>
 
                     <div>
                         <div className="text-[12px] font-semibold text-[#111827] mb-1">Email</div>
@@ -928,7 +827,7 @@ export default function SessionCard({
                             value={inviteMessage}
                             onChange={(e) => setInviteMessage(e.target.value)}
                             className="w-full min-h-[90px] p-4 rounded-[14px] border border-[#E5E7EB] outline-none focus:border-[#111827]"
-                            placeholder="Join my focus session on MySession…"
+                            placeholder="Join my focus session…"
                         />
                     </div>
 
@@ -943,13 +842,17 @@ export default function SessionCard({
                             className="h-11 px-6 rounded-full border border-[#111827] bg-[#111827] text-white hover:opacity-90 text-[13px] font-semibold"
                             onClick={async () => {
                                 const email = inviteEmail.trim();
+                                const msg = inviteMessage.trim();
+
                                 setIsInviteModalOpen(false);
                                 setInviteEmail("");
                                 setInviteMessage("");
 
+                                if (!email) return;
                                 if (!onInviteToSession) return;
+
                                 try {
-                                    await onInviteToSession(session.id, { email, message: inviteMessage });
+                                    await onInviteToSession(session.id, { email, message: msg || undefined });
                                 } catch (e) {
                                     console.error("onInviteToSession failed:", e);
                                 }
