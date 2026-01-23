@@ -6,6 +6,10 @@ interface SessionCardProps {
     session: any;
     userId?: string;
 
+    // ✅ NEW: who we send invite to
+    userEmail?: string;
+    userName?: string;
+
     // Existing callbacks (can be sync or async)
     onBook: (sessionId: string) => void | Promise<any>;
     onCancelBooking: (sessionId: string) => void | Promise<any>;
@@ -17,11 +21,15 @@ function safeLower(x: any) {
     return String(x || "").toLowerCase();
 }
 
-function inferTypeFromTitle(title: any): "Deep work" | "Pomodoro" | "Short sprints" | null {
+function inferTypeFromTitle(
+    title: any
+): "Deep work" | "Pomodoro" | "Short sprints" | null {
     const t = safeLower(title);
 
-    if (t.includes("silent") || t.includes("drop-in") || t.includes("drop in")) return "Deep work";
-    if (t.includes("deep work") || t.includes("deepwork") || t.includes("uninterrupted")) return "Deep work";
+    if (t.includes("silent") || t.includes("drop-in") || t.includes("drop in"))
+        return "Deep work";
+    if (t.includes("deep work") || t.includes("deepwork") || t.includes("uninterrupted"))
+        return "Deep work";
     if (t.includes("pomodoro")) return "Pomodoro";
 
     if (/\b25\s*[/\-]\s*5\b/.test(t)) return "Pomodoro";
@@ -136,6 +144,8 @@ function downloadTextFile(filename: string, content: string, mime = "text/plain"
 export default function SessionCard({
     session,
     userId,
+    userEmail,
+    userName,
     onBook,
     onCancelBooking,
     onJoin, // kept for compatibility
@@ -156,12 +166,20 @@ export default function SessionCard({
     const [isBookingLoading, setIsBookingLoading] = useState(false);
     const [isCancelLoading, setIsCancelLoading] = useState(false);
 
+    // ✅ invite status (client-side feedback)
+    const [inviteStatus, setInviteStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+    const [inviteError, setInviteError] = useState<string | null>(null);
+
     // ✅ hover delay
     const CANCEL_HOVER_DELAY_MS = 120;
     const [cancelHoverTimer, setCancelHoverTimer] = useState<number | null>(null);
 
     useEffect(() => {
         setIsBookingConfirmed(!!initialIsBooked);
+        // если пришли новые данные (например после refetch), сбрасываем ошибки
+        if (!!initialIsBooked) {
+            setInviteError(null);
+        }
     }, [session.id, initialIsBooked]);
 
     useEffect(() => {
@@ -224,6 +242,7 @@ export default function SessionCard({
         return session.session_bookings?.find((b: any) => b.user_id === userId) || null;
     }, [session.session_bookings, userId]);
 
+    // у тебя в select сейчас нет invite_sent_at, поэтому это почти всегда null
     const inviteSentAt = myBooking?.invite_sent_at || null;
 
     const canDownloadIcs = useMemo(() => {
@@ -242,6 +261,7 @@ export default function SessionCard({
         const duration = Math.max(1, Number(session.duration_minutes || 60));
         const end = new Date(start.getTime() + duration * 60 * 1000);
 
+        // fallback uid (не stable, но для ручного файла ок)
         const uid = `${session.id}-${userId || "user"}@mysession`;
         const ics = buildClientIcs({
             uid,
@@ -255,15 +275,74 @@ export default function SessionCard({
         downloadTextFile("mysession-invite.ics", ics, "text/calendar");
     };
 
+    const sendInvite = async (bookingId: string) => {
+        // отправляем только для scheduled (не infinite)
+        if (isInfinite) return;
+        if (!userEmail) throw new Error("No user email (cannot send invite)");
+        if (!session?.start_time) throw new Error("No start_time");
+        if (!bookingId) throw new Error("No bookingId");
+
+        const start = new Date(session.start_time);
+        if (Number.isNaN(start.getTime())) throw new Error("Invalid start_time");
+        const duration = Math.max(1, Number(session.duration_minutes || 60));
+        const end = new Date(start.getTime() + duration * 60 * 1000);
+
+        const payload = {
+            attendeeEmail: userEmail,
+            attendeeName: userName || undefined,
+            sessionTitle: `MySession — ${session.title}`,
+            sessionDescription: `Join link: ${joinUrl}`,
+            startIso: start.toISOString(),
+            endIso: end.toISOString(),
+            joinUrl,
+            bookingId,
+        };
+
+        const resp = await fetch("/api/send-session-invite", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+
+        let json: any = null;
+        try {
+            json = await resp.json();
+        } catch {
+            // ignore
+        }
+
+        if (!resp.ok || !json?.ok) {
+            const msg = json?.error || `Invite failed (${resp.status})`;
+            throw new Error(msg);
+        }
+
+        return json;
+    };
+
     const handleBookSession = async () => {
         if (isBookingLoading) return;
         setIsBookingLoading(true);
 
         try {
-            await Promise.resolve(onBook(session.id));
+            setInviteStatus("idle");
+            setInviteError(null);
+
+            // onBook MUST return {id} from DB (booking row)
+            const bookingRes = await Promise.resolve(onBook(session.id));
+            const bookingId = bookingRes?.id || bookingRes?.data?.id || null;
+
             setIsBookingConfirmed(true);
             setIsHoveringBook(false);
-            // invite отправит сервер (если onBook дергает /api/book-session)
+
+            // ✅ now реально отправляем invite
+            try {
+                setInviteStatus("sending");
+                await sendInvite(String(bookingId || ""));
+                setInviteStatus("sent");
+            } catch (e: any) {
+                setInviteStatus("error");
+                setInviteError(e?.message || "Invite error");
+            }
         } finally {
             setIsBookingLoading(false);
         }
@@ -277,6 +356,8 @@ export default function SessionCard({
             await Promise.resolve(onCancelBooking(session.id));
             setIsBookingConfirmed(false);
             setIsHoveringCancel(false);
+            setInviteStatus("idle");
+            setInviteError(null);
         } finally {
             setIsCancelLoading(false);
         }
@@ -359,14 +440,14 @@ export default function SessionCard({
         if (!isBookingConfirmed) return null;
 
         if (isInfinite) {
-            return (
-                <div className="text-[11px] text-[#606060]">
-                    Calendar invites are available for scheduled sessions only.
-                </div>
-            );
+            return <div className="text-[11px] text-[#606060]">Calendar invites are available for scheduled sessions only.</div>;
         }
 
-        if (inviteSentAt) {
+        if (inviteStatus === "sending") {
+            return <div className="text-[11px] text-[#606060]">Sending calendar invite…</div>;
+        }
+
+        if (inviteStatus === "sent" || inviteSentAt) {
             return (
                 <div className="text-[11px] text-[#15803D]">
                     Calendar invite sent (check email).{" "}
@@ -379,6 +460,24 @@ export default function SessionCard({
                         title="Download .ics (fallback)"
                     >
                         Download .ics
+                    </button>
+                </div>
+            );
+        }
+
+        if (inviteStatus === "error") {
+            return (
+                <div className="text-[11px] text-[#B91C1C] flex flex-wrap items-center gap-2">
+                    <span>Invite failed: {inviteError || "Unknown error"}.</span>
+                    <button
+                        type="button"
+                        onClick={handleDownloadIcs}
+                        className={`underline underline-offset-2 hover:opacity-80 ${canDownloadIcs ? "" : "opacity-40 cursor-not-allowed"
+                            }`}
+                        disabled={!canDownloadIcs}
+                        title="Download .ics (fallback)"
+                    >
+                        Add to calendar (.ics)
                     </button>
                 </div>
             );
