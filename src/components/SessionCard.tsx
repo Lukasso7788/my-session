@@ -263,6 +263,7 @@ export default function SessionCard({
     const [isHoveringCancel, setIsHoveringCancel] = useState(false);
     const [isHoveringBook, setIsHoveringBook] = useState(false);
     const [isHoveringJoinIframe, setIsHoveringJoinIframe] = useState(false);
+    const [isHoveringEdit, setIsHoveringEdit] = useState(false);
     const [isHoveringCard, setIsHoveringCard] = useState(false);
 
     const CANCEL_HOVER_DELAY_MS = 120;
@@ -472,6 +473,9 @@ export default function SessionCard({
     const canCancelBooking = !!isBookingConfirmed;
     const canCancelSession = isHost;
 
+    // ✅ show inline edit button (between Join and "…")
+    const showInlineEdit = canEdit;
+
     return (
         <>
             <div
@@ -526,16 +530,16 @@ export default function SessionCard({
                             </div>
                         </div>
 
-                        {/* ✅ HERE: immediately after the info block */}
+                        {/* ✅ FIX 2.2: "People booked" in ONE line */}
                         <button
                             type="button"
                             onClick={() => setIsBookersModalOpen(true)}
                             className="mt-1 inline-flex items-center gap-3 hover:opacity-80 transition text-left"
                         >
                             {bookedCount === 0 ? (
-                                <div className="text-[12px] text-[#606060]">Be the first to book</div>
+                                <div className="text-[12px] text-[#606060]">No bookings yet — be the first</div>
                             ) : (
-                                <div className="flex items-center">
+                                <>
                                     <div className="flex items-center">
                                         {stackUsers.map((u, idx) => (
                                             <div
@@ -559,11 +563,10 @@ export default function SessionCard({
                                         )}
                                     </div>
 
-                                    <div className="ml-3 flex flex-col leading-tight">
-                                        <div className="text-[12px] font-semibold text-[#111827]">People who booked this session</div>
-                                        <div className="text-[11px] text-[#606060]">{bookedCount} booked</div>
+                                    <div className="text-[12px] font-semibold text-[#111827]">
+                                        People booked: <span className="font-bold">{bookedCount}</span>
                                     </div>
-                                </div>
+                                </>
                             )}
                         </button>
                     </div>
@@ -604,6 +607,31 @@ export default function SessionCard({
                         Join session
                     </button>
 
+                    {/* ✅ FIX 2.1: visible Edit button (between Join and "...") */}
+                    {showInlineEdit && (
+                        <button
+                            type="button"
+                            onClick={() => setIsEditModalOpen(true)}
+                            onMouseEnter={() => setIsHoveringEdit(true)}
+                            onMouseLeave={() => setIsHoveringEdit(false)}
+                            className="
+                h-12 rounded-full px-6 text-[14px] font-semibold
+                flex items-center justify-center gap-2
+                transition-all duration-200 ease-in-out
+                w-full xl:w-auto
+                border
+              "
+                            style={{
+                                borderColor: isHoveringEdit ? "#111827" : "#E5E7EB",
+                                color: "#111827",
+                                backgroundColor: isHoveringEdit ? "#F3F4F6" : "white",
+                            }}
+                        >
+                            <IconEdit />
+                            Edit
+                        </button>
+                    )}
+
                     {/* options */}
                     <div ref={optionsRef} className="relative w-full xl:w-auto">
                         <button
@@ -641,17 +669,7 @@ export default function SessionCard({
                                 </div>
 
                                 <div className="p-2 flex flex-col gap-1">
-                                    {canEdit && (
-                                        <MenuItem
-                                            icon={<IconEdit />}
-                                            label="Edit session"
-                                            onClick={() => {
-                                                setIsOptionsOpen(false);
-                                                setIsEditModalOpen(true);
-                                            }}
-                                        />
-                                    )}
-
+                                    {/* Edit is now visible inline; don't duplicate in menu */}
                                     {canInvite && (
                                         <MenuItem
                                             icon={<IconInvite />}
@@ -687,7 +705,7 @@ export default function SessionCard({
                                         />
                                     )}
 
-                                    {!canEdit && !canInvite && !canCancelBooking && !canCancelSession && (
+                                    {!canInvite && !canCancelBooking && !canCancelSession && (
                                         <div className="px-3 py-2 text-[12px] text-[#606060]">No actions available</div>
                                     )}
                                 </div>

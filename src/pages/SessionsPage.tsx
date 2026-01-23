@@ -11,6 +11,18 @@ import { useCreateSessionModal } from "../context/CreateSessionModalContext";
 import { useAuth } from "../context/AuthContext";
 import type { Session } from "../types/session";
 
+type BookingProfile = {
+  id: string;
+  full_name?: string | null;
+  avatar_url?: string | null;
+  email?: string | null;
+};
+
+type SessionBookingRow = {
+  user_id: string;
+  profiles?: BookingProfile | null;
+};
+
 type SessionWithRelations = Session & {
   host_id?: string;
   host_name?: string;
@@ -23,11 +35,14 @@ type SessionWithRelations = Session & {
   session_format_type?: "group" | "infinite" | "body" | string;
   is_silent?: boolean;
 
+  // ✅ NEW: limit (используется в Edit UI)
+  max_participants?: number | null;
+
   // ✅ fallback for older rows
   schedule?: any;
 
-  // ✅ booking UI
-  session_bookings?: { user_id: string }[];
+  // ✅ booking UI (now with joined profiles)
+  session_bookings?: SessionBookingRow[];
 
   // ✅ ONLINE NOW (from DB, not history)
   live_count?: number;
@@ -269,6 +284,11 @@ export function SessionsPage() {
   >("group");
   const [dateFilter, setDateFilter] = useState<string | null>(null);
 
+  // ✅ NEW: current user profile (for instant avatar/name on booking)
+  const [currentProfile, setCurrentProfile] = useState<BookingProfile | null>(
+    null
+  );
+
   // ✅ NEW: How it works modal
   const [howItWorksOpen, setHowItWorksOpen] = useState(false);
 
@@ -292,6 +312,36 @@ export function SessionsPage() {
       if (DEBUG) console.log("[DEBUG Sessions] Tab from query:", tab);
     }
   }, [searchParams]);
+
+  // ✅ Load current user profile (best effort)
+  useEffect(() => {
+    const run = async () => {
+      if (!user?.id) {
+        setCurrentProfile(null);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("id, full_name, avatar_url, email")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (error) throw error;
+        setCurrentProfile((data as any) || null);
+      } catch (e) {
+        if (DEBUG)
+          console.warn(
+            "[DEBUG Sessions] profile load failed (ok if no profiles yet):",
+            e
+          );
+        setCurrentProfile(null);
+      }
+    };
+
+    run();
+  }, [user?.id]);
 
   // ✅ ONLINE NOW: fetch live counts from DB (cheap)
   const fetchLiveCounts = useCallback(async (sessionIds: string[]) => {
@@ -328,9 +378,11 @@ export function SessionsPage() {
     try {
       setIsLoading(true);
 
+      // ✅ IMPORTANT: pull bookers profiles (avatars/names)
       const { data, error } = await supabase
         .from("sessions")
-        .select(`
+        .select(
+          `
           id,
           title,
           host_id,
@@ -342,8 +394,18 @@ export function SessionsPage() {
           schedule,
           session_format_type,
           is_silent,
-          session_bookings ( user_id )
-        `)
+          max_participants,
+          session_bookings (
+            user_id,
+            profiles:profiles (
+              id,
+              full_name,
+              avatar_url,
+              email
+            )
+          )
+        `
+        )
         .order("start_time", { ascending: true });
 
       if (error) {
@@ -351,7 +413,7 @@ export function SessionsPage() {
         throw error;
       }
 
-      const rows = (data || []) as SessionWithRelations[];
+      const rows = (data || []) as unknown as SessionWithRelations[];
 
       if (DEBUG) console.log("[DEBUG Sessions] Loaded:", rows);
 
@@ -438,11 +500,13 @@ export function SessionsPage() {
     if (!user) return navigate("/login");
 
     try {
-      await supabase.from("session_bookings").insert({
+      const { error } = await supabase.from("session_bookings").insert({
         session_id: id,
         user_id: user.id,
       });
-      fetchSessions();
+      if (error) throw error;
+
+      await fetchSessions();
     } catch (err) {
       console.error("[DEBUG Sessions] Booking error:", err);
     }
@@ -452,13 +516,15 @@ export function SessionsPage() {
     if (!user) return navigate("/login");
 
     try {
-      await supabase
+      const { error } = await supabase
         .from("session_bookings")
         .delete()
         .eq("session_id", id)
         .eq("user_id", user.id);
 
-      fetchSessions();
+      if (error) throw error;
+
+      await fetchSessions();
     } catch (err) {
       console.error("[DEBUG Sessions] Cancel error:", err);
     }
@@ -468,11 +534,56 @@ export function SessionsPage() {
     if (!user) return navigate("/login");
 
     try {
-      await supabase.from("sessions").delete().eq("id", id);
+      const { error } = await supabase.from("sessions").delete().eq("id", id);
+      if (error) throw error;
+
       setSessions((prev) => prev.filter((s) => s.id !== id));
     } catch (err) {
       console.error("[DEBUG Sessions] Delete error:", err);
     }
+  };
+
+  // ✅ Edit handler (needed so Edit реально менял сессию в Supabase)
+  const editSession = async (
+    sessionId: string,
+    updates: { title?: string; start_time?: string; max_participants?: number | null }
+  ) => {
+    if (!user) return navigate("/login");
+    if (!updates || Object.keys(updates).length === 0) return;
+
+    try {
+      const { error } = await supabase.from("sessions").update(updates).eq("id", sessionId);
+      if (error) throw error;
+
+      await fetchSessions();
+    } catch (err) {
+      console.error("[DEBUG Sessions] Edit session error:", err);
+      throw err;
+    }
+  };
+
+  // ✅ Invite (simple mailto fallback)
+  const inviteToSession = async (
+    sessionId: string,
+    payload: { email: string; message?: string }
+  ) => {
+    const email = (payload?.email || "").trim();
+    if (!email) return;
+
+    const s = sessions.find((x) => x.id === sessionId);
+    const title = s?.title || "MySession";
+    const when = s?.start_time ? new Date(s.start_time).toLocaleString() : "";
+    const link = `${window.location.origin}/room-iframe/${sessionId}`;
+
+    const subject = encodeURIComponent(`Invitation: ${title}`);
+    const body = encodeURIComponent(
+      `${payload?.message ? payload.message + "\n\n" : ""}` +
+      `Join this session on MySession:\n${title}\n` +
+      `${when ? `When: ${when}\n` : ""}` +
+      `Link: ${link}\n`
+    );
+
+    window.location.href = `mailto:${encodeURIComponent(email)}?subject=${subject}&body=${body}`;
   };
 
   return (
@@ -549,10 +660,25 @@ export function SessionsPage() {
                     key={s.id}
                     session={s}
                     userId={user?.id}
+                    currentUser={
+                      user?.id
+                        ? {
+                          id: user.id,
+                          full_name: currentProfile?.full_name || undefined,
+                          avatar_url: currentProfile?.avatar_url || undefined,
+                          email:
+                            (currentProfile?.email ||
+                              (user as any)?.email ||
+                              undefined) as any,
+                        }
+                        : undefined
+                    }
                     onJoin={join}
                     onBook={book}
                     onCancelBooking={cancel}
                     onDelete={remove}
+                    onEditSession={editSession}
+                    onInviteToSession={inviteToSession}
                   />
                 ))}
               </div>
