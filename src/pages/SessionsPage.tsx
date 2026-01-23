@@ -480,8 +480,8 @@ export function SessionsPage() {
                     key={s.id}
                     session={s}
                     userId={user?.id}
-                    userEmail={userEmail}
-                    userName={userName}
+                    userEmail={user?.email || undefined}
+                    userName={user?.user_metadata?.full_name || user?.user_metadata?.name || undefined}
                     onJoin={join}
                     onBook={book}
                     onCancelBooking={cancel}
