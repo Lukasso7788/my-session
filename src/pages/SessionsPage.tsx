@@ -11,18 +11,6 @@ import { useCreateSessionModal } from "../context/CreateSessionModalContext";
 import { useAuth } from "../context/AuthContext";
 import type { Session } from "../types/session";
 
-type BookingProfile = {
-  id: string;
-  full_name?: string | null;
-  avatar_url?: string | null;
-  email?: string | null;
-};
-
-type SessionBookingRow = {
-  user_id: string;
-  profiles?: BookingProfile | null; // ✅ joined profile
-};
-
 type SessionWithRelations = Session & {
   host_id?: string;
   host_name?: string;
@@ -35,14 +23,11 @@ type SessionWithRelations = Session & {
   session_format_type?: "group" | "infinite" | "body" | string;
   is_silent?: boolean;
 
-  // ✅ participants limit
-  max_participants?: number | null;
-
   // ✅ fallback for older rows
   schedule?: any;
 
-  // ✅ booking UI + real profiles
-  session_bookings?: SessionBookingRow[];
+  // ✅ booking UI
+  session_bookings?: { user_id: string }[];
 
   // ✅ ONLINE NOW (from DB, not history)
   live_count?: number;
@@ -74,20 +59,26 @@ function isInfiniteBySchedule(s: SessionWithRelations) {
   const sch = safeParseSchedule((s as any)?.schedule);
   if (!sch || typeof sch !== "object") return false;
 
+  // самый надёжный маркер старого infinite
   if ((sch as any)?.kind === "infinite_room") return true;
+
+  // если раньше infinite был объектом (а group — массивом)
   if (!Array.isArray(sch) && (sch as any)?.timer?.phases) return true;
 
   return false;
 }
 
 // ✅ главный резолвер типа (с fallback)
-function resolveSessionType(s: SessionWithRelations): "group" | "infinite" | "body" {
+function resolveSessionType(
+  s: SessionWithRelations
+): "group" | "infinite" | "body" {
   const t = String(s.session_format_type || "").toLowerCase();
 
   if (t === "infinite") return "infinite";
   if (t === "body") return "body";
   if (t === "group") return "group";
 
+  // fallback: если колонка ещё не проставлена
   if (isInfiniteBySchedule(s)) return "infinite";
   if (String(s.format || "").toLowerCase() === "body") return "body";
 
@@ -98,23 +89,66 @@ function resolveSessionType(s: SessionWithRelations): "group" | "infinite" | "bo
 // UI: Infinite intro card
 // =====================
 function InfinityIcon({ className = "w-5 h-5" }: { className?: string }) {
-  return <img src="/icons/infinite.svg" className={className} alt="" draggable={false} />;
+  return (
+    <img
+      src="/icons/infinite.svg"
+      className={className}
+      alt=""
+      draggable={false}
+    />
+  );
 }
 
 function ClockIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
-  return <img src="/icons/always-open.svg" className={className} alt="" draggable={false} />;
+  return (
+    <img
+      src="/icons/always-open.svg"
+      className={className}
+      alt=""
+      draggable={false}
+    />
+  );
 }
 
 function EyeIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
-  return <img src="/icons/stay-accountable.svg" className={className} alt="" draggable={false} />;
+  return (
+    <img
+      src="/icons/stay-accountable.svg"
+      className={className}
+      alt=""
+      draggable={false}
+    />
+  );
 }
 
-function WorkflowIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
-  return <img src="/icons/structured-flow.svg" className={className} alt="" draggable={false} />;
+function WorkflowIcon({
+  className = "w-[27px] h-[27px]",
+}: {
+  className?: string;
+}) {
+  return (
+    <img
+      src="/icons/structured-flow.svg"
+      className={className}
+      alt=""
+      draggable={false}
+    />
+  );
 }
 
-function RocketIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
-  return <img src="/icons/keep-momentum.svg" className={className} alt="" draggable={false} />;
+function RocketIcon({
+  className = "w-[27px] h-[27px]",
+}: {
+  className?: string;
+}) {
+  return (
+    <img
+      src="/icons/keep-momentum.svg"
+      className={className}
+      alt=""
+      draggable={false}
+    />
+  );
 }
 
 type Feature = {
@@ -127,17 +161,43 @@ type Feature = {
 
 function InfiniteRoomsIntroCard() {
   const features: Feature[] = [
-    { title: "Always Open", subtitle: "24/7 Access", color: "#5286F6", bg20: "#5286F633", Icon: ClockIcon },
-    { title: "Stay accountable", subtitle: "With others", color: "#65D46C", bg20: "#65D46C33", Icon: EyeIcon },
-    { title: "Structured Flow", subtitle: "Built-in Workflow", color: "#F65252", bg20: "#F6525233", Icon: WorkflowIcon },
-    { title: "Keep momentum", subtitle: "Day & Night", color: "#5286F6", bg20: "#5286F633", Icon: RocketIcon },
+    {
+      title: "Always Open",
+      subtitle: "24/7 Access",
+      color: "#5286F6",
+      bg20: "#5286F633",
+      Icon: ClockIcon,
+    },
+    {
+      title: "Stay accountable",
+      subtitle: "With others",
+      color: "#65D46C",
+      bg20: "#65D46C33",
+      Icon: EyeIcon,
+    },
+    {
+      title: "Structured Flow",
+      subtitle: "Built-in Workflow",
+      color: "#F65252",
+      bg20: "#F6525233",
+      Icon: WorkflowIcon,
+    },
+    {
+      title: "Keep momentum",
+      subtitle: "Day & Night",
+      color: "#5286F6",
+      bg20: "#5286F633",
+      Icon: RocketIcon,
+    },
   ];
 
   return (
     <div className="w-full flex justify-center">
       <div className="w-full max-w-[980px]">
+        {/* ✅ mobile padding + spacing tightened */}
         <div className="border border-[#DBD8D8] rounded-[24px] bg-white px-5 py-5 sm:px-8 sm:py-6 flex flex-col gap-6 sm:gap-8">
           <div className="flex items-center justify-center gap-[10px]">
+            {/* ✅ a bit smaller on mobile */}
             <div className="p-3 sm:p-4 rounded-[20px] bg-[#111827] text-white inline-flex items-center justify-center">
               <InfinityIcon className="w-5 h-5" />
             </div>
@@ -147,19 +207,29 @@ function InfiniteRoomsIntroCard() {
             </h2>
           </div>
 
+          {/* ✅ text smaller on mobile */}
           <p className="font-inter font-light text-[14px] sm:text-[16px] leading-[160%] text-brandBlack text-center max-w-[860px] mx-auto">
-            24/7 Infinite Rooms are always open, giving you a structured space to focus whenever inspiration strikes.
-            Join at any time, follow the built-in workflow (Pomodoro or Deep Work), stay accountable with others, and
-            keep your momentum going — day or night.
+            24/7 Infinite Rooms are always open, giving you a structured space to
+            focus whenever inspiration strikes. Join at any time, follow the
+            built-in workflow (Pomodoro or Deep Work), stay accountable with
+            others, and keep your momentum going — day or night.
           </p>
 
           <div className="w-full flex justify-center">
+            {/* ✅ gaps smaller on mobile */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-5 sm:gap-8">
               {features.map((f) => (
-                <div key={f.title} className="flex items-center gap-3 sm:gap-4 min-w-0">
+                <div
+                  key={f.title}
+                  className="flex items-center gap-3 sm:gap-4 min-w-0"
+                >
+                  {/* ✅ HARD FIX: prevent shrink + fixed size box so icon is always visible */}
                   <div
                     className="shrink-0 border rounded-[13.5px] inline-flex items-center justify-center w-[44px] h-[44px] sm:w-[54px] sm:h-[54px]"
-                    style={{ borderColor: f.color, backgroundColor: f.bg20 }}
+                    style={{
+                      borderColor: f.color,
+                      backgroundColor: f.bg20,
+                    }}
                   >
                     <f.Icon className="w-5 h-5 sm:w-[27px] sm:h-[27px]" />
                   </div>
@@ -178,6 +248,7 @@ function InfiniteRoomsIntroCard() {
           </div>
         </div>
 
+        {/* distance to switcher: 48px */}
         <div className="h-12" />
       </div>
     </div>
@@ -193,11 +264,10 @@ export function SessionsPage() {
   const [sessions, setSessions] = useState<SessionWithRelations[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const [sessionTypeTab, setSessionTypeTab] = useState<"group" | "infinite" | "body">("group");
+  const [sessionTypeTab, setSessionTypeTab] = useState<
+    "group" | "infinite" | "body"
+  >("group");
   const [dateFilter, setDateFilter] = useState<string | null>(null);
-
-  // ✅ NEW: current user profile (for instant avatar/name on booking, optional)
-  const [currentProfile, setCurrentProfile] = useState<BookingProfile | null>(null);
 
   // ✅ NEW: How it works modal
   const [howItWorksOpen, setHowItWorksOpen] = useState(false);
@@ -223,30 +293,6 @@ export function SessionsPage() {
     }
   }, [searchParams]);
 
-  // ✅ Load current user profile (best-effort; works if profiles table exists)
-  useEffect(() => {
-    const run = async () => {
-      if (!user?.id) {
-        setCurrentProfile(null);
-        return;
-      }
-      try {
-        const { data, error } = await supabase
-          .from("profiles")
-          .select("id, full_name, avatar_url, email")
-          .eq("id", user.id)
-          .maybeSingle();
-
-        if (error) throw error;
-        setCurrentProfile((data as any) || null);
-      } catch (e) {
-        if (DEBUG) console.warn("[DEBUG Sessions] profile load failed (ok if no profiles yet):", e);
-        setCurrentProfile(null);
-      }
-    };
-    run();
-  }, [user?.id]);
-
   // ✅ ONLINE NOW: fetch live counts from DB (cheap)
   const fetchLiveCounts = useCallback(async (sessionIds: string[]) => {
     if (!sessionIds.length) return;
@@ -254,6 +300,7 @@ export function SessionsPage() {
     try {
       const { data, error } = await supabase.rpc("get_live_counts", {
         p_session_ids: sessionIds,
+        // p_ttl_seconds: 40, // optional
       });
 
       if (error) throw error;
@@ -283,8 +330,7 @@ export function SessionsPage() {
 
       const { data, error } = await supabase
         .from("sessions")
-        .select(
-          `
+        .select(`
           id,
           title,
           host_id,
@@ -296,18 +342,8 @@ export function SessionsPage() {
           schedule,
           session_format_type,
           is_silent,
-          max_participants,
-          session_bookings (
-            user_id,
-            profiles:profiles (
-              id,
-              full_name,
-              avatar_url,
-              email
-            )
-          )
-        `
-        )
+          session_bookings ( user_id )
+        `)
         .order("start_time", { ascending: true });
 
       if (error) {
@@ -315,7 +351,7 @@ export function SessionsPage() {
         throw error;
       }
 
-      const rows = (data || []) as unknown as SessionWithRelations[];
+      const rows = (data || []) as SessionWithRelations[];
 
       if (DEBUG) console.log("[DEBUG Sessions] Loaded:", rows);
 
@@ -341,7 +377,10 @@ export function SessionsPage() {
   }, [modal, fetchSessions]);
 
   // ✅ Poll ONLY live counts every 10s (cheap)
-  const sessionIds = useMemo(() => sessions.map((s) => s.id).filter(Boolean), [sessions]);
+  const sessionIds = useMemo(
+    () => sessions.map((s) => s.id).filter(Boolean),
+    [sessions]
+  );
 
   useEffect(() => {
     const t = window.setInterval(() => {
@@ -355,6 +394,7 @@ export function SessionsPage() {
   const isExpired = (s: SessionWithRelations) => {
     const type = resolveSessionType(s);
 
+    // ✅ Infinite rooms never expire
     if (type === "infinite") return false;
 
     if (!s.start_time) return false;
@@ -364,15 +404,21 @@ export function SessionsPage() {
     return Date.now() > new Date(s.start_time).getTime() + dur * 60_000;
   };
 
-  const activeSessions = useMemo(() => sessions.filter((s) => !isExpired(s)), [sessions]);
+  const activeSessions = useMemo(
+    () => sessions.filter((s) => !isExpired(s)),
+    [sessions]
+  );
 
   const typeFilteredSessions = useMemo(() => {
-    return activeSessions.filter((s) => resolveSessionType(s) === sessionTypeTab);
+    return activeSessions.filter(
+      (s) => resolveSessionType(s) === sessionTypeTab
+    );
   }, [sessionTypeTab, activeSessions]);
 
   // ✅ Date filtering (only for group/body; infinite ignores date filter)
   const visibleSessions = useMemo(() => {
     if (sessionTypeTab === "infinite") return typeFilteredSessions;
+
     if (!dateFilter) return typeFilteredSessions;
 
     return typeFilteredSessions.filter((s) => {
@@ -392,17 +438,13 @@ export function SessionsPage() {
     if (!user) return navigate("/login");
 
     try {
-      const { error } = await supabase.from("session_bookings").insert({
+      await supabase.from("session_bookings").insert({
         session_id: id,
         user_id: user.id,
       });
-
-      if (error) throw error;
-
-      await fetchSessions();
+      fetchSessions();
     } catch (err) {
       console.error("[DEBUG Sessions] Booking error:", err);
-      // (опционально) можно показать toast позже
     }
   };
 
@@ -410,15 +452,13 @@ export function SessionsPage() {
     if (!user) return navigate("/login");
 
     try {
-      const { error } = await supabase
+      await supabase
         .from("session_bookings")
         .delete()
         .eq("session_id", id)
         .eq("user_id", user.id);
 
-      if (error) throw error;
-
-      await fetchSessions();
+      fetchSessions();
     } catch (err) {
       console.error("[DEBUG Sessions] Cancel error:", err);
     }
@@ -428,61 +468,24 @@ export function SessionsPage() {
     if (!user) return navigate("/login");
 
     try {
-      const { error } = await supabase.from("sessions").delete().eq("id", id);
-      if (error) throw error;
-
+      await supabase.from("sessions").delete().eq("id", id);
       setSessions((prev) => prev.filter((s) => s.id !== id));
     } catch (err) {
       console.error("[DEBUG Sessions] Delete error:", err);
     }
   };
 
-  // ✅ NEW: real Supabase-sync edit
-  const editSession = async (
-    sessionId: string,
-    updates: { title?: string; start_time?: string; max_participants?: number | null }
-  ) => {
-    if (!user) return navigate("/login");
-    if (!updates || Object.keys(updates).length === 0) return;
-
-    try {
-      const { error } = await supabase.from("sessions").update(updates).eq("id", sessionId);
-      if (error) throw error;
-
-      await fetchSessions();
-    } catch (err) {
-      console.error("[DEBUG Sessions] Edit session error:", err);
-      throw err;
-    }
-  };
-
-  // ✅ NEW: invite (simple mailto fallback; no backend needed)
-  const inviteToSession = async (sessionId: string, payload: { email: string; message?: string }) => {
-    const email = (payload?.email || "").trim();
-    if (!email) return;
-
-    const s = sessions.find((x) => x.id === sessionId);
-    const title = s?.title || "MySession";
-    const when = s?.start_time ? new Date(s.start_time).toLocaleString() : "";
-    const link = `${window.location.origin}/room-iframe/${sessionId}`;
-
-    const subject = encodeURIComponent(`Invitation: ${title}`);
-    const body = encodeURIComponent(
-      `${payload?.message ? payload.message + "\n\n" : ""}` +
-      `Join this session on MySession:\n${title}\n${when ? `When: ${when}\n` : ""}` +
-      `Link: ${link}\n`
-    );
-
-    window.location.href = `mailto:${encodeURIComponent(email)}?subject=${subject}&body=${body}`;
-  };
-
   return (
     <div className="min-h-screen bg-white text-brandBlack font-inter">
       <main className="w-full px-3 md:px-6 lg:px-10 pb-12">
+        {/* ✅ FIX: уменьшаем вертикальный отступ сверху ТОЛЬКО на Infinite tab */}
         <div
-          className={`text-center ${sessionTypeTab === "infinite" ? "pt-[56px] pb-[18px]" : "pt-[100px] pb-[50px]"
+          className={`text-center ${sessionTypeTab === "infinite"
+              ? "pt-[56px] pb-[18px]"
+              : "pt-[100px] pb-[50px]"
             }`}
         >
+          {/* ✅ Убираем большой заголовок только для infinite */}
           {sessionTypeTab !== "infinite" && (
             <h1 className="text-[24px] md:text-[28px] xl:text-[36px] font-normal leading-tight mx-auto">
               Join a focus session to stay accountable
@@ -491,6 +494,7 @@ export function SessionsPage() {
         </div>
 
         <div className="w-full">
+          {/* ✅ Infinite rooms intro block (above switcher) */}
           {sessionTypeTab === "infinite" && <InfiniteRoomsIntroCard />}
 
           <div className="w-full flex justify-center mb-[55px]">
@@ -498,6 +502,8 @@ export function SessionsPage() {
               value={sessionTypeTab}
               onChange={(v) => {
                 setSessionTypeTab(v);
+
+                // чтобы не было "почему всё пропало" из-за старого dateFilter
                 if (v === "infinite") setDateFilter(null);
               }}
             />
@@ -505,7 +511,11 @@ export function SessionsPage() {
 
           {sessionTypeTab !== "infinite" && (
             <div className="mb-6 w-full">
-              <SessionsDateFilter value={dateFilter} onChange={setDateFilter} weeksAhead={3} />
+              <SessionsDateFilter
+                value={dateFilter}
+                onChange={setDateFilter}
+                weeksAhead={3}
+              />
             </div>
           )}
 
@@ -518,11 +528,16 @@ export function SessionsPage() {
               <div className="p-2 text-center">
                 <p className="text-sm text-slate-600 mb-4">
                   No active sessions{" "}
-                  {dateFilter && sessionTypeTab !== "infinite" ? "for this date" : "available"}
+                  {dateFilter && sessionTypeTab !== "infinite"
+                    ? "for this date"
+                    : "available"}
                 </p>
 
                 {user && (
-                  <button onClick={() => modal.open()} className="text-sm underline underline-offset-4">
+                  <button
+                    onClick={() => modal.open()}
+                    className="text-sm underline underline-offset-4"
+                  >
                     Create the first session
                   </button>
                 )}
@@ -534,22 +549,10 @@ export function SessionsPage() {
                     key={s.id}
                     session={s}
                     userId={user?.id}
-                    currentUser={
-                      user?.id
-                        ? {
-                          id: user.id,
-                          full_name: currentProfile?.full_name || undefined,
-                          avatar_url: currentProfile?.avatar_url || undefined,
-                          email: (currentProfile?.email || (user as any)?.email || undefined) as any,
-                        }
-                        : undefined
-                    }
                     onJoin={join}
                     onBook={book}
                     onCancelBooking={cancel}
                     onDelete={remove}
-                    onEditSession={editSession}
-                    onInviteToSession={inviteToSession}
                   />
                 ))}
               </div>
@@ -577,8 +580,14 @@ export function SessionsPage() {
         aria-label="How it works"
         title="How it works"
       >
+        {/* inline icon */}
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-          <path d="M12 18h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <path
+            d="M12 18h.01"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
           <path
             d="M9.09 9a3 3 0 1 1 4.82 2.33c-.66.49-1.41 1.08-1.41 2.17V14"
             stroke="currentColor"
@@ -600,8 +609,13 @@ export function SessionsPage() {
          ============================ */}
       {howItWorksOpen && (
         <div className="fixed inset-0 z-[70]">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setHowItWorksOpen(false)} />
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setHowItWorksOpen(false)}
+          />
 
+          {/* Modal panel */}
           <div className="absolute inset-0 flex items-center justify-center p-4">
             <div
               className="
@@ -616,6 +630,7 @@ export function SessionsPage() {
               aria-modal="true"
               aria-label="How it works"
             >
+              {/* Header */}
               <div className="px-6 py-5 sm:px-8 sm:py-6 flex items-start justify-between gap-4 border-b border-[#ECECEC]">
                 <div className="min-w-0">
                   <h3 className="text-[18px] sm:text-[20px] font-semibold text-[#111827]">
@@ -642,41 +657,67 @@ export function SessionsPage() {
                   title="Close"
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                    <path d="M18 6 6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    <path
+                      d="M18 6 6 18M6 6l12 12"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                    />
                   </svg>
                 </button>
               </div>
 
+              {/* Body */}
               <div className="px-6 py-6 sm:px-8 sm:py-8 max-h-[75vh] overflow-auto">
+                {/* Steps */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827] mb-3">1) Choose a session</div>
+                    <div className="text-[13px] font-semibold text-[#111827] mb-3">
+                      1) Choose a session
+                    </div>
                     <ul className="text-[13px] text-[#111827]/80 leading-relaxed list-disc pl-5 space-y-2">
                       <li>
-                        Pick a tab: <b>Group</b>, <b>Infinite</b> (24/7), or <b>Body doubling</b>.
+                        Pick a tab: <b>Group</b>, <b>Infinite</b> (24/7), or{" "}
+                        <b>Body doubling</b>.
                       </li>
-                      <li>Group/Body sessions are scheduled (date/time). Infinite rooms are always open.</li>
                       <li>
-                        You can <b>Book session</b> (optional) to save it — or just join.
+                        Group/Body sessions are scheduled (date/time). Infinite
+                        rooms are always open.
+                      </li>
+                      <li>
+                        You can <b>Book session</b> (optional) to save it — or
+                        just join.
                       </li>
                     </ul>
                   </div>
 
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827] mb-3">2) Join & set up</div>
+                    <div className="text-[13px] font-semibold text-[#111827] mb-3">
+                      2) Join & set up
+                    </div>
                     <ul className="text-[13px] text-[#111827]/80 leading-relaxed list-disc pl-5 space-y-2">
                       <li>
                         Click <b>Join session</b>.
                       </li>
-                      <li>Turn mic/cam on/off as you prefer. Screen-share is optional.</li>
-                      <li>You’ll see the session flow: timer/stages (depending on room type).</li>
+                      <li>
+                        Turn mic/cam on/off as you prefer. Screen-share is
+                        optional.
+                      </li>
+                      <li>
+                        You’ll see the session flow: timer/stages (depending on
+                        room type).
+                      </li>
                     </ul>
                   </div>
 
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827] mb-3">3) Follow the workflow</div>
+                    <div className="text-[13px] font-semibold text-[#111827] mb-3">
+                      3) Follow the workflow
+                    </div>
                     <ul className="text-[13px] text-[#111827]/80 leading-relaxed list-disc pl-5 space-y-2">
-                      <li>Use stage prompts to stay aligned (check-in / intentions).</li>
+                      <li>
+                        Use stage prompts to stay aligned (check-in / intentions).
+                      </li>
                       <li>
                         During <b>Focus</b>, work silently or lightly co-work.
                       </li>
@@ -687,17 +728,27 @@ export function SessionsPage() {
                   </div>
 
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827] mb-3">4) Finish & leave</div>
+                    <div className="text-[13px] font-semibold text-[#111827] mb-3">
+                      4) Finish & leave
+                    </div>
                     <ul className="text-[13px] text-[#111827]/80 leading-relaxed list-disc pl-5 space-y-2">
-                      <li>Wrap up at the end (or anytime in Infinite rooms).</li>
-                      <li>Quick self-reflection: what you did / what’s next.</li>
-                      <li>Leave the session — your work is done.</li>
+                      <li>
+                        Wrap up at the end (or anytime in Infinite rooms).
+                      </li>
+                      <li>
+                        Quick self-reflection: what you did / what’s next.
+                      </li>
+                      <li>
+                        Leave the session — your work is done.
+                      </li>
                     </ul>
                   </div>
                 </div>
 
+                {/* Divider */}
                 <div className="my-7 border-t border-[#ECECEC]" />
 
+                {/* Stages glossary */}
                 <div className="flex items-center justify-between gap-4">
                   <h4 className="text-[14px] sm:text-[15px] font-semibold text-[#111827]">
                     Stages glossary (what each block means)
@@ -709,58 +760,75 @@ export function SessionsPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827]">Check-in</div>
+                    <div className="text-[13px] font-semibold text-[#111827]">
+                      Check-in
+                    </div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      Quick verbal sync: “What are you working on?” + “Any blockers?”. Short, supportive, no long
-                      stories.
+                      Quick verbal sync: “What are you working on?” + “Any blockers?”.
+                      Short, supportive, no long stories.
                     </p>
                   </div>
 
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827]">Intentions</div>
+                    <div className="text-[13px] font-semibold text-[#111827]">
+                      Intentions
+                    </div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      You state your goal for the next focus block. Keep it specific: 1–3 concrete outcomes.
+                      You state your goal for the next focus block. Keep it specific:
+                      1–3 concrete outcomes.
                     </p>
                   </div>
 
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827]">Focus</div>
+                    <div className="text-[13px] font-semibold text-[#111827]">
+                      Focus
+                    </div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
                       The working block. Usually quiet. Your only job: do the task.
                     </p>
                   </div>
 
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827]">Break</div>
+                    <div className="text-[13px] font-semibold text-[#111827]">
+                      Break
+                    </div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
                       Rest/reset: stand up, water, stretch. Avoid doom-scrolling if you can.
                     </p>
                   </div>
 
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827]">Custom block</div>
+                    <div className="text-[13px] font-semibold text-[#111827]">
+                      Custom block
+                    </div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      A flexible stage you can name anything: “Reading”, “Planning”, “Admin”, etc. Use it however you
-                      want.
+                      A flexible stage you can name anything: “Reading”, “Planning”,
+                      “Admin”, etc. Use it however you want.
                     </p>
                   </div>
 
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827]">Outro / Wrap-up</div>
+                    <div className="text-[13px] font-semibold text-[#111827]">
+                      Outro / Wrap-up
+                    </div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
                       Quick closure: what you finished, what’s next, and one takeaway.
                     </p>
                   </div>
                 </div>
 
+                {/* Bottom hint */}
                 <div className="mt-7 rounded-[18px] border border-[#E6E6E6] bg-[#F7F7F7] p-5">
-                  <div className="text-[13px] font-semibold text-[#111827]">Pro tip</div>
+                  <div className="text-[13px] font-semibold text-[#111827]">
+                    Pro tip
+                  </div>
                   <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                    If you’re joining a <b>Silent</b> room: keep mic off, use the stage timer as guidance, and focus. No
-                    pressure to talk.
+                    If you’re joining a <b>Silent</b> room: keep mic off, use the stage
+                    timer as guidance, and focus. No pressure to talk.
                   </p>
                 </div>
 
+                {/* Footer actions */}
                 <div className="mt-8 flex items-center justify-end gap-3">
                   <button
                     type="button"
