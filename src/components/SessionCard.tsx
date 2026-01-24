@@ -230,13 +230,7 @@ function DotsFallbackIcon({ size = 18 }: { size?: number }) {
  * ✅ Options icon from file:
  * Put your custom SVG here: public/icons/options.svg  ->  "/icons/options.svg"
  */
-function OptionsSmartIcon({
-    hovered,
-    size = 18,
-}: {
-    hovered: boolean;
-    size?: number;
-}) {
+function OptionsSmartIcon({ hovered, size = 18 }: { hovered: boolean; size?: number }) {
     const [useFallback, setUseFallback] = useState(false);
 
     if (useFallback) return <DotsFallbackIcon size={size} />;
@@ -527,33 +521,33 @@ export default function SessionCard({
     );
 
     const canEdit = isHost && !!onEditSession;
-    const canInvite = isHost; // UI unlocked, реализация через onInviteToSession (опционально)
+    const canInvite = isHost;
     const canCancelBooking = !!isBookingConfirmed;
     const canCancelSession = isHost;
 
-    // ✅ People booked block — moved next to meta row
-    const peopleBookedBlock = (
+    // ✅ People booked inline (to sit next to label pill)
+    const peopleBookedInline = (
         <button
             type="button"
             onClick={() => setIsBookersModalOpen(true)}
-            className="inline-flex items-center gap-3 hover:opacity-80 transition text-left sm:shrink-0"
+            className="inline-flex items-center gap-2 hover:opacity-80 transition text-left whitespace-nowrap"
             title="People who booked"
         >
             {bookedCount === 0 ? (
-                <div className="text-[12px] text-[#606060] whitespace-nowrap">People booked: 0</div>
+                <div className="text-[12px] text-[#606060] whitespace-nowrap">People: 0</div>
             ) : (
                 <>
                     <div className="flex items-center">
                         {stackUsers.map((u, idx) => (
                             <div key={u.id} className="relative" style={{ marginLeft: idx === 0 ? 0 : -10, zIndex: 50 - idx }}>
-                                <AvatarCircle user={u} size={28} />
+                                <AvatarCircle user={u} size={26} />
                             </div>
                         ))}
                         {remaining > 0 && (
                             <div className="relative" style={{ marginLeft: -10, zIndex: 0 }}>
                                 <div
                                     className="rounded-full border border-[#E5E7EB] bg-white flex items-center justify-center text-[10px] font-semibold text-[#111827]"
-                                    style={{ width: 28, height: 28 }}
+                                    style={{ width: 26, height: 26 }}
                                     title={`${remaining} more`}
                                 >
                                     +{remaining}
@@ -563,7 +557,7 @@ export default function SessionCard({
                     </div>
 
                     <div className="text-[12px] font-semibold text-[#111827] whitespace-nowrap">
-                        People booked: <span className="font-bold">{bookedCount}</span>
+                        People: <span className="font-bold">{bookedCount}</span>
                     </div>
                 </>
             )}
@@ -589,28 +583,28 @@ export default function SessionCard({
                     <div className="flex flex-col gap-3 w-full">
                         <h3 className="text-[24px] md:text-[29px] font-bold leading-tight">{session.title}</h3>
 
-                        {/* ✅ meta + people booked (side-by-side on sm+) */}
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                            {/* meta row */}
-                            <div className="flex flex-wrap items-center gap-4 text-[12px] text-[#606060]">
-                                <Link to={`/profile/${session.host_id}`} className="flex items-center gap-1 hover:opacity-70">
-                                    <img src="/icons/host.svg" className="w-4 h-4 opacity-70" alt="" />
-                                    <span>Host</span>
-                                    <span className="underline underline-offset-2">{session.host_name}</span>
-                                </Link>
+                        {/* ✅ meta row: everything inline; label + people booked are neighbors */}
+                        <div className="flex flex-wrap items-center gap-4 text-[12px] text-[#606060]">
+                            <Link to={`/profile/${session.host_id}`} className="flex items-center gap-1 hover:opacity-70">
+                                <img src="/icons/host.svg" className="w-4 h-4 opacity-70" alt="" />
+                                <span>Host</span>
+                                <span className="underline underline-offset-2">{session.host_name}</span>
+                            </Link>
 
+                            <div className="flex items-center gap-1">
+                                <img src="/icons/duration.svg" className="w-4 h-4 opacity-70" alt="" />
+                                <span>{isInfinite ? "Infinite" : `${session.duration_minutes} min`}</span>
+                            </div>
+
+                            {!isInfinite && (
                                 <div className="flex items-center gap-1">
-                                    <img src="/icons/duration.svg" className="w-4 h-4 opacity-70" alt="" />
-                                    <span>{isInfinite ? "Infinite" : `${session.duration_minutes} min`}</span>
+                                    <img src="/icons/date.svg" className="w-4 h-4 opacity-70" alt="" />
+                                    <span>{startDateString}</span>
                                 </div>
+                            )}
 
-                                {!isInfinite && (
-                                    <div className="flex items-center gap-1">
-                                        <img src="/icons/date.svg" className="w-4 h-4 opacity-70" alt="" />
-                                        <span>{startDateString}</span>
-                                    </div>
-                                )}
-
+                            {/* ✅ label + people booked рядом, в одной линии */}
+                            <div className="inline-flex items-center gap-3">
                                 <div
                                     className="inline-flex items-center gap-1 px-3 py-1 rounded-full border"
                                     style={{
@@ -624,10 +618,9 @@ export default function SessionCard({
                                     <img src={isHoveringCard ? t.icon.replace(".svg", "-white.svg") : t.icon} className="w-4 h-4" alt="" />
                                     {resolvedType}
                                 </div>
-                            </div>
 
-                            {/* people booked (moved here) */}
-                            {peopleBookedBlock}
+                                {peopleBookedInline}
+                            </div>
                         </div>
                     </div>
 
@@ -709,7 +702,6 @@ export default function SessionCard({
                                 </div>
 
                                 <div className="p-2 flex flex-col gap-1">
-                                    {/* ✅ Edit moved here + outlined */}
                                     {canEdit && (
                                         <MenuItem
                                             icon={<IconEdit />}
@@ -792,7 +784,6 @@ export default function SessionCard({
                                     <AvatarCircle user={u} size={34} />
                                     <div className="flex flex-col min-w-0">
                                         <div className="text-[13px] font-semibold text-[#111827] truncate">{label}</div>
-                                        {/* ✅ User ID removed полностью */}
                                         {u.email ? <div className="text-[12px] text-[#606060] truncate">{u.email}</div> : null}
                                     </div>
                                 </Link>
