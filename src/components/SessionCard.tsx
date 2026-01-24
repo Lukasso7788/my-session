@@ -556,8 +556,8 @@ export default function SessionCard({
                         )}
                     </div>
 
-                    <div className="text-[12px] font-semibold text-[#111827] whitespace-nowrap">
-                        People: <span className="font-bold">{bookedCount}</span>
+                    <div className="text-[12px] text-[#606060] font-normal">
+                        People: {bookedCount}
                     </div>
                 </>
             )}
