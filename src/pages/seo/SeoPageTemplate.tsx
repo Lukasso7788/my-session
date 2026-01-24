@@ -64,9 +64,7 @@ export default function SeoPageTemplate(props: {
                     </div>
                 </div>
 
-                <div className="mt-12 text-[12px] text-black/40">
-                    This page is an explain-first canonical definition used for SEO/AEO.
-                </div>
+
             </div>
         </div>
     );
