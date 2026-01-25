@@ -20,15 +20,14 @@ import DataDeletionPage from "./pages/DataDeletionPage";
 import AppLayout from "./layouts/AppLayout";
 import { CreateSessionModalProvider } from "./context/CreateSessionModalContext";
 
-// ✅ NEW: canonical/SEO pages
+// ✅ Canonical/SEO pages
 import BodyDoublingPage from "./pages/seo/BodyDoublingPage";
 import OnlineCoworkingPage from "./pages/seo/OnlineCoworkingPage";
 import GroupFocusSessionsPage from "./pages/seo/GroupFocusSessionsPage";
 import SilentCoworkingPage from "./pages/seo/SilentCoworkingPage";
 import AdhdProductivityPage from "./pages/seo/AdhdProductivityPage";
-import AIAssistantPage from "./pages/seo/AIAssistantPage";
 
-// ✅ NEW: 404
+// ✅ 404
 import NotFoundPage from "./pages/NotFoundPage";
 
 export default function App() {
@@ -53,15 +52,19 @@ export default function App() {
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/data-deletion" element={<DataDeletionPage />} />
 
-          {/* ✅ NEW: Canonical SEO/AEO pages */}
+          {/* ✅ Canonical SEO pages */}
           <Route path="/body-doubling" element={<BodyDoublingPage />} />
           <Route path="/online-coworking" element={<OnlineCoworkingPage />} />
           <Route path="/group-focus-sessions" element={<GroupFocusSessionsPage />} />
           <Route path="/silent-coworking" element={<SilentCoworkingPage />} />
           <Route path="/adhd-productivity" element={<AdhdProductivityPage />} />
-          <Route path="/ai-assistant" element={<AIAssistantPage />} />
 
-          {/* ✅ NEW: 404 (instead of redirect-to-/) */}
+          {/* ⏸ AI assistant page is postponed for now
+              Keep route alive to avoid 404s from existing links.
+              Temporary behavior: /ai-assistant -> Sessions */}
+          <Route path="/ai-assistant" element={<SessionsPage />} />
+
+          {/* ✅ 404 (instead of redirect-to-/) */}
           <Route path="*" element={<NotFoundPage />} />
         </Route>
 
