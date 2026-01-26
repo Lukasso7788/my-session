@@ -1,6 +1,6 @@
 // src/pages/seo/SeoPageTemplate.tsx
 import { useEffect, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 
 export type FaqItem = { q: string; a: string };
 
@@ -17,7 +17,7 @@ function safeJsonLd(obj: unknown) {
     return JSON.stringify(obj).replace(/</g, "\\u003c");
 }
 
-function upsertMeta(name: string, content: string) {
+function upsertMetaName(name: string, content: string) {
     if (typeof document === "undefined") return;
     let el = document.querySelector(`meta[name="${name}"]`) as HTMLMetaElement | null;
     if (!el) {
@@ -39,7 +39,7 @@ function upsertMetaProperty(property: string, content: string) {
     el.setAttribute("content", content);
 }
 
-function upsertLink(rel: string, href: string) {
+function upsertLinkRel(rel: string, href: string) {
     if (typeof document === "undefined") return;
     let el = document.querySelector(`link[rel="${rel}"]`) as HTMLLinkElement | null;
     if (!el) {
@@ -71,8 +71,17 @@ export default function SeoPageTemplate(props: {
     /** Optional related internal links (good for internal linking) */
     relatedLinks?: RelatedLink[];
 
-    /** Optional secondary CTA */
+    /**
+     * Optional secondary CTA.
+     * If omitted, we DON'T render the button (so you can postpone /ai-assistant).
+     */
     secondaryCta?: { label: string; to: string };
+
+    /**
+     * Optional absolute site origin for canonical/OG.
+     * Default: https://mysession.club
+     */
+    siteOrigin?: string;
 }) {
     const {
         pageTitle,
@@ -82,38 +91,38 @@ export default function SeoPageTemplate(props: {
         faq,
         metaDescription,
         relatedLinks = [],
-        secondaryCta = { label: "See AI assistant", to: "/ai-assistant" },
+        secondaryCta,
+        siteOrigin = "https://mysession.club",
     } = props;
+
+    const loc = useLocation();
 
     useEffect(() => {
         try {
-            const path =
-                typeof window !== "undefined" && window.location?.pathname
-                    ? window.location.pathname
-                    : "/";
-            const url = `https://mysession.club${path}`;
+            const canonicalUrl = `${siteOrigin}${loc.pathname}`;
 
+            // Title + description
             document.title = `${pageTitle} | MySession`;
-
-            if (metaDescription) {
-                upsertMeta("description", metaDescription);
-            }
+            if (metaDescription) upsertMetaName("description", metaDescription);
 
             // Canonical
-            upsertLink("canonical", url);
+            upsertLinkRel("canonical", canonicalUrl);
 
-            // Open Graph
+            // OpenGraph
             upsertMetaProperty("og:title", `${pageTitle} | MySession`);
-            upsertMetaProperty("og:description", metaDescription ?? "");
-            upsertMetaProperty("og:url", url);
+            if (metaDescription) upsertMetaProperty("og:description", metaDescription);
+            upsertMetaProperty("og:url", canonicalUrl);
             upsertMetaProperty("og:type", "website");
+            upsertMetaProperty("og:site_name", "MySession");
 
             // Twitter
-            upsertMeta("twitter:card", "summary_large_image");
-            upsertMeta("twitter:title", `${pageTitle} | MySession`);
-            upsertMeta("twitter:description", metaDescription ?? "");
-        } catch { }
-    }, [pageTitle, metaDescription]);
+            upsertMetaName("twitter:card", "summary_large_image");
+            upsertMetaName("twitter:title", `${pageTitle} | MySession`);
+            if (metaDescription) upsertMetaName("twitter:description", metaDescription);
+        } catch {
+            // no-op
+        }
+    }, [pageTitle, metaDescription, siteOrigin, loc.pathname]);
 
     const faqJsonLd = {
         "@context": "https://schema.org",
@@ -132,7 +141,7 @@ export default function SeoPageTemplate(props: {
         "@context": "https://schema.org",
         "@type": "Organization",
         name: "MySession",
-        url: "https://mysession.club",
+        url: siteOrigin,
     };
 
     const appJsonLd = {
@@ -141,11 +150,11 @@ export default function SeoPageTemplate(props: {
         name: "MySession",
         operatingSystem: "Web",
         applicationCategory: "ProductivityApplication",
-        url: "https://mysession.club",
+        url: siteOrigin,
         description:
             typeof metaDescription === "string" && metaDescription.trim().length > 0
                 ? metaDescription
-                : "Live online body doubling and group focus sessions — with optional real-time AI support.",
+                : "Live online body doubling and group focus sessions.",
     };
 
     return (
@@ -156,7 +165,6 @@ export default function SeoPageTemplate(props: {
             <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(appJsonLd) }} />
 
             <div className="max-w-3xl mx-auto">
-                {/* Small brand line (no "canonical", no SEO text) */}
                 <div className="text-[12px] text-black/45">MySession</div>
 
                 <h1 className="mt-3 text-3xl md:text-4xl font-semibold tracking-tight">{h1}</h1>
@@ -218,12 +226,14 @@ export default function SeoPageTemplate(props: {
                         Join a session
                     </Link>
 
-                    <Link
-                        to={secondaryCta.to}
-                        className="h-11 inline-flex items-center justify-center rounded-full px-6 text-[14px] font-semibold border border-[#111827] text-[#111827] hover:bg-[#111827] hover:text-white transition"
-                    >
-                        {secondaryCta.label}
-                    </Link>
+                    {secondaryCta ? (
+                        <Link
+                            to={secondaryCta.to}
+                            className="h-11 inline-flex items-center justify-center rounded-full px-6 text-[14px] font-semibold border border-[#111827] text-[#111827] hover:bg-[#111827] hover:text-white transition"
+                        >
+                            {secondaryCta.label}
+                        </Link>
+                    ) : null}
 
                     <Link
                         to="/"
@@ -244,8 +254,6 @@ export default function SeoPageTemplate(props: {
                         ))}
                     </div>
                 </div>
-
-                {/* ничего лишнего внизу */}
             </div>
         </div>
     );
