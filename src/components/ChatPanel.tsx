@@ -203,11 +203,13 @@ function MessageCard({
 export function ChatPanel({
     sessionId,
     theme = "dark",
-    showHeader = true, // ✅ added: allows disabling inner header to avoid double header
+    showHeader = true,
+    onBecameVisible, // ✅ NEW
 }: {
     sessionId: string;
     theme?: RoomTheme;
     showHeader?: boolean;
+    onBecameVisible?: () => void; // ✅ NEW
 }) {
     const isLight = theme === "light";
 
@@ -241,6 +243,11 @@ export function ChatPanel({
     const bottomRef = useRef<HTMLDivElement | null>(null);
 
     const pollingRef = useRef<number | null>(null);
+
+    // ✅ inform parent that chat became visible
+    useEffect(() => {
+        onBecameVisible?.();
+    }, [onBecameVisible, sessionId]);
 
     // ---------- theme tokens
     const headerBorder = isLight ? "border-black/10" : "border-white/5";
@@ -560,9 +567,9 @@ export function ChatPanel({
         <div className="h-full flex flex-col bg-transparent min-h-0">
             {/* HEADER (optional) */}
             {showHeader && (
-                <div className={"px-5 py-4 border-b " + headerBorder}>
-                    <div className={titleText + " font-inter font-semibold"}>Chat</div>
-                    <div className={subText + " text-[12px]"}>All messages for this session</div>
+                <div className={"px-5 py-4 border-b " + (isLight ? "border-black/10" : "border-white/5")}>
+                    <div className={(isLight ? "text-black/85" : "text-white/85") + " font-inter font-semibold"}>Chat</div>
+                    <div className={(isLight ? "text-black/50" : "text-white/45") + " text-[12px]"}>All messages for this session</div>
                 </div>
             )}
 
@@ -590,19 +597,19 @@ export function ChatPanel({
             </div>
 
             {/* COMPOSER */}
-            <div className={"p-4 border-t " + headerBorder}>
+            <div className={"p-4 border-t " + (isLight ? "border-black/10" : "border-white/5")}>
                 {replyTo && (
-                    <div className={"mb-2 flex items-center justify-between gap-2 rounded-xl border px-3 py-2 " + replyBoxCls}>
+                    <div className={"mb-2 flex items-center justify-between gap-2 rounded-xl border px-3 py-2 " + (isLight ? "bg-black/5 border-black/10" : "bg-white/5 border-white/10")}>
                         <div className="min-w-0">
-                            <div className={replyingLabel}>Replying</div>
-                            <div className={"text-[11px] truncate " + replyingText}>
+                            <div className="text-[11px] text-emerald-500/90 font-medium">Replying</div>
+                            <div className={"text-[11px] truncate " + (isLight ? "text-black/55" : "text-white/55")}>
                                 {(replyTo.profile?.full_name || "Participant") + ": " + replyTo.body}
                             </div>
                         </div>
                         <button
                             type="button"
                             onClick={() => setReplyTo(null)}
-                            className={"w-8 h-8 rounded-lg flex items-center justify-center transition " + cancelBtnCls}
+                            className={"w-8 h-8 rounded-lg flex items-center justify-center transition " + (isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/70")}
                             title="Cancel reply"
                         >
                             <X size={16} />
@@ -619,7 +626,9 @@ export function ChatPanel({
             rounded-xl resize-none
             px-3 py-3 text-[13px]
             outline-none focus:outline-none
-            ${textareaCls}
+            ${isLight
+                            ? "bg-white border border-black/10 text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
+                            : "bg-[#0B1220]/70 border border-white/10 text-white/85 placeholder:text-white/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"}
           `}
                     onKeyDown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey) {
@@ -630,7 +639,7 @@ export function ChatPanel({
                 />
 
                 <div className="mt-2 flex items-center justify-between">
-                    <div className={"text-[11px] " + hintText}>Enter — send • Shift+Enter — new line</div>
+                    <div className={"text-[11px] " + (isLight ? "text-black/40" : "text-white/35")}>Enter — send • Shift+Enter — new line</div>
 
                     <button
                         onClick={send}

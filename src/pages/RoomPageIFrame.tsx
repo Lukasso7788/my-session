@@ -109,6 +109,9 @@ const TOOLBAR_MOUNT_BUTTONS = ["settings"];
 const TOOLBAR_VISIBLE_BUTTONS: string[] = [];
 const JITSI_CUSTOM_CSS_PATH = "/jitsi-custom.css";
 
+// ✅ Chat table for unread badge
+const CHAT_MSG_TABLE = "session_chat_messages";
+
 // ====== AUDIO ======
 const STAGE_SOUND_MAP: Record<string, string> = {
     intentions: "/sounds/intentions.mp3",
@@ -587,6 +590,9 @@ export default function RoomPageIFrame() {
     const [session, setSession] = useState<any>(null);
     const [loading, setLoading] = useState(true);
 
+    // ✅ memoized session id (used by chat/unread + ChatPanel)
+    const sessionId = useMemo(() => String(session?.id || ""), [session?.id]);
+
     // ✅ auth gate
     const [authStatus, setAuthStatus] = useState<"checking" | "authed" | "redirecting">("checking");
 
@@ -656,6 +662,118 @@ export default function RoomPageIFrame() {
             return tab;
         });
     };
+
+    // =========================
+    // ✅ CHAT UNREAD BADGE (always-on, even when ChatPanel is closed)
+    // =========================
+    const [unreadChat, setUnreadChat] = useState<number>(0);
+    const chatVisibleRef = useRef<boolean>(false);
+    const lastChatReadAtRef = useRef<number>(0);
+
+    useEffect(() => {
+        chatVisibleRef.current = rightPanelOpen && rightTab === "chat";
+    }, [rightPanelOpen, rightTab]);
+
+    const chatReadKey = useMemo(() => {
+        return sessionId ? `mysession_chat_last_read_at:${sessionId}` : "";
+    }, [sessionId]);
+
+    const markChatRead = (atMs?: number) => {
+        if (!sessionId) return;
+
+        const now = Number.isFinite(atMs as any) ? Number(atMs) : Date.now();
+        lastChatReadAtRef.current = Math.max(lastChatReadAtRef.current || 0, now);
+
+        setUnreadChat(0);
+
+        try {
+            if (chatReadKey) localStorage.setItem(chatReadKey, String(lastChatReadAtRef.current));
+        } catch { }
+    };
+
+    // when chat becomes visible => mark as read
+    useEffect(() => {
+        if (rightPanelOpen && rightTab === "chat") {
+            markChatRead();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [rightPanelOpen, rightTab, sessionId]);
+
+    // realtime unread subscription (independent from ChatPanel mount)
+    useEffect(() => {
+        if (authStatus !== "authed") return;
+        if (!sessionId) return;
+        if (!currentUserId) return;
+
+        let cancelled = false;
+
+        (async () => {
+            // load last read
+            let lastRead = 0;
+            try {
+                const raw = localStorage.getItem(chatReadKey);
+                lastRead = raw ? Number(raw) : 0;
+                if (!Number.isFinite(lastRead)) lastRead = 0;
+            } catch {
+                lastRead = 0;
+            }
+            lastChatReadAtRef.current = lastRead;
+
+            // count unread since lastRead (excluding my own)
+            try {
+                const sinceIso = lastRead > 0 ? new Date(lastRead).toISOString() : "1970-01-01T00:00:00.000Z";
+
+                const { count } = await supabase
+                    .from(CHAT_MSG_TABLE)
+                    .select("id", { count: "exact", head: true })
+                    .eq("session_id", sessionId)
+                    .neq("user_id", currentUserId)
+                    .gt("created_at", sinceIso);
+
+                if (!cancelled) setUnreadChat(Math.min(99, Math.max(0, Number(count || 0))));
+            } catch {
+                if (!cancelled) setUnreadChat(0);
+            }
+        })();
+
+        const ch = supabase
+            .channel(`chat-unread:${sessionId}`)
+            .on(
+                "postgres_changes",
+                { event: "INSERT", schema: "public", table: CHAT_MSG_TABLE, filter: `session_id=eq.${sessionId}` },
+                (payload: any) => {
+                    const row = payload?.new;
+                    if (!row) return;
+
+                    const senderId = String(row.user_id || "");
+                    if (!senderId) return;
+
+                    // ignore my own messages
+                    if (senderId === currentUserId) return;
+
+                    const ts = new Date(row.created_at).getTime();
+                    const msgMs = Number.isFinite(ts) ? ts : Date.now();
+
+                    if (chatVisibleRef.current) {
+                        // chat open => instantly read (use message timestamp)
+                        markChatRead(msgMs);
+                        return;
+                    }
+
+                    // chat closed => increment only if newer than last read
+                    if (msgMs > (lastChatReadAtRef.current || 0)) {
+                        setUnreadChat((prev) => Math.min(99, prev + 1));
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            cancelled = true;
+            supabase.removeChannel(ch);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [authStatus, sessionId, currentUserId, chatReadKey]);
 
     const isHost = useMemo(() => {
         const sid = String(session?.host_id || "");
@@ -1655,8 +1773,6 @@ export default function RoomPageIFrame() {
         );
     }
 
-    const sessionId = String(session?.id || "");
-
     return (
         <div className={`min-h-screen ${pageBg}`}>
             <div className="w-full px-3 sm:px-5 pt-5 pb-[calc(110px+env(safe-area-inset-bottom))] flex flex-col gap-5 min-h-screen">
@@ -1722,8 +1838,8 @@ export default function RoomPageIFrame() {
                                     <button
                                         onClick={() => setSelectedUser(session.host_profile)}
                                         className={`flex items-center gap-2 px-3 h-[32px] rounded-xl border transition font-inter text-[13px] ${isLight
-                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                                : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                             }`}
                                     >
                                         <span className="flex items-center gap-2 leading-none">
@@ -1806,8 +1922,8 @@ export default function RoomPageIFrame() {
                                     <button
                                         onClick={() => setSelectedUser(session.host_profile)}
                                         className={`max-[520px]:hidden flex items-center gap-2 px-3 h-[32px] rounded-xl border transition font-inter text-[13px] ${isLight
-                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                                : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                             }`}
                                     >
                                         <span className="flex items-center gap-1 leading-none">
@@ -1930,13 +2046,30 @@ export default function RoomPageIFrame() {
                     >
                         {/* LEFT GROUP */}
                         <div className="flex items-center gap-2">
-                            <button
-                                onClick={() => openRightTab("chat")}
-                                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                                title="Chat"
-                            >
-                                <Icon name="chat" theme={theme} className="w-5 h-5" />
-                            </button>
+                            {/* ✅ Chat with unread badge */}
+                            <div className="relative">
+                                <button
+                                    onClick={() => openRightTab("chat")}
+                                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                                    title="Chat"
+                                >
+                                    <Icon name="chat" theme={theme} className="w-5 h-5" />
+                                </button>
+
+                                {unreadChat > 0 && !(rightPanelOpen && rightTab === "chat") && (
+                                    <div
+                                        className={
+                                            "absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full " +
+                                            "flex items-center justify-center text-[11px] font-bold " +
+                                            (isLight ? "bg-red-600 text-white" : "bg-red-500 text-[#061019]")
+                                        }
+                                        aria-label={`Unread messages: ${unreadChat}`}
+                                        title={`${unreadChat} new`}
+                                    >
+                                        {unreadChat > 9 ? "9+" : unreadChat}
+                                    </div>
+                                )}
+                            </div>
 
                             <button
                                 onClick={() => openRightTab("intentions")}
