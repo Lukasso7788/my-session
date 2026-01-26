@@ -203,9 +203,11 @@ function MessageCard({
 export function ChatPanel({
     sessionId,
     theme = "dark",
+    showHeader = true, // ✅ added: allows disabling inner header to avoid double header
 }: {
     sessionId: string;
     theme?: RoomTheme;
+    showHeader?: boolean;
 }) {
     const isLight = theme === "light";
 
@@ -556,11 +558,13 @@ export function ChatPanel({
 
     return (
         <div className="h-full flex flex-col bg-transparent min-h-0">
-            {/* HEADER */}
-            <div className={"px-5 py-4 border-b " + headerBorder}>
-                <div className={titleText + " font-inter font-semibold"}>Chat</div>
-                <div className={subText + " text-[12px]"}>All messages for this session</div>
-            </div>
+            {/* HEADER (optional) */}
+            {showHeader && (
+                <div className={"px-5 py-4 border-b " + headerBorder}>
+                    <div className={titleText + " font-inter font-semibold"}>Chat</div>
+                    <div className={subText + " text-[12px]"}>All messages for this session</div>
+                </div>
+            )}
 
             {/* LIST */}
             <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3 custom-scrollbar">

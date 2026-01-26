@@ -1891,7 +1891,10 @@ export default function RoomPageIFrame() {
                                         </button>
                                     </div>
 
-                                    <div className="p-4 h-[calc(100%-64px)]">{sessionId ? <ChatPanel sessionId={sessionId} theme={theme} /> : null}</div>
+                                    {/* ✅ no double header: ChatPanel header hidden */}
+                                    <div className="p-4 h-[calc(100%-64px)]">
+                                        {sessionId ? <ChatPanel sessionId={sessionId} theme={theme} showHeader={false} /> : null}
+                                    </div>
                                 </div>
                             )}
 
