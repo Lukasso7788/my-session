@@ -11,6 +11,7 @@ interface SessionCardProps {
     onJoin: (sessionId: string) => void;
     onDelete: (sessionId: string) => void;
 
+    // ✅ NEW: чтобы edit реально синкался в Supabase — реализуешь в SessionsPage
     onEditSession?: (
         sessionId: string,
         updates: {
@@ -20,14 +21,14 @@ interface SessionCardProps {
         }
     ) => void | Promise<any>;
 
+    // ✅ NEW: пока UI-хук (email invite)
     onInviteToSession?: (sessionId: string, payload: { email: string; message?: string }) => void | Promise<any>;
 
+    // ✅ optional: чтобы “твоя” аватарка сразу появлялась при Book без ожидания refetch
     currentUser?: { id: string; full_name?: string; avatar_url?: string; email?: string };
 }
 
 type BookedUser = { id: string; full_name?: string; avatar_url?: string };
-
-type SessionLabel = "Deep work" | "Pomodoro" | "Short sprints" | "Custom session";
 
 function safeLower(x: any) {
     return String(x || "").toLowerCase();
@@ -45,7 +46,7 @@ function getInitials(nameOrId: string) {
  * ✅ Extract bookers from nested select:
  * session_bookings ( user_id, profiles:profiles ( id, full_name, avatar_url ) )
  *
- * IMPORTANT: we intentionally DO NOT read email to avoid privacy leaks.
+ * ❌ Privacy: do NOT keep or show emails
  */
 function extractBookers(session: any): BookedUser[] {
     const raw = session?.session_bookings || [];
@@ -76,8 +77,8 @@ function extractBookers(session: any): BookedUser[] {
     return out;
 }
 
-// ✅ infer visual type from title for templates + infinite room titles
-function inferTypeFromTitle(title: any): Exclude<SessionLabel, "Custom session"> | null {
+// ✅ NEW: infer visual type from title for newer/infinite room titles
+function inferTypeFromTitle(title: any): "Deep work" | "Pomodoro" | "Short sprints" | null {
     const t = safeLower(title);
     if (t.includes("silent") || t.includes("drop-in") || t.includes("drop in")) return "Deep work";
     if (t.includes("deep work") || t.includes("deepwork") || t.includes("uninterrupted")) return "Deep work";
@@ -117,46 +118,8 @@ function resolveSessionType(session: any): "group" | "infinite" | "body" {
     return "group";
 }
 
-/**
- * ✅ NEW: detect Session Studio (custom builder) sessions
- *
- * To make this 100% reliable, ensure Session Studio saves one of these markers:
- *  - session.is_custom === true
- *  - session.created_via === "studio"  (or session.source / session.origin)
- *  - schedule.kind === "custom_studio"
- */
-function isCustomStudioSession(session: any): boolean {
-    if (!session) return false;
-
-    if (session?.is_custom === true) return true;
-
-    const createdVia = safeLower(session?.created_via || session?.source || session?.origin);
-    if (createdVia && (createdVia.includes("studio") || createdVia.includes("custom_builder") || createdVia.includes("builder"))) {
-        return true;
-    }
-
-    const sch = (() => {
-        const raw = session?.schedule;
-        if (!raw) return null;
-        if (typeof raw === "string") {
-            try {
-                return JSON.parse(raw);
-            } catch {
-                return null;
-            }
-        }
-        return raw;
-    })();
-
-    const kind = safeLower((sch as any)?.kind);
-    if (kind === "custom_studio" || kind === "custom_session" || kind === "studio_session") return true;
-
-    return false;
-}
-
 function AvatarCircle({ user, size = 28 }: { user: BookedUser; size?: number }) {
-    // ✅ PRIVACY: do NOT use email in label or title
-    const label = user?.full_name ? String(user.full_name) : "Guest";
+    const label = user?.full_name || "Participant";
     const initials = getInitials(label);
 
     return (
@@ -266,7 +229,7 @@ function DotsFallbackIcon({ size = 18 }: { size?: number }) {
 
 /**
  * ✅ Options icon from file:
- * public/icons/options.svg  ->  "/icons/options.svg"
+ * Put your custom SVG here: public/icons/options.svg  ->  "/icons/options.svg"
  */
 function OptionsSmartIcon({ hovered, size = 18 }: { hovered: boolean; size?: number }) {
     const [useFallback, setUseFallback] = useState(false);
@@ -314,6 +277,19 @@ function MenuItem({
             <span>{label}</span>
         </button>
     );
+}
+
+// ✅ Detect studio/custom sessions (prefer DB flag; fallback to formatLabel)
+function isCustomStudioSession(session: any): boolean {
+    if (session?.is_custom === true) return true;
+
+    const f = safeLower(session?.format);
+    if (f.includes("(studio)") || f.includes("session studio")) return true;
+
+    const via = safeLower(session?.created_via);
+    if (via === "studio") return true;
+
+    return false;
 }
 
 export default function SessionCard({
@@ -377,7 +353,7 @@ export default function SessionCard({
     const isInfinite = sessionType === "infinite";
     const liveCount: number | null = typeof session?.live_count === "number" ? session.live_count : null;
 
-    const nameToTypeMap: Record<string, Exclude<SessionLabel, "Custom session">> = {
+    const nameToTypeMap: Record<string, string> = {
         "1 Hour — Pomodoro 15/3": "Short sprints",
         "2 Hours — Pomodoro 15/3": "Short sprints",
         "1 Hour — Pomodoro 25/5": "Pomodoro",
@@ -386,28 +362,29 @@ export default function SessionCard({
         "2 Hours — 2x 50min Focus Blocks": "Deep work",
     };
 
-    const isCustom = isCustomStudioSession(session);
-
     const inferredType = inferTypeFromTitle(session.title);
-    const baseResolved: Exclude<SessionLabel, "Custom session"> =
-        nameToTypeMap[session.title] || inferredType || session.type || "Deep work";
+    const baseResolvedType = nameToTypeMap[session.title] || inferredType || session.type || "Deep work";
 
-    const resolvedType: SessionLabel = isCustom ? "Custom session" : baseResolved;
+    // ✅ Custom label override (only for studio/custom builder sessions)
+    const custom = isCustomStudioSession(session);
+    const resolvedType = custom ? "Custom session" : baseResolvedType;
 
-    const typeMap: Record<SessionLabel, { color: string; bg: string; icon: string }> = {
+    const typeMap: Record<string, { color: string; bg: string; icon: string }> = {
         "Deep work": { color: "#3B82F6", bg: "#E4EDFF", icon: "/icons/deepwork.svg" },
         Pomodoro: { color: "#EF4444", bg: "#FFE4E4", icon: "/icons/pomodoro.svg" },
         "Short sprints": { color: "#22C55E", bg: "#E5FFE9", icon: "/icons/sprints.svg" },
-        "Custom session": { color: "#6366F1", bg: "#EEF2FF", icon: "/icons/custom.svg" }, // ✅ NEW
+
+        // ✅ Custom
+        "Custom session": { color: "#6366F1", bg: "#EEF2FF", icon: "/icons/custom.svg" },
     };
 
-    const t = typeMap[resolvedType];
+    const t = typeMap[resolvedType] || { color: "#111827", bg: "#E5E7EB", icon: "/icons/deepwork.svg" };
 
-    const JOIN_HOVER_BG: Record<SessionLabel, string> = {
+    const JOIN_HOVER_BG: Record<string, string> = {
         "Deep work": "#5286F6",
         Pomodoro: "#F65252",
         "Short sprints": "#65D46C",
-        "Custom session": "#6366F1", // ✅ NEW
+        "Custom session": "#6366F1",
     };
     const joinHoverBg = JOIN_HOVER_BG[resolvedType] || "#111827";
 
@@ -501,9 +478,7 @@ export default function SessionCard({
                 const d = new Date(session.start_time);
                 const pad = (n: number) => String(n).padStart(2, "0");
                 setEditStartLocal(
-                    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
-                        d.getMinutes()
-                    )}`
+                    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
                 );
             } catch { }
         } else setEditStartLocal("");
@@ -524,17 +499,10 @@ export default function SessionCard({
         flex items-center justify-center gap-2
         transition-all duration-200 ease-in-out
         w-full xl:w-auto
-        ${isHoveringBook
-                    ? "text-[#65D46C] border border-[#65D46C] bg-[#65D46C]/10"
-                    : "border border-brandBlack text-brandBlack bg-white"
-                }
+        ${isHoveringBook ? "text-[#65D46C] border border-[#65D46C] bg-[#65D46C]/10" : "border border-brandBlack text-brandBlack bg-white"}
       `}
         >
-            <img
-                src={isHoveringBook ? "/icons/book-session-green.svg" : "/icons/book-session.svg"}
-                className="w-4 h-4"
-                alt=""
-            />
+            <img src={isHoveringBook ? "/icons/book-session-green.svg" : "/icons/book-session.svg"} className="w-4 h-4" alt="" />
             <span>Book session</span>
         </button>
     );
@@ -549,10 +517,7 @@ export default function SessionCard({
         flex items-center justify-center
         transition-all duration-300 ease-in-out
         w-full xl:w-auto
-        ${isHoveringCancel
-                    ? "px-6 border border-[#F65252] bg-[#F65252]/5 text-[#F65252]"
-                    : "px-5 border border-[#65D46C] bg-[#65D46C]/10 text-[#65D46C]"
-                }
+        ${isHoveringCancel ? "px-6 border border-[#F65252] bg-[#F65252]/5 text-[#F65252]" : "px-5 border border-[#65D46C] bg-[#65D46C]/10 text-[#65D46C]"}
       `}
             style={{ willChange: "width, padding" }}
         >
@@ -572,7 +537,7 @@ export default function SessionCard({
     const canCancelBooking = !!isBookingConfirmed;
     const canCancelSession = isHost;
 
-    // ✅ People booked inline (no emails)
+    // ✅ People booked inline (to sit next to label pill)
     const peopleBookedInline = (
         <button
             type="button"
@@ -630,7 +595,7 @@ export default function SessionCard({
                     <div className="flex flex-col gap-3 w-full">
                         <h3 className="text-[24px] md:text-[29px] font-bold leading-tight">{session.title}</h3>
 
-                        {/* meta row */}
+                        {/* ✅ meta row */}
                         <div className="flex flex-wrap items-center gap-4 text-[12px] text-[#606060]">
                             <Link to={`/profile/${session.host_id}`} className="flex items-center gap-1 hover:opacity-70">
                                 <img src="/icons/host.svg" className="w-4 h-4 opacity-70" alt="" />
@@ -650,7 +615,7 @@ export default function SessionCard({
                                 </div>
                             )}
 
-                            {/* label + people booked inline */}
+                            {/* ✅ label + people booked рядом */}
                             <div className="inline-flex items-center gap-3">
                                 <div
                                     className="inline-flex items-center gap-1 px-3 py-1 rounded-full border"
@@ -663,9 +628,18 @@ export default function SessionCard({
                                     }}
                                 >
                                     <img
-                                        src={isHoveringCard ? t.icon.replace(".svg", "-white.svg") : t.icon}
+                                        src={
+                                            isHoveringCard
+                                                ? (t.icon.endsWith(".svg") ? t.icon.replace(".svg", "-white.svg") : t.icon)
+                                                : t.icon
+                                        }
                                         className="w-4 h-4"
                                         alt=""
+                                        onError={(e) => {
+                                            // if custom icon missing, fallback to deepwork
+                                            const img = e.currentTarget as HTMLImageElement;
+                                            img.src = "/icons/deepwork.svg";
+                                        }}
                                     />
                                     {resolvedType}
                                 </div>
@@ -748,9 +722,7 @@ export default function SessionCard({
                   overflow-hidden
                 "
                             >
-                                <div className="px-4 py-3 text-[12px] text-[#606060] border-b border-[#F3F4F6]">
-                                    Session options
-                                </div>
+                                <div className="px-4 py-3 text-[12px] text-[#606060] border-b border-[#F3F4F6]">Session options</div>
 
                                 <div className="p-2 flex flex-col gap-1">
                                     {canEdit && (
@@ -819,8 +791,7 @@ export default function SessionCard({
                         <div className="text-[13px] text-[#606060]">No one booked yet. Be the first.</div>
                     ) : (
                         bookers.map((u) => {
-                            // ✅ PRIVACY: do not display email at all
-                            const label = u.full_name ? String(u.full_name) : "Guest";
+                            const label = u.full_name || "Participant";
                             return (
                                 <Link
                                     key={u.id}
@@ -836,6 +807,7 @@ export default function SessionCard({
                                     <AvatarCircle user={u} size={34} />
                                     <div className="flex flex-col min-w-0">
                                         <div className="text-[13px] font-semibold text-[#111827] truncate">{label}</div>
+                                        {/* ✅ privacy: no email line */}
                                     </div>
                                 </Link>
                             );
