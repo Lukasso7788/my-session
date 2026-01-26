@@ -7,6 +7,7 @@
 // - Tile view ON by default
 // - ✅ Enforce participant limit from sessions.max_participants (default 16)
 // - ✅ Allow opening by UUID OR by sessions.custom_slug (no uuid cast error)
+// - ✅ Require login to enter room (redirect to /login on unauth)
 //
 // Fixes in this version:
 // - ✅ Prevent "everyone gets kicked" when capacity is reached:
@@ -23,9 +24,12 @@
 // - Sounds now play on stage transitions in Infinite Rooms too
 // - Still prevents "gong on join mid-block" (first tick never plays current block sound)
 // - Adds check-in sound mapping (reuses intentions sound)
+//
+// ✅ UI tweak:
+// - Tile view icon has no on/off states; uses themed assets: tile-view-light.svg / tile-view-dark.svg
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 
 import { IntentionsPanel } from "../components/IntentionsPanel";
@@ -402,8 +406,7 @@ function Icon({
     | "leave"
     | "chat"
     | "intentions"
-    | "tile-on"
-    | "tile-off"
+    | "tile-view"
     | "theme-sun"
     | "theme-moon"
     | "timer";
@@ -563,6 +566,7 @@ function ReloadSmartIcon({ theme, className = "w-4 h-4" }: { theme: RoomTheme; c
 export default function RoomPageIFrame() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
+    const location = useLocation();
 
     const idOrSlug = String(id || "").trim();
 
@@ -572,6 +576,9 @@ export default function RoomPageIFrame() {
 
     const [session, setSession] = useState<any>(null);
     const [loading, setLoading] = useState(true);
+
+    // ✅ auth gate
+    const [authStatus, setAuthStatus] = useState<"checking" | "authed" | "redirecting">("checking");
 
     const [theme, setTheme] = useState<RoomTheme>(() => {
         try {
@@ -833,6 +840,53 @@ export default function RoomPageIFrame() {
     };
 
     // ============================================
+    // AUTH GATE (NO GUESTS)
+    // ============================================
+    useEffect(() => {
+        (async () => {
+            setAuthStatus("checking");
+
+            try {
+                const { data } = await supabase.auth.getUser();
+                const u = data.user;
+
+                if (!u) {
+                    setCurrentUserId(null);
+                    setUserName("");
+                    setAuthStatus("redirecting");
+
+                    const redirect = encodeURIComponent(location.pathname + location.search);
+                    navigate(`/login?redirect=${redirect}`, { replace: true });
+                    return;
+                }
+
+                setCurrentUserId(u.id);
+
+                let name =
+                    (u?.user_metadata?.full_name as string) ||
+                    (u?.user_metadata?.name as string) ||
+                    (u?.email ? u.email.split("@")[0] : "");
+
+                if (!name && u?.id) {
+                    const { data: p } = await supabase.from("profiles").select("full_name").eq("id", u.id).single();
+                    name = p?.full_name || "";
+                }
+
+                setUserName(name || "User");
+                setAuthStatus("authed");
+            } catch {
+                // if anything weird — treat as not authed
+                setCurrentUserId(null);
+                setUserName("");
+                setAuthStatus("redirecting");
+                const redirect = encodeURIComponent(location.pathname + location.search);
+                navigate(`/login?redirect=${redirect}`, { replace: true });
+            }
+        })();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [navigate, location.pathname, location.search]);
+
+    // ============================================
     // LOAD SESSION + BUILD STAGES (UUID OR SLUG)
     // ============================================
     useEffect(() => {
@@ -897,14 +951,14 @@ export default function RoomPageIFrame() {
 
                                     if (lower.includes("break") || lower.includes("rest") || lower.includes("pause")) return "break";
 
-                                    // раньше wrap/outro попадало в outro — оставляю как было
                                     if (lower.includes("outro") || lower.includes("wrap") || lower.includes("farewell") || lower.includes("end")) return "outro";
 
                                     if (lower.includes("focus")) return "focus";
                                     return "focus";
                                 };
 
-                                const type: Stage["type"] = rawType && rawType !== "stage" && rawType !== "block" ? inferTypeFromText(rawType) : inferTypeFromText(labelLower);
+                                const type: Stage["type"] =
+                                    rawType && rawType !== "stage" && rawType !== "block" ? inferTypeFromText(rawType) : inferTypeFromText(labelLower);
 
                                 const secondsExplicit =
                                     Number(b?.seconds) || Number(b?.duration_seconds) || Number(b?.durationSeconds) || Number(b?.duration_sec) || 0;
@@ -928,7 +982,6 @@ export default function RoomPageIFrame() {
 
                                 const minutes = Math.max(1, Math.round(durationSeconds / 60));
 
-                                // ✅ FIX #3: preserve custom name if provided
                                 const defaultLabel =
                                     type === "focus"
                                         ? "Focus"
@@ -989,7 +1042,6 @@ export default function RoomPageIFrame() {
                         const phases = normalizeInfinitePhases(phasesRaw);
 
                         const formatted: Stage[] = phases.map((p) => {
-                            // ✅ FIX #2: rawName must exist here
                             const rawName = String(p.name || "").trim();
                             const lower = rawName.toLowerCase();
                             const type = phaseToStageType(lower);
@@ -1015,7 +1067,6 @@ export default function RoomPageIFrame() {
                                                                     ? "Custom"
                                                                     : "Stage";
 
-                            // ✅ если в студии задано кастомное имя — оно побеждает
                             const displayName = rawName || defaultLabel;
 
                             const seconds = Number(p.seconds) || 0;
@@ -1062,30 +1113,6 @@ export default function RoomPageIFrame() {
             }
         })();
     }, [idOrSlug]);
-
-    // ============================================
-    // RESOLVE USER NAME (no prompt)
-    // ============================================
-    useEffect(() => {
-        (async () => {
-            const { data } = await supabase.auth.getUser();
-            const u = data.user;
-
-            setCurrentUserId(u?.id || null);
-
-            let name =
-                (u?.user_metadata?.full_name as string) ||
-                (u?.user_metadata?.name as string) ||
-                (u?.email ? u.email.split("@")[0] : "");
-
-            if (!name && u?.id) {
-                const { data: p } = await supabase.from("profiles").select("full_name").eq("id", u.id).single();
-                name = p?.full_name || "";
-            }
-
-            setUserName(name || "Guest");
-        })();
-    }, []);
 
     // ============================================
     // STAGES TIMER + SOUND
@@ -1145,9 +1172,7 @@ export default function RoomPageIFrame() {
             const stage = stages[active];
             if (!stage) return;
 
-            // ✅ CRITICAL: prevent playing "current block" sound when joining mid-block
             if (!firstTickDoneRef.current) {
-                // allow welcome loop only if stage is intro (kept behavior)
                 if (stage.type === "intro") startWelcomeLoop();
                 else stopWelcomeLoop();
 
@@ -1156,16 +1181,13 @@ export default function RoomPageIFrame() {
                 return;
             }
 
-            // ✅ play sounds on stage transitions (works for infinite AND non-infinite)
             if (prevStageRef.current !== active) {
                 const prev = stages[prevStageRef.current];
                 const prevType = prev?.type;
                 const newType = stage.type;
 
-                // break end gong
                 if (prevType === "break" && newType !== "break") playOneShot(BREAK_END_SOUND);
 
-                // intro loop (optional)
                 if (newType === "intro") {
                     startWelcomeLoop();
                 } else {
@@ -1177,7 +1199,6 @@ export default function RoomPageIFrame() {
                 prevStageRef.current = active;
             }
 
-            // safety: don't keep welcome loop outside intro
             if (stage.type !== "intro" && welcomeLoopRef.current) stopWelcomeLoop();
         }, 1000);
 
@@ -1188,6 +1209,9 @@ export default function RoomPageIFrame() {
     // JITSI INIT + capacity enforcement (fixed)
     // ============================================
     useEffect(() => {
+        // ✅ must be authed
+        if (authStatus !== "authed") return;
+
         if (!session || !idOrSlug) return;
         if (!iframeContainerRef.current) return;
         if (!userName) return;
@@ -1236,20 +1260,17 @@ export default function RoomPageIFrame() {
         };
 
         const getParticipantCount = async (api: any): Promise<number | null> => {
-            // 1) Preferred: getNumberOfParticipants (sync)
             try {
                 const n = api?.getNumberOfParticipants?.();
                 if (Number.isFinite(n) && Number(n) > 0) return Number(n);
             } catch { }
 
-            // 2) getRoomsInfo (promise)
             try {
                 const res = await api?.getRoomsInfo?.();
                 const rooms = Array.isArray(res) ? res : res?.rooms;
                 const main = Array.isArray(rooms) ? rooms.find((r) => r?.isMainRoom) || rooms[0] : null;
                 const arr = main?.participants;
                 if (Array.isArray(arr)) {
-                    // Try infer local presence via getParticipantsInfo
                     try {
                         const info = api?.getParticipantsInfo?.();
                         if (Array.isArray(info)) {
@@ -1260,13 +1281,10 @@ export default function RoomPageIFrame() {
                             return Math.max(1, info.length + 1);
                         }
                     } catch { }
-
-                    // Fallback heuristic: assume roomsInfo excludes local => +1
                     return Math.max(1, arr.length + 1);
                 }
             } catch { }
 
-            // 3) Deprecated fallback: getParticipantsInfo
             try {
                 const info = api?.getParticipantsInfo?.();
                 if (Array.isArray(info)) {
@@ -1300,7 +1318,6 @@ export default function RoomPageIFrame() {
                 return;
             }
 
-            // Require 2 consecutive confirmations to reduce false positives
             if (overLimitHitsRef.current < 2) return;
 
             capacityTriggeredRef.current = true;
@@ -1384,7 +1401,6 @@ export default function RoomPageIFrame() {
                 kickedIdsRef.current = new Set();
                 localIsModeratorRef.current = false;
 
-                // ✅ persist chosen domain to DB (do NOT block join)
                 try {
                     const prev = String(session?.jitsi_domain || "").trim();
                     if (session?.id && domain && prev !== domain) {
@@ -1392,7 +1408,6 @@ export default function RoomPageIFrame() {
                     }
                 } catch { }
 
-                // Supported commands (best-effort)
                 try {
                     const cmds =
                         api.getSupportedCommands?.() || api.getAvailableCommands?.() || api._getSupportedCommands?.() || null;
@@ -1406,7 +1421,6 @@ export default function RoomPageIFrame() {
                     supportedCmdsRef.current = null;
                 }
 
-                // initial commands
                 try {
                     api.executeCommand("setTileView", true);
                     setTile(true);
@@ -1417,15 +1431,11 @@ export default function RoomPageIFrame() {
 
                 console.log("[JITSI] Domain chosen:", domain);
 
-                // ✅ lightweight poll to keep participants accurate (desktop UX)
                 participantsPollTimer = window.setInterval(() => {
                     if (destroyed) return;
                     void refreshParticipants(api);
                 }, 5000);
 
-                // --------------------------
-                // Events
-                // --------------------------
                 api.addEventListener?.("videoConferenceJoined", async (e: any) => {
                     if (destroyed) return;
 
@@ -1442,7 +1452,6 @@ export default function RoomPageIFrame() {
                         api.executeCommand("subject", "");
                     } catch { }
 
-                    // refresh participants
                     window.setTimeout(() => void refreshParticipants(api), 250);
 
                     await scheduleSelfChecks(api, "videoConferenceJoined");
@@ -1469,7 +1478,6 @@ export default function RoomPageIFrame() {
 
                     const joinedId = String(e?.id || "");
 
-                    // update UI count (after Jitsi settles)
                     window.setTimeout(() => void refreshParticipants(api), 350);
 
                     if (isHost && joinedId) {
@@ -1515,10 +1523,16 @@ export default function RoomPageIFrame() {
 
         return () => {
             destroyed = true;
-            cleanup();
+            stopWelcomeLoop();
+            setApiReady(false);
+            try {
+                apiRef.current?.dispose?.();
+            } catch { }
+            apiRef.current = null;
+            supportedCmdsRef.current = null;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [session, idOrSlug, userName, roomName, navigate, jitsiKey, maxParticipants, isHost]);
+    }, [authStatus, session, idOrSlug, userName, roomName, navigate, jitsiKey, maxParticipants, isHost]);
 
     // ============================================
     // Controls (bottom bar)
@@ -1593,6 +1607,14 @@ export default function RoomPageIFrame() {
     // ============================================
     // RENDER
     // ============================================
+    if (authStatus === "checking") {
+        return <div className={`flex h-screen justify-center items-center ${pageBg}`}>Checking login…</div>;
+    }
+
+    if (authStatus === "redirecting") {
+        return <div className={`flex h-screen justify-center items-center ${pageBg}`}>Redirecting to login…</div>;
+    }
+
     if (loading) {
         return <div className={`flex h-screen justify-center items-center ${pageBg}`}>Loading session...</div>;
     }
@@ -1672,8 +1694,8 @@ export default function RoomPageIFrame() {
                                     <button
                                         onClick={() => setSelectedUser(session.host_profile)}
                                         className={`flex items-center gap-2 px-3 h-[32px] rounded-xl border transition font-inter text-[13px] ${isLight
-                                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                                : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                             }`}
                                     >
                                         <span className="flex items-center gap-2 leading-none">
@@ -1756,8 +1778,8 @@ export default function RoomPageIFrame() {
                                     <button
                                         onClick={() => setSelectedUser(session.host_profile)}
                                         className={`max-[520px]:hidden flex items-center gap-2 px-3 h-[32px] rounded-xl border transition font-inter text-[13px] ${isLight
-                                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                                : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                             }`}
                                     >
                                         <span className="flex items-center gap-1 leading-none">
@@ -1934,7 +1956,7 @@ export default function RoomPageIFrame() {
                                 className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
                                 title={tile ? "Disable tile view" : "Enable tile view"}
                             >
-                                <Icon name={tile ? "tile-on" : "tile-off"} theme={theme} className="w-5 h-5" />
+                                <Icon name="tile-view" theme={theme} className="w-5 h-5" />
                             </button>
                         </div>
 
