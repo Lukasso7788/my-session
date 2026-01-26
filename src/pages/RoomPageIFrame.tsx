@@ -27,6 +27,14 @@
 //
 // ✅ UI tweak:
 // - Tile view icon has no on/off states; uses themed assets: tile-view-light.svg / tile-view-dark.svg
+//
+// ✅ NEW (from RoomPage):
+// - useAttendancePresence(...) so Session cards can show live participants count (attendance/presence)
+// - attendance_leave on leaving the room
+//
+// ✅ NEW:
+// - celebrate stage sound
+// - celebrate stage color -> green
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -36,6 +44,7 @@ import { IntentionsPanel } from "../components/IntentionsPanel";
 import { SessionStageBar } from "../components/SessionStageBar";
 import { UserProfileModal } from "../components/UserProfileModal";
 import ChatPanel from "../components/ChatPanel";
+import { useAttendancePresence } from "../hooks/useAttendancePresence";
 
 type Stage = {
     name: string;
@@ -107,6 +116,7 @@ const STAGE_SOUND_MAP: Record<string, string> = {
     focus: "/sounds/focus.mp3",
     break: "/sounds/break_start.mp3",
     outro: "/sounds/outro.mp3",
+    celebrate: "/sounds/celebrate.mp3", // ✅ NEW: celebrate sound
 };
 const BREAK_END_SOUND = "/sounds/break_end.mp3";
 const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
@@ -240,7 +250,7 @@ const STAGE_COLORS: Record<string, string> = {
     focus: "#4CA0FF",
 
     recap: "#A78BFA",
-    celebrate: "#F472B6",
+    celebrate: "#34D399", // ✅ NEW: was pink (#F472B6). Change here if you want another green.
     custom: CUSTOM_BLOCK_GRADIENT,
 
     break: "#F9ADA2",
@@ -715,6 +725,19 @@ export default function RoomPageIFrame() {
         const hay = `${fmt} ${title} ${tplName} ${tplKey} ${tplFmt}`.toLowerCase();
         return hay.includes("silent");
     }, [session]);
+
+    // ✅ PRESENCE (LIVE ATTENDANCE) — feeds live participants count on Session cards
+    useAttendancePresence(session?.id && currentUserId ? String(session.id) : null, { heartbeatMs: 10_000 });
+
+    const attendanceLeave = async () => {
+        try {
+            if (session?.id) {
+                await supabase.rpc("attendance_leave", { p_session_id: String(session.id) });
+            }
+        } catch (e) {
+            console.log("attendance_leave exception:", e);
+        }
+    };
 
     // Key to force recreate Jitsi iframe reliably
     const [jitsiKey, setJitsiKey] = useState(0);
@@ -1249,6 +1272,7 @@ export default function RoomPageIFrame() {
         const leaveToSessions = () => {
             if (destroyed) return;
             destroyed = true;
+            void attendanceLeave(); // ✅ ensure attendance is cleared
             cleanup();
             navigate("/sessions", { replace: true });
         };
@@ -1328,7 +1352,7 @@ export default function RoomPageIFrame() {
                 try {
                     api?.executeCommand?.("hangup");
                 } catch {
-                    navigate("/sessions", { replace: true });
+                    leaveToSessions();
                 }
             }, 600);
         };
@@ -1571,8 +1595,12 @@ export default function RoomPageIFrame() {
         } catch { }
     };
 
-    const hangup = () => {
+    const hangup = async () => {
         const api = apiRef.current;
+
+        // ✅ clear attendance so Session cards update fast
+        await attendanceLeave();
+
         if (!api) {
             navigate("/sessions", { replace: true });
             return;
