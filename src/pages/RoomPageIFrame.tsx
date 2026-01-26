@@ -33,8 +33,8 @@
 // - attendance_leave on leaving the room
 //
 // ✅ NEW:
-// - celebrate stage sound
-// - celebrate stage color -> green
+// - celebrate stage sound = outro
+// - celebrate stage color = same as welcome
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -116,7 +116,7 @@ const STAGE_SOUND_MAP: Record<string, string> = {
     focus: "/sounds/focus.mp3",
     break: "/sounds/break_start.mp3",
     outro: "/sounds/outro.mp3",
-    celebrate: "/sounds/celebrate.mp3", // ✅ NEW: celebrate sound
+    celebrate: "/sounds/outro.mp3", // ✅ celebrate uses OUTRO sound
 };
 const BREAK_END_SOUND = "/sounds/break_end.mp3";
 const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
@@ -250,7 +250,7 @@ const STAGE_COLORS: Record<string, string> = {
     focus: "#4CA0FF",
 
     recap: "#A78BFA",
-    celebrate: "#34D399", // ✅ NEW: was pink (#F472B6). Change here if you want another green.
+    celebrate: "#80DF86", // ✅ same as Welcome (intro)
     custom: CUSTOM_BLOCK_GRADIENT,
 
     break: "#F9ADA2",
