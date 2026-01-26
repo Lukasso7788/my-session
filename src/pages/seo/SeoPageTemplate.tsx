@@ -28,6 +28,28 @@ function upsertMeta(name: string, content: string) {
     el.setAttribute("content", content);
 }
 
+function upsertMetaProperty(property: string, content: string) {
+    if (typeof document === "undefined") return;
+    let el = document.querySelector(`meta[property="${property}"]`) as HTMLMetaElement | null;
+    if (!el) {
+        el = document.createElement("meta");
+        el.setAttribute("property", property);
+        document.head.appendChild(el);
+    }
+    el.setAttribute("content", content);
+}
+
+function upsertLink(rel: string, href: string) {
+    if (typeof document === "undefined") return;
+    let el = document.querySelector(`link[rel="${rel}"]`) as HTMLLinkElement | null;
+    if (!el) {
+        el = document.createElement("link");
+        el.setAttribute("rel", rel);
+        document.head.appendChild(el);
+    }
+    el.setAttribute("href", href);
+}
+
 export default function SeoPageTemplate(props: {
     /** Used for title only */
     pageTitle: string;
@@ -65,8 +87,31 @@ export default function SeoPageTemplate(props: {
 
     useEffect(() => {
         try {
+            const path =
+                typeof window !== "undefined" && window.location?.pathname
+                    ? window.location.pathname
+                    : "/";
+            const url = `https://mysession.club${path}`;
+
             document.title = `${pageTitle} | MySession`;
-            if (metaDescription) upsertMeta("description", metaDescription);
+
+            if (metaDescription) {
+                upsertMeta("description", metaDescription);
+            }
+
+            // Canonical
+            upsertLink("canonical", url);
+
+            // Open Graph
+            upsertMetaProperty("og:title", `${pageTitle} | MySession`);
+            upsertMetaProperty("og:description", metaDescription ?? "");
+            upsertMetaProperty("og:url", url);
+            upsertMetaProperty("og:type", "website");
+
+            // Twitter
+            upsertMeta("twitter:card", "summary_large_image");
+            upsertMeta("twitter:title", `${pageTitle} | MySession`);
+            upsertMeta("twitter:description", metaDescription ?? "");
         } catch { }
     }, [pageTitle, metaDescription]);
 
