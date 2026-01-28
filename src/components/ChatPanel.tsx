@@ -730,7 +730,7 @@ export function ChatPanel({
             {/* LIST */}
             <div
                 ref={listRef}
-                className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3 custom-scrollbar relative"
+                className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-4 space-y-3 custom-scrollbar relative"
                 onScroll={() => {
                     const at = isAtBottom();
                     atBottomRef.current = at;

@@ -1774,8 +1774,8 @@ export default function RoomPageIFrame() {
     }
 
     return (
-        <div className={`min-h-screen ${pageBg}`}>
-            <div className="w-full px-3 sm:px-5 pt-5 pb-[calc(110px+env(safe-area-inset-bottom))] flex flex-col gap-5 min-h-screen">
+        <div className={`h-[100dvh] overflow-hidden ${pageBg}`}>
+            <div className="w-full px-3 sm:px-5 pt-5 pb-[calc(110px+env(safe-area-inset-bottom))] flex flex-col gap-5 h-full min-h-0 overflow-hidden">
                 {/* TOP BAR */}
                 <div className={`flex w-full rounded-2xl overflow-hidden ${topBarBg}`}>
                     <div className="flex-1 min-w-0 px-4 sm:px-6 py-4">
@@ -1992,9 +1992,9 @@ export default function RoomPageIFrame() {
 
                     {/* RIGHT PANEL (chat/intentions) */}
                     {rightPanelOpen && (
-                        <div className={`rounded-2xl shadow-lg overflow-hidden min-h-0 ${panelBg}`}>
+                        <div className={`rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col ${panelBg}`}>
                             {rightTab === "chat" && (
-                                <div className="h-full">
+                                <>
                                     <div className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
                                         <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Chat</div>
                                         <button
@@ -2007,22 +2007,23 @@ export default function RoomPageIFrame() {
                                         </button>
                                     </div>
 
-                                    {/* ✅ no double header: ChatPanel header hidden */}
-                                    <div className="p-4 h-[calc(100%-64px)]">
+                                    <div className="flex-1 min-h-0 p-4">
                                         {sessionId ? (
-                                            <ChatPanel
-                                                sessionId={sessionId}
-                                                theme={theme}
-                                                showHeader={false}
-                                                onBecameVisible={() => markChatRead()} // ✅ NEW: make unread reset super reliable
-                                            />
+                                            <div className="h-full min-h-0">
+                                                <ChatPanel
+                                                    sessionId={sessionId}
+                                                    theme={theme}
+                                                    showHeader={false}
+                                                    onBecameVisible={() => markChatRead()}
+                                                />
+                                            </div>
                                         ) : null}
                                     </div>
-                                </div>
+                                </>
                             )}
 
                             {rightTab === "intentions" && (
-                                <div className="h-full">
+                                <>
                                     <div className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
                                         <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Intentions</div>
                                         <button
@@ -2035,10 +2036,10 @@ export default function RoomPageIFrame() {
                                         </button>
                                     </div>
 
-                                    <div className="h-[calc(100%-64px)]">
+                                    <div className="flex-1 min-h-0">
                                         <IntentionsPanel theme={theme} />
                                     </div>
-                                </div>
+                                </>
                             )}
                         </div>
                     )}
