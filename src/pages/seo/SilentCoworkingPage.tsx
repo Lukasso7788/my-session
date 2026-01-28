@@ -11,7 +11,7 @@ export default function SilentCoworkingPage() {
                 { label: "Body doubling", to: "/body-doubling" },
                 { label: "Online coworking", to: "/online-coworking" },
                 { label: "Group focus sessions", to: "/group-focus-sessions" },
-                { label: "AI assistant", to: "/ai-assistant" },
+                { label: "ADHD productivity", to: "/adhd-productivity" },
             ]}
             intro={[
                 "Silent coworking is an online coworking format where people work alongside each other quietly — typically with microphones off by default — to reduce distraction and increase follow-through.",
@@ -80,17 +80,17 @@ export default function SilentCoworkingPage() {
                     h2: "How MySession uses silent coworking",
                     paragraphs: [
                         "MySession is built around silent-by-default focus sessions: you join, set an intention, work through timed blocks, then recap.",
-                        "If you get stuck mid-session, you can optionally use a real-time AI assistant (screenshare included) to unblock the next step — without leaving the focus container.",
+                        "The product goal is simple: reduce friction to start, reduce drifting once you start, and leave with a concrete next step.",
                     ],
                     bullets: [
                         "Silent group sessions with structured formats (Pomodoro / deep work / sprints).",
                         "24/7 rooms to join anytime without scheduling friction.",
                         "Buddy Tripling (3 people) for a cozy, calm accountability circle.",
-                        "Optional AI assistant for fast unblocking and “what next?” guidance.",
+                        "Clear closure: a recap that locks in progress and the next step.",
                     ],
                 },
             ]}
-            secondaryCta={{ label: "See AI assistant", to: "/ai-assistant" }}
+            secondaryCta={{ label: "Join a focus session", to: "/sessions" }}
             faq={[
                 {
                     q: "What does “silent coworking” mean?",
@@ -122,7 +122,7 @@ export default function SilentCoworkingPage() {
                 },
                 {
                     q: "How is MySession different from a quiet Zoom room?",
-                    a: "MySession sessions are built for execution: intentions, timed blocks, recaps — plus an optional real-time AI assistant that can help you unblock mid-session (including via screenshare).",
+                    a: "MySession sessions are built for execution: intentions, timed blocks, and recaps — not just a quiet call link.",
                 },
             ]}
         />

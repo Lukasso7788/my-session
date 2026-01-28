@@ -36,7 +36,7 @@ export default function App() {
   return (
     <CreateSessionModalProvider>
       <Routes>
-        {/* Routes WITH header (и с футером, если он внутри AppLayout) */}
+        {/* Routes WITH header */}
         <Route element={<AppLayout />}>
           {/* Root */}
           <Route path="/" element={<LandingPage />} />
@@ -59,12 +59,12 @@ export default function App() {
           <Route path="/silent-coworking" element={<SilentCoworkingPage />} />
           <Route path="/adhd-productivity" element={<AdhdProductivityPage />} />
 
-          {/* ⏸ AI assistant page is postponed for now
-              Keep route alive to avoid 404s from existing links.
+          {/* ⏸ AI assistant page is postponed for now.
+              Keep route alive to avoid 404s from existing links/bookmarks.
               Temporary behavior: /ai-assistant -> Sessions */}
           <Route path="/ai-assistant" element={<SessionsPage />} />
 
-          {/* ✅ 404 (instead of redirect-to-/) */}
+          {/* ✅ 404 */}
           <Route path="*" element={<NotFoundPage />} />
         </Route>
 

@@ -1838,8 +1838,8 @@ export default function RoomPageIFrame() {
                                     <button
                                         onClick={() => setSelectedUser(session.host_profile)}
                                         className={`flex items-center gap-2 px-3 h-[32px] rounded-xl border transition font-inter text-[13px] ${isLight
-                                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                                : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                             }`}
                                     >
                                         <span className="flex items-center gap-2 leading-none">
@@ -1922,8 +1922,8 @@ export default function RoomPageIFrame() {
                                     <button
                                         onClick={() => setSelectedUser(session.host_profile)}
                                         className={`max-[520px]:hidden flex items-center gap-2 px-3 h-[32px] rounded-xl border transition font-inter text-[13px] ${isLight
-                                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                                : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                             }`}
                                     >
                                         <span className="flex items-center gap-1 leading-none">
@@ -2009,7 +2009,14 @@ export default function RoomPageIFrame() {
 
                                     {/* ✅ no double header: ChatPanel header hidden */}
                                     <div className="p-4 h-[calc(100%-64px)]">
-                                        {sessionId ? <ChatPanel sessionId={sessionId} theme={theme} showHeader={false} /> : null}
+                                        {sessionId ? (
+                                            <ChatPanel
+                                                sessionId={sessionId}
+                                                theme={theme}
+                                                showHeader={false}
+                                                onBecameVisible={() => markChatRead()} // ✅ NEW: make unread reset super reliable
+                                            />
+                                        ) : null}
                                     </div>
                                 </div>
                             )}

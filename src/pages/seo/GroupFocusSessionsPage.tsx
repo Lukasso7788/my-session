@@ -11,13 +11,13 @@ export default function GroupFocusSessionsPage() {
                 { label: "Body doubling", to: "/body-doubling" },
                 { label: "Online coworking", to: "/online-coworking" },
                 { label: "Silent coworking", to: "/silent-coworking" },
-                { label: "AI assistant", to: "/ai-assistant" },
+                { label: "ADHD productivity", to: "/adhd-productivity" },
             ]}
             intro={[
                 "Group focus sessions are live online coworking sessions where multiple people work at the same time to increase accountability, momentum, and consistency.",
                 "They’re not meetings. The goal is quiet execution: you show up, state a simple intention, work during timed focus blocks, then do a quick recap.",
                 "This format is a practical version of online body doubling: the group’s live presence reduces procrastination friction and helps you stay on-task without needing willpower first.",
-                "MySession runs group focus sessions as the core product — with an optional real-time AI assistant (screenshare included) to unblock the next step mid-session without leaving the focus container.",
+                "MySession runs group focus sessions as the core product: silent-by-default rooms with a simple structure that keeps you moving.",
             ]}
             sections={[
                 {
@@ -80,17 +80,17 @@ export default function GroupFocusSessionsPage() {
                     h2: "How MySession runs group focus sessions",
                     paragraphs: [
                         "MySession group sessions are designed to be silent coworking by default with clear structure: intention → timed focus blocks → recap.",
-                        "If you get stuck mid-session, you can optionally use a real-time AI assistant (screenshare included) to decide the next step and keep momentum — without leaving the session.",
+                        "The goal is simple: reduce friction to start, reduce drifting once you start, and leave with a concrete next step.",
                     ],
                     bullets: [
                         "Structured formats: Pomodoro, deep work, short sprints.",
                         "Low friction: join scheduled sessions or use always-available rooms.",
                         "Clear closure: recap reinforces progress and the next step.",
-                        "Optional AI assistant for fast unblocking and “what next?” guidance.",
+                        "Quiet by default: minimal talking, maximum focus.",
                     ],
                 },
             ]}
-            secondaryCta={{ label: "See AI assistant", to: "/ai-assistant" }}
+            secondaryCta={{ label: "Join a focus session", to: "/sessions" }}
             faq={[
                 {
                     q: "Are group focus sessions the same as online coworking?",
@@ -114,11 +114,11 @@ export default function GroupFocusSessionsPage() {
                 },
                 {
                     q: "Can I join a group focus session anytime?",
-                    a: "On MySession, yes — you can join scheduled sessions or use always-available rooms (24/7) when you need a focus container right now.",
+                    a: "On MySession, you can join scheduled sessions or use always-available rooms (24/7) when you need a focus container right now.",
                 },
                 {
                     q: "How is MySession different from a normal call?",
-                    a: "MySession is built for focus: silent-by-default sessions, intentions, timed focus blocks, recaps — plus an optional real-time AI assistant that can help you unblock mid-session (including via screenshare).",
+                    a: "It’s built for execution: silent-by-default sessions, intentions, timed focus blocks, and recaps — not just a call link.",
                 },
                 {
                     q: "How do I try a group focus session right now?",

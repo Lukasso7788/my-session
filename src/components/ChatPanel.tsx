@@ -46,14 +46,24 @@ function formatTime(iso?: string) {
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-// группировка реакций: message_id -> emoji -> count
-function groupReactions(rows: ReactionRow[]) {
-    const out: Record<string, Record<string, number>> = {};
+// группировка реакций:
+// - counts: message_id -> emoji -> count
+// - mine:   message_id -> emoji -> true (если я ставил)
+function groupReactions(rows: ReactionRow[], myUserId: string | null) {
+    const counts: Record<string, Record<string, number>> = {};
+    const mine: Record<string, Record<string, boolean>> = {};
+
     for (const r of rows) {
-        if (!out[r.message_id]) out[r.message_id] = {};
-        out[r.message_id][r.emoji] = (out[r.message_id][r.emoji] || 0) + 1;
+        if (!counts[r.message_id]) counts[r.message_id] = {};
+        counts[r.message_id][r.emoji] = (counts[r.message_id][r.emoji] || 0) + 1;
+
+        if (myUserId && r.user_id === myUserId) {
+            if (!mine[r.message_id]) mine[r.message_id] = {};
+            mine[r.message_id][r.emoji] = true;
+        }
     }
-    return out;
+
+    return { counts, mine };
 }
 
 function MessageCard({
@@ -61,14 +71,16 @@ function MessageCard({
     mine,
     onReply,
     reactionsCounts,
-    onAddReaction,
+    myReactions,
+    onToggleReaction,
     isLight,
 }: {
     msg: Msg;
     mine: boolean;
     onReply: (m: Msg) => void;
     reactionsCounts: Record<string, number> | undefined;
-    onAddReaction: (messageId: string, emoji: string) => void;
+    myReactions: Record<string, boolean> | undefined;
+    onToggleReaction: (messageId: string, emoji: string) => void;
     isLight: boolean;
 }) {
     const name = mine ? "You" : msg.profile?.full_name || "Participant";
@@ -110,9 +122,13 @@ function MessageCard({
                 ? "bg-black/5 border-black/10 text-black/80"
                 : "bg-white/5 border-white/10 text-white/85");
 
-    const reactionPillCls = isLight
-        ? "px-2 py-1 rounded-xl bg-black/5 border border-black/10 text-[12px] text-black/70 flex items-center gap-1"
-        : "px-2 py-1 rounded-xl bg-white/5 border border-white/10 text-[12px] text-white/80 flex items-center gap-1";
+    const reactionPillBase = isLight
+        ? "px-2 py-1 rounded-xl bg-black/5 border border-black/10 text-[12px] text-black/70 flex items-center gap-1 transition"
+        : "px-2 py-1 rounded-xl bg-white/5 border border-white/10 text-[12px] text-white/80 flex items-center gap-1 transition";
+
+    const reactionPillMine = isLight
+        ? "ring-1 ring-emerald-400/60 border-emerald-500/40"
+        : "ring-1 ring-emerald-300/40 border-emerald-300/30";
 
     const reactionCountCls = isLight ? "text-black/50" : "text-white/60";
 
@@ -155,20 +171,26 @@ function MessageCard({
 
                         {openReactions && (
                             <div className={"absolute z-50 mt-2 right-0 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl " + menuCls}>
-                                {REACTION_EMOJIS.map((e) => (
-                                    <button
-                                        key={e}
-                                        onClick={() => {
-                                            onAddReaction(msg.id, e);
-                                            setOpenReactions(false);
-                                        }}
-                                        className="hover:scale-[1.06] transition"
-                                        title={e}
-                                        type="button"
-                                    >
-                                        {e}
-                                    </button>
-                                ))}
+                                {REACTION_EMOJIS.map((e) => {
+                                    const isMine = !!myReactions?.[e];
+                                    return (
+                                        <button
+                                            key={e}
+                                            onClick={() => {
+                                                onToggleReaction(msg.id, e);
+                                                setOpenReactions(false);
+                                            }}
+                                            className={
+                                                "hover:scale-[1.06] transition " +
+                                                (isMine ? (isLight ? "drop-shadow-[0_0_0.6rem_rgba(16,185,129,0.35)]" : "drop-shadow-[0_0_0.7rem_rgba(16,185,129,0.25)]") : "")
+                                            }
+                                            title={isMine ? `Remove ${e}` : e}
+                                            type="button"
+                                        >
+                                            {e}
+                                        </button>
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
@@ -179,12 +201,21 @@ function MessageCard({
                 {/* reactions row */}
                 {hasReactions && (
                     <div className={"mt-2 flex flex-wrap gap-2 " + (mine ? "justify-end" : "justify-start")}>
-                        {Object.entries(reactionsCounts!).map(([emoji, count]) => (
-                            <div key={emoji} className={reactionPillCls}>
-                                <span>{emoji}</span>
-                                <span className={reactionCountCls}>{count}</span>
-                            </div>
-                        ))}
+                        {Object.entries(reactionsCounts!).map(([emoji, count]) => {
+                            const isMine = !!myReactions?.[emoji];
+                            return (
+                                <button
+                                    key={emoji}
+                                    type="button"
+                                    className={reactionPillBase + " " + (isMine ? reactionPillMine : "")}
+                                    onClick={() => onToggleReaction(msg.id, emoji)}
+                                    title={isMine ? `Remove ${emoji}` : `React ${emoji}`}
+                                >
+                                    <span>{emoji}</span>
+                                    <span className={reactionCountCls}>{count}</span>
+                                </button>
+                            );
+                        })}
                     </div>
                 )}
             </div>
@@ -233,7 +264,9 @@ export function ChatPanel({
         messagesRef.current = messages;
     }, [messages]);
 
+    // reactions: counts + mine
     const [reactions, setReactions] = useState<Record<string, Record<string, number>>>({});
+    const [myReactions, setMyReactions] = useState<Record<string, Record<string, boolean>>>({});
 
     const [text, setText] = useState("");
     const [loading, setLoading] = useState(true);
@@ -241,12 +274,31 @@ export function ChatPanel({
     const [replyTo, setReplyTo] = useState<Msg | null>(null);
 
     const bottomRef = useRef<HTMLDivElement | null>(null);
+    const listRef = useRef<HTMLDivElement | null>(null);
 
     const pollingRef = useRef<number | null>(null);
+
+    // autoscroll control
+    const atBottomRef = useRef<boolean>(true);
+    const [unseenNew, setUnseenNew] = useState<number>(0);
+
+    const isAtBottom = () => {
+        const el = listRef.current;
+        if (!el) return true;
+        const threshold = 140; // px
+        const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+        return distance <= threshold;
+    };
+
+    const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
+        bottomRef.current?.scrollIntoView({ behavior });
+    };
 
     // ✅ inform parent that chat became visible
     useEffect(() => {
         onBecameVisible?.();
+        // also reset "new messages" bubble on mount
+        setUnseenNew(0);
     }, [onBecameVisible, sessionId]);
 
     // ---------- theme tokens
@@ -368,10 +420,13 @@ export function ChatPanel({
         if (error) {
             console.error("reactions load error:", error);
             setReactions({});
+            setMyReactions({});
             return;
         }
 
-        setReactions(groupReactions((data as any as ReactionRow[]) || []));
+        const grouped = groupReactions((data as any as ReactionRow[]) || [], userId);
+        setReactions(grouped.counts);
+        setMyReactions(grouped.mine);
     };
 
     // initial load
@@ -403,6 +458,9 @@ export function ChatPanel({
 
                 await ensureProfiles([row.user_id]);
 
+                const beforeAtBottom = isAtBottom();
+                atBottomRef.current = beforeAtBottom;
+
                 setMessages((prev) => {
                     if (prev.some((m) => m.id === row.id)) return prev;
 
@@ -420,6 +478,12 @@ export function ChatPanel({
 
                     return [...prev, merged];
                 });
+
+                // if user is not at bottom => show "new messages" bubble
+                // ignore my own messages for bubble
+                if (!beforeAtBottom && row.user_id !== userId) {
+                    setUnseenNew((n) => Math.min(99, n + 1));
+                }
             }
         );
 
@@ -473,7 +537,7 @@ export function ChatPanel({
             supabase.removeChannel(channel);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [sessionId]);
+    }, [sessionId, userId]);
 
     // ---------- realtime reactions
     useEffect(() => {
@@ -501,11 +565,17 @@ export function ChatPanel({
             supabase.removeChannel(ch);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [sessionId]);
+    }, [sessionId, userId]);
 
-    // autoscroll
+    // autoscroll only if user is near bottom
     useEffect(() => {
-        bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+        const shouldScroll = atBottomRef.current || isAtBottom();
+        if (shouldScroll) {
+            scrollToBottom("smooth");
+            setUnseenNew(0);
+            onBecameVisible?.(); // treat as "read" when we are at bottom
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [messages.length]);
 
     const send = async () => {
@@ -527,6 +597,9 @@ export function ChatPanel({
                 ({ id: userId, full_name: "You", avatar_url: null } as any),
         };
 
+        // before sending, assume we want to stay at bottom
+        atBottomRef.current = true;
+
         setMessages((prev) => [...prev, optimistic]);
         setText("");
         setReplyTo(null);
@@ -546,8 +619,72 @@ export function ChatPanel({
         }
     };
 
-    const addReaction = async (messageId: string, emoji: string) => {
+    // toggle reaction:
+    // - if already reacted => delete
+    // - else insert
+    const toggleReaction = async (messageId: string, emoji: string) => {
         if (!userId || !sessionId) return;
+
+        const already = !!myReactions?.[messageId]?.[emoji];
+
+        // optimistic UI update
+        setReactions((prev) => {
+            const next = { ...prev };
+            const msgMap = { ...(next[messageId] || {}) };
+
+            const cur = Number(msgMap[emoji] || 0);
+            const nextCount = already ? Math.max(0, cur - 1) : cur + 1;
+
+            if (nextCount <= 0) {
+                delete msgMap[emoji];
+            } else {
+                msgMap[emoji] = nextCount;
+            }
+
+            if (Object.keys(msgMap).length === 0) {
+                delete next[messageId];
+            } else {
+                next[messageId] = msgMap;
+            }
+
+            return next;
+        });
+
+        setMyReactions((prev) => {
+            const next = { ...prev };
+            const msgMine = { ...(next[messageId] || {}) };
+
+            if (already) {
+                delete msgMine[emoji];
+            } else {
+                msgMine[emoji] = true;
+            }
+
+            if (Object.keys(msgMine).length === 0) {
+                delete next[messageId];
+            } else {
+                next[messageId] = msgMine;
+            }
+
+            return next;
+        });
+
+        // DB action
+        if (already) {
+            const { error } = await supabase
+                .from(REACTIONS_TABLE)
+                .delete()
+                .eq("session_id", sessionId)
+                .eq("message_id", messageId)
+                .eq("user_id", userId)
+                .eq("emoji", emoji);
+
+            if (error) {
+                console.warn("removeReaction error:", error);
+                // let realtime refresh fix
+            }
+            return;
+        }
 
         const { error } = await supabase.from(REACTIONS_TABLE).insert({
             session_id: sessionId,
@@ -557,24 +694,52 @@ export function ChatPanel({
         });
 
         if (error) {
-            console.warn("addReaction error (maybe duplicate):", error);
+            // if unique violation (already exists) => treat as toggle remove
+            const code = (error as any)?.code;
+            const msg = String((error as any)?.message || "");
+            const isDup = code === "23505" || msg.toLowerCase().includes("duplicate") || msg.toLowerCase().includes("unique");
+
+            if (isDup) {
+                await supabase
+                    .from(REACTIONS_TABLE)
+                    .delete()
+                    .eq("session_id", sessionId)
+                    .eq("message_id", messageId)
+                    .eq("user_id", userId)
+                    .eq("emoji", emoji);
+                return;
+            }
+
+            console.warn("addReaction error:", error);
+            // let realtime refresh fix
         }
     };
 
     const uiMessages = useMemo(() => messages, [messages]);
 
     return (
-        <div className="h-full flex flex-col bg-transparent min-h-0">
+        <div className="h-full flex flex-col bg-transparent min-h-0 relative">
             {/* HEADER (optional) */}
             {showHeader && (
-                <div className={"px-5 py-4 border-b " + (isLight ? "border-black/10" : "border-white/5")}>
-                    <div className={(isLight ? "text-black/85" : "text-white/85") + " font-inter font-semibold"}>Chat</div>
-                    <div className={(isLight ? "text-black/50" : "text-white/45") + " text-[12px]"}>All messages for this session</div>
+                <div className={"px-5 py-4 border-b " + headerBorder}>
+                    <div className={titleText + " font-inter font-semibold"}>Chat</div>
+                    <div className={subText + " text-[12px]"}>All messages for this session</div>
                 </div>
             )}
 
             {/* LIST */}
-            <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3 custom-scrollbar">
+            <div
+                ref={listRef}
+                className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3 custom-scrollbar relative"
+                onScroll={() => {
+                    const at = isAtBottom();
+                    atBottomRef.current = at;
+                    if (at) {
+                        if (unseenNew > 0) setUnseenNew(0);
+                        onBecameVisible?.();
+                    }
+                }}
+            >
                 {loading && <div className={(isLight ? "text-black/45" : "text-white/40") + " text-sm italic"}>Loading…</div>}
 
                 {!loading && uiMessages.length === 0 && (
@@ -588,7 +753,8 @@ export function ChatPanel({
                         mine={m.user_id === userId}
                         onReply={(msg) => setReplyTo(msg)}
                         reactionsCounts={reactions[m.id]}
-                        onAddReaction={addReaction}
+                        myReactions={myReactions[m.id]}
+                        onToggleReaction={toggleReaction}
                         isLight={isLight}
                     />
                 ))}
@@ -596,20 +762,44 @@ export function ChatPanel({
                 <div ref={bottomRef} />
             </div>
 
+            {/* "New messages" bubble */}
+            {unseenNew > 0 && (
+                <div className="absolute left-0 right-0 bottom-[92px] flex items-center justify-center pointer-events-none">
+                    <button
+                        type="button"
+                        className={
+                            "pointer-events-auto px-4 py-2 rounded-full shadow-xl text-[12px] font-semibold border transition " +
+                            (isLight
+                                ? "bg-white/95 border-black/10 text-black/80 hover:bg-white"
+                                : "bg-[#0B1220]/95 border-white/10 text-white/85 hover:bg-[#0B1220]")
+                        }
+                        onClick={() => {
+                            atBottomRef.current = true;
+                            scrollToBottom("smooth");
+                            setUnseenNew(0);
+                            onBecameVisible?.();
+                        }}
+                        title="Jump to newest"
+                    >
+                        New messages ({unseenNew}) • Jump
+                    </button>
+                </div>
+            )}
+
             {/* COMPOSER */}
-            <div className={"p-4 border-t " + (isLight ? "border-black/10" : "border-white/5")}>
+            <div className={"p-4 border-t " + headerBorder}>
                 {replyTo && (
-                    <div className={"mb-2 flex items-center justify-between gap-2 rounded-xl border px-3 py-2 " + (isLight ? "bg-black/5 border-black/10" : "bg-white/5 border-white/10")}>
+                    <div className={"mb-2 flex items-center justify-between gap-2 rounded-xl border px-3 py-2 " + replyBoxCls}>
                         <div className="min-w-0">
-                            <div className="text-[11px] text-emerald-500/90 font-medium">Replying</div>
-                            <div className={"text-[11px] truncate " + (isLight ? "text-black/55" : "text-white/55")}>
+                            <div className={replyingLabel}>Replying</div>
+                            <div className={"text-[11px] truncate " + replyingText}>
                                 {(replyTo.profile?.full_name || "Participant") + ": " + replyTo.body}
                             </div>
                         </div>
                         <button
                             type="button"
                             onClick={() => setReplyTo(null)}
-                            className={"w-8 h-8 rounded-lg flex items-center justify-center transition " + (isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/70")}
+                            className={"w-8 h-8 rounded-lg flex items-center justify-center transition " + cancelBtnCls}
                             title="Cancel reply"
                         >
                             <X size={16} />
@@ -636,15 +826,29 @@ export function ChatPanel({
                             send();
                         }
                     }}
+                    onFocus={() => {
+                        // focusing composer usually means user wants newest
+                        if (isAtBottom()) {
+                            onBecameVisible?.();
+                        }
+                    }}
                 />
 
                 <div className="mt-2 flex items-center justify-between">
-                    <div className={"text-[11px] " + (isLight ? "text-black/40" : "text-white/35")}>Enter — send • Shift+Enter — new line</div>
+                    <div className={"text-[11px] " + hintText}>Enter — send • Shift+Enter — new line</div>
 
                     <button
                         onClick={send}
-                        className="h-11 px-5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-[#02140B] font-semibold"
+                        className={
+                            "h-11 px-5 rounded-xl font-semibold transition " +
+                            (text.trim()
+                                ? "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
+                                : isLight
+                                    ? "bg-black/10 text-black/35 cursor-not-allowed"
+                                    : "bg-white/10 text-white/35 cursor-not-allowed")
+                        }
                         type="button"
+                        disabled={!text.trim()}
                     >
                         Send
                     </button>

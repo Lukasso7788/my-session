@@ -11,7 +11,7 @@ export default function BodyDoublingPage() {
                 { label: "Online coworking", to: "/online-coworking" },
                 { label: "Group focus sessions", to: "/group-focus-sessions" },
                 { label: "Silent coworking", to: "/silent-coworking" },
-                { label: "AI assistant", to: "/ai-assistant" },
+                { label: "ADHD productivity", to: "/adhd-productivity" },
             ]}
             intro={[
                 "Body doubling is a productivity method where you work alongside another person (in-person or online) to make it easier to start and stay on task.",
@@ -65,18 +65,18 @@ export default function BodyDoublingPage() {
                 {
                     h2: "How MySession uses body doubling",
                     paragraphs: [
-                        "MySession is built specifically around live online body doubling and group focus sessions: silent coworking by default, simple intentions, focus blocks, and recaps.",
-                        "If you get stuck mid-session, you can optionally use a real-time AI assistant (screenshare included) to unblock the next step — without leaving the focus container.",
+                        "MySession is built around live online body doubling and group focus sessions: silent coworking by default, simple intentions, focus blocks, and recaps.",
+                        "The product goal is simple: reduce friction to start, increase follow-through, and make focused work repeatable.",
                     ],
                     bullets: [
                         "Group focus sessions for energy + momentum.",
                         "24/7 rooms to reduce scheduling friction (join anytime).",
                         "Buddy Tripling (3 people) for a cozy, high-accountability small group.",
-                        "Optional real-time AI assistant for “what next?” and quick unblocking.",
+                        "Fast join + minimal UI so you stay in the work loop.",
                     ],
                 },
             ]}
-            secondaryCta={{ label: "See AI assistant", to: "/ai-assistant" }}
+            secondaryCta={{ label: "Browse sessions", to: "/sessions" }}
             faq={[
                 {
                     q: "Do you need to talk during body doubling?",

@@ -11,7 +11,6 @@ export default function OnlineCoworkingPage() {
                 { label: "Body doubling", to: "/body-doubling" },
                 { label: "Group focus sessions", to: "/group-focus-sessions" },
                 { label: "Silent coworking", to: "/silent-coworking" },
-                { label: "AI assistant", to: "/ai-assistant" },
                 { label: "ADHD productivity", to: "/adhd-productivity" },
             ]}
             intro={[
@@ -49,9 +48,7 @@ export default function OnlineCoworkingPage() {
                 },
                 {
                     h2: "Online coworking vs similar concepts",
-                    paragraphs: [
-                        "People use different words for similar things. Here’s how they usually map in practice.",
-                    ],
+                    paragraphs: ["People use different words for similar things. Here’s how they usually map in practice."],
                     bullets: [
                         "Online coworking: remote “work together” presence (often video).",
                         "Virtual coworking sessions: another common name for online coworking.",
@@ -84,16 +81,15 @@ export default function OnlineCoworkingPage() {
                 {
                     h2: "How MySession uses online coworking",
                     paragraphs: [
-                        "MySession is a platform for live online body doubling and group focus sessions. Online coworking is the category — structured focus sessions are the core product.",
+                        "MySession is built around live online coworking with structure: intentions, timed focus blocks, and recaps. Online coworking is the category — structured focus sessions are the core product.",
                         "You can join group sessions, drop into always-open rooms (24/7), or use small circles like Buddy Tripling (3 people).",
-                        "If you get stuck mid-session, MySession also offers an optional real-time AI assistant (screenshare included) to unblock the next step without leaving the focus container.",
                     ],
                     bullets: [
                         "Silent-by-default rooms designed for focus.",
                         "Structured formats: Pomodoro, deep work, short sprints.",
                         "24/7 rooms to join anytime (low scheduling friction).",
                         "Small groups (e.g., 3 people) for cozy accountability.",
-                        "Optional AI assistant for “what next?” and fast unblocking (including screenshare).",
+                        "Clear closure: recaps reinforce progress and the next step.",
                     ],
                 },
             ]}
@@ -129,7 +125,7 @@ export default function OnlineCoworkingPage() {
                 },
                 {
                     q: "How is MySession different from a normal coworking call?",
-                    a: "MySession is built for execution: silent-by-default sessions, intentions, timed focus blocks, recaps — plus an optional real-time AI assistant that can unblock you mid-session (including via screenshare).",
+                    a: "It’s built for execution: silent-by-default sessions, intentions, timed focus blocks, and recaps — not just a call link.",
                 },
                 {
                     q: "How do I try online coworking right now?",
