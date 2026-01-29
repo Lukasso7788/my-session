@@ -2324,30 +2324,45 @@ export default function RoomPageIFrame() {
                     >
                         <div ref={iframeContainerRef} className="w-full h-full min-h-[60vh]" />
 
-                        {/* MOBILE OVERLAY PANEL (<lg): overlays video instead of shrinking it */}
-                        {rightPanelOpen && (
-                            <div className="lg:hidden absolute inset-0 z-30">
+                        {/* ===== MOBILE CHAT / INTENTIONS OVERLAY (TRUE OVERLAY, NOT INSIDE VIDEO) ===== */}
+                        {rightPanelOpen && rightTab && (
+                            <div className="lg:hidden fixed inset-0 z-[70] pointer-events-none">
                                 {/* backdrop */}
-                                <div className="absolute inset-0 bg-black/35" onClick={() => openRightTab(null)} />
+                                <div
+                                    className="absolute inset-0 bg-black/40 pointer-events-auto"
+                                    onClick={() => openRightTab(null)}
+                                />
 
-                                {/* sheet */}
+                                {/* panel */}
                                 <div
                                     className={
-                                        "absolute left-3 right-3 top-3 bottom-[calc(84px+env(safe-area-inset-bottom))] " +
-                                        "rounded-2xl shadow-2xl overflow-hidden flex flex-col " +
-                                        (isLight ? "bg-white/90 border border-black/10" : "bg-[#0B1220]/80 border border-white/10")
+                                        "absolute left-3 right-3 top-3 " +
+                                        "bottom-[calc(84px+env(safe-area-inset-bottom))] " +
+                                        "rounded-2xl shadow-2xl overflow-hidden flex flex-col pointer-events-auto " +
+                                        (isLight
+                                            ? "bg-white/95 border border-black/10"
+                                            : "bg-[#0B1220]/90 border border-white/10")
                                     }
                                     onClick={(e) => e.stopPropagation()}
                                 >
                                     {/* header */}
-                                    <div className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/10"}`}>
-                                        <div className={`${isLight ? "text-black/80" : "text-white/90"} font-inter font-semibold`}>
-                                            {rightTab === "participants" ? "Participants" : rightTab === "chat" ? "Chat" : "Intentions"}
+                                    <div
+                                        className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/10"
+                                            }`}
+                                    >
+                                        <div className="font-inter font-semibold">
+                                            {rightTab === "participants"
+                                                ? "Participants"
+                                                : rightTab === "chat"
+                                                    ? "Chat"
+                                                    : "Intentions"}
                                         </div>
                                         <button
                                             onClick={() => openRightTab(null)}
-                                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"}`}
-                                            title="Close"
+                                            className={`w-9 h-9 rounded-xl flex items-center justify-center ${isLight
+                                                ? "bg-black/5 hover:bg-black/10"
+                                                : "bg-[#111827] hover:bg-[#1f2937]"
+                                                }`}
                                         >
                                             ✕
                                         </button>
@@ -2355,45 +2370,24 @@ export default function RoomPageIFrame() {
 
                                     {/* content */}
                                     <div className="flex-1 min-h-0">
-                                        {rightTab === "participants" && (
-                                            <div className="h-full flex flex-col min-h-0">
-                                                <div className="p-4">
-                                                    <div className={`rounded-xl px-3 py-2 ${isLight ? "bg-black/5 border border-black/10" : "bg-[#0B1220]/70 border border-white/10"}`}>
-                                                        <input
-                                                            value={participantsSearch}
-                                                            onChange={(e) => setParticipantsSearch(e.target.value)}
-                                                            placeholder="Search participants..."
-                                                            className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${isLight ? "text-black/80 placeholder:text-black/40" : "text-white/85 placeholder:text-white/35"}`}
-                                                        />
-                                                    </div>
-                                                </div>
-
-                                                <div className="flex-1 overflow-y-auto px-4 pb-4">
-                                                    <div className="flex flex-col gap-2">
-                                                        {filteredParticipants.map((p) => renderParticipantRow(p))}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {rightTab === "chat" && (
-                                            <div className="h-full min-h-0 p-4">
-                                                {sessionId ? (
-                                                    <div className="h-full min-h-0">
-                                                        <ChatPanel
-                                                            sessionId={sessionId}
-                                                            theme={theme}
-                                                            showHeader={false}
-                                                            onBecameVisible={() => markChatRead()}
-                                                        />
-                                                    </div>
-                                                ) : null}
-                                            </div>
+                                        {rightTab === "chat" && sessionId && (
+                                            <ChatPanel
+                                                sessionId={sessionId}
+                                                theme={theme}
+                                                showHeader={false}
+                                                onBecameVisible={() => markChatRead()}
+                                            />
                                         )}
 
                                         {rightTab === "intentions" && (
-                                            <div className="h-full min-h-0">
-                                                <IntentionsPanel theme={theme} />
+                                            <IntentionsPanel theme={theme} />
+                                        )}
+
+                                        {rightTab === "participants" && (
+                                            <div className="p-4 overflow-y-auto">
+                                                {filteredParticipants.map((p) =>
+                                                    renderParticipantRow(p)
+                                                )}
                                             </div>
                                         )}
                                     </div>

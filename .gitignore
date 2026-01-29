@@ -23,3 +23,6 @@ dist-ssr
 .env
 .vercel
 .env.local
+/my-session/
+/mysession/
+
