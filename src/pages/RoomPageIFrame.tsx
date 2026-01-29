@@ -336,28 +336,13 @@ async function createJitsiApiWithFallback(args: {
                 height: "100%",
                 userInfo: { displayName: args.userName },
 
-                const api = new window.JitsiMeetExternalAPI(domain, {
-                    roomName: args.roomName,
-                    parentNode: args.parentNode,
-                    width: "100%",
-                    height: "100%",
-                    userInfo: { displayName: args.userName },
-
-                    configOverwrite: {
-                        disableWelcomePage: true,
-                        prejoinPageEnabled: false,
-                        startWithTileView: true,
-                        toolbarButtons: TOOLBAR_MOUNT_BUTTONS,
-
-                        ...(cssUrl ? { customCssUrl: cssUrl } : {}),
-                    },
-
-                    interfaceConfigOverwrite: {
-                        TOOLBAR_BUTTONS: TOOLBAR_VISIBLE_BUTTONS,
-                        SHOW_JITSI_WATERMARK: false,
-                        SHOW_POWERED_BY: false,
-                    },
-                });
+                configOverwrite: {
+                    disableWelcomePage: true,
+                    prejoinPageEnabled: false,
+                    startWithTileView: true,
+                    toolbarButtons: TOOLBAR_MOUNT_BUTTONS,
+                    ...(cssUrl ? { customCssUrl: cssUrl } : {}),
+                },
 
                 interfaceConfigOverwrite: {
                     TOOLBAR_BUTTONS: TOOLBAR_VISIBLE_BUTTONS,
