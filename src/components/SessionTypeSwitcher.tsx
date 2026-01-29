@@ -12,7 +12,7 @@ const tabs = [
   },
   {
     id: "infinite",
-    label: "Infinite rooms",
+    label: "24/7 focus rooms",
     iconActive: "/icons/infinite-active.svg",
     iconInactive: "/icons/infinite-inactive.svg",
   },
