@@ -357,6 +357,8 @@ async function createJitsiApiWithFallback(args: {
                     hideConferenceTimer: true,
                     conferenceInfo: { alwaysVisible: [], autoHide: [] },
 
+                    // NOTE: some Jitsi builds expect toolbarButtons in interfaceConfigOverwrite, but keeping it
+                    // here doesn't hurt; interfaceConfigOverwrite also sets TOOLBAR_BUTTONS to empty.
                     toolbarButtons: TOOLBAR_MOUNT_BUTTONS,
 
                     ...(cssUrl ? { customCssUrl: cssUrl } : {}),
@@ -666,6 +668,39 @@ export default function RoomPageIFrame() {
         });
     };
 
+    // close reactions menu when panel is used (prevents overlapping popovers)
+    const [showReactionsMenu, setShowReactionsMenu] = useState(false);
+    useEffect(() => {
+        if (rightPanelOpen) setShowReactionsMenu(false);
+    }, [rightPanelOpen, rightTab]);
+
+    // Escape closes panels/popovers
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") {
+                setShowReactionsMenu(false);
+                setRightPanelOpen(false);
+                setRightTab(null);
+            }
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, []);
+
+    // stop any loop audio when tab is hidden
+    useEffect(() => {
+        const onVis = () => {
+            if (document.hidden) {
+                try {
+                    // stop welcome loop if running
+                    // (function declared later; safe to call via window scope? we keep it inline with try-catch below)
+                } catch { }
+            }
+        };
+        document.addEventListener("visibilitychange", onVis);
+        return () => document.removeEventListener("visibilitychange", onVis);
+    }, []);
+
     // =========================
     // ✅ CHAT UNREAD BADGE (always-on)
     // =========================
@@ -853,6 +888,21 @@ export default function RoomPageIFrame() {
         }
     };
 
+    // best-effort on page close
+    useEffect(() => {
+        const onUnload = () => {
+            try {
+                void attendanceLeave();
+            } catch { }
+            try {
+                apiRef.current?.dispose?.();
+            } catch { }
+        };
+        window.addEventListener("beforeunload", onUnload);
+        return () => window.removeEventListener("beforeunload", onUnload);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [session?.id]);
+
     // Key to force recreate Jitsi iframe reliably
     const [jitsiKey, setJitsiKey] = useState(0);
     const forceReloadJitsi = () => {
@@ -973,6 +1023,15 @@ export default function RoomPageIFrame() {
             }
         } catch { }
     };
+
+    // now that stopWelcomeLoop exists, wire the visibilitychange to actually stop it
+    useEffect(() => {
+        const onVis = () => {
+            if (document.hidden) stopWelcomeLoop();
+        };
+        document.addEventListener("visibilitychange", onVis);
+        return () => document.removeEventListener("visibilitychange", onVis);
+    }, []);
 
     // ============================================
     // AUTH GATE (NO GUESTS)
@@ -1279,7 +1338,8 @@ export default function RoomPageIFrame() {
             const diffSec = loopSeconds > 0 && isInfiniteRoom ? ((diffSecRaw % loopSeconds) + loopSeconds) % loopSeconds : diffSecRaw;
 
             let total = 0;
-            let active = 0;
+            let active = stages.length - 1;
+            let found = false;
 
             for (let i = 0; i < stages.length; i++) {
                 const dur = stageSeconds[i] || 0;
@@ -1290,11 +1350,16 @@ export default function RoomPageIFrame() {
                 if (diffSec < next) {
                     active = i;
                     const rem = next - diffSec;
-                    setRemainingTime(`${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`);
+                    setRemainingTime(`${Math.max(0, Math.floor(rem / 60))}:${String(Math.max(0, Math.floor(rem % 60))).padStart(2, "0")}`);
+                    found = true;
                     break;
                 }
                 total = next;
-                active = i;
+            }
+
+            if (!found) {
+                // ended (non-infinite); keep last stage and show 0:00
+                setRemainingTime("0:00");
             }
 
             setCurrentStage(active);
@@ -1392,10 +1457,18 @@ export default function RoomPageIFrame() {
             const merged = [localRow, ...remoteRows.filter((r) => r.id !== localId)];
             setParticipantRows(merged);
 
-            // also keep participantsNow in sync best-effort
             if (merged.length > 0) setParticipantsNow(Math.max(1, merged.length));
         } catch { }
     };
+
+    // refresh list when opening participants tab
+    useEffect(() => {
+        if (!(rightPanelOpen && rightTab === "participants")) return;
+        const api = apiRef.current;
+        if (!api) return;
+        void refreshParticipantsList(api);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [rightPanelOpen, rightTab]);
 
     const filteredParticipants = useMemo(() => {
         const q = participantsSearch.trim().toLowerCase();
@@ -1418,7 +1491,6 @@ export default function RoomPageIFrame() {
         const cached = profileNameCacheRef.current.get(id);
         if (cached) return cached;
 
-        // current user shortcut
         if (currentUserId && id === currentUserId) {
             const n = userName || "You";
             profileNameCacheRef.current.set(id, n);
@@ -1465,7 +1537,7 @@ export default function RoomPageIFrame() {
                 const type = String(p?.type || "") as ReactionType;
 
                 if (!fromUserId || !type) return;
-                if (fromUserId === currentUserId) return; // avoid double (sender receives own broadcast)
+                if (fromUserId === currentUserId) return;
 
                 const fromName = await resolveProfileName(fromUserId);
 
@@ -1509,7 +1581,6 @@ export default function RoomPageIFrame() {
     };
 
     // reaction menu
-    const [showReactionsMenu, setShowReactionsMenu] = useState(false);
     const reactionsMenuRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
@@ -1581,38 +1652,34 @@ export default function RoomPageIFrame() {
         };
 
         const getParticipantCount = async (api: any): Promise<number | null> => {
+            // best: participantsInfo
+            try {
+                const info = api?.getParticipantsInfo?.();
+                if (Array.isArray(info)) {
+                    const localId = localParticipantIdRef.current;
+                    const includesLocal =
+                        !!localId && info.some((p: any) => String(p?.participantId || p?.id || "") === String(localId));
+
+                    const local = localJoinedRef.current ? 1 : 0;
+                    const base = info.length + (includesLocal ? 0 : local);
+                    return Math.max(1, base);
+                }
+            } catch { }
+
+            // fallback: getNumberOfParticipants
             try {
                 const n = api?.getNumberOfParticipants?.();
                 if (Number.isFinite(n) && Number(n) > 0) return Number(n);
             } catch { }
 
+            // fallback: roomsInfo
             try {
                 const res = await api?.getRoomsInfo?.();
                 const rooms = Array.isArray(res) ? res : res?.rooms;
                 const main = Array.isArray(rooms) ? rooms.find((r) => r?.isMainRoom) || rooms[0] : null;
                 const arr = main?.participants;
                 if (Array.isArray(arr)) {
-                    try {
-                        const info = api?.getParticipantsInfo?.();
-                        if (Array.isArray(info)) {
-                            const localId = localParticipantIdRef.current;
-                            const hasLocal =
-                                !!localId && info.some((p: any) => String(p?.participantId || p?.id || "") === String(localId));
-                            if (hasLocal) return Math.max(1, info.length);
-                            return Math.max(1, info.length + 1);
-                        }
-                    } catch { }
                     return Math.max(1, arr.length + 1);
-                }
-            } catch { }
-
-            try {
-                const info = api?.getParticipantsInfo?.();
-                if (Array.isArray(info)) {
-                    const localId = localParticipantIdRef.current;
-                    const hasLocal =
-                        !!localId && info.some((p: any) => String(p?.participantId || p?.id || "") === String(localId));
-                    return hasLocal ? Math.max(1, info.length) : Math.max(1, info.length + 1);
                 }
             } catch { }
 
@@ -1624,7 +1691,6 @@ export default function RoomPageIFrame() {
             const n = await getParticipantCount(api);
             if (n != null && Number.isFinite(n)) setParticipantsNow(n);
 
-            // also keep list fresh
             void refreshParticipantsList(api);
         };
 
@@ -1725,6 +1791,14 @@ export default function RoomPageIFrame() {
                 kickedIdsRef.current = new Set();
                 localIsModeratorRef.current = false;
 
+                // initial state sync best-effort
+                try {
+                    if (typeof api?.isAudioMuted === "function") setMutedAudio(!!api.isAudioMuted());
+                } catch { }
+                try {
+                    if (typeof api?.isVideoMuted === "function") setMutedVideo(!!api.isVideoMuted());
+                } catch { }
+
                 try {
                     const prev = String(session?.jitsi_domain || "").trim();
                     if (session?.id && domain && prev !== domain) {
@@ -1761,6 +1835,7 @@ export default function RoomPageIFrame() {
                 participantsPollTimer = window.setInterval(() => {
                     if (destroyed) return;
                     void refreshParticipants(api);
+                    void selfLeaveIfOverCapacity(api, "poll");
                 }, 5000);
 
                 api.addEventListener?.("videoConferenceJoined", async (e: any) => {
@@ -1782,6 +1857,13 @@ export default function RoomPageIFrame() {
                     window.setTimeout(() => void refreshParticipants(api), 250);
 
                     await scheduleSelfChecks(api, "videoConferenceJoined");
+                });
+
+                // readyToClose is often more reliable
+                api.addEventListener?.("readyToClose", () => {
+                    if (destroyed) return;
+                    setApiReady(false);
+                    leaveToSessions();
                 });
 
                 api.addEventListener?.("videoConferenceLeft", () => {
@@ -1807,16 +1889,25 @@ export default function RoomPageIFrame() {
                     window.setTimeout(() => void refreshParticipants(api), 350);
 
                     if (isHost && joinedId) {
-                        hostKickIfOverCapacity(api, joinedId, "participantJoined");
+                        void hostKickIfOverCapacity(api, joinedId, "participantJoined");
+                    } else {
+                        // non-host should also enforce by leaving if over capacity
+                        void scheduleSelfChecks(api, "participantJoined");
                     }
                 });
 
                 api.addEventListener?.("participantLeft", () => {
                     if (destroyed) return;
                     window.setTimeout(() => void refreshParticipants(api), 350);
+                    // after someone leaves, clear over-limit streak
+                    overLimitHitsRef.current = 0;
+                    if (capacityTriggeredRef.current) {
+                        // if we showed overlay but then count drops quickly (race), remove overlay
+                        setCapacityError(null);
+                        capacityTriggeredRef.current = false;
+                    }
                 });
 
-                // best-effort: refresh on display name changes
                 api.addEventListener?.("displayNameChange", () => {
                     if (destroyed) return;
                     window.setTimeout(() => void refreshParticipants(api), 250);
@@ -1841,16 +1932,13 @@ export default function RoomPageIFrame() {
                     }, 0);
                 });
 
-                // remote mute event (may or may not exist depending on Jitsi build)
                 api.addEventListener?.("participantMuteStatusChanged", (e: any) => {
                     try {
                         const pid = String(e?.id || "");
                         const muted = typeof e?.muted === "boolean" ? !!e.muted : undefined;
                         if (!pid || typeof muted !== "boolean") return;
 
-                        setParticipantRows((prev) =>
-                            prev.map((p) => (p.id === pid ? { ...p, audioMuted: muted } : p))
-                        );
+                        setParticipantRows((prev) => prev.map((p) => (p.id === pid ? { ...p, audioMuted: muted } : p)));
                     } catch { }
                 });
 
@@ -2044,8 +2132,8 @@ export default function RoomPageIFrame() {
                                     <button
                                         onClick={() => setSelectedUser(session.host_profile)}
                                         className={`flex items-center gap-2 px-3 h-[32px] rounded-xl border transition font-inter text-[13px] ${isLight
-                                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                                : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                             }`}
                                     >
                                         <span className="flex items-center gap-2 leading-none">
