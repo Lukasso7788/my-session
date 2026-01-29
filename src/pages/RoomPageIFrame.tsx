@@ -13,6 +13,10 @@
 // - Participants right panel (search + list)
 // - Emoji reactions with micro-label (sender name), delivered via Supabase realtime broadcast
 // - Bottom controls rearranged: Participants (left), media (center), Chat+Intentions+Leave (right)
+//
+// ✅ MOBILE UX (<=480):
+// - Bottom bar: hide Participants/Chat/Intentions buttons; show ⋯ menu instead
+// - Right panel should NOT shrink video on mobile; it overlays video (modal sheet)
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -357,8 +361,6 @@ async function createJitsiApiWithFallback(args: {
                     hideConferenceTimer: true,
                     conferenceInfo: { alwaysVisible: [], autoHide: [] },
 
-                    // NOTE: some Jitsi builds expect toolbarButtons in interfaceConfigOverwrite, but keeping it
-                    // here doesn't hurt; interfaceConfigOverwrite also sets TOOLBAR_BUTTONS to empty.
                     toolbarButtons: TOOLBAR_MOUNT_BUTTONS,
 
                     ...(cssUrl ? { customCssUrl: cssUrl } : {}),
@@ -517,12 +519,7 @@ function ParticipantsSmartIcon({
     theme: RoomTheme;
     className?: string;
 }) {
-    const candidates = [
-        `/icons/participants-${theme}.svg`,
-        `/icons/participants.svg`,
-        `/icons/users-${theme}.svg`,
-        `/icons/users.svg`,
-    ];
+    const candidates = [`/icons/participants-${theme}.svg`, `/icons/participants.svg`, `/icons/users-${theme}.svg`, `/icons/users.svg`];
     const [idx, setIdx] = useState(0);
     const [inline, setInline] = useState(false);
 
@@ -655,6 +652,10 @@ export default function RoomPageIFrame() {
     const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(false);
     const [rightTab, setRightTab] = useState<RightPanelTab>(null);
 
+    // MOBILE ⋯ MENU (<=480)
+    const [showMoreMenu, setShowMoreMenu] = useState(false);
+    const moreMenuRef = useRef<HTMLDivElement | null>(null);
+
     const openRightTab = (tab: RightPanelTab) => {
         if (!tab) {
             setRightPanelOpen(false);
@@ -674,11 +675,31 @@ export default function RoomPageIFrame() {
         if (rightPanelOpen) setShowReactionsMenu(false);
     }, [rightPanelOpen, rightTab]);
 
+    // close ⋯ menu when panel is used
+    useEffect(() => {
+        if (rightPanelOpen) setShowMoreMenu(false);
+    }, [rightPanelOpen, rightTab]);
+
+    // Close ⋯ menu by click outside
+    useEffect(() => {
+        if (!showMoreMenu) return;
+
+        const onDown = (e: MouseEvent) => {
+            const t = e.target as Node | null;
+            if (!moreMenuRef.current || !t) return;
+            if (!moreMenuRef.current.contains(t)) setShowMoreMenu(false);
+        };
+
+        document.addEventListener("mousedown", onDown);
+        return () => document.removeEventListener("mousedown", onDown);
+    }, [showMoreMenu]);
+
     // Escape closes panels/popovers
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
             if (e.key === "Escape") {
                 setShowReactionsMenu(false);
+                setShowMoreMenu(false);
                 setRightPanelOpen(false);
                 setRightTab(null);
             }
@@ -692,8 +713,7 @@ export default function RoomPageIFrame() {
         const onVis = () => {
             if (document.hidden) {
                 try {
-                    // stop welcome loop if running
-                    // (function declared later; safe to call via window scope? we keep it inline with try-catch below)
+                    // no-op; actual handler wired below
                 } catch { }
             }
         };
@@ -1358,7 +1378,6 @@ export default function RoomPageIFrame() {
             }
 
             if (!found) {
-                // ended (non-infinite); keep last stage and show 0:00
                 setRemainingTime("0:00");
             }
 
@@ -1475,6 +1494,75 @@ export default function RoomPageIFrame() {
         if (!q) return participantRows;
         return participantRows.filter((p) => (p.displayName || "").toLowerCase().includes(q));
     }, [participantRows, participantsSearch]);
+
+    const renderParticipantRow = (p: ParticipantRow) => {
+        const name = p.isLocal ? "You" : (p.displayName || "Guest");
+        const initials =
+            name
+                .split(" ")
+                .filter(Boolean)
+                .slice(0, 2)
+                .map((x) => x[0]?.toUpperCase())
+                .join("") || "U";
+
+        const audioKnown = typeof p.audioMuted === "boolean";
+        const videoKnown = typeof p.videoMuted === "boolean";
+
+        return (
+            <div
+                key={p.id}
+                className={`flex items-center justify-between px-3 py-2 rounded-xl transition ${isLight ? "hover:bg-black/5" : "hover:bg-white/5"}`}
+            >
+                <div className="flex items-center gap-3 min-w-0">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${isLight ? "bg-blue-500/15 text-blue-700" : "bg-emerald-500/80 text-[#02140B]"}`}>
+                        {initials}
+                    </div>
+                    <div className="min-w-0">
+                        <div className={`text-[13px] font-medium truncate ${isLight ? "text-black/85" : "text-white/90"}`}>{name}</div>
+                        <div className={`text-[11px] truncate ${isLight ? "text-black/45" : "text-white/45"}`}>{p.isLocal ? "Team member" : "Participant"}</div>
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                    <div
+                        className={
+                            "w-8 h-8 rounded-lg flex items-center justify-center " +
+                            (!audioKnown
+                                ? isLight ? "bg-black/5" : "bg-white/5"
+                                : p.audioMuted
+                                    ? (isLight ? "bg-red-500/10" : "bg-red-500/20")
+                                    : (isLight ? "bg-black/5" : "bg-white/5"))
+                        }
+                        title={!audioKnown ? "Audio status unknown" : p.audioMuted ? "Muted" : "Unmuted"}
+                    >
+                        <Icon
+                            name={audioKnown && p.audioMuted ? "mic-off" : "mic-on"}
+                            theme={audioKnown && p.audioMuted ? "dark" : theme}
+                            className={`w-4 h-4 ${(audioKnown && p.audioMuted) ? "opacity-90" : "opacity-80"}`}
+                        />
+                    </div>
+
+                    <div
+                        className={
+                            "w-8 h-8 rounded-lg flex items-center justify-center " +
+                            (!videoKnown
+                                ? isLight ? "bg-black/5" : "bg-white/5"
+                                : p.videoMuted
+                                    ? (isLight ? "bg-red-500/10" : "bg-red-500/20")
+                                    : (isLight ? "bg-black/5" : "bg-white/5"))
+                        }
+                        title={!videoKnown ? "Video status unknown" : p.videoMuted ? "Video off" : "Video on"}
+                    >
+                        <Icon
+                            name={videoKnown && p.videoMuted ? "camera-off" : "camera-on"}
+                            theme={theme}
+                            className={`w-4 h-4 ${(videoKnown && p.videoMuted) ? "opacity-90" : "opacity-80"}`}
+                        />
+                    </div>
+                </div>
+            </div>
+        );
+    };
 
     // ============================================
     // ✅ Reactions via Supabase realtime broadcast
@@ -1652,7 +1740,6 @@ export default function RoomPageIFrame() {
         };
 
         const getParticipantCount = async (api: any): Promise<number | null> => {
-            // best: participantsInfo
             try {
                 const info = api?.getParticipantsInfo?.();
                 if (Array.isArray(info)) {
@@ -1666,13 +1753,11 @@ export default function RoomPageIFrame() {
                 }
             } catch { }
 
-            // fallback: getNumberOfParticipants
             try {
                 const n = api?.getNumberOfParticipants?.();
                 if (Number.isFinite(n) && Number(n) > 0) return Number(n);
             } catch { }
 
-            // fallback: roomsInfo
             try {
                 const res = await api?.getRoomsInfo?.();
                 const rooms = Array.isArray(res) ? res : res?.rooms;
@@ -1791,7 +1876,6 @@ export default function RoomPageIFrame() {
                 kickedIdsRef.current = new Set();
                 localIsModeratorRef.current = false;
 
-                // initial state sync best-effort
                 try {
                     if (typeof api?.isAudioMuted === "function") setMutedAudio(!!api.isAudioMuted());
                 } catch { }
@@ -1859,7 +1943,6 @@ export default function RoomPageIFrame() {
                     await scheduleSelfChecks(api, "videoConferenceJoined");
                 });
 
-                // readyToClose is often more reliable
                 api.addEventListener?.("readyToClose", () => {
                     if (destroyed) return;
                     setApiReady(false);
@@ -1891,7 +1974,6 @@ export default function RoomPageIFrame() {
                     if (isHost && joinedId) {
                         void hostKickIfOverCapacity(api, joinedId, "participantJoined");
                     } else {
-                        // non-host should also enforce by leaving if over capacity
                         void scheduleSelfChecks(api, "participantJoined");
                     }
                 });
@@ -1899,10 +1981,8 @@ export default function RoomPageIFrame() {
                 api.addEventListener?.("participantLeft", () => {
                     if (destroyed) return;
                     window.setTimeout(() => void refreshParticipants(api), 350);
-                    // after someone leaves, clear over-limit streak
                     overLimitHitsRef.current = 0;
                     if (capacityTriggeredRef.current) {
-                        // if we showed overlay but then count drops quickly (race), remove overlay
                         setCapacityError(null);
                         capacityTriggeredRef.current = false;
                     }
@@ -1913,7 +1993,6 @@ export default function RoomPageIFrame() {
                     window.setTimeout(() => void refreshParticipants(api), 250);
                 });
 
-                // local mute events
                 api.addEventListener?.("audioMuteStatusChanged", (e: any) => {
                     if (destroyed) return;
                     setMutedAudio(!!e?.muted);
@@ -2245,6 +2324,83 @@ export default function RoomPageIFrame() {
                     >
                         <div ref={iframeContainerRef} className="w-full h-full min-h-[60vh]" />
 
+                        {/* MOBILE OVERLAY PANEL (<lg): overlays video instead of shrinking it */}
+                        {rightPanelOpen && (
+                            <div className="lg:hidden absolute inset-0 z-30">
+                                {/* backdrop */}
+                                <div className="absolute inset-0 bg-black/35" onClick={() => openRightTab(null)} />
+
+                                {/* sheet */}
+                                <div
+                                    className={
+                                        "absolute left-3 right-3 top-3 bottom-[calc(84px+env(safe-area-inset-bottom))] " +
+                                        "rounded-2xl shadow-2xl overflow-hidden flex flex-col " +
+                                        (isLight ? "bg-white/90 border border-black/10" : "bg-[#0B1220]/80 border border-white/10")
+                                    }
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    {/* header */}
+                                    <div className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/10"}`}>
+                                        <div className={`${isLight ? "text-black/80" : "text-white/90"} font-inter font-semibold`}>
+                                            {rightTab === "participants" ? "Participants" : rightTab === "chat" ? "Chat" : "Intentions"}
+                                        </div>
+                                        <button
+                                            onClick={() => openRightTab(null)}
+                                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"}`}
+                                            title="Close"
+                                        >
+                                            ✕
+                                        </button>
+                                    </div>
+
+                                    {/* content */}
+                                    <div className="flex-1 min-h-0">
+                                        {rightTab === "participants" && (
+                                            <div className="h-full flex flex-col min-h-0">
+                                                <div className="p-4">
+                                                    <div className={`rounded-xl px-3 py-2 ${isLight ? "bg-black/5 border border-black/10" : "bg-[#0B1220]/70 border border-white/10"}`}>
+                                                        <input
+                                                            value={participantsSearch}
+                                                            onChange={(e) => setParticipantsSearch(e.target.value)}
+                                                            placeholder="Search participants..."
+                                                            className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${isLight ? "text-black/80 placeholder:text-black/40" : "text-white/85 placeholder:text-white/35"}`}
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex-1 overflow-y-auto px-4 pb-4">
+                                                    <div className="flex flex-col gap-2">
+                                                        {filteredParticipants.map((p) => renderParticipantRow(p))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {rightTab === "chat" && (
+                                            <div className="h-full min-h-0 p-4">
+                                                {sessionId ? (
+                                                    <div className="h-full min-h-0">
+                                                        <ChatPanel
+                                                            sessionId={sessionId}
+                                                            theme={theme}
+                                                            showHeader={false}
+                                                            onBecameVisible={() => markChatRead()}
+                                                        />
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                        )}
+
+                                        {rightTab === "intentions" && (
+                                            <div className="h-full min-h-0">
+                                                <IntentionsPanel theme={theme} />
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Floating reactions overlay */}
                         {floatingReactions.length > 0 && (
                             <div className="absolute inset-0 z-20 pointer-events-none flex items-end justify-center pb-10">
@@ -2293,9 +2449,9 @@ export default function RoomPageIFrame() {
                         )}
                     </div>
 
-                    {/* RIGHT PANEL */}
+                    {/* RIGHT PANEL (DESKTOP >=lg only) */}
                     {rightPanelOpen && (
-                        <div className={`rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col ${panelBg}`}>
+                        <div className={`hidden lg:flex rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex-col ${panelBg}`}>
                             {/* PARTICIPANTS */}
                             {rightTab === "participants" && (
                                 <>
@@ -2308,8 +2464,7 @@ export default function RoomPageIFrame() {
                                         </div>
                                         <button
                                             onClick={() => openRightTab(null)}
-                                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
-                                                }`}
+                                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"}`}
                                             title="Close"
                                         >
                                             ✕
@@ -2317,96 +2472,19 @@ export default function RoomPageIFrame() {
                                     </div>
 
                                     <div className="p-4">
-                                        <div className={`rounded-xl px-3 py-2 ${isLight ? "bg-black/5 border border-black/10" : "bg-[#0B1220]/70 border border-white/10"
-                                            }`}>
+                                        <div className={`rounded-xl px-3 py-2 ${isLight ? "bg-black/5 border border-black/10" : "bg-[#0B1220]/70 border border-white/10"}`}>
                                             <input
                                                 value={participantsSearch}
                                                 onChange={(e) => setParticipantsSearch(e.target.value)}
                                                 placeholder="Search participants..."
-                                                className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${isLight ? "text-black/80 placeholder:text-black/40" : "text-white/85 placeholder:text-white/35"
-                                                    }`}
+                                                className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${isLight ? "text-black/80 placeholder:text-black/40" : "text-white/85 placeholder:text-white/35"}`}
                                             />
                                         </div>
                                     </div>
 
                                     <div className="flex-1 overflow-y-auto px-4 pb-4">
                                         <div className="flex flex-col gap-2">
-                                            {filteredParticipants.map((p) => {
-                                                const name = p.isLocal ? "You" : (p.displayName || "Guest");
-                                                const initials =
-                                                    name
-                                                        .split(" ")
-                                                        .filter(Boolean)
-                                                        .slice(0, 2)
-                                                        .map((x) => x[0]?.toUpperCase())
-                                                        .join("") || "U";
-
-                                                const audioKnown = typeof p.audioMuted === "boolean";
-                                                const videoKnown = typeof p.videoMuted === "boolean";
-
-                                                return (
-                                                    <div
-                                                        key={p.id}
-                                                        className={`flex items-center justify-between px-3 py-2 rounded-xl transition ${isLight ? "hover:bg-black/5" : "hover:bg-white/5"
-                                                            }`}
-                                                    >
-                                                        <div className="flex items-center gap-3 min-w-0">
-                                                            <div
-                                                                className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${isLight ? "bg-blue-500/15 text-blue-700" : "bg-emerald-500/80 text-[#02140B]"
-                                                                    }`}
-                                                            >
-                                                                {initials}
-                                                            </div>
-                                                            <div className="min-w-0">
-                                                                <div className={`text-[13px] font-medium truncate ${isLight ? "text-black/85" : "text-white/90"}`}>
-                                                                    {name}
-                                                                </div>
-                                                                <div className={`text-[11px] truncate ${isLight ? "text-black/45" : "text-white/45"}`}>
-                                                                    {p.isLocal ? "Team member" : "Participant"}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="flex items-center gap-2">
-                                                            <div
-                                                                className={
-                                                                    "w-8 h-8 rounded-lg flex items-center justify-center " +
-                                                                    (!audioKnown
-                                                                        ? isLight ? "bg-black/5" : "bg-white/5"
-                                                                        : p.audioMuted
-                                                                            ? (isLight ? "bg-red-500/10" : "bg-red-500/20")
-                                                                            : (isLight ? "bg-black/5" : "bg-white/5"))
-                                                                }
-                                                                title={!audioKnown ? "Audio status unknown" : p.audioMuted ? "Muted" : "Unmuted"}
-                                                            >
-                                                                <Icon
-                                                                    name={audioKnown && p.audioMuted ? "mic-off" : "mic-on"}
-                                                                    theme={audioKnown && p.audioMuted ? "dark" : theme}
-                                                                    className={`w-4 h-4 ${(audioKnown && p.audioMuted) ? "opacity-90" : "opacity-80"}`}
-                                                                />
-                                                            </div>
-
-                                                            <div
-                                                                className={
-                                                                    "w-8 h-8 rounded-lg flex items-center justify-center " +
-                                                                    (!videoKnown
-                                                                        ? isLight ? "bg-black/5" : "bg-white/5"
-                                                                        : p.videoMuted
-                                                                            ? (isLight ? "bg-red-500/10" : "bg-red-500/20")
-                                                                            : (isLight ? "bg-black/5" : "bg-white/5"))
-                                                                }
-                                                                title={!videoKnown ? "Video status unknown" : p.videoMuted ? "Video off" : "Video on"}
-                                                            >
-                                                                <Icon
-                                                                    name={videoKnown && p.videoMuted ? "camera-off" : "camera-on"}
-                                                                    theme={theme}
-                                                                    className={`w-4 h-4 ${(videoKnown && p.videoMuted) ? "opacity-90" : "opacity-80"}`}
-                                                                />
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
+                                            {filteredParticipants.map((p) => renderParticipantRow(p))}
                                         </div>
                                     </div>
                                 </>
@@ -2419,8 +2497,7 @@ export default function RoomPageIFrame() {
                                         <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Chat</div>
                                         <button
                                             onClick={() => openRightTab(null)}
-                                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
-                                                }`}
+                                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"}`}
                                             title="Close"
                                         >
                                             ✕
@@ -2449,8 +2526,7 @@ export default function RoomPageIFrame() {
                                         <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Intentions</div>
                                         <button
                                             onClick={() => openRightTab(null)}
-                                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
-                                                }`}
+                                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"}`}
                                             title="Close"
                                         >
                                             ✕
@@ -2471,15 +2547,83 @@ export default function RoomPageIFrame() {
             <div className="fixed inset-x-0 bottom-0 z-50">
                 <div className="w-full px-3 sm:px-5 pb-[calc(12px+env(safe-area-inset-bottom))]">
                     <div className={`h-[64px] sm:h-[74px] rounded-2xl shadow-2xl backdrop-blur grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4 ${bottomBarBg}`}>
-                        {/* LEFT GROUP: Participants */}
-                        <div className="flex items-center gap-2">
-                            <button
-                                onClick={() => openRightTab("participants")}
-                                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                                title="Participants"
-                            >
-                                <ParticipantsSmartIcon theme={theme} className="w-5 h-5" />
-                            </button>
+                        {/* LEFT GROUP: Participants OR ⋯ menu on <=480 */}
+                        <div className="flex items-center gap-2" ref={moreMenuRef}>
+                            {/* MOBILE (<=480): dropdown */}
+                            <div className="max-[480px]:relative min-[481px]:hidden">
+                                <button
+                                    onClick={() => setShowMoreMenu((v) => !v)}
+                                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                                    title="Menu"
+                                    aria-label="Menu"
+                                >
+                                    <span className={isLight ? "text-black/70" : "text-white/85"}>⋯</span>
+                                </button>
+
+                                {showMoreMenu && (
+                                    <div className="absolute bottom-[76px] left-0 z-[60]">
+                                        <div
+                                            className={
+                                                `w-[220px] rounded-2xl shadow-2xl overflow-hidden ` +
+                                                (isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10")
+                                            }
+                                        >
+                                            <button
+                                                onClick={() => {
+                                                    openRightTab("participants");
+                                                    setShowMoreMenu(false);
+                                                }}
+                                                className={
+                                                    `w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ` +
+                                                    (isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5")
+                                                }
+                                            >
+                                                <ParticipantsSmartIcon theme={theme} className="w-4 h-4 opacity-90" />
+                                                <span>Participants</span>
+                                            </button>
+
+                                            <button
+                                                onClick={() => {
+                                                    openRightTab("chat");
+                                                    setShowMoreMenu(false);
+                                                }}
+                                                className={
+                                                    `w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ` +
+                                                    (isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5")
+                                                }
+                                            >
+                                                <Icon name="chat" theme={theme} className="w-4 h-4 opacity-90" />
+                                                <span>Chat</span>
+                                            </button>
+
+                                            <button
+                                                onClick={() => {
+                                                    openRightTab("intentions");
+                                                    setShowMoreMenu(false);
+                                                }}
+                                                className={
+                                                    `w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ` +
+                                                    (isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5")
+                                                }
+                                            >
+                                                <Icon name="intentions" theme={theme} className="w-4 h-4 opacity-90" />
+                                                <span>Intentions</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* >=481: обычная кнопка Participants */}
+                            <div className="hidden min-[481px]:flex items-center gap-2">
+                                <button
+                                    onClick={() => openRightTab("participants")}
+                                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                                    title="Participants"
+                                >
+                                    <ParticipantsSmartIcon theme={theme} className="w-5 h-5" />
+                                </button>
+                            </div>
                         </div>
 
                         {/* CENTER GROUP: media + reactions + tile */}
@@ -2529,8 +2673,7 @@ export default function RoomPageIFrame() {
 
                                 {showReactionsMenu && (
                                     <div
-                                        className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
-                                            }`}
+                                        className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}
                                     >
                                         {(["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown"] as ReactionType[]).map((t) => (
                                             <button
@@ -2558,10 +2701,10 @@ export default function RoomPageIFrame() {
                             </button>
                         </div>
 
-                        {/* RIGHT GROUP: Chat + Intentions + Leave (moved here) */}
+                        {/* RIGHT GROUP: Chat + Intentions + Leave */}
                         <div className="flex items-center justify-end gap-2 sm:gap-3">
-                            {/* Chat with unread badge */}
-                            <div className="relative">
+                            {/* Chat with unread badge (hidden on <=480) */}
+                            <div className="relative max-[480px]:hidden">
                                 <button
                                     onClick={() => openRightTab("chat")}
                                     className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
@@ -2587,7 +2730,7 @@ export default function RoomPageIFrame() {
 
                             <button
                                 onClick={() => openRightTab("intentions")}
-                                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                                className={`max-[480px]:hidden w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
                                 title="Intentions"
                             >
                                 <Icon name="intentions" theme={theme} className="w-5 h-5" />
@@ -2595,8 +2738,7 @@ export default function RoomPageIFrame() {
 
                             <button
                                 onClick={hangup}
-                                className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${isLight ? "bg-red-600 hover:bg-red-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"
-                                    }`}
+                                className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${isLight ? "bg-red-600 hover:bg-red-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"}`}
                                 title="Leave"
                             >
                                 <Icon name="leave" theme={theme} className="w-5 h-5" />
