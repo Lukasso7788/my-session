@@ -9,32 +9,10 @@
 // - ✅ Allow opening by UUID OR by sessions.custom_slug (no uuid cast error)
 // - ✅ Require login to enter room (redirect to /login on unauth)
 //
-// Fixes in this version:
-// - ✅ Prevent "everyone gets kicked" when capacity is reached:
-//    * Only the *new joiner* self-leaves if over capacity (checked on videoConferenceJoined)
-//    * Host (if possible) kicks only the extra participant on participantJoined
-// - ✅ More reliable participant counting (no naive +1)
-//
-// ✅ FIXES ADDED (important):
-// 1) CUSTOM_BLOCK_GRADIENT declared BEFORE STAGE_COLORS (prevents ReferenceError on import)
-// 2) rawName defined in infinite schedule branch (prevents ReferenceError)
-// 3) Array schedule: preserve custom block names (don't overwrite focus/custom/recap etc with defaults)
-//
-// ✅ NEW FIX (audio for infinite rooms):
-// - Sounds now play on stage transitions in Infinite Rooms too
-// - Still prevents "gong on join mid-block" (first tick never plays current block sound)
-// - Adds check-in sound mapping (reuses intentions sound)
-//
-// ✅ UI tweak:
-// - Tile view icon has no on/off states; uses themed assets: tile-view-light.svg / tile-view-dark.svg
-//
-// ✅ NEW (from RoomPage):
-// - useAttendancePresence(...) so Session cards can show live participants count (attendance/presence)
-// - attendance_leave on leaving the room
-//
-// ✅ NEW:
-// - celebrate stage sound = outro
-// - celebrate stage color = same as welcome
+// ✅ NEW (ported features from RoomPage):
+// - Participants right panel (search + list)
+// - Emoji reactions with micro-label (sender name), delivered via Supabase realtime broadcast
+// - Bottom controls rearranged: Participants (left), media (center), Chat+Intentions+Leave (right)
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -64,8 +42,33 @@ type Stage = {
     durationSeconds?: number;
 };
 
-type RightPanelTab = "chat" | "intentions" | null;
 type RoomTheme = "dark" | "light";
+type RightPanelTab = "participants" | "chat" | "intentions" | null;
+
+type ReactionType = "fire" | "laugh" | "clap" | "heart" | "thumbsUp" | "thumbsDown";
+const reactionEmoji: Record<ReactionType, string> = {
+    fire: "🔥",
+    laugh: "😂",
+    clap: "👏",
+    heart: "❤️",
+    thumbsUp: "👍",
+    thumbsDown: "👎",
+};
+
+type FloatingReaction = {
+    id: number;
+    type: ReactionType;
+    fromUserId: string;
+    fromName: string;
+};
+
+type ParticipantRow = {
+    id: string;
+    displayName: string;
+    isLocal: boolean;
+    audioMuted?: boolean;
+    videoMuted?: boolean;
+};
 
 declare global {
     interface Window {
@@ -115,11 +118,11 @@ const CHAT_MSG_TABLE = "session_chat_messages";
 // ====== AUDIO ======
 const STAGE_SOUND_MAP: Record<string, string> = {
     intentions: "/sounds/intentions.mp3",
-    checkin: "/sounds/intentions.mp3", // ✅ reuse spoken sound (no new asset required)
+    checkin: "/sounds/intentions.mp3",
     focus: "/sounds/focus.mp3",
     break: "/sounds/break_start.mp3",
     outro: "/sounds/outro.mp3",
-    celebrate: "/sounds/outro.mp3", // ✅ celebrate uses OUTRO sound
+    celebrate: "/sounds/outro.mp3",
 };
 const BREAK_END_SOUND = "/sounds/break_end.mp3";
 const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
@@ -162,7 +165,7 @@ function parse50505(raw: any): { focus: number; break: number; intentions: numbe
     return { focus, break: br, intentions };
 }
 
-// ✅ Session Studio / builder wrappers can be like { blocks: [...] } / { agenda: [...] } etc
+// ✅ Session Studio / builder wrappers
 function unwrapScheduleBlocks(parsed: any): any {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return parsed;
 
@@ -193,16 +196,12 @@ function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: numbe
         if (explicitSeconds > 0) return explicitSeconds;
 
         const explicitMinutes =
-            Number(raw?.minutes) ||
-            Number(raw?.mins) ||
-            Number(raw?.duration_minutes) ||
-            Number(raw?.durationMinutes);
+            Number(raw?.minutes) || Number(raw?.mins) || Number(raw?.duration_minutes) || Number(raw?.durationMinutes);
         if (explicitMinutes > 0) return explicitMinutes * 60;
 
         const n = typeof raw === "number" ? raw : Number(raw?.duration ?? raw?.value ?? raw ?? 0);
         if (!Number.isFinite(n) || n <= 0) return 0;
 
-        // heuristic: <=180 means minutes, else seconds
         if (n <= 180) return n * 60;
         return n;
     };
@@ -241,7 +240,7 @@ function phaseToStageType(phaseNameLower: string): Stage["type"] {
     return "focus";
 }
 
-// ✅ FIX #1: define BEFORE STAGE_COLORS (const is not hoisted)
+// ✅ FIX: define BEFORE STAGE_COLORS
 const CUSTOM_BLOCK_GRADIENT =
     "linear-gradient(90deg, #5286F6 0%, #65D46C 40%, #F65252 80%, #F65252 100%)";
 
@@ -253,7 +252,7 @@ const STAGE_COLORS: Record<string, string> = {
     focus: "#4CA0FF",
 
     recap: "#A78BFA",
-    celebrate: "#80DF86", // ✅ same as Welcome (intro)
+    celebrate: "#80DF86",
     custom: CUSTOM_BLOCK_GRADIENT,
 
     break: "#F9ADA2",
@@ -314,7 +313,7 @@ async function createJitsiApiWithFallback(args: {
     roomName: string;
     parentNode: HTMLElement;
     userName: string;
-    cssPathOnJitsiDomain?: string; // like "/jitsi-custom.css"
+    cssPathOnJitsiDomain?: string;
     onDomainChosen?: (d: string) => void;
 }) {
     let lastError: any = null;
@@ -420,6 +419,7 @@ function Icon({
     | "chat"
     | "intentions"
     | "tile-view"
+    | "reaction"
     | "theme-sun"
     | "theme-moon"
     | "timer";
@@ -507,7 +507,7 @@ function RefreshInlineIcon({ className = "w-4 h-4" }: { className?: string }) {
     );
 }
 
-// ✅ Smart icon: participants (tries existing assets, then inline fallback)
+// ✅ Smart icon: participants
 function ParticipantsSmartIcon({
     theme,
     className = "w-4 h-4",
@@ -547,7 +547,7 @@ function ParticipantsSmartIcon({
     );
 }
 
-// ✅ Smart icon: reload (expects /icons/reload.svg, then inline fallback)
+// ✅ Smart icon: reload
 function ReloadSmartIcon({ theme, className = "w-4 h-4" }: { theme: RoomTheme; className?: string }) {
     const candidates = [`/icons/reload-${theme}.svg`, `/icons/reload.svg`, `/icons/refresh-${theme}.svg`, `/icons/refresh.svg`];
     const [idx, setIdx] = useState(0);
@@ -590,7 +590,6 @@ export default function RoomPageIFrame() {
     const [session, setSession] = useState<any>(null);
     const [loading, setLoading] = useState(true);
 
-    // ✅ memoized session id (used by chat/unread + ChatPanel)
     const sessionId = useMemo(() => String(session?.id || ""), [session?.id]);
 
     // ✅ auth gate
@@ -626,7 +625,7 @@ export default function RoomPageIFrame() {
 
     const [lastErr, setLastErr] = useState<string>("");
 
-    // capacity enforcement UI (only for the client who is being rejected)
+    // capacity enforcement UI
     const [capacityError, setCapacityError] = useState<string | null>(null);
     const capacityTriggeredRef = useRef(false);
     const localJoinedRef = useRef(false);
@@ -646,6 +645,10 @@ export default function RoomPageIFrame() {
     // ✅ live participant count for UI (current/max)
     const [participantsNow, setParticipantsNow] = useState<number>(0);
 
+    // ✅ participants list (right panel)
+    const [participantRows, setParticipantRows] = useState<ParticipantRow[]>([]);
+    const [participantsSearch, setParticipantsSearch] = useState("");
+
     // right panel
     const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(false);
     const [rightTab, setRightTab] = useState<RightPanelTab>(null);
@@ -664,7 +667,7 @@ export default function RoomPageIFrame() {
     };
 
     // =========================
-    // ✅ CHAT UNREAD BADGE (always-on, even when ChatPanel is closed)
+    // ✅ CHAT UNREAD BADGE (always-on)
     // =========================
     const [unreadChat, setUnreadChat] = useState<number>(0);
     const chatVisibleRef = useRef<boolean>(false);
@@ -691,7 +694,6 @@ export default function RoomPageIFrame() {
         } catch { }
     };
 
-    // when chat becomes visible => mark as read
     useEffect(() => {
         if (rightPanelOpen && rightTab === "chat") {
             markChatRead();
@@ -699,7 +701,6 @@ export default function RoomPageIFrame() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [rightPanelOpen, rightTab, sessionId]);
 
-    // realtime unread subscription (independent from ChatPanel mount)
     useEffect(() => {
         if (authStatus !== "authed") return;
         if (!sessionId) return;
@@ -708,7 +709,6 @@ export default function RoomPageIFrame() {
         let cancelled = false;
 
         (async () => {
-            // load last read
             let lastRead = 0;
             try {
                 const raw = localStorage.getItem(chatReadKey);
@@ -719,7 +719,6 @@ export default function RoomPageIFrame() {
             }
             lastChatReadAtRef.current = lastRead;
 
-            // count unread since lastRead (excluding my own)
             try {
                 const sinceIso = lastRead > 0 ? new Date(lastRead).toISOString() : "1970-01-01T00:00:00.000Z";
 
@@ -748,19 +747,16 @@ export default function RoomPageIFrame() {
                     const senderId = String(row.user_id || "");
                     if (!senderId) return;
 
-                    // ignore my own messages
                     if (senderId === currentUserId) return;
 
                     const ts = new Date(row.created_at).getTime();
                     const msgMs = Number.isFinite(ts) ? ts : Date.now();
 
                     if (chatVisibleRef.current) {
-                        // chat open => instantly read (use message timestamp)
                         markChatRead(msgMs);
                         return;
                     }
 
-                    // chat closed => increment only if newer than last read
                     if (msgMs > (lastChatReadAtRef.current || 0)) {
                         setUnreadChat((prev) => Math.min(99, prev + 1));
                     }
@@ -780,7 +776,7 @@ export default function RoomPageIFrame() {
         return !!currentUserId && !!sid && currentUserId === sid;
     }, [currentUserId, session?.host_id]);
 
-    // ✅ max participants from DB (default 16)
+    // ✅ max participants
     const maxParticipants = useMemo(() => {
         const n = Number(session?.max_participants);
         if (Number.isFinite(n) && n >= MIN_PARTICIPANTS) {
@@ -844,7 +840,7 @@ export default function RoomPageIFrame() {
         return hay.includes("silent");
     }, [session]);
 
-    // ✅ PRESENCE (LIVE ATTENDANCE) — feeds live participants count on Session cards
+    // ✅ PRESENCE
     useAttendancePresence(session?.id && currentUserId ? String(session.id) : null, { heartbeatMs: 10_000 });
 
     const attendanceLeave = async () => {
@@ -878,6 +874,7 @@ export default function RoomPageIFrame() {
         localIsModeratorRef.current = false;
 
         setParticipantsNow(0);
+        setParticipantRows([]);
 
         setJitsiKey((x) => x + 1);
     };
@@ -890,7 +887,6 @@ export default function RoomPageIFrame() {
     const welcomeLoopRef = useRef<HTMLAudioElement | null>(null);
     const audioUnlockedRef = useRef<boolean>(false);
 
-    // ✅ Best-effort audio unlock (tries to catch the "Join" click in SPA via layout effect)
     const tryUnlockAudio = async () => {
         try {
             const AnyWindow = window as any;
@@ -901,7 +897,6 @@ export default function RoomPageIFrame() {
                     await ctx.resume?.();
                 } catch { }
 
-                // tiny silent-ish tick to satisfy some browsers
                 const osc = ctx.createOscillator();
                 const gain = ctx.createGain();
                 gain.gain.value = 0.0001;
@@ -922,7 +917,6 @@ export default function RoomPageIFrame() {
     };
 
     useLayoutEffect(() => {
-        // best-effort: if Join click user-activation is still valid, this can unlock
         void tryUnlockAudio();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -1016,7 +1010,6 @@ export default function RoomPageIFrame() {
                 setUserName(name || "User");
                 setAuthStatus("authed");
             } catch {
-                // if anything weird — treat as not authed
                 setCurrentUserId(null);
                 setUserName("");
                 setAuthStatus("redirecting");
@@ -1036,7 +1029,8 @@ export default function RoomPageIFrame() {
 
             setLoading(true);
 
-            const selectStr = "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)";
+            const selectStr =
+                "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)";
 
             try {
                 const isUuid = UUID_RE.test(idOrSlug);
@@ -1057,7 +1051,7 @@ export default function RoomPageIFrame() {
 
                     let parsed: any = safeParseJson(data.schedule);
 
-                    // 50/50/50 legacy shorthand -> treat like infinite
+                    // 50/50/50 shorthand
                     if (!parsed) {
                         const t = parse50505(data.schedule);
                         if (t) {
@@ -1082,18 +1076,13 @@ export default function RoomPageIFrame() {
 
                                 const inferTypeFromText = (lower: string): Stage["type"] => {
                                     if (lower.includes("welcome") || lower.includes("intro")) return "intro";
-
                                     if (lower.includes("checkin") || lower.includes("check-in")) return "checkin";
                                     if (lower.includes("intention")) return "intentions";
-
                                     if (lower.includes("recap")) return "recap";
                                     if (lower.includes("celebrate") || lower.includes("celebration")) return "celebrate";
                                     if (lower.includes("custom")) return "custom";
-
                                     if (lower.includes("break") || lower.includes("rest") || lower.includes("pause")) return "break";
-
                                     if (lower.includes("outro") || lower.includes("wrap") || lower.includes("farewell") || lower.includes("end")) return "outro";
-
                                     if (lower.includes("focus")) return "focus";
                                     return "focus";
                                 };
@@ -1102,7 +1091,11 @@ export default function RoomPageIFrame() {
                                     rawType && rawType !== "stage" && rawType !== "block" ? inferTypeFromText(rawType) : inferTypeFromText(labelLower);
 
                                 const secondsExplicit =
-                                    Number(b?.seconds) || Number(b?.duration_seconds) || Number(b?.durationSeconds) || Number(b?.duration_sec) || 0;
+                                    Number(b?.seconds) ||
+                                    Number(b?.duration_seconds) ||
+                                    Number(b?.durationSeconds) ||
+                                    Number(b?.duration_sec) ||
+                                    0;
 
                                 const minsLike =
                                     Number(b?.minutes) || Number(b?.mins) || Number(b?.duration_minutes) || Number(b?.durationMinutes) || 0;
@@ -1111,13 +1104,9 @@ export default function RoomPageIFrame() {
 
                                 let durationSeconds = 0;
 
-                                if (secondsExplicit > 0) {
-                                    durationSeconds = secondsExplicit;
-                                } else if (minsLike > 0) {
-                                    durationSeconds = minsLike * 60;
-                                } else if (Number.isFinite(n) && n > 0) {
-                                    durationSeconds = n <= 180 ? n * 60 : n;
-                                }
+                                if (secondsExplicit > 0) durationSeconds = secondsExplicit;
+                                else if (minsLike > 0) durationSeconds = minsLike * 60;
+                                else if (Number.isFinite(n) && n > 0) durationSeconds = n <= 180 ? n * 60 : n;
 
                                 if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return null;
 
@@ -1347,10 +1336,199 @@ export default function RoomPageIFrame() {
     }, [stagebarStartTime, stages, isSilentRoom, isInfiniteRoom, stagebarCycleSeconds]);
 
     // ============================================
-    // JITSI INIT + capacity enforcement (fixed)
+    // Participants list helpers (Jitsi External API)
+    // ============================================
+    const refreshParticipantsList = async (api: any) => {
+        try {
+            const localId = String(localParticipantIdRef.current || "local");
+            const localName = "You";
+
+            let remote: any[] = [];
+            try {
+                const info = api?.getParticipantsInfo?.();
+                if (Array.isArray(info)) remote = info;
+            } catch { }
+
+            const remoteRows: ParticipantRow[] = remote
+                .map((p: any) => {
+                    const pid = String(p?.participantId || p?.id || "");
+                    if (!pid) return null;
+
+                    const name = String(p?.displayName || p?.formattedDisplayName || p?.name || "Guest");
+                    const audioMuted =
+                        typeof p?.isAudioMuted === "boolean"
+                            ? p.isAudioMuted
+                            : typeof p?.audioMuted === "boolean"
+                                ? p.audioMuted
+                                : typeof p?.muted === "boolean"
+                                    ? p.muted
+                                    : undefined;
+
+                    const videoMuted =
+                        typeof p?.isVideoMuted === "boolean"
+                            ? p.isVideoMuted
+                            : typeof p?.videoMuted === "boolean"
+                                ? p.videoMuted
+                                : undefined;
+
+                    return {
+                        id: pid,
+                        displayName: name || "Guest",
+                        isLocal: false,
+                        audioMuted,
+                        videoMuted,
+                    } as ParticipantRow;
+                })
+                .filter(Boolean) as ParticipantRow[];
+
+            const localRow: ParticipantRow = {
+                id: localId,
+                displayName: localName,
+                isLocal: true,
+                audioMuted: mutedAudio,
+                videoMuted: mutedVideo,
+            };
+
+            const merged = [localRow, ...remoteRows.filter((r) => r.id !== localId)];
+            setParticipantRows(merged);
+
+            // also keep participantsNow in sync best-effort
+            if (merged.length > 0) setParticipantsNow(Math.max(1, merged.length));
+        } catch { }
+    };
+
+    const filteredParticipants = useMemo(() => {
+        const q = participantsSearch.trim().toLowerCase();
+        if (!q) return participantRows;
+        return participantRows.filter((p) => (p.displayName || "").toLowerCase().includes(q));
+    }, [participantRows, participantsSearch]);
+
+    // ============================================
+    // ✅ Reactions via Supabase realtime broadcast
+    // ============================================
+    const reactionsChannelRef = useRef<any>(null);
+    const reactionIdRef = useRef<number>(0);
+    const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([]);
+    const profileNameCacheRef = useRef<Map<string, string>>(new Map());
+
+    const resolveProfileName = async (uid: string): Promise<string> => {
+        const id = String(uid || "");
+        if (!id) return "User";
+
+        const cached = profileNameCacheRef.current.get(id);
+        if (cached) return cached;
+
+        // current user shortcut
+        if (currentUserId && id === currentUserId) {
+            const n = userName || "You";
+            profileNameCacheRef.current.set(id, n);
+            return n;
+        }
+
+        try {
+            const { data } = await supabase.from("profiles").select("full_name").eq("id", id).single();
+            const n = String(data?.full_name || "User");
+            profileNameCacheRef.current.set(id, n);
+            return n;
+        } catch {
+            profileNameCacheRef.current.set(id, "User");
+            return "User";
+        }
+    };
+
+    const pushReaction = (r: Omit<FloatingReaction, "id">) => {
+        const rid = reactionIdRef.current + 1;
+        reactionIdRef.current = rid;
+
+        const item: FloatingReaction = { id: rid, ...r };
+        setFloatingReactions((prev) => [...prev, item]);
+
+        window.setTimeout(() => {
+            setFloatingReactions((prev) => prev.filter((x) => x.id !== rid));
+        }, 1500);
+    };
+
+    useEffect(() => {
+        if (authStatus !== "authed") return;
+        if (!sessionId) return;
+        if (!currentUserId) return;
+
+        const key = `reactions:${sessionId}`;
+        const ch = supabase.channel(key);
+
+        reactionsChannelRef.current = ch;
+
+        ch.on("broadcast", { event: "reaction" }, async (payload: any) => {
+            try {
+                const p = payload?.payload;
+                const fromUserId = String(p?.user_id || "");
+                const type = String(p?.type || "") as ReactionType;
+
+                if (!fromUserId || !type) return;
+                if (fromUserId === currentUserId) return; // avoid double (sender receives own broadcast)
+
+                const fromName = await resolveProfileName(fromUserId);
+
+                pushReaction({
+                    type,
+                    fromUserId,
+                    fromName,
+                });
+            } catch { }
+        });
+
+        ch.subscribe();
+
+        return () => {
+            try {
+                supabase.removeChannel(ch);
+            } catch { }
+            reactionsChannelRef.current = null;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [authStatus, sessionId, currentUserId]);
+
+    const sendReaction = async (type: ReactionType) => {
+        if (!currentUserId) return;
+
+        const fromName = userName || "You";
+        pushReaction({ type, fromUserId: currentUserId, fromName });
+
+        try {
+            reactionsChannelRef.current?.send({
+                type: "broadcast",
+                event: "reaction",
+                payload: {
+                    session_id: sessionId,
+                    user_id: currentUserId,
+                    type,
+                    ts: Date.now(),
+                },
+            });
+        } catch { }
+    };
+
+    // reaction menu
+    const [showReactionsMenu, setShowReactionsMenu] = useState(false);
+    const reactionsMenuRef = useRef<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+        if (!showReactionsMenu) return;
+
+        const handleClickOutside = (e: MouseEvent) => {
+            const target = e.target as Node | null;
+            if (!reactionsMenuRef.current || !target) return;
+            if (!reactionsMenuRef.current.contains(target)) setShowReactionsMenu(false);
+        };
+
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [showReactionsMenu]);
+
+    // ============================================
+    // JITSI INIT + capacity enforcement
     // ============================================
     useEffect(() => {
-        // ✅ must be authed
         if (authStatus !== "authed") return;
 
         if (!session || !idOrSlug) return;
@@ -1380,6 +1558,7 @@ export default function RoomPageIFrame() {
             localIsModeratorRef.current = false;
 
             setParticipantsNow(0);
+            setParticipantRows([]);
 
             if (participantsPollTimer) {
                 window.clearInterval(participantsPollTimer);
@@ -1390,14 +1569,14 @@ export default function RoomPageIFrame() {
         const leaveToSessions = () => {
             if (destroyed) return;
             destroyed = true;
-            void attendanceLeave(); // ✅ ensure attendance is cleared
+            void attendanceLeave();
             cleanup();
             navigate("/sessions", { replace: true });
         };
 
         const canUseKickCommand = () => {
             const cmds = supportedCmdsRef.current;
-            if (!Array.isArray(cmds)) return true; // unknown -> try
+            if (!Array.isArray(cmds)) return true;
             return cmds.includes("kickParticipant");
         };
 
@@ -1444,6 +1623,9 @@ export default function RoomPageIFrame() {
             if (destroyed) return;
             const n = await getParticipantCount(api);
             if (n != null && Number.isFinite(n)) setParticipantsNow(n);
+
+            // also keep list fresh
+            void refreshParticipantsList(api);
         };
 
         const selfLeaveIfOverCapacity = async (api: any, why: string) => {
@@ -1552,7 +1734,10 @@ export default function RoomPageIFrame() {
 
                 try {
                     const cmds =
-                        api.getSupportedCommands?.() || api.getAvailableCommands?.() || api._getSupportedCommands?.() || null;
+                        api.getSupportedCommands?.() ||
+                        api.getAvailableCommands?.() ||
+                        api._getSupportedCommands?.() ||
+                        null;
 
                     const arr = Array.isArray(cmds) ? cmds : null;
                     supportedCmdsRef.current = arr;
@@ -1619,7 +1804,6 @@ export default function RoomPageIFrame() {
                     if (destroyed) return;
 
                     const joinedId = String(e?.id || "");
-
                     window.setTimeout(() => void refreshParticipants(api), 350);
 
                     if (isHost && joinedId) {
@@ -1632,14 +1816,42 @@ export default function RoomPageIFrame() {
                     window.setTimeout(() => void refreshParticipants(api), 350);
                 });
 
+                // best-effort: refresh on display name changes
+                api.addEventListener?.("displayNameChange", () => {
+                    if (destroyed) return;
+                    window.setTimeout(() => void refreshParticipants(api), 250);
+                });
+
+                // local mute events
                 api.addEventListener?.("audioMuteStatusChanged", (e: any) => {
                     if (destroyed) return;
                     setMutedAudio(!!e?.muted);
+                    window.setTimeout(() => {
+                        const a = apiRef.current;
+                        if (a) void refreshParticipantsList(a);
+                    }, 0);
                 });
 
                 api.addEventListener?.("videoMuteStatusChanged", (e: any) => {
                     if (destroyed) return;
                     setMutedVideo(!!e?.muted);
+                    window.setTimeout(() => {
+                        const a = apiRef.current;
+                        if (a) void refreshParticipantsList(a);
+                    }, 0);
+                });
+
+                // remote mute event (may or may not exist depending on Jitsi build)
+                api.addEventListener?.("participantMuteStatusChanged", (e: any) => {
+                    try {
+                        const pid = String(e?.id || "");
+                        const muted = typeof e?.muted === "boolean" ? !!e.muted : undefined;
+                        if (!pid || typeof muted !== "boolean") return;
+
+                        setParticipantRows((prev) =>
+                            prev.map((p) => (p.id === pid ? { ...p, audioMuted: muted } : p))
+                        );
+                    } catch { }
                 });
 
                 api.addEventListener?.("tileViewChanged", (e: any) => {
@@ -1716,7 +1928,6 @@ export default function RoomPageIFrame() {
     const hangup = async () => {
         const api = apiRef.current;
 
-        // ✅ clear attendance so Session cards update fast
         await attendanceLeave();
 
         if (!api) {
@@ -1779,9 +1990,8 @@ export default function RoomPageIFrame() {
                 {/* TOP BAR */}
                 <div className={`flex w-full rounded-2xl overflow-hidden ${topBarBg}`}>
                     <div className="flex-1 min-w-0 px-4 sm:px-6 py-4">
-                        {/* ✅ DESKTOP (sm+): like your screenshot */}
+                        {/* DESKTOP (sm+) */}
                         <div className="hidden sm:flex items-start justify-between gap-4">
-                            {/* LEFT: title + participants under title */}
                             <div className="min-w-0">
                                 <p className={`font-inter font-semibold text-[18px] truncate ${strongText}`}>{session.title}</p>
                                 <div className={`mt-1 font-inter text-[13px] ${subtleText}`}>
@@ -1790,7 +2000,6 @@ export default function RoomPageIFrame() {
                                 </div>
                             </div>
 
-                            {/* RIGHT: timer + theme + reload + host */}
                             <div className="flex items-center gap-2 shrink-0">
                                 {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
                                     <div className={`h-[32px] flex items-center gap-2 px-3 rounded-xl ${chipBg}`}>
@@ -1801,7 +2010,6 @@ export default function RoomPageIFrame() {
                                     </div>
                                 )}
 
-                                {/* Theme switcher */}
                                 <button
                                     onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
                                     className={`${switchTrack} ${switchTrackCls}`}
@@ -1818,7 +2026,6 @@ export default function RoomPageIFrame() {
                                     </div>
                                 </button>
 
-                                {/* Reload */}
                                 <button
                                     onClick={forceReloadJitsi}
                                     className={
@@ -1833,7 +2040,6 @@ export default function RoomPageIFrame() {
                                     <ReloadSmartIcon theme={theme} className="w-4 h-4" />
                                 </button>
 
-                                {/* Host */}
                                 {session.host_profile && (
                                     <button
                                         onClick={() => setSelectedUser(session.host_profile)}
@@ -1856,7 +2062,7 @@ export default function RoomPageIFrame() {
                             </div>
                         </div>
 
-                        {/* ✅ MOBILE (<sm): keep the “acceptable” layout */}
+                        {/* MOBILE (<sm) */}
                         <div className="sm:hidden">
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
@@ -1917,21 +2123,6 @@ export default function RoomPageIFrame() {
                                 >
                                     <ReloadSmartIcon theme={theme} className="w-4 h-4" />
                                 </button>
-
-                                {session.host_profile && (
-                                    <button
-                                        onClick={() => setSelectedUser(session.host_profile)}
-                                        className={`max-[520px]:hidden flex items-center gap-2 px-3 h-[32px] rounded-xl border transition font-inter text-[13px] ${isLight
-                                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                                : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
-                                            }`}
-                                    >
-                                        <span className="flex items-center gap-1 leading-none">
-                                            <span className={isLight ? "font-normal text-black/55" : "font-normal text-white/70"}>Host:</span>
-                                            <span className="font-semibold">{session.host_profile.full_name}</span>
-                                        </span>
-                                    </button>
-                                )}
                             </div>
                         </div>
 
@@ -1966,6 +2157,30 @@ export default function RoomPageIFrame() {
                     >
                         <div ref={iframeContainerRef} className="w-full h-full min-h-[60vh]" />
 
+                        {/* Floating reactions overlay */}
+                        {floatingReactions.length > 0 && (
+                            <div className="absolute inset-0 z-20 pointer-events-none flex items-end justify-center pb-10">
+                                <div className="flex flex-col gap-2 items-center">
+                                    {floatingReactions.slice(-4).map((r) => (
+                                        <div
+                                            key={r.id}
+                                            className={
+                                                "rounded-2xl px-4 py-2 shadow-2xl backdrop-blur border " +
+                                                (isLight ? "bg-white/80 border-black/10 text-black" : "bg-[#020617]/70 border-white/10 text-white")
+                                            }
+                                        >
+                                            <div className="flex flex-col items-center leading-none">
+                                                <div className="text-2xl">{reactionEmoji[r.type]}</div>
+                                                <div className={`mt-1 text-[11px] font-inter ${isLight ? "text-black/60" : "text-white/70"}`}>
+                                                    {r.fromName}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
                         {capacityError && (
                             <div className="absolute inset-0 z-40 flex items-center justify-center p-6 bg-black/55">
                                 <div className="max-w-md w-full bg-white rounded-2xl p-5 shadow-2xl">
@@ -1990,9 +2205,126 @@ export default function RoomPageIFrame() {
                         )}
                     </div>
 
-                    {/* RIGHT PANEL (chat/intentions) */}
+                    {/* RIGHT PANEL */}
                     {rightPanelOpen && (
                         <div className={`rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col ${panelBg}`}>
+                            {/* PARTICIPANTS */}
+                            {rightTab === "participants" && (
+                                <>
+                                    <div className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
+                                        <div className="flex items-center gap-2">
+                                            <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Participants</div>
+                                            <div className={`${isLight ? "text-black/50" : "text-white/55"} text-sm`}>
+                                                ({Math.max(0, participantRows.length)})
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => openRightTab(null)}
+                                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                                                }`}
+                                            title="Close"
+                                        >
+                                            ✕
+                                        </button>
+                                    </div>
+
+                                    <div className="p-4">
+                                        <div className={`rounded-xl px-3 py-2 ${isLight ? "bg-black/5 border border-black/10" : "bg-[#0B1220]/70 border border-white/10"
+                                            }`}>
+                                            <input
+                                                value={participantsSearch}
+                                                onChange={(e) => setParticipantsSearch(e.target.value)}
+                                                placeholder="Search participants..."
+                                                className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${isLight ? "text-black/80 placeholder:text-black/40" : "text-white/85 placeholder:text-white/35"
+                                                    }`}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="flex-1 overflow-y-auto px-4 pb-4">
+                                        <div className="flex flex-col gap-2">
+                                            {filteredParticipants.map((p) => {
+                                                const name = p.isLocal ? "You" : (p.displayName || "Guest");
+                                                const initials =
+                                                    name
+                                                        .split(" ")
+                                                        .filter(Boolean)
+                                                        .slice(0, 2)
+                                                        .map((x) => x[0]?.toUpperCase())
+                                                        .join("") || "U";
+
+                                                const audioKnown = typeof p.audioMuted === "boolean";
+                                                const videoKnown = typeof p.videoMuted === "boolean";
+
+                                                return (
+                                                    <div
+                                                        key={p.id}
+                                                        className={`flex items-center justify-between px-3 py-2 rounded-xl transition ${isLight ? "hover:bg-black/5" : "hover:bg-white/5"
+                                                            }`}
+                                                    >
+                                                        <div className="flex items-center gap-3 min-w-0">
+                                                            <div
+                                                                className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${isLight ? "bg-blue-500/15 text-blue-700" : "bg-emerald-500/80 text-[#02140B]"
+                                                                    }`}
+                                                            >
+                                                                {initials}
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <div className={`text-[13px] font-medium truncate ${isLight ? "text-black/85" : "text-white/90"}`}>
+                                                                    {name}
+                                                                </div>
+                                                                <div className={`text-[11px] truncate ${isLight ? "text-black/45" : "text-white/45"}`}>
+                                                                    {p.isLocal ? "Team member" : "Participant"}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="flex items-center gap-2">
+                                                            <div
+                                                                className={
+                                                                    "w-8 h-8 rounded-lg flex items-center justify-center " +
+                                                                    (!audioKnown
+                                                                        ? isLight ? "bg-black/5" : "bg-white/5"
+                                                                        : p.audioMuted
+                                                                            ? (isLight ? "bg-red-500/10" : "bg-red-500/20")
+                                                                            : (isLight ? "bg-black/5" : "bg-white/5"))
+                                                                }
+                                                                title={!audioKnown ? "Audio status unknown" : p.audioMuted ? "Muted" : "Unmuted"}
+                                                            >
+                                                                <Icon
+                                                                    name={audioKnown && p.audioMuted ? "mic-off" : "mic-on"}
+                                                                    theme={audioKnown && p.audioMuted ? "dark" : theme}
+                                                                    className={`w-4 h-4 ${(audioKnown && p.audioMuted) ? "opacity-90" : "opacity-80"}`}
+                                                                />
+                                                            </div>
+
+                                                            <div
+                                                                className={
+                                                                    "w-8 h-8 rounded-lg flex items-center justify-center " +
+                                                                    (!videoKnown
+                                                                        ? isLight ? "bg-black/5" : "bg-white/5"
+                                                                        : p.videoMuted
+                                                                            ? (isLight ? "bg-red-500/10" : "bg-red-500/20")
+                                                                            : (isLight ? "bg-black/5" : "bg-white/5"))
+                                                                }
+                                                                title={!videoKnown ? "Video status unknown" : p.videoMuted ? "Video off" : "Video on"}
+                                                            >
+                                                                <Icon
+                                                                    name={videoKnown && p.videoMuted ? "camera-off" : "camera-on"}
+                                                                    theme={theme}
+                                                                    className={`w-4 h-4 ${(videoKnown && p.videoMuted) ? "opacity-90" : "opacity-80"}`}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+
+                            {/* CHAT */}
                             {rightTab === "chat" && (
                                 <>
                                     <div className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
@@ -2022,6 +2354,7 @@ export default function RoomPageIFrame() {
                                 </>
                             )}
 
+                            {/* INTENTIONS */}
                             {rightTab === "intentions" && (
                                 <>
                                     <div className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
@@ -2050,43 +2383,18 @@ export default function RoomPageIFrame() {
             <div className="fixed inset-x-0 bottom-0 z-50">
                 <div className="w-full px-3 sm:px-5 pb-[calc(12px+env(safe-area-inset-bottom))]">
                     <div className={`h-[64px] sm:h-[74px] rounded-2xl shadow-2xl backdrop-blur grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4 ${bottomBarBg}`}>
-                        {/* LEFT GROUP */}
+                        {/* LEFT GROUP: Participants */}
                         <div className="flex items-center gap-2">
-                            {/* ✅ Chat with unread badge */}
-                            <div className="relative">
-                                <button
-                                    onClick={() => openRightTab("chat")}
-                                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                                    title="Chat"
-                                >
-                                    <Icon name="chat" theme={theme} className="w-5 h-5" />
-                                </button>
-
-                                {unreadChat > 0 && !(rightPanelOpen && rightTab === "chat") && (
-                                    <div
-                                        className={
-                                            "absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full " +
-                                            "flex items-center justify-center text-[11px] font-bold " +
-                                            (isLight ? "bg-red-600 text-white" : "bg-red-500 text-[#061019]")
-                                        }
-                                        aria-label={`Unread messages: ${unreadChat}`}
-                                        title={`${unreadChat} new`}
-                                    >
-                                        {unreadChat > 9 ? "9+" : unreadChat}
-                                    </div>
-                                )}
-                            </div>
-
                             <button
-                                onClick={() => openRightTab("intentions")}
+                                onClick={() => openRightTab("participants")}
                                 className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                                title="Intentions"
+                                title="Participants"
                             >
-                                <Icon name="intentions" theme={theme} className="w-5 h-5" />
+                                <ParticipantsSmartIcon theme={theme} className="w-5 h-5" />
                             </button>
                         </div>
 
-                        {/* CENTER GROUP */}
+                        {/* CENTER GROUP: media + reactions + tile */}
                         <div className="flex items-center justify-center gap-2 sm:gap-3">
                             <button
                                 onClick={toggleMic}
@@ -2121,6 +2429,38 @@ export default function RoomPageIFrame() {
                                 <Icon name="screen-share" theme={theme} className="w-5 h-5" />
                             </button>
 
+                            {/* reactions */}
+                            <div className="relative" ref={reactionsMenuRef}>
+                                <button
+                                    onClick={() => setShowReactionsMenu((v) => !v)}
+                                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                                    title="Reactions"
+                                >
+                                    <Icon name="reaction" theme={theme} className="w-5 h-5" />
+                                </button>
+
+                                {showReactionsMenu && (
+                                    <div
+                                        className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
+                                            }`}
+                                    >
+                                        {(["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown"] as ReactionType[]).map((t) => (
+                                            <button
+                                                key={t}
+                                                onClick={() => {
+                                                    void sendReaction(t);
+                                                    setShowReactionsMenu(false);
+                                                }}
+                                                className="hover:scale-[1.06] transition"
+                                                title={t}
+                                            >
+                                                {reactionEmoji[t]}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
                             <button
                                 onClick={toggleTile}
                                 className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
@@ -2130,8 +2470,41 @@ export default function RoomPageIFrame() {
                             </button>
                         </div>
 
-                        {/* RIGHT GROUP */}
+                        {/* RIGHT GROUP: Chat + Intentions + Leave (moved here) */}
                         <div className="flex items-center justify-end gap-2 sm:gap-3">
+                            {/* Chat with unread badge */}
+                            <div className="relative">
+                                <button
+                                    onClick={() => openRightTab("chat")}
+                                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                                    title="Chat"
+                                >
+                                    <Icon name="chat" theme={theme} className="w-5 h-5" />
+                                </button>
+
+                                {unreadChat > 0 && !(rightPanelOpen && rightTab === "chat") && (
+                                    <div
+                                        className={
+                                            "absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full " +
+                                            "flex items-center justify-center text-[11px] font-bold " +
+                                            (isLight ? "bg-red-600 text-white" : "bg-red-500 text-[#061019]")
+                                        }
+                                        aria-label={`Unread messages: ${unreadChat}`}
+                                        title={`${unreadChat} new`}
+                                    >
+                                        {unreadChat > 9 ? "9+" : unreadChat}
+                                    </div>
+                                )}
+                            </div>
+
+                            <button
+                                onClick={() => openRightTab("intentions")}
+                                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                                title="Intentions"
+                            >
+                                <Icon name="intentions" theme={theme} className="w-5 h-5" />
+                            </button>
+
                             <button
                                 onClick={hangup}
                                 className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${isLight ? "bg-red-600 hover:bg-red-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"
