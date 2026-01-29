@@ -218,13 +218,13 @@ function InfiniteRoomsIntroCard() {
             </div>
 
             <h2 className="font-inter font-semibold text-[20px] sm:text-[24px] text-brandBlack">
-              24/7 Infinite Rooms
+              24/7 Focus Rooms
             </h2>
           </div>
 
           {/* ✅ text smaller on mobile */}
           <p className="font-inter font-light text-[14px] sm:text-[16px] leading-[160%] text-brandBlack text-center max-w-[860px] mx-auto">
-            24/7 Infinite Rooms are always open, giving you a structured space to
+            24/7 Focus Rooms are always open, giving you a structured space to
             focus whenever inspiration strikes. Join at any time, follow the
             built-in workflow (Pomodoro or Deep Work), stay accountable with
             others, and keep your momentum going — day or night.
@@ -859,7 +859,7 @@ export function SessionsPage() {
                     </div>
                     <ul className="text-[13px] text-[#111827]/80 leading-relaxed list-disc pl-5 space-y-2">
                       <li>
-                        Wrap up at the end (or anytime in Infinite rooms).
+                        Wrap up at the end (or anytime in 24/7 focus rooms).
                       </li>
                       <li>
                         Quick self-reflection: what you did / what’s next.
