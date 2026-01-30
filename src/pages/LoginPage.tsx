@@ -1,10 +1,18 @@
 // src/pages/LoginPage.tsx
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useNavigate } from "react-router-dom";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, ExternalLink } from "lucide-react";
 import HeaderLite from "../components/HeaderLite";
+
+function isInAppBrowser() {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  return /FBAN|FBAV|Instagram|Line|Telegram|Twitter|Discord|TikTok|Snapchat|Pinterest/i.test(
+    ua
+  );
+}
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -13,6 +21,21 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const [oauthLoading, setOauthLoading] = useState<null | "google" | "facebook">(null);
+
+  const inApp = useMemo(() => isInAppBrowser(), []);
+
+  useEffect(() => {
+    // Optional: if user is already logged in, bounce to /sessions
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getUser();
+        if (data.user) navigate("/sessions");
+      } catch { }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -40,17 +63,78 @@ export default function LoginPage() {
   };
 
   const loginWithGoogle = async () => {
-    await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: `${window.location.origin}/auth/callback/` },
-    });
+    try {
+      setOauthLoading("google");
+
+      const redirectTo = `${window.location.origin}/auth/callback/`;
+
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo,
+          // ✅ critical for in-app browsers: don’t try to redirect inside webview
+          skipBrowserRedirect: true,
+        },
+      });
+
+      if (error) {
+        console.log("[auth] google oauth error:", error);
+        alert(error.message);
+        return;
+      }
+
+      if (data?.url) {
+        // ✅ open in a real browser tab/window
+        window.open(data.url, "_blank", "noopener,noreferrer");
+      } else {
+        console.log("[auth] google oauth: no url returned");
+        alert("Failed to start Google login. Please try again.");
+      }
+    } finally {
+      setOauthLoading(null);
+    }
   };
 
   const loginWithFacebook = async () => {
-    await supabase.auth.signInWithOAuth({
-      provider: "facebook",
-      options: { redirectTo: `${window.location.origin}/auth/callback/` },
-    });
+    try {
+      setOauthLoading("facebook");
+
+      const redirectTo = `${window.location.origin}/auth/callback/`;
+
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: "facebook",
+        options: {
+          redirectTo,
+          skipBrowserRedirect: true,
+        },
+      });
+
+      if (error) {
+        console.log("[auth] facebook oauth error:", error);
+        alert(error.message);
+        return;
+      }
+
+      if (data?.url) {
+        window.open(data.url, "_blank", "noopener,noreferrer");
+      } else {
+        console.log("[auth] facebook oauth: no url returned");
+        alert("Failed to start Facebook login. Please try again.");
+      }
+    } finally {
+      setOauthLoading(null);
+    }
+  };
+
+  const openInBrowserHint = () => {
+    // helps users in webviews: they can long-press/copy, or use the menu.
+    const url = window.location.href;
+    try {
+      navigator.clipboard?.writeText(url);
+      alert("Link copied. Open it in Chrome/Safari and try again.");
+    } catch {
+      alert("Open this page in Chrome/Safari and try again.");
+    }
   };
 
   return (
@@ -59,7 +143,24 @@ export default function LoginPage() {
 
       <div className="flex flex-col items-center w-full pt-16 px-4">
         <div className="w-full max-w-md mx-auto">
-          <h2 className="text-center text-[32px] font-bold mb-8">Log in</h2>
+          <h2 className="text-center text-[32px] font-bold mb-6">Log in</h2>
+
+          {/* In-app browser warning */}
+          {inApp && (
+            <div className="mb-6 rounded-[16px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <div className="font-semibold mb-1">Google login can be blocked here</div>
+              <div className="opacity-90">
+                You’re likely in an in-app browser (Discord/Telegram/etc). Open this page in Chrome/Safari to log in.
+              </div>
+              <button
+                onClick={openInBrowserHint}
+                className="mt-3 inline-flex items-center gap-2 text-amber-900 font-semibold hover:underline"
+                type="button"
+              >
+                <ExternalLink size={16} /> Copy link / open in browser
+              </button>
+            </div>
+          )}
 
           {/* Email */}
           <label className="block text-sm mb-1">Email address</label>
@@ -94,7 +195,7 @@ export default function LoginPage() {
           <button
             onClick={handleLogin}
             disabled={loading}
-            className="w-full bg-[#2F2F2F] text-white py-3 rounded-[16px] text-[18px] font-semibold hover:bg-[#1F1F1F] transition mb-3"
+            className="w-full bg-[#2F2F2F] text-white py-3 rounded-[16px] text-[18px] font-semibold hover:bg-[#1F1F1F] transition mb-3 disabled:opacity-60"
           >
             {loading ? "Loading…" : "Login"}
           </button>
@@ -106,27 +207,29 @@ export default function LoginPage() {
           {/* Google */}
           <button
             onClick={loginWithGoogle}
-            className="w-full py-3 border border-gray-300 rounded-[16px] flex items-center justify-center gap-3 mb-3 hover:bg-gray-50 transition text-[18px] font-semibold"
+            disabled={oauthLoading !== null}
+            className="w-full py-3 border border-gray-300 rounded-[16px] flex items-center justify-center gap-3 mb-3 hover:bg-gray-50 transition text-[18px] font-semibold disabled:opacity-60"
           >
             <img
               src="https://www.svgrepo.com/show/475656/google-color.svg"
               className="w-5"
               alt="Google icon"
             />
-            Continue with Google
+            {oauthLoading === "google" ? "Opening Google…" : "Continue with Google"}
           </button>
 
           {/* Facebook */}
           <button
             onClick={loginWithFacebook}
-            className="w-full py-3 rounded-[16px] flex items-center justify-center gap-3 mb-3 bg-[#1877F2] text-white hover:bg-[#0f66d3] transition text-[18px] font-semibold"
+            disabled={oauthLoading !== null}
+            className="w-full py-3 rounded-[16px] flex items-center justify-center gap-3 mb-3 bg-[#1877F2] text-white hover:bg-[#0f66d3] transition text-[18px] font-semibold disabled:opacity-60"
           >
             <img
               src="/icons/facebook.svg"
               className="w-5 h-5"
               alt="Facebook icon"
             />
-            Continue with Facebook
+            {oauthLoading === "facebook" ? "Opening Facebook…" : "Continue with Facebook"}
           </button>
 
           <p className="text-center text-sm text-gray-700 mt-6">
