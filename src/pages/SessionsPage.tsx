@@ -6,6 +6,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { SessionTypeSwitcher } from "../components/SessionTypeSwitcher";
 import SessionCard from "../components/SessionCard";
 import { SessionsDateFilter } from "../components/SessionsDateFilter";
+import BodyTriplingBody from "../components/body/BodyTriplingBody";
 import { BodyTriplingIntro } from "../components/body/BodyTriplingIntro";
 import { supabase } from "../lib/supabase";
 import { useCreateSessionModal } from "../context/CreateSessionModalContext";
@@ -32,15 +33,20 @@ type SessionWithRelations = Session & {
   start_time?: string;
   status?: string;
 
+  // ✅ NEW columns (идеальный способ маршрутизации)
   session_format_type?: "group" | "infinite" | "body" | string;
   is_silent?: boolean;
 
+  // ✅ NEW: limit (используется в Edit UI)
   max_participants?: number | null;
 
+  // ✅ fallback for older rows
   schedule?: any;
 
+  // ✅ booking UI (now with joined profiles)
   session_bookings?: SessionBookingRow[];
 
+  // ✅ ONLINE NOW (from DB, not history)
   live_count?: number;
 };
 
@@ -73,16 +79,21 @@ function safeParseSchedule(raw: any) {
   return raw;
 }
 
+// ✅ fallback-детектор infinite по schedule (старый формат)
 function isInfiniteBySchedule(s: SessionWithRelations) {
   const sch = safeParseSchedule((s as any)?.schedule);
   if (!sch || typeof sch !== "object") return false;
 
+  // самый надёжный маркер старого infinite
   if ((sch as any)?.kind === "infinite_room") return true;
+
+  // если раньше infinite был объектом (а group — массивом)
   if (!Array.isArray(sch) && (sch as any)?.timer?.phases) return true;
 
   return false;
 }
 
+// ✅ главный резолвер типа (с fallback)
 function resolveSessionType(
   s: SessionWithRelations
 ): "group" | "infinite" | "body" {
@@ -92,6 +103,7 @@ function resolveSessionType(
   if (t === "body") return "body";
   if (t === "group") return "group";
 
+  // fallback: если колонка ещё не проставлена
   if (isInfiniteBySchedule(s)) return "infinite";
   if (String(s.format || "").toLowerCase() === "body") return "body";
 
@@ -112,7 +124,11 @@ function InfinityIcon({ className = "w-5 h-5" }: { className?: string }) {
   );
 }
 
-function ClockIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
+function ClockIcon({
+  className = "w-[27px] h-[27px]",
+}: {
+  className?: string;
+}) {
   return (
     <img
       src="/icons/always-open.svg"
@@ -167,8 +183,8 @@ function RocketIcon({
 type Feature = {
   title: string;
   subtitle: string;
-  color: string;
-  bg20: string;
+  color: string; // border + icon
+  bg20: string; // 20% fill
   Icon: (p: { className?: string }) => JSX.Element;
 };
 
@@ -262,24 +278,11 @@ function InfiniteRoomsIntroCard() {
   );
 }
 
-// ========
-// Body create UI helpers
-// ========
-function nextQuarterTimeHHMM() {
-  const d = new Date();
-  const ms = d.getTime();
-  const step = 15 * 60 * 1000;
-  const rounded = new Date(Math.ceil(ms / step) * step);
-  const hh = String(rounded.getHours()).padStart(2, "0");
-  const mm = String(rounded.getMinutes()).padStart(2, "0");
-  return `${hh}:${mm}`;
-}
-
-function buildLocalISO(dateYMD: string, timeHHMM: string) {
-  const [y, m, d] = dateYMD.split("-").map((x) => Number(x));
-  const [hh, mm] = timeHHMM.split(":").map((x) => Number(x));
-  const local = new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, 0, 0);
-  return local.toISOString();
+function combineLocalDateTimeToISO(dateYMD: string, timeHHMM: string) {
+  // Interprets `${date}T${time}` as LOCAL time, then converts to ISO (UTC).
+  const d = new Date(`${dateYMD}T${timeHHMM}:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
 }
 
 export function SessionsPage() {
@@ -294,82 +297,21 @@ export function SessionsPage() {
   const [sessionTypeTab, setSessionTypeTab] = useState<
     "group" | "infinite" | "body"
   >("group");
-
-  // group-only date filter
   const [dateFilter, setDateFilter] = useState<string | null>(null);
 
-  // current user profile (best effort)
   const [currentProfile, setCurrentProfile] = useState<BookingProfile | null>(
     null
   );
 
-  // How it works modal
   const [howItWorksOpen, setHowItWorksOpen] = useState(false);
 
-  // BODY: inline create state
-  const [bodyCreateDuration, setBodyCreateDuration] = useState<25 | 50 | null>(
-    null
-  );
-  const [bodyCreateDate, setBodyCreateDate] = useState<string>(todayLocalYMD());
-  const [bodyCreateTime, setBodyCreateTime] = useState<string>("");
-  const [bodyCreateLoading, setBodyCreateLoading] = useState(false);
-
-  const resetBodyCreate = () => {
-    setBodyCreateDuration(null);
-    setBodyCreateTime("");
-  };
-
-  const startBodyCreate = (dur: 25 | 50) => {
-    setBodyCreateDuration(dur);
-    setBodyCreateTime((prev) => prev || nextQuarterTimeHHMM());
-  };
-
-  const confirmBodyCreate = async () => {
-    if (!user) return navigate("/login");
-    if (!bodyCreateDuration) return;
-    const time = (bodyCreateTime || "").trim();
-    const date = (bodyCreateDate || "").trim();
-    if (!date || !time) return;
-
-    try {
-      setBodyCreateLoading(true);
-
-      const start_time = buildLocalISO(date, time);
-
-      const title = `body — ${bodyCreateDuration} min`;
-
-      const payload: any = {
-        title,
-        host_id: user.id,
-        host_name: currentProfile?.full_name || null,
-        duration_minutes: bodyCreateDuration,
-        format: "body",
-        session_format_type: "body",
-        start_time,
-        status: "planned",
-        // optional default:
-        // max_participants: 3,
-      };
-
-      const { error } = await supabase.from("sessions").insert(payload);
-      if (error) throw error;
-
-      await fetchSessions();
-      resetBodyCreate();
-    } catch (e) {
-      console.error("[DEBUG Sessions] create body session error:", e);
-      alert("Failed to create session (see console).");
-    } finally {
-      setBodyCreateLoading(false);
-    }
-  };
-
-  // Close on ESC
   useEffect(() => {
     if (!howItWorksOpen) return;
+
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") setHowItWorksOpen(false);
     };
+
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [howItWorksOpen]);
@@ -381,14 +323,17 @@ export function SessionsPage() {
       setSessionTypeTab(tab as any);
       if (DEBUG) console.log("[DEBUG Sessions] Tab from query:", tab);
 
-      if (tab === "infinite") setDateFilter(null);
       if (tab === "body") {
-        setBodyCreateDate((prev) => prev || todayLocalYMD());
+        setDateFilter((prev) => prev || todayLocalYMD());
+      }
+
+      if (tab === "infinite") {
+        setDateFilter(null);
       }
     }
   }, [searchParams]);
 
-  // Load current user profile (best effort)
+  // ✅ Load current user profile (best effort)
   useEffect(() => {
     const run = async () => {
       if (!user?.id) {
@@ -407,7 +352,10 @@ export function SessionsPage() {
         setCurrentProfile((data as any) || null);
       } catch (e) {
         if (DEBUG)
-          console.warn("[DEBUG Sessions] profile load failed:", e);
+          console.warn(
+            "[DEBUG Sessions] profile load failed (ok if no profiles yet):",
+            e
+          );
         setCurrentProfile(null);
       }
     };
@@ -415,7 +363,7 @@ export function SessionsPage() {
     run();
   }, [user?.id]);
 
-  // ONLINE NOW: fetch live counts from DB (cheap)
+  // ✅ ONLINE NOW: fetch live counts from DB (cheap)
   const fetchLiveCounts = useCallback(async (sessionIds: string[]) => {
     if (!sessionIds.length) return;
 
@@ -484,6 +432,7 @@ export function SessionsPage() {
       }
 
       const rows = (data || []) as unknown as SessionWithRelations[];
+
       if (DEBUG) console.log("[DEBUG Sessions] Loaded:", rows);
 
       setSessions(rows);
@@ -501,13 +450,13 @@ export function SessionsPage() {
     fetchSessions();
   }, [fetchSessions]);
 
-  // Refresh after modal creates session (still used for group/infinite)
+  // --- Refresh after modal creates session ---
   useEffect(() => {
     modal.setOnCreatedCallback(fetchSessions);
     if (DEBUG) console.log("[DEBUG Sessions] Modal callback set");
   }, [modal, fetchSessions]);
 
-  // Poll ONLY live counts every 10s
+  // ✅ Poll ONLY live counts every 10s (cheap)
   const sessionIds = useMemo(
     () => sessions.map((s) => s.id).filter(Boolean),
     [sessions]
@@ -521,10 +470,11 @@ export function SessionsPage() {
     return () => window.clearInterval(t);
   }, [sessionIds, fetchLiveCounts]);
 
-  // HELPERS
+  // --- HELPERS ---
   const isExpired = (s: SessionWithRelations) => {
     const type = resolveSessionType(s);
 
+    // ✅ Infinite rooms never expire
     if (type === "infinite") return false;
 
     if (!s.start_time) return false;
@@ -545,10 +495,9 @@ export function SessionsPage() {
     );
   }, [sessionTypeTab, activeSessions]);
 
-  // Date filtering only for GROUP
+  // ✅ Date filtering (only for group/body; infinite ignores date filter)
   const visibleSessions = useMemo(() => {
     if (sessionTypeTab === "infinite") return typeFilteredSessions;
-    if (sessionTypeTab === "body") return typeFilteredSessions;
 
     if (!dateFilter) return typeFilteredSessions;
 
@@ -559,7 +508,7 @@ export function SessionsPage() {
     });
   }, [typeFilteredSessions, dateFilter, sessionTypeTab]);
 
-  // ACTIONS
+  // --- ACTIONS ---
   const join = (id: string) => {
     if (!user) return navigate("/login");
     navigate(`/room/${id}`);
@@ -592,6 +541,7 @@ export function SessionsPage() {
         .eq("user_id", user.id);
 
       if (error) throw error;
+
       await fetchSessions();
     } catch (err) {
       console.error("[DEBUG Sessions] Cancel error:", err);
@@ -627,8 +577,8 @@ export function SessionsPage() {
         .from("sessions")
         .update(updates)
         .eq("id", sessionId);
-
       if (error) throw error;
+
       await fetchSessions();
     } catch (err) {
       console.error("[DEBUG Sessions] Edit session error:", err);
@@ -666,6 +616,47 @@ export function SessionsPage() {
     modal.open();
   };
 
+  // ✅ BODY: create via 25/50 + date + time (writes to Supabase)
+  const createBodySession = async (payload: {
+    duration: 25 | 50;
+    dateYMD: string;
+    timeHHMM: string;
+  }) => {
+    if (!user?.id) return navigate("/login");
+
+    const iso = combineLocalDateTimeToISO(payload.dateYMD, payload.timeHHMM);
+    if (!iso) throw new Error("Invalid date/time");
+
+    const hostName =
+      (currentProfile?.full_name || "").trim() ||
+      (currentProfile?.email || "").trim() ||
+      ((user as any)?.email || "").trim() ||
+      "Host";
+
+    const title = `body — ${payload.duration}`;
+
+    const { error } = await supabase.from("sessions").insert({
+      title,
+      host_id: user.id,
+      host_name: hostName,
+      duration_minutes: payload.duration,
+      format: "body",
+      session_format_type: "body",
+      start_time: iso,
+      status: "planned",
+      is_silent: false,
+      max_participants: 3,
+      schedule: null,
+    });
+
+    if (error) {
+      console.error("[DEBUG Sessions] create body session error:", error);
+      throw error;
+    }
+
+    await fetchSessions();
+  };
+
   const topPad =
     sessionTypeTab === "group" ? "pt-[100px] pb-[50px]" : "pt-[56px] pb-[18px]";
 
@@ -691,149 +682,29 @@ export function SessionsPage() {
                 setSessionTypeTab(v);
 
                 if (v === "infinite") setDateFilter(null);
-
-                if (v === "body") {
-                  setBodyCreateDate((prev) => prev || todayLocalYMD());
-                }
+                if (v === "body") setDateFilter((prev) => prev || todayLocalYMD());
               }}
             />
           </div>
 
-          {/* BODY: Coming Soon + NEW inline create */}
+          {/* BODY */}
           {sessionTypeTab === "body" ? (
             <div className="w-full max-w-[980px] mx-auto">
-              <div className="border border-[#DBD8D8] rounded-[24px] bg-white p-5 sm:p-6">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="text-[14px] font-semibold text-[#111827]">
-                      Create a body session (25 / 50)
-                    </div>
-                    <div className="text-[12px] text-[#111827]/60 mt-1">
-                      Click 25 or 50 → choose time → confirm.
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <span className="text-[12px] text-[#111827]/60">Date</span>
-                    <input
-                      type="date"
-                      value={bodyCreateDate}
-                      onChange={(e) => setBodyCreateDate(e.target.value)}
-                      className="h-10 rounded-[12px] border border-[#E6E6E6] px-3 text-[13px] text-[#111827]"
-                    />
-                  </div>
-                </div>
-
-                <div className="mt-4 flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => startBodyCreate(25)}
-                    disabled={bodyCreateLoading}
-                    className="
-                      h-10 rounded-full border border-[#111827]
-                      px-4 text-[13px] font-semibold
-                      text-[#111827]
-                      hover:bg-[#111827] hover:text-white
-                      transition
-                      disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-[#111827]
-                    "
-                  >
-                    25
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => startBodyCreate(50)}
-                    disabled={bodyCreateLoading}
-                    className="
-                      h-10 rounded-full border border-[#111827]
-                      px-4 text-[13px] font-semibold
-                      text-[#111827]
-                      hover:bg-[#111827] hover:text-white
-                      transition
-                      disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-[#111827]
-                    "
-                  >
-                    50
-                  </button>
-
-                  {bodyCreateDuration && (
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="time"
-                        value={bodyCreateTime}
-                        onChange={(e) => setBodyCreateTime(e.target.value)}
-                        className="h-10 rounded-[12px] border border-[#E6E6E6] px-3 text-[13px] text-[#111827]"
-                      />
-
-                      {/* confirm */}
-                      <button
-                        type="button"
-                        onClick={confirmBodyCreate}
-                        disabled={bodyCreateLoading}
-                        className="
-                          h-10 w-10 rounded-full
-                          border border-[#2BB673]
-                          text-[#2BB673]
-                          hover:bg-[#2BB673] hover:text-white
-                          transition
-                          flex items-center justify-center
-                          disabled:opacity-50
-                        "
-                        aria-label="Confirm"
-                        title="Confirm"
-                      >
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                          <path
-                            d="M20 6 9 17l-5-5"
-                            stroke="currentColor"
-                            strokeWidth="2.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      </button>
-
-                      {/* cancel */}
-                      <button
-                        type="button"
-                        onClick={resetBodyCreate}
-                        disabled={bodyCreateLoading}
-                        className="
-                          h-10 w-10 rounded-full
-                          border border-[#111827]
-                          text-[#111827]
-                          hover:bg-[#111827] hover:text-white
-                          transition
-                          flex items-center justify-center
-                          disabled:opacity-50
-                        "
-                        aria-label="Cancel"
-                        title="Cancel"
-                      >
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                          <path
-                            d="M18 6 6 18M6 6l12 12"
-                            stroke="currentColor"
-                            strokeWidth="2.5"
-                            strokeLinecap="round"
-                          />
-                        </svg>
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-6 text-center py-10">
-                  <div className="text-[18px] font-semibold text-[#111827]">
-                    Coming Soon
-                  </div>
-                </div>
-              </div>
+              <BodyTriplingBody
+                sessions={visibleSessions}
+                isLoading={isLoading}
+                dateFilter={dateFilter}
+                onDateChange={setDateFilter}
+                userId={user?.id}
+                onJoin={join}
+                onBook={book}
+                onCancelBooking={cancel}
+                onCreateBodySession={createBodySession}
+              />
             </div>
           ) : (
             <>
-              {/* GROUP: date filter */}
+              {/* GROUP: old date filter; Infinite: no date filter */}
               {sessionTypeTab === "group" && (
                 <div className="mb-6 w-full">
                   <SessionsDateFilter
@@ -879,7 +750,8 @@ export function SessionsPage() {
                             ? {
                               id: user.id,
                               full_name: currentProfile?.full_name || undefined,
-                              avatar_url: currentProfile?.avatar_url || undefined,
+                              avatar_url:
+                                currentProfile?.avatar_url || undefined,
                               email:
                                 (currentProfile?.email ||
                                   (user as any)?.email ||
@@ -903,7 +775,9 @@ export function SessionsPage() {
         </div>
       </main>
 
-      {/* Floating: How it works */}
+      {/* ============================
+          Floating: How it works
+         ============================ */}
       <button
         type="button"
         onClick={() => setHowItWorksOpen(true)}
@@ -943,7 +817,9 @@ export function SessionsPage() {
         <span className="text-[14px] font-semibold">How it works</span>
       </button>
 
-      {/* Modal: How it works (оставил как было у тебя) */}
+      {/* ============================
+          Modal: How it works
+         ============================ */}
       {howItWorksOpen && (
         <div className="fixed inset-0 z-[70]">
           <div
@@ -1002,8 +878,159 @@ export function SessionsPage() {
               </div>
 
               <div className="px-6 py-6 sm:px-8 sm:py-8 max-h-[75vh] overflow-auto">
-                <div className="text-[13px] text-[#111827]/80 leading-relaxed">
-                  (content unchanged)
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                  <div className="rounded-[18px] border border-[#E6E6E6] p-5">
+                    <div className="text-[13px] font-semibold text-[#111827] mb-3">
+                      1) Choose a session
+                    </div>
+                    <ul className="text-[13px] text-[#111827]/80 leading-relaxed list-disc pl-5 space-y-2">
+                      <li>
+                        Pick a tab: <b>Group</b>, <b>Infinite</b> (24/7), or{" "}
+                        <b>body</b>.
+                      </li>
+                      <li>
+                        Group/body sessions are scheduled (date/time). Infinite
+                        rooms are always open.
+                      </li>
+                      <li>
+                        You can <b>Book session</b> (optional) to save it — or
+                        just join.
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div className="rounded-[18px] border border-[#E6E6E6] p-5">
+                    <div className="text-[13px] font-semibold text-[#111827] mb-3">
+                      2) Join & set up
+                    </div>
+                    <ul className="text-[13px] text-[#111827]/80 leading-relaxed list-disc pl-5 space-y-2">
+                      <li>
+                        Click <b>Join session</b>.
+                      </li>
+                      <li>
+                        Turn mic/cam on/off as you prefer. Screen-share is
+                        optional.
+                      </li>
+                      <li>
+                        You’ll see the session flow: timer/stages (depending on
+                        room type).
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div className="rounded-[18px] border border-[#E6E6E6] p-5">
+                    <div className="text-[13px] font-semibold text-[#111827] mb-3">
+                      3) Follow the workflow
+                    </div>
+                    <ul className="text-[13px] text-[#111827]/80 leading-relaxed list-disc pl-5 space-y-2">
+                      <li>
+                        Use stage prompts to stay aligned (check-in / intentions).
+                      </li>
+                      <li>
+                        During <b>Focus</b>, work silently or lightly co-work.
+                      </li>
+                      <li>
+                        During <b>Break</b>, rest/reset. Then go back to focus.
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div className="rounded-[18px] border border-[#E6E6E6] p-5">
+                    <div className="text-[13px] font-semibold text-[#111827] mb-3">
+                      4) Finish & leave
+                    </div>
+                    <ul className="text-[13px] text-[#111827]/80 leading-relaxed list-disc pl-5 space-y-2">
+                      <li>
+                        Wrap up at the end (or anytime in 24/7 focus rooms).
+                      </li>
+                      <li>
+                        Quick self-reflection: what you did / what’s next.
+                      </li>
+                      <li>
+                        Leave the session — your work is done.
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+
+                <div className="my-7 border-t border-[#ECECEC]" />
+
+                <div className="flex items-center justify-between gap-4">
+                  <h4 className="text-[14px] sm:text-[15px] font-semibold text-[#111827]">
+                    Stages glossary (what each block means)
+                  </h4>
+                  <span className="text-[12px] text-[#111827]/60">
+                    (Some rooms may hide stages — e.g. silent rooms)
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  <div className="rounded-[18px] border border-[#E6E6E6] p-5">
+                    <div className="text-[13px] font-semibold text-[#111827]">
+                      Check-in
+                    </div>
+                    <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
+                      Quick verbal sync: “What are you working on?” + “Any blockers?”.
+                      Short, supportive, no long stories.
+                    </p>
+                  </div>
+
+                  <div className="rounded-[18px] border border-[#E6E6E6] p-5">
+                    <div className="text-[13px] font-semibold text-[#111827]">
+                      Intentions
+                    </div>
+                    <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
+                      You state your goal for the next focus block. Keep it specific:
+                      1–3 concrete outcomes.
+                    </p>
+                  </div>
+
+                  <div className="rounded-[18px] border border-[#E6E6E6] p-5">
+                    <div className="text-[13px] font-semibold text-[#111827]">
+                      Focus
+                    </div>
+                    <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
+                      The working block. Usually quiet. Your only job: do the task.
+                    </p>
+                  </div>
+
+                  <div className="rounded-[18px] border border-[#E6E6E6] p-5">
+                    <div className="text-[13px] font-semibold text-[#111827]">
+                      Break
+                    </div>
+                    <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
+                      Rest/reset: stand up, water, stretch. Avoid doom-scrolling if you can.
+                    </p>
+                  </div>
+
+                  <div className="rounded-[18px] border border-[#E6E6E6] p-5">
+                    <div className="text-[13px] font-semibold text-[#111827]">
+                      Custom block
+                    </div>
+                    <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
+                      A flexible stage you can name anything: “Reading”, “Planning”,
+                      “Admin”, etc. Use it however you want.
+                    </p>
+                  </div>
+
+                  <div className="rounded-[18px] border border-[#E6E6E6] p-5">
+                    <div className="text-[13px] font-semibold text-[#111827]">
+                      Outro / Wrap-up
+                    </div>
+                    <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
+                      Quick closure: what you finished, what’s next, and one takeaway.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-7 rounded-[18px] border border-[#E6E6E6] bg-[#F7F7F7] p-5">
+                  <div className="text-[13px] font-semibold text-[#111827]">
+                    Pro tip
+                  </div>
+                  <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
+                    If you’re joining a <b>Silent</b> room: keep mic off, use the stage
+                    timer as guidance, and focus. No pressure to talk.
+                  </p>
                 </div>
 
                 <div className="mt-8 flex items-center justify-end gap-3">
