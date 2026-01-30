@@ -2380,7 +2380,7 @@ export default function RoomPageIFrame() {
                                         )}
 
                                         {rightTab === "intentions" && (
-                                            <IntentionsPanel theme={theme} />
+                                            <IntentionsPanel theme={theme} sessionId={sessionId} />
                                         )}
 
                                         {rightTab === "participants" && (
@@ -2528,7 +2528,7 @@ export default function RoomPageIFrame() {
                                     </div>
 
                                     <div className="flex-1 min-h-0">
-                                        <IntentionsPanel theme={theme} />
+                                        <IntentionsPanel theme={theme} sessionId={sessionId} />
                                     </div>
                                 </>
                             )}
