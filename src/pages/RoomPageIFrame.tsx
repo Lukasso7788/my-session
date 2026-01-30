@@ -519,7 +519,12 @@ function ParticipantsSmartIcon({
     theme: RoomTheme;
     className?: string;
 }) {
-    const candidates = [`/icons/participants-${theme}.svg`, `/icons/participants.svg`, `/icons/users-${theme}.svg`, `/icons/users.svg`];
+    const candidates = [
+        `/icons/participants-${theme}.svg`,
+        `/icons/participants.svg`,
+        `/icons/users-${theme}.svg`,
+        `/icons/users.svg`,
+    ];
     const [idx, setIdx] = useState(0);
     const [inline, setInline] = useState(false);
 
@@ -548,7 +553,12 @@ function ParticipantsSmartIcon({
 
 // ✅ Smart icon: reload
 function ReloadSmartIcon({ theme, className = "w-4 h-4" }: { theme: RoomTheme; className?: string }) {
-    const candidates = [`/icons/reload-${theme}.svg`, `/icons/reload.svg`, `/icons/refresh-${theme}.svg`, `/icons/refresh.svg`];
+    const candidates = [
+        `/icons/reload-${theme}.svg`,
+        `/icons/reload.svg`,
+        `/icons/refresh-${theme}.svg`,
+        `/icons/refresh.svg`,
+    ];
     const [idx, setIdx] = useState(0);
     const [inline, setInline] = useState(false);
 
@@ -706,19 +716,6 @@ export default function RoomPageIFrame() {
         };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
-    }, []);
-
-    // stop any loop audio when tab is hidden
-    useEffect(() => {
-        const onVis = () => {
-            if (document.hidden) {
-                try {
-                    // no-op; actual handler wired below
-                } catch { }
-            }
-        };
-        document.addEventListener("visibilitychange", onVis);
-        return () => document.removeEventListener("visibilitychange", onVis);
     }, []);
 
     // =========================
@@ -887,8 +884,12 @@ export default function RoomPageIFrame() {
         const title = String(session?.title || "").toLowerCase();
 
         const tpl = session?.session_templates;
-        const tplName = Array.isArray(tpl) ? String(tpl?.[0]?.name || tpl?.[0]?.title || "") : String(tpl?.name || tpl?.title || "");
-        const tplKey = Array.isArray(tpl) ? String(tpl?.[0]?.key || tpl?.[0]?.slug || tpl?.[0]?.type || "") : String(tpl?.key || tpl?.slug || tpl?.type || "");
+        const tplName = Array.isArray(tpl)
+            ? String(tpl?.[0]?.name || tpl?.[0]?.title || "")
+            : String(tpl?.name || tpl?.title || "");
+        const tplKey = Array.isArray(tpl)
+            ? String(tpl?.[0]?.key || tpl?.[0]?.slug || tpl?.[0]?.type || "")
+            : String(tpl?.key || tpl?.slug || tpl?.type || "");
         const tplFmt = Array.isArray(tpl) ? String(tpl?.[0]?.format || "") : String(tpl?.format || "");
 
         const hay = `${fmt} ${title} ${tplName} ${tplKey} ${tplFmt}`.toLowerCase();
@@ -1044,7 +1045,7 @@ export default function RoomPageIFrame() {
         } catch { }
     };
 
-    // now that stopWelcomeLoop exists, wire the visibilitychange to actually stop it
+    // ✅ stop welcome loop when tab is hidden
     useEffect(() => {
         const onVis = () => {
             if (document.hidden) stopWelcomeLoop();
@@ -1568,6 +1569,7 @@ export default function RoomPageIFrame() {
     // ✅ Reactions via Supabase realtime broadcast
     // ============================================
     const reactionsChannelRef = useRef<any>(null);
+    const reactionsSubscribedRef = useRef<boolean>(false);
     const reactionIdRef = useRef<number>(0);
     const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([]);
     const profileNameCacheRef = useRef<Map<string, string>>(new Map());
@@ -1614,15 +1616,29 @@ export default function RoomPageIFrame() {
         if (!currentUserId) return;
 
         const key = `reactions:${sessionId}`;
-        const ch = supabase.channel(key);
+
+        // ✅ IMPORTANT: correct realtime channel config
+        const ch = supabase.channel(key, {
+            config: {
+                broadcast: { ack: true, self: false },
+                presence: { key: currentUserId },
+            },
+        });
 
         reactionsChannelRef.current = ch;
+        reactionsSubscribedRef.current = false;
 
-        ch.on("broadcast", { event: "reaction" }, async (payload: any) => {
+        ch.on("broadcast", { event: "reaction" }, async (msg: any) => {
             try {
-                const p = payload?.payload;
+                // ✅ Supabase sends { event, payload }. Some apps accidentally wrap -> payload.payload
+                const raw = msg?.payload;
+                const p = raw && typeof raw === "object" && "payload" in raw ? (raw as any).payload : raw;
+
                 const fromUserId = String(p?.user_id || "");
                 const type = String(p?.type || "") as ReactionType;
+
+                const sid = String(p?.session_id || "");
+                if (sid && sid !== sessionId) return;
 
                 if (!fromUserId || !type) return;
                 if (fromUserId === currentUserId) return;
@@ -1634,28 +1650,43 @@ export default function RoomPageIFrame() {
                     fromUserId,
                     fromName,
                 });
-            } catch { }
+            } catch (e) {
+                console.log("[reactions] handler error", e);
+            }
         });
 
-        ch.subscribe();
+        ch.subscribe((status: any) => {
+            console.log("[reactions] subscribe status:", status, "channel:", key);
+            reactionsSubscribedRef.current = String(status).toUpperCase() === "SUBSCRIBED";
+        });
 
         return () => {
             try {
                 supabase.removeChannel(ch);
             } catch { }
             reactionsChannelRef.current = null;
+            reactionsSubscribedRef.current = false;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [authStatus, sessionId, currentUserId]);
 
     const sendReaction = async (type: ReactionType) => {
-        if (!currentUserId) return;
+        if (!currentUserId || !sessionId) return;
 
         const fromName = userName || "You";
         pushReaction({ type, fromUserId: currentUserId, fromName });
 
         try {
-            reactionsChannelRef.current?.send({
+            const ch = reactionsChannelRef.current;
+            if (!ch) {
+                console.log("[reactions] no channel");
+                return;
+            }
+            if (!reactionsSubscribedRef.current) {
+                console.log("[reactions] channel not SUBSCRIBED yet (will still try send)");
+            }
+
+            const res = await ch.send({
                 type: "broadcast",
                 event: "reaction",
                 payload: {
@@ -1665,7 +1696,11 @@ export default function RoomPageIFrame() {
                     ts: Date.now(),
                 },
             });
-        } catch { }
+
+            console.log("[reactions] send result:", res);
+        } catch (e) {
+            console.log("[reactions] send error:", e);
+        }
     };
 
     // reaction menu
@@ -2211,8 +2246,8 @@ export default function RoomPageIFrame() {
                                     <button
                                         onClick={() => setSelectedUser(session.host_profile)}
                                         className={`flex items-center gap-2 px-3 h-[32px] rounded-xl border transition font-inter text-[13px] ${isLight
-                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                                : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                             }`}
                                     >
                                         <span className="flex items-center gap-2 leading-none">
@@ -2319,10 +2354,10 @@ export default function RoomPageIFrame() {
                 <div className={"grid gap-5 flex-1 min-h-0 " + (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")}>
                     {/* VIDEO */}
                     <div
-                        className={`rounded-2xl overflow-hidden min-h-0 relative ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
-                            }`}
+                        className={`rounded-2xl overflow-hidden min-h-0 relative ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"}`}
                     >
-                        <div ref={iframeContainerRef} className="w-full h-full min-h-[60vh]" />
+                        {/* ✅ z-0 to ensure overlays win vs injected iframe */}
+                        <div ref={iframeContainerRef} className="w-full h-full min-h-[60vh] relative z-0" />
 
                         {/* ===== MOBILE CHAT / INTENTIONS OVERLAY (TRUE OVERLAY, NOT INSIDE VIDEO) ===== */}
                         {rightPanelOpen && rightTab && (
@@ -2347,8 +2382,7 @@ export default function RoomPageIFrame() {
                                 >
                                     {/* header */}
                                     <div
-                                        className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/10"
-                                            }`}
+                                        className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/10"}`}
                                     >
                                         <div className="font-inter font-semibold">
                                             {rightTab === "participants"
@@ -2359,10 +2393,7 @@ export default function RoomPageIFrame() {
                                         </div>
                                         <button
                                             onClick={() => openRightTab(null)}
-                                            className={`w-9 h-9 rounded-xl flex items-center justify-center ${isLight
-                                                ? "bg-black/5 hover:bg-black/10"
-                                                : "bg-[#111827] hover:bg-[#1f2937]"
-                                                }`}
+                                            className={`w-9 h-9 rounded-xl flex items-center justify-center ${isLight ? "bg-black/5 hover:bg-black/10" : "bg-[#111827] hover:bg-[#1f2937]"}`}
                                         >
                                             ✕
                                         </button>
@@ -2385,9 +2416,7 @@ export default function RoomPageIFrame() {
 
                                         {rightTab === "participants" && (
                                             <div className="p-4 overflow-y-auto">
-                                                {filteredParticipants.map((p) =>
-                                                    renderParticipantRow(p)
-                                                )}
+                                                {filteredParticipants.map((p) => renderParticipantRow(p))}
                                             </div>
                                         )}
                                     </div>
@@ -2395,9 +2424,9 @@ export default function RoomPageIFrame() {
                             </div>
                         )}
 
-                        {/* Floating reactions overlay */}
+                        {/* ✅ Floating reactions overlay (BETON z-index) */}
                         {floatingReactions.length > 0 && (
-                            <div className="absolute inset-0 z-20 pointer-events-none flex items-end justify-center pb-10">
+                            <div className="absolute inset-0 z-[999] pointer-events-none flex items-end justify-center pb-10">
                                 <div className="flex flex-col gap-2 items-center">
                                     {floatingReactions.slice(-4).map((r) => (
                                         <div
@@ -2667,7 +2696,8 @@ export default function RoomPageIFrame() {
 
                                 {showReactionsMenu && (
                                     <div
-                                        className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}
+                                        className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
+                                            }`}
                                     >
                                         {(["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown"] as ReactionType[]).map((t) => (
                                             <button
@@ -2732,7 +2762,8 @@ export default function RoomPageIFrame() {
 
                             <button
                                 onClick={hangup}
-                                className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${isLight ? "bg-red-600 hover:bg-red-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"}`}
+                                className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${isLight ? "bg-red-600 hover:bg-red-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"
+                                    }`}
                                 title="Leave"
                             >
                                 <Icon name="leave" theme={theme} className="w-5 h-5" />
