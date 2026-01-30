@@ -6,6 +6,8 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { SessionTypeSwitcher } from "../components/SessionTypeSwitcher";
 import SessionCard from "../components/SessionCard";
 import { SessionsDateFilter } from "../components/SessionsDateFilter";
+import BodyTriplingBody from "../components/body/BodyTriplingBody";
+import { BodyTriplingIntro } from "../components/body/BodyTriplingIntro";
 import { supabase } from "../lib/supabase";
 import { useCreateSessionModal } from "../context/CreateSessionModalContext";
 import { useAuth } from "../context/AuthContext";
@@ -51,6 +53,14 @@ type SessionWithRelations = Session & {
 function toLocalYMDFromISO(iso: string) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function todayLocalYMD() {
+  const d = new Date();
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
@@ -114,7 +124,11 @@ function InfinityIcon({ className = "w-5 h-5" }: { className?: string }) {
   );
 }
 
-function ClockIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
+function ClockIcon({
+  className = "w-[27px] h-[27px]",
+}: {
+  className?: string;
+}) {
   return (
     <img
       src="/icons/always-open.svg"
@@ -308,8 +322,18 @@ export function SessionsPage() {
   useEffect(() => {
     const tab = (searchParams.get("tab") || "").toLowerCase();
     if (tab === "group" || tab === "infinite" || tab === "body") {
-      setSessionTypeTab(tab);
+      setSessionTypeTab(tab as any);
       if (DEBUG) console.log("[DEBUG Sessions] Tab from query:", tab);
+
+      // for body: ensure date is set (so filter bar has a date immediately)
+      if (tab === "body") {
+        setDateFilter((prev) => prev || todayLocalYMD());
+      }
+
+      // for infinite: date filter irrelevant
+      if (tab === "infinite") {
+        setDateFilter(null);
+      }
     }
   }, [searchParams]);
 
@@ -546,13 +570,20 @@ export function SessionsPage() {
   // ✅ Edit handler (needed so Edit реально менял сессию в Supabase)
   const editSession = async (
     sessionId: string,
-    updates: { title?: string; start_time?: string; max_participants?: number | null }
+    updates: {
+      title?: string;
+      start_time?: string;
+      max_participants?: number | null;
+    }
   ) => {
     if (!user) return navigate("/login");
     if (!updates || Object.keys(updates).length === 0) return;
 
     try {
-      const { error } = await supabase.from("sessions").update(updates).eq("id", sessionId);
+      const { error } = await supabase
+        .from("sessions")
+        .update(updates)
+        .eq("id", sessionId);
       if (error) throw error;
 
       await fetchSessions();
@@ -583,21 +614,25 @@ export function SessionsPage() {
       `Link: ${link}\n`
     );
 
-    window.location.href = `mailto:${encodeURIComponent(email)}?subject=${subject}&body=${body}`;
+    window.location.href = `mailto:${encodeURIComponent(
+      email
+    )}?subject=${subject}&body=${body}`;
   };
+
+  const openCreate = () => {
+    if (!user) return navigate("/login");
+    modal.open();
+  };
+
+  const topPad =
+    sessionTypeTab === "group" ? "pt-[100px] pb-[50px]" : "pt-[56px] pb-[18px]";
 
   return (
     <div className="min-h-screen bg-white text-brandBlack font-inter">
       <main className="w-full px-3 md:px-6 lg:px-10 pb-12">
-        {/* ✅ FIX: уменьшаем вертикальный отступ сверху ТОЛЬКО на Infinite tab */}
-        <div
-          className={`text-center ${sessionTypeTab === "infinite"
-              ? "pt-[56px] pb-[18px]"
-              : "pt-[100px] pb-[50px]"
-            }`}
-        >
-          {/* ✅ Убираем большой заголовок только для infinite */}
-          {sessionTypeTab !== "infinite" && (
+        <div className={`text-center ${topPad}`}>
+          {/* Big H1 only for group */}
+          {sessionTypeTab === "group" && (
             <h1 className="text-[24px] md:text-[28px] xl:text-[36px] font-normal leading-tight mx-auto">
               Join a focus session to stay accountable
             </h1>
@@ -605,8 +640,9 @@ export function SessionsPage() {
         </div>
 
         <div className="w-full">
-          {/* ✅ Infinite rooms intro block (above switcher) */}
+          {/* ✅ Intro blocks above switcher */}
           {sessionTypeTab === "infinite" && <InfiniteRoomsIntroCard />}
+          {sessionTypeTab === "body" && <BodyTriplingIntro />}
 
           <div className="w-full flex justify-center mb-[55px]">
             <SessionTypeSwitcher
@@ -614,76 +650,98 @@ export function SessionsPage() {
               onChange={(v) => {
                 setSessionTypeTab(v);
 
-                // чтобы не было "почему всё пропало" из-за старого dateFilter
+                // infinite ignores date filter
                 if (v === "infinite") setDateFilter(null);
+
+                // body wants a date immediately (for its filter bar)
+                if (v === "body") setDateFilter((prev) => prev || todayLocalYMD());
               }}
             />
           </div>
 
-          {sessionTypeTab !== "infinite" && (
-            <div className="mb-6 w-full">
-              <SessionsDateFilter
-                value={dateFilter}
-                onChange={setDateFilter}
-                weeksAhead={3}
+          {/* BODY: custom section (filter bar + buddy tripling cards) */}
+          {sessionTypeTab === "body" ? (
+            <div className="w-full max-w-[980px] mx-auto">
+              <BodyTriplingBody
+                sessions={visibleSessions}
+                isLoading={isLoading}
+                dateFilter={dateFilter}
+                onDateChange={setDateFilter}
+                onCreateSession={openCreate}
+                userId={user?.id}
+                onBook={book}
+                onCancelBooking={cancel}
               />
             </div>
-          )}
+          ) : (
+            <>
+              {/* GROUP: old date filter; Infinite: no date filter */}
+              {sessionTypeTab === "group" && (
+                <div className="mb-6 w-full">
+                  <SessionsDateFilter
+                    value={dateFilter}
+                    onChange={setDateFilter}
+                    weeksAhead={3}
+                  />
+                </div>
+              )}
 
-          <div className="rounded-[24px] px-3 py-3 md:border md:border-[#DBD8D8] md:p-8">
-            {isLoading ? (
-              <div className="text-center py-12">
-                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-brandBlack" />
-              </div>
-            ) : visibleSessions.length === 0 ? (
-              <div className="p-2 text-center">
-                <p className="text-sm text-slate-600 mb-4">
-                  No active sessions{" "}
-                  {dateFilter && sessionTypeTab !== "infinite"
-                    ? "for this date"
-                    : "available"}
-                </p>
+              <div className="rounded-[24px] px-3 py-3 md:border md:border-[#DBD8D8] md:p-8">
+                {isLoading ? (
+                  <div className="text-center py-12">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-brandBlack" />
+                  </div>
+                ) : visibleSessions.length === 0 ? (
+                  <div className="p-2 text-center">
+                    <p className="text-sm text-slate-600 mb-4">
+                      No active sessions{" "}
+                      {dateFilter && sessionTypeTab === "group"
+                        ? "for this date"
+                        : "available"}
+                    </p>
 
-                {user && (
-                  <button
-                    onClick={() => modal.open()}
-                    className="text-sm underline underline-offset-4"
-                  >
-                    Create the first session
-                  </button>
+                    {user && (
+                      <button
+                        onClick={openCreate}
+                        className="text-sm underline underline-offset-4"
+                      >
+                        Create the first session
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-3 md:space-y-6">
+                    {visibleSessions.map((s) => (
+                      <SessionCard
+                        key={s.id}
+                        session={s}
+                        userId={user?.id}
+                        currentUser={
+                          user?.id
+                            ? {
+                              id: user.id,
+                              full_name: currentProfile?.full_name || undefined,
+                              avatar_url: currentProfile?.avatar_url || undefined,
+                              email:
+                                (currentProfile?.email ||
+                                  (user as any)?.email ||
+                                  undefined) as any,
+                            }
+                            : undefined
+                        }
+                        onJoin={join}
+                        onBook={book}
+                        onCancelBooking={cancel}
+                        onDelete={remove}
+                        onEditSession={editSession}
+                        onInviteToSession={inviteToSession}
+                      />
+                    ))}
+                  </div>
                 )}
               </div>
-            ) : (
-              <div className="space-y-3 md:space-y-6">
-                {visibleSessions.map((s) => (
-                  <SessionCard
-                    key={s.id}
-                    session={s}
-                    userId={user?.id}
-                    currentUser={
-                      user?.id
-                        ? {
-                          id: user.id,
-                          full_name: currentProfile?.full_name || undefined,
-                          avatar_url: currentProfile?.avatar_url || undefined,
-                          email:
-                            (currentProfile?.email ||
-                              (user as any)?.email ||
-                              undefined) as any,
-                        }
-                        : undefined
-                    }
-                    onJoin={join}
-                    onBook={book}
-                    onCancelBooking={cancel}
-                    onDelete={remove}
-                    onEditSession={editSession}
-                    onInviteToSession={inviteToSession}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
+            </>
+          )}
         </div>
       </main>
 
@@ -822,9 +880,7 @@ export function SessionsPage() {
                       2) Join & set up
                     </div>
                     <ul className="text-[13px] text-[#111827]/80 leading-relaxed list-disc pl-5 space-y-2">
-                      <li>
-                        Click <b>Join session</b>.
-                      </li>
+                      <li>Click <b>Join session</b>.</li>
                       <li>
                         Turn mic/cam on/off as you prefer. Screen-share is
                         optional.
@@ -864,9 +920,7 @@ export function SessionsPage() {
                       <li>
                         Quick self-reflection: what you did / what’s next.
                       </li>
-                      <li>
-                        Leave the session — your work is done.
-                      </li>
+                      <li>Leave the session — your work is done.</li>
                     </ul>
                   </div>
                 </div>
