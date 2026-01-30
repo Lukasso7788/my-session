@@ -285,6 +285,22 @@ function combineLocalDateTimeToISO(dateYMD: string, timeHHMM: string) {
   return d.toISOString();
 }
 
+// ✅ FIX: sessions.schedule is NOT NULL in DB -> always write an object
+function buildBodySchedule(duration: 25 | 50) {
+  return {
+    kind: "body_room",
+    timer: {
+      phases: [
+        { name: "check-in", minutes: 2 },
+        { name: "intentions", minutes: 1 },
+        { name: "focus", minutes: duration },
+        { name: "wrap-up", minutes: 2 },
+      ],
+      loop: false,
+    },
+  };
+}
+
 export function SessionsPage() {
   const navigate = useNavigate();
   const modal = useCreateSessionModal();
@@ -646,7 +662,9 @@ export function SessionsPage() {
       status: "planned",
       is_silent: false,
       max_participants: 3,
-      schedule: null,
+
+      // ✅ FIX: schedule must NOT be null
+      schedule: buildBodySchedule(payload.duration),
     });
 
     if (error) {
@@ -682,7 +700,8 @@ export function SessionsPage() {
                 setSessionTypeTab(v);
 
                 if (v === "infinite") setDateFilter(null);
-                if (v === "body") setDateFilter((prev) => prev || todayLocalYMD());
+                if (v === "body")
+                  setDateFilter((prev) => prev || todayLocalYMD());
               }}
             />
           </div>
@@ -749,7 +768,8 @@ export function SessionsPage() {
                           user?.id
                             ? {
                               id: user.id,
-                              full_name: currentProfile?.full_name || undefined,
+                              full_name:
+                                currentProfile?.full_name || undefined,
                               avatar_url:
                                 currentProfile?.avatar_url || undefined,
                               email:
@@ -946,9 +966,7 @@ export function SessionsPage() {
                       <li>
                         Quick self-reflection: what you did / what’s next.
                       </li>
-                      <li>
-                        Leave the session — your work is done.
-                      </li>
+                      <li>Leave the session — your work is done.</li>
                     </ul>
                   </div>
                 </div>
@@ -970,8 +988,8 @@ export function SessionsPage() {
                       Check-in
                     </div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      Quick verbal sync: “What are you working on?” + “Any blockers?”.
-                      Short, supportive, no long stories.
+                      Quick verbal sync: “What are you working on?” + “Any
+                      blockers?”. Short, supportive, no long stories.
                     </p>
                   </div>
 
@@ -980,8 +998,8 @@ export function SessionsPage() {
                       Intentions
                     </div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      You state your goal for the next focus block. Keep it specific:
-                      1–3 concrete outcomes.
+                      You state your goal for the next focus block. Keep it
+                      specific: 1–3 concrete outcomes.
                     </p>
                   </div>
 
@@ -990,7 +1008,8 @@ export function SessionsPage() {
                       Focus
                     </div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      The working block. Usually quiet. Your only job: do the task.
+                      The working block. Usually quiet. Your only job: do the
+                      task.
                     </p>
                   </div>
 
@@ -999,7 +1018,8 @@ export function SessionsPage() {
                       Break
                     </div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      Rest/reset: stand up, water, stretch. Avoid doom-scrolling if you can.
+                      Rest/reset: stand up, water, stretch. Avoid doom-scrolling
+                      if you can.
                     </p>
                   </div>
 
@@ -1008,8 +1028,8 @@ export function SessionsPage() {
                       Custom block
                     </div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      A flexible stage you can name anything: “Reading”, “Planning”,
-                      “Admin”, etc. Use it however you want.
+                      A flexible stage you can name anything: “Reading”,
+                      “Planning”, “Admin”, etc. Use it however you want.
                     </p>
                   </div>
 
@@ -1018,7 +1038,8 @@ export function SessionsPage() {
                       Outro / Wrap-up
                     </div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      Quick closure: what you finished, what’s next, and one takeaway.
+                      Quick closure: what you finished, what’s next, and one
+                      takeaway.
                     </p>
                   </div>
                 </div>
@@ -1028,8 +1049,8 @@ export function SessionsPage() {
                     Pro tip
                   </div>
                   <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                    If you’re joining a <b>Silent</b> room: keep mic off, use the stage
-                    timer as guidance, and focus. No pressure to talk.
+                    If you’re joining a <b>Silent</b> room: keep mic off, use
+                    the stage timer as guidance, and focus. No pressure to talk.
                   </p>
                 </div>
 
