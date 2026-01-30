@@ -2,20 +2,22 @@
 export function BodyTriplingIntro() {
     return (
         <div className="w-full flex justify-center">
-            <div className="w-full max-w-[980px] px-3">
-                <div className="text-center">
-                    <h2 className="font-inter font-semibold text-[26px] sm:text-[34px] text-[#111827] leading-tight">
-                        Buddy Tripling Sessions
-                    </h2>
+            <div className="w-full max-w-[980px]">
+                <div className="border border-[#DBD8D8] rounded-[24px] bg-white px-5 py-5 sm:px-8 sm:py-6">
+                    <div className="text-center">
+                        <h2 className="font-inter font-semibold text-[20px] sm:text-[24px] text-[#111827]">
+                            body
+                        </h2>
 
-                    <p className="mt-3 font-inter font-light text-[14px] sm:text-[16px] leading-[160%] text-[#111827]/70 max-w-[760px] mx-auto">
-                        Schedule a 90-minute focus session with two other buddies to stay
-                        accountable as a group of three.
-                    </p>
+                        <p className="font-inter font-light text-[14px] sm:text-[16px] leading-[160%] text-[#111827] mt-3 max-w-[860px] mx-auto">
+                            body sessions are structured co-working sessions for accountability
+                            and deep focus. Pick a duration, schedule a start time, and join
+                            with others to stay on track.
+                        </p>
+                    </div>
                 </div>
 
-                {/* spacing to switcher */}
-                <div className="h-8 sm:h-10" />
+                <div className="h-12" />
             </div>
         </div>
     );
