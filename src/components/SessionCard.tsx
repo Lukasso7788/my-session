@@ -546,7 +546,7 @@ export default function SessionCard({
             title="People who booked"
         >
             {bookedCount === 0 ? (
-                <div className="text-[12px] text-[#606060] whitespace-nowrap">People: 0</div>
+                <div className="text-[12px] text-[#606060] whitespace-nowrap">Booked: 0</div>
             ) : (
                 <>
                     <div className="flex items-center">
