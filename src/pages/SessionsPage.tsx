@@ -33,20 +33,14 @@ type SessionWithRelations = Session & {
   start_time?: string;
   status?: string;
 
-  // ✅ NEW columns (идеальный способ маршрутизации)
   session_format_type?: "group" | "infinite" | "body" | string;
   is_silent?: boolean;
 
-  // ✅ NEW: limit (используется в Edit UI)
   max_participants?: number | null;
-
-  // ✅ fallback for older rows
   schedule?: any;
 
-  // ✅ booking UI (now with joined profiles)
   session_bookings?: SessionBookingRow[];
 
-  // ✅ ONLINE NOW (from DB, not history)
   live_count?: number;
 };
 
@@ -79,31 +73,23 @@ function safeParseSchedule(raw: any) {
   return raw;
 }
 
-// ✅ fallback-детектор infinite по schedule (старый формат)
 function isInfiniteBySchedule(s: SessionWithRelations) {
   const sch = safeParseSchedule((s as any)?.schedule);
   if (!sch || typeof sch !== "object") return false;
 
-  // самый надёжный маркер старого infinite
   if ((sch as any)?.kind === "infinite_room") return true;
-
-  // если раньше infinite был объектом (а group — массивом)
   if (!Array.isArray(sch) && (sch as any)?.timer?.phases) return true;
 
   return false;
 }
 
-// ✅ главный резолвер типа (с fallback)
-function resolveSessionType(
-  s: SessionWithRelations
-): "group" | "infinite" | "body" {
+function resolveSessionType(s: SessionWithRelations): "group" | "infinite" | "body" {
   const t = String(s.session_format_type || "").toLowerCase();
 
   if (t === "infinite") return "infinite";
   if (t === "body") return "body";
   if (t === "group") return "group";
 
-  // fallback: если колонка ещё не проставлена
   if (isInfiniteBySchedule(s)) return "infinite";
   if (String(s.format || "").toLowerCase() === "body") return "body";
 
@@ -114,110 +100,35 @@ function resolveSessionType(
 // UI: Infinite intro card
 // =====================
 function InfinityIcon({ className = "w-5 h-5" }: { className?: string }) {
-  return (
-    <img
-      src="/icons/infinite.svg"
-      className={className}
-      alt=""
-      draggable={false}
-    />
-  );
+  return <img src="/icons/infinite.svg" className={className} alt="" draggable={false} />;
 }
-
-function ClockIcon({
-  className = "w-[27px] h-[27px]",
-}: {
-  className?: string;
-}) {
-  return (
-    <img
-      src="/icons/always-open.svg"
-      className={className}
-      alt=""
-      draggable={false}
-    />
-  );
+function ClockIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
+  return <img src="/icons/always-open.svg" className={className} alt="" draggable={false} />;
 }
-
 function EyeIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
-  return (
-    <img
-      src="/icons/stay-accountable.svg"
-      className={className}
-      alt=""
-      draggable={false}
-    />
-  );
+  return <img src="/icons/stay-accountable.svg" className={className} alt="" draggable={false} />;
 }
-
-function WorkflowIcon({
-  className = "w-[27px] h-[27px]",
-}: {
-  className?: string;
-}) {
-  return (
-    <img
-      src="/icons/structured-flow.svg"
-      className={className}
-      alt=""
-      draggable={false}
-    />
-  );
+function WorkflowIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
+  return <img src="/icons/structured-flow.svg" className={className} alt="" draggable={false} />;
 }
-
-function RocketIcon({
-  className = "w-[27px] h-[27px]",
-}: {
-  className?: string;
-}) {
-  return (
-    <img
-      src="/icons/keep-momentum.svg"
-      className={className}
-      alt=""
-      draggable={false}
-    />
-  );
+function RocketIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
+  return <img src="/icons/keep-momentum.svg" className={className} alt="" draggable={false} />;
 }
 
 type Feature = {
   title: string;
   subtitle: string;
-  color: string; // border + icon
-  bg20: string; // 20% fill
+  color: string;
+  bg20: string;
   Icon: (p: { className?: string }) => JSX.Element;
 };
 
 function InfiniteRoomsIntroCard() {
   const features: Feature[] = [
-    {
-      title: "Always Open",
-      subtitle: "24/7 Access",
-      color: "#5286F6",
-      bg20: "#5286F633",
-      Icon: ClockIcon,
-    },
-    {
-      title: "Stay accountable",
-      subtitle: "With others",
-      color: "#65D46C",
-      bg20: "#65D46C33",
-      Icon: EyeIcon,
-    },
-    {
-      title: "Structured Flow",
-      subtitle: "Built-in Workflow",
-      color: "#F65252",
-      bg20: "#F6525233",
-      Icon: WorkflowIcon,
-    },
-    {
-      title: "Keep momentum",
-      subtitle: "Day & Night",
-      color: "#5286F6",
-      bg20: "#5286F633",
-      Icon: RocketIcon,
-    },
+    { title: "Always Open", subtitle: "24/7 Access", color: "#5286F6", bg20: "#5286F633", Icon: ClockIcon },
+    { title: "Stay accountable", subtitle: "With others", color: "#65D46C", bg20: "#65D46C33", Icon: EyeIcon },
+    { title: "Structured Flow", subtitle: "Built-in Workflow", color: "#F65252", bg20: "#F6525233", Icon: WorkflowIcon },
+    { title: "Keep momentum", subtitle: "Day & Night", color: "#5286F6", bg20: "#5286F633", Icon: RocketIcon },
   ];
 
   return (
@@ -235,25 +146,18 @@ function InfiniteRoomsIntroCard() {
           </div>
 
           <p className="font-inter font-light text-[14px] sm:text-[16px] leading-[160%] text-brandBlack text-center max-w-[860px] mx-auto">
-            24/7 Focus Rooms are always open, giving you a structured space to
-            focus whenever inspiration strikes. Join at any time, follow the
-            built-in workflow (Pomodoro or Deep Work), stay accountable with
-            others, and keep your momentum going — day or night.
+            24/7 Focus Rooms are always open, giving you a structured space to focus whenever inspiration strikes.
+            Join at any time, follow the built-in workflow (Pomodoro or Deep Work), stay accountable with others,
+            and keep your momentum going — day or night.
           </p>
 
           <div className="w-full flex justify-center">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-5 sm:gap-8">
               {features.map((f) => (
-                <div
-                  key={f.title}
-                  className="flex items-center gap-3 sm:gap-4 min-w-0"
-                >
+                <div key={f.title} className="flex items-center gap-3 sm:gap-4 min-w-0">
                   <div
                     className="shrink-0 border rounded-[13.5px] inline-flex items-center justify-center w-[44px] h-[44px] sm:w-[54px] sm:h-[54px]"
-                    style={{
-                      borderColor: f.color,
-                      backgroundColor: f.bg20,
-                    }}
+                    style={{ borderColor: f.color, backgroundColor: f.bg20 }}
                   >
                     <f.Icon className="w-5 h-5 sm:w-[27px] sm:h-[27px]" />
                   </div>
@@ -279,24 +183,22 @@ function InfiniteRoomsIntroCard() {
 }
 
 function combineLocalDateTimeToISO(dateYMD: string, timeHHMM: string) {
-  // Interprets `${date}T${time}` as LOCAL time, then converts to ISO (UTC).
   const d = new Date(`${dateYMD}T${timeHHMM}:00`);
   if (Number.isNaN(d.getTime())) return null;
   return d.toISOString();
 }
 
-// ✅ FIX: sessions.schedule is NOT NULL in DB -> always write an object
 function buildBodySchedule(duration: 25 | 50) {
+  // Главное: schedule НЕ null (колонка NOT NULL).
+  // Дальше — минимально адекватная структура (в будущем можно подключить к реальному таймеру).
+  const kind = duration === 25 ? "pomodoro" : "deep_work";
   return {
-    kind: "body_room",
+    kind: "body_session",
+    preset: kind,
     timer: {
       phases: [
-        { name: "check-in", minutes: 2 },
-        { name: "intentions", minutes: 1 },
-        { name: "focus", minutes: duration },
-        { name: "wrap-up", minutes: 2 },
+        { name: "focus", minutes: duration, mode: kind },
       ],
-      loop: false,
     },
   };
 }
@@ -310,24 +212,18 @@ export function SessionsPage() {
   const [sessions, setSessions] = useState<SessionWithRelations[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const [sessionTypeTab, setSessionTypeTab] = useState<
-    "group" | "infinite" | "body"
-  >("group");
+  const [sessionTypeTab, setSessionTypeTab] = useState<"group" | "infinite" | "body">("group");
   const [dateFilter, setDateFilter] = useState<string | null>(null);
 
-  const [currentProfile, setCurrentProfile] = useState<BookingProfile | null>(
-    null
-  );
+  const [currentProfile, setCurrentProfile] = useState<BookingProfile | null>(null);
 
   const [howItWorksOpen, setHowItWorksOpen] = useState(false);
 
   useEffect(() => {
     if (!howItWorksOpen) return;
-
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") setHowItWorksOpen(false);
     };
-
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [howItWorksOpen]);
@@ -339,17 +235,17 @@ export function SessionsPage() {
       setSessionTypeTab(tab as any);
       if (DEBUG) console.log("[DEBUG Sessions] Tab from query:", tab);
 
-      if (tab === "body") {
-        setDateFilter((prev) => prev || todayLocalYMD());
-      }
-
-      if (tab === "infinite") {
-        setDateFilter(null);
-      }
+      if (tab === "body") setDateFilter((prev) => prev || todayLocalYMD());
+      if (tab === "infinite") setDateFilter(null);
     }
   }, [searchParams]);
 
-  // ✅ Load current user profile (best effort)
+  // Ensure body always has a dateFilter
+  useEffect(() => {
+    if (sessionTypeTab === "body" && !dateFilter) setDateFilter(todayLocalYMD());
+  }, [sessionTypeTab, dateFilter]);
+
+  // Load current user profile (best effort)
   useEffect(() => {
     const run = async () => {
       if (!user?.id) {
@@ -367,11 +263,7 @@ export function SessionsPage() {
         if (error) throw error;
         setCurrentProfile((data as any) || null);
       } catch (e) {
-        if (DEBUG)
-          console.warn(
-            "[DEBUG Sessions] profile load failed (ok if no profiles yet):",
-            e
-          );
+        if (DEBUG) console.warn("[DEBUG Sessions] profile load failed:", e);
         setCurrentProfile(null);
       }
     };
@@ -379,7 +271,7 @@ export function SessionsPage() {
     run();
   }, [user?.id]);
 
-  // ✅ ONLINE NOW: fetch live counts from DB (cheap)
+  // ONLINE NOW: fetch live counts from DB (cheap)
   const fetchLiveCounts = useCallback(async (sessionIds: string[]) => {
     if (!sessionIds.length) return;
 
@@ -387,13 +279,10 @@ export function SessionsPage() {
       const { data, error } = await supabase.rpc("get_live_counts", {
         p_session_ids: sessionIds,
       });
-
       if (error) throw error;
 
       const map = new Map<string, number>();
-      for (const row of data || []) {
-        map.set(row.session_id, row.live_count);
-      }
+      for (const row of data || []) map.set(row.session_id, row.live_count);
 
       setSessions((prev) =>
         prev.map((s) => ({
@@ -406,7 +295,7 @@ export function SessionsPage() {
     }
   }, []);
 
-  // --- LOAD SESSIONS ---
+  // LOAD SESSIONS
   const fetchSessions = useCallback(async () => {
     if (DEBUG) console.log("[DEBUG Sessions] Fetch sessions…");
 
@@ -442,13 +331,9 @@ export function SessionsPage() {
         )
         .order("start_time", { ascending: true });
 
-      if (error) {
-        console.error("[DEBUG Sessions] Fetch error:", error);
-        throw error;
-      }
+      if (error) throw error;
 
       const rows = (data || []) as unknown as SessionWithRelations[];
-
       if (DEBUG) console.log("[DEBUG Sessions] Loaded:", rows);
 
       setSessions(rows);
@@ -466,31 +351,21 @@ export function SessionsPage() {
     fetchSessions();
   }, [fetchSessions]);
 
-  // --- Refresh after modal creates session ---
   useEffect(() => {
     modal.setOnCreatedCallback(fetchSessions);
     if (DEBUG) console.log("[DEBUG Sessions] Modal callback set");
   }, [modal, fetchSessions]);
 
-  // ✅ Poll ONLY live counts every 10s (cheap)
-  const sessionIds = useMemo(
-    () => sessions.map((s) => s.id).filter(Boolean),
-    [sessions]
-  );
+  const sessionIds = useMemo(() => sessions.map((s) => s.id).filter(Boolean), [sessions]);
 
   useEffect(() => {
-    const t = window.setInterval(() => {
-      fetchLiveCounts(sessionIds);
-    }, 10_000);
-
+    const t = window.setInterval(() => fetchLiveCounts(sessionIds), 10_000);
     return () => window.clearInterval(t);
   }, [sessionIds, fetchLiveCounts]);
 
-  // --- HELPERS ---
+  // HELPERS
   const isExpired = (s: SessionWithRelations) => {
     const type = resolveSessionType(s);
-
-    // ✅ Infinite rooms never expire
     if (type === "infinite") return false;
 
     if (!s.start_time) return false;
@@ -500,21 +375,14 @@ export function SessionsPage() {
     return Date.now() > new Date(s.start_time).getTime() + dur * 60_000;
   };
 
-  const activeSessions = useMemo(
-    () => sessions.filter((s) => !isExpired(s)),
-    [sessions]
-  );
+  const activeSessions = useMemo(() => sessions.filter((s) => !isExpired(s)), [sessions]);
 
   const typeFilteredSessions = useMemo(() => {
-    return activeSessions.filter(
-      (s) => resolveSessionType(s) === sessionTypeTab
-    );
+    return activeSessions.filter((s) => resolveSessionType(s) === sessionTypeTab);
   }, [sessionTypeTab, activeSessions]);
 
-  // ✅ Date filtering (only for group/body; infinite ignores date filter)
   const visibleSessions = useMemo(() => {
     if (sessionTypeTab === "infinite") return typeFilteredSessions;
-
     if (!dateFilter) return typeFilteredSessions;
 
     return typeFilteredSessions.filter((s) => {
@@ -524,7 +392,7 @@ export function SessionsPage() {
     });
   }, [typeFilteredSessions, dateFilter, sessionTypeTab]);
 
-  // --- ACTIONS ---
+  // ACTIONS
   const join = (id: string) => {
     if (!user) return navigate("/login");
     navigate(`/room/${id}`);
@@ -532,14 +400,12 @@ export function SessionsPage() {
 
   const book = async (id: string) => {
     if (!user) return navigate("/login");
-
     try {
       const { error } = await supabase.from("session_bookings").insert({
         session_id: id,
         user_id: user.id,
       });
       if (error) throw error;
-
       await fetchSessions();
     } catch (err) {
       console.error("[DEBUG Sessions] Booking error:", err);
@@ -548,7 +414,6 @@ export function SessionsPage() {
 
   const cancel = async (id: string) => {
     if (!user) return navigate("/login");
-
     try {
       const { error } = await supabase
         .from("session_bookings")
@@ -557,7 +422,6 @@ export function SessionsPage() {
         .eq("user_id", user.id);
 
       if (error) throw error;
-
       await fetchSessions();
     } catch (err) {
       console.error("[DEBUG Sessions] Cancel error:", err);
@@ -566,11 +430,9 @@ export function SessionsPage() {
 
   const remove = async (id: string) => {
     if (!user) return navigate("/login");
-
     try {
       const { error } = await supabase.from("sessions").delete().eq("id", id);
       if (error) throw error;
-
       setSessions((prev) => prev.filter((s) => s.id !== id));
     } catch (err) {
       console.error("[DEBUG Sessions] Delete error:", err);
@@ -579,22 +441,14 @@ export function SessionsPage() {
 
   const editSession = async (
     sessionId: string,
-    updates: {
-      title?: string;
-      start_time?: string;
-      max_participants?: number | null;
-    }
+    updates: { title?: string; start_time?: string; max_participants?: number | null }
   ) => {
     if (!user) return navigate("/login");
     if (!updates || Object.keys(updates).length === 0) return;
 
     try {
-      const { error } = await supabase
-        .from("sessions")
-        .update(updates)
-        .eq("id", sessionId);
+      const { error } = await supabase.from("sessions").update(updates).eq("id", sessionId);
       if (error) throw error;
-
       await fetchSessions();
     } catch (err) {
       console.error("[DEBUG Sessions] Edit session error:", err);
@@ -602,10 +456,7 @@ export function SessionsPage() {
     }
   };
 
-  const inviteToSession = async (
-    sessionId: string,
-    payload: { email: string; message?: string }
-  ) => {
+  const inviteToSession = async (sessionId: string, payload: { email: string; message?: string }) => {
     const email = (payload?.email || "").trim();
     if (!email) return;
 
@@ -622,9 +473,7 @@ export function SessionsPage() {
       `Link: ${link}\n`
     );
 
-    window.location.href = `mailto:${encodeURIComponent(
-      email
-    )}?subject=${subject}&body=${body}`;
+    window.location.href = `mailto:${encodeURIComponent(email)}?subject=${subject}&body=${body}`;
   };
 
   const openCreate = () => {
@@ -632,12 +481,8 @@ export function SessionsPage() {
     modal.open();
   };
 
-  // ✅ BODY: create via 25/50 + date + time (writes to Supabase)
-  const createBodySession = async (payload: {
-    duration: 25 | 50;
-    dateYMD: string;
-    timeHHMM: string;
-  }) => {
+  // BODY: create via 25/50 + date + time (writes to Supabase)
+  const createBodySession = async (payload: { duration: 25 | 50; dateYMD: string; timeHHMM: string }) => {
     if (!user?.id) return navigate("/login");
 
     const iso = combineLocalDateTimeToISO(payload.dateYMD, payload.timeHHMM);
@@ -649,7 +494,8 @@ export function SessionsPage() {
       ((user as any)?.email || "").trim() ||
       "Host";
 
-    const title = `body — ${payload.duration}`;
+    // Title (как ты просил): "25min session" / "50min session"
+    const title = payload.duration === 25 ? "25min session" : "50min session";
 
     const { error } = await supabase.from("sessions").insert({
       title,
@@ -663,7 +509,7 @@ export function SessionsPage() {
       is_silent: false,
       max_participants: 3,
 
-      // ✅ FIX: schedule must NOT be null
+      // ✅ FIX: schedule NOT NULL
       schedule: buildBodySchedule(payload.duration),
     });
 
@@ -675,8 +521,7 @@ export function SessionsPage() {
     await fetchSessions();
   };
 
-  const topPad =
-    sessionTypeTab === "group" ? "pt-[100px] pb-[50px]" : "pt-[56px] pb-[18px]";
+  const topPad = sessionTypeTab === "group" ? "pt-[100px] pb-[50px]" : "pt-[56px] pb-[18px]";
 
   return (
     <div className="min-h-screen bg-white text-brandBlack font-inter">
@@ -698,10 +543,8 @@ export function SessionsPage() {
               value={sessionTypeTab}
               onChange={(v) => {
                 setSessionTypeTab(v);
-
                 if (v === "infinite") setDateFilter(null);
-                if (v === "body")
-                  setDateFilter((prev) => prev || todayLocalYMD());
+                if (v === "body") setDateFilter((prev) => prev || todayLocalYMD());
               }}
             />
           </div>
@@ -712,7 +555,7 @@ export function SessionsPage() {
               <BodyTriplingBody
                 sessions={visibleSessions}
                 isLoading={isLoading}
-                dateFilter={dateFilter}
+                dateFilter={dateFilter || todayLocalYMD()}
                 onDateChange={setDateFilter}
                 userId={user?.id}
                 onJoin={join}
@@ -723,14 +566,9 @@ export function SessionsPage() {
             </div>
           ) : (
             <>
-              {/* GROUP: old date filter; Infinite: no date filter */}
               {sessionTypeTab === "group" && (
                 <div className="mb-6 w-full">
-                  <SessionsDateFilter
-                    value={dateFilter}
-                    onChange={setDateFilter}
-                    weeksAhead={3}
-                  />
+                  <SessionsDateFilter value={dateFilter} onChange={setDateFilter} weeksAhead={3} />
                 </div>
               )}
 
@@ -743,16 +581,11 @@ export function SessionsPage() {
                   <div className="p-2 text-center">
                     <p className="text-sm text-slate-600 mb-4">
                       No active sessions{" "}
-                      {dateFilter && sessionTypeTab === "group"
-                        ? "for this date"
-                        : "available"}
+                      {dateFilter && sessionTypeTab === "group" ? "for this date" : "available"}
                     </p>
 
                     {user && (
-                      <button
-                        onClick={openCreate}
-                        className="text-sm underline underline-offset-4"
-                      >
+                      <button onClick={openCreate} className="text-sm underline underline-offset-4">
                         Create the first session
                       </button>
                     )}
@@ -768,14 +601,10 @@ export function SessionsPage() {
                           user?.id
                             ? {
                               id: user.id,
-                              full_name:
-                                currentProfile?.full_name || undefined,
-                              avatar_url:
-                                currentProfile?.avatar_url || undefined,
+                              full_name: currentProfile?.full_name || undefined,
+                              avatar_url: currentProfile?.avatar_url || undefined,
                               email:
-                                (currentProfile?.email ||
-                                  (user as any)?.email ||
-                                  undefined) as any,
+                                (currentProfile?.email || (user as any)?.email || undefined) as any,
                             }
                             : undefined
                         }
@@ -795,9 +624,7 @@ export function SessionsPage() {
         </div>
       </main>
 
-      {/* ============================
-          Floating: How it works
-         ============================ */}
+      {/* Floating: How it works */}
       <button
         type="button"
         onClick={() => setHowItWorksOpen(true)}
@@ -815,12 +642,7 @@ export function SessionsPage() {
         title="How it works"
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-          <path
-            d="M12 18h.01"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
+          <path d="M12 18h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
           <path
             d="M9.09 9a3 3 0 1 1 4.82 2.33c-.66.49-1.41 1.08-1.41 2.17V14"
             stroke="currentColor"
@@ -837,16 +659,10 @@ export function SessionsPage() {
         <span className="text-[14px] font-semibold">How it works</span>
       </button>
 
-      {/* ============================
-          Modal: How it works
-         ============================ */}
+      {/* Modal: How it works */}
       {howItWorksOpen && (
         <div className="fixed inset-0 z-[70]">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setHowItWorksOpen(false)}
-          />
-
+          <div className="absolute inset-0 bg-black/40" onClick={() => setHowItWorksOpen(false)} />
           <div className="absolute inset-0 flex items-center justify-center p-4">
             <div
               className="
@@ -905,67 +721,40 @@ export function SessionsPage() {
                     </div>
                     <ul className="text-[13px] text-[#111827]/80 leading-relaxed list-disc pl-5 space-y-2">
                       <li>
-                        Pick a tab: <b>Group</b>, <b>Infinite</b> (24/7), or{" "}
-                        <b>body</b>.
+                        Pick a tab: <b>Group</b>, <b>Infinite</b> (24/7), or <b>body</b>.
                       </li>
                       <li>
-                        Group/body sessions are scheduled (date/time). Infinite
-                        rooms are always open.
+                        Group/body sessions are scheduled (date/time). Infinite rooms are always open.
                       </li>
                       <li>
-                        You can <b>Book session</b> (optional) to save it — or
-                        just join.
+                        You can <b>Book session</b> (optional) to save it — or just join.
                       </li>
                     </ul>
                   </div>
 
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827] mb-3">
-                      2) Join & set up
-                    </div>
+                    <div className="text-[13px] font-semibold text-[#111827] mb-3">2) Join & set up</div>
                     <ul className="text-[13px] text-[#111827]/80 leading-relaxed list-disc pl-5 space-y-2">
-                      <li>
-                        Click <b>Join session</b>.
-                      </li>
-                      <li>
-                        Turn mic/cam on/off as you prefer. Screen-share is
-                        optional.
-                      </li>
-                      <li>
-                        You’ll see the session flow: timer/stages (depending on
-                        room type).
-                      </li>
+                      <li>Click <b>Join session</b>.</li>
+                      <li>Turn mic/cam on/off as you prefer. Screen-share is optional.</li>
+                      <li>You’ll see the session flow: timer/stages (depending on room type).</li>
                     </ul>
                   </div>
 
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827] mb-3">
-                      3) Follow the workflow
-                    </div>
+                    <div className="text-[13px] font-semibold text-[#111827] mb-3">3) Follow the workflow</div>
                     <ul className="text-[13px] text-[#111827]/80 leading-relaxed list-disc pl-5 space-y-2">
-                      <li>
-                        Use stage prompts to stay aligned (check-in / intentions).
-                      </li>
-                      <li>
-                        During <b>Focus</b>, work silently or lightly co-work.
-                      </li>
-                      <li>
-                        During <b>Break</b>, rest/reset. Then go back to focus.
-                      </li>
+                      <li>Use stage prompts to stay aligned (check-in / intentions).</li>
+                      <li>During <b>Focus</b>, work silently or lightly co-work.</li>
+                      <li>During <b>Break</b>, rest/reset. Then go back to focus.</li>
                     </ul>
                   </div>
 
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827] mb-3">
-                      4) Finish & leave
-                    </div>
+                    <div className="text-[13px] font-semibold text-[#111827] mb-3">4) Finish & leave</div>
                     <ul className="text-[13px] text-[#111827]/80 leading-relaxed list-disc pl-5 space-y-2">
-                      <li>
-                        Wrap up at the end (or anytime in 24/7 focus rooms).
-                      </li>
-                      <li>
-                        Quick self-reflection: what you did / what’s next.
-                      </li>
+                      <li>Wrap up at the end (or anytime in 24/7 focus rooms).</li>
+                      <li>Quick self-reflection: what you did / what’s next.</li>
                       <li>Leave the session — your work is done.</li>
                     </ul>
                   </div>
@@ -984,73 +773,52 @@ export function SessionsPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827]">
-                      Check-in
-                    </div>
+                    <div className="text-[13px] font-semibold text-[#111827]">Check-in</div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      Quick verbal sync: “What are you working on?” + “Any
-                      blockers?”. Short, supportive, no long stories.
+                      Quick verbal sync: “What are you working on?” + “Any blockers?”. Short, supportive, no long stories.
                     </p>
                   </div>
 
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827]">
-                      Intentions
-                    </div>
+                    <div className="text-[13px] font-semibold text-[#111827]">Intentions</div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      You state your goal for the next focus block. Keep it
-                      specific: 1–3 concrete outcomes.
+                      You state your goal for the next focus block. Keep it specific: 1–3 concrete outcomes.
                     </p>
                   </div>
 
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827]">
-                      Focus
-                    </div>
+                    <div className="text-[13px] font-semibold text-[#111827]">Focus</div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      The working block. Usually quiet. Your only job: do the
-                      task.
+                      The working block. Usually quiet. Your only job: do the task.
                     </p>
                   </div>
 
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827]">
-                      Break
-                    </div>
+                    <div className="text-[13px] font-semibold text-[#111827]">Break</div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      Rest/reset: stand up, water, stretch. Avoid doom-scrolling
-                      if you can.
+                      Rest/reset: stand up, water, stretch. Avoid doom-scrolling if you can.
                     </p>
                   </div>
 
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827]">
-                      Custom block
-                    </div>
+                    <div className="text-[13px] font-semibold text-[#111827]">Custom block</div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      A flexible stage you can name anything: “Reading”,
-                      “Planning”, “Admin”, etc. Use it however you want.
+                      A flexible stage you can name anything: “Reading”, “Planning”, “Admin”, etc. Use it however you want.
                     </p>
                   </div>
 
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827]">
-                      Outro / Wrap-up
-                    </div>
+                    <div className="text-[13px] font-semibold text-[#111827]">Outro / Wrap-up</div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      Quick closure: what you finished, what’s next, and one
-                      takeaway.
+                      Quick closure: what you finished, what’s next, and one takeaway.
                     </p>
                   </div>
                 </div>
 
                 <div className="mt-7 rounded-[18px] border border-[#E6E6E6] bg-[#F7F7F7] p-5">
-                  <div className="text-[13px] font-semibold text-[#111827]">
-                    Pro tip
-                  </div>
+                  <div className="text-[13px] font-semibold text-[#111827]">Pro tip</div>
                   <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                    If you’re joining a <b>Silent</b> room: keep mic off, use
-                    the stage timer as guidance, and focus. No pressure to talk.
+                    If you’re joining a <b>Silent</b> room: keep mic off, use the stage timer as guidance, and focus. No pressure to talk.
                   </p>
                 </div>
 
