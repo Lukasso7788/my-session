@@ -1,6 +1,6 @@
 // src/components/IntentionsPanel.tsx
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle, Circle, Trash2, Pencil, X, Check } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useParams } from "react-router-dom";
@@ -21,9 +21,13 @@ interface Intention {
 }
 
 type IntentionsPanelProps = {
-  sessionId?: string;
+  sessionId?: string; // should be UUID ideally
   theme?: RoomTheme;
 };
+
+// UUID matcher (so we can safely detect slug vs uuid)
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function IconButton({
   title,
@@ -47,7 +51,12 @@ function IconButton({
     <button
       title={title}
       onClick={onClick}
-      className={"w-9 h-9 rounded-xl flex items-center justify-center transition " + base + " " + className}
+      className={
+        "w-9 h-9 rounded-xl flex items-center justify-center transition " +
+        base +
+        " " +
+        className
+      }
       type="button"
     >
       {children}
@@ -55,19 +64,29 @@ function IconButton({
   );
 }
 
-export function IntentionsPanel({ sessionId: sessionIdProp, theme = "dark" }: IntentionsPanelProps) {
-  const { id: sessionIdFromUrl } = useParams<{ id: string }>();
-  const sessionId = sessionIdProp || sessionIdFromUrl;
+export function IntentionsPanel({
+  sessionId: sessionIdProp,
+  theme = "dark",
+}: IntentionsPanelProps) {
+  const { id: idOrSlugFromUrl } = useParams<{ id: string }>();
+  const rawSessionId = (sessionIdProp || idOrSlugFromUrl || "").trim();
 
   const isLight = theme === "light";
 
   const [user, setUser] = useState<any>(null);
+
+  // ✅ resolved UUID (so realtime filter + queries always match DB)
+  const [sessionId, setSessionId] = useState<string | null>(null);
+
   const [intentions, setIntentions] = useState<Intention[]>([]);
   const [newIntention, setNewIntention] = useState("");
   const [loading, setLoading] = useState(true);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState<string>("");
+
+  // avoid overlapping loads + stale updates
+  const loadSeqRef = useRef(0);
 
   // tokens
   const titleText = isLight ? "text-black/85" : "text-white/85";
@@ -98,56 +117,117 @@ export function IntentionsPanel({ sessionId: sessionIdProp, theme = "dark" }: In
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
   }, []);
 
+  // ✅ Resolve session UUID from prop/url (supports slug)
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      const raw = String(rawSessionId || "").trim();
+      if (!raw) {
+        if (!cancelled) setSessionId(null);
+        return;
+      }
+
+      // already UUID
+      if (UUID_RE.test(raw)) {
+        if (!cancelled) setSessionId(raw);
+        return;
+      }
+
+      // treat as slug → resolve sessions.id
+      const slug = raw.toLowerCase();
+
+      try {
+        const { data, error } = await supabase
+          .from("sessions")
+          .select("id")
+          .eq("custom_slug", slug)
+          .single();
+
+        if (!cancelled) {
+          if (!error && data?.id) setSessionId(String(data.id));
+          else setSessionId(null);
+        }
+      } catch {
+        if (!cancelled) setSessionId(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rawSessionId]);
+
   const getAvatar = (profile?: any) =>
     profile?.avatar_url ||
-    `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || "User")}`;
+    `https://ui-avatars.com/api/?name=${encodeURIComponent(
+      profile?.full_name || "User"
+    )}`;
 
-  const loadIntentions = async () => {
-    if (!sessionId) return;
+  const loadIntentions = async (sid?: string | null) => {
+    const s = String(sid || sessionId || "");
+    if (!s) return;
 
+    const seq = ++loadSeqRef.current;
     setLoading(true);
-    const { data, error } = await supabase
-      .from("intentions")
-      .select(
-        `id, text, user_id, session_id, created_at, completed,
-         profiles ( full_name, avatar_url )`
-      )
-      .eq("session_id", sessionId)
-      .order("created_at", { ascending: false });
 
-    if (!error) setIntentions((data as any) || []);
-    setLoading(false);
+    try {
+      const { data, error } = await supabase
+        .from("intentions")
+        .select(
+          `id, text, user_id, session_id, created_at, completed,
+           profiles ( full_name, avatar_url )`
+        )
+        .eq("session_id", s)
+        .order("created_at", { ascending: false });
+
+      // ignore stale loads
+      if (seq !== loadSeqRef.current) return;
+
+      if (!error) setIntentions((data as any) || []);
+    } finally {
+      if (seq === loadSeqRef.current) setLoading(false);
+    }
   };
 
+  // ✅ Initial load + realtime (proper filter by session_id)
   useEffect(() => {
     if (!sessionId) return;
 
-    loadIntentions();
+    loadIntentions(sessionId);
 
-    const channel = supabase.channel(`intentions_realtime_${sessionId}`);
+    const channel = supabase
+      .channel(`intentions_realtime_${sessionId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "intentions",
+          filter: `session_id=eq.${sessionId}`,
+        },
+        (payload: any) => {
+          // DELETE: we can remove locally immediately
+          if (payload?.eventType === "DELETE") {
+            const deletedId = payload?.old?.id;
+            if (deletedId) {
+              setIntentions((prev) => prev.filter((i) => i.id !== deletedId));
+            } else {
+              // fallback
+              loadIntentions(sessionId);
+            }
+            return;
+          }
 
-    channel.on(
-      "postgres_changes",
-      { event: "INSERT", schema: "public", table: "intentions" },
-      (payload) => payload.new?.session_id === sessionId && loadIntentions()
-    );
+          // INSERT/UPDATE: reload list (simple + reliable)
+          loadIntentions(sessionId);
+        }
+      )
+      .subscribe((status) => {
+        // useful for debugging if realtime silently fails
+        // console.log("[intentions realtime]", sessionId, status);
+      });
 
-    channel.on(
-      "postgres_changes",
-      { event: "UPDATE", schema: "public", table: "intentions" },
-      (payload) => payload.new?.session_id === sessionId && loadIntentions()
-    );
-
-    channel.on(
-      "postgres_changes",
-      { event: "DELETE", schema: "public", table: "intentions" },
-      (payload: any) => {
-        const deletedId = payload?.old?.id;
-        setIntentions((prev) => prev.filter((i) => i.id !== deletedId));
-      }
-    );
-
-    channel.subscribe();
     return () => {
       supabase.removeChannel(channel);
     };
@@ -164,29 +244,91 @@ export function IntentionsPanel({ sessionId: sessionIdProp, theme = "dark" }: In
   const handleAddIntention = async () => {
     if (!newIntention.trim() || !user || !sessionId) return;
 
-    await supabase.from("intentions").insert([
+    const text = newIntention.trim();
+    setNewIntention("");
+
+    // optimistic: insert locally first (so UI feels instant)
+    const optimisticId = `optimistic-${Date.now()}`;
+    setIntentions((prev) => [
+      {
+        id: optimisticId,
+        text,
+        user_id: user.id,
+        session_id: sessionId,
+        completed: false,
+        created_at: new Date().toISOString(),
+        profiles: {
+          full_name: "You",
+          avatar_url: undefined,
+        },
+      },
+      ...prev,
+    ]);
+
+    const { error } = await supabase.from("intentions").insert([
       {
         user_id: user.id,
         session_id: sessionId,
-        text: newIntention.trim(),
+        text,
         completed: false,
       },
     ]);
 
-    setNewIntention("");
+    // if failed, revert optimistic
+    if (error) {
+      setIntentions((prev) => prev.filter((i) => i.id !== optimisticId));
+      return;
+    }
+
+    // sync with DB state
+    loadIntentions(sessionId);
   };
 
   const toggleCompleted = async (intention: Intention) => {
     if (editingId === intention.id) return;
+    if (!sessionId) return;
 
-    await supabase
+    const next = !Boolean(intention.completed);
+
+    // optimistic
+    setIntentions((prev) =>
+      prev.map((i) => (i.id === intention.id ? { ...i, completed: next } : i))
+    );
+
+    const { error } = await supabase
       .from("intentions")
-      .update({ completed: !intention.completed })
+      .update({ completed: next })
       .eq("id", intention.id);
+
+    if (error) {
+      // revert
+      setIntentions((prev) =>
+        prev.map((i) =>
+          i.id === intention.id ? { ...i, completed: !next } : i
+        )
+      );
+      return;
+    }
+
+    // optional: keep list synced (in case server-side changes exist)
+    // loadIntentions(sessionId);
   };
 
   const handleDelete = async (id: string) => {
-    await supabase.from("intentions").delete().eq("id", id);
+    if (!sessionId) return;
+
+    // optimistic remove
+    const prev = intentions;
+    setIntentions((curr) => curr.filter((i) => i.id !== id));
+
+    const { error } = await supabase.from("intentions").delete().eq("id", id);
+    if (error) {
+      // revert on fail
+      setIntentions(prev);
+      return;
+    }
+
+    // no need to reload; realtime will also propagate to others
   };
 
   const startEdit = (i: Intention) => {
@@ -201,20 +343,62 @@ export function IntentionsPanel({ sessionId: sessionIdProp, theme = "dark" }: In
 
   const saveEdit = async () => {
     if (!editingId) return;
+    if (!sessionId) return;
+
     const text = editingText.trim();
     if (!text) return;
 
-    await supabase.from("intentions").update({ text }).eq("id", editingId);
+    // optimistic update
+    const old = intentions.find((i) => i.id === editingId)?.text || "";
+    setIntentions((prev) =>
+      prev.map((i) => (i.id === editingId ? { ...i, text } : i))
+    );
+
+    const { error } = await supabase
+      .from("intentions")
+      .update({ text })
+      .eq("id", editingId);
+
+    if (error) {
+      // revert
+      setIntentions((prev) =>
+        prev.map((i) => (i.id === editingId ? { ...i, text: old } : i))
+      );
+      return;
+    }
 
     setEditingId(null);
     setEditingText("");
   };
 
+  // When session not resolved yet (e.g., slug resolving)
+  if (!rawSessionId) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className={"text-[12px] italic " + mutedText}>No session id</div>
+      </div>
+    );
+  }
+
+  if (!sessionId) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className={"text-[12px] italic " + mutedText}>
+          Resolving session...
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-full flex flex-col min-h-0">
       <div className="p-4 min-h-0 flex-1 overflow-y-auto custom-scrollbar">
         <div className="mb-5">
-          <div className={titleText + " font-inter font-semibold text-[13px] mb-3"}>My intentions</div>
+          <div
+            className={titleText + " font-inter font-semibold text-[13px] mb-3"}
+          >
+            My intentions
+          </div>
 
           <div className="flex items-center gap-2 mb-3">
             <input
@@ -243,15 +427,21 @@ export function IntentionsPanel({ sessionId: sessionIdProp, theme = "dark" }: In
           {loading ? (
             <div className={"text-[12px] italic " + mutedText}>Loading...</div>
           ) : myIntentions.length === 0 ? (
-            <div className={"text-[12px] italic " + mutedText}>No intentions yet</div>
+            <div className={"text-[12px] italic " + mutedText}>
+              No intentions yet
+            </div>
           ) : (
             <div className="flex flex-col gap-2">
               {myIntentions.map((i) => {
                 const isEditing = editingId === i.id;
 
                 const circleCls = isLight ? "text-black/40" : "text-white/45";
-                const textDoneCls = isLight ? "text-black/45 line-through" : "text-white/50 line-through";
-                const textActiveCls = isLight ? "text-black/80" : "text-white/80";
+                const textDoneCls = isLight
+                  ? "text-black/45 line-through"
+                  : "text-white/50 line-through";
+                const textActiveCls = isLight
+                  ? "text-black/80"
+                  : "text-white/80";
 
                 const editInputCls = isLight
                   ? `
@@ -266,11 +456,18 @@ export function IntentionsPanel({ sessionId: sessionIdProp, theme = "dark" }: In
                   `;
 
                 return (
-                  <div key={i.id} onClick={() => toggleCompleted(i)} className={myCardCls}>
+                  <div
+                    key={i.id}
+                    onClick={() => toggleCompleted(i)}
+                    className={myCardCls}
+                  >
                     <div className="flex items-center gap-2">
                       <div className="shrink-0">
                         {i.completed ? (
-                          <CheckCircle size={18} className="text-emerald-500" />
+                          <CheckCircle
+                            size={18}
+                            className="text-emerald-500"
+                          />
                         ) : (
                           <Circle size={18} className={circleCls} />
                         )}
@@ -368,19 +565,27 @@ export function IntentionsPanel({ sessionId: sessionIdProp, theme = "dark" }: In
 
         <div className={"h-px my-5 " + divider} />
 
-        <div className={titleText + " font-inter font-semibold text-[13px] mb-3"}>Team intentions</div>
+        <div
+          className={titleText + " font-inter font-semibold text-[13px] mb-3"}
+        >
+          Team intentions
+        </div>
 
         {loading ? (
           <div className={"text-[12px] italic " + mutedText}>Loading...</div>
         ) : teamIntentions.length === 0 ? (
-          <div className={"text-[12px] italic " + mutedText}>No team intentions</div>
+          <div className={"text-[12px] italic " + mutedText}>
+            No team intentions
+          </div>
         ) : (
           <div className="flex flex-col gap-2">
             {teamIntentions.map((item) => {
               const isMine = item.user_id === user?.id;
               const nameCls = isLight ? "text-black/85" : "text-white/85";
               const bodyActive = isLight ? "text-black/75" : "text-white/75";
-              const bodyDone = isLight ? "text-black/45 line-through" : "text-white/50 line-through";
+              const bodyDone = isLight
+                ? "text-black/45 line-through"
+                : "text-white/50 line-through";
               const circleCls = isLight ? "text-black/30" : "text-white/30";
 
               return (
@@ -393,9 +598,12 @@ export function IntentionsPanel({ sessionId: sessionIdProp, theme = "dark" }: In
                     />
 
                     <div className="flex-1 min-w-0">
-                      <div className={"text-[13px] font-medium truncate " + nameCls}>
+                      <div
+                        className={"text-[13px] font-medium truncate " + nameCls}
+                      >
                         {isMine ? "You" : item.profiles?.full_name || "Participant"}
                       </div>
+
                       <div
                         className={
                           "text-[13px] break-words leading-5 " +
