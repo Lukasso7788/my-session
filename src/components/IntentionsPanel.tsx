@@ -42,7 +42,7 @@ type IntentionsPanelProps = {
 
   // ✅ IMPORTANT:
   // Pass EXACT SAME className that you use for the timer text in RoomPageIFrame.
-  // This makes timer typography 1:1 identical.
+  // This makes timer typography 1:1 identical (except we force Inter + font-normal).
   timerTextClassName?: string;
 };
 
@@ -586,8 +586,10 @@ export function IntentionsPanel({
 
   const headerTitle = isLight ? "text-black/85" : "text-white/85";
 
-  // ✅ default timer typography (if you don't pass timerTextClassName)
-  const defaultTimerTextCls = "font-inter font-normal tabular-nums text-[12px]";
+  // ✅ Timer typography: allow passing size/etc from RoomPageIFrame,
+  // but ALWAYS force Inter + font-normal here (and keep tabular nums).
+  const timerTextCls =
+    `tabular-nums text-[12px] ${timerTextClassName || ""} font-inter font-normal`.trim();
 
   const PanelUI = (
     <div className={"h-full flex flex-col min-h-0 font-inter " + panelBg}>
@@ -600,13 +602,16 @@ export function IntentionsPanel({
           </div>
 
           <div className="flex items-center gap-2 shrink-0 font-inter">
-            {/* ✅ Timer pill (same icon + text; typography can be forced from RoomPageIFrame) */}
+            {/* ✅ Timer pill */}
             <div
               className={"inline-flex items-center gap-2 px-3 py-2 rounded-xl " + timerPillCls}
               title="Timer"
             >
               <TimerSmartIcon theme={theme} className="w-4 h-4 opacity-80" />
-              <span className={(timerTextClassName || defaultTimerTextCls) + " leading-none"}>
+              <span
+                className={timerTextCls + " leading-none"}
+                style={{ fontFamily: OVERLAY_FONT_FAMILY }}
+              >
                 {timerText || "--:--"}
               </span>
             </div>
@@ -821,9 +826,7 @@ export function IntentionsPanel({
               const isMine = item.user_id === user?.id;
               const nameCls = isLight ? "text-black/85" : "text-white/85";
               const bodyActive = isLight ? "text-black/75" : "text-white/75";
-              const bodyDone = isLight
-                ? "text-black/45 line-through"
-                : "text-white/50 line-through";
+              const bodyDone = isLight ? "text-black/45 line-through" : "text-white/50 line-through";
               const circleCls = isLight ? "text-black/30" : "text-white/30";
 
               return (
@@ -885,10 +888,7 @@ export function IntentionsPanel({
               onClick={closeOverlay}
               className={`
                 mt-4 px-4 py-2 rounded-xl border
-                ${isLight
-                  ? "border-black/15 text-black/80 hover:bg-black/5"
-                  : "border-white/10 text-white/80 hover:bg-white/5"
-                }
+                ${isLight ? "border-black/15 text-black/80 hover:bg-black/5" : "border-white/10 text-white/80 hover:bg-white/5"}
                 transition inline-flex items-center gap-2 text-[13px] font-semibold font-inter
               `}
             >
