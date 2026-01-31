@@ -587,7 +587,7 @@ export function IntentionsPanel({
   const headerTitle = isLight ? "text-black/85" : "text-white/85";
 
   // ✅ default timer typography (if you don't pass timerTextClassName)
-  const defaultTimerTextCls = "font-inter font-semibold tabular-nums text-[12px]";
+  const defaultTimerTextCls = "font-inter font-normal tabular-nums text-[12px]";
 
   const PanelUI = (
     <div className={"h-full flex flex-col min-h-0 font-inter " + panelBg}>
