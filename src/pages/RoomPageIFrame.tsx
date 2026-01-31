@@ -351,7 +351,7 @@ async function createJitsiApiWithFallback(args: {
                     disableDeepLinking: true,
                     disableInviteFunctions: true,
 
-                    startWithAudioMuted: false,
+                    startWithAudioMuted: true,
                     startWithVideoMuted: false,
 
                     startWithTileView: true,
@@ -1963,6 +1963,20 @@ export default function RoomPageIFrame() {
                     setApiReady(true);
                     localJoinedRef.current = true;
                     localParticipantIdRef.current = String(e?.id || "") || null;
+                    // ✅ Ensure local user is muted on join (fallback, in case config is ignored)
+                    try {
+                        const currentlyMuted =
+                            typeof api?.isAudioMuted === "function" ? !!api.isAudioMuted() : false;
+
+                        if (!currentlyMuted) {
+                            api.executeCommand?.("toggleAudio"); // will mute
+                            setMutedAudio(true);
+                        }
+                    } catch {
+                        // If we can't read state, do NOT blindly toggle (could unmute).
+                        // But if you prefer "always try", uncomment next line:
+                        // try { api.executeCommand?.("toggleAudio"); setMutedAudio(true); } catch {}
+                    }
 
                     try {
                         api.executeCommand("setTileView", true);
