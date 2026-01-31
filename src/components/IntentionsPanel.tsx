@@ -1,7 +1,20 @@
 // src/components/IntentionsPanel.tsx
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle, Circle, Trash2, Pencil, X, Check } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import type { ReactNode, MouseEvent } from "react";
+import { createPortal } from "react-dom";
+import {
+  CheckCircle,
+  Circle,
+  Trash2,
+  Pencil,
+  X,
+  Check,
+  Pin,
+  PinOff,
+  Timer,
+  ExternalLink,
+} from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useParams } from "react-router-dom";
 
@@ -23,11 +36,27 @@ interface Intention {
 type IntentionsPanelProps = {
   sessionId?: string; // should be UUID ideally
   theme?: RoomTheme;
+
+  // ✅ Timer from top-bar (recommended)
+  // If not provided, component will try to listen to window event "mysession:timer"
+  // with payload: { detail: { text: "12:34" } }
+  timerText?: string;
 };
 
 // UUID matcher (so we can safely detect slug vs uuid)
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+// ---- Document Picture-in-Picture typings (Chromium) ----
+type DocPiPWindow = Window & { document: Document; close: () => void };
+
+declare global {
+  interface Window {
+    documentPictureInPicture?: {
+      requestWindow: (opts?: { width?: number; height?: number }) => Promise<DocPiPWindow>;
+    };
+  }
+}
 
 function IconButton({
   title,
@@ -37,8 +66,8 @@ function IconButton({
   theme = "dark",
 }: {
   title: string;
-  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
-  children: React.ReactNode;
+  onClick: (e: MouseEvent<HTMLButtonElement>) => void;
+  children: ReactNode;
   className?: string;
   theme?: RoomTheme;
 }) {
@@ -64,9 +93,27 @@ function IconButton({
   );
 }
 
+function copyStylesToDocument(from: Document, to: Document) {
+  // Best-effort: clone <style> and <link rel="stylesheet"> into target doc
+  try {
+    const nodes = Array.from(
+      from.querySelectorAll<HTMLStyleElement | HTMLLinkElement>(
+        'style, link[rel="stylesheet"]'
+      )
+    );
+    nodes.forEach((n) => {
+      const clone = n.cloneNode(true) as any;
+      to.head.appendChild(clone);
+    });
+  } catch {
+    // ignore
+  }
+}
+
 export function IntentionsPanel({
   sessionId: sessionIdProp,
   theme = "dark",
+  timerText: timerTextProp,
 }: IntentionsPanelProps) {
   const { id: idOrSlugFromUrl } = useParams<{ id: string }>();
   const rawSessionId = (sessionIdProp || idOrSlugFromUrl || "").trim();
@@ -88,10 +135,21 @@ export function IntentionsPanel({
   // avoid overlapping loads + stale updates
   const loadSeqRef = useRef(0);
 
+  // ✅ timer label shown in the panel header
+  const [timerText, setTimerText] = useState<string>("--:--");
+
+  // ✅ overlay state (PiP / Popout)
+  const overlayRef = useRef<{ win: any; container: HTMLElement; kind: "pip" | "window" } | null>(null);
+  const [overlayOpen, setOverlayOpen] = useState(false);
+
   // tokens
   const titleText = isLight ? "text-black/85" : "text-white/85";
   const mutedText = isLight ? "text-black/50" : "text-white/45";
   const divider = isLight ? "bg-black/10" : "bg-white/5";
+
+  const panelBg = isLight ? "bg-white" : "bg-[#060B14]";
+  const headerBg = isLight ? "bg-white/95" : "bg-[#060B14]/95";
+  const headerBorder = isLight ? "border-black/10" : "border-white/10";
 
   const inputCls = isLight
     ? `
@@ -116,6 +174,43 @@ export function IntentionsPanel({
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
   }, []);
+
+  // ✅ timer: prefer prop, otherwise listen to window event
+  useEffect(() => {
+    if (typeof timerTextProp === "string" && timerTextProp.trim()) {
+      setTimerText(timerTextProp.trim());
+    }
+  }, [timerTextProp]);
+
+  useEffect(() => {
+    if (typeof timerTextProp === "string" && timerTextProp.trim()) return;
+
+    const onTimer = (e: any) => {
+      const t = e?.detail?.text;
+      if (typeof t === "string" && t.trim()) setTimerText(t.trim());
+    };
+
+    window.addEventListener("mysession:timer", onTimer as any);
+
+    // very light fallback: if someone stores timer text in localStorage
+    const id = window.setInterval(() => {
+      try {
+        const v =
+          localStorage.getItem("mysession_timer_text") ||
+          localStorage.getItem("timer_text") ||
+          "";
+        if (v && v !== timerText) setTimerText(v);
+      } catch {
+        // ignore
+      }
+    }, 1000);
+
+    return () => {
+      window.removeEventListener("mysession:timer", onTimer as any);
+      window.clearInterval(id);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timerTextProp]);
 
   // ✅ Resolve session UUID from prop/url (supports slug)
   useEffect(() => {
@@ -160,35 +255,36 @@ export function IntentionsPanel({
 
   const getAvatar = (profile?: any) =>
     profile?.avatar_url ||
-    `https://ui-avatars.com/api/?name=${encodeURIComponent(
-      profile?.full_name || "User"
-    )}`;
+    `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || "User")}`;
 
-  const loadIntentions = async (sid?: string | null) => {
-    const s = String(sid || sessionId || "");
-    if (!s) return;
+  const loadIntentions = useCallback(
+    async (sid?: string | null) => {
+      const s = String(sid || sessionId || "");
+      if (!s) return;
 
-    const seq = ++loadSeqRef.current;
-    setLoading(true);
+      const seq = ++loadSeqRef.current;
+      setLoading(true);
 
-    try {
-      const { data, error } = await supabase
-        .from("intentions")
-        .select(
-          `id, text, user_id, session_id, created_at, completed,
-           profiles ( full_name, avatar_url )`
-        )
-        .eq("session_id", s)
-        .order("created_at", { ascending: false });
+      try {
+        const { data, error } = await supabase
+          .from("intentions")
+          .select(
+            `id, text, user_id, session_id, created_at, completed,
+             profiles ( full_name, avatar_url )`
+          )
+          .eq("session_id", s)
+          .order("created_at", { ascending: false });
 
-      // ignore stale loads
-      if (seq !== loadSeqRef.current) return;
+        // ignore stale loads
+        if (seq !== loadSeqRef.current) return;
 
-      if (!error) setIntentions((data as any) || []);
-    } finally {
-      if (seq === loadSeqRef.current) setLoading(false);
-    }
-  };
+        if (!error) setIntentions((data as any) || []);
+      } finally {
+        if (seq === loadSeqRef.current) setLoading(false);
+      }
+    },
+    [sessionId]
+  );
 
   // ✅ Initial load + realtime (proper filter by session_id)
   useEffect(() => {
@@ -207,32 +303,22 @@ export function IntentionsPanel({
           filter: `session_id=eq.${sessionId}`,
         },
         (payload: any) => {
-          // DELETE: we can remove locally immediately
           if (payload?.eventType === "DELETE") {
             const deletedId = payload?.old?.id;
-            if (deletedId) {
-              setIntentions((prev) => prev.filter((i) => i.id !== deletedId));
-            } else {
-              // fallback
-              loadIntentions(sessionId);
-            }
+            if (deletedId) setIntentions((prev) => prev.filter((i) => i.id !== deletedId));
+            else loadIntentions(sessionId);
             return;
           }
 
-          // INSERT/UPDATE: reload list (simple + reliable)
           loadIntentions(sessionId);
         }
       )
-      .subscribe((status) => {
-        // useful for debugging if realtime silently fails
-        // console.log("[intentions realtime]", sessionId, status);
-      });
+      .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [sessionId, loadIntentions]);
 
   const myIntentions = useMemo(
     () => intentions.filter((i) => i.user_id === user?.id),
@@ -247,7 +333,7 @@ export function IntentionsPanel({
     const text = newIntention.trim();
     setNewIntention("");
 
-    // optimistic: insert locally first (so UI feels instant)
+    // optimistic
     const optimisticId = `optimistic-${Date.now()}`;
     setIntentions((prev) => [
       {
@@ -257,30 +343,20 @@ export function IntentionsPanel({
         session_id: sessionId,
         completed: false,
         created_at: new Date().toISOString(),
-        profiles: {
-          full_name: "You",
-          avatar_url: undefined,
-        },
+        profiles: { full_name: "You", avatar_url: undefined },
       },
       ...prev,
     ]);
 
     const { error } = await supabase.from("intentions").insert([
-      {
-        user_id: user.id,
-        session_id: sessionId,
-        text,
-        completed: false,
-      },
+      { user_id: user.id, session_id: sessionId, text, completed: false },
     ]);
 
-    // if failed, revert optimistic
     if (error) {
       setIntentions((prev) => prev.filter((i) => i.id !== optimisticId));
       return;
     }
 
-    // sync with DB state
     loadIntentions(sessionId);
   };
 
@@ -290,7 +366,6 @@ export function IntentionsPanel({
 
     const next = !Boolean(intention.completed);
 
-    // optimistic
     setIntentions((prev) =>
       prev.map((i) => (i.id === intention.id ? { ...i, completed: next } : i))
     );
@@ -301,34 +376,20 @@ export function IntentionsPanel({
       .eq("id", intention.id);
 
     if (error) {
-      // revert
       setIntentions((prev) =>
-        prev.map((i) =>
-          i.id === intention.id ? { ...i, completed: !next } : i
-        )
+        prev.map((i) => (i.id === intention.id ? { ...i, completed: !next } : i))
       );
-      return;
     }
-
-    // optional: keep list synced (in case server-side changes exist)
-    // loadIntentions(sessionId);
   };
 
   const handleDelete = async (id: string) => {
     if (!sessionId) return;
 
-    // optimistic remove
     const prev = intentions;
     setIntentions((curr) => curr.filter((i) => i.id !== id));
 
     const { error } = await supabase.from("intentions").delete().eq("id", id);
-    if (error) {
-      // revert on fail
-      setIntentions(prev);
-      return;
-    }
-
-    // no need to reload; realtime will also propagate to others
+    if (error) setIntentions(prev);
   };
 
   const startEdit = (i: Intention) => {
@@ -348,19 +409,11 @@ export function IntentionsPanel({
     const text = editingText.trim();
     if (!text) return;
 
-    // optimistic update
     const old = intentions.find((i) => i.id === editingId)?.text || "";
-    setIntentions((prev) =>
-      prev.map((i) => (i.id === editingId ? { ...i, text } : i))
-    );
+    setIntentions((prev) => prev.map((i) => (i.id === editingId ? { ...i, text } : i)));
 
-    const { error } = await supabase
-      .from("intentions")
-      .update({ text })
-      .eq("id", editingId);
-
+    const { error } = await supabase.from("intentions").update({ text }).eq("id", editingId);
     if (error) {
-      // revert
       setIntentions((prev) =>
         prev.map((i) => (i.id === editingId ? { ...i, text: old } : i))
       );
@@ -371,10 +424,101 @@ export function IntentionsPanel({
     setEditingText("");
   };
 
-  // When session not resolved yet (e.g., slug resolving)
+  // =========================
+  // ✅ Pin / Overlay functions
+  // =========================
+  const closeOverlay = useCallback(() => {
+    const o = overlayRef.current;
+    overlayRef.current = null;
+    setOverlayOpen(false);
+
+    try {
+      o?.win?.close?.();
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const openOverlay = useCallback(async () => {
+    if (overlayRef.current) return;
+
+    // Prefer Document PiP (Chromium)
+    const canPip = !!window.documentPictureInPicture?.requestWindow;
+
+    try {
+      if (canPip) {
+        const pipWin = await window.documentPictureInPicture!.requestWindow({
+          width: 420,
+          height: 720,
+        });
+
+        // basic doc setup
+        pipWin.document.title = "Intentions";
+        pipWin.document.body.style.margin = "0";
+        pipWin.document.body.style.background = isLight ? "#ffffff" : "#060B14";
+
+        copyStylesToDocument(document, pipWin.document);
+
+        const container = pipWin.document.createElement("div");
+        container.style.height = "100vh";
+        container.style.width = "100vw";
+        pipWin.document.body.appendChild(container);
+
+        overlayRef.current = { win: pipWin, container, kind: "pip" };
+        setOverlayOpen(true);
+
+        // auto cleanup if user closes the PiP window
+        pipWin.addEventListener("pagehide", closeOverlay);
+        pipWin.addEventListener("beforeunload", closeOverlay);
+        return;
+      }
+
+      // Fallback: popup window (NOT always-on-top, but still pop-out)
+      const w = window.open(
+        "",
+        "mysession_intentions",
+        "popup,width=420,height=720"
+      );
+
+      if (!w) return;
+
+      w.document.title = "Intentions";
+      w.document.body.style.margin = "0";
+      w.document.body.style.background = isLight ? "#ffffff" : "#060B14";
+
+      copyStylesToDocument(document, w.document);
+
+      const container = w.document.createElement("div");
+      container.style.height = "100vh";
+      container.style.width = "100vw";
+      w.document.body.appendChild(container);
+
+      overlayRef.current = { win: w, container, kind: "window" };
+      setOverlayOpen(true);
+
+      w.addEventListener("beforeunload", closeOverlay);
+    } catch {
+      // ignore
+    }
+  }, [closeOverlay, isLight]);
+
+  // cleanup on unmount
+  useEffect(() => {
+    return () => {
+      try {
+        closeOverlay();
+      } catch {
+        // ignore
+      }
+    };
+  }, [closeOverlay]);
+
+  // =========================
+  // UI states for session id
+  // =========================
   if (!rawSessionId) {
     return (
-      <div className="h-full flex items-center justify-center">
+      <div className={"h-full flex items-center justify-center " + panelBg}>
         <div className={"text-[12px] italic " + mutedText}>No session id</div>
       </div>
     );
@@ -382,21 +526,91 @@ export function IntentionsPanel({
 
   if (!sessionId) {
     return (
-      <div className="h-full flex items-center justify-center">
-        <div className={"text-[12px] italic " + mutedText}>
-          Resolving session...
-        </div>
+      <div className={"h-full flex items-center justify-center " + panelBg}>
+        <div className={"text-[12px] italic " + mutedText}>Resolving session...</div>
       </div>
     );
   }
 
-  return (
-    <div className="h-full flex flex-col min-h-0">
-      <div className="p-4 min-h-0 flex-1 overflow-y-auto custom-scrollbar">
+  // =========================
+  // Panel UI (rendered inline OR portal)
+  // =========================
+  const timerPillCls = isLight
+    ? "bg-black/5 border border-black/10 text-black/80"
+    : "bg-white/5 border border-white/10 text-white/80";
+
+  const headerTitle = isLight ? "text-black/85" : "text-white/85";
+
+  const PanelUI = (
+    <div className={"h-full flex flex-col min-h-0 " + panelBg}>
+      {/* Header (always visible, good for pinned mode) */}
+      <div
+        className={
+          "px-4 pt-4 pb-3 shrink-0 border-b " +
+          headerBorder +
+          " " +
+          headerBg
+        }
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className={"font-inter font-semibold text-[13px] " + headerTitle}>
+              Intentions
+            </div>
+            <div className={"text-[11px] " + mutedText}>
+              Keep it visible while you work
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Timer pill */}
+            <div className={"inline-flex items-center gap-2 px-3 py-2 rounded-xl " + timerPillCls} title="Timer">
+              <Timer size={16} />
+              <span className="text-[12px] font-semibold tabular-nums">{timerText || "--:--"}</span>
+            </div>
+
+            {/* Pin / Unpin */}
+            {!overlayOpen ? (
+              <IconButton
+                theme={theme}
+                title="Pin (always on top if supported)"
+                onClick={(e) => {
+                  e.preventDefault();
+                  openOverlay();
+                }}
+              >
+                <Pin size={16} />
+              </IconButton>
+            ) : (
+              <IconButton
+                theme={theme}
+                title="Unpin"
+                onClick={(e) => {
+                  e.preventDefault();
+                  closeOverlay();
+                }}
+              >
+                <PinOff size={16} />
+              </IconButton>
+            )}
+
+            {/* Hint button (optional) */}
+            <IconButton
+              theme={theme}
+              title="If Pin is unavailable, pop-out window will be used"
+              onClick={(e) => e.preventDefault()}
+              className="cursor-default"
+            >
+              <ExternalLink size={16} />
+            </IconButton>
+          </div>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="px-4 pb-4 pt-4 min-h-0 flex-1 overflow-y-auto custom-scrollbar">
         <div className="mb-5">
-          <div
-            className={titleText + " font-inter font-semibold text-[13px] mb-3"}
-          >
+          <div className={titleText + " font-inter font-semibold text-[13px] mb-3"}>
             My intentions
           </div>
 
@@ -427,21 +641,15 @@ export function IntentionsPanel({
           {loading ? (
             <div className={"text-[12px] italic " + mutedText}>Loading...</div>
           ) : myIntentions.length === 0 ? (
-            <div className={"text-[12px] italic " + mutedText}>
-              No intentions yet
-            </div>
+            <div className={"text-[12px] italic " + mutedText}>No intentions yet</div>
           ) : (
             <div className="flex flex-col gap-2">
               {myIntentions.map((i) => {
                 const isEditing = editingId === i.id;
 
                 const circleCls = isLight ? "text-black/40" : "text-white/45";
-                const textDoneCls = isLight
-                  ? "text-black/45 line-through"
-                  : "text-white/50 line-through";
-                const textActiveCls = isLight
-                  ? "text-black/80"
-                  : "text-white/80";
+                const textDoneCls = isLight ? "text-black/45 line-through" : "text-white/50 line-through";
+                const textActiveCls = isLight ? "text-black/80" : "text-white/80";
 
                 const editInputCls = isLight
                   ? `
@@ -464,10 +672,7 @@ export function IntentionsPanel({
                     <div className="flex items-center gap-2">
                       <div className="shrink-0">
                         {i.completed ? (
-                          <CheckCircle
-                            size={18}
-                            className="text-emerald-500"
-                          />
+                          <CheckCircle size={18} className="text-emerald-500" />
                         ) : (
                           <Circle size={18} className={circleCls} />
                         )}
@@ -565,27 +770,21 @@ export function IntentionsPanel({
 
         <div className={"h-px my-5 " + divider} />
 
-        <div
-          className={titleText + " font-inter font-semibold text-[13px] mb-3"}
-        >
+        <div className={titleText + " font-inter font-semibold text-[13px] mb-3"}>
           Team intentions
         </div>
 
         {loading ? (
           <div className={"text-[12px] italic " + mutedText}>Loading...</div>
         ) : teamIntentions.length === 0 ? (
-          <div className={"text-[12px] italic " + mutedText}>
-            No team intentions
-          </div>
+          <div className={"text-[12px] italic " + mutedText}>No team intentions</div>
         ) : (
           <div className="flex flex-col gap-2">
             {teamIntentions.map((item) => {
               const isMine = item.user_id === user?.id;
               const nameCls = isLight ? "text-black/85" : "text-white/85";
               const bodyActive = isLight ? "text-black/75" : "text-white/75";
-              const bodyDone = isLight
-                ? "text-black/45 line-through"
-                : "text-white/50 line-through";
+              const bodyDone = isLight ? "text-black/45 line-through" : "text-white/50 line-through";
               const circleCls = isLight ? "text-black/30" : "text-white/30";
 
               return (
@@ -598,18 +797,11 @@ export function IntentionsPanel({
                     />
 
                     <div className="flex-1 min-w-0">
-                      <div
-                        className={"text-[13px] font-medium truncate " + nameCls}
-                      >
+                      <div className={"text-[13px] font-medium truncate " + nameCls}>
                         {isMine ? "You" : item.profiles?.full_name || "Participant"}
                       </div>
 
-                      <div
-                        className={
-                          "text-[13px] break-words leading-5 " +
-                          (item.completed ? bodyDone : bodyActive)
-                        }
-                      >
+                      <div className={"text-[13px] break-words leading-5 " + (item.completed ? bodyDone : bodyActive)}>
                         {item.text}
                       </div>
                     </div>
@@ -629,6 +821,40 @@ export function IntentionsPanel({
         )}
       </div>
     </div>
+  );
+
+  // Render inline + (if pinned) render portal into PiP / popout
+  return (
+    <>
+      {overlayOpen && overlayRef.current?.container
+        ? createPortal(PanelUI, overlayRef.current.container)
+        : null}
+
+      {!overlayOpen ? (
+        PanelUI
+      ) : (
+        <div className={"h-full flex items-center justify-center " + panelBg}>
+          <div className="text-center">
+            <div className={"text-[12px] " + titleText}>Pinned</div>
+            <div className={"text-[12px] italic mt-1 " + mutedText}>
+              Intentions are opened in a floating window.
+            </div>
+            <button
+              type="button"
+              onClick={closeOverlay}
+              className={`
+                mt-4 px-4 py-2 rounded-xl border
+                ${isLight ? "border-black/15 text-black/80 hover:bg-black/5" : "border-white/10 text-white/80 hover:bg-white/5"}
+                transition inline-flex items-center gap-2 text-[13px] font-semibold
+              `}
+            >
+              <PinOff size={16} />
+              Unpin
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
