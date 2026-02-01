@@ -1185,23 +1185,8 @@ export function RoomPage() {
 
   const thumbTranslate = isLight ? "translateX(0px)" : "translateX(50px)";
 
-  if (loading) {
-    return (
-      <div className={`flex h-screen justify-center items-center ${pageBg}`}>
-        Loading session...
-      </div>
-    );
-  }
-
-  if (!session) {
-    return (
-      <div className={`flex h-screen justify-center items-center ${pageBg}`}>
-        <button onClick={() => navigate("/sessions")}>Back</button>
-      </div>
-    );
-  }
-
   // ✅ video container ref + ResizeObserver to keep layouts stable
+  // ✅ MUST be above early returns (loading/session) to keep hooks order stable.
   const videoWrapRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -1225,6 +1210,22 @@ export function RoomPage() {
       ro.disconnect();
     };
   }, []);
+
+  if (loading) {
+    return (
+      <div className={`flex h-screen justify-center items-center ${pageBg}`}>
+        Loading session...
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className={`flex h-screen justify-center items-center ${pageBg}`}>
+        <button onClick={() => navigate("/sessions")}>Back</button>
+      </div>
+    );
+  }
 
   // Right panel body (re-used for desktop & mobile overlay)
   const RightPanelBody = (
