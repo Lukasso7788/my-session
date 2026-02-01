@@ -28,10 +28,84 @@ type Stage = {
   duration: number; // minutes (display / legacy)
   color: string;
   type: "intro" | "intentions" | "focus" | "break" | "outro" | string;
+  durationSeconds?: number; // preferred when present
 };
 
 type RightPanelTab = "participants" | "chat" | "intentions" | null;
 type RoomTheme = "dark" | "light";
+
+type HostProfile = {
+  id: string;
+  full_name: string;
+  avatar_url?: string | null;
+  bio?: string | null;
+};
+
+type SessionTemplate = {
+  name?: string | null;
+  title?: string | null;
+  key?: string | null;
+  slug?: string | null;
+  type?: string | null;
+  format?: string | null;
+};
+
+type SessionRow = {
+  id: string;
+  title: string;
+  schedule: unknown;
+  format?: string | null;
+  start_time?: string | null;
+  created_at?: string | null;
+  jitsi_room_name?: string | null;
+  daily_room_url?: string | null;
+  host_profile?: HostProfile | null;
+  session_templates?: SessionTemplate | SessionTemplate[] | null;
+};
+
+type MediaDevicesResult = {
+  videoInputs: MediaDeviceInfo[];
+  audioInputs: MediaDeviceInfo[];
+  audioOutputs: MediaDeviceInfo[];
+};
+
+type BackgroundPrefs = {
+  mode: "blur" | "image" | "none";
+  imageUrl?: string;
+};
+
+type InputDevices = {
+  videoInputId: string;
+  audioInputId: string;
+};
+
+/**
+ * JitsiEngine in your lib can have extra methods (devices/bg/audio output/reactions).
+ * We model them here without using `any`.
+ */
+type JitsiEngineExt = JitsiEngine & {
+  listMediaDevices?: () => Promise<Partial<MediaDevicesResult> | null | undefined>;
+  applyInputDevices?: (devices: InputDevices) => Promise<void>;
+  setBackgroundPrefs?: (prefs: BackgroundPrefs) => void;
+  setBackgroundEffect?: (prefs: BackgroundPrefs) => Promise<void>;
+  setAudioOutputDevice?: (id: string) => Promise<void> | void;
+  sendReaction?: (type: ReactionType) => void;
+  registerVideoElement?: (pid: string, el: HTMLVideoElement, kind: string) => void;
+  setVisibleVideoParticipants?: (ids: string[]) => void;
+};
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+function str(v: unknown): string {
+  return typeof v === "string" ? v : "";
+}
+
+function num(v: unknown): number {
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
 
 function Icon({
   name,
@@ -91,13 +165,13 @@ const reactionEmoji: Record<ReactionType, string> = {
 };
 
 // ✅ helpers for infinite schedule parsing
-function safeParseJson(raw: any) {
+function safeParseJson(raw: unknown): unknown | null {
   if (!raw) return null;
   if (typeof raw === "string") {
     const s = raw.trim();
     if (!s || s === "undefined" || s === "null") return null;
     try {
-      return JSON.parse(s);
+      return JSON.parse(s) as unknown;
     } catch {
       return null;
     }
@@ -107,7 +181,7 @@ function safeParseJson(raw: any) {
 
 /** ✅ parse "50/5/5" (or "50-5-5") schedule stored as a string. */
 function parse50505(
-  raw: any
+  raw: unknown
 ): { focus: number; break: number; intentions: number } | null {
   if (typeof raw !== "string") return null;
   const s = raw.trim();
@@ -120,58 +194,51 @@ function parse50505(
   const br = Number(m[2]);
   const intentions = Number(m[3]);
 
-  if (
-    !Number.isFinite(focus) ||
-    !Number.isFinite(br) ||
-    !Number.isFinite(intentions)
-  )
-    return null;
+  if (!Number.isFinite(focus) || !Number.isFinite(br) || !Number.isFinite(intentions)) return null;
   if (focus <= 0 || br <= 0 || intentions <= 0) return null;
 
   return { focus, break: br, intentions };
 }
 
-function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: number }[] {
+function normalizeInfinitePhases(anyPhases: unknown): { name: string; seconds: number }[] {
   if (!anyPhases) return [];
 
-  const toSeconds = (raw: any): number => {
-    const explicitSeconds =
-      Number(raw?.seconds) ||
-      Number(raw?.duration_seconds) ||
-      Number(raw?.durationSeconds);
-    if (explicitSeconds > 0) return explicitSeconds;
+  const toSeconds = (raw: unknown): number => {
+    if (isRecord(raw)) {
+      const explicitSeconds =
+        num(raw.seconds) || num(raw.duration_seconds) || num(raw.durationSeconds);
+      if (explicitSeconds > 0) return explicitSeconds;
 
-    const explicitMinutes =
-      Number(raw?.minutes) ||
-      Number(raw?.mins) ||
-      Number(raw?.duration_minutes) ||
-      Number(raw?.durationMinutes);
-    if (explicitMinutes > 0) return explicitMinutes * 60;
+      const explicitMinutes =
+        num(raw.minutes) || num(raw.mins) || num(raw.duration_minutes) || num(raw.durationMinutes);
+      if (explicitMinutes > 0) return explicitMinutes * 60;
 
-    const n =
-      typeof raw === "number"
-        ? raw
-        : Number(raw?.duration ?? raw?.value ?? raw ?? 0);
+      const n = num(raw.duration ?? raw.value ?? raw);
+      if (!Number.isFinite(n) || n <= 0) return 0;
 
+      if (n <= 180) return n * 60; // assume minutes
+      return n; // assume seconds
+    }
+
+    const n = num(raw);
     if (!Number.isFinite(n) || n <= 0) return 0;
-
     if (n <= 180) return n * 60;
     return n;
   };
 
   if (Array.isArray(anyPhases)) {
     return anyPhases
-      .map((p: any) => {
-        const name = String(p?.name || p?.key || p?.type || "");
+      .map((p) => {
+        const name = isRecord(p) ? str(p.name || p.key || p.type) : "";
         const seconds = toSeconds(p);
         return { name, seconds };
       })
       .filter((x) => x.seconds > 0);
   }
 
-  if (typeof anyPhases === "object") {
+  if (isRecord(anyPhases)) {
     return Object.entries(anyPhases)
-      .map(([k, v]: any) => {
+      .map(([k, v]) => {
         const name = String(k || "");
         const seconds =
           typeof v === "number"
@@ -189,10 +256,8 @@ function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: numbe
 
 function phaseToStageType(phaseNameLower: string): Stage["type"] {
   if (phaseNameLower.includes("focus")) return "focus";
-  if (phaseNameLower.includes("checkin") || phaseNameLower.includes("intention"))
-    return "intentions";
-  if (phaseNameLower.includes("break") || phaseNameLower.includes("rest"))
-    return "break";
+  if (phaseNameLower.includes("checkin") || phaseNameLower.includes("intention")) return "intentions";
+  if (phaseNameLower.includes("break") || phaseNameLower.includes("rest")) return "break";
   return "focus";
 }
 
@@ -210,21 +275,23 @@ function loadStoredMediaSettings(): RoomMediaSettings | null {
   try {
     const raw = localStorage.getItem(MEDIA_SETTINGS_KEY);
     if (!raw) return null;
-    const obj = JSON.parse(raw);
-    if (!obj || typeof obj !== "object") return null;
 
-    const bgMode =
-      obj.bgMode === "blur" || obj.bgMode === "image" || obj.bgMode === "none"
-        ? obj.bgMode
+    const objUnknown: unknown = JSON.parse(raw);
+    if (!isRecord(objUnknown)) return null;
+
+    const bgModeRaw = str(objUnknown.bgMode).toLowerCase();
+    const bgMode: RoomMediaSettings["bgMode"] =
+      bgModeRaw === "blur" || bgModeRaw === "image" || bgModeRaw === "none"
+        ? (bgModeRaw as RoomMediaSettings["bgMode"])
         : "none";
 
     return {
-      videoInputId: String(obj.videoInputId || ""),
-      audioInputId: String(obj.audioInputId || ""),
-      audioOutputId: String(obj.audioOutputId || "default"),
+      videoInputId: str(objUnknown.videoInputId || ""),
+      audioInputId: str(objUnknown.audioInputId || ""),
+      audioOutputId: str(objUnknown.audioOutputId || "default") || "default",
       bgMode,
-      bgImageUrl: obj.bgImageUrl ? String(obj.bgImageUrl) : undefined,
-    } as RoomMediaSettings;
+      bgImageUrl: objUnknown.bgImageUrl ? str(objUnknown.bgImageUrl) : undefined,
+    };
   } catch {
     return null;
   }
@@ -234,6 +301,11 @@ function saveStoredMediaSettings(s: RoomMediaSettings) {
   try {
     localStorage.setItem(MEDIA_SETTINGS_KEY, JSON.stringify(s));
   } catch { }
+}
+
+function getTemplateFirst(tpl: SessionRow["session_templates"]): SessionTemplate | null {
+  if (!tpl) return null;
+  return Array.isArray(tpl) ? tpl[0] ?? null : tpl;
 }
 
 export function RoomPage() {
@@ -256,21 +328,29 @@ export function RoomPage() {
 
   // theme tokens
   const pageBg = isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white";
-  const topBarBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#111827]/40 border border-white/5";
-  const chipBg = isLight ? "bg-black/5 border border-black/10" : "bg-[#0B1220]/70 border border-white/5";
+  const topBarBg = isLight
+    ? "bg-white/85 border border-black/10"
+    : "bg-[#111827]/40 border border-white/5";
+  const chipBg = isLight
+    ? "bg-black/5 border border-black/10"
+    : "bg-[#0B1220]/70 border border-white/5";
   const subtleText = isLight ? "text-black/55" : "text-[#9CA3AF]";
   const strongText = isLight ? "text-black/85" : "text-[#F3F4F6]/90";
-  const panelBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#0B1220]/55 border border-white/5";
-  const bottomBarBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#07101E]/85 border border-white/10";
+  const panelBg = isLight
+    ? "bg-white/85 border border-black/10"
+    : "bg-[#0B1220]/55 border border-white/5";
+  const bottomBarBg = isLight
+    ? "bg-white/85 border border-black/10"
+    : "bg-[#07101E]/85 border border-white/10";
   const ctlBtnBase = isLight ? "bg-black/5 hover:bg-black/10" : "bg-[#111827] hover:bg-[#1f2937]";
 
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const [devices, setDevices] = useState<{
-    videoInputs: MediaDeviceInfo[];
-    audioInputs: MediaDeviceInfo[];
-    audioOutputs: MediaDeviceInfo[];
-  }>({ videoInputs: [], audioInputs: [], audioOutputs: [] });
+  const [devices, setDevices] = useState<MediaDevicesResult>({
+    videoInputs: [],
+    audioInputs: [],
+    audioOutputs: [],
+  });
 
   const [mediaSettings, setMediaSettings] = useState<RoomMediaSettings>(() => {
     const stored = loadStoredMediaSettings();
@@ -288,7 +368,7 @@ export function RoomPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const [session, setSession] = useState<any>(null);
+  const [session, setSession] = useState<SessionRow | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [selectedAudioOutputId, setSelectedAudioOutputId] = useState<string>(() => {
@@ -308,7 +388,7 @@ export function RoomPage() {
   const [stagebarStartTime, setStagebarStartTime] = useState<string>("");
   const [stagebarCycleSeconds, setStagebarCycleSeconds] = useState<number | undefined>(undefined);
 
-  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [selectedUser, setSelectedUser] = useState<HostProfile | null>(null);
 
   const [userName, setUserName] = useState<string>("");
   const [lastErr, setLastErr] = useState<string>("");
@@ -370,36 +450,27 @@ export function RoomPage() {
     if (parse50505(raw)) return true;
 
     const parsed = safeParseJson(raw);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+    if (!isRecord(parsed)) return false;
 
-    const kind = String((parsed as any)?.kind || "").toLowerCase();
+    const kind = str(parsed.kind).toLowerCase();
     if (kind === "infinite_room") return true;
     if (kind.includes("infinite")) return true;
 
-    if ((parsed as any)?.timer?.phases) return true;
-    if ((parsed as any)?.timer?.segments) return true;
-    if ((parsed as any)?.phases) return true;
-    if ((parsed as any)?.segments) return true;
+    if (isRecord(parsed.timer) && (parsed.timer.phases || parsed.timer.segments)) return true;
+    if (parsed.phases || parsed.segments) return true;
 
     return false;
   }, [session]);
 
   // SILENT ROOM DETECTION
   const isSilentRoom = useMemo(() => {
-    const fmt = String(session?.format || "").toLowerCase();
-    const title = String(session?.title || "").toLowerCase();
+    const fmt = str(session?.format).toLowerCase();
+    const title = str(session?.title).toLowerCase();
 
-    const tpl = session?.session_templates;
-    const tplName =
-      Array.isArray(tpl)
-        ? String(tpl?.[0]?.name || tpl?.[0]?.title || "")
-        : String(tpl?.name || tpl?.title || "");
-    const tplKey =
-      Array.isArray(tpl)
-        ? String(tpl?.[0]?.key || tpl?.[0]?.slug || tpl?.[0]?.type || "")
-        : String(tpl?.key || tpl?.slug || tpl?.type || "");
-    const tplFmt =
-      Array.isArray(tpl) ? String(tpl?.[0]?.format || "") : String(tpl?.format || "");
+    const tpl0 = getTemplateFirst(session?.session_templates ?? null);
+    const tplName = str(tpl0?.name || tpl0?.title).toLowerCase();
+    const tplKey = str(tpl0?.key || tpl0?.slug || tpl0?.type).toLowerCase();
+    const tplFmt = str(tpl0?.format).toLowerCase();
 
     const hay = `${fmt} ${title} ${tplName} ${tplKey} ${tplFmt}`.toLowerCase();
     return hay.includes("silent");
@@ -457,15 +528,16 @@ export function RoomPage() {
   // DEVICES
   const loadDevices = async () => {
     try {
-      const engine = engineRef.current;
-      if (!engine) return;
+      const engineBase = engineRef.current;
+      if (!engineBase) return;
 
-      const res = await (engine as any).listMediaDevices?.();
+      const engine = engineBase as unknown as JitsiEngineExt;
+      const res = await engine.listMediaDevices?.();
       if (!res) return;
 
-      const vIn = res.videoInputs || [];
-      const aIn = res.audioInputs || [];
-      const aOut = res.audioOutputs || [];
+      const vIn = res.videoInputs ?? [];
+      const aIn = res.audioInputs ?? [];
+      const aOut = res.audioOutputs ?? [];
 
       setDevices({ videoInputs: vIn, audioInputs: aIn, audioOutputs: aOut });
 
@@ -494,35 +566,36 @@ export function RoomPage() {
         .single();
 
       if (data && !error) {
-        setSession(data);
+        const s = data as unknown as SessionRow;
+        setSession(s);
 
         setStages([]);
         setStagebarCycleSeconds(undefined);
         setStagebarStartTime("");
 
-        const fallbackStart = String(data?.start_time || data?.created_at || new Date().toISOString());
+        const fallbackStart = String(s?.start_time || s?.created_at || new Date().toISOString());
 
-        let parsed: any = safeParseJson(data.schedule);
+        let parsed: unknown = safeParseJson(s.schedule);
 
         if (!parsed) {
-          const t = parse50505(data.schedule);
+          const t = parse50505(s.schedule);
           if (t) {
             parsed = {
               kind: "infinite_room",
               timer: { phases: { focus: t.focus, break: t.break, intentions: t.intentions } },
-              anchor_ts: data?.start_time || data?.created_at || fallbackStart,
+              anchor_ts: s?.start_time || s?.created_at || fallbackStart,
             };
           }
         }
 
         // ✅ unwrap Session Studio / wrapper objects -> blocks array
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        if (isRecord(parsed)) {
           const maybeBlocks =
-            (parsed as any)?.blocks ||
-            (parsed as any)?.script ||
-            (parsed as any)?.agenda ||
-            (parsed as any)?.items ||
-            (parsed as any)?.stages;
+            parsed.blocks ||
+            parsed.script ||
+            parsed.agenda ||
+            parsed.items ||
+            parsed.stages;
 
           if (Array.isArray(maybeBlocks)) parsed = maybeBlocks;
         }
@@ -530,20 +603,22 @@ export function RoomPage() {
         // ✅ legacy array schedule (and Session Studio array)
         if (Array.isArray(parsed)) {
           const formatted: Stage[] = parsed
-            .map((b: any) => {
+            .map((b): Stage | null => {
+              const blk = isRecord(b) ? b : null;
+              if (!blk) return null;
+
               const rawName =
-                b?.name ??
-                b?.title ??
-                b?.label ??
-                b?.text ??
-                b?.key ??
+                str(blk.name) ||
+                str(blk.title) ||
+                str(blk.label) ||
+                str(blk.text) ||
+                str(blk.key) ||
                 "Stage";
 
-              const lower = String(rawName).toLowerCase();
+              const lower = rawName.toLowerCase();
 
               const inferredType: Stage["type"] =
-                b?.type ||
-                b?.category ||
+                (str(blk.type) || str(blk.category)) ||
                 (lower.includes("welcome") || lower.includes("intro")
                   ? "intro"
                   : lower.includes("intention") || lower.includes("checkin")
@@ -557,53 +632,56 @@ export function RoomPage() {
                           : "focus");
 
               const minutes =
-                Number(b?.minutes) ||
-                Number(b?.mins) ||
-                Number(b?.duration_minutes) ||
-                Number(b?.durationMinutes) ||
-                Number(b?.durationMin) ||
-                Number(b?.duration) ||
+                num(blk.minutes) ||
+                num(blk.mins) ||
+                num(blk.duration_minutes) ||
+                num(blk.durationMinutes) ||
+                num(blk.durationMin) ||
+                num(blk.duration) ||
                 0;
 
               const seconds =
-                Number(b?.seconds) ||
-                Number(b?.durationSeconds) ||
-                Number(b?.duration_seconds) ||
+                num(blk.seconds) ||
+                num(blk.durationSeconds) ||
+                num(blk.duration_seconds) ||
                 0;
 
+              const durationSeconds = seconds > 0 ? seconds : minutes > 0 ? minutes * 60 : 0;
+              const displayMinutes =
+                minutes > 0 ? minutes : seconds > 0 ? Math.max(1, Math.round(seconds / 60)) : 0;
+
+              if (durationSeconds <= 0 || displayMinutes <= 0) return null;
+
+              const color = str(blk.color) || STAGE_COLORS[inferredType] || "#F63135";
+
               return {
-                name: String(rawName),
-                duration: Math.max(0, minutes),
-                color: String(b?.color || STAGE_COLORS[inferredType] || "#F63135"),
+                name: rawName,
+                duration: displayMinutes,
+                color,
                 type: inferredType,
-                ...(seconds > 0 ? { durationSeconds: seconds } : {}),
-              } as any;
+                durationSeconds,
+              };
             })
-            .filter((s) => (Number((s as any)?.duration) || 0) > 0);
+            .filter((x): x is Stage => !!x);
 
           setStages(formatted);
-          setStagebarStartTime(String(data.start_time || fallbackStart));
+          setStagebarStartTime(String(s.start_time || fallbackStart));
           setStagebarCycleSeconds(undefined);
         }
 
         // infinite object schedule
         const isInfiniteScheduleObject =
-          parsed &&
-          typeof parsed === "object" &&
-          !Array.isArray(parsed) &&
-          (String((parsed as any)?.kind || "").toLowerCase().includes("infinite") ||
-            (parsed as any)?.timer?.phases ||
-            (parsed as any)?.timer?.segments ||
-            (parsed as any)?.phases ||
-            (parsed as any)?.segments);
+          isRecord(parsed) &&
+          (str(parsed.kind).toLowerCase().includes("infinite") ||
+            (isRecord(parsed.timer) && (parsed.timer.phases || parsed.timer.segments)) ||
+            !!parsed.phases ||
+            !!parsed.segments);
 
-        if (isInfiniteScheduleObject) {
+        if (isInfiniteScheduleObject && isRecord(parsed)) {
+          const timer = isRecord(parsed.timer) ? parsed.timer : null;
+
           const phasesRaw =
-            (parsed as any)?.timer?.phases ||
-            (parsed as any)?.timer?.segments ||
-            (parsed as any)?.phases ||
-            (parsed as any)?.segments ||
-            null;
+            (timer?.phases ?? timer?.segments ?? parsed.phases ?? parsed.segments) ?? null;
 
           const phases = normalizeInfinitePhases(phasesRaw);
 
@@ -623,32 +701,36 @@ export function RoomPage() {
             const seconds = Number(p.seconds) || 0;
             const minutes = Math.max(1, Math.round(seconds / 60));
 
-            return ({
+            return {
               name: displayName,
               duration: minutes,
               color: STAGE_COLORS[type] || "#F63135",
               type,
               durationSeconds: seconds,
-            } as any) as Stage;
+            };
           });
 
           setStages(formatted);
 
           const anchor = String(
-            (parsed as any)?.anchor_ts ||
-            (parsed as any)?.anchorTs ||
-            data?.start_time ||
+            str(parsed.anchor_ts) ||
+            str(parsed.anchorTs) ||
+            str(s?.start_time) ||
             fallbackStart
           );
           setStagebarStartTime(anchor);
 
           const sumSeconds = phases.reduce((acc, p) => acc + (Number(p.seconds) || 0), 0);
 
+          const timerCycle =
+            timer && isRecord(timer)
+              ? num(timer.cycle_seconds) || num(timer.cycleSeconds)
+              : 0;
+
           let cycleSeconds =
-            Number((parsed as any)?.timer?.cycle_seconds) ||
-            Number((parsed as any)?.timer?.cycleSeconds) ||
-            Number((parsed as any)?.cycle_seconds) ||
-            Number((parsed as any)?.cycleSeconds) ||
+            timerCycle ||
+            num(parsed.cycle_seconds) ||
+            num(parsed.cycleSeconds) ||
             0;
 
           if (!cycleSeconds || cycleSeconds <= 0) cycleSeconds = sumSeconds;
@@ -672,13 +754,13 @@ export function RoomPage() {
       setAuthUserId(u?.id || null);
 
       let name =
-        u?.user_metadata?.full_name ||
-        u?.user_metadata?.name ||
+        str(u?.user_metadata?.full_name) ||
+        str(u?.user_metadata?.name) ||
         (u?.email ? u.email.split("@")[0] : "");
 
       if (!name && u?.id) {
         const { data: p } = await supabase.from("profiles").select("full_name").eq("id", u.id).single();
-        name = p?.full_name || "";
+        name = str((p as unknown as { full_name?: unknown } | null)?.full_name);
       }
 
       setUserName(name);
@@ -705,8 +787,9 @@ export function RoomPage() {
 
         const updated = list.map((p) => {
           if (!p.isLocal && p.displayName === "Guest") {
-            if (session?.host_profile?.full_name && session.host_profile.id === p.id) {
-              return { ...p, displayName: session.host_profile.full_name };
+            const hp = session.host_profile;
+            if (hp?.full_name && hp.id === p.id) {
+              return { ...p, displayName: hp.full_name };
             }
           }
           return p;
@@ -740,15 +823,17 @@ export function RoomPage() {
     try {
       engine.mediaSettings.videoInputId = mediaSettings.videoInputId || "";
       engine.mediaSettings.audioInputId = mediaSettings.audioInputId || "";
-      engine.setAudioOutputDevice?.(mediaSettings.audioOutputId || "default");
-      (engine as any).setBackgroundPrefs?.({
+
+      const engineExt = engine as unknown as JitsiEngineExt;
+      engineExt.setAudioOutputDevice?.(mediaSettings.audioOutputId || "default");
+      engineExt.setBackgroundPrefs?.({
         mode: mediaSettings.bgMode,
         imageUrl: mediaSettings.bgImageUrl,
       });
     } catch { }
 
     engineRef.current = engine;
-    (window as any).engine = engine;
+    (window as unknown as { engine?: JitsiEngine }).engine = engine;
 
     const roomNameRaw =
       session.jitsi_room_name ||
@@ -768,9 +853,10 @@ export function RoomPage() {
 
     engine
       .initAndJoin(safeRoomName || `session-${session.id}`, userName || "Guest")
-      .catch((e) => {
+      .catch((e: unknown) => {
         console.error("initAndJoin error", e);
-        setLastErr(String(e?.message || e));
+        const msg = isRecord(e) ? str(e.message) : "";
+        setLastErr(msg || String(e));
       });
 
     return () => {
@@ -780,18 +866,19 @@ export function RoomPage() {
         .finally(() => {
           engineRef.current = null;
           try {
-            delete (window as any).engine;
+            delete (window as unknown as { engine?: JitsiEngine }).engine;
           } catch { }
         });
       stopWelcomeLoop();
     };
-  }, [session, userName]);
+  }, [session, userName, mediaSettings]);
 
   // APPLY MEDIA SETTINGS
   const applyMediaSettings = async (next: RoomMediaSettings) => {
     try {
-      const engine = engineRef.current as any;
-      if (!engine) return;
+      const base = engineRef.current;
+      if (!base) return;
+      const engine = base as unknown as JitsiEngineExt;
 
       await engine.applyInputDevices?.({
         videoInputId: next.videoInputId,
@@ -808,7 +895,7 @@ export function RoomPage() {
       }
 
       try {
-        engine.setAudioOutputDevice?.(next.audioOutputId);
+        await engine.setAudioOutputDevice?.(next.audioOutputId);
       } catch (e) {
         console.warn("setAudioOutputDevice warning:", e);
       }
@@ -855,14 +942,10 @@ export function RoomPage() {
     const startMs = new Date(stagebarStartTime).getTime();
     if (Number.isNaN(startMs)) return;
 
-    const stageSeconds = stages.map((s: any) => {
-      const sec =
-        Number(s?.durationSeconds) ||
-        Number(s?.duration_seconds) ||
-        Number(s?.seconds) ||
-        0;
+    const stageSeconds = stages.map((s) => {
+      const sec = Number(s.durationSeconds || 0);
       if (sec > 0) return sec;
-      const mins = Number(s?.duration) || 0;
+      const mins = Number(s.duration || 0);
       return mins > 0 ? mins * 60 : 0;
     });
 
@@ -884,6 +967,8 @@ export function RoomPage() {
       let total = 0;
       let active = 0;
 
+      let found = false;
+
       for (let i = 0; i < stages.length; i++) {
         const dur = stageSeconds[i] || 0;
         const next = total + dur;
@@ -893,13 +978,17 @@ export function RoomPage() {
         if (diffSec < next) {
           active = i;
           const rem = next - diffSec;
-          setRemainingTime(
-            `${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`
-          );
+          setRemainingTime(`${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`);
+          found = true;
           break;
         }
+
         total = next;
         active = i;
+      }
+
+      if (!found && !isInfiniteRoom) {
+        setRemainingTime("0:00");
       }
 
       setCurrentStage(active);
@@ -908,7 +997,7 @@ export function RoomPage() {
         const stage = stages[active];
 
         if (!firstTickDoneRef.current) {
-          if (stage.type === "intro") startWelcomeLoop();
+          if (stage?.type === "intro") startWelcomeLoop();
           else stopWelcomeLoop();
 
           prevStageRef.current = active;
@@ -919,7 +1008,7 @@ export function RoomPage() {
         if (prevStageRef.current !== active) {
           const prev = stages[prevStageRef.current];
           const prevType = prev?.type;
-          const newType = stage.type;
+          const newType = stage?.type;
 
           if (prevType === "break" && newType !== "break") playOneShot(BREAK_END_SOUND);
 
@@ -927,14 +1016,16 @@ export function RoomPage() {
             startWelcomeLoop();
           } else {
             stopWelcomeLoop();
-            const sound = STAGE_SOUND_MAP[newType];
-            if (sound) playOneShot(sound);
+            if (newType) {
+              const sound = STAGE_SOUND_MAP[newType];
+              if (sound) playOneShot(sound);
+            }
           }
 
           prevStageRef.current = active;
         }
 
-        if (stage.type !== "intro" && welcomeLoopRef.current) stopWelcomeLoop();
+        if (stage?.type !== "intro" && welcomeLoopRef.current) stopWelcomeLoop();
       }
     }, 1000);
 
@@ -975,7 +1066,11 @@ export function RoomPage() {
     setLocalReactions((prev) => [...prev, { id: rid, type }]);
 
     try {
-      (engineRef.current as any)?.sendReaction?.(type);
+      const base = engineRef.current;
+      if (base) {
+        const eng = base as unknown as JitsiEngineExt;
+        eng.sendReaction?.(type);
+      }
     } catch { }
 
     setTimeout(() => {
@@ -1106,7 +1201,7 @@ export function RoomPage() {
                 {/* Host indicator (theme-aware icon) */}
                 {session.host_profile && (
                   <button
-                    onClick={() => setSelectedUser(session.host_profile)}
+                    onClick={() => setSelectedUser(session.host_profile || null)}
                     className={`max-[480px]:hidden flex items-center gap-2 px-3 py-1.5 rounded-xl border transition font-inter text-[13px] ${isLight
                         ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
                         : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
@@ -1129,10 +1224,10 @@ export function RoomPage() {
               <div className="mt-3 w-full overflow-hidden">
                 <div className="w-full overflow-hidden">
                   <SessionStageBar
-                    stages={stages as any}
+                    stages={stages}
                     startTime={stagebarStartTime}
                     cycleSeconds={stagebarCycleSeconds}
-                    onHoverStage={setHoveredStage as any}
+                    onHoverStage={setHoveredStage}
                   />
                 </div>
               </div>
@@ -1164,11 +1259,19 @@ export function RoomPage() {
                 incomingReactions={incomingReactions}
                 localReactions={localReactions}
                 showControls={false}
-                onVisibleVideoIdsChange={(ids) => engineRef.current?.setVisibleVideoParticipants(ids)}
+                onVisibleVideoIdsChange={(ids: string[]) => {
+                  const base = engineRef.current;
+                  if (!base) return;
+                  const eng = base as unknown as JitsiEngineExt;
+                  eng.setVisibleVideoParticipants?.(ids);
+                }}
                 audioOutputId={selectedAudioOutputId}
-                onRegisterVideoElement={(pid, el, kind) => {
+                onRegisterVideoElement={(pid: string, el: HTMLVideoElement, kind: string) => {
                   try {
-                    (engineRef.current as any)?.registerVideoElement?.(pid, el, kind);
+                    const base = engineRef.current;
+                    if (!base) return;
+                    const eng = base as unknown as JitsiEngineExt;
+                    eng.registerVideoElement?.(pid, el, kind);
                   } catch { }
                 }}
               />
@@ -1201,7 +1304,9 @@ export function RoomPage() {
                     </div>
                     <button
                       onClick={() => openRightTab(null)}
-                      className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
+                          ? "bg-black/5 hover:bg-black/10 text-black/60"
+                          : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
                         }`}
                       title="Close"
                     >
@@ -1210,15 +1315,15 @@ export function RoomPage() {
                   </div>
 
                   <div className="p-4">
-                    <div className={`rounded-xl px-3 py-2 ${isLight ? "bg-black/5 border border-black/10" : "bg-[#0B1220]/70 border border-white/10"
-                      }`}>
+                    <div
+                      className={`rounded-xl px-3 py-2 ${isLight ? "bg-black/5 border border-black/10" : "bg-[#0B1220]/70 border border-white/10"
+                        }`}
+                    >
                       <input
                         value={participantsSearch}
                         onChange={(e) => setParticipantsSearch(e.target.value)}
                         placeholder="Search participants..."
-                        className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${isLight
-                            ? "text-black/80 placeholder:text-black/40"
-                            : "text-white/85 placeholder:text-white/35"
+                        className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${isLight ? "text-black/80 placeholder:text-black/40" : "text-white/85 placeholder:text-white/35"
                           }`}
                       />
                     </div>
@@ -1309,9 +1414,7 @@ export function RoomPage() {
                   <div className={`p-4 border-t ${isLight ? "border-black/10" : "border-white/5"}`}>
                     <button
                       onClick={() => { }}
-                      className={`w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 ${isLight
-                          ? "bg-blue-600 hover:bg-blue-700 text-white"
-                          : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
+                      className={`w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 ${isLight ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
                         }`}
                     >
                       <span className="text-lg">+</span>
@@ -1333,7 +1436,9 @@ export function RoomPage() {
                     </div>
                     <button
                       onClick={() => openRightTab(null)}
-                      className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
+                          ? "bg-black/5 hover:bg-black/10 text-black/60"
+                          : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
                         }`}
                       title="Close"
                     >
@@ -1358,7 +1463,9 @@ export function RoomPage() {
                     </div>
                     <button
                       onClick={() => openRightTab(null)}
-                      className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
+                          ? "bg-black/5 hover:bg-black/10 text-black/60"
+                          : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
                         }`}
                       title="Close"
                     >
