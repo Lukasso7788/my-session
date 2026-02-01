@@ -479,7 +479,7 @@ function P2PLayout({
                     theme={theme}
                     participant={p}
                     forceAspect={true}
-                    fit="cover"
+                    fit="contain"
                     onRegisterVideoElement={onRegisterVideoElement}
                 />
             ))}
