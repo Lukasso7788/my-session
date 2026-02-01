@@ -395,10 +395,12 @@ function GridLayout({
     pageParticipants: JitsiParticipant[];
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
 }) {
-    const { cols } = useMemo(
+    const { cols, rows } = useMemo(
         () => computeGrid(pageParticipants.length),
         [pageParticipants.length]
     );
+
+    const maxW = cols === 1 ? 900 : cols === 2 ? 1200 : cols === 3 ? 1500 : 1800;
 
     // gap-3 = 0.75rem = 12px (в дефолтном tailwind)
     const GAP_PX = 12;
@@ -414,42 +416,45 @@ function GridLayout({
     const lastRow = pageParticipants.slice(fullCount);
 
     return (
-        <div
-            className="w-full h-full grid gap-3 p-3 min-h-0 place-content-center place-items-center"
-            style={{
-                gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-                gridAutoRows: "auto", // ✅ НЕ 1fr, чтобы не тянуло по высоте
-            }}
-        >
-            {/* Полные строки (всё кратно cols) */}
-            {fullRows.map((p) => (
-                <div key={p.id} className="w-full">
-                    <ParticipantTile
-                        theme={theme}
-                        participant={p}
-                        forceAspect={true}     // ✅ 16:9
-                        fit="cover"            // ✅ без "пустых полей", можно заменить на "contain" если хочешь без кропа
-                        onRegisterVideoElement={onRegisterVideoElement}
-                    />
-                </div>
-            ))}
+        <div className="w-full h-full min-h-0 overflow-hidden flex items-center justify-center p-3">
+            <div
+                className="w-full h-full min-h-0 grid gap-3 max-h-full"
+                style={{
+                    maxWidth: maxW,
+                    gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+                    gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`, // <-- ключ к “не распирает”
+                }}
+            >
+                {/* Полные строки */}
+                {fullRows.map((p) => (
+                    <div key={p.id} className="w-full h-full min-w-0 min-h-0">
+                        <ParticipantTile
+                            theme={theme}
+                            participant={p}
+                            forceAspect={false}    // <-- ключ к “не распирает”
+                            fit="cover"
+                            onRegisterVideoElement={onRegisterVideoElement}
+                        />
+                    </div>
+                ))}
 
-            {/* Последняя неполная строка — центрируем как "hug" */}
-            {lastRow.length > 0 && (
-                <div className="col-span-full w-full flex justify-center gap-3">
-                    {lastRow.map((p) => (
-                        <div key={p.id} className="shrink-0" style={{ width: oneColWidth }}>
-                            <ParticipantTile
-                                theme={theme}
-                                participant={p}
-                                forceAspect={true}
-                                fit="cover"
-                                onRegisterVideoElement={onRegisterVideoElement}
-                            />
-                        </div>
-                    ))}
-                </div>
-            )}
+                {/* Последняя неполная строка — центрируем */}
+                {lastRow.length > 0 && (
+                    <div className="col-span-full w-full h-full flex justify-center items-center gap-3">
+                        {lastRow.map((p) => (
+                            <div key={p.id} className="shrink-0 h-full" style={{ width: oneColWidth }}>
+                                <ParticipantTile
+                                    theme={theme}
+                                    participant={p}
+                                    forceAspect={false} // <-- тоже
+                                    fit="cover"
+                                    onRegisterVideoElement={onRegisterVideoElement}
+                                />
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
         </div>
     );
 }
@@ -466,23 +471,26 @@ function P2PLayout({
     const count = pageParticipants.length;
 
     return (
-        <div
-            className="w-full h-full grid gap-3 p-3 min-h-0"
-            style={{
-                gridTemplateColumns: count <= 1 ? "1fr" : "1fr 1fr",
-                gridTemplateRows: "1fr",
-            }}
-        >
-            {pageParticipants.map((p) => (
-                <ParticipantTile
-                    key={p.id}
-                    theme={theme}
-                    participant={p}
-                    forceAspect={true}
-                    fit="contain"
-                    onRegisterVideoElement={onRegisterVideoElement}
-                />
-            ))}
+        <div className="w-full h-full min-h-0 overflow-hidden flex items-center justify-center p-3">
+            <div
+                className="w-full h-full min-h-0 grid gap-3 max-w-[1200px]"
+                style={{
+                    gridTemplateColumns: count <= 1 ? "1fr" : "1fr 1fr",
+                    gridTemplateRows: "1fr",
+                }}
+            >
+                {pageParticipants.map((p) => (
+                    <div key={p.id} className="w-full h-full min-w-0 min-h-0">
+                        <ParticipantTile
+                            theme={theme}
+                            participant={p}
+                            forceAspect={false}     // <-- важно: НЕ aspect-video, иначе опять начнёт ломать высоту
+                            fit="cover"
+                            onRegisterVideoElement={onRegisterVideoElement}
+                        />
+                    </div>
+                ))}
+            </div>
         </div>
     );
 }
@@ -850,7 +858,7 @@ export function VideoRoom(props: VideoRoomProps) {
         <div className="relative w-full h-full flex flex-col min-h-0">
             <AudioSink participants={participants} />
 
-            <div className="flex-1 relative min-h-0">
+            <div className="flex-1 relative min-h-0 overflow-hidden">
                 {!screenSharer && (
                     <>
                         {isMobile ? (
