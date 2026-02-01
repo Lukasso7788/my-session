@@ -58,7 +58,14 @@ function Icon({
     alt = "",
     theme = "dark",
 }: {
-    name: "mic-on" | "mic-off" | "camera-on" | "camera-off" | "screen-share" | "reaction" | "leave";
+    name:
+    | "mic-on"
+    | "mic-off"
+    | "camera-on"
+    | "camera-off"
+    | "screen-share"
+    | "reaction"
+    | "leave";
     className?: string;
     alt?: string;
     theme?: "dark" | "light";
@@ -101,7 +108,7 @@ function attachTrackToMedia(
 ) {
     if (!track || !element) return;
 
-    // ✅ safety: detach before attach (avoid double attachments / stale streams)
+    // safety: detach before attach
     try {
         track.detach?.(element);
     } catch { }
@@ -200,6 +207,101 @@ function useMediaQuery(query: string) {
     return matches;
 }
 
+function clamp(n: number, min: number, max: number) {
+    return Math.max(min, Math.min(max, n));
+}
+
+// Measure element size via ResizeObserver (no deps)
+function useElementSize<T extends HTMLElement>() {
+    const [el, setEl] = useState<T | null>(null);
+    const [size, setSize] = useState({ w: 0, h: 0 });
+
+    const ref = useCallback((node: T | null) => {
+        setEl(node);
+    }, []);
+
+    useEffect(() => {
+        if (!el) return;
+
+        const measure = () => {
+            const r = el.getBoundingClientRect();
+            setSize({ w: r.width, h: r.height });
+        };
+
+        measure();
+
+        if (typeof (window as any).ResizeObserver === "undefined") {
+            // fallback
+            window.addEventListener("resize", measure);
+            return () => window.removeEventListener("resize", measure);
+        }
+
+        const ro = new ResizeObserver(() => measure());
+        ro.observe(el);
+
+        return () => ro.disconnect();
+    }, [el]);
+
+    return { ref, size };
+}
+
+type BestGrid = {
+    cols: number;
+    rows: number;
+    tileW: number;
+    tileH: number;
+};
+
+function computeBestGrid({
+    count,
+    maxCols,
+    W,
+    H,
+    gap,
+    aspectW = 16,
+    aspectH = 9,
+}: {
+    count: number;
+    maxCols: number;
+    W: number;
+    H: number;
+    gap: number;
+    aspectW?: number;
+    aspectH?: number;
+}): BestGrid {
+    const safeW = Math.max(0, W);
+    const safeH = Math.max(0, H);
+
+    if (count <= 0 || safeW <= 0 || safeH <= 0) {
+        return { cols: 1, rows: 1, tileW: 0, tileH: 0 };
+    }
+
+    const maxC = Math.max(1, Math.min(maxCols, count));
+
+    let best: BestGrid = { cols: 1, rows: count, tileW: 0, tileH: 0 };
+    let bestScore = -1;
+
+    for (let cols = 1; cols <= maxC; cols++) {
+        const rows = Math.ceil(count / cols);
+
+        const widthLimited = (safeW - gap * (cols - 1)) / cols;
+        const heightLimitedW =
+            ((safeH - gap * (rows - 1)) / rows) * (aspectW / aspectH);
+
+        const tileW = Math.max(0, Math.min(widthLimited, heightLimitedW));
+        const tileH = tileW * (aspectH / aspectW);
+
+        const score = tileW * tileH; // maximize area
+
+        if (score > bestScore) {
+            bestScore = score;
+            best = { cols, rows, tileW, tileH };
+        }
+    }
+
+    return best;
+}
+
 // ----------------------- Audio sink (playback only) -----------------------
 function AudioSinkItem({ p }: { p: JitsiParticipant }) {
     const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -240,17 +342,15 @@ function AudioSink({ participants }: { participants: JitsiParticipant[] }) {
     );
 }
 
-// ----------------------- Tiles -----------------------
+// ----------------------- Tile -----------------------
 function ParticipantTile({
     theme,
     participant,
-    forceAspect = false,
-    fit = "contain",
+    fit = "cover",
     onRegisterVideoElement,
 }: {
     theme: "dark" | "light";
     participant: JitsiParticipant;
-    forceAspect?: boolean;
     fit?: "contain" | "cover";
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
 }) {
@@ -259,7 +359,6 @@ function ParticipantTile({
     const hasVideoTrack = !!participant.videoTrack;
     const streamV = useTrackStreamVersion(participant.videoTrack);
 
-    // ✅ IMPORTANT: register <video> element so engine can "black video recovery" reattach correctly
     const handleVideoRef = useCallback(
         (el: HTMLVideoElement | null) => {
             videoRef.current = el;
@@ -274,7 +373,6 @@ function ParticipantTile({
         };
     }, [onRegisterVideoElement, participant.id]);
 
-    // ✅ attach/detach via helper
     useEffect(() => {
         const el = videoRef.current;
         if (!el) return;
@@ -304,12 +402,10 @@ function ParticipantTile({
     return (
         <div
             className={
-                "relative overflow-hidden flex items-center justify-center " +
+                "relative w-full h-full overflow-hidden rounded-2xl flex items-center justify-center " +
                 ringClass +
                 " " +
-                tileBaseBg +
-                " " +
-                (forceAspect ? "w-full aspect-video rounded-2xl" : "w-full h-full rounded-2xl")
+                tileBaseBg
             }
         >
             <video
@@ -318,14 +414,15 @@ function ParticipantTile({
                 playsInline
                 muted={participant.isLocal}
                 className={
-                    `absolute inset-0 w-full h-full ${objectClass} transition-opacity duration-150 ` +
+                    `absolute inset-0 w-full h-full ${objectClass} object-center transition-opacity duration-150 ` +
                     (hideVideo ? "opacity-0" : "opacity-100")
                 }
             />
 
-            {/* ✅ Placeholder overlay: centered + NO "Camera off" */}
             {showPlaceholder && (
-                <div className={`absolute inset-0 flex flex-col items-center justify-center text-center ${placeholderBg}`}>
+                <div
+                    className={`absolute inset-0 flex flex-col items-center justify-center text-center ${placeholderBg}`}
+                >
                     <div className="relative w-16 h-16 rounded-full overflow-hidden border border-black/10">
                         <img
                             src={PLACEHOLDER_AVATAR_URL}
@@ -357,12 +454,9 @@ function ParticipantTile({
                             theme={theme}
                         />
                     </div>
-
-                    {/* ❌ убрали полностью "Camera off" */}
                 </div>
             )}
 
-            {/* Bottom label */}
             <div
                 className={`absolute left-3 bottom-3 rounded-lg px-2 py-1 text-[11px] flex items-center gap-2 ${labelBg}`}
             >
@@ -378,123 +472,7 @@ function ParticipantTile({
     );
 }
 
-// ----------------------- Layout helpers -----------------------
-function computeGrid(count: number) {
-    if (count <= 1) return { cols: 1, rows: 1 };
-    const cols = Math.min(4, Math.ceil(Math.sqrt(count)));
-    const rows = Math.ceil(count / cols);
-    return { cols, rows };
-}
-
-function GridLayout({
-    theme,
-    pageParticipants,
-    onRegisterVideoElement,
-}: {
-    theme: "dark" | "light";
-    pageParticipants: JitsiParticipant[];
-    onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
-}) {
-    const { cols, rows } = useMemo(
-        () => computeGrid(pageParticipants.length),
-        [pageParticipants.length]
-    );
-
-    const maxW = cols === 1 ? 900 : cols === 2 ? 1200 : cols === 3 ? 1500 : 1800;
-
-    // gap-3 = 0.75rem = 12px (в дефолтном tailwind)
-    const GAP_PX = 12;
-
-    const count = pageParticipants.length;
-    const remainder = cols > 0 ? count % cols : 0;
-    const fullCount = remainder === 0 ? count : count - remainder;
-
-    // ширина "одной колонки" внутри полной ширины строки
-    const oneColWidth = `calc((100% - ${(cols - 1) * GAP_PX}px) / ${cols})`;
-
-    const fullRows = pageParticipants.slice(0, fullCount);
-    const lastRow = pageParticipants.slice(fullCount);
-
-    return (
-        <div className="w-full h-full min-h-0 overflow-hidden flex items-center justify-center p-3">
-            <div
-                className="w-full h-full min-h-0 grid gap-3 max-h-full"
-                style={{
-                    maxWidth: maxW,
-                    gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-                    gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`, // <-- ключ к “не распирает”
-                }}
-            >
-                {/* Полные строки */}
-                {fullRows.map((p) => (
-                    <div key={p.id} className="w-full h-full min-w-0 min-h-0">
-                        <ParticipantTile
-                            theme={theme}
-                            participant={p}
-                            forceAspect={false}    // <-- ключ к “не распирает”
-                            fit="cover"
-                            onRegisterVideoElement={onRegisterVideoElement}
-                        />
-                    </div>
-                ))}
-
-                {/* Последняя неполная строка — центрируем */}
-                {lastRow.length > 0 && (
-                    <div className="col-span-full w-full h-full flex justify-center items-center gap-3">
-                        {lastRow.map((p) => (
-                            <div key={p.id} className="shrink-0 h-full" style={{ width: oneColWidth }}>
-                                <ParticipantTile
-                                    theme={theme}
-                                    participant={p}
-                                    forceAspect={false} // <-- тоже
-                                    fit="cover"
-                                    onRegisterVideoElement={onRegisterVideoElement}
-                                />
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
-        </div>
-    );
-}
-
-function P2PLayout({
-    theme,
-    pageParticipants,
-    onRegisterVideoElement,
-}: {
-    theme: "dark" | "light";
-    pageParticipants: JitsiParticipant[];
-    onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
-}) {
-    const count = pageParticipants.length;
-
-    return (
-        <div className="w-full h-full min-h-0 overflow-hidden flex items-center justify-center p-3">
-            <div
-                className="w-full h-full min-h-0 grid gap-3 max-w-[1200px]"
-                style={{
-                    gridTemplateColumns: count <= 1 ? "1fr" : "1fr 1fr",
-                    gridTemplateRows: "1fr",
-                }}
-            >
-                {pageParticipants.map((p) => (
-                    <div key={p.id} className="w-full h-full min-w-0 min-h-0">
-                        <ParticipantTile
-                            theme={theme}
-                            participant={p}
-                            forceAspect={false}     // <-- важно: НЕ aspect-video, иначе опять начнёт ломать высоту
-                            fit="cover"
-                            onRegisterVideoElement={onRegisterVideoElement}
-                        />
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-}
-
+// ----------------------- Layouts -----------------------
 function MobileStackLayout({
     theme,
     pageParticipants,
@@ -512,15 +490,92 @@ function MobileStackLayout({
             style={{ paddingBottom: paddingBottomPx }}
         >
             {pageParticipants.map((p) => (
-                <ParticipantTile
+                <div
                     key={p.id}
-                    theme={theme}
-                    participant={p}
-                    forceAspect={true}
-                    fit="cover"
-                    onRegisterVideoElement={onRegisterVideoElement}
-                />
+                    className="w-full"
+                    style={{
+                        aspectRatio: "16 / 9",
+                        // на всякий: не даём схлопнуться даже в супер-узких случаях
+                        minHeight: 160,
+                    }}
+                >
+                    <ParticipantTile
+                        theme={theme}
+                        participant={p}
+                        fit="cover"
+                        onRegisterVideoElement={onRegisterVideoElement}
+                    />
+                </div>
             ))}
+        </div>
+    );
+}
+
+/**
+ * Desktop/tablet: auto-fit grid that maximizes tile size AND guarantees fit in container.
+ * Works great on 1024 / 1366 / 1440 / 1920 and with side panels.
+ */
+function AutoFitGridLayout({
+    theme,
+    pageParticipants,
+    maxCols = 4,
+    onRegisterVideoElement,
+}: {
+    theme: "dark" | "light";
+    pageParticipants: JitsiParticipant[];
+    maxCols?: number;
+    onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
+}) {
+    const { ref, size } = useElementSize<HTMLDivElement>();
+
+    const GAP = 12; // gap-3
+    const PAD = 12; // p-3
+
+    const count = pageParticipants.length;
+
+    // available inner rect (minus padding)
+    const innerW = Math.max(0, size.w - PAD * 2);
+    const innerH = Math.max(0, size.h - PAD * 2);
+
+    const best = useMemo(() => {
+        // for small counts, cap columns sensibly:
+        const cappedMaxCols = Math.max(1, Math.min(maxCols, count));
+        return computeBestGrid({
+            count,
+            maxCols: cappedMaxCols,
+            W: innerW,
+            H: innerH,
+            gap: GAP,
+            aspectW: 16,
+            aspectH: 9,
+        });
+    }, [count, innerW, innerH, maxCols]);
+
+    // hard clamps to avoid ultra tiny tiles when container is still measuring
+    const tileW = clamp(best.tileW || 0, 220, innerW || 220);
+    const tileH = (tileW * 9) / 16;
+
+    return (
+        <div ref={ref} className="w-full h-full min-h-0 overflow-hidden">
+            <div className="w-full h-full min-h-0 overflow-hidden flex flex-wrap items-center justify-center gap-3 p-3">
+                {pageParticipants.map((p) => (
+                    <div
+                        key={p.id}
+                        className="shrink-0"
+                        style={{
+                            width: tileW,
+                            height: tileH,
+                        }}
+                    >
+                        <ParticipantTile
+                            theme={theme}
+                            participant={p}
+                            fit="cover"
+                            onRegisterVideoElement={onRegisterVideoElement}
+                        />
+                    </div>
+                ))}
+            </div>
         </div>
     );
 }
@@ -536,6 +591,8 @@ function ScreenShareLayoutDesktop({
     others: JitsiParticipant[];
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
 }) {
+    const { ref, size } = useElementSize<HTMLDivElement>();
+
     const screenVideoRef = useRef<HTMLVideoElement | null>(null);
     const screenTrackId = useMemo(
         () => safeTrackId(screenSharer.screenTrack),
@@ -543,7 +600,6 @@ function ScreenShareLayoutDesktop({
     );
     const screenStreamV = useTrackStreamVersion(screenSharer.screenTrack);
 
-    // ✅ use callback ref to guarantee registration happens when element exists
     const handleScreenRef = useCallback(
         (el: HTMLVideoElement | null) => {
             screenVideoRef.current = el;
@@ -569,8 +625,11 @@ function ScreenShareLayoutDesktop({
             ? "bg-white/90 border border-black/10 text-black/80"
             : "bg-black/45 border border-white/10 text-white/80";
 
+    // responsive side column width (works better on laptops)
+    const sideW = clamp((size.w || 1100) * 0.22, 180, 260);
+
     return (
-        <div className="relative w-full h-full flex flex-row gap-3 p-3 min-h-0">
+        <div ref={ref} className="relative w-full h-full flex flex-row gap-3 p-3 min-h-0">
             <div
                 className={`relative flex-1 overflow-hidden rounded-2xl ${theme === "light"
                     ? "bg-white ring-1 ring-black/10"
@@ -600,13 +659,19 @@ function ScreenShareLayoutDesktop({
                 </div>
             </div>
 
-            <div className="flex flex-col gap-3 w-56 min-h-0">
+            <div className="flex flex-col gap-3 min-h-0" style={{ width: sideW }}>
                 {others.map((p) => (
-                    <div key={p.id} className="h-[140px] w-full">
+                    <div
+                        key={p.id}
+                        className="w-full shrink-0"
+                        style={{
+                            aspectRatio: "16 / 9",
+                            minHeight: 90,
+                        }}
+                    >
                         <ParticipantTile
                             theme={theme}
                             participant={p}
-                            forceAspect={false}
                             fit="cover"
                             onRegisterVideoElement={onRegisterVideoElement}
                         />
@@ -668,10 +733,11 @@ function ScreenShareLayoutMobile({
             style={{ paddingBottom: paddingBottomPx }}
         >
             <div
-                className={`w-full aspect-video overflow-hidden rounded-2xl ${theme === "light"
+                className={`w-full overflow-hidden rounded-2xl ${theme === "light"
                     ? "bg-white ring-1 ring-black/10"
                     : "bg-[#0B1220] ring-1 ring-white/10"
                     } relative`}
+                style={{ aspectRatio: "16 / 9", minHeight: 180 }}
             >
                 <video
                     ref={handleScreenRef}
@@ -697,14 +763,18 @@ function ScreenShareLayoutMobile({
             </div>
 
             {others.map((p) => (
-                <ParticipantTile
+                <div
                     key={p.id}
-                    theme={theme}
-                    participant={p}
-                    forceAspect={true}
-                    fit="cover"
-                    onRegisterVideoElement={onRegisterVideoElement}
-                />
+                    className="w-full"
+                    style={{ aspectRatio: "16 / 9", minHeight: 160 }}
+                >
+                    <ParticipantTile
+                        theme={theme}
+                        participant={p}
+                        fit="cover"
+                        onRegisterVideoElement={onRegisterVideoElement}
+                    />
+                </div>
             ))}
         </div>
     );
@@ -758,8 +828,6 @@ export function VideoRoom(props: VideoRoomProps) {
         [participants]
     );
 
-    const isP2P = useMemo(() => participants.length <= 2, [participants.length]);
-
     const localParticipant = useMemo(
         () => participants.find((p) => p.isLocal) || null,
         [participants]
@@ -775,6 +843,7 @@ export function VideoRoom(props: VideoRoomProps) {
         () => Math.max(0, baseParticipants.length - PAGE_SIZE),
         [baseParticipants.length]
     );
+
     const canScroll = useMemo(
         () => baseParticipants.length > PAGE_SIZE,
         [baseParticipants.length]
@@ -801,6 +870,7 @@ export function VideoRoom(props: VideoRoomProps) {
         const visibleList = screenSharer
             ? [screenSharer, ...screenOthers]
             : pageParticipants;
+
         return visibleList
             .map((p) => p.id)
             .filter((id) => id && id !== localParticipant?.id);
@@ -867,16 +937,11 @@ export function VideoRoom(props: VideoRoomProps) {
                                 pageParticipants={pageParticipants}
                                 onRegisterVideoElement={onRegisterVideoElement}
                             />
-                        ) : isP2P ? (
-                            <P2PLayout
-                                theme={theme}
-                                pageParticipants={pageParticipants}
-                                onRegisterVideoElement={onRegisterVideoElement}
-                            />
                         ) : (
-                            <GridLayout
+                            <AutoFitGridLayout
                                 theme={theme}
                                 pageParticipants={pageParticipants}
+                                maxCols={4}
                                 onRegisterVideoElement={onRegisterVideoElement}
                             />
                         )}
@@ -985,7 +1050,7 @@ export function VideoRoom(props: VideoRoomProps) {
                             <Icon
                                 name={isAudioMuted ? "mic-off" : "mic-on"}
                                 className="w-5 h-5"
-                                theme={isAudioMuted ? "dark" : theme}   // ✅ mic-off всегда белая
+                                theme={isAudioMuted ? "dark" : theme}
                             />
                         </button>
 
