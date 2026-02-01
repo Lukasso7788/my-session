@@ -1,9 +1,10 @@
 // src/pages/RoomPage.tsx
 // ROOMPAGE + JITSI ENGINE + VIDEO UI (FIXED)
-// ✅ Fix: Jitsi init effect MUST NOT depend on mediaSettings (prevents dispose/re-init loop -> "conference not)
-// ✅ Fix: propagate theme to global html class (tailwind class-based dark mode) so Chat/Intentions adapt
-// ✅ Fix: layout height lock (h-screen + overflow-hidden) + min-h-0 chain
-// ✅ Fix: mobile right-panel overlays video (like RoomPageIFrame) so it doesn't increase page height
+// ✅ Fix: grid row must be minmax(0,1fr) (grid-rows-1) so right panel content (Chat) can't grow the page -> video tiles won't "fall down"
+// ✅ Fix: enforce h-full/min-h-0 chain on BOTH grid items (video + right panel) + overflow-hidden on desktop panel wrapper
+// ✅ Fix: propagate theme to html + body AND data-theme + color-scheme so Chat/Intentions can reliably pick it up
+// ✅ Fix: kick layout recalculation when right panel toggles (dispatch resize) + ResizeObserver hook for container changes
+// ✅ Fix: remove "double header" for chat (keep only close button row; also pass embedded/hideHeader props defensively)
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -112,21 +113,21 @@ function Icon({
   alt = "",
 }: {
   name:
-  | "mic-on"
-  | "mic-off"
-  | "camera-on"
-  | "camera-off"
-  | "screen-share"
-  | "reaction"
-  | "leave"
-  | "participants"
-  | "chat"
-  | "intentions"
-  | "settings"
-  | "theme-sun"
-  | "theme-moon"
-  | "timer"
-  | "host_session_icon";
+    | "mic-on"
+    | "mic-off"
+    | "camera-on"
+    | "camera-off"
+    | "screen-share"
+    | "reaction"
+    | "leave"
+    | "participants"
+    | "chat"
+    | "intentions"
+    | "settings"
+    | "theme-sun"
+    | "theme-moon"
+    | "timer"
+    | "host_session_icon";
   theme: RoomTheme;
   className?: string;
   alt?: string;
@@ -323,11 +324,24 @@ export function RoomPage() {
     } catch { }
   }, [theme]);
 
-  // ✅ CRITICAL: sync tailwind dark-mode class to make Chat/Intentions adapt
+  // ✅ CRITICAL: propagate theme to html + body (tailwind class-based dark mode)
+  // ✅ Also set data-theme + color-scheme (some components read it)
   useEffect(() => {
     try {
       const root = document.documentElement;
-      root.classList.toggle("dark", theme === "dark");
+      const body = document.body;
+
+      const isDark = theme === "dark";
+
+      root.classList.toggle("dark", isDark);
+      body.classList.toggle("dark", isDark);
+
+      root.setAttribute("data-theme", theme);
+      body.setAttribute("data-theme", theme);
+
+      // helpful for inputs/scrollbars and some UI libs
+      (root.style as unknown as { colorScheme?: string }).colorScheme = theme;
+      (body.style as unknown as { colorScheme?: string }).colorScheme = theme;
     } catch { }
   }, [theme]);
 
@@ -456,6 +470,25 @@ export function RoomPage() {
       return tab;
     });
   };
+
+  // ✅ Layout recalculation: when panel toggles, some video layouts only recompute on resize
+  useEffect(() => {
+    const fire = () => {
+      try {
+        window.dispatchEvent(new Event("resize"));
+      } catch { }
+    };
+
+    // rAF + a couple delayed kicks for CSS grid settling
+    requestAnimationFrame(fire);
+    const t1 = window.setTimeout(fire, 60);
+    const t2 = window.setTimeout(fire, 220);
+
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+    };
+  }, [rightPanelOpen, rightTab]);
 
   // detect infinite room
   const isInfiniteRoom = useMemo(() => {
@@ -1168,9 +1201,42 @@ export function RoomPage() {
     );
   }
 
+  // ✅ video container ref + ResizeObserver to keep layouts stable
+  const videoWrapRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const el = videoWrapRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      window.cancelAnimationFrame(raf);
+      raf = window.requestAnimationFrame(() => {
+        try {
+          window.dispatchEvent(new Event("resize"));
+        } catch { }
+      });
+    });
+
+    ro.observe(el);
+
+    return () => {
+      window.cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, []);
+
   // Right panel body (re-used for desktop & mobile overlay)
   const RightPanelBody = (
-    <div className={`rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col ${panelBg}`}>
+    <div
+      className={[
+        "rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col",
+        panelBg,
+        // extra safety: local dark context for panels
+        theme === "dark" ? "dark" : "",
+      ].join(" ")}
+      data-theme={theme}
+    >
       {/* participants */}
       {rightTab === "participants" && (
         <div className="h-full min-h-0 flex flex-col">
@@ -1189,8 +1255,8 @@ export function RoomPage() {
             <button
               onClick={() => openRightTab(null)}
               className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                  ? "bg-black/5 hover:bg-black/10 text-black/60"
-                  : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                ? "bg-black/5 hover:bg-black/10 text-black/60"
+                : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
                 }`}
               title="Close"
             >
@@ -1311,18 +1377,16 @@ export function RoomPage() {
       {/* chat */}
       {rightTab === "chat" && (
         <div className="h-full min-h-0 flex flex-col">
+          {/* ✅ remove double header: keep only close control row (no title text) */}
           <div
-            className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
+            className={`px-4 py-3 border-b flex items-center justify-end ${isLight ? "border-black/10" : "border-white/5"
               }`}
           >
-            <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>
-              Chat
-            </div>
             <button
               onClick={() => openRightTab(null)}
               className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                  ? "bg-black/5 hover:bg-black/10 text-black/60"
-                  : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                ? "bg-black/5 hover:bg-black/10 text-black/60"
+                : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
                 }`}
               title="Close"
             >
@@ -1330,14 +1394,27 @@ export function RoomPage() {
             </button>
           </div>
 
-          {/* ✅ critical: min-h-0 + overflow-hidden so Chat doesn't stretch page */}
+          {/* ✅ critical: min-h-0 + overflow-hidden so Chat can't stretch the grid row */}
           <div className="flex-1 min-h-0 p-4 overflow-hidden">
             <div
               className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight ? "bg-white/70 border border-black/10" : "bg-[#020617]/40 border border-white/10"
                 }`}
             >
-              <div className="h-full min-h-0">
-                {session?.id ? <ChatPanel sessionId={session.id} /> : null}
+              {/* force ChatPanel root to be h-full/min-h-0 */}
+              <div className="h-full min-h-0 flex flex-col overflow-hidden [&>*]:h-full [&>*]:min-h-0">
+                {session?.id ? (
+                  <ChatPanel
+                    sessionId={session.id}
+                    {...({
+                      theme,
+                      mode: theme,
+                      appearance: theme,
+                      embedded: true,
+                      hideHeader: true,
+                      showHeader: false,
+                    } as any)}
+                  />
+                ) : null}
               </div>
             </div>
           </div>
@@ -1357,8 +1434,8 @@ export function RoomPage() {
             <button
               onClick={() => openRightTab(null)}
               className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                  ? "bg-black/5 hover:bg-black/10 text-black/60"
-                  : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                ? "bg-black/5 hover:bg-black/10 text-black/60"
+                : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
                 }`}
               title="Close"
             >
@@ -1372,8 +1449,15 @@ export function RoomPage() {
               className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight ? "bg-white/70 border border-black/10" : "bg-[#020617]/40 border border-white/10"
                 }`}
             >
-              <div className="h-full min-h-0 overflow-y-auto">
-                <IntentionsPanel />
+              <div className="h-full min-h-0 overflow-y-auto [&>*]:min-h-0">
+                <IntentionsPanel
+                  {...({
+                    theme,
+                    mode: theme,
+                    appearance: theme,
+                    embedded: true,
+                  } as any)}
+                />
               </div>
             </div>
           </div>
@@ -1431,8 +1515,8 @@ export function RoomPage() {
                   <button
                     onClick={() => setSelectedUser(session.host_profile || null)}
                     className={`max-[480px]:hidden flex items-center gap-2 px-3 py-1.5 rounded-xl border transition font-inter text-[13px] ${isLight
-                        ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                        : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                      ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                      : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                       }`}
                   >
                     <Icon name="host_session_icon" theme={theme} className="h-5 w-5 opacity-90" alt="" />
@@ -1466,13 +1550,15 @@ export function RoomPage() {
         {/* MAIN AREA */}
         <div
           className={
-            "relative grid gap-5 flex-1 min-h-0 " +
+            // ✅ IMPORTANT: force the single row to minmax(0,1fr) so content can't expand height
+            "relative grid grid-rows-1 gap-5 flex-1 min-h-0 h-full " +
             (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
           }
         >
           {/* VIDEO AREA */}
           <div
-            className={`relative rounded-2xl overflow-hidden min-h-0 ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
+            ref={videoWrapRef}
+            className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
               }`}
           >
             <div className="w-full h-full min-h-0">
@@ -1514,7 +1600,7 @@ export function RoomPage() {
 
           {/* DESKTOP RIGHT PANEL */}
           {rightPanelOpen && (
-            <div className="hidden lg:block min-h-0">
+            <div className="hidden lg:block min-h-0 h-full overflow-hidden">
               {RightPanelBody}
             </div>
           )}
@@ -1528,7 +1614,7 @@ export function RoomPage() {
                 onClick={() => openRightTab(null)}
               />
               {/* panel (over video) */}
-              <div className="absolute inset-x-0 top-0 bottom-0 p-2">
+              <div className="absolute inset-x-0 top-0 bottom-0 p-2 min-h-0">
                 {RightPanelBody}
               </div>
             </div>
