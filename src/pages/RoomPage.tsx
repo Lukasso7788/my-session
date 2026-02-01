@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { IntentionsPanel } from "../components/IntentionsPanel";
-import { ChatPanel } from "../components/ChatPanel";
+import ChatPanel from "../components/ChatPanel";
 import { SessionStageBar } from "../components/SessionStageBar";
 import { supabase } from "../lib/supabase";
 import { UserProfileModal } from "../components/UserProfileModal";
@@ -113,21 +113,21 @@ function Icon({
   alt = "",
 }: {
   name:
-    | "mic-on"
-    | "mic-off"
-    | "camera-on"
-    | "camera-off"
-    | "screen-share"
-    | "reaction"
-    | "leave"
-    | "participants"
-    | "chat"
-    | "intentions"
-    | "settings"
-    | "theme-sun"
-    | "theme-moon"
-    | "timer"
-    | "host_session_icon";
+  | "mic-on"
+  | "mic-off"
+  | "camera-on"
+  | "camera-off"
+  | "screen-share"
+  | "reaction"
+  | "leave"
+  | "participants"
+  | "chat"
+  | "intentions"
+  | "settings"
+  | "theme-sun"
+  | "theme-moon"
+  | "timer"
+  | "host_session_icon";
   theme: RoomTheme;
   className?: string;
   alt?: string;
@@ -1403,17 +1403,14 @@ export function RoomPage() {
               {/* force ChatPanel root to be h-full/min-h-0 */}
               <div className="h-full min-h-0 flex flex-col overflow-hidden [&>*]:h-full [&>*]:min-h-0">
                 {session?.id ? (
-                  <ChatPanel
-                    sessionId={session.id}
-                    {...({
-                      theme,
-                      mode: theme,
-                      appearance: theme,
-                      embedded: true,
-                      hideHeader: true,
-                      showHeader: false,
-                    } as any)}
-                  />
+                  <div data-theme={theme} style={{ colorScheme: theme }} className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}>
+                    <ChatPanel
+                      key={`chat-${session.id}-${theme}`}
+                      sessionId={session.id}
+                      theme={theme}
+                      showHeader={false}
+                    />
+                  </div>
                 ) : null}
               </div>
             </div>
@@ -1450,14 +1447,14 @@ export function RoomPage() {
                 }`}
             >
               <div className="h-full min-h-0 overflow-y-auto [&>*]:min-h-0">
-                <IntentionsPanel
-                  {...({
-                    theme,
-                    mode: theme,
-                    appearance: theme,
-                    embedded: true,
-                  } as any)}
-                />
+                <div data-theme={theme} style={{ colorScheme: theme }} className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}>
+                  <IntentionsPanel
+                    key={`intentions-${session.id}-${theme}`}
+                    theme={theme}
+                    sessionId={session.id}
+                    timerText={remainingTime || "--:--"}
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -1467,7 +1464,7 @@ export function RoomPage() {
   );
 
   return (
-    <div className={`h-screen overflow-hidden ${pageBg}`}>
+    <div className={`h-[100dvh] overflow-hidden ${pageBg}`}>
       {/* ✅ full-height column layout */}
       <div className="h-full w-full px-3 sm:px-5 pt-5 pb-[calc(110px+env(safe-area-inset-bottom))] flex flex-col gap-5 min-h-0">
         {/* TOP BAR */}
