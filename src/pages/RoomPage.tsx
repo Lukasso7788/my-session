@@ -1406,10 +1406,11 @@ export function RoomPage() {
                 {session?.id ? (
                   <div data-theme={theme} style={{ colorScheme: theme }} className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}>
                     <ChatPanel
-                      key={`chat-${session.id}-${theme}`}
-                      sessionId={session.id}
+                      sessionId={sessionId}
                       theme={theme}
-                      showHeader={false}
+                      showHeader={false} // если хочешь без сабтайтла
+                      title="Chat"
+                      onClose={() => setChatOpen(false)}
                     />
                   </div>
                 ) : null}

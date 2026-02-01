@@ -182,7 +182,11 @@ function MessageCard({
                                             }}
                                             className={
                                                 "hover:scale-[1.06] transition " +
-                                                (isMine ? (isLight ? "drop-shadow-[0_0_0.6rem_rgba(16,185,129,0.35)]" : "drop-shadow-[0_0_0.7rem_rgba(16,185,129,0.25)]") : "")
+                                                (isMine
+                                                    ? (isLight
+                                                        ? "drop-shadow-[0_0_0.6rem_rgba(16,185,129,0.35)]"
+                                                        : "drop-shadow-[0_0_0.7rem_rgba(16,185,129,0.25)]")
+                                                    : "")
                                             }
                                             title={isMine ? `Remove ${e}` : e}
                                             type="button"
@@ -234,12 +238,25 @@ function MessageCard({
 export function ChatPanel({
     sessionId,
     theme = "dark",
+
+    // IMPORTANT: showHeader теперь управляет только сабтайтлом,
+    // а заголовок "Chat" мы показываем ВСЕГДА (чтобы он не пропадал).
     showHeader = true,
+
+    title = "Chat",
+    subtitle = "All messages for this session",
+
+    onClose, // NEW: если хочешь крестик сверху — прокинь сюда
     onBecameVisible, // ✅ NEW
 }: {
     sessionId: string;
     theme?: RoomTheme;
     showHeader?: boolean;
+
+    title?: string;
+    subtitle?: string;
+
+    onClose?: () => void;
     onBecameVisible?: () => void; // ✅ NEW
 }) {
     const isLight = theme === "light";
@@ -297,7 +314,6 @@ export function ChatPanel({
     // ✅ inform parent that chat became visible
     useEffect(() => {
         onBecameVisible?.();
-        // also reset "new messages" bubble on mount
         setUnseenNew(0);
     }, [onBecameVisible, sessionId]);
 
@@ -306,6 +322,10 @@ export function ChatPanel({
     const titleText = isLight ? "text-black/85" : "text-white/85";
     const subText = isLight ? "text-black/50" : "text-white/45";
 
+    const headerCloseBtnCls = isLight
+        ? "bg-black/5 hover:bg-black/10 text-black/60"
+        : "bg-white/5 hover:bg-white/10 text-white/70";
+
     const replyBoxCls = isLight ? "bg-black/5 border-black/10" : "bg-white/5 border-white/10";
     const replyingLabel = "text-[11px] text-emerald-500/90 font-medium";
     const replyingText = isLight ? "text-black/55" : "text-white/55";
@@ -313,18 +333,6 @@ export function ChatPanel({
     const cancelBtnCls = isLight
         ? "bg-black/5 hover:bg-black/10 text-black/60"
         : "bg-[#111827] hover:bg-[#1f2937] text-white/70";
-
-    const textareaCls = isLight
-        ? `
-      bg-white border border-black/10
-      text-black/85 placeholder:text-black/35
-      focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
-    `
-        : `
-      bg-[#0B1220]/70 border border-white/10
-      text-white/85 placeholder:text-white/35
-      focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
-    `;
 
     const hintText = isLight ? "text-black/40" : "text-white/35";
 
@@ -479,8 +487,6 @@ export function ChatPanel({
                     return [...prev, merged];
                 });
 
-                // if user is not at bottom => show "new messages" bubble
-                // ignore my own messages for bubble
                 if (!beforeAtBottom && row.user_id !== userId) {
                     setUnseenNew((n) => Math.min(99, n + 1));
                 }
@@ -573,7 +579,7 @@ export function ChatPanel({
         if (shouldScroll) {
             scrollToBottom("smooth");
             setUnseenNew(0);
-            onBecameVisible?.(); // treat as "read" when we are at bottom
+            onBecameVisible?.();
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [messages.length]);
@@ -597,7 +603,6 @@ export function ChatPanel({
                 ({ id: userId, full_name: "You", avatar_url: null } as any),
         };
 
-        // before sending, assume we want to stay at bottom
         atBottomRef.current = true;
 
         setMessages((prev) => [...prev, optimistic]);
@@ -619,9 +624,6 @@ export function ChatPanel({
         }
     };
 
-    // toggle reaction:
-    // - if already reacted => delete
-    // - else insert
     const toggleReaction = async (messageId: string, emoji: string) => {
         if (!userId || !sessionId) return;
 
@@ -681,7 +683,6 @@ export function ChatPanel({
 
             if (error) {
                 console.warn("removeReaction error:", error);
-                // let realtime refresh fix
             }
             return;
         }
@@ -694,10 +695,12 @@ export function ChatPanel({
         });
 
         if (error) {
-            // if unique violation (already exists) => treat as toggle remove
             const code = (error as any)?.code;
             const msg = String((error as any)?.message || "");
-            const isDup = code === "23505" || msg.toLowerCase().includes("duplicate") || msg.toLowerCase().includes("unique");
+            const isDup =
+                code === "23505" ||
+                msg.toLowerCase().includes("duplicate") ||
+                msg.toLowerCase().includes("unique");
 
             if (isDup) {
                 await supabase
@@ -711,7 +714,6 @@ export function ChatPanel({
             }
 
             console.warn("addReaction error:", error);
-            // let realtime refresh fix
         }
     };
 
@@ -719,13 +721,31 @@ export function ChatPanel({
 
     return (
         <div className="h-full flex flex-col bg-transparent min-h-0 relative">
-            {/* HEADER (optional) */}
-            {showHeader && (
-                <div className={"px-5 py-4 border-b " + headerBorder}>
-                    <div className={titleText + " font-inter font-semibold"}>Chat</div>
-                    <div className={subText + " text-[12px]"}>All messages for this session</div>
+            {/* HEADER — ВСЕГДА показываем title, чтобы он не пропадал */}
+            <div className={"px-5 " + (showHeader ? "py-4" : "py-3") + " border-b " + headerBorder}>
+                <div className="flex items-center justify-between gap-3">
+                    <div className={titleText + " font-inter font-semibold truncate min-w-0"}>
+                        {title}
+                    </div>
+
+                    {onClose && (
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className={"w-9 h-9 rounded-xl flex items-center justify-center transition " + headerCloseBtnCls}
+                            title="Close"
+                        >
+                            <X size={18} />
+                        </button>
+                    )}
                 </div>
-            )}
+
+                {showHeader && (
+                    <div className={subText + " text-[12px] mt-0.5"}>
+                        {subtitle}
+                    </div>
+                )}
+            </div>
 
             {/* LIST */}
             <div
@@ -740,10 +760,16 @@ export function ChatPanel({
                     }
                 }}
             >
-                {loading && <div className={(isLight ? "text-black/45" : "text-white/40") + " text-sm italic"}>Loading…</div>}
+                {loading && (
+                    <div className={(isLight ? "text-black/45" : "text-white/40") + " text-sm italic"}>
+                        Loading…
+                    </div>
+                )}
 
                 {!loading && uiMessages.length === 0 && (
-                    <div className={(isLight ? "text-black/45" : "text-white/40") + " text-sm italic"}>No messages yet</div>
+                    <div className={(isLight ? "text-black/45" : "text-white/40") + " text-sm italic"}>
+                        No messages yet
+                    </div>
                 )}
 
                 {uiMessages.map((m) => (
@@ -812,14 +838,14 @@ export function ChatPanel({
                     onChange={(e) => setText(e.target.value)}
                     placeholder="Write a message…"
                     className={`
-            w-full min-h-[48px] max-h-[160px]
-            rounded-xl resize-none
-            px-3 py-3 text-[13px]
-            outline-none focus:outline-none
-            ${isLight
+                        w-full min-h-[48px] max-h-[160px]
+                        rounded-xl resize-none
+                        px-3 py-3 text-[13px]
+                        outline-none focus:outline-none
+                        ${isLight
                             ? "bg-white border border-black/10 text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
                             : "bg-[#0B1220]/70 border border-white/10 text-white/85 placeholder:text-white/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"}
-          `}
+                    `}
                     onKeyDown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey) {
                             e.preventDefault();
@@ -827,7 +853,6 @@ export function ChatPanel({
                         }
                     }}
                     onFocus={() => {
-                        // focusing composer usually means user wants newest
                         if (isAtBottom()) {
                             onBecameVisible?.();
                         }

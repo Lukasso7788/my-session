@@ -58,14 +58,7 @@ function Icon({
     alt = "",
     theme = "dark",
 }: {
-    name:
-    | "mic-on"
-    | "mic-off"
-    | "camera-on"
-    | "camera-off"
-    | "screen-share"
-    | "reaction"
-    | "leave";
+    name: "mic-on" | "mic-off" | "camera-on" | "camera-off" | "screen-share" | "reaction" | "leave";
     className?: string;
     alt?: string;
     theme?: "dark" | "light";
@@ -108,7 +101,7 @@ function attachTrackToMedia(
 ) {
     if (!track || !element) return;
 
-    // safety: detach before attach
+    // ✅ safety: detach before attach (avoid double attachments / stale streams)
     try {
         track.detach?.(element);
     } catch { }
@@ -207,99 +200,40 @@ function useMediaQuery(query: string) {
     return matches;
 }
 
-function clamp(n: number, min: number, max: number) {
-    return Math.max(min, Math.min(max, n));
-}
-
-// Measure element size via ResizeObserver (no deps)
+/** Measure an element (width/height) via ResizeObserver (fallback to window resize). */
 function useElementSize<T extends HTMLElement>() {
-    const [el, setEl] = useState<T | null>(null);
-    const [size, setSize] = useState({ w: 0, h: 0 });
+    const [node, setNode] = useState<T | null>(null);
+    const [size, setSize] = useState({ width: 0, height: 0 });
 
-    const ref = useCallback((node: T | null) => {
-        setEl(node);
+    const ref = useCallback((el: T | null) => {
+        setNode(el);
     }, []);
 
     useEffect(() => {
-        if (!el) return;
+        if (!node) return;
 
-        const measure = () => {
-            const r = el.getBoundingClientRect();
-            setSize({ w: r.width, h: r.height });
+        const update = () => {
+            const r = node.getBoundingClientRect();
+            setSize({
+                width: Math.round(r.width),
+                height: Math.round(r.height),
+            });
         };
 
-        measure();
+        update();
 
-        if (typeof (window as any).ResizeObserver === "undefined") {
-            // fallback
-            window.addEventListener("resize", measure);
-            return () => window.removeEventListener("resize", measure);
+        const RO: any = (window as any).ResizeObserver;
+        if (RO) {
+            const ro = new RO(() => update());
+            ro.observe(node);
+            return () => ro.disconnect();
         }
 
-        const ro = new ResizeObserver(() => measure());
-        ro.observe(el);
+        window.addEventListener("resize", update);
+        return () => window.removeEventListener("resize", update);
+    }, [node]);
 
-        return () => ro.disconnect();
-    }, [el]);
-
-    return { ref, size };
-}
-
-type BestGrid = {
-    cols: number;
-    rows: number;
-    tileW: number;
-    tileH: number;
-};
-
-function computeBestGrid({
-    count,
-    maxCols,
-    W,
-    H,
-    gap,
-    aspectW = 16,
-    aspectH = 9,
-}: {
-    count: number;
-    maxCols: number;
-    W: number;
-    H: number;
-    gap: number;
-    aspectW?: number;
-    aspectH?: number;
-}): BestGrid {
-    const safeW = Math.max(0, W);
-    const safeH = Math.max(0, H);
-
-    if (count <= 0 || safeW <= 0 || safeH <= 0) {
-        return { cols: 1, rows: 1, tileW: 0, tileH: 0 };
-    }
-
-    const maxC = Math.max(1, Math.min(maxCols, count));
-
-    let best: BestGrid = { cols: 1, rows: count, tileW: 0, tileH: 0 };
-    let bestScore = -1;
-
-    for (let cols = 1; cols <= maxC; cols++) {
-        const rows = Math.ceil(count / cols);
-
-        const widthLimited = (safeW - gap * (cols - 1)) / cols;
-        const heightLimitedW =
-            ((safeH - gap * (rows - 1)) / rows) * (aspectW / aspectH);
-
-        const tileW = Math.max(0, Math.min(widthLimited, heightLimitedW));
-        const tileH = tileW * (aspectH / aspectW);
-
-        const score = tileW * tileH; // maximize area
-
-        if (score > bestScore) {
-            bestScore = score;
-            best = { cols, rows, tileW, tileH };
-        }
-    }
-
-    return best;
+    return { ref, width: size.width, height: size.height };
 }
 
 // ----------------------- Audio sink (playback only) -----------------------
@@ -342,15 +276,17 @@ function AudioSink({ participants }: { participants: JitsiParticipant[] }) {
     );
 }
 
-// ----------------------- Tile -----------------------
+// ----------------------- Tiles -----------------------
 function ParticipantTile({
     theme,
     participant,
-    fit = "cover",
+    forceAspect = false,
+    fit = "contain",
     onRegisterVideoElement,
 }: {
     theme: "dark" | "light";
     participant: JitsiParticipant;
+    forceAspect?: boolean;
     fit?: "contain" | "cover";
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
 }) {
@@ -359,6 +295,7 @@ function ParticipantTile({
     const hasVideoTrack = !!participant.videoTrack;
     const streamV = useTrackStreamVersion(participant.videoTrack);
 
+    // ✅ IMPORTANT: register <video> element so engine can "black video recovery" reattach correctly
     const handleVideoRef = useCallback(
         (el: HTMLVideoElement | null) => {
             videoRef.current = el;
@@ -373,6 +310,7 @@ function ParticipantTile({
         };
     }, [onRegisterVideoElement, participant.id]);
 
+    // ✅ attach/detach via helper
     useEffect(() => {
         const el = videoRef.current;
         if (!el) return;
@@ -382,7 +320,16 @@ function ParticipantTile({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [participant.videoTrack, participant.isLocal, streamV]);
 
-    const objectClass = fit === "cover" ? "object-cover" : "object-contain";
+    // NOTE: "aspect-video" tailwind class may be missing in your build → we enforce aspectRatio via inline style.
+    const aspectStyle: React.CSSProperties | undefined = forceAspect
+        ? { aspectRatio: "16 / 9" }
+        : undefined;
+
+    // camera tiles look better with slight "headroom" bias (more top than bottom)
+    const objectClass =
+        fit === "cover"
+            ? "object-cover object-[50%_35%]"
+            : "object-contain object-center";
 
     const showPlaceholder = !hasVideoTrack || participant.videoMuted;
     const hideVideo = !hasVideoTrack || participant.videoMuted;
@@ -401,11 +348,14 @@ function ParticipantTile({
 
     return (
         <div
+            style={aspectStyle}
             className={
-                "relative w-full h-full overflow-hidden rounded-2xl flex items-center justify-center " +
+                "relative overflow-hidden flex items-center justify-center rounded-2xl " +
                 ringClass +
                 " " +
-                tileBaseBg
+                tileBaseBg +
+                " " +
+                (forceAspect ? "w-full" : "w-full h-full")
             }
         >
             <video
@@ -414,15 +364,14 @@ function ParticipantTile({
                 playsInline
                 muted={participant.isLocal}
                 className={
-                    `absolute inset-0 w-full h-full ${objectClass} object-center transition-opacity duration-150 ` +
+                    `absolute inset-0 w-full h-full ${objectClass} transition-opacity duration-150 ` +
                     (hideVideo ? "opacity-0" : "opacity-100")
                 }
             />
 
+            {/* ✅ Placeholder overlay: centered + NO "Camera off" */}
             {showPlaceholder && (
-                <div
-                    className={`absolute inset-0 flex flex-col items-center justify-center text-center ${placeholderBg}`}
-                >
+                <div className={`absolute inset-0 flex flex-col items-center justify-center text-center ${placeholderBg}`}>
                     <div className="relative w-16 h-16 rounded-full overflow-hidden border border-black/10">
                         <img
                             src={PLACEHOLDER_AVATAR_URL}
@@ -457,6 +406,7 @@ function ParticipantTile({
                 </div>
             )}
 
+            {/* Bottom label */}
             <div
                 className={`absolute left-3 bottom-3 rounded-lg px-2 py-1 text-[11px] flex items-center gap-2 ${labelBg}`}
             >
@@ -472,7 +422,233 @@ function ParticipantTile({
     );
 }
 
-// ----------------------- Layouts -----------------------
+// ----------------------- Layout helpers -----------------------
+function computeCols(count: number, containerWidth: number) {
+    // hard guarantees
+    if (count <= 1) return 1;
+    if (count === 2) return 2;
+    if (count === 4) return 2; // ✅ always 2x2
+
+    // responsive choices
+    if (count === 3) return containerWidth >= 1100 ? 3 : 2;
+
+    if (count <= 6) return containerWidth >= 1100 ? 3 : 2;
+
+    // 7+ participants
+    return containerWidth >= 1400 ? 4 : 3;
+}
+
+function calcMaxGridWidthPx(params: {
+    containerWidth: number;
+    containerHeight: number;
+    cols: number;
+    rows: number;
+    gapPx: number;
+    paddingPx: number;
+    aspectHOverW: number; // height / width, for 16:9 it's 9/16
+}) {
+    const { containerWidth, containerHeight, cols, rows, gapPx, paddingPx, aspectHOverW } = params;
+
+    if (!containerWidth || !containerHeight) return null;
+
+    const availW = Math.max(0, containerWidth - paddingPx * 2);
+    const availH = Math.max(0, containerHeight - paddingPx * 2);
+
+    const byWidth = (availW - (cols - 1) * gapPx) / cols;
+    const byHeight = (availH - (rows - 1) * gapPx) / (rows * aspectHOverW);
+
+    const tileW = Math.max(0, Math.min(byWidth, byHeight));
+    const gridW = cols * tileW + (cols - 1) * gapPx;
+
+    // cap to available width (just in case)
+    return Math.min(availW, gridW);
+}
+
+function GridLayout({
+    theme,
+    pageParticipants,
+    containerWidth,
+    containerHeight,
+    onRegisterVideoElement,
+}: {
+    theme: "dark" | "light";
+    pageParticipants: JitsiParticipant[];
+    containerWidth: number;
+    containerHeight: number;
+    onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
+}) {
+    // tighter padding/gap on narrow-ish screens
+    const paddingPx = containerWidth && containerWidth < 520 ? 8 : 12;
+    const gapPx = containerWidth && containerWidth < 520 ? 8 : 12;
+
+    const cols = useMemo(
+        () => computeCols(pageParticipants.length, containerWidth || 1200),
+        [pageParticipants.length, containerWidth]
+    );
+    const rows = useMemo(
+        () => Math.ceil(pageParticipants.length / cols),
+        [pageParticipants.length, cols]
+    );
+
+    const maxGridWidth = useMemo(() => {
+        // we keep 16:9 tiles in grid to avoid relying on parent height/`h-full`
+        const w = calcMaxGridWidthPx({
+            containerWidth: containerWidth || 0,
+            containerHeight: containerHeight || 0,
+            cols,
+            rows,
+            gapPx,
+            paddingPx,
+            aspectHOverW: 9 / 16,
+        });
+        return w;
+    }, [containerWidth, containerHeight, cols, rows, gapPx, paddingPx]);
+
+    const count = pageParticipants.length;
+    const remainder = cols > 0 ? count % cols : 0;
+    const fullCount = remainder === 0 ? count : count - remainder;
+
+    const oneColWidth = `calc((100% - ${(cols - 1) * gapPx}px) / ${cols})`;
+
+    const fullRows = pageParticipants.slice(0, fullCount);
+    const lastRow = pageParticipants.slice(fullCount);
+
+    return (
+        <div
+            className="w-full h-full min-h-0 overflow-y-auto flex justify-center"
+            style={{ padding: paddingPx }}
+        >
+            <div
+                className="w-full grid"
+                style={{
+                    gap: gapPx,
+                    maxWidth: maxGridWidth ? `${maxGridWidth}px` : undefined,
+                    gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+                    alignContent: "start",
+                }}
+            >
+                {/* Full rows */}
+                {fullRows.map((p) => (
+                    <ParticipantTile
+                        key={p.id}
+                        theme={theme}
+                        participant={p}
+                        forceAspect={true}
+                        fit="cover"
+                        onRegisterVideoElement={onRegisterVideoElement}
+                    />
+                ))}
+
+                {/* Last incomplete row centered */}
+                {lastRow.length > 0 && (
+                    <div className="col-span-full w-full flex justify-center items-start" style={{ gap: gapPx }}>
+                        {lastRow.map((p) => (
+                            <div key={p.id} className="shrink-0" style={{ width: oneColWidth }}>
+                                <ParticipantTile
+                                    theme={theme}
+                                    participant={p}
+                                    forceAspect={true}
+                                    fit="cover"
+                                    onRegisterVideoElement={onRegisterVideoElement}
+                                />
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+function P2PLayout({
+    theme,
+    pageParticipants,
+    containerWidth,
+    containerHeight,
+    onRegisterVideoElement,
+}: {
+    theme: "dark" | "light";
+    pageParticipants: JitsiParticipant[];
+    containerWidth: number;
+    containerHeight: number;
+    onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
+}) {
+    const paddingPx = containerWidth && containerWidth < 520 ? 8 : 12;
+    const gapPx = containerWidth && containerWidth < 520 ? 8 : 12;
+
+    // when parent height is known, clamp by height so tiles don't overflow
+    const maxGridWidth = useMemo(() => {
+        const w = calcMaxGridWidthPx({
+            containerWidth: containerWidth || 0,
+            containerHeight: containerHeight || 0,
+            cols: 2,
+            rows: 1,
+            gapPx,
+            paddingPx,
+            aspectHOverW: 9 / 16,
+        });
+        // allow a bit more on big screens
+        const cap = 1400;
+        if (!w) return null;
+        return Math.min(w, cap);
+    }, [containerWidth, containerHeight, gapPx, paddingPx]);
+
+    return (
+        <div className="w-full h-full min-h-0 overflow-y-auto flex justify-center" style={{ padding: paddingPx }}>
+            <div
+                className="w-full grid"
+                style={{
+                    gap: gapPx,
+                    maxWidth: maxGridWidth ? `${maxGridWidth}px` : undefined,
+                    gridTemplateColumns: pageParticipants.length <= 1 ? "1fr" : "1fr 1fr",
+                    alignContent: "start",
+                }}
+            >
+                {pageParticipants.map((p) => (
+                    <ParticipantTile
+                        key={p.id}
+                        theme={theme}
+                        participant={p}
+                        forceAspect={true}
+                        fit="cover"
+                        onRegisterVideoElement={onRegisterVideoElement}
+                    />
+                ))}
+            </div>
+        </div>
+    );
+}
+
+/** For VERY narrow phones with 1–2 participants: fill height nicely (no scroll, no tiny tiles). */
+function MobileFillLayout({
+    theme,
+    pageParticipants,
+    paddingBottomPx = 96,
+    onRegisterVideoElement,
+}: {
+    theme: "dark" | "light";
+    pageParticipants: JitsiParticipant[];
+    paddingBottomPx?: number;
+    onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
+}) {
+    return (
+        <div className="w-full h-full min-h-0 p-2 flex flex-col gap-2" style={{ paddingBottom: paddingBottomPx }}>
+            {pageParticipants.map((p) => (
+                <div key={p.id} className="flex-1 min-h-0">
+                    <ParticipantTile
+                        theme={theme}
+                        participant={p}
+                        forceAspect={false}
+                        fit="cover"
+                        onRegisterVideoElement={onRegisterVideoElement}
+                    />
+                </div>
+            ))}
+        </div>
+    );
+}
+
+/** For narrow phones with 3+ participants: scroll list, but with REAL aspect ratio (no “thin strips”). */
 function MobileStackLayout({
     theme,
     pageParticipants,
@@ -485,97 +661,17 @@ function MobileStackLayout({
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
 }) {
     return (
-        <div
-            className="w-full h-full overflow-y-auto p-3 flex flex-col gap-3"
-            style={{ paddingBottom: paddingBottomPx }}
-        >
+        <div className="w-full h-full min-h-0 overflow-y-auto p-2 flex flex-col gap-2" style={{ paddingBottom: paddingBottomPx }}>
             {pageParticipants.map((p) => (
-                <div
+                <ParticipantTile
                     key={p.id}
-                    className="w-full"
-                    style={{
-                        aspectRatio: "16 / 9",
-                        // на всякий: не даём схлопнуться даже в супер-узких случаях
-                        minHeight: 160,
-                    }}
-                >
-                    <ParticipantTile
-                        theme={theme}
-                        participant={p}
-                        fit="cover"
-                        onRegisterVideoElement={onRegisterVideoElement}
-                    />
-                </div>
+                    theme={theme}
+                    participant={p}
+                    forceAspect={true}
+                    fit="cover"
+                    onRegisterVideoElement={onRegisterVideoElement}
+                />
             ))}
-        </div>
-    );
-}
-
-/**
- * Desktop/tablet: auto-fit grid that maximizes tile size AND guarantees fit in container.
- * Works great on 1024 / 1366 / 1440 / 1920 and with side panels.
- */
-function AutoFitGridLayout({
-    theme,
-    pageParticipants,
-    maxCols = 4,
-    onRegisterVideoElement,
-}: {
-    theme: "dark" | "light";
-    pageParticipants: JitsiParticipant[];
-    maxCols?: number;
-    onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
-}) {
-    const { ref, size } = useElementSize<HTMLDivElement>();
-
-    const GAP = 12; // gap-3
-    const PAD = 12; // p-3
-
-    const count = pageParticipants.length;
-
-    // available inner rect (minus padding)
-    const innerW = Math.max(0, size.w - PAD * 2);
-    const innerH = Math.max(0, size.h - PAD * 2);
-
-    const best = useMemo(() => {
-        // for small counts, cap columns sensibly:
-        const cappedMaxCols = Math.max(1, Math.min(maxCols, count));
-        return computeBestGrid({
-            count,
-            maxCols: cappedMaxCols,
-            W: innerW,
-            H: innerH,
-            gap: GAP,
-            aspectW: 16,
-            aspectH: 9,
-        });
-    }, [count, innerW, innerH, maxCols]);
-
-    // hard clamps to avoid ultra tiny tiles when container is still measuring
-    const tileW = clamp(best.tileW || 0, 220, innerW || 220);
-    const tileH = (tileW * 9) / 16;
-
-    return (
-        <div ref={ref} className="w-full h-full min-h-0 overflow-hidden">
-            <div className="w-full h-full min-h-0 overflow-hidden flex flex-wrap items-center justify-center gap-3 p-3">
-                {pageParticipants.map((p) => (
-                    <div
-                        key={p.id}
-                        className="shrink-0"
-                        style={{
-                            width: tileW,
-                            height: tileH,
-                        }}
-                    >
-                        <ParticipantTile
-                            theme={theme}
-                            participant={p}
-                            fit="cover"
-                            onRegisterVideoElement={onRegisterVideoElement}
-                        />
-                    </div>
-                ))}
-            </div>
         </div>
     );
 }
@@ -591,8 +687,6 @@ function ScreenShareLayoutDesktop({
     others: JitsiParticipant[];
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
 }) {
-    const { ref, size } = useElementSize<HTMLDivElement>();
-
     const screenVideoRef = useRef<HTMLVideoElement | null>(null);
     const screenTrackId = useMemo(
         () => safeTrackId(screenSharer.screenTrack),
@@ -600,6 +694,7 @@ function ScreenShareLayoutDesktop({
     );
     const screenStreamV = useTrackStreamVersion(screenSharer.screenTrack);
 
+    // ✅ use callback ref to guarantee registration happens when element exists
     const handleScreenRef = useCallback(
         (el: HTMLVideoElement | null) => {
             screenVideoRef.current = el;
@@ -625,11 +720,8 @@ function ScreenShareLayoutDesktop({
             ? "bg-white/90 border border-black/10 text-black/80"
             : "bg-black/45 border border-white/10 text-white/80";
 
-    // responsive side column width (works better on laptops)
-    const sideW = clamp((size.w || 1100) * 0.22, 180, 260);
-
     return (
-        <div ref={ref} className="relative w-full h-full flex flex-row gap-3 p-3 min-h-0">
+        <div className="relative w-full h-full min-h-0 flex flex-row gap-3 p-3 overflow-hidden">
             <div
                 className={`relative flex-1 overflow-hidden rounded-2xl ${theme === "light"
                     ? "bg-white ring-1 ring-black/10"
@@ -659,19 +751,13 @@ function ScreenShareLayoutDesktop({
                 </div>
             </div>
 
-            <div className="flex flex-col gap-3 min-h-0" style={{ width: sideW }}>
+            <div className="flex flex-col gap-3 w-56 min-h-0 overflow-y-auto">
                 {others.map((p) => (
-                    <div
-                        key={p.id}
-                        className="w-full shrink-0"
-                        style={{
-                            aspectRatio: "16 / 9",
-                            minHeight: 90,
-                        }}
-                    >
+                    <div key={p.id} className="w-full">
                         <ParticipantTile
                             theme={theme}
                             participant={p}
+                            forceAspect={true}
                             fit="cover"
                             onRegisterVideoElement={onRegisterVideoElement}
                         />
@@ -728,16 +814,13 @@ function ScreenShareLayoutMobile({
             : "bg-black/45 border border-white/10 text-white/80";
 
     return (
-        <div
-            className="w-full h-full overflow-y-auto p-3 flex flex-col gap-3"
-            style={{ paddingBottom: paddingBottomPx }}
-        >
+        <div className="w-full h-full min-h-0 overflow-y-auto p-2 flex flex-col gap-2" style={{ paddingBottom: paddingBottomPx }}>
             <div
                 className={`w-full overflow-hidden rounded-2xl ${theme === "light"
                     ? "bg-white ring-1 ring-black/10"
                     : "bg-[#0B1220] ring-1 ring-white/10"
                     } relative`}
-                style={{ aspectRatio: "16 / 9", minHeight: 180 }}
+                style={{ aspectRatio: "16 / 9" }}
             >
                 <video
                     ref={handleScreenRef}
@@ -763,18 +846,14 @@ function ScreenShareLayoutMobile({
             </div>
 
             {others.map((p) => (
-                <div
+                <ParticipantTile
                     key={p.id}
-                    className="w-full"
-                    style={{ aspectRatio: "16 / 9", minHeight: 160 }}
-                >
-                    <ParticipantTile
-                        theme={theme}
-                        participant={p}
-                        fit="cover"
-                        onRegisterVideoElement={onRegisterVideoElement}
-                    />
-                </div>
+                    theme={theme}
+                    participant={p}
+                    forceAspect={true}
+                    fit="cover"
+                    onRegisterVideoElement={onRegisterVideoElement}
+                />
             ))}
         </div>
     );
@@ -798,8 +877,25 @@ export function VideoRoom(props: VideoRoomProps) {
         onRegisterVideoElement,
     } = props;
 
-    const isMobile = useMediaQuery("(max-width: 767px)");
     const isLight = theme === "light";
+
+    // measure the real viewport available for tiles (VERY important for laptop/tablet/chat panel widths)
+    const { ref: roomRef, width: roomW, height: roomH } = useElementSize<HTMLDivElement>();
+
+    // fallback for first render (SSR / zero-size initial)
+    const fallbackW = typeof window !== "undefined" ? window.innerWidth : 1200;
+    const fallbackH = typeof window !== "undefined" ? window.innerHeight : 800;
+
+    const effectiveW = roomW || fallbackW;
+    const effectiveH = roomH || fallbackH;
+
+    // These breakpoints are about *available room* width, not window width.
+    const isVeryNarrow = effectiveW < 430;     // iPhone SE etc
+    const isNarrowForColumns = effectiveW < 520; // still phone-ish
+    const isCompact = effectiveW < 900;        // tablets / narrow layouts
+
+    // keep old query as extra fallback
+    const isMobileQuery = useMediaQuery("(max-width: 767px)");
 
     useEffect(() => {
         const deviceId = audioOutputId;
@@ -843,7 +939,6 @@ export function VideoRoom(props: VideoRoomProps) {
         () => Math.max(0, baseParticipants.length - PAGE_SIZE),
         [baseParticipants.length]
     );
-
     const canScroll = useMemo(
         () => baseParticipants.length > PAGE_SIZE,
         [baseParticipants.length]
@@ -870,7 +965,6 @@ export function VideoRoom(props: VideoRoomProps) {
         const visibleList = screenSharer
             ? [screenSharer, ...screenOthers]
             : pageParticipants;
-
         return visibleList
             .map((p) => p.id)
             .filter((id) => id && id !== localParticipant?.id);
@@ -924,33 +1018,66 @@ export function VideoRoom(props: VideoRoomProps) {
         ? "bg-white/90 border border-black/10"
         : "bg-[#020617]/90 border border-white/10";
 
+    // ---------------- layout decision ----------------
+    const count = pageParticipants.length;
+
+    // "mobile-ish" is based on room width, not window width
+    const useVeryNarrowMode = isVeryNarrow || (isMobileQuery && isNarrowForColumns);
+
+    // For wide phones / small tablets (e.g. Surface Duo 540px), we DO want grid for 4p.
+    const useColumnsMode = !useVeryNarrowMode;
+
     return (
         <div className="relative w-full h-full flex flex-col min-h-0">
             <AudioSink participants={participants} />
 
-            <div className="flex-1 relative min-h-0 overflow-hidden">
+            <div ref={roomRef} className="flex-1 relative min-h-0 overflow-hidden">
                 {!screenSharer && (
                     <>
-                        {isMobile ? (
-                            <MobileStackLayout
-                                theme={theme}
-                                pageParticipants={pageParticipants}
-                                onRegisterVideoElement={onRegisterVideoElement}
-                            />
+                        {/* very narrow phones: 1–2 fill, 3+ scroll stack */}
+                        {useVeryNarrowMode ? (
+                            count <= 2 ? (
+                                <MobileFillLayout
+                                    theme={theme}
+                                    pageParticipants={pageParticipants}
+                                    onRegisterVideoElement={onRegisterVideoElement}
+                                />
+                            ) : (
+                                <MobileStackLayout
+                                    theme={theme}
+                                    pageParticipants={pageParticipants}
+                                    onRegisterVideoElement={onRegisterVideoElement}
+                                />
+                            )
                         ) : (
-                            <AutoFitGridLayout
-                                theme={theme}
-                                pageParticipants={pageParticipants}
-                                maxCols={4}
-                                onRegisterVideoElement={onRegisterVideoElement}
-                            />
+                            <>
+                                {/* 2 participants: always P2P */}
+                                {count <= 2 ? (
+                                    <P2PLayout
+                                        theme={theme}
+                                        pageParticipants={pageParticipants}
+                                        containerWidth={effectiveW}
+                                        containerHeight={effectiveH}
+                                        onRegisterVideoElement={onRegisterVideoElement}
+                                    />
+                                ) : (
+                                    <GridLayout
+                                        theme={theme}
+                                        pageParticipants={pageParticipants}
+                                        containerWidth={effectiveW}
+                                        containerHeight={effectiveH}
+                                        onRegisterVideoElement={onRegisterVideoElement}
+                                    />
+                                )}
+                            </>
                         )}
                     </>
                 )}
 
                 {screenSharer && (
                     <>
-                        {isMobile ? (
+                        {/* screen share layout: switch to mobile version when room is compact */}
+                        {(isCompact || isMobileQuery) ? (
                             <ScreenShareLayoutMobile
                                 theme={theme}
                                 screenSharer={screenSharer}
@@ -983,7 +1110,7 @@ export function VideoRoom(props: VideoRoomProps) {
                     </div>
                 )}
 
-                {canScroll && !isMobile && (
+                {canScroll && useColumnsMode && !useVeryNarrowMode && (
                     <div className="absolute top-3 right-3 flex items-center gap-2">
                         <button
                             onClick={goPrev}
@@ -1050,7 +1177,7 @@ export function VideoRoom(props: VideoRoomProps) {
                             <Icon
                                 name={isAudioMuted ? "mic-off" : "mic-on"}
                                 className="w-5 h-5"
-                                theme={isAudioMuted ? "dark" : theme}
+                                theme={isAudioMuted ? "dark" : theme} // ✅ mic-off always white
                             />
                         </button>
 
