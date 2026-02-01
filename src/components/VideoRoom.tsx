@@ -395,29 +395,61 @@ function GridLayout({
     pageParticipants: JitsiParticipant[];
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
 }) {
-    const { cols, rows } = useMemo(
+    const { cols } = useMemo(
         () => computeGrid(pageParticipants.length),
         [pageParticipants.length]
     );
 
+    // gap-3 = 0.75rem = 12px (в дефолтном tailwind)
+    const GAP_PX = 12;
+
+    const count = pageParticipants.length;
+    const remainder = cols > 0 ? count % cols : 0;
+    const fullCount = remainder === 0 ? count : count - remainder;
+
+    // ширина "одной колонки" внутри полной ширины строки
+    const oneColWidth = `calc((100% - ${(cols - 1) * GAP_PX}px) / ${cols})`;
+
+    const fullRows = pageParticipants.slice(0, fullCount);
+    const lastRow = pageParticipants.slice(fullCount);
+
     return (
         <div
-            className="w-full h-full grid gap-3 p-3 min-h-0"
+            className="w-full h-full grid gap-3 p-3 min-h-0 place-content-center place-items-center"
             style={{
                 gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-                gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
+                gridAutoRows: "auto", // ✅ НЕ 1fr, чтобы не тянуло по высоте
             }}
         >
-            {pageParticipants.map((p) => (
-                <ParticipantTile
-                    key={p.id}
-                    theme={theme}
-                    participant={p}
-                    forceAspect={false}
-                    fit="contain"
-                    onRegisterVideoElement={onRegisterVideoElement}
-                />
+            {/* Полные строки (всё кратно cols) */}
+            {fullRows.map((p) => (
+                <div key={p.id} className="w-full">
+                    <ParticipantTile
+                        theme={theme}
+                        participant={p}
+                        forceAspect={true}     // ✅ 16:9
+                        fit="cover"            // ✅ без "пустых полей", можно заменить на "contain" если хочешь без кропа
+                        onRegisterVideoElement={onRegisterVideoElement}
+                    />
+                </div>
             ))}
+
+            {/* Последняя неполная строка — центрируем как "hug" */}
+            {lastRow.length > 0 && (
+                <div className="col-span-full w-full flex justify-center gap-3">
+                    {lastRow.map((p) => (
+                        <div key={p.id} className="shrink-0" style={{ width: oneColWidth }}>
+                            <ParticipantTile
+                                theme={theme}
+                                participant={p}
+                                forceAspect={true}
+                                fit="cover"
+                                onRegisterVideoElement={onRegisterVideoElement}
+                            />
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }
@@ -446,8 +478,8 @@ function P2PLayout({
                     key={p.id}
                     theme={theme}
                     participant={p}
-                    forceAspect={false}
-                    fit="contain"
+                    forceAspect={true}
+                    fit="cover"
                     onRegisterVideoElement={onRegisterVideoElement}
                 />
             ))}
