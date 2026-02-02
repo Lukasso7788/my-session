@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { CornerUpLeft, X, Smile } from "lucide-react";
+import { CornerUpLeft, X, Smile, SendHorizontal, Pencil, Trash2, Check } from "lucide-react";
 
 type RoomTheme = "dark" | "light";
 
@@ -66,6 +66,30 @@ function groupReactions(rows: ReactionRow[], myUserId: string | null) {
     return { counts, mine };
 }
 
+// --- Reply parsing: вытягиваем цитату из тела сообщения, чтобы красиво отрендерить
+function parseReplyBody(body: string): { quote: string | null; main: string } {
+    if (!body) return { quote: null, main: "" };
+
+    // Форматы:
+    // 1) "↪ Reply: ...\n\nmain"
+    // 2) "↪ <something>\n\nmain"
+    // 3) "↪ Reply to: ...\n\nmain"
+    const trimmed = body.trimStart();
+    if (!trimmed.startsWith("↪")) return { quote: null, main: body };
+
+    const parts = trimmed.split(/\n\s*\n/); // first block + rest
+    if (parts.length <= 1) {
+        const firstLine = trimmed.split("\n")[0] || trimmed;
+        const q = firstLine.replace(/^↪\s*/, "").replace(/^Reply:\s*/i, "").replace(/^Reply to:\s*/i, "");
+        return { quote: q.trim() || null, main: trimmed.replace(firstLine, "").trim() };
+    }
+
+    const header = parts[0] || "";
+    const q = header.replace(/^↪\s*/, "").replace(/^Reply:\s*/i, "").replace(/^Reply to:\s*/i, "").trim();
+    const main = parts.slice(1).join("\n\n");
+    return { quote: q || null, main };
+}
+
 function MessageCard({
     msg,
     mine,
@@ -74,6 +98,9 @@ function MessageCard({
     myReactions,
     onToggleReaction,
     isLight,
+    canEdit,
+    onUpdateMessage,
+    onDeleteMessage,
 }: {
     msg: Msg;
     mine: boolean;
@@ -82,12 +109,28 @@ function MessageCard({
     myReactions: Record<string, boolean> | undefined;
     onToggleReaction: (messageId: string, emoji: string) => void;
     isLight: boolean;
+
+    canEdit: boolean;
+    onUpdateMessage: (messageId: string, newBody: string) => Promise<void>;
+    onDeleteMessage: (messageId: string) => Promise<void>;
 }) {
     const name = mine ? "You" : msg.profile?.full_name || "Participant";
     const time = formatTime(msg.created_at);
 
     const [openReactions, setOpenReactions] = useState(false);
     const menuRef = useRef<HTMLDivElement | null>(null);
+
+    // edit state
+    const [isEditing, setIsEditing] = useState(false);
+    const [draft, setDraft] = useState(msg.body);
+    const [savingEdit, setSavingEdit] = useState(false);
+    const [deleting, setDeleting] = useState(false);
+
+    useEffect(() => {
+        // если сообщение обновилось realtime — синхронизируем draft, если не в режиме редактирования
+        if (!isEditing) setDraft(msg.body);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [msg.body]);
 
     useEffect(() => {
         if (!openReactions) return;
@@ -108,6 +151,10 @@ function MessageCard({
         ? "text-black/45 hover:text-emerald-700"
         : "text-white/45 hover:text-emerald-300";
 
+    const dangerBtnCls = isLight
+        ? "text-black/40 hover:text-red-700"
+        : "text-white/40 hover:text-red-300";
+
     const menuCls = isLight
         ? "bg-white border border-black/10"
         : "bg-[#020617] border border-white/10";
@@ -122,6 +169,10 @@ function MessageCard({
                 ? "bg-black/5 border-black/10 text-black/80"
                 : "bg-white/5 border-white/10 text-white/85");
 
+    const quoteBoxCls = isLight
+        ? "bg-white/70 border border-black/10 text-black/70"
+        : "bg-black/25 border border-white/10 text-white/70";
+
     const reactionPillBase = isLight
         ? "px-2 py-1 rounded-xl bg-black/5 border border-black/10 text-[12px] text-black/70 flex items-center gap-1 transition"
         : "px-2 py-1 rounded-xl bg-white/5 border border-white/10 text-[12px] text-white/80 flex items-center gap-1 transition";
@@ -131,6 +182,38 @@ function MessageCard({
         : "ring-1 ring-emerald-300/40 border-emerald-300/30";
 
     const reactionCountCls = isLight ? "text-black/50" : "text-white/60";
+
+    const inputCls = isLight
+        ? "w-full min-h-[42px] max-h-[180px] rounded-xl resize-none px-3 py-2 text-[13px] outline-none bg-white border border-black/10 text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
+        : "w-full min-h-[42px] max-h-[180px] rounded-xl resize-none px-3 py-2 text-[13px] outline-none bg-[#0B1220]/70 border border-white/10 text-white/85 placeholder:text-white/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500";
+
+    const { quote, main } = useMemo(() => parseReplyBody(msg.body), [msg.body]);
+
+    const saveEdit = async () => {
+        const next = draft.trim();
+        if (!next) return;
+
+        setSavingEdit(true);
+        try {
+            await onUpdateMessage(msg.id, next);
+            setIsEditing(false);
+        } finally {
+            setSavingEdit(false);
+        }
+    };
+
+    const doDelete = async () => {
+        if (deleting) return;
+        const ok = window.confirm("Delete this message?");
+        if (!ok) return;
+
+        setDeleting(true);
+        try {
+            await onDeleteMessage(msg.id);
+        } finally {
+            setDeleting(false);
+        }
+    };
 
     return (
         <div className={"flex items-start gap-3 " + (mine ? "justify-end" : "justify-start")}>
@@ -147,63 +230,150 @@ function MessageCard({
                     <div className={"text-[11px] truncate " + metaNameCls}>{name}</div>
                     <div className={"text-[11px] " + metaTimeCls}>{time}</div>
 
-                    <button
-                        type="button"
-                        onClick={() => onReply(msg)}
-                        className={"ml-1 inline-flex items-center gap-1 text-[11px] transition " + actionBtnCls}
-                        title="Reply"
-                    >
-                        <CornerUpLeft size={14} />
-                        Reply
-                    </button>
+                    {!isEditing && (
+                        <>
+                            <button
+                                type="button"
+                                onClick={() => onReply(msg)}
+                                className={"ml-1 inline-flex items-center gap-1 text-[11px] transition " + actionBtnCls}
+                                title="Reply"
+                            >
+                                <CornerUpLeft size={14} />
+                                Reply
+                            </button>
 
-                    {/* reactions button */}
-                    <div className="relative" ref={menuRef}>
-                        <button
-                            type="button"
-                            onClick={() => setOpenReactions((v) => !v)}
-                            className={"ml-1 inline-flex items-center gap-1 text-[11px] transition " + actionBtnCls}
-                            title="React"
-                        >
-                            <Smile size={14} />
-                            React
-                        </button>
+                            {/* reactions button */}
+                            <div className="relative" ref={menuRef}>
+                                <button
+                                    type="button"
+                                    onClick={() => setOpenReactions((v) => !v)}
+                                    className={"ml-1 inline-flex items-center gap-1 text-[11px] transition " + actionBtnCls}
+                                    title="React"
+                                >
+                                    <Smile size={14} />
+                                    React
+                                </button>
 
-                        {openReactions && (
-                            <div className={"absolute z-50 mt-2 right-0 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl " + menuCls}>
-                                {REACTION_EMOJIS.map((e) => {
-                                    const isMine = !!myReactions?.[e];
-                                    return (
-                                        <button
-                                            key={e}
-                                            onClick={() => {
-                                                onToggleReaction(msg.id, e);
-                                                setOpenReactions(false);
-                                            }}
-                                            className={
-                                                "hover:scale-[1.06] transition " +
-                                                (isMine
-                                                    ? (isLight
-                                                        ? "drop-shadow-[0_0_0.6rem_rgba(16,185,129,0.35)]"
-                                                        : "drop-shadow-[0_0_0.7rem_rgba(16,185,129,0.25)]")
-                                                    : "")
-                                            }
-                                            title={isMine ? `Remove ${e}` : e}
-                                            type="button"
-                                        >
-                                            {e}
-                                        </button>
-                                    );
-                                })}
+                                {openReactions && (
+                                    <div className={"absolute z-50 mt-2 right-0 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl " + menuCls}>
+                                        {REACTION_EMOJIS.map((e) => {
+                                            const isMine = !!myReactions?.[e];
+                                            return (
+                                                <button
+                                                    key={e}
+                                                    onClick={() => {
+                                                        onToggleReaction(msg.id, e);
+                                                        setOpenReactions(false);
+                                                    }}
+                                                    className={
+                                                        "hover:scale-[1.06] transition " +
+                                                        (isMine
+                                                            ? (isLight
+                                                                ? "drop-shadow-[0_0_0.6rem_rgba(16,185,129,0.35)]"
+                                                                : "drop-shadow-[0_0_0.7rem_rgba(16,185,129,0.25)]")
+                                                            : "")
+                                                    }
+                                                    title={isMine ? `Remove ${e}` : e}
+                                                    type="button"
+                                                >
+                                                    {e}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </div>
-                        )}
-                    </div>
+
+                            {/* edit/delete for mine */}
+                            {canEdit && (
+                                <>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsEditing(true)}
+                                        className={"ml-1 inline-flex items-center gap-1 text-[11px] transition " + actionBtnCls}
+                                        title="Edit"
+                                    >
+                                        <Pencil size={14} />
+                                        Edit
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={doDelete}
+                                        className={"ml-1 inline-flex items-center gap-1 text-[11px] transition " + dangerBtnCls}
+                                        title="Delete"
+                                    >
+                                        <Trash2 size={14} />
+                                        Delete
+                                    </button>
+                                </>
+                            )}
+                        </>
+                    )}
                 </div>
 
-                <div className={bubbleCls}>{msg.body}</div>
+                {!isEditing ? (
+                    <div className={bubbleCls}>
+                        {/* quoted reply block */}
+                        {quote && (
+                            <div className={"mb-2 rounded-xl px-3 py-2 text-[12px] leading-snug " + quoteBoxCls}>
+                                <div className="text-[10px] opacity-75 mb-1">Reply</div>
+                                <div className="whitespace-pre-wrap break-words">{quote}</div>
+                            </div>
+                        )}
+                        <div className="whitespace-pre-wrap break-words">{main}</div>
+                    </div>
+                ) : (
+                    <div className={bubbleCls}>
+                        <textarea
+                            className={inputCls}
+                            value={draft}
+                            onChange={(e) => setDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === "Enter" && !e.shiftKey) {
+                                    e.preventDefault();
+                                    saveEdit();
+                                }
+                                if (e.key === "Escape") {
+                                    setIsEditing(false);
+                                    setDraft(msg.body);
+                                }
+                            }}
+                            autoFocus
+                        />
+                        <div className="mt-2 flex items-center justify-end gap-2">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setIsEditing(false);
+                                    setDraft(msg.body);
+                                }}
+                                className={isLight ? "px-3 h-9 rounded-xl bg-black/5 hover:bg-black/10 border border-black/10 text-black/70 text-sm" : "px-3 h-9 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/75 text-sm"}
+                                disabled={savingEdit}
+                                title="Cancel"
+                            >
+                                <X size={16} />
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={saveEdit}
+                                className={"px-3 h-9 rounded-xl text-sm font-semibold inline-flex items-center gap-2 " + (savingEdit ? "opacity-70 cursor-not-allowed" : "") + " " + (isLight ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-emerald-600 hover:bg-emerald-700 text-white")}
+                                disabled={savingEdit || !draft.trim()}
+                                title="Save"
+                            >
+                                <Check size={16} />
+                                Save
+                            </button>
+                        </div>
+                        <div className={"mt-1 text-[11px] " + (isLight ? "text-black/40" : "text-white/35")}>
+                            Enter — save • Shift+Enter — new line • Esc — cancel
+                        </div>
+                    </div>
+                )}
 
                 {/* reactions row */}
-                {hasReactions && (
+                {hasReactions && !isEditing && (
                     <div className={"mt-2 flex flex-wrap gap-2 " + (mine ? "justify-end" : "justify-start")}>
                         {Object.entries(reactionsCounts!).map(([emoji, count]) => {
                             const isMine = !!myReactions?.[emoji];
@@ -299,6 +469,8 @@ export function ChatPanel({
     const atBottomRef = useRef<boolean>(true);
     const [unseenNew, setUnseenNew] = useState<number>(0);
 
+    const composerRef = useRef<HTMLTextAreaElement | null>(null);
+
     const isAtBottom = () => {
         const el = listRef.current;
         if (!el) return true;
@@ -335,6 +507,13 @@ export function ChatPanel({
         : "bg-[#111827] hover:bg-[#1f2937] text-white/70";
 
     const hintText = isLight ? "text-black/40" : "text-white/35";
+
+    const sendBtnActive = "bg-emerald-600 hover:bg-emerald-700 text-white";
+    const sendBtnDisabled = isLight ? "bg-black/10 text-black/35" : "bg-white/10 text-white/35";
+
+    const composerInputCls = isLight
+        ? "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none bg-white border border-black/10 text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
+        : "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none bg-[#0B1220]/70 border border-white/10 text-white/85 placeholder:text-white/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500";
 
     // ---------- auth user + my profile
     useEffect(() => {
@@ -584,11 +763,26 @@ export function ChatPanel({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [messages.length]);
 
+    // auto-resize composer textarea (чтобы не занимал дохера места)
+    useEffect(() => {
+        const el = composerRef.current;
+        if (!el) return;
+
+        // reset then set
+        el.style.height = "0px";
+        const next = Math.min(el.scrollHeight, 140);
+        el.style.height = `${next}px`;
+    }, [text, replyTo]);
+
     const send = async () => {
         const raw = text.trim();
         if (!raw || !userId || !sessionId) return;
 
-        const composed = replyTo ? `↪ Reply: ${replyTo.body}\n\n${raw}` : raw;
+        const replyHeader = replyTo
+            ? `↪ ${replyTo.profile?.full_name || "Participant"}: ${replyTo.body}`
+            : null;
+
+        const composed = replyHeader ? `${replyHeader}\n\n${raw}` : raw;
 
         // optimistic
         const optimistic: Msg = {
@@ -621,6 +815,58 @@ export function ChatPanel({
             setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
             setText(composed);
             return;
+        }
+    };
+
+    const updateMessage = async (messageId: string, newBody: string) => {
+        if (!userId || !sessionId) return;
+
+        // optimistic update
+        const prevBody = messagesRef.current.find((m) => m.id === messageId)?.body ?? null;
+
+        setMessages((prev) =>
+            prev.map((m) => (m.id === messageId ? { ...m, body: newBody } : m))
+        );
+
+        const { error } = await supabase
+            .from(MSG_TABLE)
+            .update({ body: newBody })
+            .eq("id", messageId)
+            .eq("session_id", sessionId)
+            .eq("user_id", userId);
+
+        if (error) {
+            console.error("chat update error:", error);
+
+            // revert (best effort)
+            if (prevBody !== null) {
+                setMessages((prev) =>
+                    prev.map((m) => (m.id === messageId ? { ...m, body: prevBody } : m))
+                );
+            } else {
+                loadMessages();
+            }
+        }
+    };
+
+    const deleteMessage = async (messageId: string) => {
+        if (!userId || !sessionId) return;
+
+        // optimistic remove
+        const snapshot = messagesRef.current;
+        setMessages((prev) => prev.filter((m) => m.id !== messageId));
+
+        const { error } = await supabase
+            .from(MSG_TABLE)
+            .delete()
+            .eq("id", messageId)
+            .eq("session_id", sessionId)
+            .eq("user_id", userId);
+
+        if (error) {
+            console.error("chat delete error:", error);
+            // revert
+            setMessages(snapshot);
         }
     };
 
@@ -772,25 +1018,33 @@ export function ChatPanel({
                     </div>
                 )}
 
-                {uiMessages.map((m) => (
-                    <MessageCard
-                        key={m.id}
-                        msg={m}
-                        mine={m.user_id === userId}
-                        onReply={(msg) => setReplyTo(msg)}
-                        reactionsCounts={reactions[m.id]}
-                        myReactions={myReactions[m.id]}
-                        onToggleReaction={toggleReaction}
-                        isLight={isLight}
-                    />
-                ))}
+                {uiMessages.map((m) => {
+                    const mine = m.user_id === userId;
+                    const canEdit = mine && !m.id.startsWith("optimistic-");
+
+                    return (
+                        <MessageCard
+                            key={m.id}
+                            msg={m}
+                            mine={mine}
+                            onReply={(msg) => setReplyTo(msg)}
+                            reactionsCounts={reactions[m.id]}
+                            myReactions={myReactions[m.id]}
+                            onToggleReaction={toggleReaction}
+                            isLight={isLight}
+                            canEdit={canEdit}
+                            onUpdateMessage={updateMessage}
+                            onDeleteMessage={deleteMessage}
+                        />
+                    );
+                })}
 
                 <div ref={bottomRef} />
             </div>
 
             {/* "New messages" bubble */}
             {unseenNew > 0 && (
-                <div className="absolute left-0 right-0 bottom-[92px] flex items-center justify-center pointer-events-none">
+                <div className="absolute left-0 right-0 bottom-[96px] flex items-center justify-center pointer-events-none">
                     <button
                         type="button"
                         className={
@@ -833,50 +1087,46 @@ export function ChatPanel({
                     </div>
                 )}
 
-                <textarea
-                    value={text}
-                    onChange={(e) => setText(e.target.value)}
-                    placeholder="Write a message…"
-                    className={`
-                        w-full min-h-[48px] max-h-[160px]
-                        rounded-xl resize-none
-                        px-3 py-3 text-[13px]
-                        outline-none focus:outline-none
-                        ${isLight
-                            ? "bg-white border border-black/10 text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
-                            : "bg-[#0B1220]/70 border border-white/10 text-white/85 placeholder:text-white/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"}
-                    `}
-                    onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                            e.preventDefault();
-                            send();
-                        }
-                    }}
-                    onFocus={() => {
-                        if (isAtBottom()) {
-                            onBecameVisible?.();
-                        }
-                    }}
-                />
-
-                <div className="mt-2 flex items-center justify-between">
-                    <div className={"text-[11px] " + hintText}>Enter — send • Shift+Enter — new line</div>
+                {/* ROW: input + send button */}
+                <div className="flex items-end gap-2">
+                    <textarea
+                        ref={composerRef}
+                        value={text}
+                        onChange={(e) => setText(e.target.value)}
+                        placeholder="Write a message…"
+                        className={composerInputCls}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey) {
+                                e.preventDefault();
+                                send();
+                            }
+                        }}
+                        onFocus={() => {
+                            if (isAtBottom()) {
+                                onBecameVisible?.();
+                            }
+                        }}
+                    />
 
                     <button
                         onClick={send}
                         className={
-                            "h-11 px-5 rounded-xl font-semibold transition " +
+                            "w-11 h-11 rounded-xl flex items-center justify-center transition border " +
                             (text.trim()
-                                ? "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
-                                : isLight
-                                    ? "bg-black/10 text-black/35 cursor-not-allowed"
-                                    : "bg-white/10 text-white/35 cursor-not-allowed")
+                                ? sendBtnActive + " border-emerald-500/40"
+                                : sendBtnDisabled + " border-transparent cursor-not-allowed")
                         }
                         type="button"
                         disabled={!text.trim()}
+                        title="Send"
                     >
-                        Send
+                        <SendHorizontal size={18} />
                     </button>
+                </div>
+
+                {/* hint under row */}
+                <div className={"mt-2 text-[11px] " + hintText}>
+                    Enter — send • Shift+Enter — new line
                 </div>
             </div>
         </div>
