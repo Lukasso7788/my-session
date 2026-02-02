@@ -5,6 +5,7 @@
 // ✅ Fix: propagate theme to html + body AND data-theme + color-scheme so Chat/Intentions can reliably pick it up
 // ✅ Fix: kick layout recalculation when right panel toggles (dispatch resize) + ResizeObserver hook for container changes
 // ✅ Fix: remove "double header" for chat (keep only close button row; also pass embedded/hideHeader props defensively)
+// ✅ NEW: Pre-join modal (devices + name + constraints) blocks Jitsi join until user confirms
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -78,10 +79,30 @@ type InputDevices = {
   audioInputId: string;
 };
 
-/**
- * JitsiEngine in your lib can have extra methods (devices/bg/audio output/reactions).
- * We model them here without using `any`.
- */
+type PreJoinSettings = {
+  displayName: string;
+  audioInputId: string;
+  videoInputId: string;
+  audioOutputId: string;
+
+  audioEnabled: boolean;
+  videoEnabled: boolean;
+
+  echoCancellation: boolean;
+  noiseSuppression: boolean;
+  autoGainControl: boolean;
+};
+
+type EngineMediaSettingsExt = {
+  videoInputId: string;
+  audioInputId: string;
+
+  // optional fields (safe to set; engine may use them or ignore)
+  startWithAudioMuted?: boolean;
+  startWithVideoMuted?: boolean;
+  constraints?: MediaStreamConstraints;
+};
+
 type JitsiEngineExt = JitsiEngine & {
   listMediaDevices?: () => Promise<Partial<MediaDevicesResult> | null | undefined>;
   applyInputDevices?: (devices: InputDevices) => Promise<void>;
@@ -113,21 +134,21 @@ function Icon({
   alt = "",
 }: {
   name:
-  | "mic-on"
-  | "mic-off"
-  | "camera-on"
-  | "camera-off"
-  | "screen-share"
-  | "reaction"
-  | "leave"
-  | "participants"
-  | "chat"
-  | "intentions"
-  | "settings"
-  | "theme-sun"
-  | "theme-moon"
-  | "timer"
-  | "host_session_icon";
+    | "mic-on"
+    | "mic-off"
+    | "camera-on"
+    | "camera-off"
+    | "screen-share"
+    | "reaction"
+    | "leave"
+    | "participants"
+    | "chat"
+    | "intentions"
+    | "settings"
+    | "theme-sun"
+    | "theme-moon"
+    | "timer"
+    | "host_session_icon";
   theme: RoomTheme;
   className?: string;
   alt?: string;
@@ -163,7 +184,6 @@ const reactionEmoji: Record<ReactionType, string> = {
   thumbsDown: "👎",
 };
 
-// ✅ helpers for infinite schedule parsing
 function safeParseJson(raw: unknown): unknown | null {
   if (!raw) return null;
   if (typeof raw === "string") {
@@ -178,7 +198,6 @@ function safeParseJson(raw: unknown): unknown | null {
   return raw;
 }
 
-/** ✅ parse "50/5/5" (or "50-5-5") schedule stored as a string. */
 function parse50505(
   raw: unknown
 ): { focus: number; break: number; intentions: number } | null {
@@ -215,8 +234,8 @@ function normalizeInfinitePhases(anyPhases: unknown): { name: string; seconds: n
       const n = num(raw.duration ?? raw.value ?? raw);
       if (!Number.isFinite(n) || n <= 0) return 0;
 
-      if (n <= 180) return n * 60; // assume minutes
-      return n; // assume seconds
+      if (n <= 180) return n * 60;
+      return n;
     }
 
     const n = num(raw);
@@ -307,6 +326,231 @@ function getTemplateFirst(tpl: SessionRow["session_templates"]): SessionTemplate
   return Array.isArray(tpl) ? tpl[0] ?? null : tpl;
 }
 
+function deviceLabel(d: MediaDeviceInfo, fallback: string) {
+  const l = (d.label || "").trim();
+  return l || fallback;
+}
+
+function PreJoinModal({
+  open,
+  theme,
+  devices,
+  value,
+  onChange,
+  onJoin,
+  onCancel,
+  onRefreshDevices,
+}: {
+  open: boolean;
+  theme: RoomTheme;
+  devices: MediaDevicesResult;
+  value: PreJoinSettings;
+  onChange: (next: PreJoinSettings) => void;
+  onJoin: () => void;
+  onCancel: () => void;
+  onRefreshDevices: () => void;
+}) {
+  if (!open) return null;
+
+  const isLight = theme === "light";
+
+  const overlay = "fixed inset-0 z-[999] flex items-center justify-center px-3";
+  const backdrop = "absolute inset-0 bg-black/55";
+  const card = [
+    "relative w-full max-w-[520px] rounded-3xl shadow-2xl overflow-hidden",
+    isLight ? "bg-white text-black" : "bg-[#020617] text-white",
+    "border",
+    isLight ? "border-black/10" : "border-white/10",
+  ].join(" ");
+
+  const inputWrap = isLight
+    ? "bg-black/5 border border-black/10"
+    : "bg-white/5 border border-white/10";
+
+  const inputCls = isLight
+    ? "text-black placeholder:text-black/40"
+    : "text-white placeholder:text-white/40";
+
+  const labelCls = isLight ? "text-black/70" : "text-white/70";
+
+  const btnPrimary = isLight
+    ? "bg-blue-600 hover:bg-blue-700 text-white"
+    : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]";
+
+  const btnGhost = isLight
+    ? "bg-black/5 hover:bg-black/10 text-black/70"
+    : "bg-white/5 hover:bg-white/10 text-white/80";
+
+  return (
+    <div className={overlay} data-theme={theme} style={{ colorScheme: theme }}>
+      <div className={backdrop} onClick={onCancel} />
+      <div className={card}>
+        <div className={`px-6 py-5 border-b ${isLight ? "border-black/10" : "border-white/10"}`}>
+          <div className="flex items-center justify-between">
+            <div className="font-inter font-semibold text-[16px]">
+              Before you join
+            </div>
+            <button
+              onClick={onCancel}
+              className={`w-9 h-9 rounded-2xl flex items-center justify-center ${btnGhost}`}
+              title="Close"
+            >
+              ✕
+            </button>
+          </div>
+          <div className={`mt-1 text-[12px] ${labelCls}`}>
+            Pick devices + name. Then join.
+          </div>
+        </div>
+
+        <div className="px-6 py-5 flex flex-col gap-4">
+          {/* name */}
+          <div className="flex flex-col gap-2">
+            <div className={`text-[12px] ${labelCls}`}>Display name</div>
+            <div className={`rounded-2xl px-4 py-3 ${inputWrap}`}>
+              <input
+                value={value.displayName}
+                onChange={(e) => onChange({ ...value, displayName: e.target.value })}
+                placeholder="Your name…"
+                className={`w-full bg-transparent outline-none text-[14px] ${inputCls}`}
+              />
+            </div>
+          </div>
+
+          {/* devices */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="flex flex-col gap-2">
+              <div className={`text-[12px] ${labelCls}`}>Microphone</div>
+              <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
+                <select
+                  value={value.audioInputId}
+                  onChange={(e) => onChange({ ...value, audioInputId: e.target.value })}
+                  className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
+                >
+                  <option value="">Default</option>
+                  {devices.audioInputs.map((d, i) => (
+                    <option key={d.deviceId} value={d.deviceId}>
+                      {deviceLabel(d, `Microphone ${i + 1}`)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <div className={`text-[12px] ${labelCls}`}>Camera</div>
+              <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
+                <select
+                  value={value.videoInputId}
+                  onChange={(e) => onChange({ ...value, videoInputId: e.target.value })}
+                  className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
+                >
+                  <option value="">Default</option>
+                  {devices.videoInputs.map((d, i) => (
+                    <option key={d.deviceId} value={d.deviceId}>
+                      {deviceLabel(d, `Camera ${i + 1}`)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="sm:col-span-2 flex flex-col gap-2">
+              <div className={`text-[12px] ${labelCls}`}>Speaker</div>
+              <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
+                <select
+                  value={value.audioOutputId}
+                  onChange={(e) => onChange({ ...value, audioOutputId: e.target.value })}
+                  className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
+                >
+                  <option value="default">Default</option>
+                  {devices.audioOutputs.map((d, i) => (
+                    <option key={d.deviceId} value={d.deviceId}>
+                      {deviceLabel(d, `Speaker ${i + 1}`)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* toggles */}
+          <div className={`rounded-2xl p-4 ${inputWrap}`}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="flex items-center gap-2 text-[13px]">
+                <input
+                  type="checkbox"
+                  checked={value.audioEnabled}
+                  onChange={(e) => onChange({ ...value, audioEnabled: e.target.checked })}
+                />
+                <span className={labelCls}>Audio enabled</span>
+              </label>
+
+              <label className="flex items-center gap-2 text-[13px]">
+                <input
+                  type="checkbox"
+                  checked={value.videoEnabled}
+                  onChange={(e) => onChange({ ...value, videoEnabled: e.target.checked })}
+                />
+                <span className={labelCls}>Video enabled</span>
+              </label>
+
+              <label className="flex items-center gap-2 text-[13px]">
+                <input
+                  type="checkbox"
+                  checked={value.echoCancellation}
+                  onChange={(e) => onChange({ ...value, echoCancellation: e.target.checked })}
+                />
+                <span className={labelCls}>Echo cancellation</span>
+              </label>
+
+              <label className="flex items-center gap-2 text-[13px]">
+                <input
+                  type="checkbox"
+                  checked={value.noiseSuppression}
+                  onChange={(e) => onChange({ ...value, noiseSuppression: e.target.checked })}
+                />
+                <span className={labelCls}>Noise suppression</span>
+              </label>
+
+              <label className="flex items-center gap-2 text-[13px] sm:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={value.autoGainControl}
+                  onChange={(e) => onChange({ ...value, autoGainControl: e.target.checked })}
+                />
+                <span className={labelCls}>Auto gain control</span>
+              </label>
+            </div>
+
+            <div className="mt-3 flex items-center justify-between">
+              <button
+                onClick={onRefreshDevices}
+                className={`h-10 px-4 rounded-2xl text-[13px] ${btnGhost}`}
+              >
+                Refresh devices
+              </button>
+
+              <div className={`text-[12px] ${labelCls}`}>
+                Tip: allow mic/camera to see device names
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className={`px-6 py-5 border-t flex items-center justify-end gap-3 ${isLight ? "border-black/10" : "border-white/10"}`}>
+          <button onClick={onCancel} className={`h-11 px-5 rounded-2xl text-[13px] font-semibold ${btnGhost}`}>
+            Cancel
+          </button>
+          <button onClick={onJoin} className={`h-11 px-6 rounded-2xl text-[13px] font-semibold ${btnPrimary}`}>
+            Join room
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function RoomPage() {
   const [theme, setTheme] = useState<RoomTheme>(() => {
     try {
@@ -317,15 +561,12 @@ export function RoomPage() {
     }
   });
 
-  // persist theme
   useEffect(() => {
     try {
       localStorage.setItem("room_theme", theme);
     } catch { }
   }, [theme]);
 
-  // ✅ CRITICAL: propagate theme to html + body (tailwind class-based dark mode)
-  // ✅ Also set data-theme + color-scheme (some components read it)
   useEffect(() => {
     try {
       const root = document.documentElement;
@@ -339,7 +580,6 @@ export function RoomPage() {
       root.setAttribute("data-theme", theme);
       body.setAttribute("data-theme", theme);
 
-      // helpful for inputs/scrollbars and some UI libs
       (root.style as unknown as { colorScheme?: string }).colorScheme = theme;
       (body.style as unknown as { colorScheme?: string }).colorScheme = theme;
     } catch { }
@@ -347,7 +587,6 @@ export function RoomPage() {
 
   const isLight = theme === "light";
 
-  // theme tokens (RoomPage layout)
   const pageBg = isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white";
   const topBarBg = isLight
     ? "bg-white/85 border border-black/10"
@@ -386,7 +625,6 @@ export function RoomPage() {
     );
   });
 
-  // ✅ keep latest settings in ref without triggering Jitsi init effect
   const mediaSettingsRef = useRef<RoomMediaSettings>(mediaSettings);
   useEffect(() => {
     mediaSettingsRef.current = mediaSettings;
@@ -411,33 +649,30 @@ export function RoomPage() {
   const [currentStage, setCurrentStage] = useState(0);
   const [remainingTime, setRemainingTime] = useState<string>("");
 
-  // stagebar start + infinite cycle
   const [stagebarStartTime, setStagebarStartTime] = useState<string>("");
   const [stagebarCycleSeconds, setStagebarCycleSeconds] = useState<number | undefined>(undefined);
 
   const [selectedUser, setSelectedUser] = useState<HostProfile | null>(null);
 
   const [userName, setUserName] = useState<string>("");
+  const [displayName, setDisplayName] = useState<string>("");
+
   const [lastErr, setLastErr] = useState<string>("");
   const [authUserId, setAuthUserId] = useState<string | null>(null);
 
   const engineRef = useRef<JitsiEngine | null>(null);
   const [participants, setParticipants] = useState<JitsiParticipant[]>([]);
 
-  // SOUND WHEN USER JOINS
   const prevCountRef = useRef<number>(0);
 
-  // TRACK SCREEN SHARER
   const [activeScreenSharer, setActiveScreenSharer] = useState<string | null>(null);
 
-  // REACTIONS
   const [incomingReactions, setIncomingReactions] = useState<{ id: number; type: ReactionType }[]>([]);
   const reactionIdRef = useRef<number>(0);
 
   const [localReactions, setLocalReactions] = useState<{ id: number; type: ReactionType }[]>([]);
   const localReactionIdRef = useRef<number>(0);
 
-  // AUDIO
   const prevStageRef = useRef<number>(-1);
   const firstTickDoneRef = useRef<boolean>(false);
   const welcomeLoopRef = useRef<HTMLAudioElement | null>(null);
@@ -453,7 +688,6 @@ export function RoomPage() {
   const BREAK_END_SOUND = "/sounds/break_end.mp3";
   const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
 
-  // RIGHT PANEL
   const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(false);
   const [rightTab, setRightTab] = useState<RightPanelTab>(null);
 
@@ -471,7 +705,6 @@ export function RoomPage() {
     });
   };
 
-  // ✅ Layout recalculation: when panel toggles, some video layouts only recompute on resize
   useEffect(() => {
     const fire = () => {
       try {
@@ -479,7 +712,6 @@ export function RoomPage() {
       } catch { }
     };
 
-    // rAF + a couple delayed kicks for CSS grid settling
     requestAnimationFrame(fire);
     const t1 = window.setTimeout(fire, 60);
     const t2 = window.setTimeout(fire, 220);
@@ -490,7 +722,6 @@ export function RoomPage() {
     };
   }, [rightPanelOpen, rightTab]);
 
-  // detect infinite room
   const isInfiniteRoom = useMemo(() => {
     const raw = session?.schedule;
     if (parse50505(raw)) return true;
@@ -508,7 +739,6 @@ export function RoomPage() {
     return false;
   }, [session]);
 
-  // SILENT ROOM DETECTION
   const isSilentRoom = useMemo(() => {
     const fmt = str(session?.format).toLowerCase();
     const title = str(session?.title).toLowerCase();
@@ -521,6 +751,32 @@ export function RoomPage() {
     const hay = `${fmt} ${title} ${tplName} ${tplKey} ${tplFmt}`.toLowerCase();
     return hay.includes("silent");
   }, [session]);
+
+  // PREJOIN
+  const [joinRequested, setJoinRequested] = useState(false);
+  const [prejoinOpen, setPrejoinOpen] = useState(false);
+
+  const [prejoin, setPrejoin] = useState<PreJoinSettings>(() => {
+    const stored = loadStoredMediaSettings();
+    return {
+      displayName: "",
+      audioInputId: stored?.audioInputId || "",
+      videoInputId: stored?.videoInputId || "",
+      audioOutputId: stored?.audioOutputId || "default",
+
+      audioEnabled: true,
+      videoEnabled: true,
+
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    };
+  });
+
+  const prejoinRef = useRef<PreJoinSettings>(prejoin);
+  useEffect(() => {
+    prejoinRef.current = prejoin;
+  }, [prejoin]);
 
   // UNLOCK AUDIO
   useEffect(() => {
@@ -571,15 +827,61 @@ export function RoomPage() {
     } catch { }
   };
 
-  // DEVICES
+  // Browser enumerate devices (works before Jitsi join)
+  const loadBrowserDevices = async () => {
+    try {
+      if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) return;
+
+      try {
+        // Ask permission so labels appear (best-effort)
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        stream.getTracks().forEach((t) => t.stop());
+      } catch {
+        // ignore (user may block)
+      }
+
+      const list = await navigator.mediaDevices.enumerateDevices();
+      const videoInputs = list.filter((d) => d.kind === "videoinput");
+      const audioInputs = list.filter((d) => d.kind === "audioinput");
+      const audioOutputs = list.filter((d) => d.kind === "audiooutput");
+
+      setDevices({ videoInputs, audioInputs, audioOutputs });
+
+      // set defaults if empty
+      setMediaSettings((prev) => ({
+        ...prev,
+        videoInputId: prev.videoInputId || videoInputs?.[0]?.deviceId || "",
+        audioInputId: prev.audioInputId || audioInputs?.[0]?.deviceId || "",
+        audioOutputId: prev.audioOutputId || "default",
+      }));
+
+      setPrejoin((prev) => ({
+        ...prev,
+        videoInputId: prev.videoInputId || videoInputs?.[0]?.deviceId || "",
+        audioInputId: prev.audioInputId || audioInputs?.[0]?.deviceId || "",
+        audioOutputId: prev.audioOutputId || "default",
+      }));
+    } catch (e) {
+      console.error("loadBrowserDevices error:", e);
+    }
+  };
+
+  // DEVICES (engine list preferred, fallback to browser)
   const loadDevices = async () => {
     try {
       const engineBase = engineRef.current;
-      if (!engineBase) return;
+      if (!engineBase) {
+        await loadBrowserDevices();
+        return;
+      }
 
       const engine = engineBase as unknown as JitsiEngineExt;
       const res = await engine.listMediaDevices?.();
-      if (!res) return;
+
+      if (!res) {
+        await loadBrowserDevices();
+        return;
+      }
 
       const vIn = res.videoInputs ?? [];
       const aIn = res.audioInputs ?? [];
@@ -587,7 +889,6 @@ export function RoomPage() {
 
       setDevices({ videoInputs: vIn, audioInputs: aIn, audioOutputs: aOut });
 
-      // only set defaults if empty (don't trigger re-join!)
       setMediaSettings((prev) => ({
         ...prev,
         videoInputId: prev.videoInputId || vIn?.[0]?.deviceId || "",
@@ -596,6 +897,7 @@ export function RoomPage() {
       }));
     } catch (e) {
       console.error("loadDevices error:", e);
+      await loadBrowserDevices();
     }
   };
 
@@ -635,7 +937,6 @@ export function RoomPage() {
           }
         }
 
-        // unwrap Session Studio / wrapper objects -> blocks array
         if (isRecord(parsed)) {
           const maybeBlocks =
             parsed.blocks ||
@@ -647,7 +948,6 @@ export function RoomPage() {
           if (Array.isArray(maybeBlocks)) parsed = maybeBlocks;
         }
 
-        // legacy array schedule
         if (Array.isArray(parsed)) {
           const formatted: Stage[] = parsed
             .map((b): Stage | null => {
@@ -716,7 +1016,6 @@ export function RoomPage() {
           setStagebarCycleSeconds(undefined);
         }
 
-        // infinite object schedule
         const isInfiniteScheduleObject =
           isRecord(parsed) &&
           (str(parsed.kind).toLowerCase().includes("infinite") ||
@@ -811,15 +1110,33 @@ export function RoomPage() {
       }
 
       setUserName(name);
+      setDisplayName((prev) => prev || name);
+      setPrejoin((prev) => ({ ...prev, displayName: prev.displayName || name }));
     })();
   }, []);
 
-  // PRESENCE (LIVE ATTENDANCE)
+  // Show prejoin once we have a session & a name (and not already joining)
+  useEffect(() => {
+    if (loading) return;
+    if (!session) return;
+    if (!displayName && !userName) return;
+    if (engineRef.current) return;
+    if (joinRequested) return;
+
+    setPrejoinOpen(true);
+    // best-effort load devices (so selects are populated)
+    loadBrowserDevices().catch(() => { });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, session, displayName, userName, joinRequested]);
+
+  // PRESENCE
   useAttendancePresence(id && authUserId ? id : null, { heartbeatMs: 10_000 });
 
-  // ✅ JITSI INIT + REACTIONS (FIXED deps: NO mediaSettings)
+  // ✅ JITSI INIT (blocked by joinRequested)
   useEffect(() => {
-    if (!session || !userName) return;
+    if (!session) return;
+    if (!displayName && !userName) return;
+    if (!joinRequested) return;
     if (engineRef.current) return;
 
     const engine = new JitsiEngine({
@@ -866,11 +1183,29 @@ export function RoomPage() {
       },
     });
 
-    // apply persisted settings BEFORE join (devices + bg prefs) — but do NOT re-init on changes
+    // apply persisted settings BEFORE join (devices + bg prefs)
     try {
       const ms = mediaSettingsRef.current;
       engine.mediaSettings.videoInputId = ms.videoInputId || "";
       engine.mediaSettings.audioInputId = ms.audioInputId || "";
+
+      const pj = prejoinRef.current;
+
+      // optional engine fields (mute + constraints)
+      const msExt = engine.mediaSettings as unknown as EngineMediaSettingsExt;
+      msExt.startWithAudioMuted = !pj.audioEnabled;
+      msExt.startWithVideoMuted = !pj.videoEnabled;
+      msExt.constraints = {
+        audio: {
+          echoCancellation: pj.echoCancellation,
+          noiseSuppression: pj.noiseSuppression,
+          autoGainControl: pj.autoGainControl,
+        },
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+      };
 
       const engineExt = engine as unknown as JitsiEngineExt;
       engineExt.setAudioOutputDevice?.(ms.audioOutputId || "default");
@@ -899,8 +1234,10 @@ export function RoomPage() {
 
     const safeRoomName = roomNameRaw.toLowerCase().replace(/[^a-z0-9-_]/g, "");
 
+    const nameToUse = (displayName || userName || "Guest").trim() || "Guest";
+
     engine
-      .initAndJoin(safeRoomName || `session-${session.id}`, userName || "Guest")
+      .initAndJoin(safeRoomName || `session-${session.id}`, nameToUse)
       .catch((e: unknown) => {
         console.error("initAndJoin error", e);
         const msg = isRecord(e) ? str(e.message) : "";
@@ -920,9 +1257,9 @@ export function RoomPage() {
       stopWelcomeLoop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, userName]);
+  }, [session, displayName, userName, joinRequested]);
 
-  // APPLY MEDIA SETTINGS
+  // APPLY MEDIA SETTINGS (in-room)
   const applyMediaSettings = async (next: RoomMediaSettings) => {
     try {
       const base = engineRef.current;
@@ -957,7 +1294,6 @@ export function RoomPage() {
     }
   };
 
-  // BUTTON HANDLERS
   const handleToggleAudio = () => engineRef.current?.toggleAudioMute();
   const handleToggleVideo = () => engineRef.current?.toggleVideoMute();
   const handleToggleScreenShare = () => engineRef.current?.toggleScreenShare();
@@ -974,7 +1310,7 @@ export function RoomPage() {
     }
   };
 
-  // STAGES TIMER (scheduled OR infinite)
+  // STAGES TIMER
   useEffect(() => {
     if (isSilentRoom) {
       setRemainingTime("");
@@ -1080,7 +1416,6 @@ export function RoomPage() {
     return () => window.clearInterval(timer);
   }, [stagebarStartTime, stages, isSilentRoom, isInfiniteRoom, stagebarCycleSeconds]);
 
-  // DERIVED
   const localParticipant = useMemo(
     () => participants.find((p) => p.isLocal) || null,
     [participants]
@@ -1090,7 +1425,6 @@ export function RoomPage() {
   const isVideoMuted = !!localParticipant?.videoMuted;
   const isScreenSharing = !!localParticipant?.isScreenSharing;
 
-  // REACTIONS MENU
   const [showReactionsMenu, setShowReactionsMenu] = useState(false);
   const reactionsMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -1126,7 +1460,6 @@ export function RoomPage() {
     }, 1500);
   };
 
-  // MORE MENU (bottom, mobile-only)
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -1154,13 +1487,11 @@ export function RoomPage() {
       mql.addEventListener("change", onChange);
       return () => mql.removeEventListener("change", onChange);
     } catch {
-      // Safari fallback
       mql.addListener(onChange);
       return () => mql.removeListener(onChange);
     }
   }, []);
 
-  // RIGHT PANEL CONTENT
   const [participantsSearch, setParticipantsSearch] = useState("");
 
   const filteredParticipants = useMemo(() => {
@@ -1173,7 +1504,6 @@ export function RoomPage() {
 
   const participantsCount = participants.length;
 
-  // theme switcher
   const switchTrack =
     "w-[84px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
   const switchTrackCls = isLight
@@ -1185,8 +1515,6 @@ export function RoomPage() {
 
   const thumbTranslate = isLight ? "translateX(0px)" : "translateX(50px)";
 
-  // ✅ video container ref + ResizeObserver to keep layouts stable
-  // ✅ MUST be above early returns (loading/session) to keep hooks order stable.
   const videoWrapRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -1227,18 +1555,15 @@ export function RoomPage() {
     );
   }
 
-  // Right panel body (re-used for desktop & mobile overlay)
   const RightPanelBody = (
     <div
       className={[
         "rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col",
         panelBg,
-        // extra safety: local dark context for panels
         theme === "dark" ? "dark" : "",
       ].join(" ")}
       data-theme={theme}
     >
-      {/* participants */}
       {rightTab === "participants" && (
         <div className="h-full min-h-0 flex flex-col">
           <div
@@ -1375,10 +1700,8 @@ export function RoomPage() {
         </div>
       )}
 
-      {/* chat */}
       {rightTab === "chat" && (
         <div className="h-full min-h-0 flex flex-col">
-          {/* ✅ remove double header: keep only close control row (no title text) */}
           <div
             className={`px-4 py-3 border-b flex items-center justify-end ${isLight ? "border-black/10" : "border-white/5"
               }`}
@@ -1395,22 +1718,24 @@ export function RoomPage() {
             </button>
           </div>
 
-          {/* ✅ critical: min-h-0 + overflow-hidden so Chat can't stretch the grid row */}
           <div className="flex-1 min-h-0 p-4 overflow-hidden">
             <div
               className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight ? "bg-white/70 border border-black/10" : "bg-[#020617]/40 border border-white/10"
                 }`}
             >
-              {/* force ChatPanel root to be h-full/min-h-0 */}
               <div className="h-full min-h-0 flex flex-col overflow-hidden [&>*]:h-full [&>*]:min-h-0">
                 {session?.id ? (
-                  <div data-theme={theme} style={{ colorScheme: theme }} className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}>
+                  <div
+                    data-theme={theme}
+                    style={{ colorScheme: theme }}
+                    className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
+                  >
                     <ChatPanel
-                      sessionId={sessionId}
+                      sessionId={session.id}
                       theme={theme}
-                      showHeader={false} // если хочешь без сабтайтла
+                      showHeader={false}
                       title="Chat"
-                      onClose={() => setChatOpen(false)}
+                      onClose={() => openRightTab(null)}
                     />
                   </div>
                 ) : null}
@@ -1420,7 +1745,6 @@ export function RoomPage() {
         </div>
       )}
 
-      {/* intentions */}
       {rightTab === "intentions" && (
         <div className="h-full min-h-0 flex flex-col">
           <div
@@ -1442,7 +1766,6 @@ export function RoomPage() {
             </button>
           </div>
 
-          {/* ✅ critical: min-h-0 + overflow-hidden so Intentions doesn't stretch page */}
           <div className="flex-1 min-h-0 overflow-hidden p-4">
             <div
               className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight ? "bg-white/70 border border-black/10" : "bg-[#020617]/40 border border-white/10"
@@ -1466,385 +1789,407 @@ export function RoomPage() {
   );
 
   return (
-    <div className={`h-[100dvh] overflow-hidden ${pageBg}`}>
-      {/* ✅ full-height column layout */}
-      <div className="h-full w-full px-3 sm:px-5 pt-5 pb-[calc(110px+env(safe-area-inset-bottom))] flex flex-col gap-5 min-h-0">
-        {/* TOP BAR */}
-        <div className={`flex w-full rounded-2xl overflow-hidden ${topBarBg}`}>
-          <div className="flex-1 px-6 py-4">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <p className={`font-inter font-semibold text-[18px] truncate ${strongText}`}>
-                  {session.title}
-                </p>
-                <p className={`font-inter text-[13px] ${subtleText}`}>
-                  {participantsCount} participants
-                </p>
+    <>
+      <PreJoinModal
+        open={prejoinOpen}
+        theme={theme}
+        devices={devices}
+        value={prejoin}
+        onChange={setPrejoin}
+        onRefreshDevices={() => {
+          loadBrowserDevices().catch(() => { });
+        }}
+        onCancel={() => {
+          // cancel = leave
+          navigate("/sessions", { replace: true });
+        }}
+        onJoin={() => {
+          const pj = prejoinRef.current;
+
+          // update names
+          const nm = (pj.displayName || displayName || userName || "Guest").trim() || "Guest";
+          setDisplayName(nm);
+
+          // persist device + output
+          const nextMedia: RoomMediaSettings = {
+            ...mediaSettingsRef.current,
+            videoInputId: pj.videoInputId || mediaSettingsRef.current.videoInputId || "",
+            audioInputId: pj.audioInputId || mediaSettingsRef.current.audioInputId || "",
+            audioOutputId: pj.audioOutputId || mediaSettingsRef.current.audioOutputId || "default",
+            bgMode: mediaSettingsRef.current.bgMode,
+            bgImageUrl: mediaSettingsRef.current.bgImageUrl,
+          };
+
+          mediaSettingsRef.current = nextMedia;
+          setMediaSettings(nextMedia);
+          setSelectedAudioOutputId(nextMedia.audioOutputId || "default");
+          saveStoredMediaSettings(nextMedia);
+
+          setPrejoinOpen(false);
+          setJoinRequested(true);
+        }}
+      />
+
+      <div className={`h-[100dvh] overflow-hidden ${pageBg}`}>
+        <div className="h-full w-full px-3 sm:px-5 pt-5 pb-[calc(110px+env(safe-area-inset-bottom))] flex flex-col gap-5 min-h-0">
+          <div className={`flex w-full rounded-2xl overflow-hidden ${topBarBg}`}>
+            <div className="flex-1 px-6 py-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className={`font-inter font-semibold text-[18px] truncate ${strongText}`}>
+                    {session.title}
+                  </p>
+                  <p className={`font-inter text-[13px] ${subtleText}`}>
+                    {participantsCount} participants
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
+                    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}>
+                      <Icon name="timer" theme={theme} className="w-4 h-4 opacity-80" alt="Timer" />
+                      <span className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"}`}>
+                        {remainingTime || "--:--"}
+                      </span>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+                    className={`${switchTrack} ${switchTrackCls}`}
+                    title="Toggle theme"
+                    aria-label="Toggle theme"
+                  >
+                    <div className={switchThumb} style={{ transform: thumbTranslate }}>
+                      <Icon
+                        name={isLight ? "theme-sun" : "theme-moon"}
+                        theme={theme}
+                        className="w-4 h-4"
+                        alt={isLight ? "Light" : "Dark"}
+                      />
+                    </div>
+                  </button>
+
+                  {session.host_profile && (
+                    <button
+                      onClick={() => setSelectedUser(session.host_profile || null)}
+                      className={`max-[480px]:hidden flex items-center gap-2 px-3 py-1.5 rounded-xl border transition font-inter text-[13px] ${isLight
+                        ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                        : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                        }`}
+                    >
+                      <Icon name="host_session_icon" theme={theme} className="h-5 w-5 opacity-90" alt="" />
+                      <span className="flex items-center gap-1 leading-none">
+                        <span className={isLight ? "font-normal text-black/55" : "font-normal text-white/70"}>
+                          Host:
+                        </span>
+                        <span className="font-semibold">{session.host_profile.full_name}</span>
+                      </span>
+                    </button>
+                  )}
+                </div>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
-                {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
-                  <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}>
-                    <Icon name="timer" theme={theme} className="w-4 h-4 opacity-80" alt="Timer" />
-                    <span className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"}`}>
-                      {remainingTime || "--:--"}
-                    </span>
-                  </div>
-                )}
-
-                {/* Theme switcher */}
-                <button
-                  onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-                  className={`${switchTrack} ${switchTrackCls}`}
-                  title="Toggle theme"
-                  aria-label="Toggle theme"
-                >
-                  <div className={switchThumb} style={{ transform: thumbTranslate }}>
-                    <Icon
-                      name={isLight ? "theme-sun" : "theme-moon"}
-                      theme={theme}
-                      className="w-4 h-4"
-                      alt={isLight ? "Light" : "Dark"}
+              {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
+                <div className="mt-3 w-full overflow-hidden">
+                  <div className="w-full overflow-hidden">
+                    <SessionStageBar
+                      stages={stages}
+                      startTime={stagebarStartTime}
+                      cycleSeconds={stagebarCycleSeconds}
+                      onHoverStage={setHoveredStage}
                     />
                   </div>
-                </button>
+                </div>
+              )}
+            </div>
+          </div>
 
-                {/* Host indicator */}
-                {session.host_profile && (
-                  <button
-                    onClick={() => setSelectedUser(session.host_profile || null)}
-                    className={`max-[480px]:hidden flex items-center gap-2 px-3 py-1.5 rounded-xl border transition font-inter text-[13px] ${isLight
-                      ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                      : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
-                      }`}
-                  >
-                    <Icon name="host_session_icon" theme={theme} className="h-5 w-5 opacity-90" alt="" />
-                    <span className="flex items-center gap-1 leading-none">
-                      <span className={isLight ? "font-normal text-black/55" : "font-normal text-white/70"}>
-                        Host:
-                      </span>
-                      <span className="font-semibold">{session.host_profile.full_name}</span>
-                    </span>
-                  </button>
-                )}
+          <div
+            className={
+              "relative grid grid-rows-1 gap-5 flex-1 min-h-0 h-full " +
+              (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
+            }
+          >
+            <div
+              ref={videoWrapRef}
+              className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
+                }`}
+            >
+              <div className="w-full h-full min-h-0">
+                <VideoRoom
+                  theme={theme}
+                  participants={participants}
+                  onToggleAudio={handleToggleAudio}
+                  onToggleVideo={handleToggleVideo}
+                  onToggleScreenShare={handleToggleScreenShare}
+                  onLeave={handleLeave}
+                  activeScreenSharer={activeScreenSharer}
+                  incomingReactions={incomingReactions}
+                  localReactions={localReactions}
+                  showControls={false}
+                  onVisibleVideoIdsChange={(ids: string[]) => {
+                    const base = engineRef.current;
+                    if (!base) return;
+                    const eng = base as unknown as JitsiEngineExt;
+                    eng.setVisibleVideoParticipants?.(ids);
+                  }}
+                  audioOutputId={selectedAudioOutputId}
+                  onRegisterVideoElement={(pid: string, el: HTMLVideoElement, kind: string) => {
+                    try {
+                      const base = engineRef.current;
+                      if (!base) return;
+                      const eng = base as unknown as JitsiEngineExt;
+                      eng.registerVideoElement?.(pid, el, kind);
+                    } catch { }
+                  }}
+                />
               </div>
+
+              {lastErr && (
+                <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow">
+                  {lastErr}
+                </div>
+              )}
             </div>
 
-            {/* StageBar */}
-            {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
-              <div className="mt-3 w-full overflow-hidden">
-                <div className="w-full overflow-hidden">
-                  <SessionStageBar
-                    stages={stages}
-                    startTime={stagebarStartTime}
-                    cycleSeconds={stagebarCycleSeconds}
-                    onHoverStage={setHoveredStage}
-                  />
+            {rightPanelOpen && (
+              <div className="hidden lg:block min-h-0 h-full overflow-hidden">
+                {RightPanelBody}
+              </div>
+            )}
+
+            {rightPanelOpen && (
+              <div className="lg:hidden absolute inset-0 z-40 min-h-0">
+                <div
+                  className="absolute inset-0 bg-black/40"
+                  onClick={() => openRightTab(null)}
+                />
+                <div className="absolute inset-x-0 top-0 bottom-0 p-2 min-h-0">
+                  {RightPanelBody}
                 </div>
               </div>
             )}
           </div>
         </div>
 
-        {/* MAIN AREA */}
-        <div
-          className={
-            // ✅ IMPORTANT: force the single row to minmax(0,1fr) so content can't expand height
-            "relative grid grid-rows-1 gap-5 flex-1 min-h-0 h-full " +
-            (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
-          }
-        >
-          {/* VIDEO AREA */}
-          <div
-            ref={videoWrapRef}
-            className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
-              }`}
-          >
-            <div className="w-full h-full min-h-0">
-              <VideoRoom
-                theme={theme}
-                participants={participants}
-                onToggleAudio={handleToggleAudio}
-                onToggleVideo={handleToggleVideo}
-                onToggleScreenShare={handleToggleScreenShare}
-                onLeave={handleLeave}
-                activeScreenSharer={activeScreenSharer}
-                incomingReactions={incomingReactions}
-                localReactions={localReactions}
-                showControls={false}
-                onVisibleVideoIdsChange={(ids: string[]) => {
-                  const base = engineRef.current;
-                  if (!base) return;
-                  const eng = base as unknown as JitsiEngineExt;
-                  eng.setVisibleVideoParticipants?.(ids);
-                }}
-                audioOutputId={selectedAudioOutputId}
-                onRegisterVideoElement={(pid: string, el: HTMLVideoElement, kind: string) => {
-                  try {
-                    const base = engineRef.current;
-                    if (!base) return;
-                    const eng = base as unknown as JitsiEngineExt;
-                    eng.registerVideoElement?.(pid, el, kind);
-                  } catch { }
-                }}
-              />
-            </div>
-
-            {lastErr && (
-              <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow">
-                {lastErr}
-              </div>
-            )}
-          </div>
-
-          {/* DESKTOP RIGHT PANEL */}
-          {rightPanelOpen && (
-            <div className="hidden lg:block min-h-0 h-full overflow-hidden">
-              {RightPanelBody}
-            </div>
-          )}
-
-          {/* MOBILE OVERLAY RIGHT PANEL */}
-          {rightPanelOpen && (
-            <div className="lg:hidden absolute inset-0 z-40 min-h-0">
-              {/* backdrop */}
-              <div
-                className="absolute inset-0 bg-black/40"
-                onClick={() => openRightTab(null)}
-              />
-              {/* panel (over video) */}
-              <div className="absolute inset-x-0 top-0 bottom-0 p-2 min-h-0">
-                {RightPanelBody}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* FIXED BOTTOM CONTROLS */}
-      <div className="fixed inset-x-0 bottom-0 z-50">
-        <div className="w-full px-3 sm:px-5 pb-[calc(12px+env(safe-area-inset-bottom))]">
-          <div className={`h-[64px] sm:h-[74px] rounded-2xl shadow-2xl backdrop-blur grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4 ${bottomBarBg}`}>
-            {/* LEFT GROUP */}
-            <div className="flex items-center gap-2" ref={moreMenuRef}>
-              {/* MOBILE (<768): dropdown */}
-              <div className="md:hidden relative">
-                <button
-                  onClick={() => setShowMoreMenu((v) => !v)}
-                  className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                  title="Menu"
-                >
-                  <span className={isLight ? "text-black/70" : "text-white/85"}>⋯</span>
-                </button>
-
-                {showMoreMenu && (
-                  <div className="absolute bottom-[76px] sm:bottom-[86px] left-0">
-                    <div className={`w-[240px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}>
-                      <button
-                        onClick={() => {
-                          openRightTab("participants");
-                          setShowMoreMenu(false);
-                        }}
-                        className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
-                      >
-                        <Icon name="participants" theme={theme} className="w-4 h-4 opacity-90" />
-                        <span>Participants</span>
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          openRightTab("chat");
-                          setShowMoreMenu(false);
-                        }}
-                        className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
-                      >
-                        <Icon name="chat" theme={theme} className="w-4 h-4 opacity-90" />
-                        <span>Chat</span>
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          openRightTab("intentions");
-                          setShowMoreMenu(false);
-                        }}
-                        className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
-                      >
-                        <Icon name="intentions" theme={theme} className="w-4 h-4 opacity-90" />
-                        <span>Intentions</span>
-                      </button>
-
-                      <div className={isLight ? "h-px bg-black/10" : "h-px bg-white/10"} />
-
-                      <button
-                        onClick={() => {
-                          setSettingsOpen(true);
-                          setTimeout(() => loadDevices(), 0);
-                          setShowMoreMenu(false);
-                        }}
-                        className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
-                      >
-                        <Icon name="settings" theme={theme} className="w-4 h-4 opacity-90" />
-                        <span>Video settings</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* DESKTOP/TABLET (>=768): direct */}
-              <div className="hidden md:flex items-center gap-2">
-                <button
-                  onClick={() => openRightTab("participants")}
-                  className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                  title="Participants"
-                >
-                  <Icon name="participants" theme={theme} className="w-5 h-5" />
-                </button>
-
-                <button
-                  onClick={() => openRightTab("chat")}
-                  className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                  title="Chat"
-                >
-                  <Icon name="chat" theme={theme} className="w-5 h-5" />
-                </button>
-
-                <button
-                  onClick={() => openRightTab("intentions")}
-                  className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                  title="Intentions"
-                >
-                  <Icon name="intentions" theme={theme} className="w-5 h-5" />
-                </button>
-
-                <button
-                  onClick={() => {
-                    setSettingsOpen(true);
-                    setTimeout(() => loadDevices(), 0);
-                  }}
-                  className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                  title="Video settings"
-                >
-                  <Icon name="settings" theme={theme} className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            {/* CENTER GROUP */}
-            <div className="flex items-center justify-center gap-2 sm:gap-3">
-              <button
-                onClick={() => engineRef.current?.toggleAudioMute()}
-                className={
-                  "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
-                  (isAudioMuted ? "bg-red-600 hover:bg-red-700" : ctlBtnBase)
-                }
-                title="Toggle mic"
-              >
-                <Icon
-                  name={isAudioMuted ? "mic-off" : "mic-on"}
-                  theme={isAudioMuted ? "dark" : theme} // mic-off always white
-                  className="w-5 h-5"
-                />
-              </button>
-
-              <button
-                onClick={() => engineRef.current?.toggleVideoMute()}
-                className={
-                  "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
-                  (isVideoMuted ? "bg-red-600 hover:bg-red-700" : ctlBtnBase)
-                }
-                title="Toggle camera"
-              >
-                <Icon name={isVideoMuted ? "camera-off" : "camera-on"} theme={theme} className="w-5 h-5" />
-              </button>
-
-              <button
-                onClick={() => engineRef.current?.toggleScreenShare()}
-                className={
-                  "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
-                  (isScreenSharing ? "bg-blue-600 hover:bg-blue-700" : ctlBtnBase)
-                }
-                title="Share screen"
-              >
-                <Icon name="screen-share" theme={theme} className="w-5 h-5" />
-              </button>
-
-              {/* reactions */}
-              <div className="relative" ref={reactionsMenuRef}>
-                <button
-                  onClick={() => setShowReactionsMenu((v) => !v)}
-                  className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                  title="Reactions"
-                >
-                  <Icon name="reaction" theme={theme} className="w-5 h-5" />
-                </button>
-
-                {showReactionsMenu && (
-                  <div
-                    className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
-                      }`}
+        <div className="fixed inset-x-0 bottom-0 z-50">
+          <div className="w-full px-3 sm:px-5 pb-[calc(12px+env(safe-area-inset-bottom))]">
+            <div className={`h-[64px] sm:h-[74px] rounded-2xl shadow-2xl backdrop-blur grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4 ${bottomBarBg}`}>
+              <div className="flex items-center gap-2" ref={moreMenuRef}>
+                <div className="md:hidden relative">
+                  <button
+                    onClick={() => setShowMoreMenu((v) => !v)}
+                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                    title="Menu"
                   >
-                    {(["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown"] as ReactionType[]).map((t) => (
-                      <button
-                        key={t}
-                        onClick={() => {
-                          handleSendReaction(t);
-                          setShowReactionsMenu(false);
-                        }}
-                        className="hover:scale-[1.06] transition"
-                        title={t}
-                      >
-                        {reactionEmoji[t]}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                    <span className={isLight ? "text-black/70" : "text-white/85"}>⋯</span>
+                  </button>
+
+                  {showMoreMenu && (
+                    <div className="absolute bottom-[76px] sm:bottom-[86px] left-0">
+                      <div className={`w-[240px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}>
+                        <button
+                          onClick={() => {
+                            openRightTab("participants");
+                            setShowMoreMenu(false);
+                          }}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
+                        >
+                          <Icon name="participants" theme={theme} className="w-4 h-4 opacity-90" />
+                          <span>Participants</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            openRightTab("chat");
+                            setShowMoreMenu(false);
+                          }}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
+                        >
+                          <Icon name="chat" theme={theme} className="w-4 h-4 opacity-90" />
+                          <span>Chat</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            openRightTab("intentions");
+                            setShowMoreMenu(false);
+                          }}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
+                        >
+                          <Icon name="intentions" theme={theme} className="w-4 h-4 opacity-90" />
+                          <span>Intentions</span>
+                        </button>
+
+                        <div className={isLight ? "h-px bg-black/10" : "h-px bg-white/10"} />
+
+                        <button
+                          onClick={() => {
+                            setSettingsOpen(true);
+                            setTimeout(() => loadDevices(), 0);
+                            setShowMoreMenu(false);
+                          }}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
+                        >
+                          <Icon name="settings" theme={theme} className="w-4 h-4 opacity-90" />
+                          <span>Video settings</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="hidden md:flex items-center gap-2">
+                  <button
+                    onClick={() => openRightTab("participants")}
+                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                    title="Participants"
+                  >
+                    <Icon name="participants" theme={theme} className="w-5 h-5" />
+                  </button>
+
+                  <button
+                    onClick={() => openRightTab("chat")}
+                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                    title="Chat"
+                  >
+                    <Icon name="chat" theme={theme} className="w-5 h-5" />
+                  </button>
+
+                  <button
+                    onClick={() => openRightTab("intentions")}
+                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                    title="Intentions"
+                  >
+                    <Icon name="intentions" theme={theme} className="w-5 h-5" />
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setSettingsOpen(true);
+                      setTimeout(() => loadDevices(), 0);
+                    }}
+                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                    title="Video settings"
+                  >
+                    <Icon name="settings" theme={theme} className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
-            </div>
 
-            {/* RIGHT GROUP */}
-            <div className="flex items-center justify-end gap-2 sm:gap-3">
-              <button
-                onClick={handleLeave}
-                className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${isLight ? "bg-red-600 hover:bg-red-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"
-                  }`}
-                title="Leave"
-              >
-                <Icon name="leave" theme={theme} className="w-5 h-5" />
-                <span className="text-[14px]">Leave</span>
-              </button>
+              <div className="flex items-center justify-center gap-2 sm:gap-3">
+                <button
+                  onClick={() => engineRef.current?.toggleAudioMute()}
+                  className={
+                    "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
+                    (isAudioMuted ? "bg-red-600 hover:bg-red-700" : ctlBtnBase)
+                  }
+                  title="Toggle mic"
+                >
+                  <Icon
+                    name={isAudioMuted ? "mic-off" : "mic-on"}
+                    theme={isAudioMuted ? "dark" : theme}
+                    className="w-5 h-5"
+                  />
+                </button>
 
-              <button
-                onClick={handleLeave}
-                className="sm:hidden w-10 h-10 rounded-2xl bg-red-600 hover:bg-red-700 text-white flex items-center justify-center"
-                title="Leave"
-              >
-                <Icon name="leave" theme={theme} className="w-5 h-5" />
-              </button>
+                <button
+                  onClick={() => engineRef.current?.toggleVideoMute()}
+                  className={
+                    "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
+                    (isVideoMuted ? "bg-red-600 hover:bg-red-700" : ctlBtnBase)
+                  }
+                  title="Toggle camera"
+                >
+                  <Icon name={isVideoMuted ? "camera-off" : "camera-on"} theme={theme} className="w-5 h-5" />
+                </button>
+
+                <button
+                  onClick={() => engineRef.current?.toggleScreenShare()}
+                  className={
+                    "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
+                    (isScreenSharing ? "bg-blue-600 hover:bg-blue-700" : ctlBtnBase)
+                  }
+                  title="Share screen"
+                >
+                  <Icon name="screen-share" theme={theme} className="w-5 h-5" />
+                </button>
+
+                <div className="relative" ref={reactionsMenuRef}>
+                  <button
+                    onClick={() => setShowReactionsMenu((v) => !v)}
+                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                    title="Reactions"
+                  >
+                    <Icon name="reaction" theme={theme} className="w-5 h-5" />
+                  </button>
+
+                  {showReactionsMenu && (
+                    <div
+                      className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
+                        }`}
+                    >
+                      {(["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown"] as ReactionType[]).map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => {
+                            handleSendReaction(t);
+                            setShowReactionsMenu(false);
+                          }}
+                          className="hover:scale-[1.06] transition"
+                          title={t}
+                        >
+                          {reactionEmoji[t]}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 sm:gap-3">
+                <button
+                  onClick={handleLeave}
+                  className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${isLight ? "bg-red-600 hover:bg-red-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"
+                    }`}
+                  title="Leave"
+                >
+                  <Icon name="leave" theme={theme} className="w-5 h-5" />
+                  <span className="text-[14px]">Leave</span>
+                </button>
+
+                <button
+                  onClick={handleLeave}
+                  className="sm:hidden w-10 h-10 rounded-2xl bg-red-600 hover:bg-red-700 text-white flex items-center justify-center"
+                  title="Leave"
+                >
+                  <Icon name="leave" theme={theme} className="w-5 h-5" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
+
+        <RoomMediaSettingsModal
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          devices={devices}
+          value={mediaSettings}
+          onRefreshDevices={loadDevices}
+          onChange={(next) => {
+            setMediaSettings(next);
+            setSelectedAudioOutputId(next.audioOutputId || "default");
+          }}
+          onApply={async (next) => {
+            await applyMediaSettings(next);
+            setSettingsOpen(false);
+          }}
+        />
+
+        {selectedUser && <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />}
       </div>
-
-      {/* MEDIA SETTINGS MODAL */}
-      <RoomMediaSettingsModal
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        devices={devices}
-        value={mediaSettings}
-        onRefreshDevices={loadDevices}
-        onChange={(next) => {
-          setMediaSettings(next);
-          setSelectedAudioOutputId(next.audioOutputId || "default");
-        }}
-        onApply={async (next) => {
-          await applyMediaSettings(next);
-          setSettingsOpen(false);
-        }}
-      />
-
-      {selectedUser && <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />}
-    </div>
+    </>
   );
 }
 
