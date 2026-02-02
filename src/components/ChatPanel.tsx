@@ -967,31 +967,29 @@ export function ChatPanel({
 
     return (
         <div className="h-full flex flex-col bg-transparent min-h-0 relative">
-            {/* HEADER — ВСЕГДА показываем title, чтобы он не пропадал */}
-            <div className={"px-5 " + (showHeader ? "py-4" : "py-3") + " border-b " + headerBorder}>
-                <div className="flex items-center justify-between gap-3">
-                    <div className={titleText + " font-inter font-semibold truncate min-w-0"}>
-                        {title}
+            {/* HEADER */}
+            {showHeader && (
+                <div className={"px-5 py-4 border-b " + headerBorder}>
+                    <div className="flex items-center justify-between gap-3">
+                        <div className={titleText + " font-inter font-semibold truncate min-w-0"}>{title}</div>
+
+                        {onClose && (
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className={"w-9 h-9 rounded-xl flex items-center justify-center transition " + headerCloseBtnCls}
+                                title="Close"
+                            >
+                                <X size={18} />
+                            </button>
+                        )}
                     </div>
 
-                    {onClose && (
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            className={"w-9 h-9 rounded-xl flex items-center justify-center transition " + headerCloseBtnCls}
-                            title="Close"
-                        >
-                            <X size={18} />
-                        </button>
+                    {subtitle && (
+                        <div className={subText + " text-[12px] mt-0.5"}>{subtitle}</div>
                     )}
                 </div>
-
-                {showHeader && (
-                    <div className={subText + " text-[12px] mt-0.5"}>
-                        {subtitle}
-                    </div>
-                )}
-            </div>
+            )}
 
             {/* LIST */}
             <div
