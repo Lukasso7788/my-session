@@ -422,7 +422,7 @@ function computeCols(count: number, containerWidth: number) {
 
     // ✅ You explicitly want 3 videos to behave like "one row of 3" on normal widths
     // and still not degrade too early when panels open.
-    if (count === 3) return 2;
+    if (count === 3) return containerWidth >= 900 ? 3 : 2;
 
     // ✅ Keep 3 columns for 5-6 earlier (so chat/intentions doesn't flip 6p into 2x3)
     if (count === 5) return containerWidth >= 900 ? 3 : 2;
@@ -622,10 +622,10 @@ function P2PLayout({
 
         if (!w) return null;
 
-        // allow a bit more on big screens for side-by-side
-        const cap = stack ? 99999 : 1400;
-        return Math.min(w, cap);
-    }, [containerWidth, containerHeight, cols, rows, gapPx, paddingPx, stack]);
+        // ✅ FIX: remove hard cap (was 1400) so 2 tiles can expand to full available width when chat is closed
+        // Keep w as-is (it already respects available width + height).
+        return w;
+    }, [containerWidth, containerHeight, cols, rows, gapPx, paddingPx]);
 
     // ✅ Center the whole grid vertically inside the available frame (fix "stuck to top")
     return (
