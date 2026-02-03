@@ -422,7 +422,7 @@ function computeCols(count: number, containerWidth: number) {
 
     // ✅ You explicitly want 3 videos to behave like "one row of 3" on normal widths
     // and still not degrade too early when panels open.
-    if (count === 3) return containerWidth >= 900 ? 3 : 2;
+    if (count === 3) return 2;
 
     // ✅ Keep 3 columns for 5-6 earlier (so chat/intentions doesn't flip 6p into 2x3)
     if (count === 5) return containerWidth >= 900 ? 3 : 2;

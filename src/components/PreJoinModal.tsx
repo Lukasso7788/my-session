@@ -1,4 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { X, RefreshCcw } from "lucide-react";
+
+type BgMode = "none" | "blur" | "image";
 
 export type PreJoinSettings = {
     displayName: string;
@@ -10,13 +13,13 @@ export type PreJoinSettings = {
     audioInputId: string; // "default" or deviceId
     audioOutputId: string; // "default" or deviceId
 
-    // "Reduce" toggles (real constraints)
     echoCancellation: boolean;
     noiseSuppression: boolean;
     autoGainControl: boolean;
 
-    // Effects MVP (preview toggle; later можно сделать real outgoing processing)
-    effect: "none" | "blur";
+    // ✅ new: same model idea as RoomMediaSettings
+    bgMode: BgMode;
+    bgImageUrl?: string; // /public url | remote url | objectURL(blob:)
 };
 
 type Props = {
@@ -41,11 +44,27 @@ const DEFAULTS: PreJoinSettings = {
     noiseSuppression: true,
     autoGainControl: true,
 
-    effect: "none",
+    bgMode: "none",
+    bgImageUrl: undefined,
 };
+
+const DEFAULT_BACKGROUNDS: { id: string; url: string; label: string }[] = [
+    { id: "bg1", url: "/backgrounds/bg1.jpg", label: "Warm" },
+    { id: "bg2", url: "/backgrounds/bg2.jpg", label: "Office" },
+    { id: "bg3", url: "/backgrounds/bg3.jpg", label: "Soft" },
+    { id: "bg4", url: "/backgrounds/bg4.jpg", label: "Mountains" },
+    { id: "bg5", url: "/backgrounds/bg5.jpg", label: "Gradient" },
+    { id: "bg6", url: "/backgrounds/bg6.jpg", label: "Night" },
+];
+
+const isObjectUrl = (u?: string) => typeof u === "string" && u.startsWith("blob:");
 
 function supportsSetSinkId() {
     return typeof (HTMLMediaElement.prototype as any).setSinkId === "function";
+}
+
+function deviceLabel(d: MediaDeviceInfo, fallback: string) {
+    return d.label?.trim() || `${fallback} (${(d.deviceId || "").slice(0, 6)}…)`;
 }
 
 export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = "dark" }: Props) {
@@ -67,6 +86,10 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
     const audioCtxRef = useRef<AudioContext | null>(null);
     const analyserRef = useRef<AnalyserNode | null>(null);
     const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+
+    // ✅ blob URL lifecycle (same idea as RoomMediaSettings)
+    const committedBgUrlRef = useRef<string | undefined>(initial?.bgImageUrl);
+    const prevDraftObjectUrlRef = useRef<string | null>(null);
 
     const cameras = useMemo(() => devices.filter((d) => d.kind === "videoinput"), [devices]);
     const mics = useMemo(() => devices.filter((d) => d.kind === "audioinput"), [devices]);
@@ -90,12 +113,18 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
         if (rafRef.current) cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
 
-        try { sourceRef.current?.disconnect(); } catch { }
-        try { analyserRef.current?.disconnect(); } catch { }
+        try {
+            sourceRef.current?.disconnect();
+        } catch { }
+        try {
+            analyserRef.current?.disconnect();
+        } catch { }
         sourceRef.current = null;
         analyserRef.current = null;
 
-        try { audioCtxRef.current?.close(); } catch { }
+        try {
+            audioCtxRef.current?.close();
+        } catch { }
         audioCtxRef.current = null;
     };
 
@@ -107,7 +136,6 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
     };
 
     const setupMicMeter = (stream: MediaStream) => {
-        // если audio выключен — meter не нужен
         if (!s.audioEnabled) {
             setMicLevel(0);
             return;
@@ -135,11 +163,10 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
 
         const tick = () => {
             analyser.getByteFrequencyData(data);
-            // simple average
             let sum = 0;
             for (let i = 0; i < data.length; i++) sum += data[i];
             const avg = sum / data.length;
-            setMicLevel(Math.min(1, avg / 80)); // tweak
+            setMicLevel(Math.min(1, avg / 80));
             rafRef.current = requestAnimationFrame(tick);
         };
 
@@ -187,10 +214,10 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
             attachPreview(stream);
             setupMicMeter(stream);
 
-            // после выдачи разрешений появляются device labels
+            // after permission we get labels
             await ensureDevices();
 
-            // sink for test audio (optional)
+            // sink for test audio
             if (supportsSetSinkId() && testAudioRef.current && s.audioOutputId && s.audioOutputId !== "default") {
                 try {
                     await (testAudioRef.current as any).setSinkId(s.audioOutputId);
@@ -202,10 +229,39 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
         }
     };
 
+    // ---------- blob url cleanup for background ----------
+    useEffect(() => {
+        if (!open) return;
+
+        const next = s.bgImageUrl;
+        const prev = prevDraftObjectUrlRef.current;
+        const committed = committedBgUrlRef.current;
+
+        if (prev && isObjectUrl(prev) && prev !== next && prev !== committed) {
+            try {
+                URL.revokeObjectURL(prev);
+            } catch { }
+        }
+
+        prevDraftObjectUrlRef.current = isObjectUrl(next) ? (next as string) : null;
+    }, [open, s.bgImageUrl]);
+
+    const revokeCurrentBgIfNotCommitted = () => {
+        const committed = committedBgUrlRef.current;
+        const cur = s.bgImageUrl;
+
+        if (cur && isObjectUrl(cur) && cur !== committed) {
+            try {
+                URL.revokeObjectURL(cur);
+            } catch { }
+        }
+    };
+
     // ---------- lifecycle ----------
     useEffect(() => {
         if (!open) return;
-        // load last settings quickly (optional pattern)
+
+        // restore local
         try {
             const raw = localStorage.getItem("mysession_prejoin");
             if (raw) {
@@ -213,19 +269,24 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
                 setS((prev) => ({ ...prev, ...parsed, ...(initial || {}) }));
             } else if (initial) {
                 setS((prev) => ({ ...prev, ...(initial || {}) }));
+            } else {
+                setS((prev) => ({ ...prev }));
             }
-        } catch { }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [open]);
+        } catch {
+            if (initial) setS((prev) => ({ ...prev, ...(initial || {}) }));
+        }
 
-    useEffect(() => {
-        if (!open) return;
+        // reset committed marker each open (we only commit on Join)
+        committedBgUrlRef.current = undefined;
+        prevDraftObjectUrlRef.current = null;
 
-        // initial list (labels may be empty pre-permission)
         ensureDevices().catch(() => { });
         startPreview().catch(() => { });
 
-        return () => stopStream();
+        return () => {
+            stopStream();
+            revokeCurrentBgIfNotCommitted();
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open]);
 
@@ -250,14 +311,33 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
         if (!open) return;
         if (!supportsSetSinkId()) return;
         if (!testAudioRef.current) return;
-
         if (!s.audioOutputId || s.audioOutputId === "default") return;
 
         (testAudioRef.current as any).setSinkId(s.audioOutputId).catch(() => { });
     }, [open, s.audioOutputId]);
 
+    // lock body scroll while open (same UX as settings modal)
+    useEffect(() => {
+        if (!open) return;
+
+        const body = document.body;
+        const prevOverflow = body.style.overflow;
+        const prevPaddingRight = body.style.paddingRight;
+
+        const scrollbarW = window.innerWidth - document.documentElement.clientWidth;
+        body.style.overflow = "hidden";
+        if (scrollbarW > 0) body.style.paddingRight = `${scrollbarW}px`;
+
+        return () => {
+            body.style.overflow = prevOverflow;
+            body.style.paddingRight = prevPaddingRight;
+        };
+    }, [open]);
+
     const onClickJoin = () => {
-        // persist
+        // ✅ commit background url NOW (avoid revoke on close/unmount)
+        committedBgUrlRef.current = s.bgImageUrl;
+
         try {
             localStorage.setItem("mysession_prejoin", JSON.stringify(s));
         } catch { }
@@ -265,9 +345,12 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
         onJoin(s);
     };
 
+    const onClickCancel = () => {
+        revokeCurrentBgIfNotCommitted();
+        onCancel?.();
+    };
+
     const playTestSound = async () => {
-        // quick beep using WebAudio; route through <audio> element to enable sink selection
-        // We'll generate a short wav-ish via oscillator and connect to MediaStream -> <audio>.
         try {
             const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
 
@@ -290,227 +373,408 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
 
             osc.start();
             setTimeout(() => {
-                try { osc.stop(); } catch { }
-                try { ctx.close(); } catch { }
-                try { (audioEl as any).srcObject = null; } catch { }
+                try {
+                    osc.stop();
+                } catch { }
+                try {
+                    ctx.close();
+                } catch { }
+                try {
+                    (audioEl as any).srcObject = null;
+                } catch { }
             }, 350);
         } catch { }
     };
 
+    const refreshDevices = async () => {
+        await ensureDevices();
+    };
+
+    // ---------- background setters ----------
+    const setBgNone = () => setS((p) => ({ ...p, bgMode: "none", bgImageUrl: undefined }));
+    const setBgBlur = () => setS((p) => ({ ...p, bgMode: "blur", bgImageUrl: undefined }));
+    const setBgImage = (url: string) => setS((p) => ({ ...p, bgMode: "image", bgImageUrl: url }));
+    const setCustomFile = (file: File) => {
+        const url = URL.createObjectURL(file);
+        setBgImage(url);
+    };
+
     if (!open) return null;
 
-    const effectClass = s.effect === "blur" ? "blur-[6px] scale-[1.03]" : "";
+    // preview styles
+    const previewVideoFilter =
+        s.bgMode === "blur" ? "blur-[6px] scale-[1.03]" : "";
+    const previewHasBgImage = s.bgMode === "image" && !!(s.bgImageUrl || DEFAULT_BACKGROUNDS[0]?.url);
+    const previewBgUrl = s.bgImageUrl || DEFAULT_BACKGROUNDS[0]?.url;
+
+    const pillActive =
+        isLight
+            ? "bg-emerald-500/20 border-emerald-500/30 text-black"
+            : "bg-emerald-500/15 border-emerald-400/30 text-white/90";
+
+    const pillIdle =
+        isLight
+            ? "bg-black/5 border-black/10 text-black/70 hover:bg-black/10"
+            : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10";
 
     return (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/60" onClick={onCancel} />
+        <div className="fixed inset-0 z-[9999]">
+            <div className="absolute inset-0 bg-black/60" onClick={onClickCancel} />
 
-            <div className={`relative w-full max-w-[920px] rounded-2xl shadow-2xl ${modalBg} overflow-hidden`}>
-                {/* header */}
-                <div className={`flex items-center justify-between px-5 py-4 ${panel}`}>
-                    <div className="flex items-center gap-3">
-                        <div className="text-base font-semibold">Ready to join?</div>
-                        <div className={`text-xs ${subtle}`}>Pre-join settings</div>
+            <div className="absolute inset-0 flex items-center justify-center p-3 sm:p-5">
+                <div
+                    className={`relative w-[92vw] max-w-[980px] rounded-2xl shadow-2xl overflow-hidden ${modalBg}`}
+                    role="dialog"
+                    aria-modal="true"
+                >
+                    {/* header */}
+                    <div className={`flex items-center justify-between px-5 py-4 ${panel}`}>
+                        <div>
+                            <div className="text-base font-semibold">Before you join</div>
+                            <div className={`text-xs ${subtle}`}>Pick devices + name. Then join.</div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={refreshDevices}
+                                className={`w-9 h-9 rounded-xl flex items-center justify-center ${btn}`}
+                                title="Refresh devices"
+                                type="button"
+                            >
+                                <RefreshCcw size={16} />
+                            </button>
+
+                            <button
+                                onClick={onClickCancel}
+                                className={`w-9 h-9 rounded-xl flex items-center justify-center ${btn}`}
+                                title="Close"
+                                type="button"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
                     </div>
 
-                    <button
-                        onClick={onClickJoin}
-                        className="px-4 h-9 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold"
-                    >
-                        Join
-                    </button>
-                </div>
+                    {/* body */}
+                    <div className="p-5 grid grid-cols-1 lg:grid-cols-2 gap-5">
+                        {/* left: preview */}
+                        <div className="space-y-3">
+                            <div
+                                className={`relative rounded-2xl overflow-hidden bg-black ring-1 ${isLight ? "ring-black/10" : "ring-white/10"}`}
+                                style={{
+                                    aspectRatio: "16 / 9",
+                                    backgroundImage: previewHasBgImage ? `url(${previewBgUrl})` : undefined,
+                                    backgroundSize: "cover",
+                                    backgroundPosition: "center",
+                                }}
+                            >
+                                <video
+                                    ref={videoRef}
+                                    playsInline
+                                    muted
+                                    className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-150 ${previewVideoFilter} ${s.videoEnabled ? "opacity-100" : "opacity-0"
+                                        }`}
+                                />
 
-                <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-5">
-                    {/* left: preview */}
-                    <div className="space-y-3">
-                        <div className="relative rounded-2xl overflow-hidden bg-black">
-                            <video
-                                ref={videoRef}
-                                playsInline
-                                muted
-                                className={`w-full h-auto ${effectClass}`}
-                                style={{ aspectRatio: "16 / 9", objectFit: "cover" }}
-                            />
-                            {!s.videoEnabled && (
-                                <div className="absolute inset-0 flex items-center justify-center text-white/80 text-sm">
-                                    Camera is off
+                                {!s.videoEnabled && (
+                                    <div className="absolute inset-0 flex items-center justify-center text-white/80 text-sm">
+                                        Camera is off
+                                    </div>
+                                )}
+
+                                <div className="absolute left-3 top-3 flex items-center gap-2">
+                                    <div className={`px-2.5 py-1 rounded-full text-[11px] border ${isLight ? "bg-white/90 border-black/10 text-black/70" : "bg-black/45 border-white/10 text-white/75"}`}>
+                                        {s.bgMode === "none" ? "Background: none" : s.bgMode === "blur" ? "Background: blur" : "Background: image"}
+                                    </div>
+                                    {s.audioEnabled ? (
+                                        <div className={`px-2.5 py-1 rounded-full text-[11px] border ${isLight ? "bg-white/90 border-black/10 text-black/70" : "bg-black/45 border-white/10 text-white/75"}`}>
+                                            Mic: on
+                                        </div>
+                                    ) : (
+                                        <div className={`px-2.5 py-1 rounded-full text-[11px] border ${isLight ? "bg-white/90 border-black/10 text-black/70" : "bg-black/45 border-white/10 text-white/75"}`}>
+                                            Mic: muted
+                                        </div>
+                                    )}
                                 </div>
-                            )}
 
-                            <div className="absolute left-3 bottom-3 flex items-center gap-2">
-                                <button
-                                    className={`px-3 h-9 rounded-xl text-sm ${btn}`}
-                                    onClick={() => setS((p) => ({ ...p, videoEnabled: !p.videoEnabled }))}
-                                >
-                                    {s.videoEnabled ? "Turn off camera" : "Turn on camera"}
-                                </button>
-                                <button
-                                    className={`px-3 h-9 rounded-xl text-sm ${btn}`}
-                                    onClick={() => setS((p) => ({ ...p, audioEnabled: !p.audioEnabled }))}
-                                >
-                                    {s.audioEnabled ? "Mute mic" : "Unmute mic"}
-                                </button>
+                                {/* quick toggles */}
+                                <div className="absolute left-3 bottom-3 flex items-center gap-2">
+                                    <button
+                                        className={`px-3 h-9 rounded-xl text-sm ${btn}`}
+                                        onClick={() => setS((p) => ({ ...p, videoEnabled: !p.videoEnabled }))}
+                                        type="button"
+                                    >
+                                        {s.videoEnabled ? "Turn off camera" : "Turn on camera"}
+                                    </button>
+                                    <button
+                                        className={`px-3 h-9 rounded-xl text-sm ${btn}`}
+                                        onClick={() => setS((p) => ({ ...p, audioEnabled: !p.audioEnabled }))}
+                                        type="button"
+                                    >
+                                        {s.audioEnabled ? "Mute mic" : "Unmute mic"}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* mic meter + errors */}
+                            <div className={`rounded-2xl p-4 ${panel} space-y-3`}>
+                                <div className="flex items-center justify-between gap-3">
+                                    <div className={`text-xs ${subtle}`}>Mic level</div>
+                                    <div className={`flex-1 h-2 rounded-full ${isLight ? "bg-black/10" : "bg-white/10"} overflow-hidden`}>
+                                        <div className="h-full bg-emerald-500" style={{ width: `${Math.round(micLevel * 100)}%` }} />
+                                    </div>
+                                </div>
+
+                                {permissionError && <div className="text-xs text-red-400">{permissionError}</div>}
+
+                                <div className={`text-[11px] ${subtle}`}>
+                                    Note: preview of blur/image here is simplified. Real outgoing background effect should be applied when creating the outgoing track.
+                                </div>
                             </div>
                         </div>
 
-                        {/* quick controls row */}
-                        <div className={`rounded-2xl p-4 ${panel} space-y-3`}>
-                            <div className="flex items-center justify-between">
-                                <div className="text-sm font-semibold">Effects</div>
-                                <div className="flex gap-2">
-                                    <button
-                                        className={`px-3 h-9 rounded-xl text-sm ${btn} ${s.effect === "none" ? "opacity-100" : "opacity-70"}`}
-                                        onClick={() => setS((p) => ({ ...p, effect: "none" }))}
+                        {/* right: settings */}
+                        <div className={`rounded-2xl p-4 ${panel} space-y-4`}>
+                            {/* name */}
+                            <div className="space-y-2">
+                                <div className="text-sm font-semibold">Display name</div>
+                                <input
+                                    value={s.displayName}
+                                    onChange={(e) => setS((p) => ({ ...p, displayName: e.target.value }))}
+                                    placeholder="Your name"
+                                    className={`w-full h-10 rounded-xl px-3 outline-none ${isLight ? "bg-white border border-black/10" : "bg-[#111827] border border-white/10 text-white/85"
+                                        }`}
+                                />
+                            </div>
+
+                            {/* camera + mic row */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div className="space-y-2">
+                                    <div className="text-sm font-semibold">Camera</div>
+                                    <select
+                                        value={s.videoInputId}
+                                        onChange={(e) => setS((p) => ({ ...p, videoInputId: e.target.value }))}
+                                        className={`w-full h-10 rounded-xl px-3 outline-none ${isLight ? "bg-white border border-black/10" : "bg-[#111827] border border-white/10 text-white/85"
+                                            }`}
                                     >
-                                        None
-                                    </button>
-                                    <button
-                                        className={`px-3 h-9 rounded-xl text-sm ${btn} ${s.effect === "blur" ? "opacity-100" : "opacity-70"}`}
-                                        onClick={() => setS((p) => ({ ...p, effect: "blur" }))}
+                                        <option value="default">Default</option>
+                                        {cameras.map((d) => (
+                                            <option key={d.deviceId} value={d.deviceId}>
+                                                {deviceLabel(d, "Camera")}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <div className="text-sm font-semibold">Microphone</div>
+                                    <select
+                                        value={s.audioInputId}
+                                        onChange={(e) => setS((p) => ({ ...p, audioInputId: e.target.value }))}
+                                        className={`w-full h-10 rounded-xl px-3 outline-none ${isLight ? "bg-white border border-black/10" : "bg-[#111827] border border-white/10 text-white/85"
+                                            }`}
                                     >
-                                        Blur (MVP)
-                                    </button>
+                                        <option value="default">Default</option>
+                                        {mics.map((d) => (
+                                            <option key={d.deviceId} value={d.deviceId}>
+                                                {deviceLabel(d, "Mic")}
+                                            </option>
+                                        ))}
+                                    </select>
                                 </div>
                             </div>
 
-                            <div className="flex items-center justify-between">
-                                <div className="text-sm font-semibold">Reduce</div>
-                                <div className="flex items-center gap-3">
-                                    <label className="text-xs flex items-center gap-2">
-                                        <input
-                                            type="checkbox"
-                                            checked={s.noiseSuppression}
-                                            onChange={(e) => setS((p) => ({ ...p, noiseSuppression: e.target.checked }))}
-                                        />
-                                        Noise
-                                    </label>
-                                    <label className="text-xs flex items-center gap-2">
+                            {/* speakers */}
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <div className="text-sm font-semibold">Speaker (Output)</div>
+                                    <button onClick={playTestSound} className={`text-xs underline ${subtle}`} type="button">
+                                        Test sound
+                                    </button>
+                                </div>
+
+                                <select
+                                    value={s.audioOutputId}
+                                    onChange={(e) => setS((p) => ({ ...p, audioOutputId: e.target.value }))}
+                                    disabled={!supportsSetSinkId()}
+                                    className={`w-full h-10 rounded-xl px-3 outline-none ${isLight ? "bg-white border border-black/10" : "bg-[#111827] border border-white/10 text-white/85"
+                                        } ${!supportsSetSinkId() ? "opacity-60 cursor-not-allowed" : ""}`}
+                                >
+                                    <option value="default">System default</option>
+                                    {speakers
+                                        .filter((d) => d.deviceId && d.deviceId !== "default")
+                                        .map((d) => (
+                                            <option key={d.deviceId} value={d.deviceId}>
+                                                {deviceLabel(d, "Speakers")}
+                                            </option>
+                                        ))}
+                                </select>
+
+                                {!supportsSetSinkId() && <div className={`text-xs ${subtle}`}>Output selection not supported in this browser.</div>}
+                            </div>
+
+                            {/* toggles like in screenshot */}
+                            <div className={`rounded-2xl p-3 ${isLight ? "bg-black/5" : "bg-white/5"} space-y-2`}>
+                                <label className="flex items-center gap-2 text-sm">
+                                    <input
+                                        type="checkbox"
+                                        checked={s.audioEnabled}
+                                        onChange={(e) => setS((p) => ({ ...p, audioEnabled: e.target.checked }))}
+                                    />
+                                    Audio enabled
+                                </label>
+
+                                <label className="flex items-center gap-2 text-sm">
+                                    <input
+                                        type="checkbox"
+                                        checked={s.videoEnabled}
+                                        onChange={(e) => setS((p) => ({ ...p, videoEnabled: e.target.checked }))}
+                                    />
+                                    Video enabled
+                                </label>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
+                                    <label className="flex items-center gap-2 text-sm">
                                         <input
                                             type="checkbox"
                                             checked={s.echoCancellation}
                                             onChange={(e) => setS((p) => ({ ...p, echoCancellation: e.target.checked }))}
                                         />
-                                        Echo
+                                        Echo cancellation
                                     </label>
-                                    <label className="text-xs flex items-center gap-2">
+
+                                    <label className="flex items-center gap-2 text-sm">
+                                        <input
+                                            type="checkbox"
+                                            checked={s.noiseSuppression}
+                                            onChange={(e) => setS((p) => ({ ...p, noiseSuppression: e.target.checked }))}
+                                        />
+                                        Noise suppression
+                                    </label>
+
+                                    <label className="flex items-center gap-2 text-sm">
                                         <input
                                             type="checkbox"
                                             checked={s.autoGainControl}
                                             onChange={(e) => setS((p) => ({ ...p, autoGainControl: e.target.checked }))}
                                         />
-                                        AGC
+                                        Auto gain control
                                     </label>
                                 </div>
                             </div>
 
-                            {/* mic meter */}
-                            <div className="flex items-center justify-between gap-3">
-                                <div className={`text-xs ${subtle}`}>Mic level</div>
-                                <div className="flex-1 h-2 rounded-full bg-black/10 overflow-hidden">
-                                    <div
-                                        className="h-full bg-green-500"
-                                        style={{ width: `${Math.round(micLevel * 100)}%` }}
-                                    />
+                            {/* background (ported from RoomMediaSettings) */}
+                            <div>
+                                <div className="text-sm font-semibold mb-2">Background</div>
+
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <button
+                                        type="button"
+                                        onClick={setBgNone}
+                                        className={`h-10 px-3 rounded-xl border text-[13px] transition ${s.bgMode === "none" ? pillActive : pillIdle
+                                            }`}
+                                    >
+                                        None
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={setBgBlur}
+                                        className={`h-10 px-3 rounded-xl border text-[13px] transition ${s.bgMode === "blur" ? pillActive : pillIdle
+                                            }`}
+                                    >
+                                        Blur
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const url = s.bgImageUrl || DEFAULT_BACKGROUNDS[0]?.url;
+                                            if (url) setBgImage(url);
+                                        }}
+                                        className={`h-10 px-3 rounded-xl border text-[13px] transition ${s.bgMode === "image" ? pillActive : pillIdle
+                                            }`}
+                                    >
+                                        Image
+                                    </button>
+
+                                    <label
+                                        className={`h-10 px-3 rounded-xl border text-[13px] transition cursor-pointer flex items-center ${pillIdle}`}
+                                        title="Upload custom background"
+                                    >
+                                        Upload
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={(e) => {
+                                                const file = e.target.files?.[0];
+                                                if (!file) return;
+                                                setCustomFile(file);
+                                                e.currentTarget.value = "";
+                                            }}
+                                        />
+                                    </label>
+                                </div>
+
+                                {s.bgMode === "image" && (
+                                    <div className="mt-3">
+                                        <div className={`text-[11px] ${subtle} mb-2`}>Choose a default</div>
+
+                                        <div className="grid grid-cols-3 gap-2">
+                                            {DEFAULT_BACKGROUNDS.map((bg) => {
+                                                const active = s.bgImageUrl === bg.url || (!s.bgImageUrl && bg.url === DEFAULT_BACKGROUNDS[0]?.url);
+                                                return (
+                                                    <button
+                                                        key={bg.id}
+                                                        type="button"
+                                                        onClick={() => setBgImage(bg.url)}
+                                                        className={`rounded-xl overflow-hidden border transition text-left ${active
+                                                                ? (isLight ? "border-emerald-500/40" : "border-emerald-400/40")
+                                                                : (isLight ? "border-black/10 hover:border-black/25" : "border-white/10 hover:border-white/25")
+                                                            }`}
+                                                        title={bg.label}
+                                                    >
+                                                        <div className="w-full h-[78px] bg-black/20">
+                                                            <img src={bg.url} alt={bg.label} className="w-full h-full object-cover" />
+                                                        </div>
+                                                        <div className={`px-2 py-1 text-[11px] ${subtle} truncate`}>{bg.label}</div>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {!!s.bgImageUrl && (
+                                            <div className={`mt-3 rounded-xl overflow-hidden border ${isLight ? "border-black/10" : "border-white/10"}`}>
+                                                <img src={s.bgImageUrl} className="w-full h-[140px] object-cover" alt="" />
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                <div className={`mt-2 text-[11px] ${subtle}`}>
+                                    These settings are saved and passed into <b>onJoin()</b>. Apply them to your outgoing track the same way you do in RoomMediaSettings.
                                 </div>
                             </div>
 
-                            {permissionError && (
-                                <div className="text-xs text-red-400">
-                                    {permissionError}
-                                </div>
-                            )}
-                        </div>
-                    </div>
+                            {/* footer actions */}
+                            <div className="pt-2 flex items-center justify-between">
+                                <button onClick={onClickCancel} className={`px-4 h-10 rounded-xl ${btn}`} type="button">
+                                    Cancel
+                                </button>
 
-                    {/* right: device selectors */}
-                    <div className={`rounded-2xl p-4 ${panel} space-y-4`}>
-                        <div className="space-y-2">
-                            <div className="text-sm font-semibold">Name</div>
-                            <input
-                                value={s.displayName}
-                                onChange={(e) => setS((p) => ({ ...p, displayName: e.target.value }))}
-                                placeholder="Your name"
-                                className={`w-full h-10 rounded-xl px-3 outline-none ${isLight ? "bg-white border border-black/10" : "bg-white/5 border border-white/10"}`}
-                            />
-                        </div>
-
-                        <div className="space-y-2">
-                            <div className="text-sm font-semibold">Camera</div>
-                            <select
-                                value={s.videoInputId}
-                                onChange={(e) => setS((p) => ({ ...p, videoInputId: e.target.value }))}
-                                className={`w-full h-10 rounded-xl px-3 outline-none ${isLight ? "bg-white border border-black/10" : "bg-white/5 border border-white/10"}`}
-                            >
-                                <option value="default">Default</option>
-                                {cameras.map((d) => (
-                                    <option key={d.deviceId} value={d.deviceId}>
-                                        {d.label || `Camera (${d.deviceId.slice(0, 6)})`}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <div className="space-y-2">
-                            <div className="text-sm font-semibold">Microphone</div>
-                            <select
-                                value={s.audioInputId}
-                                onChange={(e) => setS((p) => ({ ...p, audioInputId: e.target.value }))}
-                                className={`w-full h-10 rounded-xl px-3 outline-none ${isLight ? "bg-white border border-black/10" : "bg-white/5 border border-white/10"}`}
-                            >
-                                <option value="default">Default</option>
-                                {mics.map((d) => (
-                                    <option key={d.deviceId} value={d.deviceId}>
-                                        {d.label || `Mic (${d.deviceId.slice(0, 6)})`}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                                <div className="text-sm font-semibold">Speakers (Output)</div>
-                                <button onClick={playTestSound} className={`text-xs underline ${subtle}`}>
-                                    Test sound
+                                <button
+                                    onClick={onClickJoin}
+                                    className="px-5 h-10 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-[#02140B] font-semibold"
+                                    type="button"
+                                >
+                                    Join room
                                 </button>
                             </div>
 
-                            <select
-                                value={s.audioOutputId}
-                                onChange={(e) => setS((p) => ({ ...p, audioOutputId: e.target.value }))}
-                                disabled={!supportsSetSinkId()}
-                                className={`w-full h-10 rounded-xl px-3 outline-none ${isLight ? "bg-white border border-black/10" : "bg-white/5 border border-white/10"} ${!supportsSetSinkId() ? "opacity-60 cursor-not-allowed" : ""}`}
-                            >
-                                <option value="default">Default</option>
-                                {speakers.map((d) => (
-                                    <option key={d.deviceId} value={d.deviceId}>
-                                        {d.label || `Speaker (${d.deviceId.slice(0, 6)})`}
-                                    </option>
-                                ))}
-                            </select>
-
-                            {!supportsSetSinkId() && (
-                                <div className={`text-xs ${subtle}`}>
-                                    Output selection not supported in this browser.
-                                </div>
-                            )}
+                            {/* hidden audio element used for sink routing */}
+                            <audio ref={testAudioRef} />
                         </div>
-
-                        <div className="pt-2 flex items-center justify-between">
-                            <button onClick={onCancel} className={`px-4 h-10 rounded-xl ${btn}`}>
-                                Cancel
-                            </button>
-
-                            <button
-                                onClick={onClickJoin}
-                                className="px-5 h-10 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold"
-                            >
-                                Join
-                            </button>
-                        </div>
-
-                        {/* hidden audio element used for sink routing */}
-                        <audio ref={testAudioRef} />
                     </div>
                 </div>
             </div>

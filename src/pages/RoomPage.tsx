@@ -6,6 +6,7 @@
 // ✅ Fix: kick layout recalculation when right panel toggles (dispatch resize) + ResizeObserver hook for container changes
 // ✅ Fix: remove "double header" for chat (keep only close button row; also pass embedded/hideHeader props defensively)
 // ✅ NEW: Pre-join modal (devices + name + constraints) blocks Jitsi join until user confirms
+// ✅ FIX (CHAT): render RightPanel only ONCE (desktop OR mobile) to avoid double-mounting ChatPanel (causes auth/login flicker)
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -134,21 +135,21 @@ function Icon({
   alt = "",
 }: {
   name:
-    | "mic-on"
-    | "mic-off"
-    | "camera-on"
-    | "camera-off"
-    | "screen-share"
-    | "reaction"
-    | "leave"
-    | "participants"
-    | "chat"
-    | "intentions"
-    | "settings"
-    | "theme-sun"
-    | "theme-moon"
-    | "timer"
-    | "host_session_icon";
+  | "mic-on"
+  | "mic-off"
+  | "camera-on"
+  | "camera-off"
+  | "screen-share"
+  | "reaction"
+  | "leave"
+  | "participants"
+  | "chat"
+  | "intentions"
+  | "settings"
+  | "theme-sun"
+  | "theme-moon"
+  | "timer"
+  | "host_session_icon";
   theme: RoomTheme;
   className?: string;
   alt?: string;
@@ -329,6 +330,28 @@ function getTemplateFirst(tpl: SessionRow["session_templates"]): SessionTemplate
 function deviceLabel(d: MediaDeviceInfo, fallback: string) {
   const l = (d.label || "").trim();
   return l || fallback;
+}
+
+// ✅ Render-only-one-panel helper (so we don't mount Chat twice)
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mql = window.matchMedia(query);
+    const onChange = () => setMatches(!!mql.matches);
+    onChange();
+
+    try {
+      mql.addEventListener("change", onChange);
+      return () => mql.removeEventListener("change", onChange);
+    } catch {
+      mql.addListener(onChange);
+      return () => mql.removeListener(onChange);
+    }
+  }, [query]);
+
+  return matches;
 }
 
 function PreJoinModal({
@@ -586,6 +609,9 @@ export function RoomPage() {
   }, [theme]);
 
   const isLight = theme === "light";
+
+  // ✅ Only one right panel variant mounted
+  const isLgUp = useMediaQuery("(min-width: 1024px)");
 
   const pageBg = isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white";
   const topBarBg = isLight
@@ -1555,6 +1581,8 @@ export function RoomPage() {
     );
   }
 
+  const ChatPanelAny = ChatPanel as any;
+
   const RightPanelBody = (
     <div
       className={[
@@ -1702,10 +1730,14 @@ export function RoomPage() {
 
       {rightTab === "chat" && (
         <div className="h-full min-h-0 flex flex-col">
+          {/* ✅ Header restored */}
           <div
-            className={`px-4 py-3 border-b flex items-center justify-end ${isLight ? "border-black/10" : "border-white/5"
+            className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
               }`}
           >
+            <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>
+              Chat
+            </div>
             <button
               onClick={() => openRightTab(null)}
               className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
@@ -1730,12 +1762,17 @@ export function RoomPage() {
                     style={{ colorScheme: theme }}
                     className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
                   >
-                    <ChatPanel
+                    <ChatPanelAny
                       sessionId={session.id}
                       theme={theme}
                       showHeader={false}
                       title="Chat"
                       onClose={() => openRightTab(null)}
+                      // defensive props (safe even if ignored)
+                      embedded={true}
+                      hideHeader={true}
+                      authUserId={authUserId}
+                      displayName={displayName || userName}
                     />
                   </div>
                 ) : null}
@@ -1953,14 +1990,15 @@ export function RoomPage() {
               )}
             </div>
 
-            {rightPanelOpen && (
-              <div className="hidden lg:block min-h-0 h-full overflow-hidden">
+            {/* ✅ Render only one variant */}
+            {rightPanelOpen && isLgUp && (
+              <div className="min-h-0 h-full overflow-hidden">
                 {RightPanelBody}
               </div>
             )}
 
-            {rightPanelOpen && (
-              <div className="lg:hidden absolute inset-0 z-40 min-h-0">
+            {rightPanelOpen && !isLgUp && (
+              <div className="absolute inset-0 z-40 min-h-0">
                 <div
                   className="absolute inset-0 bg-black/40"
                   onClick={() => openRightTab(null)}
