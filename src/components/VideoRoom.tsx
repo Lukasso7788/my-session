@@ -58,7 +58,14 @@ function Icon({
     alt = "",
     theme = "dark",
 }: {
-    name: "mic-on" | "mic-off" | "camera-on" | "camera-off" | "screen-share" | "reaction" | "leave";
+    name:
+    | "mic-on"
+    | "mic-off"
+    | "camera-on"
+    | "camera-off"
+    | "screen-share"
+    | "reaction"
+    | "leave";
     className?: string;
     alt?: string;
     theme?: "dark" | "light";
@@ -95,10 +102,7 @@ function safeTrackId(track?: any): string {
     return String((track as any)?._id ?? "track");
 }
 
-function attachTrackToMedia(
-    track: JitsiTrack | undefined,
-    element: HTMLMediaElement | null
-) {
+function attachTrackToMedia(track: JitsiTrack | undefined, element: HTMLMediaElement | null) {
     if (!track || !element) return;
 
     // ✅ safety: detach before attach (avoid double attachments / stale streams)
@@ -154,9 +158,7 @@ function useTrackStreamVersion(track: any) {
             "LOCAL_TRACK_STOPPED",
         ];
 
-        const eventNames: string[] = Array.from(
-            new Set([...(candidates as string[]), ...fallback])
-        );
+        const eventNames: string[] = Array.from(new Set([...(candidates as string[]), ...fallback]));
 
         const bump = () => setV((x) => x + 1);
 
@@ -262,10 +264,7 @@ function AudioSinkItem({ p }: { p: JitsiParticipant }) {
 }
 
 function AudioSink({ participants }: { participants: JitsiParticipant[] }) {
-    const remotes = useMemo(
-        () => participants.filter((p) => !p.isLocal),
-        [participants]
-    );
+    const remotes = useMemo(() => participants.filter((p) => !p.isLocal), [participants]);
 
     return (
         <div className="absolute w-0 h-0 overflow-hidden opacity-0 pointer-events-none">
@@ -321,15 +320,10 @@ function ParticipantTile({
     }, [participant.videoTrack, participant.isLocal, streamV]);
 
     // NOTE: "aspect-video" tailwind class may be missing in your build → we enforce aspectRatio via inline style.
-    const aspectStyle: React.CSSProperties | undefined = forceAspect
-        ? { aspectRatio: "16 / 9" }
-        : undefined;
+    const aspectStyle: React.CSSProperties | undefined = forceAspect ? { aspectRatio: "16 / 9" } : undefined;
 
     // camera tiles look better with slight "headroom" bias (more top than bottom)
-    const objectClass =
-        fit === "cover"
-            ? "object-cover object-[50%_35%]"
-            : "object-contain object-center";
+    const objectClass = fit === "cover" ? "object-cover object-[50%_35%]" : "object-contain object-center";
 
     const showPlaceholder = !hasVideoTrack || participant.videoMuted;
     const hideVideo = !hasVideoTrack || participant.videoMuted;
@@ -343,8 +337,7 @@ function ParticipantTile({
             ? "bg-white/90 border border-black/10 text-black/80"
             : "bg-black/45 border border-white/10 text-white/80";
 
-    const ringClass =
-        theme === "light" ? "ring-1 ring-black/10" : "ring-1 ring-white/10";
+    const ringClass = theme === "light" ? "ring-1 ring-black/10" : "ring-1 ring-white/10";
 
     return (
         <div
@@ -407,9 +400,7 @@ function ParticipantTile({
             )}
 
             {/* Bottom label */}
-            <div
-                className={`absolute left-3 bottom-3 rounded-lg px-2 py-1 text-[11px] flex items-center gap-2 ${labelBg}`}
-            >
+            <div className={`absolute left-3 bottom-3 rounded-lg px-2 py-1 text-[11px] flex items-center gap-2 ${labelBg}`}>
                 <span className="truncate max-w-[160px]">{name}</span>
 
                 <Icon
@@ -481,14 +472,11 @@ function GridLayout({
     const paddingPx = containerWidth && containerWidth < 520 ? 8 : 12;
     const gapPx = containerWidth && containerWidth < 520 ? 8 : 12;
 
-    const cols = useMemo(
-        () => computeCols(pageParticipants.length, containerWidth || 1200),
-        [pageParticipants.length, containerWidth]
-    );
-    const rows = useMemo(
-        () => Math.ceil(pageParticipants.length / cols),
-        [pageParticipants.length, cols]
-    );
+    const cols = useMemo(() => computeCols(pageParticipants.length, containerWidth || 1200), [
+        pageParticipants.length,
+        containerWidth,
+    ]);
+    const rows = useMemo(() => Math.ceil(pageParticipants.length / cols), [pageParticipants.length, cols]);
 
     const maxGridWidth = useMemo(() => {
         // we keep 16:9 tiles in grid to avoid relying on parent height/`h-full`
@@ -514,10 +502,7 @@ function GridLayout({
     const lastRow = pageParticipants.slice(fullCount);
 
     return (
-        <div
-            className="w-full h-full min-h-0 overflow-y-auto flex justify-center"
-            style={{ padding: paddingPx }}
-        >
+        <div className="w-full h-full min-h-0 overflow-y-auto flex justify-center" style={{ padding: paddingPx }}>
             <div
                 className="w-full grid"
                 style={{
@@ -565,43 +550,57 @@ function P2PLayout({
     pageParticipants,
     containerWidth,
     containerHeight,
+    stack = false,
     onRegisterVideoElement,
 }: {
     theme: "dark" | "light";
     pageParticipants: JitsiParticipant[];
     containerWidth: number;
     containerHeight: number;
+    stack?: boolean; // ✅ tablet/phone wide: 2 tiles vertically stacked
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
 }) {
     const paddingPx = containerWidth && containerWidth < 520 ? 8 : 12;
     const gapPx = containerWidth && containerWidth < 520 ? 8 : 12;
 
-    // when parent height is known, clamp by height so tiles don't overflow
+    const count = pageParticipants.length;
+
+    // side-by-side: 2 cols / 1 row
+    // stacked: 1 col / 2 rows (only meaningful when count==2)
+    const cols = stack ? 1 : count <= 1 ? 1 : 2;
+    const rows = count <= 1 ? 1 : stack ? 2 : 1;
+
     const maxGridWidth = useMemo(() => {
         const w = calcMaxGridWidthPx({
             containerWidth: containerWidth || 0,
             containerHeight: containerHeight || 0,
-            cols: 2,
-            rows: 1,
+            cols,
+            rows,
             gapPx,
             paddingPx,
             aspectHOverW: 9 / 16,
         });
-        // allow a bit more on big screens
-        const cap = 1400;
-        if (!w) return null;
-        return Math.min(w, cap);
-    }, [containerWidth, containerHeight, gapPx, paddingPx]);
 
+        if (!w) return null;
+
+        // allow a bit more on big screens for side-by-side
+        const cap = stack ? 99999 : 1400;
+        return Math.min(w, cap);
+    }, [containerWidth, containerHeight, cols, rows, gapPx, paddingPx, stack]);
+
+    // ✅ Center the whole grid vertically inside the available frame (fix "stuck to top")
     return (
-        <div className="w-full h-full min-h-0 overflow-y-auto flex justify-center" style={{ padding: paddingPx }}>
+        <div
+            className="w-full h-full min-h-0 overflow-hidden flex justify-center items-center"
+            style={{ padding: paddingPx }}
+        >
             <div
                 className="w-full grid"
                 style={{
                     gap: gapPx,
                     maxWidth: maxGridWidth ? `${maxGridWidth}px` : undefined,
-                    gridTemplateColumns: pageParticipants.length <= 1 ? "1fr" : "1fr 1fr",
-                    alignContent: "start",
+                    gridTemplateColumns: cols === 1 ? "1fr" : "1fr 1fr",
+                    alignContent: "center",
                 }}
             >
                 {pageParticipants.map((p) => (
@@ -619,29 +618,60 @@ function P2PLayout({
     );
 }
 
-/** For VERY narrow phones with 1–2 participants: fill height nicely (no scroll, no tiny tiles). */
+/**
+ * ✅ Phones with 1–2 participants:
+ * Keep TRUE 16:9 (no squish/stretch) and center tiles in the frame.
+ * (Fixes 360/375 “too tall / stretched” and Duo 540 “squished/small” when side-by-side.)
+ */
 function MobileFillLayout({
     theme,
     pageParticipants,
-    paddingBottomPx = 96,
+    containerWidth,
+    containerHeight,
+    paddingBottomPx = 12,
     onRegisterVideoElement,
 }: {
     theme: "dark" | "light";
     pageParticipants: JitsiParticipant[];
+    containerWidth: number;
+    containerHeight: number;
     paddingBottomPx?: number;
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
 }) {
+    const count = pageParticipants.length || 1;
+
+    const paddingPx = containerWidth && containerWidth < 520 ? 8 : 12;
+    const gapPx = containerWidth && containerWidth < 520 ? 8 : 12;
+
+    const availW = Math.max(0, (containerWidth || 0) - paddingPx * 2);
+    const availH = Math.max(0, (containerHeight || 0) - paddingPx * 2 - paddingBottomPx - (count - 1) * gapPx);
+
+    // Fit by height for stacked tiles, then cap by width.
+    const tileH = availH > 0 ? availH / count : 0;
+    const tileWByH = tileH > 0 ? tileH * (16 / 9) : 0;
+
+    const maxTileW = Math.max(0, Math.min(availW || 0, tileWByH || availW || 0));
+
     return (
-        <div className="w-full h-full min-h-0 p-2 flex flex-col gap-2" style={{ paddingBottom: paddingBottomPx }}>
+        <div
+            className="w-full h-full min-h-0 flex flex-col justify-center"
+            style={{
+                padding: paddingPx,
+                paddingBottom: paddingBottomPx,
+                gap: gapPx,
+            }}
+        >
             {pageParticipants.map((p) => (
-                <div key={p.id} className="flex-1 min-h-0">
-                    <ParticipantTile
-                        theme={theme}
-                        participant={p}
-                        forceAspect={false}
-                        fit="cover"
-                        onRegisterVideoElement={onRegisterVideoElement}
-                    />
+                <div key={p.id} className="w-full flex justify-center">
+                    <div className="w-full" style={{ maxWidth: maxTileW ? `${maxTileW}px` : undefined }}>
+                        <ParticipantTile
+                            theme={theme}
+                            participant={p}
+                            forceAspect={true}
+                            fit="cover"
+                            onRegisterVideoElement={onRegisterVideoElement}
+                        />
+                    </div>
                 </div>
             ))}
         </div>
@@ -652,7 +682,7 @@ function MobileFillLayout({
 function MobileStackLayout({
     theme,
     pageParticipants,
-    paddingBottomPx = 96,
+    paddingBottomPx = 12,
     onRegisterVideoElement,
 }: {
     theme: "dark" | "light";
@@ -661,7 +691,10 @@ function MobileStackLayout({
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
 }) {
     return (
-        <div className="w-full h-full min-h-0 overflow-y-auto p-2 flex flex-col gap-2" style={{ paddingBottom: paddingBottomPx }}>
+        <div
+            className="w-full h-full min-h-0 overflow-y-auto p-2 flex flex-col gap-2"
+            style={{ paddingBottom: paddingBottomPx }}
+        >
             {pageParticipants.map((p) => (
                 <ParticipantTile
                     key={p.id}
@@ -688,10 +721,7 @@ function ScreenShareLayoutDesktop({
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
 }) {
     const screenVideoRef = useRef<HTMLVideoElement | null>(null);
-    const screenTrackId = useMemo(
-        () => safeTrackId(screenSharer.screenTrack),
-        [screenSharer.screenTrack]
-    );
+    const screenTrackId = useMemo(() => safeTrackId(screenSharer.screenTrack), [screenSharer.screenTrack]);
     const screenStreamV = useTrackStreamVersion(screenSharer.screenTrack);
 
     // ✅ use callback ref to guarantee registration happens when element exists
@@ -723,9 +753,7 @@ function ScreenShareLayoutDesktop({
     return (
         <div className="relative w-full h-full min-h-0 flex flex-row gap-3 p-3 overflow-hidden">
             <div
-                className={`relative flex-1 overflow-hidden rounded-2xl ${theme === "light"
-                    ? "bg-white ring-1 ring-black/10"
-                    : "bg-[#0B1220] ring-1 ring-white/10"
+                className={`relative flex-1 overflow-hidden rounded-2xl ${theme === "light" ? "bg-white ring-1 ring-black/10" : "bg-[#0B1220] ring-1 ring-white/10"
                     } min-h-0`}
             >
                 <video
@@ -735,13 +763,9 @@ function ScreenShareLayoutDesktop({
                     muted={screenSharer.isLocal}
                     className="w-full h-full object-contain bg-black"
                 />
-                <div
-                    className={`absolute left-3 bottom-3 rounded-lg px-2 py-1 text-[11px] flex items-center gap-2 ${labelBg}`}
-                >
+                <div className={`absolute left-3 bottom-3 rounded-lg px-2 py-1 text-[11px] flex items-center gap-2 ${labelBg}`}>
                     <span className="truncate max-w-[220px]">
-                        {screenSharer.isLocal
-                            ? "You (screen)"
-                            : `${screenSharer.displayName || "Guest"} (screen)`}
+                        {screenSharer.isLocal ? "You (screen)" : `${screenSharer.displayName || "Guest"} (screen)`}
                     </span>
                     <Icon
                         name={screenSharer.audioMuted ? "mic-off" : "mic-on"}
@@ -772,7 +796,7 @@ function ScreenShareLayoutMobile({
     theme,
     screenSharer,
     others,
-    paddingBottomPx = 96,
+    paddingBottomPx = 12,
     onRegisterVideoElement,
 }: {
     theme: "dark" | "light";
@@ -782,10 +806,7 @@ function ScreenShareLayoutMobile({
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
 }) {
     const screenVideoRef = useRef<HTMLVideoElement | null>(null);
-    const screenTrackId = useMemo(
-        () => safeTrackId(screenSharer.screenTrack),
-        [screenSharer.screenTrack]
-    );
+    const screenTrackId = useMemo(() => safeTrackId(screenSharer.screenTrack), [screenSharer.screenTrack]);
     const screenStreamV = useTrackStreamVersion(screenSharer.screenTrack);
 
     const handleScreenRef = useCallback(
@@ -814,11 +835,12 @@ function ScreenShareLayoutMobile({
             : "bg-black/45 border border-white/10 text-white/80";
 
     return (
-        <div className="w-full h-full min-h-0 overflow-y-auto p-2 flex flex-col gap-2" style={{ paddingBottom: paddingBottomPx }}>
+        <div
+            className="w-full h-full min-h-0 overflow-y-auto p-2 flex flex-col gap-2"
+            style={{ paddingBottom: paddingBottomPx }}
+        >
             <div
-                className={`w-full overflow-hidden rounded-2xl ${theme === "light"
-                    ? "bg-white ring-1 ring-black/10"
-                    : "bg-[#0B1220] ring-1 ring-white/10"
+                className={`w-full overflow-hidden rounded-2xl ${theme === "light" ? "bg-white ring-1 ring-black/10" : "bg-[#0B1220] ring-1 ring-white/10"
                     } relative`}
                 style={{ aspectRatio: "16 / 9" }}
             >
@@ -829,13 +851,9 @@ function ScreenShareLayoutMobile({
                     muted={screenSharer.isLocal}
                     className="absolute inset-0 w-full h-full object-contain bg-black"
                 />
-                <div
-                    className={`absolute left-3 bottom-3 rounded-lg px-2 py-1 text-[11px] flex items-center gap-2 ${labelBg}`}
-                >
+                <div className={`absolute left-3 bottom-3 rounded-lg px-2 py-1 text-[11px] flex items-center gap-2 ${labelBg}`}>
                     <span className="truncate max-w-[220px]">
-                        {screenSharer.isLocal
-                            ? "You (screen)"
-                            : `${screenSharer.displayName || "Guest"} (screen)`}
+                        {screenSharer.isLocal ? "You (screen)" : `${screenSharer.displayName || "Guest"} (screen)`}
                     </span>
                     <Icon
                         name={screenSharer.audioMuted ? "mic-off" : "mic-on"}
@@ -890,12 +908,18 @@ export function VideoRoom(props: VideoRoomProps) {
     const effectiveH = roomH || fallbackH;
 
     // These breakpoints are about *available room* width, not window width.
-    const isVeryNarrow = effectiveW < 430;     // iPhone SE etc
+    const isVeryNarrow = effectiveW < 430; // iPhone SE etc
     const isNarrowForColumns = effectiveW < 520; // still phone-ish
-    const isCompact = effectiveW < 900;        // tablets / narrow layouts
+    const isCompact = effectiveW < 900; // tablets / narrow layouts
 
     // keep old query as extra fallback
     const isMobileQuery = useMediaQuery("(max-width: 767px)");
+    const isTabletQuery = useMediaQuery("(min-width: 768px) and (max-width: 1023px)");
+
+    // bottom gutter inside video layouts:
+    // - when VideoRoom shows its own controls -> keep space
+    // - when controls are external (RoomPage fixed bottom bar) -> almost none
+    const paddingBottomPx = showControls ? 96 : 12;
 
     useEffect(() => {
         const deviceId = audioOutputId;
@@ -919,30 +943,16 @@ export function VideoRoom(props: VideoRoomProps) {
 
     const [scrollIndex, setScrollIndex] = useState(0);
 
-    const screenSharer = useMemo(
-        () => participants.find((p) => p.isScreenSharing && p.screenTrack),
-        [participants]
-    );
+    const screenSharer = useMemo(() => participants.find((p) => p.isScreenSharing && p.screenTrack), [participants]);
 
-    const localParticipant = useMemo(
-        () => participants.find((p) => p.isLocal) || null,
-        [participants]
-    );
+    const localParticipant = useMemo(() => participants.find((p) => p.isLocal) || null, [participants]);
 
     const baseParticipants = useMemo(() => {
-        return screenSharer
-            ? participants.filter((p) => p.id !== screenSharer.id)
-            : participants;
+        return screenSharer ? participants.filter((p) => p.id !== screenSharer.id) : participants;
     }, [participants, screenSharer]);
 
-    const maxStartIndex = useMemo(
-        () => Math.max(0, baseParticipants.length - PAGE_SIZE),
-        [baseParticipants.length]
-    );
-    const canScroll = useMemo(
-        () => baseParticipants.length > PAGE_SIZE,
-        [baseParticipants.length]
-    );
+    const maxStartIndex = useMemo(() => Math.max(0, baseParticipants.length - PAGE_SIZE), [baseParticipants.length]);
+    const canScroll = useMemo(() => baseParticipants.length > PAGE_SIZE, [baseParticipants.length]);
 
     useEffect(() => {
         setScrollIndex((i) => Math.min(Math.max(0, i), maxStartIndex));
@@ -962,12 +972,8 @@ export function VideoRoom(props: VideoRoomProps) {
     }, [baseParticipants, screenSharer, scrollIndex]);
 
     const visibleRemoteIds = useMemo(() => {
-        const visibleList = screenSharer
-            ? [screenSharer, ...screenOthers]
-            : pageParticipants;
-        return visibleList
-            .map((p) => p.id)
-            .filter((id) => id && id !== localParticipant?.id);
+        const visibleList = screenSharer ? [screenSharer, ...screenOthers] : pageParticipants;
+        return visibleList.map((p) => p.id).filter((id) => id && id !== localParticipant?.id);
     }, [screenSharer, screenOthers, pageParticipants, localParticipant?.id]);
 
     useEffect(() => {
@@ -1003,8 +1009,7 @@ export function VideoRoom(props: VideoRoomProps) {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, [showReactionsMenu]);
 
-    const baseBtn =
-        "w-10 h-10 rounded-2xl flex items-center justify-center transition";
+    const baseBtn = "w-10 h-10 rounded-2xl flex items-center justify-center transition";
 
     const goPrev = () => setScrollIndex((i) => Math.max(0, i - SCROLL_STEP));
     const goNext = () => setScrollIndex((i) => Math.min(maxStartIndex, i + SCROLL_STEP));
@@ -1014,15 +1019,18 @@ export function VideoRoom(props: VideoRoomProps) {
 
     const overlayLocal = localReactions ?? reactions;
 
-    const controlsBg = isLight
-        ? "bg-white/90 border border-black/10"
-        : "bg-[#020617]/90 border border-white/10";
+    const controlsBg = isLight ? "bg-white/90 border border-black/10" : "bg-[#020617]/90 border border-white/10";
 
     // ---------------- layout decision ----------------
     const count = pageParticipants.length;
 
     // "mobile-ish" is based on room width, not window width
     const useVeryNarrowMode = isVeryNarrow || (isMobileQuery && isNarrowForColumns);
+
+    // ✅ For 2 participants on tablets (and wide phones like Duo 540):
+    // stack vertically instead of side-by-side.
+    const stackTwoOnThisViewport =
+        count === 2 && !useVeryNarrowMode && (isTabletQuery || (isMobileQuery && effectiveW < 640) || isCompact);
 
     // For wide phones / small tablets (e.g. Surface Duo 540px), we DO want grid for 4p.
     const useColumnsMode = !useVeryNarrowMode;
@@ -1034,30 +1042,35 @@ export function VideoRoom(props: VideoRoomProps) {
             <div ref={roomRef} className="flex-1 relative min-h-0 overflow-hidden">
                 {!screenSharer && (
                     <>
-                        {/* very narrow phones: 1–2 fill, 3+ scroll stack */}
+                        {/* narrow phones: 1–2 centered 16:9, 3+ scroll stack */}
                         {useVeryNarrowMode ? (
                             count <= 2 ? (
                                 <MobileFillLayout
                                     theme={theme}
                                     pageParticipants={pageParticipants}
+                                    containerWidth={effectiveW}
+                                    containerHeight={effectiveH}
+                                    paddingBottomPx={paddingBottomPx}
                                     onRegisterVideoElement={onRegisterVideoElement}
                                 />
                             ) : (
                                 <MobileStackLayout
                                     theme={theme}
                                     pageParticipants={pageParticipants}
+                                    paddingBottomPx={paddingBottomPx}
                                     onRegisterVideoElement={onRegisterVideoElement}
                                 />
                             )
                         ) : (
                             <>
-                                {/* 2 participants: always P2P */}
+                                {/* 1–2 participants */}
                                 {count <= 2 ? (
                                     <P2PLayout
                                         theme={theme}
                                         pageParticipants={pageParticipants}
                                         containerWidth={effectiveW}
                                         containerHeight={effectiveH}
+                                        stack={stackTwoOnThisViewport}
                                         onRegisterVideoElement={onRegisterVideoElement}
                                     />
                                 ) : (
@@ -1077,11 +1090,12 @@ export function VideoRoom(props: VideoRoomProps) {
                 {screenSharer && (
                     <>
                         {/* screen share layout: switch to mobile version when room is compact */}
-                        {(isCompact || isMobileQuery) ? (
+                        {isCompact || isMobileQuery ? (
                             <ScreenShareLayoutMobile
                                 theme={theme}
                                 screenSharer={screenSharer}
                                 others={screenOthers}
+                                paddingBottomPx={paddingBottomPx}
                                 onRegisterVideoElement={onRegisterVideoElement}
                             />
                         ) : (
@@ -1146,9 +1160,7 @@ export function VideoRoom(props: VideoRoomProps) {
                                 (isLight
                                     ? "bg-white/85 border border-black/10 text-black/70"
                                     : "bg-black/45 border border-white/10 text-white/80") +
-                                (scrollIndex >= maxStartIndex
-                                    ? " opacity-40 cursor-not-allowed"
-                                    : " hover:opacity-90")
+                                (scrollIndex >= maxStartIndex ? " opacity-40 cursor-not-allowed" : " hover:opacity-90")
                             }
                             title="Scroll forward"
                         >
@@ -1216,11 +1228,7 @@ export function VideoRoom(props: VideoRoomProps) {
                         <div className="relative" ref={menuRef}>
                             <button
                                 onClick={() => setShowReactionsMenu((v) => !v)}
-                                className={
-                                    baseBtn +
-                                    " " +
-                                    (isLight ? "bg-black/5 hover:bg-black/10" : "bg-[#111827] hover:bg-[#1f2937]")
-                                }
+                                className={baseBtn + " " + (isLight ? "bg-black/5 hover:bg-black/10" : "bg-[#111827] hover:bg-[#1f2937]")}
                                 title="Reactions"
                             >
                                 <Icon name="reaction" className="w-5 h-5" theme={theme} />
