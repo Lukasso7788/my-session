@@ -17,7 +17,7 @@ export type PreJoinSettings = {
     noiseSuppression: boolean;
     autoGainControl: boolean;
 
-    // ✅ new: same model idea as RoomMediaSettings
+    // ✅ эффекты как в RoomMediaSettingsModal
     bgMode: BgMode;
     bgImageUrl?: string; // /public url | remote url | objectURL(blob:)
 };
@@ -71,25 +71,36 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
     const isLight = theme === "light";
 
     const [s, setS] = useState<PreJoinSettings>({ ...DEFAULTS, ...(initial || {}) });
-
     const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
     const [permissionError, setPermissionError] = useState<string | null>(null);
 
-    const videoRef = useRef<HTMLVideoElement | null>(null);
+    const videoRef = useRef<HTMLVideoElement | null>(null); // input video (camera stream)
+    const canvasRef = useRef<HTMLCanvasElement | null>(null); // output (processed)
     const streamRef = useRef<MediaStream | null>(null);
 
     const testAudioRef = useRef<HTMLAudioElement | null>(null);
 
     // mic meter
     const [micLevel, setMicLevel] = useState(0);
-    const rafRef = useRef<number | null>(null);
+    const rafMeterRef = useRef<number | null>(null);
     const audioCtxRef = useRef<AudioContext | null>(null);
     const analyserRef = useRef<AnalyserNode | null>(null);
     const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
 
-    // ✅ blob URL lifecycle (same idea as RoomMediaSettings)
-    const committedBgUrlRef = useRef<string | undefined>(initial?.bgImageUrl);
+    // ✅ objectURL cleanup like in RoomMediaSettingsModal
+    const committedBgUrlRef = useRef<string | undefined>(undefined);
     const prevDraftObjectUrlRef = useRef<string | null>(null);
+
+    // ✅ segmentation pipeline
+    const segRef = useRef<any>(null);
+    const segReadyRef = useRef(false);
+    const segFailRef = useRef(false);
+    const segLoopRafRef = useRef<number | null>(null);
+    const segInFlightRef = useRef(false);
+
+    const personCanvasRef = useRef<HTMLCanvasElement | null>(null); // offscreen for foreground (person)
+    const bgImgRef = useRef<HTMLImageElement | null>(null);
+    const [segStatus, setSegStatus] = useState<"idle" | "loading" | "ready" | "failed">("idle");
 
     const cameras = useMemo(() => devices.filter((d) => d.kind === "videoinput"), [devices]);
     const mics = useMemo(() => devices.filter((d) => d.kind === "audioinput"), [devices]);
@@ -102,36 +113,33 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
         ? "bg-black/5 hover:bg-black/10 border border-black/10"
         : "bg-white/10 hover:bg-white/15 border border-white/10";
 
-    // ---------- helpers ----------
+    // -------------------- media helpers --------------------
     const stopStream = () => {
         try {
             streamRef.current?.getTracks().forEach((t) => t.stop());
         } catch { }
         streamRef.current = null;
 
-        // mic meter cleanup
-        if (rafRef.current) cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
+        if (rafMeterRef.current) cancelAnimationFrame(rafMeterRef.current);
+        rafMeterRef.current = null;
 
-        try {
-            sourceRef.current?.disconnect();
-        } catch { }
-        try {
-            analyserRef.current?.disconnect();
-        } catch { }
+        try { sourceRef.current?.disconnect(); } catch { }
+        try { analyserRef.current?.disconnect(); } catch { }
         sourceRef.current = null;
         analyserRef.current = null;
 
-        try {
-            audioCtxRef.current?.close();
-        } catch { }
+        try { audioCtxRef.current?.close(); } catch { }
         audioCtxRef.current = null;
     };
 
     const attachPreview = (stream: MediaStream) => {
-        if (!videoRef.current) return;
-        videoRef.current.srcObject = stream;
-        const pr = (videoRef.current as any).play?.();
+        const v = videoRef.current;
+        if (!v) return;
+
+        v.srcObject = stream;
+
+        // важно: play() руками, иначе на некоторых браузерах видео "не стартует"
+        const pr = (v as any).play?.();
         pr?.catch?.(() => { });
     };
 
@@ -156,7 +164,6 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
 
         const src = ctx.createMediaStreamSource(new MediaStream([audioTrack]));
         sourceRef.current = src;
-
         src.connect(analyser);
 
         const data = new Uint8Array(analyser.frequencyBinCount);
@@ -167,10 +174,10 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
             for (let i = 0; i < data.length; i++) sum += data[i];
             const avg = sum / data.length;
             setMicLevel(Math.min(1, avg / 80));
-            rafRef.current = requestAnimationFrame(tick);
+            rafMeterRef.current = requestAnimationFrame(tick);
         };
 
-        rafRef.current = requestAnimationFrame(tick);
+        rafMeterRef.current = requestAnimationFrame(tick);
     };
 
     const ensureDevices = async () => {
@@ -214,10 +221,8 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
             attachPreview(stream);
             setupMicMeter(stream);
 
-            // after permission we get labels
             await ensureDevices();
 
-            // sink for test audio
             if (supportsSetSinkId() && testAudioRef.current && s.audioOutputId && s.audioOutputId !== "default") {
                 try {
                     await (testAudioRef.current as any).setSinkId(s.audioOutputId);
@@ -229,7 +234,7 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
         }
     };
 
-    // ---------- blob url cleanup for background ----------
+    // -------------------- blob url cleanup --------------------
     useEffect(() => {
         if (!open) return;
 
@@ -257,11 +262,213 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
         }
     };
 
-    // ---------- lifecycle ----------
+    // -------------------- segmentation (virtual background) --------------------
+    const ensureOffscreenCanvases = (w: number, h: number) => {
+        if (!personCanvasRef.current) personCanvasRef.current = document.createElement("canvas");
+        const pc = personCanvasRef.current!;
+        if (pc.width !== w) pc.width = w;
+        if (pc.height !== h) pc.height = h;
+
+        const out = canvasRef.current;
+        if (out && (out.width !== w || out.height !== h)) {
+            out.width = w;
+            out.height = h;
+        }
+    };
+
+    const ensureBgImage = (url?: string) => {
+        if (!url) {
+            bgImgRef.current = null;
+            return;
+        }
+        const img = new Image();
+        img.crossOrigin = "anonymous"; // best effort (если нет CORS — просто таинтится, но нам не надо экспортировать)
+        img.src = url;
+        bgImgRef.current = img;
+    };
+
+    const initSegmentationIfNeeded = async () => {
+        if (segReadyRef.current || segFailRef.current) return;
+
+        setSegStatus("loading");
+        try {
+            const mod: any = await import("@mediapipe/selfie_segmentation");
+            const SelfieSegmentation = mod.SelfieSegmentation;
+
+            const seg = new SelfieSegmentation({
+                locateFile: (file: string) =>
+                    `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`,
+            });
+
+            seg.setOptions({
+                modelSelection: 1, // 0 = general, 1 = landscape (обычно лучше)
+            });
+
+            seg.onResults((results: any) => {
+                // results.image = input frame, results.segmentationMask = mask canvas (white=person)
+                const v = videoRef.current;
+                const out = canvasRef.current;
+                if (!v || !out) return;
+
+                const w = v.videoWidth || 1280;
+                const h = v.videoHeight || 720;
+
+                ensureOffscreenCanvases(w, h);
+
+                const ctx = out.getContext("2d");
+                if (!ctx) return;
+
+                const mask = results.segmentationMask;
+
+                if (s.bgMode === "none") {
+                    // no need to draw
+                    return;
+                }
+
+                // person layer
+                const pc = personCanvasRef.current!;
+                const pctx = pc.getContext("2d");
+                if (!pctx) return;
+
+                pctx.clearRect(0, 0, w, h);
+                pctx.globalCompositeOperation = "source-over";
+                pctx.filter = "none";
+                pctx.drawImage(results.image, 0, 0, w, h);
+                pctx.globalCompositeOperation = "destination-in";
+                pctx.drawImage(mask, 0, 0, w, h);
+                pctx.globalCompositeOperation = "source-over";
+
+                // compose output
+                ctx.clearRect(0, 0, w, h);
+
+                if (s.bgMode === "blur") {
+                    // background = blurred video, but remove person
+                    ctx.save();
+                    ctx.filter = "blur(12px)";
+                    ctx.drawImage(results.image, 0, 0, w, h);
+                    ctx.restore();
+
+                    ctx.save();
+                    ctx.globalCompositeOperation = "destination-out"; // cut person out => leaves blurred background
+                    ctx.drawImage(mask, 0, 0, w, h);
+                    ctx.restore();
+
+                    // add person
+                    ctx.drawImage(pc, 0, 0, w, h);
+                    return;
+                }
+
+                if (s.bgMode === "image") {
+                    // background image
+                    const bg = bgImgRef.current;
+
+                    if (bg && bg.complete && bg.naturalWidth > 0) {
+                        // cover draw
+                        const iw = bg.naturalWidth;
+                        const ih = bg.naturalHeight;
+                        const scale = Math.max(w / iw, h / ih);
+                        const dw = iw * scale;
+                        const dh = ih * scale;
+                        const dx = (w - dw) / 2;
+                        const dy = (h - dh) / 2;
+                        ctx.drawImage(bg, dx, dy, dw, dh);
+                    } else {
+                        // fallback if image not loaded yet
+                        ctx.fillStyle = "#0B1220";
+                        ctx.fillRect(0, 0, w, h);
+                    }
+
+                    // add person on top
+                    ctx.drawImage(pc, 0, 0, w, h);
+                    return;
+                }
+            });
+
+            segRef.current = seg;
+            segReadyRef.current = true;
+            setSegStatus("ready");
+        } catch (e) {
+            console.warn("SelfieSegmentation init failed", e);
+            segFailRef.current = true;
+            setSegStatus("failed");
+        }
+    };
+
+    const startSegLoop = () => {
+        if (segLoopRafRef.current) cancelAnimationFrame(segLoopRafRef.current);
+        segLoopRafRef.current = null;
+
+        const tick = async () => {
+            if (!open) return;
+
+            const v = videoRef.current;
+            const seg = segRef.current;
+            if (!v || !seg || !segReadyRef.current) {
+                segLoopRafRef.current = requestAnimationFrame(tick);
+                return;
+            }
+
+            // если камера выключена — не гоняем сегментацию
+            if (!s.videoEnabled) {
+                segLoopRafRef.current = requestAnimationFrame(tick);
+                return;
+            }
+
+            // ждём пока видео реально готово
+            if (v.readyState < 2) {
+                segLoopRafRef.current = requestAnimationFrame(tick);
+                return;
+            }
+
+            if (!segInFlightRef.current && (s.bgMode === "blur" || s.bgMode === "image")) {
+                segInFlightRef.current = true;
+                try {
+                    await seg.send({ image: v });
+                } catch { }
+                segInFlightRef.current = false;
+            }
+
+            segLoopRafRef.current = requestAnimationFrame(tick);
+        };
+
+        segLoopRafRef.current = requestAnimationFrame(tick);
+    };
+
+    const stopSegLoop = () => {
+        if (segLoopRafRef.current) cancelAnimationFrame(segLoopRafRef.current);
+        segLoopRafRef.current = null;
+        segInFlightRef.current = false;
+    };
+
+    // update bg image when url changes
+    useEffect(() => {
+        if (!open) return;
+        if (s.bgMode !== "image") return;
+
+        const url = s.bgImageUrl || DEFAULT_BACKGROUNDS[0]?.url;
+        ensureBgImage(url);
+    }, [open, s.bgMode, s.bgImageUrl]);
+
+    // init segmentation only when needed (blur/image)
     useEffect(() => {
         if (!open) return;
 
-        // restore local
+        if (s.bgMode === "blur" || s.bgMode === "image") {
+            initSegmentationIfNeeded().then(() => {
+                startSegLoop();
+            });
+            return () => stopSegLoop();
+        }
+
+        // none mode
+        stopSegLoop();
+    }, [open, s.bgMode, s.videoEnabled]);
+
+    // -------------------- lifecycle --------------------
+    useEffect(() => {
+        if (!open) return;
+
+        // restore saved
         try {
             const raw = localStorage.getItem("mysession_prejoin");
             if (raw) {
@@ -269,22 +476,23 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
                 setS((prev) => ({ ...prev, ...parsed, ...(initial || {}) }));
             } else if (initial) {
                 setS((prev) => ({ ...prev, ...(initial || {}) }));
-            } else {
-                setS((prev) => ({ ...prev }));
             }
         } catch {
             if (initial) setS((prev) => ({ ...prev, ...(initial || {}) }));
         }
 
-        // reset committed marker each open (we only commit on Join)
         committedBgUrlRef.current = undefined;
         prevDraftObjectUrlRef.current = null;
+
+        // reset seg status per open (optional)
+        setSegStatus("idle");
 
         ensureDevices().catch(() => { });
         startPreview().catch(() => { });
 
         return () => {
             stopStream();
+            stopSegLoop();
             revokeCurrentBgIfNotCommitted();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -306,7 +514,7 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
         s.autoGainControl,
     ]);
 
-    // apply sinkId to test audio when output changes
+    // sinkId for test audio
     useEffect(() => {
         if (!open) return;
         if (!supportsSetSinkId()) return;
@@ -316,7 +524,7 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
         (testAudioRef.current as any).setSinkId(s.audioOutputId).catch(() => { });
     }, [open, s.audioOutputId]);
 
-    // lock body scroll while open (same UX as settings modal)
+    // lock body scroll
     useEffect(() => {
         if (!open) return;
 
@@ -335,7 +543,6 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
     }, [open]);
 
     const onClickJoin = () => {
-        // ✅ commit background url NOW (avoid revoke on close/unmount)
         committedBgUrlRef.current = s.bgImageUrl;
 
         try {
@@ -373,15 +580,9 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
 
             osc.start();
             setTimeout(() => {
-                try {
-                    osc.stop();
-                } catch { }
-                try {
-                    ctx.close();
-                } catch { }
-                try {
-                    (audioEl as any).srcObject = null;
-                } catch { }
+                try { osc.stop(); } catch { }
+                try { ctx.close(); } catch { }
+                try { (audioEl as any).srcObject = null; } catch { }
             }, 350);
         } catch { }
     };
@@ -390,10 +591,11 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
         await ensureDevices();
     };
 
-    // ---------- background setters ----------
+    // -------------------- bg setters --------------------
     const setBgNone = () => setS((p) => ({ ...p, bgMode: "none", bgImageUrl: undefined }));
     const setBgBlur = () => setS((p) => ({ ...p, bgMode: "blur", bgImageUrl: undefined }));
     const setBgImage = (url: string) => setS((p) => ({ ...p, bgMode: "image", bgImageUrl: url }));
+
     const setCustomFile = (file: File) => {
         const url = URL.createObjectURL(file);
         setBgImage(url);
@@ -401,11 +603,19 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
 
     if (!open) return null;
 
-    // preview styles
-    const previewVideoFilter =
-        s.bgMode === "blur" ? "blur-[6px] scale-[1.03]" : "";
-    const previewHasBgImage = s.bgMode === "image" && !!(s.bgImageUrl || DEFAULT_BACKGROUNDS[0]?.url);
-    const previewBgUrl = s.bgImageUrl || DEFAULT_BACKGROUNDS[0]?.url;
+    // показываем canvas только когда:
+    // - выбран blur/image
+    // - и segmentation готова
+    const wantProcessed = s.bgMode === "blur" || s.bgMode === "image";
+    const canProcessed = wantProcessed && segStatus === "ready" && !segFailRef.current;
+
+    // фолбэк (если segmentation не готова/сломалась):
+    // - blur: размываем всё видео
+    // - image: картинка как background контейнера, видео сверху
+    const fallbackBlurAll = wantProcessed && !canProcessed && s.bgMode === "blur";
+    const fallbackBgBehind = wantProcessed && !canProcessed && s.bgMode === "image";
+
+    const fallbackBgUrl = s.bgImageUrl || DEFAULT_BACKGROUNDS[0]?.url;
 
     const pillActive =
         isLight
@@ -460,21 +670,37 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
                         {/* left: preview */}
                         <div className="space-y-3">
                             <div
-                                className={`relative rounded-2xl overflow-hidden bg-black ring-1 ${isLight ? "ring-black/10" : "ring-white/10"}`}
+                                className={`relative rounded-2xl overflow-hidden ring-1 ${isLight ? "ring-black/10 bg-black" : "ring-white/10 bg-black"
+                                    }`}
                                 style={{
                                     aspectRatio: "16 / 9",
-                                    backgroundImage: previewHasBgImage ? `url(${previewBgUrl})` : undefined,
+                                    backgroundImage: fallbackBgBehind ? `url(${fallbackBgUrl})` : undefined,
                                     backgroundSize: "cover",
                                     backgroundPosition: "center",
                                 }}
                             >
+                                {/* input video: always exists (we feed segmentation from it) */}
                                 <video
                                     ref={videoRef}
+                                    autoPlay
                                     playsInline
                                     muted
-                                    className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-150 ${previewVideoFilter} ${s.videoEnabled ? "opacity-100" : "opacity-0"
-                                        }`}
+                                    className={
+                                        "absolute inset-0 w-full h-full object-cover transition-opacity duration-150 " +
+                                        (s.videoEnabled ? "opacity-100" : "opacity-0") +
+                                        (fallbackBlurAll ? " blur-[10px] scale-[1.03]" : "") +
+                                        (canProcessed ? " opacity-0" : "")
+                                    }
                                 />
+
+                                {/* processed output */}
+                                {canProcessed && (
+                                    <canvas
+                                        ref={canvasRef}
+                                        className="absolute inset-0 w-full h-full"
+                                    // canvas scale via CSS, internal size set by code
+                                    />
+                                )}
 
                                 {!s.videoEnabled && (
                                     <div className="absolute inset-0 flex items-center justify-center text-white/80 text-sm">
@@ -483,21 +709,32 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
                                 )}
 
                                 <div className="absolute left-3 top-3 flex items-center gap-2">
-                                    <div className={`px-2.5 py-1 rounded-full text-[11px] border ${isLight ? "bg-white/90 border-black/10 text-black/70" : "bg-black/45 border-white/10 text-white/75"}`}>
+                                    <div
+                                        className={`px-2.5 py-1 rounded-full text-[11px] border ${isLight ? "bg-white/90 border-black/10 text-black/70" : "bg-black/45 border-white/10 text-white/75"
+                                            }`}
+                                    >
                                         {s.bgMode === "none" ? "Background: none" : s.bgMode === "blur" ? "Background: blur" : "Background: image"}
                                     </div>
-                                    {s.audioEnabled ? (
-                                        <div className={`px-2.5 py-1 rounded-full text-[11px] border ${isLight ? "bg-white/90 border-black/10 text-black/70" : "bg-black/45 border-white/10 text-white/75"}`}>
-                                            Mic: on
+
+                                    {wantProcessed && segStatus === "loading" && (
+                                        <div
+                                            className={`px-2.5 py-1 rounded-full text-[11px] border ${isLight ? "bg-white/90 border-black/10 text-black/70" : "bg-black/45 border-white/10 text-white/75"
+                                                }`}
+                                        >
+                                            Loading effects…
                                         </div>
-                                    ) : (
-                                        <div className={`px-2.5 py-1 rounded-full text-[11px] border ${isLight ? "bg-white/90 border-black/10 text-black/70" : "bg-black/45 border-white/10 text-white/75"}`}>
-                                            Mic: muted
+                                    )}
+
+                                    {wantProcessed && segStatus === "failed" && (
+                                        <div
+                                            className={`px-2.5 py-1 rounded-full text-[11px] border ${isLight ? "bg-white/90 border-black/10 text-black/70" : "bg-black/45 border-white/10 text-white/75"
+                                                }`}
+                                        >
+                                            Effects fallback
                                         </div>
                                     )}
                                 </div>
 
-                                {/* quick toggles */}
                                 <div className="absolute left-3 bottom-3 flex items-center gap-2">
                                     <button
                                         className={`px-3 h-9 rounded-xl text-sm ${btn}`}
@@ -506,6 +743,7 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
                                     >
                                         {s.videoEnabled ? "Turn off camera" : "Turn on camera"}
                                     </button>
+
                                     <button
                                         className={`px-3 h-9 rounded-xl text-sm ${btn}`}
                                         onClick={() => setS((p) => ({ ...p, audioEnabled: !p.audioEnabled }))}
@@ -527,9 +765,11 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
 
                                 {permissionError && <div className="text-xs text-red-400">{permissionError}</div>}
 
-                                <div className={`text-[11px] ${subtle}`}>
-                                    Note: preview of blur/image here is simplified. Real outgoing background effect should be applied when creating the outgoing track.
-                                </div>
+                                {wantProcessed && segStatus !== "ready" && (
+                                    <div className={`text-[11px] ${subtle}`}>
+                                        Virtual background needs MediaPipe. If it fails to load, you’ll see a simplified fallback effect.
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -547,7 +787,7 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
                                 />
                             </div>
 
-                            {/* camera + mic row */}
+                            {/* camera + mic */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div className="space-y-2">
                                     <div className="text-sm font-semibold">Camera</div>
@@ -613,7 +853,7 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
                                 {!supportsSetSinkId() && <div className={`text-xs ${subtle}`}>Output selection not supported in this browser.</div>}
                             </div>
 
-                            {/* toggles like in screenshot */}
+                            {/* reduce toggles */}
                             <div className={`rounded-2xl p-3 ${isLight ? "bg-black/5" : "bg-white/5"} space-y-2`}>
                                 <label className="flex items-center gap-2 text-sm">
                                     <input
@@ -663,7 +903,7 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
                                 </div>
                             </div>
 
-                            {/* background (ported from RoomMediaSettings) */}
+                            {/* background */}
                             <div>
                                 <div className="text-sm font-semibold mb-2">Background</div>
 
@@ -671,8 +911,7 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
                                     <button
                                         type="button"
                                         onClick={setBgNone}
-                                        className={`h-10 px-3 rounded-xl border text-[13px] transition ${s.bgMode === "none" ? pillActive : pillIdle
-                                            }`}
+                                        className={`h-10 px-3 rounded-xl border text-[13px] transition ${s.bgMode === "none" ? pillActive : pillIdle}`}
                                     >
                                         None
                                     </button>
@@ -680,8 +919,7 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
                                     <button
                                         type="button"
                                         onClick={setBgBlur}
-                                        className={`h-10 px-3 rounded-xl border text-[13px] transition ${s.bgMode === "blur" ? pillActive : pillIdle
-                                            }`}
+                                        className={`h-10 px-3 rounded-xl border text-[13px] transition ${s.bgMode === "blur" ? pillActive : pillIdle}`}
                                     >
                                         Blur
                                     </button>
@@ -692,8 +930,7 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
                                             const url = s.bgImageUrl || DEFAULT_BACKGROUNDS[0]?.url;
                                             if (url) setBgImage(url);
                                         }}
-                                        className={`h-10 px-3 rounded-xl border text-[13px] transition ${s.bgMode === "image" ? pillActive : pillIdle
-                                            }`}
+                                        className={`h-10 px-3 rounded-xl border text-[13px] transition ${s.bgMode === "image" ? pillActive : pillIdle}`}
                                     >
                                         Image
                                     </button>
@@ -723,7 +960,7 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
 
                                         <div className="grid grid-cols-3 gap-2">
                                             {DEFAULT_BACKGROUNDS.map((bg) => {
-                                                const active = s.bgImageUrl === bg.url || (!s.bgImageUrl && bg.url === DEFAULT_BACKGROUNDS[0]?.url);
+                                                const active = s.bgImageUrl === bg.url;
                                                 return (
                                                     <button
                                                         key={bg.id}
@@ -751,13 +988,9 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
                                         )}
                                     </div>
                                 )}
-
-                                <div className={`mt-2 text-[11px] ${subtle}`}>
-                                    These settings are saved and passed into <b>onJoin()</b>. Apply them to your outgoing track the same way you do in RoomMediaSettings.
-                                </div>
                             </div>
 
-                            {/* footer actions */}
+                            {/* footer */}
                             <div className="pt-2 flex items-center justify-between">
                                 <button onClick={onClickCancel} className={`px-4 h-10 rounded-xl ${btn}`} type="button">
                                     Cancel
@@ -772,7 +1005,7 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
                                 </button>
                             </div>
 
-                            {/* hidden audio element used for sink routing */}
+                            {/* hidden audio element for sink routing */}
                             <audio ref={testAudioRef} />
                         </div>
                     </div>
