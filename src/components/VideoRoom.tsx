@@ -420,10 +420,16 @@ function computeCols(count: number, containerWidth: number) {
     if (count === 2) return 2;
     if (count === 4) return 2; // ✅ always 2x2
 
-    // responsive choices
-    if (count === 3) return containerWidth >= 1100 ? 3 : 2;
+    // ✅ You explicitly want 3 videos to behave like "one row of 3" on normal widths
+    // and still not degrade too early when panels open.
+    if (count === 3) return containerWidth >= 900 ? 3 : 2;
 
-    if (count <= 6) return containerWidth >= 1100 ? 3 : 2;
+    // ✅ Keep 3 columns for 5-6 earlier (so chat/intentions doesn't flip 6p into 2x3)
+    if (count === 5) return containerWidth >= 900 ? 3 : 2;
+
+    // ✅ This is the main fix: 6 participants should prefer 3x2 even when the room becomes narrower
+    // (chat/intentions open). Lower threshold on purpose.
+    if (count === 6) return containerWidth >= 780 ? 3 : 2;
 
     // 7+ participants
     return containerWidth >= 1400 ? 4 : 3;
@@ -492,6 +498,26 @@ function GridLayout({
         return w;
     }, [containerWidth, containerHeight, cols, rows, gapPx, paddingPx]);
 
+    // ✅ Decide if we can vertically center (only when content fits — otherwise keep start + scroll)
+    const shouldCenterY = useMemo(() => {
+        if (!containerWidth || !containerHeight) return false;
+
+        const availW = Math.max(0, containerWidth - paddingPx * 2);
+        const availH = Math.max(0, containerHeight - paddingPx * 2);
+
+        if (availW <= 0 || availH <= 0) return false;
+
+        const byWidth = (availW - (cols - 1) * gapPx) / cols;
+        const byHeight = (availH - (rows - 1) * gapPx) / (rows * (9 / 16));
+
+        const tileW = Math.max(0, Math.min(byWidth, byHeight));
+        const tileH = tileW * (9 / 16);
+        const gridH = rows * tileH + (rows - 1) * gapPx;
+
+        // small epsilon to avoid jitter
+        return gridH > 0 && gridH <= availH - 4;
+    }, [containerWidth, containerHeight, paddingPx, gapPx, cols, rows]);
+
     const count = pageParticipants.length;
     const remainder = cols > 0 ? count % cols : 0;
     const fullCount = remainder === 0 ? count : count - remainder;
@@ -502,14 +528,21 @@ function GridLayout({
     const lastRow = pageParticipants.slice(fullCount);
 
     return (
-        <div className="w-full h-full min-h-0 overflow-y-auto flex justify-center" style={{ padding: paddingPx }}>
+        <div
+            className={
+                "w-full h-full min-h-0 overflow-y-auto flex justify-center " +
+                (shouldCenterY ? "items-center" : "items-start")
+            }
+            style={{ padding: paddingPx }}
+        >
             <div
                 className="w-full grid"
                 style={{
                     gap: gapPx,
                     maxWidth: maxGridWidth ? `${maxGridWidth}px` : undefined,
                     gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-                    alignContent: "start",
+                    // ✅ Key fix: if we can fit, center; otherwise keep start (and allow scroll)
+                    alignContent: shouldCenterY ? "center" : "start",
                 }}
             >
                 {/* Full rows */}
@@ -526,7 +559,13 @@ function GridLayout({
 
                 {/* Last incomplete row centered */}
                 {lastRow.length > 0 && (
-                    <div className="col-span-full w-full flex justify-center items-start" style={{ gap: gapPx }}>
+                    <div
+                        className="col-span-full w-full flex justify-center"
+                        style={{
+                            gap: gapPx,
+                            alignItems: shouldCenterY ? "center" : "flex-start",
+                        }}
+                    >
                         {lastRow.map((p) => (
                             <div key={p.id} className="shrink-0" style={{ width: oneColWidth }}>
                                 <ParticipantTile
