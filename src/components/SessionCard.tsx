@@ -444,7 +444,8 @@ export default function SessionCard({
         setIsHoveringCancel(false);
     };
 
-    const handleJoinIframe = () => navigate(`/room-iframe/${session.id}`);
+    // ✅ FIX: go to RoomPage (not iframe)
+    const handleJoinRoom = () => navigate(`/room/${session.id}`);
 
     // ✅ avatars stack
     const maxStack = 6;
@@ -478,7 +479,9 @@ export default function SessionCard({
                 const d = new Date(session.start_time);
                 const pad = (n: number) => String(n).padStart(2, "0");
                 setEditStartLocal(
-                    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+                    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
+                        d.getMinutes()
+                    )}`
                 );
             } catch { }
         } else setEditStartLocal("");
@@ -636,7 +639,6 @@ export default function SessionCard({
                                         className="w-4 h-4"
                                         alt=""
                                         onError={(e) => {
-                                            // if custom icon missing, fallback to deepwork
                                             const img = e.currentTarget as HTMLImageElement;
                                             img.src = "/icons/deepwork.svg";
                                         }}
@@ -666,7 +668,7 @@ export default function SessionCard({
                     {isBookingConfirmed ? confirmedBookingButton : bookSessionButton}
 
                     <button
-                        onClick={handleJoinIframe}
+                        onClick={handleJoinRoom}
                         onMouseEnter={() => setIsHoveringJoinIframe(true)}
                         onMouseLeave={() => setIsHoveringJoinIframe(false)}
                         className="
@@ -807,7 +809,6 @@ export default function SessionCard({
                                     <AvatarCircle user={u} size={34} />
                                     <div className="flex flex-col min-w-0">
                                         <div className="text-[13px] font-semibold text-[#111827] truncate">{label}</div>
-                                        {/* ✅ privacy: no email line */}
                                     </div>
                                 </Link>
                             );
