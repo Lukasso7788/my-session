@@ -41,6 +41,13 @@ type VideoRoomProps = {
         el: HTMLVideoElement | null,
         kind: "video" | "screen"
     ) => void;
+
+    /**
+     * ✅ NEW: edit your own display name in-room
+     * - if provided, call this to persist into Jitsi/conference + backend if needed
+     * - if not provided, we still update locally for UI
+     */
+    onEditLocalDisplayName?: (newName: string) => void | Promise<void>;
 };
 
 const reactionEmoji: Record<ReactionType, string> = {
@@ -282,17 +289,43 @@ function ParticipantTile({
     forceAspect = false,
     fit = "contain",
     onRegisterVideoElement,
+    editable,
+    displayNameOverride,
+    onOpenEditName,
 }: {
     theme: "dark" | "light";
     participant: JitsiParticipant;
     forceAspect?: boolean;
     fit?: "contain" | "cover";
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
+
+    // ✅ NEW: local edit UX
+    editable?: boolean; // only local participant
+    displayNameOverride?: string | null; // local override shown in UI
+    onOpenEditName?: () => void;
 }) {
     const videoRef = useRef<HTMLVideoElement | null>(null);
 
     const hasVideoTrack = !!participant.videoTrack;
     const streamV = useTrackStreamVersion(participant.videoTrack);
+
+    // hover/options state
+    const [hovered, setHovered] = useState(false);
+    const [optionsOpen, setOptionsOpen] = useState(false);
+    const optionsRef = useRef<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+        if (!optionsOpen) return;
+
+        const onDoc = (e: MouseEvent) => {
+            const t = e.target as Node | null;
+            if (!t) return;
+            if (!optionsRef.current) return;
+            if (!optionsRef.current.contains(t)) setOptionsOpen(false);
+        };
+        document.addEventListener("mousedown", onDoc);
+        return () => document.removeEventListener("mousedown", onDoc);
+    }, [optionsOpen]);
 
     // ✅ IMPORTANT: register <video> element so engine can "black video recovery" reattach correctly
     const handleVideoRef = useCallback(
@@ -328,7 +361,8 @@ function ParticipantTile({
     const showPlaceholder = !hasVideoTrack || participant.videoMuted;
     const hideVideo = !hasVideoTrack || participant.videoMuted;
 
-    const name = participant.isLocal ? "You" : participant.displayName || "Guest";
+    const rawName = participant.isLocal ? "You" : participant.displayName || "Guest";
+    const name = participant.isLocal && displayNameOverride ? displayNameOverride : rawName;
 
     const tileBaseBg = theme === "light" ? "bg-[#EEF1F7]" : "bg-[#0B1220]";
     const placeholderBg = theme === "light" ? "bg-white" : "bg-[#111827]";
@@ -338,6 +372,19 @@ function ParticipantTile({
             : "bg-black/45 border border-white/10 text-white/80";
 
     const ringClass = theme === "light" ? "ring-1 ring-black/10" : "ring-1 ring-white/10";
+
+    const optionsBtnBg =
+        theme === "light"
+            ? "bg-white/90 border border-black/10 text-black/70 hover:bg-white"
+            : "bg-black/45 border border-white/10 text-white/80 hover:bg-black/55";
+
+    const menuBg =
+        theme === "light"
+            ? "bg-white border border-black/10 text-black/80"
+            : "bg-[#020617] border border-white/10 text-white/85";
+
+    const menuItemHover =
+        theme === "light" ? "hover:bg-black/5" : "hover:bg-white/10";
 
     return (
         <div
@@ -350,6 +397,11 @@ function ParticipantTile({
                 " " +
                 (forceAspect ? "w-full" : "w-full h-full")
             }
+            onMouseEnter={() => setHovered(true)}
+            onMouseLeave={() => {
+                setHovered(false);
+                setOptionsOpen(false);
+            }}
         >
             <video
                 ref={handleVideoRef}
@@ -399,6 +451,41 @@ function ParticipantTile({
                 </div>
             )}
 
+            {/* ✅ Hover Options (⋯) — only for editable(local) to start; can be enabled for all later */}
+            {editable && hovered && (
+                <div className="absolute top-3 right-3" ref={optionsRef}>
+                    <button
+                        type="button"
+                        className={`h-9 w-9 rounded-xl flex items-center justify-center shadow-lg ${optionsBtnBg}`}
+                        title="Options"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setOptionsOpen((v) => !v);
+                        }}
+                    >
+                        <span className="text-lg leading-none">⋯</span>
+                    </button>
+
+                    {optionsOpen && (
+                        <div
+                            className={`absolute right-0 mt-2 min-w-[170px] rounded-xl shadow-xl overflow-hidden ${menuBg}`}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <button
+                                type="button"
+                                className={`w-full text-left px-3 py-2 text-sm ${menuItemHover}`}
+                                onClick={() => {
+                                    setOptionsOpen(false);
+                                    onOpenEditName?.();
+                                }}
+                            >
+                                ✎ Edit name
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
+
             {/* Bottom label */}
             <div className={`absolute left-3 bottom-3 rounded-lg px-2 py-1 text-[11px] flex items-center gap-2 ${labelBg}`}>
                 <span className="truncate max-w-[160px]">{name}</span>
@@ -408,6 +495,22 @@ function ParticipantTile({
                     className="w-3.5 h-3.5 opacity-80"
                     theme={theme}
                 />
+
+                {/* ✅ Inline edit button near name on hover */}
+                {editable && hovered && (
+                    <button
+                        type="button"
+                        className={`ml-1 h-6 w-6 rounded-md flex items-center justify-center ${theme === "light" ? "hover:bg-black/5" : "hover:bg-white/10"
+                            }`}
+                        title="Edit name"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenEditName?.();
+                        }}
+                    >
+                        <span className="text-[12px] leading-none">✎</span>
+                    </button>
+                )}
             </div>
         </div>
     );
@@ -420,18 +523,10 @@ function computeCols(count: number, containerWidth: number) {
     if (count === 2) return 2;
     if (count === 4) return 2; // ✅ always 2x2
 
-    // ✅ You explicitly want 3 videos to behave like "one row of 3" on normal widths
-    // and still not degrade too early when panels open.
     if (count === 3) return containerWidth >= 900 ? 3 : 2;
-
-    // ✅ Keep 3 columns for 5-6 earlier (so chat/intentions doesn't flip 6p into 2x3)
     if (count === 5) return containerWidth >= 900 ? 3 : 2;
-
-    // ✅ This is the main fix: 6 participants should prefer 3x2 even when the room becomes narrower
-    // (chat/intentions open). Lower threshold on purpose.
     if (count === 6) return containerWidth >= 780 ? 3 : 2;
 
-    // 7+ participants
     return containerWidth >= 1400 ? 4 : 3;
 }
 
@@ -457,7 +552,6 @@ function calcMaxGridWidthPx(params: {
     const tileW = Math.max(0, Math.min(byWidth, byHeight));
     const gridW = cols * tileW + (cols - 1) * gapPx;
 
-    // cap to available width (just in case)
     return Math.min(availW, gridW);
 }
 
@@ -467,14 +561,21 @@ function GridLayout({
     containerWidth,
     containerHeight,
     onRegisterVideoElement,
+    localId,
+    localDisplayNameOverride,
+    onOpenEditName,
 }: {
     theme: "dark" | "light";
     pageParticipants: JitsiParticipant[];
     containerWidth: number;
     containerHeight: number;
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
+
+    // edit name wiring
+    localId: string | null;
+    localDisplayNameOverride: string | null;
+    onOpenEditName: () => void;
 }) {
-    // tighter padding/gap on narrow-ish screens
     const paddingPx = containerWidth && containerWidth < 520 ? 8 : 12;
     const gapPx = containerWidth && containerWidth < 520 ? 8 : 12;
 
@@ -485,7 +586,6 @@ function GridLayout({
     const rows = useMemo(() => Math.ceil(pageParticipants.length / cols), [pageParticipants.length, cols]);
 
     const maxGridWidth = useMemo(() => {
-        // we keep 16:9 tiles in grid to avoid relying on parent height/`h-full`
         const w = calcMaxGridWidthPx({
             containerWidth: containerWidth || 0,
             containerHeight: containerHeight || 0,
@@ -498,7 +598,6 @@ function GridLayout({
         return w;
     }, [containerWidth, containerHeight, cols, rows, gapPx, paddingPx]);
 
-    // ✅ Decide if we can vertically center (only when content fits — otherwise keep start + scroll)
     const shouldCenterY = useMemo(() => {
         if (!containerWidth || !containerHeight) return false;
 
@@ -514,7 +613,6 @@ function GridLayout({
         const tileH = tileW * (9 / 16);
         const gridH = rows * tileH + (rows - 1) * gapPx;
 
-        // small epsilon to avoid jitter
         return gridH > 0 && gridH <= availH - 4;
     }, [containerWidth, containerHeight, paddingPx, gapPx, cols, rows]);
 
@@ -541,11 +639,9 @@ function GridLayout({
                     gap: gapPx,
                     maxWidth: maxGridWidth ? `${maxGridWidth}px` : undefined,
                     gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-                    // ✅ Key fix: if we can fit, center; otherwise keep start (and allow scroll)
                     alignContent: shouldCenterY ? "center" : "start",
                 }}
             >
-                {/* Full rows */}
                 {fullRows.map((p) => (
                     <ParticipantTile
                         key={p.id}
@@ -554,10 +650,12 @@ function GridLayout({
                         forceAspect={true}
                         fit="cover"
                         onRegisterVideoElement={onRegisterVideoElement}
+                        editable={!!localId && p.id === localId}
+                        displayNameOverride={p.id === localId ? localDisplayNameOverride : null}
+                        onOpenEditName={onOpenEditName}
                     />
                 ))}
 
-                {/* Last incomplete row centered */}
                 {lastRow.length > 0 && (
                     <div
                         className="col-span-full w-full flex justify-center"
@@ -574,6 +672,9 @@ function GridLayout({
                                     forceAspect={true}
                                     fit="cover"
                                     onRegisterVideoElement={onRegisterVideoElement}
+                                    editable={!!localId && p.id === localId}
+                                    displayNameOverride={p.id === localId ? localDisplayNameOverride : null}
+                                    onOpenEditName={onOpenEditName}
                                 />
                             </div>
                         ))}
@@ -591,21 +692,26 @@ function P2PLayout({
     containerHeight,
     stack = false,
     onRegisterVideoElement,
+    localId,
+    localDisplayNameOverride,
+    onOpenEditName,
 }: {
     theme: "dark" | "light";
     pageParticipants: JitsiParticipant[];
     containerWidth: number;
     containerHeight: number;
-    stack?: boolean; // ✅ tablet/phone wide: 2 tiles vertically stacked
+    stack?: boolean;
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
+
+    localId: string | null;
+    localDisplayNameOverride: string | null;
+    onOpenEditName: () => void;
 }) {
     const paddingPx = containerWidth && containerWidth < 520 ? 8 : 12;
     const gapPx = containerWidth && containerWidth < 520 ? 8 : 12;
 
     const count = pageParticipants.length;
 
-    // side-by-side: 2 cols / 1 row
-    // stacked: 1 col / 2 rows (only meaningful when count==2)
     const cols = stack ? 1 : count <= 1 ? 1 : 2;
     const rows = count <= 1 ? 1 : stack ? 2 : 1;
 
@@ -622,12 +728,10 @@ function P2PLayout({
 
         if (!w) return null;
 
-        // ✅ FIX: remove hard cap (was 1400) so 2 tiles can expand to full available width when chat is closed
-        // Keep w as-is (it already respects available width + height).
+        // ✅ FIX (from previous): remove hard cap so 2 tiles expand fully when chat is closed
         return w;
     }, [containerWidth, containerHeight, cols, rows, gapPx, paddingPx]);
 
-    // ✅ Center the whole grid vertically inside the available frame (fix "stuck to top")
     return (
         <div
             className="w-full h-full min-h-0 overflow-hidden flex justify-center items-center"
@@ -650,6 +754,9 @@ function P2PLayout({
                         forceAspect={true}
                         fit="cover"
                         onRegisterVideoElement={onRegisterVideoElement}
+                        editable={!!localId && p.id === localId}
+                        displayNameOverride={p.id === localId ? localDisplayNameOverride : null}
+                        onOpenEditName={onOpenEditName}
                     />
                 ))}
             </div>
@@ -660,7 +767,6 @@ function P2PLayout({
 /**
  * ✅ Phones with 1–2 participants:
  * Keep TRUE 16:9 (no squish/stretch) and center tiles in the frame.
- * (Fixes 360/375 “too tall / stretched” and Duo 540 “squished/small” when side-by-side.)
  */
 function MobileFillLayout({
     theme,
@@ -669,6 +775,9 @@ function MobileFillLayout({
     containerHeight,
     paddingBottomPx = 12,
     onRegisterVideoElement,
+    localId,
+    localDisplayNameOverride,
+    onOpenEditName,
 }: {
     theme: "dark" | "light";
     pageParticipants: JitsiParticipant[];
@@ -676,6 +785,10 @@ function MobileFillLayout({
     containerHeight: number;
     paddingBottomPx?: number;
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
+
+    localId: string | null;
+    localDisplayNameOverride: string | null;
+    onOpenEditName: () => void;
 }) {
     const count = pageParticipants.length || 1;
 
@@ -685,7 +798,6 @@ function MobileFillLayout({
     const availW = Math.max(0, (containerWidth || 0) - paddingPx * 2);
     const availH = Math.max(0, (containerHeight || 0) - paddingPx * 2 - paddingBottomPx - (count - 1) * gapPx);
 
-    // Fit by height for stacked tiles, then cap by width.
     const tileH = availH > 0 ? availH / count : 0;
     const tileWByH = tileH > 0 ? tileH * (16 / 9) : 0;
 
@@ -709,6 +821,9 @@ function MobileFillLayout({
                             forceAspect={true}
                             fit="cover"
                             onRegisterVideoElement={onRegisterVideoElement}
+                            editable={!!localId && p.id === localId}
+                            displayNameOverride={p.id === localId ? localDisplayNameOverride : null}
+                            onOpenEditName={onOpenEditName}
                         />
                     </div>
                 </div>
@@ -717,17 +832,24 @@ function MobileFillLayout({
     );
 }
 
-/** For narrow phones with 3+ participants: scroll list, but with REAL aspect ratio (no “thin strips”). */
+/** For narrow phones with 3+ participants: scroll list, but with REAL aspect ratio. */
 function MobileStackLayout({
     theme,
     pageParticipants,
     paddingBottomPx = 12,
     onRegisterVideoElement,
+    localId,
+    localDisplayNameOverride,
+    onOpenEditName,
 }: {
     theme: "dark" | "light";
     pageParticipants: JitsiParticipant[];
     paddingBottomPx?: number;
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
+
+    localId: string | null;
+    localDisplayNameOverride: string | null;
+    onOpenEditName: () => void;
 }) {
     return (
         <div
@@ -742,6 +864,9 @@ function MobileStackLayout({
                     forceAspect={true}
                     fit="cover"
                     onRegisterVideoElement={onRegisterVideoElement}
+                    editable={!!localId && p.id === localId}
+                    displayNameOverride={p.id === localId ? localDisplayNameOverride : null}
+                    onOpenEditName={onOpenEditName}
                 />
             ))}
         </div>
@@ -753,17 +878,23 @@ function ScreenShareLayoutDesktop({
     screenSharer,
     others,
     onRegisterVideoElement,
+    localId,
+    localDisplayNameOverride,
+    onOpenEditName,
 }: {
     theme: "dark" | "light";
     screenSharer: JitsiParticipant;
     others: JitsiParticipant[];
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
+
+    localId: string | null;
+    localDisplayNameOverride: string | null;
+    onOpenEditName: () => void;
 }) {
     const screenVideoRef = useRef<HTMLVideoElement | null>(null);
     const screenTrackId = useMemo(() => safeTrackId(screenSharer.screenTrack), [screenSharer.screenTrack]);
     const screenStreamV = useTrackStreamVersion(screenSharer.screenTrack);
 
-    // ✅ use callback ref to guarantee registration happens when element exists
     const handleScreenRef = useCallback(
         (el: HTMLVideoElement | null) => {
             screenVideoRef.current = el;
@@ -792,7 +923,9 @@ function ScreenShareLayoutDesktop({
     return (
         <div className="relative w-full h-full min-h-0 flex flex-row gap-3 p-3 overflow-hidden">
             <div
-                className={`relative flex-1 overflow-hidden rounded-2xl ${theme === "light" ? "bg-white ring-1 ring-black/10" : "bg-[#0B1220] ring-1 ring-white/10"
+                className={`relative flex-1 overflow-hidden rounded-2xl ${theme === "light"
+                    ? "bg-white ring-1 ring-black/10"
+                    : "bg-[#0B1220] ring-1 ring-white/10"
                     } min-h-0`}
             >
                 <video
@@ -823,6 +956,9 @@ function ScreenShareLayoutDesktop({
                             forceAspect={true}
                             fit="cover"
                             onRegisterVideoElement={onRegisterVideoElement}
+                            editable={!!localId && p.id === localId}
+                            displayNameOverride={p.id === localId ? localDisplayNameOverride : null}
+                            onOpenEditName={onOpenEditName}
                         />
                     </div>
                 ))}
@@ -837,12 +973,19 @@ function ScreenShareLayoutMobile({
     others,
     paddingBottomPx = 12,
     onRegisterVideoElement,
+    localId,
+    localDisplayNameOverride,
+    onOpenEditName,
 }: {
     theme: "dark" | "light";
     screenSharer: JitsiParticipant;
     others: JitsiParticipant[];
     paddingBottomPx?: number;
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
+
+    localId: string | null;
+    localDisplayNameOverride: string | null;
+    onOpenEditName: () => void;
 }) {
     const screenVideoRef = useRef<HTMLVideoElement | null>(null);
     const screenTrackId = useMemo(() => safeTrackId(screenSharer.screenTrack), [screenSharer.screenTrack]);
@@ -879,7 +1022,9 @@ function ScreenShareLayoutMobile({
             style={{ paddingBottom: paddingBottomPx }}
         >
             <div
-                className={`w-full overflow-hidden rounded-2xl ${theme === "light" ? "bg-white ring-1 ring-black/10" : "bg-[#0B1220] ring-1 ring-white/10"
+                className={`w-full overflow-hidden rounded-2xl ${theme === "light"
+                    ? "bg-white ring-1 ring-black/10"
+                    : "bg-[#0B1220] ring-1 ring-white/10"
                     } relative`}
                 style={{ aspectRatio: "16 / 9" }}
             >
@@ -910,6 +1055,9 @@ function ScreenShareLayoutMobile({
                     forceAspect={true}
                     fit="cover"
                     onRegisterVideoElement={onRegisterVideoElement}
+                    editable={!!localId && p.id === localId}
+                    displayNameOverride={p.id === localId ? localDisplayNameOverride : null}
+                    onOpenEditName={onOpenEditName}
                 />
             ))}
         </div>
@@ -932,11 +1080,21 @@ export function VideoRoom(props: VideoRoomProps) {
         showControls = true,
         audioOutputId,
         onRegisterVideoElement,
+        onEditLocalDisplayName,
     } = props;
 
     const isLight = theme === "light";
 
-    // measure the real viewport available for tiles (VERY important for laptop/tablet/chat panel widths)
+    // ✅ NEW: local display name override state (UI-level)
+    const [localNameOverride, setLocalNameOverride] = useState<string | null>(null);
+
+    // edit modal state
+    const [editOpen, setEditOpen] = useState(false);
+    const [editValue, setEditValue] = useState("");
+    const [editSaving, setEditSaving] = useState(false);
+    const editInputRef = useRef<HTMLInputElement | null>(null);
+
+    // measure the real viewport available for tiles
     const { ref: roomRef, width: roomW, height: roomH } = useElementSize<HTMLDivElement>();
 
     // fallback for first render (SSR / zero-size initial)
@@ -946,18 +1104,13 @@ export function VideoRoom(props: VideoRoomProps) {
     const effectiveW = roomW || fallbackW;
     const effectiveH = roomH || fallbackH;
 
-    // These breakpoints are about *available room* width, not window width.
-    const isVeryNarrow = effectiveW < 430; // iPhone SE etc
-    const isNarrowForColumns = effectiveW < 520; // still phone-ish
-    const isCompact = effectiveW < 900; // tablets / narrow layouts
+    const isVeryNarrow = effectiveW < 430;
+    const isNarrowForColumns = effectiveW < 520;
+    const isCompact = effectiveW < 900;
 
-    // keep old query as extra fallback
     const isMobileQuery = useMediaQuery("(max-width: 767px)");
     const isTabletQuery = useMediaQuery("(min-width: 768px) and (max-width: 1023px)");
 
-    // bottom gutter inside video layouts:
-    // - when VideoRoom shows its own controls -> keep space
-    // - when controls are external (RoomPage fixed bottom bar) -> almost none
     const paddingBottomPx = showControls ? 96 : 12;
 
     useEffect(() => {
@@ -983,8 +1136,17 @@ export function VideoRoom(props: VideoRoomProps) {
     const [scrollIndex, setScrollIndex] = useState(0);
 
     const screenSharer = useMemo(() => participants.find((p) => p.isScreenSharing && p.screenTrack), [participants]);
-
     const localParticipant = useMemo(() => participants.find((p) => p.isLocal) || null, [participants]);
+    const localId = localParticipant?.id ?? null;
+
+    // keep override synced with initial name (only if override not set yet)
+    useEffect(() => {
+        if (!localParticipant) return;
+        if (localNameOverride !== null) return;
+        const initial = localParticipant.displayName?.trim();
+        if (initial) setLocalNameOverride(initial);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [localParticipant?.displayName]);
 
     const baseParticipants = useMemo(() => {
         return screenSharer ? participants.filter((p) => p.id !== screenSharer.id) : participants;
@@ -1063,16 +1225,60 @@ export function VideoRoom(props: VideoRoomProps) {
     // ---------------- layout decision ----------------
     const count = pageParticipants.length;
 
-    // "mobile-ish" is based on room width, not window width
     const useVeryNarrowMode = isVeryNarrow || (isMobileQuery && isNarrowForColumns);
 
-    // ✅ For 2 participants on tablets (and wide phones like Duo 540):
-    // stack vertically instead of side-by-side.
     const stackTwoOnThisViewport =
         count === 2 && !useVeryNarrowMode && (isTabletQuery || (isMobileQuery && effectiveW < 640) || isCompact);
 
-    // For wide phones / small tablets (e.g. Surface Duo 540px), we DO want grid for 4p.
     const useColumnsMode = !useVeryNarrowMode;
+
+    // ---------------- Edit name handlers ----------------
+    const openEditName = useCallback(() => {
+        const current =
+            (localNameOverride ?? localParticipant?.displayName ?? "").trim() || "Yaroslav";
+        setEditValue(current);
+        setEditOpen(true);
+        setTimeout(() => editInputRef.current?.focus(), 0);
+    }, [localNameOverride, localParticipant?.displayName]);
+
+    const closeEditName = useCallback(() => {
+        setEditOpen(false);
+        setEditSaving(false);
+    }, []);
+
+    const commitEditName = useCallback(async () => {
+        if (editSaving) return;
+        const next = editValue.trim();
+
+        // minimal validation: 1..30 chars
+        if (!next || next.length < 1) return;
+        if (next.length > 30) return;
+
+        setEditSaving(true);
+
+        // optimistic UI
+        setLocalNameOverride(next);
+
+        try {
+            await onEditLocalDisplayName?.(next);
+        } catch (e) {
+            console.error("onEditLocalDisplayName failed:", e);
+            // keep UI value anyway; you can decide later if you want rollback
+        } finally {
+            setEditSaving(false);
+            setEditOpen(false);
+        }
+    }, [editSaving, editValue, onEditLocalDisplayName]);
+
+    useEffect(() => {
+        if (!editOpen) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") closeEditName();
+            if (e.key === "Enter") commitEditName();
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [editOpen, closeEditName, commitEditName]);
 
     return (
         <div className="relative w-full h-full flex flex-col min-h-0">
@@ -1081,7 +1287,6 @@ export function VideoRoom(props: VideoRoomProps) {
             <div ref={roomRef} className="flex-1 relative min-h-0 overflow-hidden">
                 {!screenSharer && (
                     <>
-                        {/* narrow phones: 1–2 centered 16:9, 3+ scroll stack */}
                         {useVeryNarrowMode ? (
                             count <= 2 ? (
                                 <MobileFillLayout
@@ -1091,6 +1296,9 @@ export function VideoRoom(props: VideoRoomProps) {
                                     containerHeight={effectiveH}
                                     paddingBottomPx={paddingBottomPx}
                                     onRegisterVideoElement={onRegisterVideoElement}
+                                    localId={localId}
+                                    localDisplayNameOverride={localNameOverride}
+                                    onOpenEditName={openEditName}
                                 />
                             ) : (
                                 <MobileStackLayout
@@ -1098,11 +1306,13 @@ export function VideoRoom(props: VideoRoomProps) {
                                     pageParticipants={pageParticipants}
                                     paddingBottomPx={paddingBottomPx}
                                     onRegisterVideoElement={onRegisterVideoElement}
+                                    localId={localId}
+                                    localDisplayNameOverride={localNameOverride}
+                                    onOpenEditName={openEditName}
                                 />
                             )
                         ) : (
                             <>
-                                {/* 1–2 participants */}
                                 {count <= 2 ? (
                                     <P2PLayout
                                         theme={theme}
@@ -1111,6 +1321,9 @@ export function VideoRoom(props: VideoRoomProps) {
                                         containerHeight={effectiveH}
                                         stack={stackTwoOnThisViewport}
                                         onRegisterVideoElement={onRegisterVideoElement}
+                                        localId={localId}
+                                        localDisplayNameOverride={localNameOverride}
+                                        onOpenEditName={openEditName}
                                     />
                                 ) : (
                                     <GridLayout
@@ -1119,6 +1332,9 @@ export function VideoRoom(props: VideoRoomProps) {
                                         containerWidth={effectiveW}
                                         containerHeight={effectiveH}
                                         onRegisterVideoElement={onRegisterVideoElement}
+                                        localId={localId}
+                                        localDisplayNameOverride={localNameOverride}
+                                        onOpenEditName={openEditName}
                                     />
                                 )}
                             </>
@@ -1128,7 +1344,6 @@ export function VideoRoom(props: VideoRoomProps) {
 
                 {screenSharer && (
                     <>
-                        {/* screen share layout: switch to mobile version when room is compact */}
                         {isCompact || isMobileQuery ? (
                             <ScreenShareLayoutMobile
                                 theme={theme}
@@ -1136,6 +1351,9 @@ export function VideoRoom(props: VideoRoomProps) {
                                 others={screenOthers}
                                 paddingBottomPx={paddingBottomPx}
                                 onRegisterVideoElement={onRegisterVideoElement}
+                                localId={localId}
+                                localDisplayNameOverride={localNameOverride}
+                                onOpenEditName={openEditName}
                             />
                         ) : (
                             <ScreenShareLayoutDesktop
@@ -1143,6 +1361,9 @@ export function VideoRoom(props: VideoRoomProps) {
                                 screenSharer={screenSharer}
                                 others={screenOthers}
                                 onRegisterVideoElement={onRegisterVideoElement}
+                                localId={localId}
+                                localDisplayNameOverride={localNameOverride}
+                                onOpenEditName={openEditName}
                             />
                         )}
                     </>
@@ -1207,6 +1428,80 @@ export function VideoRoom(props: VideoRoomProps) {
                         </button>
                     </div>
                 )}
+
+                {/* ✅ Edit Name Modal */}
+                {editOpen && (
+                    <div
+                        className="absolute inset-0 z-50 flex items-center justify-center"
+                        onMouseDown={(e) => {
+                            // click backdrop closes (but not when clicking inside modal)
+                            if (e.target === e.currentTarget) closeEditName();
+                        }}
+                        style={{
+                            background: isLight ? "rgba(0,0,0,0.35)" : "rgba(0,0,0,0.55)",
+                        }}
+                    >
+                        <div
+                            className={`w-[92%] max-w-[420px] rounded-2xl shadow-2xl p-4 ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
+                                }`}
+                            onMouseDown={(e) => e.stopPropagation()}
+                        >
+                            <div className="flex items-center justify-between">
+                                <div className={`text-sm font-semibold ${isLight ? "text-black/80" : "text-white/90"}`}>
+                                    Edit your name
+                                </div>
+                                <button
+                                    className={`h-8 w-8 rounded-xl flex items-center justify-center ${isLight ? "hover:bg-black/5" : "hover:bg-white/10"
+                                        }`}
+                                    onClick={closeEditName}
+                                    title="Close"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+
+                            <div className="mt-3">
+                                <input
+                                    ref={editInputRef}
+                                    value={editValue}
+                                    onChange={(e) => setEditValue(e.target.value)}
+                                    maxLength={30}
+                                    placeholder="Your name"
+                                    className={`w-full h-11 rounded-xl px-3 text-sm outline-none ${isLight
+                                        ? "bg-white border border-black/10 text-black"
+                                        : "bg-[#0B1220] border border-white/10 text-white"
+                                        }`}
+                                />
+                                <div className={`mt-2 text-[11px] ${isLight ? "text-black/50" : "text-white/50"}`}>
+                                    1–30 characters. Press Enter to save, Esc to cancel.
+                                </div>
+                            </div>
+
+                            <div className="mt-4 flex items-center justify-end gap-2">
+                                <button
+                                    className={`h-10 px-3 rounded-xl text-sm ${isLight
+                                        ? "bg-black/5 hover:bg-black/10 text-black/80"
+                                        : "bg-white/10 hover:bg-white/15 text-white/85"
+                                        }`}
+                                    onClick={closeEditName}
+                                    disabled={editSaving}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    className={`h-10 px-3 rounded-xl text-sm font-semibold ${isLight
+                                        ? "bg-black text-white hover:opacity-90"
+                                        : "bg-blue-600 text-white hover:bg-blue-700"
+                                        } ${editSaving ? "opacity-60 cursor-not-allowed" : ""}`}
+                                    onClick={commitEditName}
+                                    disabled={editSaving}
+                                >
+                                    {editSaving ? "Saving..." : "Save"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {showControls && (
@@ -1228,7 +1523,7 @@ export function VideoRoom(props: VideoRoomProps) {
                             <Icon
                                 name={isAudioMuted ? "mic-off" : "mic-on"}
                                 className="w-5 h-5"
-                                theme={isAudioMuted ? "dark" : theme} // ✅ mic-off always white
+                                theme={isAudioMuted ? "dark" : theme}
                             />
                         </button>
 
