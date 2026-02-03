@@ -17,7 +17,6 @@ export type PreJoinSettings = {
     noiseSuppression: boolean;
     autoGainControl: boolean;
 
-    // ✅ эффекты как в RoomMediaSettingsModal
     bgMode: BgMode;
     bgImageUrl?: string; // /public url | remote url | objectURL(blob:)
 };
@@ -67,15 +66,28 @@ function deviceLabel(d: MediaDeviceInfo, fallback: string) {
     return d.label?.trim() || `${fallback} (${(d.deviceId || "").slice(0, 6)}…)`;
 }
 
+function isConstraintDeviceError(e: any) {
+    const name = e?.name || "";
+    return (
+        name === "OverconstrainedError" ||
+        name === "NotFoundError" ||
+        name === "DevicesNotFoundError"
+    );
+}
+
 export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = "dark" }: Props) {
     const isLight = theme === "light";
 
     const [s, setS] = useState<PreJoinSettings>({ ...DEFAULTS, ...(initial || {}) });
+    const sRef = useRef(s);
+    useEffect(() => { sRef.current = s; }, [s]);
+
     const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
     const [permissionError, setPermissionError] = useState<string | null>(null);
+    const [videoReady, setVideoReady] = useState(false);
 
-    const videoRef = useRef<HTMLVideoElement | null>(null); // input video (camera stream)
-    const canvasRef = useRef<HTMLCanvasElement | null>(null); // output (processed)
+    const videoRef = useRef<HTMLVideoElement | null>(null);   // raw camera
+    const canvasRef = useRef<HTMLCanvasElement | null>(null); // processed overlay
     const streamRef = useRef<MediaStream | null>(null);
 
     const testAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -87,18 +99,18 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
     const analyserRef = useRef<AnalyserNode | null>(null);
     const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
 
-    // ✅ objectURL cleanup like in RoomMediaSettingsModal
+    // objectURL cleanup
     const committedBgUrlRef = useRef<string | undefined>(undefined);
     const prevDraftObjectUrlRef = useRef<string | null>(null);
 
-    // ✅ segmentation pipeline
+    // segmentation pipeline
     const segRef = useRef<any>(null);
     const segReadyRef = useRef(false);
     const segFailRef = useRef(false);
     const segLoopRafRef = useRef<number | null>(null);
     const segInFlightRef = useRef(false);
 
-    const personCanvasRef = useRef<HTMLCanvasElement | null>(null); // offscreen for foreground (person)
+    const personCanvasRef = useRef<HTMLCanvasElement | null>(null); // offscreen person
     const bgImgRef = useRef<HTMLImageElement | null>(null);
     const [segStatus, setSegStatus] = useState<"idle" | "loading" | "ready" | "failed">("idle");
 
@@ -130,21 +142,36 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
 
         try { audioCtxRef.current?.close(); } catch { }
         audioCtxRef.current = null;
+
+        setMicLevel(0);
+        setVideoReady(false);
     };
 
     const attachPreview = (stream: MediaStream) => {
         const v = videoRef.current;
         if (!v) return;
 
+        v.muted = true;
+        (v as any).playsInline = true;
+
+        setVideoReady(false);
+
+        v.onloadedmetadata = () => {
+            setVideoReady(true);
+            const pr = (v as any).play?.();
+            pr?.catch?.(() => { });
+        };
+
         v.srcObject = stream;
 
-        // важно: play() руками, иначе на некоторых браузерах видео "не стартует"
+        // на некоторых браузерах onloadedmetadata не стреляет быстро — пытаемся play сразу тоже
         const pr = (v as any).play?.();
         pr?.catch?.(() => { });
     };
 
     const setupMicMeter = (stream: MediaStream) => {
-        if (!s.audioEnabled) {
+        const cur = sRef.current;
+        if (!cur.audioEnabled) {
             setMicLevel(0);
             return;
         }
@@ -186,23 +213,25 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
         setDevices(list);
     };
 
-    const getConstraints = () => {
+    const buildConstraints = (override?: Partial<PreJoinSettings>) => {
+        const cur = { ...sRef.current, ...(override || {}) };
+
         const video: MediaTrackConstraints | boolean =
-            s.videoEnabled
+            cur.videoEnabled
                 ? {
-                    deviceId: s.videoInputId === "default" ? undefined : { exact: s.videoInputId },
+                    deviceId: cur.videoInputId === "default" ? undefined : { exact: cur.videoInputId },
                     width: { ideal: 1280 },
                     height: { ideal: 720 },
                 }
                 : false;
 
         const audio: MediaTrackConstraints | boolean =
-            s.audioEnabled
+            cur.audioEnabled
                 ? {
-                    deviceId: s.audioInputId === "default" ? undefined : { exact: s.audioInputId },
-                    echoCancellation: s.echoCancellation,
-                    noiseSuppression: s.noiseSuppression,
-                    autoGainControl: s.autoGainControl,
+                    deviceId: cur.audioInputId === "default" ? undefined : { exact: cur.audioInputId },
+                    echoCancellation: cur.echoCancellation,
+                    noiseSuppression: cur.noiseSuppression,
+                    autoGainControl: cur.autoGainControl,
                 }
                 : false;
 
@@ -213,23 +242,49 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
         setPermissionError(null);
         stopStream();
 
+        // 1) пробуем как выбрано
         try {
-            const constraints = getConstraints();
-            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            const stream = await navigator.mediaDevices.getUserMedia(buildConstraints());
             streamRef.current = stream;
 
             attachPreview(stream);
             setupMicMeter(stream);
-
             await ensureDevices();
 
-            if (supportsSetSinkId() && testAudioRef.current && s.audioOutputId && s.audioOutputId !== "default") {
+            // sink for test sound
+            const cur = sRef.current;
+            if (supportsSetSinkId() && testAudioRef.current && cur.audioOutputId && cur.audioOutputId !== "default") {
                 try {
-                    await (testAudioRef.current as any).setSinkId(s.audioOutputId);
+                    await (testAudioRef.current as any).setSinkId(cur.audioOutputId);
                 } catch { }
             }
+
+            return;
         } catch (e: any) {
-            setPermissionError(e?.message || "Permission error");
+            // 2) если deviceId битый — откатываемся на default и пробуем ещё раз
+            if (isConstraintDeviceError(e)) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia(buildConstraints({
+                        videoInputId: "default",
+                        audioInputId: "default",
+                    }));
+                    streamRef.current = stream;
+
+                    // обновим UI чтобы соответствовал факту
+                    setS((p) => ({ ...p, videoInputId: "default", audioInputId: "default" }));
+
+                    attachPreview(stream);
+                    setupMicMeter(stream);
+                    await ensureDevices();
+                    return;
+                } catch (e2: any) {
+                    setPermissionError(e2?.message || e2?.name || "getUserMedia failed");
+                    stopStream();
+                    return;
+                }
+            }
+
+            setPermissionError(e?.message || e?.name || "getUserMedia failed");
             stopStream();
         }
     };
@@ -243,9 +298,7 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
         const committed = committedBgUrlRef.current;
 
         if (prev && isObjectUrl(prev) && prev !== next && prev !== committed) {
-            try {
-                URL.revokeObjectURL(prev);
-            } catch { }
+            try { URL.revokeObjectURL(prev); } catch { }
         }
 
         prevDraftObjectUrlRef.current = isObjectUrl(next) ? (next as string) : null;
@@ -256,9 +309,7 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
         const cur = s.bgImageUrl;
 
         if (cur && isObjectUrl(cur) && cur !== committed) {
-            try {
-                URL.revokeObjectURL(cur);
-            } catch { }
+            try { URL.revokeObjectURL(cur); } catch { }
         }
     };
 
@@ -282,7 +333,7 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
             return;
         }
         const img = new Image();
-        img.crossOrigin = "anonymous"; // best effort (если нет CORS — просто таинтится, но нам не надо экспортировать)
+        img.crossOrigin = "anonymous";
         img.src = url;
         bgImgRef.current = img;
     };
@@ -300,12 +351,11 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
                     `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`,
             });
 
-            seg.setOptions({
-                modelSelection: 1, // 0 = general, 1 = landscape (обычно лучше)
-            });
+            seg.setOptions({ modelSelection: 1 });
 
             seg.onResults((results: any) => {
-                // results.image = input frame, results.segmentationMask = mask canvas (white=person)
+                const cur = sRef.current;
+
                 const v = videoRef.current;
                 const out = canvasRef.current;
                 if (!v || !out) return;
@@ -320,16 +370,17 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
 
                 const mask = results.segmentationMask;
 
-                if (s.bgMode === "none") {
-                    // no need to draw
+                // если эффекты отключены — чистим overlay
+                if (cur.bgMode === "none") {
+                    ctx.clearRect(0, 0, w, h);
                     return;
                 }
 
-                // person layer
                 const pc = personCanvasRef.current!;
                 const pctx = pc.getContext("2d");
                 if (!pctx) return;
 
+                // person layer
                 pctx.clearRect(0, 0, w, h);
                 pctx.globalCompositeOperation = "source-over";
                 pctx.filter = "none";
@@ -341,29 +392,25 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
                 // compose output
                 ctx.clearRect(0, 0, w, h);
 
-                if (s.bgMode === "blur") {
-                    // background = blurred video, but remove person
+                if (cur.bgMode === "blur") {
                     ctx.save();
                     ctx.filter = "blur(12px)";
                     ctx.drawImage(results.image, 0, 0, w, h);
                     ctx.restore();
 
                     ctx.save();
-                    ctx.globalCompositeOperation = "destination-out"; // cut person out => leaves blurred background
+                    ctx.globalCompositeOperation = "destination-out";
                     ctx.drawImage(mask, 0, 0, w, h);
                     ctx.restore();
 
-                    // add person
                     ctx.drawImage(pc, 0, 0, w, h);
                     return;
                 }
 
-                if (s.bgMode === "image") {
-                    // background image
+                if (cur.bgMode === "image") {
                     const bg = bgImgRef.current;
 
                     if (bg && bg.complete && bg.naturalWidth > 0) {
-                        // cover draw
                         const iw = bg.naturalWidth;
                         const ih = bg.naturalHeight;
                         const scale = Math.max(w / iw, h / ih);
@@ -373,12 +420,10 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
                         const dy = (h - dh) / 2;
                         ctx.drawImage(bg, dx, dy, dw, dh);
                     } else {
-                        // fallback if image not loaded yet
                         ctx.fillStyle = "#0B1220";
                         ctx.fillRect(0, 0, w, h);
                     }
 
-                    // add person on top
                     ctx.drawImage(pc, 0, 0, w, h);
                     return;
                 }
@@ -401,26 +446,27 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
         const tick = async () => {
             if (!open) return;
 
+            const cur = sRef.current;
+
             const v = videoRef.current;
             const seg = segRef.current;
+
             if (!v || !seg || !segReadyRef.current) {
                 segLoopRafRef.current = requestAnimationFrame(tick);
                 return;
             }
 
-            // если камера выключена — не гоняем сегментацию
-            if (!s.videoEnabled) {
+            if (!cur.videoEnabled) {
                 segLoopRafRef.current = requestAnimationFrame(tick);
                 return;
             }
 
-            // ждём пока видео реально готово
             if (v.readyState < 2) {
                 segLoopRafRef.current = requestAnimationFrame(tick);
                 return;
             }
 
-            if (!segInFlightRef.current && (s.bgMode === "blur" || s.bgMode === "image")) {
+            if (!segInFlightRef.current && (cur.bgMode === "blur" || cur.bgMode === "image")) {
                 segInFlightRef.current = true;
                 try {
                     await seg.send({ image: v });
@@ -449,19 +495,25 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
         ensureBgImage(url);
     }, [open, s.bgMode, s.bgImageUrl]);
 
-    // init segmentation only when needed (blur/image)
+    // init segmentation only when needed
     useEffect(() => {
         if (!open) return;
 
         if (s.bgMode === "blur" || s.bgMode === "image") {
-            initSegmentationIfNeeded().then(() => {
-                startSegLoop();
-            });
+            initSegmentationIfNeeded().then(() => startSegLoop());
             return () => stopSegLoop();
         }
 
-        // none mode
+        // none mode => stop loop + clear overlay
         stopSegLoop();
+        const c = canvasRef.current;
+        const v = videoRef.current;
+        if (c && v) {
+            const w = v.videoWidth || c.width;
+            const h = v.videoHeight || c.height;
+            const ctx = c.getContext("2d");
+            ctx?.clearRect(0, 0, w, h);
+        }
     }, [open, s.bgMode, s.videoEnabled]);
 
     // -------------------- lifecycle --------------------
@@ -484,7 +536,10 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
         committedBgUrlRef.current = undefined;
         prevDraftObjectUrlRef.current = null;
 
-        // reset seg status per open (optional)
+        // reset effects engine per open (чтобы можно было повторно пробовать)
+        segRef.current = null;
+        segReadyRef.current = false;
+        segFailRef.current = false;
         setSegStatus("idle");
 
         ensureDevices().catch(() => { });
@@ -514,7 +569,7 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
         s.autoGainControl,
     ]);
 
-    // sinkId for test audio
+    // sinkId for test audio when output changes
     useEffect(() => {
         if (!open) return;
         if (!supportsSetSinkId()) return;
@@ -524,7 +579,7 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
         (testAudioRef.current as any).setSinkId(s.audioOutputId).catch(() => { });
     }, [open, s.audioOutputId]);
 
-    // lock body scroll
+    // lock body scroll while modal open
     useEffect(() => {
         if (!open) return;
 
@@ -542,13 +597,11 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
         };
     }, [open]);
 
+    // -------------------- actions --------------------
     const onClickJoin = () => {
         committedBgUrlRef.current = s.bgImageUrl;
 
-        try {
-            localStorage.setItem("mysession_prejoin", JSON.stringify(s));
-        } catch { }
-
+        try { localStorage.setItem("mysession_prejoin", JSON.stringify(s)); } catch { }
         onJoin(s);
     };
 
@@ -591,7 +644,7 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
         await ensureDevices();
     };
 
-    // -------------------- bg setters --------------------
+    // background setters
     const setBgNone = () => setS((p) => ({ ...p, bgMode: "none", bgImageUrl: undefined }));
     const setBgBlur = () => setS((p) => ({ ...p, bgMode: "blur", bgImageUrl: undefined }));
     const setBgImage = (url: string) => setS((p) => ({ ...p, bgMode: "image", bgImageUrl: url }));
@@ -603,18 +656,12 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
 
     if (!open) return null;
 
-    // показываем canvas только когда:
-    // - выбран blur/image
-    // - и segmentation готова
     const wantProcessed = s.bgMode === "blur" || s.bgMode === "image";
     const canProcessed = wantProcessed && segStatus === "ready" && !segFailRef.current;
 
-    // фолбэк (если segmentation не готова/сломалась):
-    // - blur: размываем всё видео
-    // - image: картинка как background контейнера, видео сверху
+    // fallback if effects not ready/failed
     const fallbackBlurAll = wantProcessed && !canProcessed && s.bgMode === "blur";
     const fallbackBgBehind = wantProcessed && !canProcessed && s.bgMode === "image";
-
     const fallbackBgUrl = s.bgImageUrl || DEFAULT_BACKGROUNDS[0]?.url;
 
     const pillActive =
@@ -679,7 +726,7 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
                                     backgroundPosition: "center",
                                 }}
                             >
-                                {/* input video: always exists (we feed segmentation from it) */}
+                                {/* ✅ RAW VIDEO ALWAYS VISIBLE (we NEVER hide it now) */}
                                 <video
                                     ref={videoRef}
                                     autoPlay
@@ -688,18 +735,26 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
                                     className={
                                         "absolute inset-0 w-full h-full object-cover transition-opacity duration-150 " +
                                         (s.videoEnabled ? "opacity-100" : "opacity-0") +
-                                        (fallbackBlurAll ? " blur-[10px] scale-[1.03]" : "") +
-                                        (canProcessed ? " opacity-0" : "")
+                                        (fallbackBlurAll ? " blur-[10px] scale-[1.03]" : "")
                                     }
                                 />
 
-                                {/* processed output */}
-                                {canProcessed && (
+                                {/* ✅ processed overlay (drawn on top, but raw video stays behind as fallback) */}
+                                {wantProcessed && (
                                     <canvas
                                         ref={canvasRef}
-                                        className="absolute inset-0 w-full h-full"
-                                    // canvas scale via CSS, internal size set by code
+                                        className={
+                                            "absolute inset-0 w-full h-full pointer-events-none transition-opacity duration-150 " +
+                                            (canProcessed ? "opacity-100" : "opacity-0")
+                                        }
                                     />
+                                )}
+
+                                {/* loading placeholder */}
+                                {s.videoEnabled && !videoReady && (
+                                    <div className="absolute inset-0 flex items-center justify-center text-white/70 text-sm">
+                                        Starting camera…
+                                    </div>
                                 )}
 
                                 {!s.videoEnabled && (
@@ -710,15 +765,23 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
 
                                 <div className="absolute left-3 top-3 flex items-center gap-2">
                                     <div
-                                        className={`px-2.5 py-1 rounded-full text-[11px] border ${isLight ? "bg-white/90 border-black/10 text-black/70" : "bg-black/45 border-white/10 text-white/75"
+                                        className={`px-2.5 py-1 rounded-full text-[11px] border ${isLight
+                                                ? "bg-white/90 border-black/10 text-black/70"
+                                                : "bg-black/45 border-white/10 text-white/75"
                                             }`}
                                     >
-                                        {s.bgMode === "none" ? "Background: none" : s.bgMode === "blur" ? "Background: blur" : "Background: image"}
+                                        {s.bgMode === "none"
+                                            ? "Background: none"
+                                            : s.bgMode === "blur"
+                                                ? "Background: blur"
+                                                : "Background: image"}
                                     </div>
 
                                     {wantProcessed && segStatus === "loading" && (
                                         <div
-                                            className={`px-2.5 py-1 rounded-full text-[11px] border ${isLight ? "bg-white/90 border-black/10 text-black/70" : "bg-black/45 border-white/10 text-white/75"
+                                            className={`px-2.5 py-1 rounded-full text-[11px] border ${isLight
+                                                    ? "bg-white/90 border-black/10 text-black/70"
+                                                    : "bg-black/45 border-white/10 text-white/75"
                                                 }`}
                                         >
                                             Loading effects…
@@ -727,7 +790,9 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
 
                                     {wantProcessed && segStatus === "failed" && (
                                         <div
-                                            className={`px-2.5 py-1 rounded-full text-[11px] border ${isLight ? "bg-white/90 border-black/10 text-black/70" : "bg-black/45 border-white/10 text-white/75"
+                                            className={`px-2.5 py-1 rounded-full text-[11px] border ${isLight
+                                                    ? "bg-white/90 border-black/10 text-black/70"
+                                                    : "bg-black/45 border-white/10 text-white/75"
                                                 }`}
                                         >
                                             Effects fallback
@@ -764,12 +829,6 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
                                 </div>
 
                                 {permissionError && <div className="text-xs text-red-400">{permissionError}</div>}
-
-                                {wantProcessed && segStatus !== "ready" && (
-                                    <div className={`text-[11px] ${subtle}`}>
-                                        Virtual background needs MediaPipe. If it fails to load, you’ll see a simplified fallback effect.
-                                    </div>
-                                )}
                             </div>
                         </div>
 
@@ -1005,7 +1064,6 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin, theme = 
                                 </button>
                             </div>
 
-                            {/* hidden audio element for sink routing */}
                             <audio ref={testAudioRef} />
                         </div>
                     </div>
