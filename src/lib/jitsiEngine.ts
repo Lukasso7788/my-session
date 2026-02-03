@@ -58,6 +58,13 @@ export type JitsiEngineOptions = {
   configPath?: string;
   /** Default: "/libs/lib-jitsi-meet.min.js" */
   libPath?: string;
+
+  // ✅ NEW: join-sound options
+  joinSound?: {
+    enabled?: boolean;
+    volume?: number; // 0..1 (default ~0.35)
+    respectVisibility?: boolean; // default true (don't play when tab hidden)
+  };
 };
 
 // ----------------------------------------------------------------------------
@@ -342,12 +349,31 @@ export class JitsiEngine {
   private jitsiConfigPath: string = DEFAULT_CONFIG_PATH;
   private jitsiLibPath: string = DEFAULT_LIB_PATH;
 
+  // ✅ NEW: join sound (WebAudio)
+  private joinSoundEnabled = true;
+  private joinSoundVolume = 0.35;
+  private joinSoundRespectVisibility = true;
+
+  private audioUnlocked = false;
+  private audioCtx: AudioContext | null = null;
+
+  private lastJoinSoundAt = 0;
+  private joinSoundByPid = new Map<string, number>(); // pid -> lastPlayedAt
+  private readonly JOIN_SOUND_COOLDOWN_MS = 850;
+  private readonly JOIN_SOUND_PER_PID_COOLDOWN_MS = 7000;
+
   constructor(callbacks: JitsiEngineCallbacks = {}, opts: JitsiEngineOptions = {}) {
     this.callbacks = callbacks;
 
     if (opts.jitsiDomain) this.jitsiDomainOrOrigin = opts.jitsiDomain;
     if (opts.configPath) this.jitsiConfigPath = opts.configPath;
     if (opts.libPath) this.jitsiLibPath = opts.libPath;
+
+    if (opts.joinSound) {
+      if (typeof opts.joinSound.enabled === "boolean") this.joinSoundEnabled = opts.joinSound.enabled;
+      if (typeof opts.joinSound.volume === "number") this.joinSoundVolume = Math.max(0, Math.min(1, opts.joinSound.volume));
+      if (typeof opts.joinSound.respectVisibility === "boolean") this.joinSoundRespectVisibility = opts.joinSound.respectVisibility;
+    }
   }
 
   // ✅ NEW: allow changing domain (ideally BEFORE initAndJoin)
@@ -359,6 +385,53 @@ export class JitsiEngine {
   public setJitsiScriptPaths(paths: { configPath?: string; libPath?: string }) {
     if (paths.configPath) this.jitsiConfigPath = paths.configPath;
     if (paths.libPath) this.jitsiLibPath = paths.libPath;
+  }
+
+  // ✅ NEW: configure join sound
+  public configureJoinSound(opts: { enabled?: boolean; volume?: number; respectVisibility?: boolean }) {
+    if (typeof opts.enabled === "boolean") this.joinSoundEnabled = opts.enabled;
+    if (typeof opts.volume === "number") this.joinSoundVolume = Math.max(0, Math.min(1, opts.volume));
+    if (typeof opts.respectVisibility === "boolean") this.joinSoundRespectVisibility = opts.respectVisibility;
+  }
+
+  // ✅ NEW: must be called from a user gesture (click/tap) to unlock AudioContext
+  public async unlockAudio(): Promise<void> {
+    if (typeof window === "undefined") return;
+    const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
+    if (!Ctx) {
+      this.audioUnlocked = true; // no WebAudio, but mark unlocked (so we don't retry)
+      return;
+    }
+
+    if (!this.audioCtx) {
+      this.audioCtx = new Ctx();
+    }
+
+    try {
+      if (this.audioCtx.state === "suspended") await this.audioCtx.resume();
+      this.audioUnlocked = true;
+
+      // "warm-up" tiny silent blip to stabilize on iOS
+      const ctx = this.audioCtx;
+      const t = ctx.currentTime;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.00001, t);
+      g.connect(ctx.destination);
+
+      const osc = ctx.createOscillator();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(1, t);
+      osc.connect(g);
+      osc.start(t);
+      osc.stop(t + 0.02);
+
+      setTimeout(() => {
+        try { osc.disconnect(); } catch { }
+        try { g.disconnect(); } catch { }
+      }, 50);
+    } catch {
+      // ignore (browser policy); user can trigger again
+    }
   }
 
   private getJitsiEndpoints(): ResolvedJitsiEndpoints {
@@ -400,6 +473,99 @@ export class JitsiEngine {
       return document.contains(el);
     } catch {
       return false;
+    }
+  }
+
+  // ✅ NEW: join sound player (two-tone chime)
+  private tryEnsureAudioContext(): AudioContext | null {
+    if (typeof window === "undefined") return null;
+    const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
+    if (!Ctx) return null;
+    if (!this.audioCtx) {
+      try {
+        this.audioCtx = new Ctx();
+      } catch {
+        return null;
+      }
+    }
+    return this.audioCtx;
+  }
+
+  private playJoinSound(pid?: string, reason?: string) {
+    if (!this.joinSoundEnabled) return;
+
+    if (this.joinSoundRespectVisibility) {
+      try {
+        if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      } catch { }
+    }
+
+    const now = Date.now();
+
+    // global cooldown
+    if (now - this.lastJoinSoundAt < this.JOIN_SOUND_COOLDOWN_MS) return;
+
+    // per-participant cooldown (dedupe reconnections/spam)
+    if (pid) {
+      const last = this.joinSoundByPid.get(pid) || 0;
+      if (now - last < this.JOIN_SOUND_PER_PID_COOLDOWN_MS) return;
+    }
+
+    const ctx = this.tryEnsureAudioContext();
+    if (!ctx) return;
+
+    // if not unlocked, try soft resume (may still fail due to policy)
+    if (!this.audioUnlocked) {
+      try { void ctx.resume(); } catch { }
+      if (ctx.state !== "running") return;
+      this.audioUnlocked = true;
+    } else {
+      // keep it running if browser suspended it
+      try { if (ctx.state === "suspended") void ctx.resume(); } catch { }
+      if (ctx.state !== "running") return;
+    }
+
+    this.lastJoinSoundAt = now;
+    if (pid) this.joinSoundByPid.set(pid, now);
+
+    const vol = Math.max(0, Math.min(1, this.joinSoundVolume));
+
+    try {
+      const t0 = ctx.currentTime;
+
+      // master gain envelope
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.00001, t0);
+      g.gain.linearRampToValueAtTime(vol, t0 + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.00001, t0 + 0.18);
+      g.connect(ctx.destination);
+
+      // osc #1
+      const o1 = ctx.createOscillator();
+      o1.type = "triangle";
+      o1.frequency.setValueAtTime(880, t0);
+      o1.frequency.exponentialRampToValueAtTime(740, t0 + 0.10);
+      o1.connect(g);
+
+      // osc #2 (slight delayed second tone for “chime” feel)
+      const o2 = ctx.createOscillator();
+      o2.type = "sine";
+      o2.frequency.setValueAtTime(1320, t0 + 0.03);
+      o2.frequency.exponentialRampToValueAtTime(990, t0 + 0.15);
+      o2.connect(g);
+
+      o1.start(t0);
+      o2.start(t0 + 0.03);
+      o1.stop(t0 + 0.20);
+      o2.stop(t0 + 0.20);
+
+      setTimeout(() => {
+        try { o1.disconnect(); } catch { }
+        try { o2.disconnect(); } catch { }
+        try { g.disconnect(); } catch { }
+      }, 260);
+    } catch {
+      // ignore
     }
   }
 
@@ -850,6 +1016,9 @@ export class JitsiEngine {
     if (opts?.jitsiDomain) this.setJitsiDomain(opts.jitsiDomain);
     if (opts?.configPath || opts?.libPath) this.setJitsiScriptPaths({ configPath: opts.configPath, libPath: opts.libPath });
 
+    // ✅ allow passing join-sound options here too
+    if (opts?.joinSound) this.configureJoinSound(opts.joinSound);
+
     const endpoints = this.getJitsiEndpoints();
     await loadJitsiScripts(endpoints);
 
@@ -997,6 +1166,12 @@ export class JitsiEngine {
 
     conf.on(events.conference.USER_JOINED, (id: string, user: any) => {
       if (this.disposed) return;
+
+      // ✅ play join sound only for remote participants
+      if (id && id !== this.localUserId) {
+        this.playJoinSound(id, "USER_JOINED");
+      }
+
       this.ensureRemoteParticipant(id, user?._displayName || "Guest");
       if (!this.tracksByParticipant.has(id)) this.tracksByParticipant.set(id, {});
       this.emitParticipants();
@@ -1297,6 +1472,11 @@ export class JitsiEngine {
     this.conference = null;
     this.connection = null;
     this.localUserId = null;
+
+    // ✅ NEW: keep AudioContext (optional). If you prefer hard-stop, uncomment:
+    // try { await this.audioCtx?.close?.(); } catch {}
+    // this.audioCtx = null;
+    // this.audioUnlocked = false;
   }
 
   // ============================================================================
