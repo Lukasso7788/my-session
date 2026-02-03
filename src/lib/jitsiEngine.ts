@@ -491,81 +491,25 @@ export class JitsiEngine {
     return this.audioCtx;
   }
 
+  private joinSound?: HTMLAudioElement;
+
   private playJoinSound(pid?: string, reason?: string) {
-    if (!this.joinSoundEnabled) return;
-
-    if (this.joinSoundRespectVisibility) {
-      try {
-        if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
-      } catch { }
-    }
-
-    const now = Date.now();
-
-    // global cooldown
-    if (now - this.lastJoinSoundAt < this.JOIN_SOUND_COOLDOWN_MS) return;
-
-    // per-participant cooldown (dedupe reconnections/spam)
-    if (pid) {
-      const last = this.joinSoundByPid.get(pid) || 0;
-      if (now - last < this.JOIN_SOUND_PER_PID_COOLDOWN_MS) return;
-    }
-
-    const ctx = this.tryEnsureAudioContext();
-    if (!ctx) return;
-
-    // if not unlocked, try soft resume (may still fail due to policy)
-    if (!this.audioUnlocked) {
-      try { void ctx.resume(); } catch { }
-      if (ctx.state !== "running") return;
-      this.audioUnlocked = true;
-    } else {
-      // keep it running if browser suspended it
-      try { if (ctx.state === "suspended") void ctx.resume(); } catch { }
-      if (ctx.state !== "running") return;
-    }
-
-    this.lastJoinSoundAt = now;
-    if (pid) this.joinSoundByPid.set(pid, now);
-
-    const vol = Math.max(0, Math.min(1, this.joinSoundVolume));
-
     try {
-      const t0 = ctx.currentTime;
+      if (!this.joinSound) {
+        this.joinSound = new Audio("/sounds/join.wav");
+        this.joinSound.preload = "auto";
+        this.joinSound.volume = 0.6; // 🔧 отрегулируй под себя (0.4–0.7 обычно норм)
+      }
 
-      // master gain envelope
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.00001, t0);
-      g.gain.linearRampToValueAtTime(vol, t0 + 0.012);
-      g.gain.exponentialRampToValueAtTime(0.00001, t0 + 0.18);
-      g.connect(ctx.destination);
+      // 🔁 чтобы звук можно было играть быстро подряд
+      this.joinSound.currentTime = 0;
 
-      // osc #1
-      const o1 = ctx.createOscillator();
-      o1.type = "triangle";
-      o1.frequency.setValueAtTime(880, t0);
-      o1.frequency.exponentialRampToValueAtTime(740, t0 + 0.10);
-      o1.connect(g);
-
-      // osc #2 (slight delayed second tone for “chime” feel)
-      const o2 = ctx.createOscillator();
-      o2.type = "sine";
-      o2.frequency.setValueAtTime(1320, t0 + 0.03);
-      o2.frequency.exponentialRampToValueAtTime(990, t0 + 0.15);
-      o2.connect(g);
-
-      o1.start(t0);
-      o2.start(t0 + 0.03);
-      o1.stop(t0 + 0.20);
-      o2.stop(t0 + 0.20);
-
-      setTimeout(() => {
-        try { o1.disconnect(); } catch { }
-        try { o2.disconnect(); } catch { }
-        try { g.disconnect(); } catch { }
-      }, 260);
-    } catch {
-      // ignore
+      const p = this.joinSound.play();
+      if (p && typeof p.catch === "function") {
+        p.catch(() => { });
+      }
+    } catch (e) {
+      console.warn("Join sound failed:", e);
     }
   }
 
