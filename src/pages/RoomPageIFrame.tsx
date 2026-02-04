@@ -330,8 +330,6 @@ async function createJitsiApiWithFallback(args: {
 
             // ✅ CRITICAL FIX:
             // customCssUrl MUST be served from the SAME JITSI DOMAIN.
-            // If you point it to your app domain, it often won't apply (CORS/iframe/csp),
-            // and all your "hide native UI / center layout" expectations won't work reliably.
             const cssPath = String(args.cssPathOnJitsiDomain || "").trim() || JITSI_CUSTOM_CSS_PATH;
             const cssUrl = `https://${domain}${cssPath}?v=${Date.now()}`;
 
@@ -357,6 +355,10 @@ async function createJitsiApiWithFallback(args: {
                     startWithVideoMuted: false,
 
                     startWithTileView: true,
+
+                    // Try to avoid “filmstrip-only / top-stuck” behavior when UI is hidden by CSS
+                    filmStripOnly: false,
+                    disableFilmstrip: true,
 
                     subject: "",
                     hideConferenceSubject: true,
@@ -1966,6 +1968,7 @@ export default function RoomPageIFrame() {
                     setApiReady(true);
                     localJoinedRef.current = true;
                     localParticipantIdRef.current = String(e?.id || "") || null;
+
                     // ✅ Ensure local user is muted on join (fallback, in case config is ignored)
                     try {
                         const currentlyMuted =
@@ -1975,11 +1978,7 @@ export default function RoomPageIFrame() {
                             api.executeCommand?.("toggleAudio"); // will mute
                             setMutedAudio(true);
                         }
-                    } catch {
-                        // If we can't read state, do NOT blindly toggle (could unmute).
-                        // But if you prefer "always try", uncomment next line:
-                        // try { api.executeCommand?.("toggleAudio"); setMutedAudio(true); } catch {}
-                    }
+                    } catch { }
 
                     try {
                         api.executeCommand("setTileView", true);
@@ -2205,6 +2204,24 @@ export default function RoomPageIFrame() {
 
     return (
         <div className={`h-[100dvh] overflow-hidden ${pageBg}`}>
+            {/* local CSS to ensure iframe wrapper and injected nodes fill + can be centered */}
+            <style>{`
+                #jitsi-mount {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+                #jitsi-mount > iframe,
+                #jitsi-mount iframe,
+                #jitsi-mount > div,
+                #jitsi-mount div {
+                    width: 100% !important;
+                    height: 100% !important;
+                    max-width: 100% !important;
+                    max-height: 100% !important;
+                }
+            `}</style>
+
             <div className="w-full px-3 sm:px-5 pt-5 pb-[calc(110px+env(safe-area-inset-bottom))] flex flex-col gap-5 h-full min-h-0 overflow-hidden">
                 {/* TOP BAR */}
                 <div className={`flex w-full rounded-2xl overflow-hidden ${topBarBg}`}>
@@ -2374,7 +2391,11 @@ export default function RoomPageIFrame() {
                         className={`rounded-2xl overflow-hidden min-h-0 relative ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"}`}
                     >
                         {/* ✅ z-0 to ensure overlays win vs injected iframe */}
-                        <div ref={iframeContainerRef} className="w-full h-full min-h-[60vh] relative z-0" />
+                        <div
+                            id="jitsi-mount"
+                            ref={iframeContainerRef}
+                            className="w-full h-full min-h-[60vh] relative z-0"
+                        />
 
                         {/* ===== MOBILE CHAT / INTENTIONS OVERLAY (TRUE OVERLAY, NOT INSIDE VIDEO) ===== */}
                         {rightPanelOpen && rightTab && (
