@@ -328,7 +328,12 @@ async function createJitsiApiWithFallback(args: {
 
             args.parentNode.innerHTML = "";
 
-            const cssUrl = `${window.location.origin}${JITSI_CUSTOM_CSS_PATH}?v=${Date.now()}`;
+            // ✅ CRITICAL FIX:
+            // customCssUrl MUST be served from the SAME JITSI DOMAIN.
+            // If you point it to your app domain, it often won't apply (CORS/iframe/csp),
+            // and all your "hide native UI / center layout" expectations won't work reliably.
+            const cssPath = String(args.cssPathOnJitsiDomain || "").trim() || JITSI_CUSTOM_CSS_PATH;
+            const cssUrl = `https://${domain}${cssPath}?v=${Date.now()}`;
 
             const api = new window.JitsiMeetExternalAPI(domain, {
                 roomName: args.roomName,
@@ -2258,8 +2263,8 @@ export default function RoomPageIFrame() {
                                     <button
                                         onClick={() => setSelectedUser(session.host_profile)}
                                         className={`flex items-center gap-2 px-3 h-[32px] rounded-xl border transition font-inter text-[13px] ${isLight
-                                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                                : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                             }`}
                                     >
                                         <span className="flex items-center gap-2 leading-none">

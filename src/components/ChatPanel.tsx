@@ -251,6 +251,7 @@ function MessageCard({
                                     title="React"
                                 >
                                     <Smile size={14} />
+                                    React
                                 </button>
 
                                 {openReactions && (
