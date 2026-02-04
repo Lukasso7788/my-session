@@ -7,6 +7,7 @@
 // ✅ Fix: remove "double header" for chat (keep only close button row; also pass embedded/hideHeader props defensively)
 // ✅ NEW: Pre-join modal (devices + name + constraints) blocks Jitsi join until user confirms
 // ✅ FIX (CHAT): render RightPanel only ONCE (desktop OR mobile) to avoid double-mounting ChatPanel (causes auth/login flicker)
+// ✅ FIX (STAGES): robust stage type detection (check-in / check in / check_in) + do NOT treat any timer.phases as infinite by default
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -128,62 +129,15 @@ function num(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function Icon({
-  name,
-  theme,
-  className = "w-5 h-5",
-  alt = "",
-}: {
-  name:
-  | "mic-on"
-  | "mic-off"
-  | "camera-on"
-  | "camera-off"
-  | "screen-share"
-  | "reaction"
-  | "leave"
-  | "participants"
-  | "chat"
-  | "intentions"
-  | "settings"
-  | "theme-sun"
-  | "theme-moon"
-  | "timer"
-  | "host_session_icon";
-  theme: RoomTheme;
-  className?: string;
-  alt?: string;
-}) {
-  const themedSrc = `/icons/${name}-${theme}.svg`;
-  const fallbackSrc = `/icons/${name}.svg`;
-
-  const [src, setSrc] = useState(themedSrc);
-
-  useEffect(() => {
-    setSrc(themedSrc);
-  }, [themedSrc]);
-
-  return (
-    <img
-      src={src}
-      onError={() => {
-        if (src !== fallbackSrc) setSrc(fallbackSrc);
-      }}
-      className={className}
-      alt={alt}
-      draggable={false}
-    />
-  );
+function getTemplateFirst(tpl: SessionRow["session_templates"]): SessionTemplate | null {
+  if (!tpl) return null;
+  return Array.isArray(tpl) ? tpl[0] ?? null : tpl;
 }
 
-const reactionEmoji: Record<ReactionType, string> = {
-  fire: "🔥",
-  laugh: "😂",
-  clap: "👏",
-  heart: "❤️",
-  thumbsUp: "👍",
-  thumbsDown: "👎",
-};
+function deviceLabel(d: MediaDeviceInfo, fallback: string) {
+  const l = (d.label || "").trim();
+  return l || fallback;
+}
 
 function safeParseJson(raw: unknown): unknown | null {
   if (!raw) return null;
@@ -217,6 +171,61 @@ function parse50505(
   if (focus <= 0 || br <= 0 || intentions <= 0) return null;
 
   return { focus, break: br, intentions };
+}
+
+function normalizeToken(s: string): string {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/[\s\-_]+/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+function prettyPhaseLabel(raw: string): string {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  // keep hyphen for "check-in" if present; otherwise normalize underscores to spaces
+  const cleaned = s.replace(/_/g, " ").replace(/\s+/g, " ").trim();
+  // Capitalize first char
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
+function normalizeStageType(rawType: unknown, rawName: unknown): Stage["type"] {
+  const t = normalizeToken(str(rawType));
+  const n = normalizeToken(str(rawName));
+  const hay = `${t} ${n}`.trim();
+
+  // intro / welcome
+  if (hay.includes("intro") || hay.includes("welcome") || hay.includes("start") || hay.includes("opening")) {
+    return "intro";
+  }
+
+  // intentions / check-in
+  if (
+    hay.includes("checkin") ||
+    hay.includes("standup") ||
+    hay.includes("intention") ||
+    hay.includes("intentions") ||
+    hay.includes("checklist") // sometimes people name it like this; safe
+  ) {
+    return "intentions";
+  }
+
+  // break / rest
+  if (hay.includes("break") || hay.includes("rest") || hay.includes("pause") || hay.includes("recovery")) {
+    return "break";
+  }
+
+  // outro / wrap-up
+  if (hay.includes("outro") || hay.includes("wrap") || hay.includes("closing") || hay.includes("farewell") || hay.includes("celebrat")) {
+    return "outro";
+  }
+
+  // focus / work
+  if (hay.includes("focus") || hay.includes("work") || hay.includes("deepwork") || hay.includes("pomodoro")) {
+    return "focus";
+  }
+
+  return "focus";
 }
 
 function normalizeInfinitePhases(anyPhases: unknown): { name: string; seconds: number }[] {
@@ -273,13 +282,6 @@ function normalizeInfinitePhases(anyPhases: unknown): { name: string; seconds: n
   return [];
 }
 
-function phaseToStageType(phaseNameLower: string): Stage["type"] {
-  if (phaseNameLower.includes("focus")) return "focus";
-  if (phaseNameLower.includes("checkin") || phaseNameLower.includes("intention")) return "intentions";
-  if (phaseNameLower.includes("break") || phaseNameLower.includes("rest")) return "break";
-  return "focus";
-}
-
 const STAGE_COLORS: Record<string, string> = {
   intro: "#80DF86",
   intentions: "#ADD3FF",
@@ -322,16 +324,6 @@ function saveStoredMediaSettings(s: RoomMediaSettings) {
   } catch { }
 }
 
-function getTemplateFirst(tpl: SessionRow["session_templates"]): SessionTemplate | null {
-  if (!tpl) return null;
-  return Array.isArray(tpl) ? tpl[0] ?? null : tpl;
-}
-
-function deviceLabel(d: MediaDeviceInfo, fallback: string) {
-  const l = (d.label || "").trim();
-  return l || fallback;
-}
-
 // ✅ Render-only-one-panel helper (so we don't mount Chat twice)
 function useMediaQuery(query: string) {
   const [matches, setMatches] = useState(false);
@@ -353,6 +345,100 @@ function useMediaQuery(query: string) {
 
   return matches;
 }
+
+function isSessionProbablyInfinite(s: SessionRow | null): boolean {
+  if (!s) return false;
+
+  // 50505 string = infinite-style schedule
+  if (parse50505(s.schedule)) return true;
+
+  const parsed = safeParseJson(s.schedule);
+  if (isRecord(parsed)) {
+    const kind = str(parsed.kind || parsed.type || parsed.mode).toLowerCase();
+    if (kind.includes("infinite")) return true;
+
+    const timer = isRecord(parsed.timer) ? parsed.timer : null;
+    if (timer) {
+      const loopFlag =
+        (timer.loop === true) ||
+        (timer.is_infinite === true) ||
+        (timer.infinite === true);
+
+      if (loopFlag) return true;
+    }
+  }
+
+  // Fallback by session fields (title/format/template)
+  const fmt = str(s.format).toLowerCase();
+  const title = str(s.title).toLowerCase();
+
+  const tpl0 = getTemplateFirst(s.session_templates ?? null);
+  const tplName = str(tpl0?.name || tpl0?.title).toLowerCase();
+  const tplKey = str(tpl0?.key || tpl0?.slug || tpl0?.type).toLowerCase();
+  const tplFmt = str(tpl0?.format).toLowerCase();
+
+  const hay = `${fmt} ${title} ${tplName} ${tplKey} ${tplFmt}`.toLowerCase();
+  if (hay.includes("24/7") || hay.includes("infinite")) return true;
+
+  return false;
+}
+
+function Icon({
+  name,
+  theme,
+  className = "w-5 h-5",
+  alt = "",
+}: {
+  name:
+  | "mic-on"
+  | "mic-off"
+  | "camera-on"
+  | "camera-off"
+  | "screen-share"
+  | "reaction"
+  | "leave"
+  | "participants"
+  | "chat"
+  | "intentions"
+  | "settings"
+  | "theme-sun"
+  | "theme-moon"
+  | "timer"
+  | "host_session_icon";
+  theme: RoomTheme;
+  className?: string;
+  alt?: string;
+}) {
+  const themedSrc = `/icons/${name}-${theme}.svg`;
+  const fallbackSrc = `/icons/${name}.svg`;
+
+  const [src, setSrc] = useState(themedSrc);
+
+  useEffect(() => {
+    setSrc(themedSrc);
+  }, [themedSrc]);
+
+  return (
+    <img
+      src={src}
+      onError={() => {
+        if (src !== fallbackSrc) setSrc(fallbackSrc);
+      }}
+      className={className}
+      alt={alt}
+      draggable={false}
+    />
+  );
+}
+
+const reactionEmoji: Record<ReactionType, string> = {
+  fire: "🔥",
+  laugh: "😂",
+  clap: "👏",
+  heart: "❤️",
+  thumbsUp: "👍",
+  thumbsDown: "👎",
+};
 
 function PreJoinModal({
   open,
@@ -709,6 +795,11 @@ export function RoomPage() {
     focus: "/sounds/focus.mp3",
     break: "/sounds/break_start.mp3",
     outro: "/sounds/outro.mp3",
+
+    // extra-safe aliases (in case a custom schedule uses weird type strings)
+    checkin: "/sounds/intentions.mp3",
+    "check-in": "/sounds/intentions.mp3",
+    intention: "/sounds/intentions.mp3",
   };
 
   const BREAK_END_SOUND = "/sounds/break_end.mp3";
@@ -749,20 +840,7 @@ export function RoomPage() {
   }, [rightPanelOpen, rightTab]);
 
   const isInfiniteRoom = useMemo(() => {
-    const raw = session?.schedule;
-    if (parse50505(raw)) return true;
-
-    const parsed = safeParseJson(raw);
-    if (!isRecord(parsed)) return false;
-
-    const kind = str(parsed.kind).toLowerCase();
-    if (kind === "infinite_room") return true;
-    if (kind.includes("infinite")) return true;
-
-    if (isRecord(parsed.timer) && (parsed.timer.phases || parsed.timer.segments)) return true;
-    if (parsed.phases || parsed.segments) return true;
-
-    return false;
+    return isSessionProbablyInfinite(session);
   }, [session]);
 
   const isSilentRoom = useMemo(() => {
@@ -950,12 +1028,14 @@ export function RoomPage() {
 
         const fallbackStart = String(s?.start_time || s?.created_at || new Date().toISOString());
 
-        let parsed: unknown = safeParseJson(s.schedule);
+        // Parse schedule
+        let parsedSchedule: unknown = safeParseJson(s.schedule);
 
-        if (!parsed) {
+        // Support simple "25/5/5" shorthand
+        if (!parsedSchedule) {
           const t = parse50505(s.schedule);
           if (t) {
-            parsed = {
+            parsedSchedule = {
               kind: "infinite_room",
               timer: { phases: { focus: t.focus, break: t.break, intentions: t.intentions } },
               anchor_ts: s?.start_time || s?.created_at || fallbackStart,
@@ -963,19 +1043,28 @@ export function RoomPage() {
           }
         }
 
-        if (isRecord(parsed)) {
-          const maybeBlocks =
-            parsed.blocks ||
-            parsed.script ||
-            parsed.agenda ||
-            parsed.items ||
-            parsed.stages;
+        // Determine if THIS session should loop (infinite)
+        const shouldLoop = isSessionProbablyInfinite(s);
 
-          if (Array.isArray(maybeBlocks)) parsed = maybeBlocks;
+        // 1) If schedule is an array of blocks (custom agenda)
+        // Also support schedule objects that carry "blocks/script/agenda/items/stages" arrays
+        let blocksArr: unknown[] | null = null;
+
+        if (Array.isArray(parsedSchedule)) {
+          blocksArr = parsedSchedule;
+        } else if (isRecord(parsedSchedule)) {
+          const maybeBlocks =
+            parsedSchedule.blocks ||
+            parsedSchedule.script ||
+            parsedSchedule.agenda ||
+            parsedSchedule.items ||
+            parsedSchedule.stages;
+
+          if (Array.isArray(maybeBlocks)) blocksArr = maybeBlocks as unknown[];
         }
 
-        if (Array.isArray(parsed)) {
-          const formatted: Stage[] = parsed
+        if (blocksArr) {
+          const formatted: Stage[] = blocksArr
             .map((b): Stage | null => {
               const blk = isRecord(b) ? b : null;
               if (!blk) return null;
@@ -988,21 +1077,7 @@ export function RoomPage() {
                 str(blk.key) ||
                 "Stage";
 
-              const lower = rawName.toLowerCase();
-
-              const inferredType: Stage["type"] =
-                (str(blk.type) || str(blk.category)) ||
-                (lower.includes("welcome") || lower.includes("intro")
-                  ? "intro"
-                  : lower.includes("intention") || lower.includes("checkin")
-                    ? "intentions"
-                    : lower.includes("focus")
-                      ? "focus"
-                      : lower.includes("break") || lower.includes("pause") || lower.includes("rest")
-                        ? "break"
-                        : lower.includes("farewell") || lower.includes("celebrat")
-                          ? "outro"
-                          : "focus");
+              const inferredType = normalizeStageType(blk.type || blk.category, rawName);
 
               const minutes =
                 num(blk.minutes) ||
@@ -1042,76 +1117,83 @@ export function RoomPage() {
           setStagebarCycleSeconds(undefined);
         }
 
-        const isInfiniteScheduleObject =
-          isRecord(parsed) &&
-          (str(parsed.kind).toLowerCase().includes("infinite") ||
-            (isRecord(parsed.timer) && (parsed.timer.phases || parsed.timer.segments)) ||
-            !!parsed.phases ||
-            !!parsed.segments);
-
-        if (isInfiniteScheduleObject && isRecord(parsed)) {
-          const timer = isRecord(parsed.timer) ? parsed.timer : null;
+        // 2) If schedule is an object with timer.phases/segments (Session Studio style)
+        if (isRecord(parsedSchedule)) {
+          const timer = isRecord(parsedSchedule.timer) ? parsedSchedule.timer : null;
 
           const phasesRaw =
-            (timer?.phases ?? timer?.segments ?? parsed.phases ?? parsed.segments) ?? null;
+            (timer?.phases ?? timer?.segments ?? parsedSchedule.phases ?? parsedSchedule.segments) ?? null;
 
           const phases = normalizeInfinitePhases(phasesRaw);
 
-          const formatted: Stage[] = phases.map((p) => {
-            const lower = String(p.name || "").toLowerCase();
-            const type = phaseToStageType(lower);
+          if (phases.length > 0) {
+            const formatted: Stage[] = phases.map((p) => {
+              const type = normalizeStageType("", p.name);
 
-            const displayName =
-              type === "focus"
-                ? "Focus"
-                : type === "intentions"
-                  ? "Intentions (spoken)"
-                  : type === "break"
-                    ? "Break"
-                    : String(p.name || "Stage");
+              const token = normalizeToken(p.name);
+              const displayName =
+                token.includes("checkin")
+                  ? "Check-in"
+                  : type === "focus"
+                    ? "Focus"
+                    : type === "intentions"
+                      ? "Intentions"
+                      : type === "break"
+                        ? "Break"
+                        : type === "intro"
+                          ? "Intro"
+                          : type === "outro"
+                            ? "Outro"
+                            : prettyPhaseLabel(p.name || "Stage");
 
-            const seconds = Number(p.seconds) || 0;
-            const minutes = Math.max(1, Math.round(seconds / 60));
+              const seconds = Number(p.seconds) || 0;
+              const minutes = Math.max(1, Math.round(seconds / 60));
 
-            return {
-              name: displayName,
-              duration: minutes,
-              color: STAGE_COLORS[type] || "#F63135",
-              type,
-              durationSeconds: seconds,
-            };
-          });
+              return {
+                name: displayName,
+                duration: minutes,
+                color: STAGE_COLORS[type] || "#F63135",
+                type,
+                durationSeconds: seconds,
+              };
+            });
 
-          setStages(formatted);
+            setStages(formatted);
 
-          const anchor = String(
-            str(parsed.anchor_ts) ||
-            str(parsed.anchorTs) ||
-            str(s?.start_time) ||
-            fallbackStart
-          );
-          setStagebarStartTime(anchor);
+            const anchor = String(
+              str(parsedSchedule.anchor_ts) ||
+              str(parsedSchedule.anchorTs) ||
+              str(s?.start_time) ||
+              fallbackStart
+            );
+            setStagebarStartTime(anchor);
 
-          const sumSeconds = phases.reduce((acc, p) => acc + (Number(p.seconds) || 0), 0);
+            if (shouldLoop) {
+              const sumSeconds = phases.reduce((acc, p) => acc + (Number(p.seconds) || 0), 0);
 
-          const timerCycle =
-            timer && isRecord(timer)
-              ? num(timer.cycle_seconds) || num(timer.cycleSeconds)
-              : 0;
+              const timerCycle =
+                timer && isRecord(timer)
+                  ? num(timer.cycle_seconds) || num(timer.cycleSeconds)
+                  : 0;
 
-          let cycleSeconds =
-            timerCycle ||
-            num(parsed.cycle_seconds) ||
-            num(parsed.cycleSeconds) ||
-            0;
+              let cycleSeconds =
+                timerCycle ||
+                num(parsedSchedule.cycle_seconds) ||
+                num(parsedSchedule.cycleSeconds) ||
+                0;
 
-          if (!cycleSeconds || cycleSeconds <= 0) cycleSeconds = sumSeconds;
-          if (cycleSeconds < sumSeconds) cycleSeconds = sumSeconds;
+              if (!cycleSeconds || cycleSeconds <= 0) cycleSeconds = sumSeconds;
+              if (cycleSeconds < sumSeconds) cycleSeconds = sumSeconds;
 
-          setStagebarCycleSeconds(Math.max(1, cycleSeconds));
+              setStagebarCycleSeconds(Math.max(1, cycleSeconds));
+            } else {
+              // finite session: do not force loop cycle in StageBar
+              setStagebarCycleSeconds(undefined);
+            }
+          }
         }
 
-        if (!parsed) setStagebarStartTime(fallbackStart);
+        if (!parsedSchedule) setStagebarStartTime(fallbackStart);
       }
 
       setLoading(false);
@@ -1266,7 +1348,7 @@ export function RoomPage() {
       .initAndJoin(safeRoomName || `session-${session.id}`, nameToUse)
       .catch((e: unknown) => {
         console.error("initAndJoin error", e);
-        const msg = isRecord(e) ? str(e.message) : "";
+        const msg = isRecord(e) ? str((e as any).message) : "";
         setLastErr(msg || String(e));
       });
 
@@ -1403,11 +1485,14 @@ export function RoomPage() {
 
       setCurrentStage(active);
 
+      // 🔥 Sounds only for non-infinite rooms (as before), but now types are robust.
       if (!isInfiniteRoom) {
         const stage = stages[active];
 
         if (!firstTickDoneRef.current) {
-          if (stage?.type === "intro") startWelcomeLoop();
+          const firstType = normalizeStageType(stage?.type, stage?.name);
+
+          if (firstType === "intro") startWelcomeLoop();
           else stopWelcomeLoop();
 
           prevStageRef.current = active;
@@ -1417,8 +1502,8 @@ export function RoomPage() {
 
         if (prevStageRef.current !== active) {
           const prev = stages[prevStageRef.current];
-          const prevType = prev?.type;
-          const newType = stage?.type;
+          const prevType = normalizeStageType(prev?.type, prev?.name);
+          const newType = normalizeStageType(stage?.type, stage?.name);
 
           if (prevType === "break" && newType !== "break") playOneShot(BREAK_END_SOUND);
 
@@ -1426,16 +1511,19 @@ export function RoomPage() {
             startWelcomeLoop();
           } else {
             stopWelcomeLoop();
-            if (newType) {
-              const sound = STAGE_SOUND_MAP[newType];
-              if (sound) playOneShot(sound);
-            }
+            const sound =
+              STAGE_SOUND_MAP[newType] ||
+              STAGE_SOUND_MAP[str(stage?.type)] ||
+              "";
+
+            if (sound) playOneShot(sound);
           }
 
           prevStageRef.current = active;
         }
 
-        if (stage?.type !== "intro" && welcomeLoopRef.current) stopWelcomeLoop();
+        const activeType = normalizeStageType(stage?.type, stage?.name);
+        if (activeType !== "intro" && welcomeLoopRef.current) stopWelcomeLoop();
       }
     }, 1000);
 
@@ -1825,6 +1913,37 @@ export function RoomPage() {
     </div>
   );
 
+  const localParticipant = useMemo(
+    () => participants.find((p) => p.isLocal) || null,
+    [participants]
+  );
+
+  const isAudioMuted = !!localParticipant?.audioMuted;
+  const isVideoMuted = !!localParticipant?.videoMuted;
+  const isScreenSharing = !!localParticipant?.isScreenSharing;
+
+  const [showReactionsMenu, setShowReactionsMenu] = useState(false);
+  const reactionsMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
+
+  if (loading) {
+    return (
+      <div className={`flex h-screen justify-center items-center ${pageBg}`}>
+        Loading session...
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className={`flex h-screen justify-center items-center ${pageBg}`}>
+        <button onClick={() => navigate("/sessions")}>Back</button>
+      </div>
+    );
+  }
+
   return (
     <>
       <PreJoinModal
@@ -1893,11 +2012,16 @@ export function RoomPage() {
 
                   <button
                     onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-                    className={`${switchTrack} ${switchTrackCls}`}
+                    className={`w-[84px] h-[32px] rounded-full border relative transition flex items-center px-[3px] ${isLight
+                      ? "bg-black/5 border-black/10 hover:bg-black/10"
+                      : "bg-white/5 border-white/10 hover:bg-white/10"
+                      }`}
                     title="Toggle theme"
                     aria-label="Toggle theme"
                   >
-                    <div className={switchThumb} style={{ transform: thumbTranslate }}>
+                    <div className="absolute top-[2px] w-[26px] h-[26px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center"
+                      style={{ transform: isLight ? "translateX(0px)" : "translateX(50px)" }}
+                    >
                       <Icon
                         name={isLight ? "theme-sun" : "theme-moon"}
                         theme={theme}
