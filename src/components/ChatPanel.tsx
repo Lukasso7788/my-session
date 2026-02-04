@@ -294,7 +294,6 @@ function MessageCard({
                                         title="Edit"
                                     >
                                         <Pencil size={14} />
-                                        Edit
                                     </button>
 
                                     <button
@@ -304,7 +303,6 @@ function MessageCard({
                                         title="Delete"
                                     >
                                         <Trash2 size={14} />
-                                        Delete
                                     </button>
                                 </>
                             )}
