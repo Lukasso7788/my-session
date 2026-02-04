@@ -386,6 +386,7 @@ async function createJitsiApiWithFallback(args: {
                     DISABLE_DOMINANT_SPEAKER_INDICATOR: true,
 
                     DEFAULT_REMOTE_DISPLAY_NAME: "Guest",
+                    TILE_VIEW_MAX_COLUMNS: 2,
                 },
             });
 

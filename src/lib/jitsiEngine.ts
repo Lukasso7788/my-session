@@ -1,22 +1,14 @@
 // src/lib/jitsiEngine.ts
 // SFU-only (P2P OFF) + track-based + reactions + SAFE background effects
 // Ultra-stable subscriptions + targeted “black video” recovery + resume/self-heal
-// Single-file optimized (reduced noise/duplication) — no functional split.
 //
-// ✅ PATCH (freeze-after-leave fix) — Variant #1 (updated):
-// - STOP doing global "selectParticipants([]) + setLastN(0)" resets on USER_LEFT/TRACK_REMOVED
-// - ✅ Do NOT call selectParticipants at all for small rooms (<=2 remote videos). Let Jitsi handle it.
-// - ✅ Add receiver-constraint "tickle" (0 -> h) on leave to force fresh keyframe/renegotiation behavior.
-// - ✅ Delay subscription apply on leave (650ms) to avoid racing Jitsi internal resubscribe.
-// - Replace "global nudge" with BEST-EFFORT keyframe requests + light reattach
-// - After any subscription apply / bump / reattach, request keyframes (PLI/FIR) best-effort
-// - Keep your black-video recovery, but make it keyframe-aware
-// - ✅ IMPORTANT: Cancel any pending delayed hard-reset that was scheduled BEFORE someone left,
-//   so it can’t fire 4.5s later and wedge decoders.
-//
-// Rationale: symptom "video unfreezes only when voice happens" strongly suggests you're stuck
-// waiting for a keyframe after resubscribe/layer switch. Daily-like behavior = don't do global resets,
-// and always request keyframes when you change subscriptions.
+// PATCH: freeze-after-leave fix
+// - No global selectParticipants([])/setLastN(0) on USER_LEFT/TRACK_REMOVED
+// - Do NOT call selectParticipants for small rooms (<=2 remote videos)
+// - Receiver-constraint tickle (0 -> h) on leave to force fresh keyframe behavior
+// - Delay subscription apply on leave (650ms) to avoid racing internal resubscribe
+// - Best-effort keyframe requests (PLI/FIR) after subs changes + reattach
+// - Cancel any pending delayed hard-reset scheduled before a leave
 
 import { createVirtualBackgroundEffect as createVendoredVirtualBackgroundEffect } from "./jitsiEffects/virtualBackground";
 
@@ -50,7 +42,6 @@ export type JitsiEngineCallbacks = {
 
 export type BgMode = "none" | "blur" | "image";
 
-// ✅ NEW: configurable domain + script paths
 export type JitsiEngineOptions = {
   /** Can be host ("meet2.mysession.club") or origin ("https://meet2.mysession.club") */
   jitsiDomain?: string;
@@ -59,11 +50,10 @@ export type JitsiEngineOptions = {
   /** Default: "/libs/lib-jitsi-meet.min.js" */
   libPath?: string;
 
-  // ✅ NEW: join-sound options
   joinSound?: {
     enabled?: boolean;
-    volume?: number; // 0..1 (default ~0.35)
-    respectVisibility?: boolean; // default true (don't play when tab hidden)
+    volume?: number; // 0..1
+    respectVisibility?: boolean; // default true
   };
 };
 
@@ -96,7 +86,7 @@ const DEFAULT_LIB_PATH = "/libs/lib-jitsi-meet.min.js";
 const DISABLE_P2P = true;
 
 // ============================================================================
-// URL helpers (NEW)
+// URL helpers
 // ============================================================================
 type ResolvedJitsiEndpoints = {
   origin: string; // "https://meet.example.com"
@@ -108,10 +98,6 @@ type ResolvedJitsiEndpoints = {
 function resolveOriginAndHost(domainOrOrigin: string): { origin: string; host: string } {
   const raw = (domainOrOrigin || "").trim() || DEFAULT_JITSI_DOMAIN;
 
-  // Accept:
-  // - "meet2.mysession.club"
-  // - "https://meet2.mysession.club"
-  // - "//meet2.mysession.club"
   try {
     const asUrl =
       raw.startsWith("http://") || raw.startsWith("https://")
@@ -122,7 +108,6 @@ function resolveOriginAndHost(domainOrOrigin: string): { origin: string; host: s
 
     return { origin: asUrl.origin, host: asUrl.host };
   } catch {
-    // fallback
     const host = raw.replace(/^https?:\/\//i, "").replace(/^\/\//, "").replace(/\/+$/, "");
     return { origin: "https://" + host, host };
   }
@@ -138,7 +123,11 @@ function buildAbsoluteFromOrigin(origin: string, pathOrUrl: string): string {
   return origin + "/" + p;
 }
 
-function resolveJitsiEndpoints(opts: { domainOrOrigin: string; configPath: string; libPath: string }): ResolvedJitsiEndpoints {
+function resolveJitsiEndpoints(opts: {
+  domainOrOrigin: string;
+  configPath: string;
+  libPath: string;
+}): ResolvedJitsiEndpoints {
   const { origin, host } = resolveOriginAndHost(opts.domainOrOrigin);
   const configSrc = buildAbsoluteFromOrigin(origin, opts.configPath);
   const libSrc = buildAbsoluteFromOrigin(origin, opts.libPath);
@@ -146,7 +135,7 @@ function resolveJitsiEndpoints(opts: { domainOrOrigin: string; configPath: strin
 }
 
 // ============================================================================
-// SCRIPT LOADER (UPDATED: per-domain config/lib)
+// SCRIPT LOADER (per-domain config/lib)
 // ============================================================================
 const jitsiLoaderPromises = new Map<string, Promise<void>>();
 
@@ -170,7 +159,7 @@ async function loadJitsiScripts(endpoints: ResolvedJitsiEndpoints): Promise<void
 
     const onError = (src: string) => reject(new Error("Failed to load Jitsi script: " + src));
 
-    // ✅ Always ensure config.js for the requested domain is present (it overwrites window.config)
+    // Always ensure config.js for the requested domain is present (it overwrites window.config)
     if (!document.querySelector(`script[src="${endpoints.configSrc}"]`)) {
       const sc = document.createElement("script");
       sc.src = endpoints.configSrc;
@@ -182,7 +171,7 @@ async function loadJitsiScripts(endpoints: ResolvedJitsiEndpoints): Promise<void
       done();
     }
 
-    // ✅ Load lib-jitsi-meet only if not already loaded
+    // Load lib-jitsi-meet only if not already loaded
     if (window.JitsiMeetJS) {
       done();
     } else if (!document.querySelector(`script[src="${endpoints.libSrc}"]`)) {
@@ -205,7 +194,6 @@ async function loadJitsiScripts(endpoints: ResolvedJitsiEndpoints): Promise<void
 // JITSI ENGINE
 // ============================================================================
 export class JitsiEngine {
-  // PUBLIC-ish settings (persisted in state/UI)
   public mediaSettings = {
     videoInputId: "",
     audioInputId: "",
@@ -238,9 +226,8 @@ export class JitsiEngine {
   private lastJoinUserName: string | null = null;
   private lastSafeRejoinAt = 0;
 
-  // ✅ guard against double mount / double join
+  // guard against double mount / double join
   private joinInFlight = false;
-  private joinedOnce = false;
   private joinToken = 0;
 
   // VIDEO SUBS
@@ -258,12 +245,7 @@ export class JitsiEngine {
 
   private subsWatchdog: any = null;
 
-  // soft reset
-  private softResetTimer: any = null;
-  private softResetInFlight = false;
-  private softResetCooldownUntil = 0;
-
-  // Leave recovery + keyframe refresh (patched)
+  // Leave recovery + keyframe refresh
   private lastLeaveRecoveryAt = 0;
 
   private lastKeyframeRefreshAt = 0;
@@ -284,6 +266,7 @@ export class JitsiEngine {
   private resumeHandlersAttached = false;
   private hiddenAt: number | null = null;
   private resumeRecoverTimer: any = null;
+  private resumeRemovers: (() => void) | null = null;
 
   // post-join heal
   private postJoinHealTimer: any = null;
@@ -344,23 +327,26 @@ export class JitsiEngine {
     }
   >();
 
-  // ✅ NEW: runtime-configurable jitsi endpoints
+  // runtime-configurable jitsi endpoints
   private jitsiDomainOrOrigin: string = DEFAULT_JITSI_DOMAIN;
   private jitsiConfigPath: string = DEFAULT_CONFIG_PATH;
   private jitsiLibPath: string = DEFAULT_LIB_PATH;
 
-  // ✅ NEW: join sound (WebAudio)
+  // join sound
   private joinSoundEnabled = true;
   private joinSoundVolume = 0.35;
   private joinSoundRespectVisibility = true;
 
   private audioUnlocked = false;
-  private audioCtx: AudioContext | null = null;
+  private joinSoundEl?: HTMLAudioElement;
 
   private lastJoinSoundAt = 0;
   private joinSoundByPid = new Map<string, number>(); // pid -> lastPlayedAt
   private readonly JOIN_SOUND_COOLDOWN_MS = 850;
   private readonly JOIN_SOUND_PER_PID_COOLDOWN_MS = 7000;
+
+  // internal timers/refs
+  private applySubsSoonTimer: any = null;
 
   constructor(callbacks: JitsiEngineCallbacks = {}, opts: JitsiEngineOptions = {}) {
     this.callbacks = callbacks;
@@ -369,82 +355,12 @@ export class JitsiEngine {
     if (opts.configPath) this.jitsiConfigPath = opts.configPath;
     if (opts.libPath) this.jitsiLibPath = opts.libPath;
 
-    if (opts.joinSound) {
-      if (typeof opts.joinSound.enabled === "boolean") this.joinSoundEnabled = opts.joinSound.enabled;
-      if (typeof opts.joinSound.volume === "number") this.joinSoundVolume = Math.max(0, Math.min(1, opts.joinSound.volume));
-      if (typeof opts.joinSound.respectVisibility === "boolean") this.joinSoundRespectVisibility = opts.joinSound.respectVisibility;
-    }
+    if (opts.joinSound) this.configureJoinSound(opts.joinSound);
   }
 
-  // ✅ NEW: allow changing domain (ideally BEFORE initAndJoin)
-  public setJitsiDomain(domainOrOrigin: string) {
-    this.jitsiDomainOrOrigin = (domainOrOrigin || "").trim() || DEFAULT_JITSI_DOMAIN;
-  }
-
-  // ✅ NEW: allow changing script paths if needed
-  public setJitsiScriptPaths(paths: { configPath?: string; libPath?: string }) {
-    if (paths.configPath) this.jitsiConfigPath = paths.configPath;
-    if (paths.libPath) this.jitsiLibPath = paths.libPath;
-  }
-
-  // ✅ NEW: configure join sound
-  public configureJoinSound(opts: { enabled?: boolean; volume?: number; respectVisibility?: boolean }) {
-    if (typeof opts.enabled === "boolean") this.joinSoundEnabled = opts.enabled;
-    if (typeof opts.volume === "number") this.joinSoundVolume = Math.max(0, Math.min(1, opts.volume));
-    if (typeof opts.respectVisibility === "boolean") this.joinSoundRespectVisibility = opts.respectVisibility;
-  }
-
-  // ✅ NEW: must be called from a user gesture (click/tap) to unlock AudioContext
-  public async unlockAudio(): Promise<void> {
-    if (typeof window === "undefined") return;
-    const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
-    if (!Ctx) {
-      this.audioUnlocked = true; // no WebAudio, but mark unlocked (so we don't retry)
-      return;
-    }
-
-    if (!this.audioCtx) {
-      this.audioCtx = new Ctx();
-    }
-
-    try {
-      if (this.audioCtx.state === "suspended") await this.audioCtx.resume();
-      this.audioUnlocked = true;
-
-      // "warm-up" tiny silent blip to stabilize on iOS
-      const ctx = this.audioCtx;
-      const t = ctx.currentTime;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.00001, t);
-      g.connect(ctx.destination);
-
-      const osc = ctx.createOscillator();
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(1, t);
-      osc.connect(g);
-      osc.start(t);
-      osc.stop(t + 0.02);
-
-      setTimeout(() => {
-        try { osc.disconnect(); } catch { }
-        try { g.disconnect(); } catch { }
-      }, 50);
-    } catch {
-      // ignore (browser policy); user can trigger again
-    }
-  }
-
-  private getJitsiEndpoints(): ResolvedJitsiEndpoints {
-    return resolveJitsiEndpoints({
-      domainOrOrigin: this.jitsiDomainOrOrigin,
-      configPath: this.jitsiConfigPath,
-      libPath: this.jitsiLibPath,
-    });
-  }
-
-  // ============================================================================
-  // tiny helpers
-  // ============================================================================
+  // ========================================================================
+  // small helpers
+  // ========================================================================
   private delay(ms: number) {
     return new Promise<void>((r) => setTimeout(r, ms));
   }
@@ -460,7 +376,7 @@ export class JitsiEngine {
       return undefined;
     }
   }
-  private clearTimer(ref: any) {
+  private clearTimeoutRef(ref: any) {
     if (ref) clearTimeout(ref);
   }
   private clearIntervalRef(ref: any) {
@@ -476,161 +392,69 @@ export class JitsiEngine {
     }
   }
 
-  // ✅ NEW: join sound player (two-tone chime)
-  private tryEnsureAudioContext(): AudioContext | null {
-    if (typeof window === "undefined") return null;
-    const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
-    if (!Ctx) return null;
-    if (!this.audioCtx) {
-      try {
-        this.audioCtx = new Ctx();
-      } catch {
-        return null;
-      }
-    }
-    return this.audioCtx;
-  }
-
-  private joinSound?: HTMLAudioElement;
-
-  private playJoinSound(pid?: string, reason?: string) {
-    try {
-      if (!this.joinSound) {
-        this.joinSound = new Audio("/sounds/join.wav");
-        this.joinSound.preload = "auto";
-        this.joinSound.volume = 0.6; // 🔧 отрегулируй под себя (0.4–0.7 обычно норм)
-      }
-
-      // 🔁 чтобы звук можно было играть быстро подряд
-      this.joinSound.currentTime = 0;
-
-      const p = this.joinSound.play();
-      if (p && typeof p.catch === "function") {
-        p.catch(() => { });
-      }
-    } catch (e) {
-      console.warn("Join sound failed:", e);
-    }
-  }
-
-  // ✅ important: cancel delayed hard reset that could fire after a leave
-  private cancelPendingHardReset(reason: string) {
-    this.clearTimer(this.subsHardResetTimer);
-    this.subsHardResetTimer = null;
-    // If a hard reset was marked in-flight but we’re in weird timing, don’t keep it stuck.
-    this.subsHardResetInFlight = false;
-    // (no logs by default)
-  }
-
-  // ✅ For small rooms we skip selectParticipants entirely (prevents layer-switch/keyframe stalls)
-  private shouldUseSelectParticipants(desiredLastN: number) {
-    // "small room" = <= 2 remote videos (i.e. 1:1 or 3-person call)
-    return desiredLastN > 2;
-  }
-
-  // ✅ Receiver constraint tickle: 0 -> h to encourage fresh keyframe after leave/resubscribe
-  private tickleReceiverVideoConstraint(h: number, reason: string) {
-    if (!this.conference || this.disposed) return;
-    this.safe(() => this.conference.setReceiverVideoConstraint?.(0));
-    setTimeout(() => {
-      if (this.disposed || !this.conference) return;
-      this.safe(() => this.conference.setReceiverVideoConstraint?.(h));
-      this.scheduleKeyframeRefresh(90, `constraintTickle:${reason}`);
-    }, 110);
-  }
-
-  private scheduleConstraintTickle(delayMs: number, reason: string) {
-    if (!this.conference || this.disposed) return;
-    setTimeout(() => {
-      if (this.disposed || !this.conference) return;
-      try {
-        const finalRemoteIds = this.computeFinalRemoteIds();
-        const desiredLastN = Math.min(finalRemoteIds.length, this.MAX_LAST_N);
-        const h = this.pickReceiverConstraintHeight(desiredLastN);
-        this.tickleReceiverVideoConstraint(h, reason);
-      } catch { }
-    }, delayMs);
-  }
-
-  // ============================================================================
-  // Queues (bg/cam)
-  // ============================================================================
-  private enqueueBgOp(label: string, fn: () => Promise<void>) {
-    const id = ++this.bgOpSeq;
-    this.bgOpQueue = this.bgOpQueue
-      .catch(() => { })
-      .then(async () => {
-        await fn();
-      })
-      .catch((e) => console.warn(`[bgQ#${id}] FAIL ${label}:`, e));
-    return this.bgOpQueue;
-  }
-  private async waitBgIdle() {
-    try {
-      await this.bgOpQueue;
-    } catch { }
-  }
-  private enqueueCamOp(label: string, fn: () => Promise<void>) {
-    const id = ++this.camOpSeq;
-    this.camOpQueue = this.camOpQueue
-      .catch(() => { })
-      .then(async () => {
-        await fn();
-      })
-      .catch((e) => console.warn(`[camQ#${id}] FAIL ${label}:`, e));
-    return this.camOpQueue;
-  }
-
-  // ============================================================================
-  // Effect serializer
-  // ============================================================================
-  private async runEffectOpOnTrack(track: any, fn: () => Promise<void>) {
-    if (!track) return;
-    const prev = this.effectQueueByTrack.get(track) || Promise.resolve();
-    const opId = ++this.effectOpSeq;
-    const next = prev
-      .catch(() => { })
-      .then(async () => {
-        await fn();
-      })
-      .catch((e) => {
-        console.warn(`[effect#${opId}] fail`, e);
-        throw e;
-      });
-    this.effectQueueByTrack.set(track, next);
-    return next;
-  }
-  private async waitEffectIdle(track: any) {
-    const p = this.effectQueueByTrack.get(track);
-    if (!p) return;
-    try {
-      await p;
-    } catch { }
-  }
-  private async safeSetEffect(track: any, effect: any) {
-    if (!track || typeof track.setEffect !== "function") return;
-    await this.runEffectOpOnTrack(track, async () => {
-      const attempt = async () => track.setEffect(effect);
-      try {
-        await attempt();
-      } catch (e: any) {
-        const msg = String(e?.message || e || "");
-        if (msg.includes("setEffect already in progress")) {
-          await this.delay(120);
-          await attempt();
-        } else throw e;
-      }
+  private getJitsiEndpoints(): ResolvedJitsiEndpoints {
+    return resolveJitsiEndpoints({
+      domainOrOrigin: this.jitsiDomainOrOrigin,
+      configPath: this.jitsiConfigPath,
+      libPath: this.jitsiLibPath,
     });
   }
-  private async safeDisposeTrack(track: any) {
-    if (!track) return;
-    await this.waitEffectIdle(track);
-    this.safe(() => track.dispose?.());
+
+  // ========================================================================
+  // Public config
+  // ========================================================================
+  public setJitsiDomain(domainOrOrigin: string) {
+    this.jitsiDomainOrOrigin = (domainOrOrigin || "").trim() || DEFAULT_JITSI_DOMAIN;
   }
 
-  // ============================================================================
+  public setJitsiScriptPaths(paths: { configPath?: string; libPath?: string }) {
+    if (paths.configPath) this.jitsiConfigPath = paths.configPath;
+    if (paths.libPath) this.jitsiLibPath = paths.libPath;
+  }
+
+  public configureJoinSound(opts: { enabled?: boolean; volume?: number; respectVisibility?: boolean }) {
+    if (typeof opts.enabled === "boolean") this.joinSoundEnabled = opts.enabled;
+    if (typeof opts.volume === "number") this.joinSoundVolume = Math.max(0, Math.min(1, opts.volume));
+    if (typeof opts.respectVisibility === "boolean") this.joinSoundRespectVisibility = opts.respectVisibility;
+    if (this.joinSoundEl) this.joinSoundEl.volume = this.joinSoundVolume;
+  }
+
+  // must be called from a user gesture (click/tap) to help autoplay policies
+  public async unlockAudio(): Promise<void> {
+    if (typeof window === "undefined") return;
+    if (this.audioUnlocked) return;
+
+    const a = this.ensureJoinSoundEl();
+    if (!a) {
+      this.audioUnlocked = true;
+      return;
+    }
+
+    try {
+      const prevMuted = a.muted;
+      const prevVol = a.volume;
+
+      a.muted = true;
+      a.volume = 0;
+
+      a.currentTime = 0;
+      const p = a.play();
+      if (p && typeof (p as any).catch === "function") await (p as any).catch(() => { });
+      a.pause();
+
+      a.currentTime = 0;
+      a.muted = prevMuted;
+      a.volume = prevVol;
+
+      this.audioUnlocked = true;
+    } catch {
+      // user can retry on next gesture
+    }
+  }
+
+  // ========================================================================
   // Devices
-  // ============================================================================
+  // ========================================================================
   public async listMediaDevices() {
     const devices = await navigator.mediaDevices.enumerateDevices();
     return {
@@ -643,9 +467,9 @@ export class JitsiEngine {
     this.mediaSettings.audioOutputId = deviceId || "default";
   }
 
-  // ============================================================================
+  // ========================================================================
   // Register <video> elements (for black-video recovery)
-  // ============================================================================
+  // ========================================================================
   public registerVideoElement(pid: string, el: HTMLVideoElement | null | undefined, kind: "video" | "screen" = "video") {
     if (!pid) return;
     const map = kind === "screen" ? this.screenElByPid : this.videoElByPid;
@@ -679,7 +503,7 @@ export class JitsiEngine {
     this.clearIntervalRef(this.videoHealthTimer);
     this.videoHealthTimer = null;
 
-    this.clearTimer(this.healthSoonTimer);
+    this.clearTimeoutRef(this.healthSoonTimer);
     this.healthSoonTimer = null;
 
     this.videoHealthState.clear();
@@ -724,20 +548,18 @@ export class JitsiEngine {
     return { ids: finalRemoteIds.slice(0, desiredLastN), desiredLastN };
   }
 
-  // ============================================================================
+  // ========================================================================
   // BEST-EFFORT KEYFRAME REQUESTS (PLI/FIR)
-  // ============================================================================
-  private requestKeyframe(pid: string, kind: "video" | "screen", reason: string) {
+  // ========================================================================
+  private requestKeyframe(pid: string, kind: "video" | "screen", _reason: string) {
     if (!this.conference || this.disposed) return;
 
     const p = this.participants[pid];
     const track = kind === "screen" ? p?.screenTrack : p?.videoTrack;
 
-    // 1) sometimes exists directly on track
     this.safe(() => (track as any)?.requestKeyFrame?.());
     this.safe(() => (track as any)?.requestKeyframe?.());
 
-    // 2) sometimes exists on conference internals (varies by version)
     const anyConf: any = this.conference as any;
     this.safe(() => anyConf?.rtc?.requestKeyFrame?.(pid));
     this.safe(() => anyConf?.rtc?._requestKeyframe?.(pid));
@@ -772,10 +594,9 @@ export class JitsiEngine {
     if (!this.conference || this.disposed) return;
 
     const now = Date.now();
-    // avoid spamming; enough to cover layer switches after leave/resub
     if (now - this.lastKeyframeRefreshAt < 700) return;
 
-    this.clearTimer(this.keyframeRefreshTimer);
+    this.clearTimeoutRef(this.keyframeRefreshTimer);
     this.keyframeRefreshTimer = setTimeout(() => {
       this.keyframeRefreshTimer = null;
       if (!this.conference || this.disposed) return;
@@ -788,179 +609,178 @@ export class JitsiEngine {
     }, delayMs);
   }
 
-  private healthTick() {
-    if (!this.conference || this.disposed) return;
-
-    const { ids } = this.getSubscribedRemoteIds();
-    if (!ids.length) return;
-
-    const now = Date.now();
-
-    // cleanup state for ids we don't care about
-    for (const pid of Array.from(this.videoHealthState.keys())) {
-      if (!ids.includes(pid)) this.videoHealthState.delete(pid);
-    }
-
-    for (const pid of ids) {
-      const p = this.participants[pid];
-      if (!p || p.isLocal) continue;
-
-      const hasScreen = !!p.screenTrack && this.screenElByPid.has(pid);
-      const kind: "video" | "screen" = hasScreen ? "screen" : "video";
-
-      const el = kind === "screen" ? this.screenElByPid.get(pid) : this.videoElByPid.get(pid);
-      const track = kind === "screen" ? p.screenTrack : p.videoTrack;
-      if (!el || !track) continue;
-
-      // ✅ avoid touching unmounted DOM nodes
-      if (!this.isLiveNode(el)) {
-        if (kind === "screen") this.screenElByPid.delete(pid);
-        else this.videoElByPid.delete(pid);
-        continue;
-      }
-
-      if (kind === "video" && p.videoMuted) {
-        const st = this.getOrInitHealth(pid);
-        st.stuckSince = null;
-        st.lastProgressAt = now;
-        st.lastFrameCount = this.getFrameCount(el);
-        st.lastCurrentTime = el.currentTime || 0;
-        continue;
-      }
-
-      const ready = el.readyState >= 2;
-      const hasSize = (el.videoWidth || 0) > 0 && (el.videoHeight || 0) > 0;
-
-      const st = this.getOrInitHealth(pid);
-      const frames = this.getFrameCount(el);
-      const curTime = Number(el.currentTime || 0);
-
-      let progressed = false;
-      if (frames != null && st.lastFrameCount != null) progressed = frames > st.lastFrameCount;
-      else progressed = curTime > (st.lastCurrentTime || 0);
-
-      if (ready && hasSize && progressed) {
-        st.lastProgressAt = now;
-        st.stuckSince = null;
-        st.lastFrameCount = frames;
-        st.lastCurrentTime = curTime;
-        continue;
-      }
-
-      if (st.stuckSince == null) st.stuckSince = now;
-      st.lastFrameCount = frames;
-      st.lastCurrentTime = curTime;
-
-      const stuckFor = now - st.stuckSince;
-      if (stuckFor < this.STUCK_THRESHOLD_MS) continue;
-
-      void this.recoverParticipantVideo(pid, kind, track, el, st);
-    }
-  }
-
-  private async recoverParticipantVideo(
-    pid: string,
-    kind: "video" | "screen",
-    track: any,
-    el: HTMLVideoElement,
-    st: {
-      lastFrameCount: number | null;
-      lastCurrentTime: number;
-      lastProgressAt: number;
-      stuckSince: number | null;
-      lastReattachAt: number;
-      lastBumpAt: number;
-      reattachAttemptsInWindow: number;
-      lastAttemptWindowAt: number;
-    }
-  ) {
-    if (!this.isLiveNode(el)) return;
-
-    const now = Date.now();
-    if (now - st.lastReattachAt < this.REATTACH_COOLDOWN_MS) return;
-
-    if (now - st.lastAttemptWindowAt > 12000) {
-      st.lastAttemptWindowAt = now;
-      st.reattachAttemptsInWindow = 0;
-    }
-    st.reattachAttemptsInWindow += 1;
-    st.lastReattachAt = now;
-
+  // ========================================================================
+  // Join sound (HTMLAudioElement)
+  // ========================================================================
+  private ensureJoinSoundEl(): HTMLAudioElement | null {
     try {
-      if (typeof track.detach === "function") {
-        this.safe(() => track.detach(el));
-        this.safe(() => track.detach());
+      if (!this.joinSoundEl) {
+        const a = new Audio("/sounds/join.wav");
+        a.preload = "auto";
+        a.volume = this.joinSoundVolume;
+        this.joinSoundEl = a;
       }
-
-      this.safe(() => ((el as any).srcObject = null));
-      await this.delay(40);
-
-      if (typeof track.attach === "function") this.safe(() => track.attach(el));
-      this.safe(() => void el.play().catch(() => { }));
-
-      // ✅ after reattach, request keyframe
-      this.requestKeyframe(pid, kind, "recoverParticipantVideo");
-
-      st.stuckSince = Date.now();
-      st.lastProgressAt = Date.now();
-
-      if (st.reattachAttemptsInWindow >= 2) this.bumpParticipantSubscription(pid, st, kind);
+      return this.joinSoundEl;
     } catch {
-      this.bumpParticipantSubscription(pid, st, kind);
+      return null;
     }
   }
 
-  private bumpParticipantSubscription(pid: string, st: { lastBumpAt: number }, kindHint?: "video" | "screen") {
-    const now = Date.now();
-    if (!this.conference || this.disposed) return;
-    if (now - (st.lastBumpAt || 0) < this.BUMP_COOLDOWN_MS) return;
+  private playJoinSound(pid?: string, _reason?: string) {
+    try {
+      if (!this.joinSoundEnabled) return;
+      if (this.joinSoundRespectVisibility && typeof document !== "undefined" && document.visibilityState === "hidden") return;
 
-    st.lastBumpAt = now;
+      const now = Date.now();
 
-    this.safe(() => {
-      const { ids, desiredLastN } = this.getSubscribedRemoteIds();
-      if (!ids.includes(pid)) return;
+      // global cooldown
+      if (now - this.lastJoinSoundAt < this.JOIN_SOUND_COOLDOWN_MS) return;
 
-      const h = this.pickReceiverConstraintHeight(desiredLastN);
-      const shouldSelect = this.shouldUseSelectParticipants(desiredLastN);
-
-      // ✅ small-room bump: do NOT touch selectParticipants (it can be the source of freezes)
-      if (!shouldSelect) {
-        this.tickleReceiverVideoConstraint(h, "bumpParticipantSubscription");
-        const p = this.participants[pid];
-        const kind: "video" | "screen" = kindHint || (!!p?.screenTrack && this.screenElByPid.has(pid) ? "screen" : "video");
-        this.requestKeyframe(pid, kind, "bumpParticipantSubscription:smallRoom");
-        return;
+      // per-participant cooldown
+      if (pid) {
+        const lastForPid = this.joinSoundByPid.get(pid) || 0;
+        if (now - lastForPid < this.JOIN_SOUND_PER_PID_COOLDOWN_MS) return;
       }
 
-      const original = ids.slice(0, desiredLastN);
-      const without = original.filter((x) => x !== pid);
+      const a = this.ensureJoinSoundEl();
+      if (!a) return;
 
-      this.safe(() => this.conference.selectParticipants?.(without));
+      a.volume = this.joinSoundVolume;
 
-      setTimeout(() => {
-        if (this.disposed || !this.conference) return;
-        this.safe(() => this.conference.selectParticipants?.(original));
+      // allow fast replays
+      a.currentTime = 0;
 
-        // ✅ after bump restore, ask for keyframe for that participant
-        const p = this.participants[pid];
-        const kind: "video" | "screen" =
-          kindHint || (!!p?.screenTrack && this.screenElByPid.has(pid) ? "screen" : "video");
+      const p = a.play();
+      if (p && typeof (p as any).catch === "function") (p as any).catch(() => { });
 
-        this.requestKeyframe(pid, kind, "bumpParticipantSubscription");
-      }, 220);
+      this.lastJoinSoundAt = now;
+      if (pid) this.joinSoundByPid.set(pid, now);
+    } catch (e) {
+      console.warn("Join sound failed:", e);
+    }
+  }
+
+  // ========================================================================
+  // Subscriptions patch helpers
+  // ========================================================================
+  private cancelPendingHardReset(_reason: string) {
+    this.clearTimeoutRef(this.subsHardResetTimer);
+    this.subsHardResetTimer = null;
+    this.subsHardResetInFlight = false;
+  }
+
+  // For small rooms we skip selectParticipants entirely
+  private shouldUseSelectParticipants(desiredLastN: number) {
+    return desiredLastN > 2;
+  }
+
+  // Receiver constraint tickle: 0 -> h to encourage fresh keyframe after leave/resubscribe
+  private tickleReceiverVideoConstraint(h: number, reason: string) {
+    if (!this.conference || this.disposed) return;
+    this.safe(() => this.conference.setReceiverVideoConstraint?.(0));
+    setTimeout(() => {
+      if (this.disposed || !this.conference) return;
+      this.safe(() => this.conference.setReceiverVideoConstraint?.(h));
+      this.scheduleKeyframeRefresh(90, `constraintTickle:${reason}`);
+    }, 110);
+  }
+
+  private scheduleConstraintTickle(delayMs: number, reason: string) {
+    if (!this.conference || this.disposed) return;
+    setTimeout(() => {
+      if (this.disposed || !this.conference) return;
+      try {
+        const finalRemoteIds = this.computeFinalRemoteIds();
+        const desiredLastN = Math.min(finalRemoteIds.length, this.MAX_LAST_N);
+        const h = this.pickReceiverConstraintHeight(desiredLastN);
+        this.tickleReceiverVideoConstraint(h, reason);
+      } catch { }
+    }, delayMs);
+  }
+
+  // ========================================================================
+  // Queues (bg/cam)
+  // ========================================================================
+  private enqueueBgOp(label: string, fn: () => Promise<void>) {
+    const id = ++this.bgOpSeq;
+    this.bgOpQueue = this.bgOpQueue
+      .catch(() => { })
+      .then(async () => {
+        await fn();
+      })
+      .catch((e) => console.warn(`[bgQ#${id}] FAIL ${label}:`, e));
+    return this.bgOpQueue;
+  }
+  private async waitBgIdle() {
+    try {
+      await this.bgOpQueue;
+    } catch { }
+  }
+  private enqueueCamOp(label: string, fn: () => Promise<void>) {
+    const id = ++this.camOpSeq;
+    this.camOpQueue = this.camOpQueue
+      .catch(() => { })
+      .then(async () => {
+        await fn();
+      })
+      .catch((e) => console.warn(`[camQ#${id}] FAIL ${label}:`, e));
+    return this.camOpQueue;
+  }
+
+  // ========================================================================
+  // Effect serializer
+  // ========================================================================
+  private async runEffectOpOnTrack(track: any, fn: () => Promise<void>) {
+    if (!track) return;
+    const prev = this.effectQueueByTrack.get(track) || Promise.resolve();
+    const opId = ++this.effectOpSeq;
+    const next = prev
+      .catch(() => { })
+      .then(async () => {
+        await fn();
+      })
+      .catch((e) => {
+        console.warn(`[effect#${opId}] fail`, e);
+        throw e;
+      });
+    this.effectQueueByTrack.set(track, next);
+    return next;
+  }
+  private async waitEffectIdle(track: any) {
+    const p = this.effectQueueByTrack.get(track);
+    if (!p) return;
+    try {
+      await p;
+    } catch { }
+  }
+  private async safeSetEffect(track: any, effect: any) {
+    if (!track || typeof track.setEffect !== "function") return;
+    await this.runEffectOpOnTrack(track, async () => {
+      const attempt = async () => track.setEffect(effect);
+      try {
+        await attempt();
+      } catch (e: any) {
+        const msg = String(e?.message || e || "");
+        if (msg.includes("setEffect already in progress")) {
+          await this.delay(120);
+          await attempt();
+        } else throw e;
+      }
     });
   }
+  private async safeDisposeTrack(track: any) {
+    if (!track) return;
+    await this.waitEffectIdle(track);
+    this.safe(() => track.dispose?.());
+  }
 
-  // ============================================================================
+  // ========================================================================
   // Join / Conference lifecycle
-  // ============================================================================
+  // ========================================================================
   async initAndJoin(roomName: string, userName: string, opts?: JitsiEngineOptions): Promise<void> {
-    // ✅ allow passing domain/paths here too
+    // allow passing domain/paths here too
     if (opts?.jitsiDomain) this.setJitsiDomain(opts.jitsiDomain);
     if (opts?.configPath || opts?.libPath) this.setJitsiScriptPaths({ configPath: opts.configPath, libPath: opts.libPath });
-
-    // ✅ allow passing join-sound options here too
     if (opts?.joinSound) this.configureJoinSound(opts.joinSound);
 
     const endpoints = this.getJitsiEndpoints();
@@ -970,10 +790,8 @@ export class JitsiEngine {
     this.lastJoinRoomName = roomName;
     this.lastJoinUserName = userName;
 
-    // guard double-init/join
     if (this.joinInFlight) return;
     this.joinInFlight = true;
-    this.joinedOnce = false;
     const myToken = ++this.joinToken;
 
     this.JitsiMeetJS = window.JitsiMeetJS;
@@ -990,7 +808,6 @@ export class JitsiEngine {
 
     this.JitsiMeetJS.init({ disableP2P: true, disableAudioLevels: true });
 
-    // ✅ UPDATED fallback uses current endpoints.host
     const serviceUrl = this.config.websocket || this.config.bosh || `wss://${endpoints.host}/xmpp-websocket`;
     const options = { hosts: this.config.hosts, serviceUrl, clientNode: this.config.clientNode, p2p: { enabled: false } };
 
@@ -1041,15 +858,15 @@ export class JitsiEngine {
 
     const applySubsSoon = (force = false) => {
       if (this.disposed) return;
-      this.clearTimer((this as any).__applySubsT);
-      (this as any).__applySubsT = setTimeout(() => {
+      this.clearTimeoutRef(this.applySubsSoonTimer);
+      this.applySubsSoonTimer = setTimeout(() => {
+        this.applySubsSoonTimer = null;
         if (this.disposed) return;
         this.scheduleApplyVideoSubscriptions(0, force);
       }, 80);
     };
 
-    // “topology changed” still schedules the rare hard reset for wedged stacks,
-    // but we will cancel any pending one when a user leaves.
+    // rare hard reset for wedged stacks, but cancel if someone leaves
     const topologyChanged = () => this.scheduleHardResetSubscriptions(4500);
 
     const isLocalCameraOrAudio = (track: any) => {
@@ -1079,7 +896,6 @@ export class JitsiEngine {
 
       this.localUserId = localId;
       this.joinInFlight = false;
-      this.joinedOnce = true;
 
       if (userName && typeof anyConf.setDisplayName === "function") anyConf.setDisplayName(userName);
 
@@ -1111,10 +927,8 @@ export class JitsiEngine {
     conf.on(events.conference.USER_JOINED, (id: string, user: any) => {
       if (this.disposed) return;
 
-      // ✅ play join sound only for remote participants
-      if (id && id !== this.localUserId) {
-        this.playJoinSound(id, "USER_JOINED");
-      }
+      // join sound for remote only
+      if (id && id !== this.localUserId) this.playJoinSound(id, "USER_JOINED");
 
       this.ensureRemoteParticipant(id, user?._displayName || "Guest");
       if (!this.tracksByParticipant.has(id)) this.tracksByParticipant.set(id, {});
@@ -1129,7 +943,7 @@ export class JitsiEngine {
     conf.on(events.conference.USER_LEFT, (id: string) => {
       if (this.disposed) return;
 
-      // ✅ critical: cancel any delayed hard reset scheduled earlier
+      // critical: cancel any delayed hard reset scheduled earlier
       this.cancelPendingHardReset("USER_LEFT");
 
       delete this.participants[id];
@@ -1144,13 +958,11 @@ export class JitsiEngine {
 
       this.emitParticipants();
 
-      // ✅ PATCH: on leave, DO NOT touch global hard resets / global nudges.
-      // ✅ Delay subs apply slightly to avoid racing Jitsi internal resubscribe.
+      // patched: delay subs apply to avoid racing internal resubscribe
       this.scheduleApplyVideoSubscriptions(650, true);
 
-      // ✅ Constraint tickle after leave is the "cheap" keyframe enforcer
+      // cheap keyframe enforcer
       this.scheduleConstraintTickle(720, "USER_LEFT");
-
       this.scheduleKeyframeRefresh(120, "USER_LEFT");
       this.triggerLeaveRecovery("USER_LEFT");
     });
@@ -1183,16 +995,13 @@ export class JitsiEngine {
       if (isLocalCameraOrAudio(track)) {
         applySubsSoon(false);
       } else {
-        // ✅ critical: cancel any delayed hard reset scheduled earlier
+        // critical: cancel any delayed hard reset scheduled earlier
         this.cancelPendingHardReset("TRACK_REMOVED(remote)");
 
-        // ✅ PATCH: for remote track removed, don't do global hard resets or setLastN(0) nudges.
-        // ✅ Delay subs apply slightly to avoid racing Jitsi internal resubscribe.
+        // patched: delay subs apply to avoid racing internal resubscribe
         this.scheduleApplyVideoSubscriptions(650, true);
 
-        // ✅ Constraint tickle after remote track removal
         this.scheduleConstraintTickle(720, "TRACK_REMOVED(remote)");
-
         this.scheduleKeyframeRefresh(140, "TRACK_REMOVED");
         this.triggerLeaveRecovery("TRACK_REMOVED");
       }
@@ -1213,9 +1022,9 @@ export class JitsiEngine {
     conf.join();
   }
 
-  // ============================================================================
+  // ========================================================================
   // Public controls
-  // ============================================================================
+  // ========================================================================
   public sendReaction(type: string) {
     this.broadcastLocalEvent({ kind: "reaction", reaction: type });
   }
@@ -1336,34 +1145,36 @@ export class JitsiEngine {
     }
   }
 
-  // ============================================================================
+  // ========================================================================
   // Dispose
-  // ============================================================================
+  // ========================================================================
   async dispose(): Promise<void> {
     this.disposed = true;
     this.joinInFlight = false;
-    this.joinedOnce = false;
 
-    this.clearTimer(this.subsApplyTimer);
-    this.clearTimer(this.subsHardResetTimer);
+    this.clearTimeoutRef(this.subsApplyTimer);
+    this.clearTimeoutRef(this.subsHardResetTimer);
     this.subsApplyTimer = null;
     this.subsHardResetTimer = null;
 
     this.clearIntervalRef(this.subsWatchdog);
     this.subsWatchdog = null;
 
-    this.clearTimer(this.postJoinHealTimer);
+    this.clearTimeoutRef(this.postJoinHealTimer);
     this.postJoinHealTimer = null;
 
-    this.clearTimer(this.resumeRecoverTimer);
+    this.clearTimeoutRef(this.resumeRecoverTimer);
     this.resumeRecoverTimer = null;
 
-    this.clearTimer(this.keyframeRefreshTimer);
+    this.clearTimeoutRef(this.keyframeRefreshTimer);
     this.keyframeRefreshTimer = null;
 
+    this.clearTimeoutRef(this.applySubsSoonTimer);
+    this.applySubsSoonTimer = null;
+
     // remove resume handlers
-    this.safe(() => (this as any).__resumeRemovers?.());
-    (this as any).__resumeRemovers = null;
+    this.safe(() => this.resumeRemovers?.());
+    this.resumeRemovers = null;
     this.resumeHandlersAttached = false;
 
     this.stopVideoHealthMonitor();
@@ -1417,15 +1228,14 @@ export class JitsiEngine {
     this.connection = null;
     this.localUserId = null;
 
-    // ✅ NEW: keep AudioContext (optional). If you prefer hard-stop, uncomment:
-    // try { await this.audioCtx?.close?.(); } catch {}
-    // this.audioCtx = null;
-    // this.audioUnlocked = false;
+    // join sound state
+    this.joinSoundByPid.clear();
+    this.lastJoinSoundAt = 0;
   }
 
-  // ============================================================================
+  // ========================================================================
   // Resume/self-heal
-  // ============================================================================
+  // ========================================================================
   private async resumeAllAudioElements() {
     try {
       const audios = Array.from(document.querySelectorAll("audio")) as HTMLAudioElement[];
@@ -1434,7 +1244,7 @@ export class JitsiEngine {
   }
 
   private schedulePostJoinSelfHeal() {
-    this.clearTimer(this.postJoinHealTimer);
+    this.clearTimeoutRef(this.postJoinHealTimer);
     this.postJoinHealTimer = setTimeout(() => {
       this.postJoinHealTimer = null;
       if (this.disposed) return;
@@ -1482,7 +1292,7 @@ export class JitsiEngine {
     window.addEventListener("online", onOnline);
     window.addEventListener("pageshow", onPageShow);
 
-    (this as any).__resumeRemovers = () => {
+    this.resumeRemovers = () => {
       this.safe(() => document.removeEventListener("visibilitychange", onVisibility));
       this.safe(() => window.removeEventListener("focus", onFocus));
       this.safe(() => window.removeEventListener("online", onOnline));
@@ -1573,10 +1383,15 @@ export class JitsiEngine {
     const savedQuality = this.qualityMode;
     const savedSelected = [...(this.selectedVideoIds || [])];
 
-    // ✅ keep current domain/paths too
     const savedJitsiDomain = this.jitsiDomainOrOrigin;
     const savedConfigPath = this.jitsiConfigPath;
     const savedLibPath = this.jitsiLibPath;
+
+    const savedJoinSound = {
+      enabled: this.joinSoundEnabled,
+      volume: this.joinSoundVolume,
+      respectVisibility: this.joinSoundRespectVisibility,
+    };
 
     await this.dispose().catch(() => { });
     this.disposed = false;
@@ -1591,6 +1406,8 @@ export class JitsiEngine {
     this.jitsiConfigPath = savedConfigPath;
     this.jitsiLibPath = savedLibPath;
 
+    this.configureJoinSound(savedJoinSound);
+
     this.lastSubsKey = "";
     this.lastSubsAppliedAt = 0;
     this.hardResetCooldownUntil = 0;
@@ -1598,9 +1415,9 @@ export class JitsiEngine {
     await this.initAndJoin(room, user);
   }
 
-  // ============================================================================
+  // ========================================================================
   // Local track helpers
-  // ============================================================================
+  // ========================================================================
   private getConferenceLocalVideoTrack(): any | null {
     try {
       const conf = this.conference;
@@ -1675,9 +1492,9 @@ export class JitsiEngine {
     return this.effectsSupported;
   }
 
-  // ============================================================================
+  // ========================================================================
   // Background effects: strategy + unified apply
-  // ============================================================================
+  // ========================================================================
   public setBackgroundStrategy(strategy: "auto" | "setEffect" | "replaceTrack") {
     this.bgStrategy = strategy;
     if (this.bgPrefs.mode !== "none") {
@@ -1799,7 +1616,6 @@ export class JitsiEngine {
     if (!this.effectsSupported) throw new Error("setEffect not supported");
     if (this.effectsCompatibility === "incompatible") throw new Error(`setEffect incompatible: ${this.effectsIncompatReason}`);
 
-    // skip if muted
     const wasMuted = (() => {
       try {
         return track.isMuted?.() === true;
@@ -1809,7 +1625,6 @@ export class JitsiEngine {
     })();
     if (wasMuted) return;
 
-    // ensure stream exists
     try {
       const ms = await Promise.resolve(track.getOriginalStream?.());
       if (!ms || typeof ms.getTracks !== "function") return;
@@ -1839,7 +1654,6 @@ export class JitsiEngine {
       await this.safeSetEffect(track, effect);
       this.videoEffect = effect;
 
-      // if it muted unexpectedly, unmute
       this.safeAsync(async () => {
         const nowMuted = track.isMuted?.() === true;
         if (!wasMuted && nowMuted && typeof track.unmute === "function") await track.unmute();
@@ -1909,7 +1723,7 @@ export class JitsiEngine {
     this.bgProcessedStream = null;
   }
 
-  private async disableBg_replaceTrack(reason: string, keepPrefs: boolean) {
+  private async disableBg_replaceTrack(_reason: string, keepPrefs: boolean) {
     if (!this.conference || this.disposed) return;
 
     const base = this.bgBaseVideoTrack;
@@ -1943,7 +1757,7 @@ export class JitsiEngine {
     this.bgImplMode = "none";
   }
 
-  private async enableBg_replaceTrack(reason: string) {
+  private async enableBg_replaceTrack(_reason: string) {
     if (!this.conference || this.disposed) return;
     if (this.bgPrefs.mode === "none") return;
     if (!this.localVideoTrack) return;
@@ -2110,16 +1924,15 @@ export class JitsiEngine {
     await this.enqueueBgOp("reapplyBgIfNeeded", () => this.applyBgNow("reapplyBgIfNeeded"));
   }
 
-  // ============================================================================
+  // ========================================================================
   // Local A/V ensure
-  // ============================================================================
+  // ========================================================================
   private async ensureLocalAudioTrack(): Promise<void> {
     if (this.disposed || !this.JitsiMeetJS || !this.conference || !this.localUserId) return;
 
     const local = this.participants[this.localUserId];
     if (local?.audioMuted) return;
 
-    // if current audio is usable, stop
     try {
       if (this.localAudioTrack) {
         const ms = await Promise.resolve(this.localAudioTrack.getOriginalStream?.());
@@ -2128,7 +1941,6 @@ export class JitsiEngine {
       }
     } catch { }
 
-    // adopt from conference if usable
     try {
       const confAudio = this.getConferenceLocalAudioTrack();
       if (confAudio) {
@@ -2146,7 +1958,6 @@ export class JitsiEngine {
       }
     } catch { }
 
-    // create fresh
     try {
       const tracks = await this.JitsiMeetJS.createLocalTracks({
         devices: ["audio"],
@@ -2171,7 +1982,6 @@ export class JitsiEngine {
   private async ensureLocalVideoTrack(): Promise<void> {
     if (this.disposed || !this.JitsiMeetJS || !this.conference) return;
 
-    // do not resurrect if user intentionally off
     try {
       if (this.localUserId && this.participants[this.localUserId]?.videoMuted) return;
     } catch { }
@@ -2179,7 +1989,6 @@ export class JitsiEngine {
     const needBase = this.bgImplMode === "replaceTrack" && this.bgBaseVideoTrack;
     const baseCandidate = needBase ? this.bgBaseVideoTrack : this.localVideoTrack;
 
-    // if candidate alive and (if replaceTrack) outgoing alive => done
     try {
       const ms = await Promise.resolve(baseCandidate?.getOriginalStream?.());
       const vt = ms?.getVideoTracks?.()?.[0];
@@ -2227,7 +2036,6 @@ export class JitsiEngine {
       return;
     }
 
-    // non-replaceTrack
     const oldVideo = this.localVideoTrack;
 
     if (oldVideo) {
@@ -2262,10 +2070,10 @@ export class JitsiEngine {
     await this.reapplyBgIfNeeded();
   }
 
-  // ============================================================================
+  // ========================================================================
   // Hard toggle camera (remove/add) — stable with BG
-  // ============================================================================
-  private async disableLocalVideoHard(reason: string) {
+  // ========================================================================
+  private async disableLocalVideoHard(_reason: string) {
     if (this.disposed || !this.conference || !this.localUserId) return;
     await this.waitBgIdle();
 
@@ -2283,7 +2091,6 @@ export class JitsiEngine {
       await this.waitEffectIdle(track);
       await this.safeAsync(async () => this.clearAnyBg(true, "disableLocalVideoHard"));
 
-      // refresh to actual conf track (base after bg clear)
       track = this.getConferenceLocalVideoTrack() || this.localVideoTrack || track;
 
       await this.safeAsync(async () => this.conference.removeTrack?.(track));
@@ -2314,7 +2121,7 @@ export class JitsiEngine {
     }
   }
 
-  private async enableLocalVideoHard(reason: string) {
+  private async enableLocalVideoHard(_reason: string) {
     if (this.disposed || !this.JitsiMeetJS || !this.conference || !this.localUserId) return;
 
     try {
@@ -2332,7 +2139,6 @@ export class JitsiEngine {
 
       await this.replaceOrAddLocalVideoTrack(newVideo);
 
-      // reset bg pointers (prefs stay)
       this.bgBaseVideoTrack = null;
       this.bgProcessedTrack = null;
       this.bgProcessedStream = null;
@@ -2362,9 +2168,9 @@ export class JitsiEngine {
     }
   }
 
-  // ============================================================================
-  // Input devices (kept; reduced noise)
-  // ============================================================================
+  // ========================================================================
+  // Input devices
+  // ========================================================================
   public async applyInputDevices(opts: { videoInputId: string; audioInputId: string }) {
     const { videoInputId, audioInputId } = opts;
 
@@ -2442,9 +2248,9 @@ export class JitsiEngine {
     return { audio: this.localAudioTrack, video: this.localVideoTrack };
   }
 
-  // ============================================================================
+  // ========================================================================
   // Create initial local tracks
-  // ============================================================================
+  // ========================================================================
   private async createLocalTracks() {
     if (!this.JitsiMeetJS || !this.conference || !this.localUserId) return;
 
@@ -2495,12 +2301,12 @@ export class JitsiEngine {
     }
   }
 
-  // ============================================================================
+  // ========================================================================
   // Subscriptions
-  // ============================================================================
+  // ========================================================================
   private scheduleApplyVideoSubscriptions(delayMs = 150, force = false) {
     if (!this.conference || this.disposed) return;
-    this.clearTimer(this.subsApplyTimer);
+    this.clearTimeoutRef(this.subsApplyTimer);
     this.subsApplyTimer = setTimeout(() => {
       this.subsApplyTimer = null;
       this.applyVideoSubscriptions(force);
@@ -2509,21 +2315,10 @@ export class JitsiEngine {
 
   private scheduleHardResetSubscriptions(delayMs = 4500) {
     if (!this.conference || this.disposed) return;
-    this.clearTimer(this.subsHardResetTimer);
+    this.clearTimeoutRef(this.subsHardResetTimer);
     this.subsHardResetTimer = setTimeout(() => {
       this.subsHardResetTimer = null;
       this.hardResetAndApplyVideoSubscriptions();
-    }, delayMs);
-  }
-
-  private scheduleSoftResetSubscriptions(delayMs: number) {
-    if (!this.conference || this.disposed) return;
-    if (Date.now() < this.softResetCooldownUntil) return;
-
-    this.clearTimer(this.softResetTimer);
-    this.softResetTimer = setTimeout(() => {
-      this.softResetTimer = null;
-      this.softResetAndApplyVideoSubscriptions();
     }, delayMs);
   }
 
@@ -2596,14 +2391,12 @@ export class JitsiEngine {
       this.conference.setReceiverVideoConstraint?.(h);
       this.conference.setReceiverAudioConstraint?.(true);
 
-      // ✅ Skip selectParticipants for small rooms (prevents "stuck waiting keyframe" stalls)
+      // Skip selectParticipants for small rooms
       if (shouldSelect && typeof this.conference.selectParticipants === "function") {
         this.conference.selectParticipants(finalRemoteIds.slice(0, desiredLastN));
       }
 
-      // ✅ after any subs apply, request keyframes
       this.scheduleKeyframeRefresh(120, "applyVideoSubscriptions");
-
       this.scheduleHealthTickSoon();
     } catch { }
   }
@@ -2622,12 +2415,11 @@ export class JitsiEngine {
       const h = this.pickReceiverConstraintHeight(desiredLastN);
       const shouldSelect = this.shouldUseSelectParticipants(desiredLastN);
 
-      // NOTE: kept for rare "stack is wedged" cases, but avoid it for small rooms.
+      // kept for rare wedged cases; avoid global nudge for small rooms
       if (shouldSelect) {
         this.safe(() => this.conference.selectParticipants?.([]));
         this.safe(() => this.conference.setLastN?.(0));
       } else {
-        // small rooms: tickle instead of global nudge
         this.tickleReceiverVideoConstraint(h, "hardReset:smallRoom");
       }
 
@@ -2659,58 +2451,9 @@ export class JitsiEngine {
     }
   }
 
-  private softResetAndApplyVideoSubscriptions() {
-    if (!this.conference || this.disposed || this.softResetInFlight) return;
-    const now = Date.now();
-    if (now < this.softResetCooldownUntil) return;
-
-    this.softResetInFlight = true;
-
-    try {
-      const finalRemoteIds = this.computeFinalRemoteIds();
-      const desiredLastN = Math.min(finalRemoteIds.length, this.MAX_LAST_N);
-      const h = this.pickReceiverConstraintHeight(desiredLastN);
-      const shouldSelect = this.shouldUseSelectParticipants(desiredLastN);
-
-      // NOTE: kept but not used as a leave nudge. Also avoid in small rooms.
-      if (shouldSelect) {
-        this.safe(() => this.conference.selectParticipants?.([]));
-        this.safe(() => this.conference.setLastN?.(0));
-      } else {
-        this.tickleReceiverVideoConstraint(h, "softReset:smallRoom");
-      }
-
-      setTimeout(() => {
-        if (this.disposed || !this.conference) {
-          this.softResetInFlight = false;
-          return;
-        }
-        try {
-          this.conference.setLastN?.(desiredLastN);
-          this.conference.setReceiverVideoConstraint?.(h);
-          this.conference.setReceiverAudioConstraint?.(true);
-
-          if (shouldSelect) {
-            this.conference.selectParticipants?.(finalRemoteIds.slice(0, desiredLastN));
-          }
-
-          this.lastSubsKey = "";
-          this.lastSubsAppliedAt = Date.now();
-        } finally {
-          this.softResetCooldownUntil = Date.now() + 3500;
-          this.softResetInFlight = false;
-          this.scheduleHealthTickSoon();
-          this.scheduleKeyframeRefresh(160, "softResetAndApplyVideoSubscriptions");
-        }
-      }, 180);
-    } catch {
-      this.softResetInFlight = false;
-    }
-  }
-
-  // ============================================================================
-  // Leave recovery (patched lightweight)
-  // ============================================================================
+  // ========================================================================
+  // Leave recovery (lightweight)
+  // ========================================================================
   private async reattachAllSubscribedRemoteVideos(reason: string) {
     if (!this.conference || this.disposed) return;
 
@@ -2737,7 +2480,6 @@ export class JitsiEngine {
         if (typeof track.attach === "function") this.safe(() => track.attach(el));
         this.safe(() => void el.play().catch(() => { }));
 
-        // ✅ request keyframe after reattach
         this.requestKeyframe(pid, kind, `reattachAllSubscribedRemoteVideos:${reason}`);
       } catch { }
     }
@@ -2755,7 +2497,6 @@ export class JitsiEngine {
     const { ids } = this.getSubscribedRemoteIds();
     if (!ids.length) return;
 
-    // ✅ lightweight leave recovery = reattach + keyframes
     setTimeout(() => {
       if (!this.disposed) void this.reattachAllSubscribedRemoteVideos(`leaveRecovery:now:${reason}`);
     }, 0);
@@ -2768,9 +2509,169 @@ export class JitsiEngine {
     this.scheduleHealthTickSoon();
   }
 
-  // ============================================================================
+  // ========================================================================
+  // Health tick (black video recovery)
+  // ========================================================================
+  private healthTick() {
+    if (!this.conference || this.disposed) return;
+
+    const { ids } = this.getSubscribedRemoteIds();
+    if (!ids.length) return;
+
+    const now = Date.now();
+
+    for (const pid of Array.from(this.videoHealthState.keys())) {
+      if (!ids.includes(pid)) this.videoHealthState.delete(pid);
+    }
+
+    for (const pid of ids) {
+      const p = this.participants[pid];
+      if (!p || p.isLocal) continue;
+
+      const hasScreen = !!p.screenTrack && this.screenElByPid.has(pid);
+      const kind: "video" | "screen" = hasScreen ? "screen" : "video";
+
+      const el = kind === "screen" ? this.screenElByPid.get(pid) : this.videoElByPid.get(pid);
+      const track = kind === "screen" ? p.screenTrack : p.videoTrack;
+      if (!el || !track) continue;
+
+      if (!this.isLiveNode(el)) {
+        if (kind === "screen") this.screenElByPid.delete(pid);
+        else this.videoElByPid.delete(pid);
+        continue;
+      }
+
+      if (kind === "video" && p.videoMuted) {
+        const st = this.getOrInitHealth(pid);
+        st.stuckSince = null;
+        st.lastProgressAt = now;
+        st.lastFrameCount = this.getFrameCount(el);
+        st.lastCurrentTime = el.currentTime || 0;
+        continue;
+      }
+
+      const ready = el.readyState >= 2;
+      const hasSize = (el.videoWidth || 0) > 0 && (el.videoHeight || 0) > 0;
+
+      const st = this.getOrInitHealth(pid);
+      const frames = this.getFrameCount(el);
+      const curTime = Number(el.currentTime || 0);
+
+      let progressed = false;
+      if (frames != null && st.lastFrameCount != null) progressed = frames > st.lastFrameCount;
+      else progressed = curTime > (st.lastCurrentTime || 0);
+
+      if (ready && hasSize && progressed) {
+        st.lastProgressAt = now;
+        st.stuckSince = null;
+        st.lastFrameCount = frames;
+        st.lastCurrentTime = curTime;
+        continue;
+      }
+
+      if (st.stuckSince == null) st.stuckSince = now;
+      st.lastFrameCount = frames;
+      st.lastCurrentTime = curTime;
+
+      const stuckFor = now - st.stuckSince;
+      if (stuckFor < this.STUCK_THRESHOLD_MS) continue;
+
+      void this.recoverParticipantVideo(pid, kind, track, el, st);
+    }
+  }
+
+  private async recoverParticipantVideo(
+    pid: string,
+    kind: "video" | "screen",
+    track: any,
+    el: HTMLVideoElement,
+    st: {
+      lastFrameCount: number | null;
+      lastCurrentTime: number;
+      lastProgressAt: number;
+      stuckSince: number | null;
+      lastReattachAt: number;
+      lastBumpAt: number;
+      reattachAttemptsInWindow: number;
+      lastAttemptWindowAt: number;
+    }
+  ) {
+    if (!this.isLiveNode(el)) return;
+
+    const now = Date.now();
+    if (now - st.lastReattachAt < this.REATTACH_COOLDOWN_MS) return;
+
+    if (now - st.lastAttemptWindowAt > 12000) {
+      st.lastAttemptWindowAt = now;
+      st.reattachAttemptsInWindow = 0;
+    }
+    st.reattachAttemptsInWindow += 1;
+    st.lastReattachAt = now;
+
+    try {
+      if (typeof track.detach === "function") {
+        this.safe(() => track.detach(el));
+        this.safe(() => track.detach());
+      }
+
+      this.safe(() => ((el as any).srcObject = null));
+      await this.delay(40);
+
+      if (typeof track.attach === "function") this.safe(() => track.attach(el));
+      this.safe(() => void el.play().catch(() => { }));
+
+      this.requestKeyframe(pid, kind, "recoverParticipantVideo");
+
+      st.stuckSince = Date.now();
+      st.lastProgressAt = Date.now();
+
+      if (st.reattachAttemptsInWindow >= 2) this.bumpParticipantSubscription(pid, st, kind);
+    } catch {
+      this.bumpParticipantSubscription(pid, st, kind);
+    }
+  }
+
+  private bumpParticipantSubscription(pid: string, st: { lastBumpAt: number }, kindHint?: "video" | "screen") {
+    const now = Date.now();
+    if (!this.conference || this.disposed) return;
+    if (now - (st.lastBumpAt || 0) < this.BUMP_COOLDOWN_MS) return;
+
+    st.lastBumpAt = now;
+
+    this.safe(() => {
+      const { ids, desiredLastN } = this.getSubscribedRemoteIds();
+      if (!ids.includes(pid)) return;
+
+      const h = this.pickReceiverConstraintHeight(desiredLastN);
+      const shouldSelect = this.shouldUseSelectParticipants(desiredLastN);
+
+      if (!shouldSelect) {
+        this.tickleReceiverVideoConstraint(h, "bumpParticipantSubscription");
+        const p = this.participants[pid];
+        const kind: "video" | "screen" = kindHint || (!!p?.screenTrack && this.screenElByPid.has(pid) ? "screen" : "video");
+        this.requestKeyframe(pid, kind, "bumpParticipantSubscription:smallRoom");
+        return;
+      }
+
+      const original = ids.slice(0, desiredLastN);
+      const without = original.filter((x) => x !== pid);
+
+      this.safe(() => this.conference.selectParticipants?.(without));
+
+      setTimeout(() => {
+        if (this.disposed || !this.conference) return;
+        this.safe(() => this.conference.selectParticipants?.(original));
+
+        const p = this.participants[pid];
+        const kind: "video" | "screen" = kindHint || (!!p?.screenTrack && this.screenElByPid.has(pid) ? "screen" : "video");
+        this.requestKeyframe(pid, kind, "bumpParticipantSubscription");
+      }, 220);
+    });
+  }
+
+  // ========================================================================
   // Endpoint messaging (reactions)
-  // ============================================================================
+  // ========================================================================
   private broadcastLocalEvent(ev: any) {
     if (!this.conference || !this.localUserId) return;
     for (const id of Object.keys(this.participants)) {
@@ -2786,9 +2687,9 @@ export class JitsiEngine {
     }
   }
 
-  // ============================================================================
+  // ========================================================================
   // Participants / DTO
-  // ============================================================================
+  // ========================================================================
   private ensureLocalParticipant(displayName: string) {
     if (!this.localUserId) return;
     const id = this.localUserId;
@@ -2834,9 +2735,9 @@ export class JitsiEngine {
     this.callbacks.onParticipantsUpdate?.(arr);
   }
 
-  // ============================================================================
+  // ========================================================================
   // Tracks
-  // ============================================================================
+  // ========================================================================
   private handleTrackAdded(track: any) {
     const pid = this.resolveTrackParticipantId(track);
     if (!pid) return;
