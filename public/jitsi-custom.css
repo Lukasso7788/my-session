@@ -1,6 +1,7 @@
 /* jitsi-custom.css
-   MUST be served from the SAME Jitsi domain:
-   https://meet2.mysession.club/jitsi-custom.css
+   NOTE:
+   - В идеале Jitsi любит "same domain", но мы делаем фон прозрачным, чтобы внешний контейнер (MySession) задавал цвет.
+   - Если будешь грузить CSS НЕ с meet-домена — зависит от CSP. Если CSP блокирует, тогда этот файл надо класть на meet-* домены.
 */
 
 /* =========================
@@ -9,7 +10,7 @@
    /usr/share/jitsi-meet/fonts/inter/Inter-roman.var.woff2
    /usr/share/jitsi-meet/fonts/inter/Inter-italic.var.woff2
    And they must be reachable as:
-   https://meet2.mysession.club/fonts/inter/Inter-roman.var.woff2
+   https://meet-*.mysession.club/fonts/inter/Inter-roman.var.woff2
    ========================= */
 
 @font-face {
@@ -31,6 +32,10 @@
 /* Force Inter as best-effort everywhere */
 :root {
     --mysession-font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+
+    /* ====== TILE LAYOUT TUNING ====== */
+    --mysession-gap: 14px;
+    --mysession-cols: 2;
 }
 
 html,
@@ -38,6 +43,7 @@ body {
     font-family: var(--mysession-font) !important;
 }
 
+/* Avoid breaking icons */
 body *:not(svg):not(path) {
     font-family: var(--mysession-font) !important;
 }
@@ -59,6 +65,24 @@ body,
     margin: 0 !important;
     padding: 0 !important;
     overflow: hidden !important;
+}
+
+/* =========================
+   ✅ IMPORTANT: let MySession control background
+   Make Jitsi page background TRANSPARENT
+   so your outer container (light/dark) is visible.
+   ========================= */
+html,
+body,
+#react-root,
+#videoconference_page,
+#layout_wrapper,
+#videospace,
+.videospace,
+#largeVideoContainer,
+.large-video-container,
+#largeVideoWrapper {
+    background: transparent !important;
 }
 
 /* ====== KILL ALL TOOLBARS / STRIPS / HEADERS ====== */
@@ -84,18 +108,14 @@ body,
     pointer-events: none !important;
 }
 
-/* filmstrip / thumbnails */
+/* filmstrip / thumbnails (DO NOT kill tile grid containers broadly) */
 .filmstrip,
 #filmstrip,
 .filmstrip__videos,
 .filmstrip__toolbar,
 .filmstrip__toolbox,
 .thumbnail-filmstrip,
-#thumbnail-filmstrip,
-.videogrid,
-#videogrid,
-.remote-videos,
-#remote-videos {
+#thumbnail-filmstrip {
     display: none !important;
     visibility: hidden !important;
     pointer-events: none !important;
@@ -131,16 +151,8 @@ body,
 }
 
 /* =========================================================
-   ✅ EXACT MATCH FROM YOUR DEVTOOLS:
-   - top pill is inside:
-     div.details-container
-       div#autoHide.subject.visible
-         div.subject-info-container
-           span.css-xxxx-timer
-   So we kill those containers directly.
+   ✅ Hide “details/header overlay” area (subject/timer pills)
    ========================================================= */
-
-/* kill the whole "details/header overlay" area */
 .details-container,
 #autoHide,
 .subject.visible,
@@ -226,6 +238,7 @@ a#watermark,
     display: none !important;
     visibility: hidden !important;
     opacity: 0 !important;
+    pointer-events: none !important;
 }
 
 /* extra aggressive (when watermark is inside large video container) */
@@ -244,7 +257,7 @@ a#watermark,
     pointer-events: none !important;
 }
 
-/* "info"/"stats"/"performance" buttons often live in header/toolbox on hover */
+/* “info/stats” buttons often live in header/toolbox on hover */
 [aria-label*="Performance" i],
 [aria-label*="Stats" i],
 [aria-label*="Statistics" i],
@@ -259,11 +272,10 @@ a#watermark,
     pointer-events: none !important;
 }
 
-/* some builds render an overlay wrapper on hover */
+/* Some overlays exist, disable pointer events (don’t break dialogs) */
 div[class*="overlay" i],
 div[class*="chrome" i],
 div[class*="header" i] {
-    /* don't fully hide overlays to avoid breaking dialogs, but disable pointer events */
     pointer-events: none !important;
 }
 
@@ -276,6 +288,128 @@ div[class*="header" i] {
 .videospace {
     height: 100% !important;
     width: 100% !important;
+}
+
+/* =========================================================
+   ✅ MYSESSION TILE LAYOUT (THE FIX YOU ASKED FOR)
+   - Force tiles to wrap into a grid (NOT a single line)
+   - Columns logic:
+       1 tile  -> 1 col
+       2-4     -> 2 cols
+       5-6     -> 3 cols
+       7-8     -> 4 cols
+       9-10    -> 5 cols
+       11-12   -> 6 cols
+       13-14   -> 7 cols
+       15-16   -> 8 cols
+   Works best in Chromium (supports :has()).
+   ========================================================= */
+
+/* Target most common tile containers across Jitsi builds */
+#tileViewContainer,
+.tile-view-container,
+div[id*="tileViewContainer" i],
+div[class*="tileViewContainer" i] {
+    /* defaults */
+    --mysession-cols: 2;
+
+    display: flex !important;
+    flex-wrap: wrap !important;
+
+    /* centers last row automatically */
+    justify-content: center !important;
+    align-content: center !important;
+
+    gap: var(--mysession-gap) !important;
+    padding: var(--mysession-gap) !important;
+
+    box-sizing: border-box !important;
+    width: 100% !important;
+    height: 100% !important;
+
+    /* just in case */
+    overflow: hidden !important;
+}
+
+/* If only 1 tile -> 1 column */
+#tileViewContainer:not(:has(> :nth-child(2))),
+.tile-view-container:not(:has(> :nth-child(2))),
+div[id*="tileViewContainer" i]:not(:has(> :nth-child(2))),
+div[class*="tileViewContainer" i]:not(:has(> :nth-child(2))) {
+    --mysession-cols: 1;
+}
+
+/* 5-6 tiles -> 3 columns */
+#tileViewContainer:has(> :nth-child(5)):not(:has(> :nth-child(7))),
+.tile-view-container:has(> :nth-child(5)):not(:has(> :nth-child(7))),
+div[id*="tileViewContainer" i]:has(> :nth-child(5)):not(:has(> :nth-child(7))),
+div[class*="tileViewContainer" i]:has(> :nth-child(5)):not(:has(> :nth-child(7))) {
+    --mysession-cols: 3;
+}
+
+/* 7-8 tiles -> 4 columns */
+#tileViewContainer:has(> :nth-child(7)):not(:has(> :nth-child(9))),
+.tile-view-container:has(> :nth-child(7)):not(:has(> :nth-child(9))),
+div[id*="tileViewContainer" i]:has(> :nth-child(7)):not(:has(> :nth-child(9))),
+div[class*="tileViewContainer" i]:has(> :nth-child(7)):not(:has(> :nth-child(9))) {
+    --mysession-cols: 4;
+}
+
+/* 9-10 tiles -> 5 columns */
+#tileViewContainer:has(> :nth-child(9)):not(:has(> :nth-child(11))),
+.tile-view-container:has(> :nth-child(9)):not(:has(> :nth-child(11))),
+div[id*="tileViewContainer" i]:has(> :nth-child(9)):not(:has(> :nth-child(11))),
+div[class*="tileViewContainer" i]:has(> :nth-child(9)):not(:has(> :nth-child(11))) {
+    --mysession-cols: 5;
+}
+
+/* 11-12 tiles -> 6 columns */
+#tileViewContainer:has(> :nth-child(11)):not(:has(> :nth-child(13))),
+.tile-view-container:has(> :nth-child(11)):not(:has(> :nth-child(13))),
+div[id*="tileViewContainer" i]:has(> :nth-child(11)):not(:has(> :nth-child(13))),
+div[class*="tileViewContainer" i]:has(> :nth-child(11)):not(:has(> :nth-child(13))) {
+    --mysession-cols: 6;
+}
+
+/* 13-14 tiles -> 7 columns */
+#tileViewContainer:has(> :nth-child(13)):not(:has(> :nth-child(15))),
+.tile-view-container:has(> :nth-child(13)):not(:has(> :nth-child(15))),
+div[id*="tileViewContainer" i]:has(> :nth-child(13)):not(:has(> :nth-child(15))),
+div[class*="tileViewContainer" i]:has(> :nth-child(13)):not(:has(> :nth-child(15))) {
+    --mysession-cols: 7;
+}
+
+/* 15-16+ tiles -> 8 columns (for your max 16 default) */
+#tileViewContainer:has(> :nth-child(15)),
+.tile-view-container:has(> :nth-child(15)),
+div[id*="tileViewContainer" i]:has(> :nth-child(15)),
+div[class*="tileViewContainer" i]:has(> :nth-child(15)) {
+    --mysession-cols: 8;
+}
+
+/* The tiles themselves: force width by columns */
+#tileViewContainer>*,
+.tile-view-container>*,
+div[id*="tileViewContainer" i]>*,
+div[class*="tileViewContainer" i]>* {
+    box-sizing: border-box !important;
+
+    /* width per column; gap already accounted for */
+    flex: 0 0 calc((100% - (var(--mysession-cols) - 1) * var(--mysession-gap)) / var(--mysession-cols)) !important;
+    max-width: calc((100% - (var(--mysession-cols) - 1) * var(--mysession-gap)) / var(--mysession-cols)) !important;
+
+    min-width: 0 !important;
+}
+
+/* Some Jitsi builds nest the tile one level deeper; try to apply too */
+#tileViewContainer>*>*,
+.tile-view-container>*>* {
+    max-width: 100% !important;
+}
+
+/* Make sure videos don’t overflow weirdly */
+video {
+    object-fit: cover !important;
 }
 
 /* IMPORTANT:

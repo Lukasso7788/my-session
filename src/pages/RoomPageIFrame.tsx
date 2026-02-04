@@ -328,10 +328,7 @@ async function createJitsiApiWithFallback(args: {
 
             args.parentNode.innerHTML = "";
 
-            const cssUrl =
-                args.cssPathOnJitsiDomain && args.cssPathOnJitsiDomain.startsWith("/")
-                    ? `https://${domain}${args.cssPathOnJitsiDomain}?v=${Date.now()}`
-                    : undefined;
+            const cssUrl = `${window.location.origin}${JITSI_CUSTOM_CSS_PATH}?v=${Date.now()}`;
 
             const api = new window.JitsiMeetExternalAPI(domain, {
                 roomName: args.roomName,
