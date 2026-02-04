@@ -444,8 +444,13 @@ export default function SessionCard({
         setIsHoveringCancel(false);
     };
 
-    // ✅ FIX: go to RoomPage (not iframe)
-    const handleJoinRoom = () => navigate(`/room/${session.id}`);
+    // ✅ Go to IFRAME room (back to original behavior)
+    const handleJoinRoom = () => {
+        try {
+            onJoin(session.id);
+        } catch { }
+        navigate(`/room-iframe/${session.id}`);
+    };
 
     // ✅ avatars stack
     const maxStack = 6;
