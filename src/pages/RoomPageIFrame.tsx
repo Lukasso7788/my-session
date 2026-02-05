@@ -390,7 +390,6 @@ async function createJitsiApiWithFallback(args: {
                     DISABLE_DOMINANT_SPEAKER_INDICATOR: true,
 
                     DEFAULT_REMOTE_DISPLAY_NAME: "Guest",
-                    TILE_VIEW_MAX_COLUMNS: 2,
                 },
             });
 
@@ -432,6 +431,7 @@ function Icon({
     | "theme-sun"
     | "theme-moon"
     | "timer";
+    | "pip";
     theme: RoomTheme;
     className?: string;
     alt?: string;
@@ -670,6 +670,10 @@ export default function RoomPageIFrame() {
     // MOBILE ⋯ MENU (<=480)
     const [showMoreMenu, setShowMoreMenu] = useState(false);
     const moreMenuRef = useRef<HTMLDivElement | null>(null);
+    // Picture-in-Picture (Document PiP API)
+    const pipWindowRef = useRef<Window | null>(null);
+    const pipIframeParentRef = useRef<HTMLElement | null>(null);
+    const [pipActive, setPipActive] = useState(false);
 
     const openRightTab = (tab: RightPanelTab) => {
         if (!tab) {
@@ -721,6 +725,16 @@ export default function RoomPageIFrame() {
         };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            try {
+                if (pipWindowRef.current && !pipWindowRef.current.closed) {
+                    pipWindowRef.current.close();
+                }
+            } catch { }
+        };
     }, []);
 
     // =========================
@@ -2143,6 +2157,85 @@ export default function RoomPageIFrame() {
         } catch { }
     };
 
+    const togglePiP = async () => {
+        const api = apiRef.current;
+        if (!api) return;
+
+        // Jitsi iframe element (мы не лезем внутрь iframe, просто переносим его)
+        const iframe = (typeof api.getIFrame === "function" ? api.getIFrame() : null) as HTMLIFrameElement | null;
+        if (!iframe) return;
+
+        // If already in PiP window -> close it (и вернём iframe обратно)
+        if (pipWindowRef.current && !pipWindowRef.current.closed) {
+            try {
+                pipWindowRef.current.close();
+            } catch { }
+            return;
+        }
+
+        const dipip = (window as any).documentPictureInPicture;
+
+        // fallback: если Document PiP нет — откроем маленькое окно (не PiP, но хотя бы “поп-аут”)
+        if (!dipip || typeof dipip.requestWindow !== "function") {
+            try {
+                window.open(window.location.href, "_blank", "width=520,height=360");
+            } catch { }
+            return;
+        }
+
+        // запоминаем, куда вернуть iframe
+        pipIframeParentRef.current = iframe.parentElement as HTMLElement | null;
+
+        try {
+            const pipWin = (await dipip.requestWindow({
+                width: 520,
+                height: 360,
+            })) as Window;
+
+            pipWindowRef.current = pipWin;
+            setPipActive(true);
+
+            // базовый стиль окна
+            try {
+                pipWin.document.body.style.margin = "0";
+                pipWin.document.body.style.background = "black";
+                pipWin.document.body.style.width = "100%";
+                pipWin.document.body.style.height = "100%";
+            } catch { }
+
+            // делаем iframe на весь размер PiP окна
+            try {
+                iframe.style.border = "0";
+                iframe.style.width = "100%";
+                iframe.style.height = "100%";
+                iframe.style.display = "block";
+            } catch { }
+
+            // переносим iframe в PiP окно
+            try {
+                pipWin.document.body.appendChild(iframe);
+            } catch { }
+
+            // когда PiP окно закрывается — вернуть iframe обратно
+            const restore = () => {
+                try {
+                    const parent = pipIframeParentRef.current;
+                    if (parent) parent.appendChild(iframe);
+                } catch { }
+                pipWindowRef.current = null;
+                setPipActive(false);
+            };
+
+            // pagehide чаще всего ловит закрытие PiP окна
+            try {
+                pipWin.addEventListener("pagehide", restore, { once: true } as any);
+                pipWin.addEventListener("unload", restore, { once: true } as any);
+            } catch { }
+        } catch {
+            // если requestWindow упал — ничего
+        }
+    };
+
     const hangup = async () => {
         const api = apiRef.current;
 
@@ -2670,6 +2763,19 @@ export default function RoomPageIFrame() {
                                                 <Icon name="intentions" theme={theme} className="w-4 h-4 opacity-90" />
                                                 <span>Intentions</span>
                                             </button>
+                                            <button
+                                                onClick={() => {
+                                                    void togglePiP();
+                                                    setShowMoreMenu(false);
+                                                }}
+                                                className={
+                                                    `w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ` +
+                                                    (isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5")
+                                                }
+                                            >
+                                                <Icon name="pip" theme={theme} className="w-4 h-4 opacity-90" />
+                                                <span>Picture-in-Picture</span>
+                                            </button>
                                         </div>
                                     </div>
                                 )}
@@ -2720,6 +2826,17 @@ export default function RoomPageIFrame() {
                                 title="Share screen"
                             >
                                 <Icon name="screen-share" theme={theme} className="w-5 h-5" />
+                            </button>
+
+                            <button
+                                onClick={() => void togglePiP()}
+                                className={
+                                    "max-[480px]:hidden w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
+                                    (pipActive ? "bg-blue-600 hover:bg-blue-700" : ctlBtnBase)
+                                }
+                                title="Picture-in-Picture"
+                            >
+                                <Icon name="pip" theme={theme} className="w-5 h-5" />
                             </button>
 
                             {/* reactions */}
