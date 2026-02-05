@@ -430,7 +430,7 @@ function Icon({
     | "reaction"
     | "theme-sun"
     | "theme-moon"
-    | "timer";
+    | "timer"
     | "pip";
     theme: RoomTheme;
     className?: string;
