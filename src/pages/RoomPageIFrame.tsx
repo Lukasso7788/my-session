@@ -96,17 +96,39 @@ function sanitizeSlug(input: string) {
 // ===============================
 // JITSI DOMAINS (PRIMARY + FALLBACK)
 // ===============================
+// ===============================
+// JITSI DOMAINS (PRIMARY + FALLBACK) + ✅ TEST OVERRIDE
+// ===============================
+const DEFAULT_JITSI_DOMAIN = "jitsi.mysession.club";
+
 const ALL_JITSI_DOMAINS = [
+    DEFAULT_JITSI_DOMAIN,
     "meet-eu.mysession.club",
     "meet-us-east.mysession.club",
     "meet-apac.mysession.club",
 ] as const;
 
-type JitsiDomain = (typeof ALL_JITSI_DOMAINS)[number];
+// ✅ allow env-forced domain (useful for test deployments)
+const FORCE_JITSI_DOMAIN = String((import.meta as any).env.VITE_FORCE_JITSI_DOMAIN || "").trim();
+// if true => ONLY this domain (no fallbacks)
+const FORCE_JITSI_ONLY = (import.meta as any).env.VITE_FORCE_JITSI_ONLY === "true";
+
+type JitsiDomain = (typeof ALL_JITSI_DOMAINS)[number] | string;
 
 function domainsForSession(session: any): readonly string[] {
+    // ✅ test override
+    if (FORCE_JITSI_DOMAIN) {
+        const uniq = (d: string, i: number, arr: string[]) => arr.indexOf(d) === i;
+
+        if (FORCE_JITSI_ONLY) return [FORCE_JITSI_DOMAIN];
+
+        return [FORCE_JITSI_DOMAIN, ...ALL_JITSI_DOMAINS].filter(uniq);
+    }
+
+    // normal behavior
     const preferred = String(session?.jitsi_domain || "").trim();
-    if (preferred && (ALL_JITSI_DOMAINS as readonly string[]).includes(preferred)) {
+    if (preferred) {
+        // if preferred is not in ALL_JITSI_DOMAINS, still allow it (dynamic)
         return [preferred, ...ALL_JITSI_DOMAINS.filter((d) => d !== preferred)];
     }
     return ALL_JITSI_DOMAINS;
@@ -1886,6 +1908,7 @@ export default function RoomPageIFrame() {
         (async () => {
             try {
                 const domainList = domainsForSession(session);
+                console.log("[JITSI][domains]", domainList);
 
                 const { api, domain } = await createJitsiApiWithFallback({
                     domains: domainList,
@@ -1923,9 +1946,12 @@ export default function RoomPageIFrame() {
                 } catch { }
 
                 try {
-                    const prev = String(session?.jitsi_domain || "").trim();
-                    if (session?.id && domain && prev !== domain) {
-                        supabase.from("sessions").update({ jitsi_domain: domain }).eq("id", session.id);
+                    // ✅ In forced mode we do NOT write domain back into DB (so test env won't overwrite prod data)
+                    if (!FORCE_JITSI_DOMAIN) {
+                        const prev = String(session?.jitsi_domain || "").trim();
+                        if (session?.id && domain && prev !== domain) {
+                            supabase.from("sessions").update({ jitsi_domain: domain }).eq("id", session.id);
+                        }
                     }
                 } catch { }
 

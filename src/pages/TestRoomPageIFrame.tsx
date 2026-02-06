@@ -1908,6 +1908,7 @@ export default function RoomPageIFrame() {
         (async () => {
             try {
                 const domainList = domainsForSession(session);
+                console.log("[JITSI][domains]", domainList);
 
                 const { api, domain } = await createJitsiApiWithFallback({
                     domains: domainList,
