@@ -43,11 +43,23 @@ type VideoRoomProps = {
     ) => void;
 
     /**
-     * ✅ NEW: edit your own display name in-room
-     * - if provided, call this to persist into Jitsi/conference + backend if needed
-     * - if not provided, we still update locally for UI
+     * ✅ edit your own display name in-room
      */
     onEditLocalDisplayName?: (newName: string) => void | Promise<void>;
+
+    /**
+     * ✅ moderation capabilities (host/moderator)
+     */
+    canModerate?: boolean;
+
+    /**
+     * ✅ moderation callbacks (wire to your jitsiEngine / conference)
+     */
+    onMakeParticipantAdmin?: (participantId: string) => void | Promise<void>;
+    onMuteParticipantAudio?: (participantId: string) => void | Promise<void>;
+    onMuteParticipantVideo?: (participantId: string) => void | Promise<void>;
+    onKickParticipant?: (participantId: string) => void | Promise<void>;
+    onReportParticipant?: (participantId: string, reason: string) => void | Promise<void>;
 };
 
 const reactionEmoji: Record<ReactionType, string> = {
@@ -58,6 +70,19 @@ const reactionEmoji: Record<ReactionType, string> = {
     thumbsUp: "👍",
     thumbsDown: "👎",
 };
+
+function clamp01(n: number) {
+    if (!Number.isFinite(n)) return 1;
+    return Math.max(0, Math.min(1, n));
+}
+
+function guessIsAdmin(p: JitsiParticipant): boolean {
+    const anyP = p as any;
+    const role = String(anyP?.role ?? anyP?.conferenceRole ?? "").toLowerCase();
+    if (role.includes("moderator") || role.includes("admin") || role.includes("host")) return true;
+    if (anyP?.isModerator === true || anyP?.isAdmin === true || anyP?.isHost === true) return true;
+    return false;
+}
 
 function Icon({
     name,
@@ -246,9 +271,14 @@ function useElementSize<T extends HTMLElement>() {
 }
 
 // ----------------------- Audio sink (playback only) -----------------------
-function AudioSinkItem({ p }: { p: JitsiParticipant }) {
+function AudioSinkItem({ p, volume01 }: { p: JitsiParticipant; volume01: number }) {
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const streamV = useTrackStreamVersion(p.audioTrack);
+
+    useEffect(() => {
+        if (!audioRef.current) return;
+        audioRef.current.volume = clamp01(volume01);
+    }, [volume01]);
 
     useEffect(() => {
         if (!audioRef.current) return;
@@ -270,13 +300,13 @@ function AudioSinkItem({ p }: { p: JitsiParticipant }) {
     return <audio ref={audioRef} autoPlay playsInline preload="auto" />;
 }
 
-function AudioSink({ participants }: { participants: JitsiParticipant[] }) {
+function AudioSink({ participants, volumeById }: { participants: JitsiParticipant[]; volumeById: Record<string, number> }) {
     const remotes = useMemo(() => participants.filter((p) => !p.isLocal), [participants]);
 
     return (
         <div className="absolute w-0 h-0 overflow-hidden opacity-0 pointer-events-none">
             {remotes.map((p) => (
-                <AudioSinkItem key={p.id} p={p} />
+                <AudioSinkItem key={p.id} p={p} volume01={volumeById[p.id] ?? 1} />
             ))}
         </div>
     );
@@ -289,9 +319,26 @@ function ParticipantTile({
     forceAspect = false,
     fit = "contain",
     onRegisterVideoElement,
+
+    // local name edit
     editable,
     displayNameOverride,
     onOpenEditName,
+
+    // per-participant volume
+    volume01,
+    onSetVolume01,
+
+    // moderation + UI actions
+    canModerate,
+    alwaysShowOptionsButton,
+    pinned,
+    onTogglePin,
+    onHideUser,
+    onMakeAdmin,
+    onMuteAudio,
+    onMuteVideo,
+    onOpenRemoveReport,
 }: {
     theme: "dark" | "light";
     participant: JitsiParticipant;
@@ -299,10 +346,25 @@ function ParticipantTile({
     fit?: "contain" | "cover";
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
 
-    // ✅ NEW: local edit UX
-    editable?: boolean; // only local participant
-    displayNameOverride?: string | null; // local override shown in UI
+    editable?: boolean;
+    displayNameOverride?: string | null;
     onOpenEditName?: () => void;
+
+    volume01?: number; // 0..1 (remote only)
+    onSetVolume01?: (next: number) => void;
+
+    canModerate?: boolean;
+    alwaysShowOptionsButton?: boolean;
+
+    pinned?: boolean;
+    onTogglePin?: () => void;
+    onHideUser?: () => void;
+
+    onMakeAdmin?: () => void | Promise<void>;
+    onMuteAudio?: () => void | Promise<void>;
+    onMuteVideo?: () => void | Promise<void>;
+
+    onOpenRemoveReport?: () => void;
 }) {
     const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -371,7 +433,13 @@ function ParticipantTile({
             ? "bg-white/90 border border-black/10 text-black/80"
             : "bg-black/45 border border-white/10 text-white/80";
 
-    const ringClass = theme === "light" ? "ring-1 ring-black/10" : "ring-1 ring-white/10";
+    const ringClassBase = theme === "light" ? "ring-1 ring-black/10" : "ring-1 ring-white/10";
+    const ringPinned =
+        theme === "light"
+            ? "ring-2 ring-blue-500/50"
+            : "ring-2 ring-blue-400/45";
+
+    const ringClass = pinned ? ringPinned : ringClassBase;
 
     const optionsBtnBg =
         theme === "light"
@@ -385,6 +453,21 @@ function ParticipantTile({
 
     const menuItemHover =
         theme === "light" ? "hover:bg-black/5" : "hover:bg-white/10";
+
+    const separator =
+        theme === "light" ? "bg-black/10" : "bg-white/10";
+
+    const isAdmin = guessIsAdmin(participant);
+
+    const hasOptions =
+        (!!editable && !!onOpenEditName) ||
+        (!participant.isLocal && typeof volume01 === "number" && !!onSetVolume01) ||
+        (!!onTogglePin) ||
+        (!!onHideUser) ||
+        (!!canModerate && !participant.isLocal && (!!onMakeAdmin || !!onMuteAudio || !!onMuteVideo || !!onOpenRemoveReport));
+
+    const showOptionsBtn =
+        hasOptions && (hovered || optionsOpen || !!alwaysShowOptionsButton);
 
     return (
         <div
@@ -400,7 +483,7 @@ function ParticipantTile({
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => {
                 setHovered(false);
-                setOptionsOpen(false);
+                // ✅ do NOT auto-close menu on mouseleave (prevents accidental close)
             }}
         >
             <video
@@ -447,12 +530,17 @@ function ParticipantTile({
                             className="w-4 h-4 opacity-80"
                             theme={theme}
                         />
+                        {isAdmin && (
+                            <span className={`text-[11px] px-1.5 py-0.5 rounded-md ${theme === "light" ? "bg-black/5 text-black/60" : "bg-white/10 text-white/70"}`}>
+                                admin
+                            </span>
+                        )}
                     </div>
                 </div>
             )}
 
-            {/* ✅ Hover Options (⋯) — only for editable(local) to start; can be enabled for all later */}
-            {editable && hovered && (
+            {/* Options (⋯) */}
+            {showOptionsBtn && (
                 <div className="absolute top-3 right-3" ref={optionsRef}>
                     <button
                         type="button"
@@ -468,49 +556,206 @@ function ParticipantTile({
 
                     {optionsOpen && (
                         <div
-                            className={`absolute right-0 mt-2 min-w-[170px] rounded-xl shadow-xl overflow-hidden ${menuBg}`}
+                            className={`absolute right-0 mt-2 min-w-[220px] rounded-xl shadow-xl overflow-hidden ${menuBg}`}
                             onClick={(e) => e.stopPropagation()}
                         >
-                            <button
-                                type="button"
-                                className={`w-full text-left px-3 py-2 text-sm ${menuItemHover}`}
-                                onClick={() => {
-                                    setOptionsOpen(false);
-                                    onOpenEditName?.();
-                                }}
-                            >
-                                ✎ Edit name
-                            </button>
+                            {/* Local edit */}
+                            {editable && (
+                                <button
+                                    type="button"
+                                    className={`w-full text-left px-3 py-2 text-sm ${menuItemHover}`}
+                                    onClick={() => {
+                                        setOptionsOpen(false);
+                                        onOpenEditName?.();
+                                    }}
+                                >
+                                    ✎ Edit name
+                                </button>
+                            )}
+
+                            {/* Volume (remote only, for everyone) */}
+                            {!participant.isLocal && typeof volume01 === "number" && !!onSetVolume01 && (
+                                <div className="px-3 py-2">
+                                    <div className={`flex items-center justify-between text-[11px] ${theme === "light" ? "text-black/55" : "text-white/55"}`}>
+                                        <span>Volume</span>
+                                        <span>{Math.round(clamp01(volume01) * 100)}%</span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min={0}
+                                        max={100}
+                                        value={Math.round(clamp01(volume01) * 100)}
+                                        onChange={(e) => {
+                                            const v = clamp01(Number(e.target.value) / 100);
+                                            onSetVolume01(v);
+                                        }}
+                                        className="w-full mt-2"
+                                    />
+                                    <div className="mt-2 flex items-center gap-2">
+                                        <button
+                                            className={`h-7 px-2 rounded-lg text-[11px] ${theme === "light" ? "bg-black/5 hover:bg-black/10" : "bg-white/10 hover:bg-white/15"
+                                                }`}
+                                            onClick={() => onSetVolume01(0)}
+                                        >
+                                            0%
+                                        </button>
+                                        <button
+                                            className={`h-7 px-2 rounded-lg text-[11px] ${theme === "light" ? "bg-black/5 hover:bg-black/10" : "bg-white/10 hover:bg-white/15"
+                                                }`}
+                                            onClick={() => onSetVolume01(0.5)}
+                                        >
+                                            50%
+                                        </button>
+                                        <button
+                                            className={`h-7 px-2 rounded-lg text-[11px] ${theme === "light" ? "bg-black/5 hover:bg-black/10" : "bg-white/10 hover:bg-white/15"
+                                                }`}
+                                            onClick={() => onSetVolume01(1)}
+                                        >
+                                            100%
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className={`h-px w-full ${separator}`} />
+
+                            {/* Pin / Hide (local-only actions) */}
+                            {!!onTogglePin && (
+                                <button
+                                    type="button"
+                                    className={`w-full text-left px-3 py-2 text-sm ${menuItemHover}`}
+                                    onClick={() => {
+                                        setOptionsOpen(false);
+                                        onTogglePin?.();
+                                    }}
+                                >
+                                    {pinned ? "📌 Unpin participant" : "📌 Pin participant"}
+                                </button>
+                            )}
+
+                            {!!onHideUser && (
+                                <button
+                                    type="button"
+                                    className={`w-full text-left px-3 py-2 text-sm ${menuItemHover}`}
+                                    onClick={() => {
+                                        setOptionsOpen(false);
+                                        onHideUser?.();
+                                    }}
+                                >
+                                    🙈 Hide user
+                                </button>
+                            )}
+
+                            {/* Moderator actions */}
+                            {canModerate && !participant.isLocal && (
+                                <>
+                                    {(!!onMakeAdmin || !!onMuteAudio || !!onMuteVideo) && (
+                                        <div className={`h-px w-full ${separator}`} />
+                                    )}
+
+                                    {!!onMakeAdmin && !isAdmin && (
+                                        <button
+                                            type="button"
+                                            className={`w-full text-left px-3 py-2 text-sm ${menuItemHover}`}
+                                            onClick={async () => {
+                                                setOptionsOpen(false);
+                                                try { await onMakeAdmin(); } catch { }
+                                            }}
+                                        >
+                                            👑 Make admin
+                                        </button>
+                                    )}
+
+                                    {!!onMuteAudio && (
+                                        <button
+                                            type="button"
+                                            className={`w-full text-left px-3 py-2 text-sm ${menuItemHover}`}
+                                            onClick={async () => {
+                                                setOptionsOpen(false);
+                                                try { await onMuteAudio(); } catch { }
+                                            }}
+                                        >
+                                            🎙️ Mute microphone
+                                        </button>
+                                    )}
+
+                                    {!!onMuteVideo && (
+                                        <button
+                                            type="button"
+                                            className={`w-full text-left px-3 py-2 text-sm ${menuItemHover}`}
+                                            onClick={async () => {
+                                                setOptionsOpen(false);
+                                                try { await onMuteVideo(); } catch { }
+                                            }}
+                                        >
+                                            🎥 Turn off camera
+                                        </button>
+                                    )}
+
+                                    {!!onOpenRemoveReport && (
+                                        <>
+                                            <div className={`h-px w-full ${separator}`} />
+                                            <button
+                                                type="button"
+                                                className={`w-full text-left px-3 py-2 text-sm ${theme === "light" ? "text-red-600 hover:bg-red-50" : "text-red-400 hover:bg-white/10"
+                                                    }`}
+                                                onClick={() => {
+                                                    setOptionsOpen(false);
+                                                    onOpenRemoveReport?.();
+                                                }}
+                                            >
+                                                Remove / report user
+                                            </button>
+                                        </>
+                                    )}
+                                </>
+                            )}
                         </div>
                     )}
                 </div>
             )}
 
-            {/* Bottom label */}
-            <div className={`absolute left-3 bottom-3 rounded-lg px-2 py-1 text-[11px] flex items-center gap-2 ${labelBg}`}>
-                <span className="truncate max-w-[160px]">{name}</span>
+            {/* Bottom label (fixed height; edit icon doesn't change layout) */}
+            <div
+                className={
+                    `absolute left-3 bottom-3 rounded-lg px-2 h-7 text-[11px] flex items-center gap-2 ${labelBg}`
+                }
+            >
+                <div className="flex items-center gap-1 min-w-0">
+                    <span className="truncate max-w-[160px] leading-none">{name}</span>
+
+                    {/* ✅ edit icon: ALWAYS rendered (reserved space), only fades/zooms on hover */}
+                    {editable && (
+                        <button
+                            type="button"
+                            className={
+                                `h-6 w-6 rounded-md flex items-center justify-center transition-all duration-150 ` +
+                                (hovered
+                                    ? (theme === "light" ? "opacity-100 scale-100 hover:bg-black/5" : "opacity-100 scale-100 hover:bg-white/10")
+                                    : "opacity-0 scale-95 pointer-events-none")
+                            }
+                            title="Edit name"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenEditName?.();
+                            }}
+                        >
+                            <span className="text-[12px] leading-none">✎</span>
+                        </button>
+                    )}
+
+                    {isAdmin && (
+                        <span className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-md ${theme === "light" ? "bg-black/5 text-black/55" : "bg-white/10 text-white/65"}`}>
+                            admin
+                        </span>
+                    )}
+                </div>
 
                 <Icon
                     name={participant.audioMuted ? "mic-off" : "mic-on"}
                     className="w-3.5 h-3.5 opacity-80"
                     theme={theme}
                 />
-
-                {/* ✅ Inline edit button near name on hover */}
-                {editable && hovered && (
-                    <button
-                        type="button"
-                        className={`ml-1 h-6 w-6 rounded-md flex items-center justify-center ${theme === "light" ? "hover:bg-black/5" : "hover:bg-white/10"
-                            }`}
-                        title="Edit name"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenEditName?.();
-                        }}
-                    >
-                        <span className="text-[12px] leading-none">✎</span>
-                    </button>
-                )}
             </div>
         </div>
     );
@@ -561,9 +806,22 @@ function GridLayout({
     containerWidth,
     containerHeight,
     onRegisterVideoElement,
+
     localId,
     localDisplayNameOverride,
     onOpenEditName,
+
+    canModerate,
+    alwaysShowOptionsButton,
+    pinnedId,
+    onTogglePinById,
+    onHideById,
+    getVolume01ById,
+    onSetVolume01ById,
+    onOpenRemoveReportById,
+    onMakeAdminById,
+    onMuteAudioById,
+    onMuteVideoById,
 }: {
     theme: "dark" | "light";
     pageParticipants: JitsiParticipant[];
@@ -571,10 +829,25 @@ function GridLayout({
     containerHeight: number;
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
 
-    // edit name wiring
     localId: string | null;
     localDisplayNameOverride: string | null;
     onOpenEditName: () => void;
+
+    canModerate: boolean;
+    alwaysShowOptionsButton: boolean;
+
+    pinnedId: string | null;
+    onTogglePinById: (id: string) => void;
+    onHideById: (id: string) => void;
+
+    getVolume01ById: (id: string) => number;
+    onSetVolume01ById: (id: string, v: number) => void;
+
+    onOpenRemoveReportById: (id: string) => void;
+
+    onMakeAdminById: (id: string) => void | Promise<void>;
+    onMuteAudioById: (id: string) => void | Promise<void>;
+    onMuteVideoById: (id: string) => void | Promise<void>;
 }) {
     const paddingPx = containerWidth && containerWidth < 520 ? 8 : 12;
     const gapPx = containerWidth && containerWidth < 520 ? 8 : 12;
@@ -653,6 +926,17 @@ function GridLayout({
                         editable={!!localId && p.id === localId}
                         displayNameOverride={p.id === localId ? localDisplayNameOverride : null}
                         onOpenEditName={onOpenEditName}
+                        canModerate={canModerate}
+                        alwaysShowOptionsButton={alwaysShowOptionsButton}
+                        pinned={!!pinnedId && p.id === pinnedId}
+                        onTogglePin={() => onTogglePinById(p.id)}
+                        onHideUser={!p.isLocal ? () => onHideById(p.id) : undefined}
+                        volume01={!p.isLocal ? getVolume01ById(p.id) : undefined}
+                        onSetVolume01={!p.isLocal ? (v) => onSetVolume01ById(p.id, v) : undefined}
+                        onOpenRemoveReport={!p.isLocal ? () => onOpenRemoveReportById(p.id) : undefined}
+                        onMakeAdmin={!p.isLocal ? () => onMakeAdminById(p.id) : undefined}
+                        onMuteAudio={!p.isLocal ? () => onMuteAudioById(p.id) : undefined}
+                        onMuteVideo={!p.isLocal ? () => onMuteVideoById(p.id) : undefined}
                     />
                 ))}
 
@@ -675,6 +959,17 @@ function GridLayout({
                                     editable={!!localId && p.id === localId}
                                     displayNameOverride={p.id === localId ? localDisplayNameOverride : null}
                                     onOpenEditName={onOpenEditName}
+                                    canModerate={canModerate}
+                                    alwaysShowOptionsButton={alwaysShowOptionsButton}
+                                    pinned={!!pinnedId && p.id === pinnedId}
+                                    onTogglePin={() => onTogglePinById(p.id)}
+                                    onHideUser={!p.isLocal ? () => onHideById(p.id) : undefined}
+                                    volume01={!p.isLocal ? getVolume01ById(p.id) : undefined}
+                                    onSetVolume01={!p.isLocal ? (v) => onSetVolume01ById(p.id, v) : undefined}
+                                    onOpenRemoveReport={!p.isLocal ? () => onOpenRemoveReportById(p.id) : undefined}
+                                    onMakeAdmin={!p.isLocal ? () => onMakeAdminById(p.id) : undefined}
+                                    onMuteAudio={!p.isLocal ? () => onMuteAudioById(p.id) : undefined}
+                                    onMuteVideo={!p.isLocal ? () => onMuteVideoById(p.id) : undefined}
                                 />
                             </div>
                         ))}
@@ -692,9 +987,22 @@ function P2PLayout({
     containerHeight,
     stack = false,
     onRegisterVideoElement,
+
     localId,
     localDisplayNameOverride,
     onOpenEditName,
+
+    canModerate,
+    alwaysShowOptionsButton,
+    pinnedId,
+    onTogglePinById,
+    onHideById,
+    getVolume01ById,
+    onSetVolume01ById,
+    onOpenRemoveReportById,
+    onMakeAdminById,
+    onMuteAudioById,
+    onMuteVideoById,
 }: {
     theme: "dark" | "light";
     pageParticipants: JitsiParticipant[];
@@ -706,6 +1014,22 @@ function P2PLayout({
     localId: string | null;
     localDisplayNameOverride: string | null;
     onOpenEditName: () => void;
+
+    canModerate: boolean;
+    alwaysShowOptionsButton: boolean;
+
+    pinnedId: string | null;
+    onTogglePinById: (id: string) => void;
+    onHideById: (id: string) => void;
+
+    getVolume01ById: (id: string) => number;
+    onSetVolume01ById: (id: string, v: number) => void;
+
+    onOpenRemoveReportById: (id: string) => void;
+
+    onMakeAdminById: (id: string) => void | Promise<void>;
+    onMuteAudioById: (id: string) => void | Promise<void>;
+    onMuteVideoById: (id: string) => void | Promise<void>;
 }) {
     const paddingPx = containerWidth && containerWidth < 520 ? 8 : 12;
     const gapPx = containerWidth && containerWidth < 520 ? 8 : 12;
@@ -727,8 +1051,6 @@ function P2PLayout({
         });
 
         if (!w) return null;
-
-        // ✅ FIX (from previous): remove hard cap so 2 tiles expand fully when chat is closed
         return w;
     }, [containerWidth, containerHeight, cols, rows, gapPx, paddingPx]);
 
@@ -757,6 +1079,17 @@ function P2PLayout({
                         editable={!!localId && p.id === localId}
                         displayNameOverride={p.id === localId ? localDisplayNameOverride : null}
                         onOpenEditName={onOpenEditName}
+                        canModerate={canModerate}
+                        alwaysShowOptionsButton={alwaysShowOptionsButton}
+                        pinned={!!pinnedId && p.id === pinnedId}
+                        onTogglePin={() => onTogglePinById(p.id)}
+                        onHideUser={!p.isLocal ? () => onHideById(p.id) : undefined}
+                        volume01={!p.isLocal ? getVolume01ById(p.id) : undefined}
+                        onSetVolume01={!p.isLocal ? (v) => onSetVolume01ById(p.id, v) : undefined}
+                        onOpenRemoveReport={!p.isLocal ? () => onOpenRemoveReportById(p.id) : undefined}
+                        onMakeAdmin={!p.isLocal ? () => onMakeAdminById(p.id) : undefined}
+                        onMuteAudio={!p.isLocal ? () => onMuteAudioById(p.id) : undefined}
+                        onMuteVideo={!p.isLocal ? () => onMuteVideoById(p.id) : undefined}
                     />
                 ))}
             </div>
@@ -775,9 +1108,22 @@ function MobileFillLayout({
     containerHeight,
     paddingBottomPx = 12,
     onRegisterVideoElement,
+
     localId,
     localDisplayNameOverride,
     onOpenEditName,
+
+    canModerate,
+    alwaysShowOptionsButton,
+    pinnedId,
+    onTogglePinById,
+    onHideById,
+    getVolume01ById,
+    onSetVolume01ById,
+    onOpenRemoveReportById,
+    onMakeAdminById,
+    onMuteAudioById,
+    onMuteVideoById,
 }: {
     theme: "dark" | "light";
     pageParticipants: JitsiParticipant[];
@@ -789,6 +1135,22 @@ function MobileFillLayout({
     localId: string | null;
     localDisplayNameOverride: string | null;
     onOpenEditName: () => void;
+
+    canModerate: boolean;
+    alwaysShowOptionsButton: boolean;
+
+    pinnedId: string | null;
+    onTogglePinById: (id: string) => void;
+    onHideById: (id: string) => void;
+
+    getVolume01ById: (id: string) => number;
+    onSetVolume01ById: (id: string, v: number) => void;
+
+    onOpenRemoveReportById: (id: string) => void;
+
+    onMakeAdminById: (id: string) => void | Promise<void>;
+    onMuteAudioById: (id: string) => void | Promise<void>;
+    onMuteVideoById: (id: string) => void | Promise<void>;
 }) {
     const count = pageParticipants.length || 1;
 
@@ -824,6 +1186,17 @@ function MobileFillLayout({
                             editable={!!localId && p.id === localId}
                             displayNameOverride={p.id === localId ? localDisplayNameOverride : null}
                             onOpenEditName={onOpenEditName}
+                            canModerate={canModerate}
+                            alwaysShowOptionsButton={alwaysShowOptionsButton}
+                            pinned={!!pinnedId && p.id === pinnedId}
+                            onTogglePin={() => onTogglePinById(p.id)}
+                            onHideUser={!p.isLocal ? () => onHideById(p.id) : undefined}
+                            volume01={!p.isLocal ? getVolume01ById(p.id) : undefined}
+                            onSetVolume01={!p.isLocal ? (v) => onSetVolume01ById(p.id, v) : undefined}
+                            onOpenRemoveReport={!p.isLocal ? () => onOpenRemoveReportById(p.id) : undefined}
+                            onMakeAdmin={!p.isLocal ? () => onMakeAdminById(p.id) : undefined}
+                            onMuteAudio={!p.isLocal ? () => onMuteAudioById(p.id) : undefined}
+                            onMuteVideo={!p.isLocal ? () => onMuteVideoById(p.id) : undefined}
                         />
                     </div>
                 </div>
@@ -838,9 +1211,22 @@ function MobileStackLayout({
     pageParticipants,
     paddingBottomPx = 12,
     onRegisterVideoElement,
+
     localId,
     localDisplayNameOverride,
     onOpenEditName,
+
+    canModerate,
+    alwaysShowOptionsButton,
+    pinnedId,
+    onTogglePinById,
+    onHideById,
+    getVolume01ById,
+    onSetVolume01ById,
+    onOpenRemoveReportById,
+    onMakeAdminById,
+    onMuteAudioById,
+    onMuteVideoById,
 }: {
     theme: "dark" | "light";
     pageParticipants: JitsiParticipant[];
@@ -850,6 +1236,22 @@ function MobileStackLayout({
     localId: string | null;
     localDisplayNameOverride: string | null;
     onOpenEditName: () => void;
+
+    canModerate: boolean;
+    alwaysShowOptionsButton: boolean;
+
+    pinnedId: string | null;
+    onTogglePinById: (id: string) => void;
+    onHideById: (id: string) => void;
+
+    getVolume01ById: (id: string) => number;
+    onSetVolume01ById: (id: string, v: number) => void;
+
+    onOpenRemoveReportById: (id: string) => void;
+
+    onMakeAdminById: (id: string) => void | Promise<void>;
+    onMuteAudioById: (id: string) => void | Promise<void>;
+    onMuteVideoById: (id: string) => void | Promise<void>;
 }) {
     return (
         <div
@@ -867,6 +1269,17 @@ function MobileStackLayout({
                     editable={!!localId && p.id === localId}
                     displayNameOverride={p.id === localId ? localDisplayNameOverride : null}
                     onOpenEditName={onOpenEditName}
+                    canModerate={canModerate}
+                    alwaysShowOptionsButton={alwaysShowOptionsButton}
+                    pinned={!!pinnedId && p.id === pinnedId}
+                    onTogglePin={() => onTogglePinById(p.id)}
+                    onHideUser={!p.isLocal ? () => onHideById(p.id) : undefined}
+                    volume01={!p.isLocal ? getVolume01ById(p.id) : undefined}
+                    onSetVolume01={!p.isLocal ? (v) => onSetVolume01ById(p.id, v) : undefined}
+                    onOpenRemoveReport={!p.isLocal ? () => onOpenRemoveReportById(p.id) : undefined}
+                    onMakeAdmin={!p.isLocal ? () => onMakeAdminById(p.id) : undefined}
+                    onMuteAudio={!p.isLocal ? () => onMuteAudioById(p.id) : undefined}
+                    onMuteVideo={!p.isLocal ? () => onMuteVideoById(p.id) : undefined}
                 />
             ))}
         </div>
@@ -878,9 +1291,22 @@ function ScreenShareLayoutDesktop({
     screenSharer,
     others,
     onRegisterVideoElement,
+
     localId,
     localDisplayNameOverride,
     onOpenEditName,
+
+    canModerate,
+    alwaysShowOptionsButton,
+    pinnedId,
+    onTogglePinById,
+    onHideById,
+    getVolume01ById,
+    onSetVolume01ById,
+    onOpenRemoveReportById,
+    onMakeAdminById,
+    onMuteAudioById,
+    onMuteVideoById,
 }: {
     theme: "dark" | "light";
     screenSharer: JitsiParticipant;
@@ -890,6 +1316,22 @@ function ScreenShareLayoutDesktop({
     localId: string | null;
     localDisplayNameOverride: string | null;
     onOpenEditName: () => void;
+
+    canModerate: boolean;
+    alwaysShowOptionsButton: boolean;
+
+    pinnedId: string | null;
+    onTogglePinById: (id: string) => void;
+    onHideById: (id: string) => void;
+
+    getVolume01ById: (id: string) => number;
+    onSetVolume01ById: (id: string, v: number) => void;
+
+    onOpenRemoveReportById: (id: string) => void;
+
+    onMakeAdminById: (id: string) => void | Promise<void>;
+    onMuteAudioById: (id: string) => void | Promise<void>;
+    onMuteVideoById: (id: string) => void | Promise<void>;
 }) {
     const screenVideoRef = useRef<HTMLVideoElement | null>(null);
     const screenTrackId = useMemo(() => safeTrackId(screenSharer.screenTrack), [screenSharer.screenTrack]);
@@ -935,8 +1377,8 @@ function ScreenShareLayoutDesktop({
                     muted={screenSharer.isLocal}
                     className="w-full h-full object-contain bg-black"
                 />
-                <div className={`absolute left-3 bottom-3 rounded-lg px-2 py-1 text-[11px] flex items-center gap-2 ${labelBg}`}>
-                    <span className="truncate max-w-[220px]">
+                <div className={`absolute left-3 bottom-3 rounded-lg px-2 h-7 text-[11px] flex items-center gap-2 ${labelBg}`}>
+                    <span className="truncate max-w-[220px] leading-none">
                         {screenSharer.isLocal ? "You (screen)" : `${screenSharer.displayName || "Guest"} (screen)`}
                     </span>
                     <Icon
@@ -959,6 +1401,17 @@ function ScreenShareLayoutDesktop({
                             editable={!!localId && p.id === localId}
                             displayNameOverride={p.id === localId ? localDisplayNameOverride : null}
                             onOpenEditName={onOpenEditName}
+                            canModerate={canModerate}
+                            alwaysShowOptionsButton={alwaysShowOptionsButton}
+                            pinned={!!pinnedId && p.id === pinnedId}
+                            onTogglePin={() => onTogglePinById(p.id)}
+                            onHideUser={!p.isLocal ? () => onHideById(p.id) : undefined}
+                            volume01={!p.isLocal ? getVolume01ById(p.id) : undefined}
+                            onSetVolume01={!p.isLocal ? (v) => onSetVolume01ById(p.id, v) : undefined}
+                            onOpenRemoveReport={!p.isLocal ? () => onOpenRemoveReportById(p.id) : undefined}
+                            onMakeAdmin={!p.isLocal ? () => onMakeAdminById(p.id) : undefined}
+                            onMuteAudio={!p.isLocal ? () => onMuteAudioById(p.id) : undefined}
+                            onMuteVideo={!p.isLocal ? () => onMuteVideoById(p.id) : undefined}
                         />
                     </div>
                 ))}
@@ -973,9 +1426,22 @@ function ScreenShareLayoutMobile({
     others,
     paddingBottomPx = 12,
     onRegisterVideoElement,
+
     localId,
     localDisplayNameOverride,
     onOpenEditName,
+
+    canModerate,
+    alwaysShowOptionsButton,
+    pinnedId,
+    onTogglePinById,
+    onHideById,
+    getVolume01ById,
+    onSetVolume01ById,
+    onOpenRemoveReportById,
+    onMakeAdminById,
+    onMuteAudioById,
+    onMuteVideoById,
 }: {
     theme: "dark" | "light";
     screenSharer: JitsiParticipant;
@@ -986,6 +1452,22 @@ function ScreenShareLayoutMobile({
     localId: string | null;
     localDisplayNameOverride: string | null;
     onOpenEditName: () => void;
+
+    canModerate: boolean;
+    alwaysShowOptionsButton: boolean;
+
+    pinnedId: string | null;
+    onTogglePinById: (id: string) => void;
+    onHideById: (id: string) => void;
+
+    getVolume01ById: (id: string) => number;
+    onSetVolume01ById: (id: string, v: number) => void;
+
+    onOpenRemoveReportById: (id: string) => void;
+
+    onMakeAdminById: (id: string) => void | Promise<void>;
+    onMuteAudioById: (id: string) => void | Promise<void>;
+    onMuteVideoById: (id: string) => void | Promise<void>;
 }) {
     const screenVideoRef = useRef<HTMLVideoElement | null>(null);
     const screenTrackId = useMemo(() => safeTrackId(screenSharer.screenTrack), [screenSharer.screenTrack]);
@@ -1035,8 +1517,8 @@ function ScreenShareLayoutMobile({
                     muted={screenSharer.isLocal}
                     className="absolute inset-0 w-full h-full object-contain bg-black"
                 />
-                <div className={`absolute left-3 bottom-3 rounded-lg px-2 py-1 text-[11px] flex items-center gap-2 ${labelBg}`}>
-                    <span className="truncate max-w-[220px]">
+                <div className={`absolute left-3 bottom-3 rounded-lg px-2 h-7 text-[11px] flex items-center gap-2 ${labelBg}`}>
+                    <span className="truncate max-w-[220px] leading-none">
                         {screenSharer.isLocal ? "You (screen)" : `${screenSharer.displayName || "Guest"} (screen)`}
                     </span>
                     <Icon
@@ -1058,6 +1540,17 @@ function ScreenShareLayoutMobile({
                     editable={!!localId && p.id === localId}
                     displayNameOverride={p.id === localId ? localDisplayNameOverride : null}
                     onOpenEditName={onOpenEditName}
+                    canModerate={canModerate}
+                    alwaysShowOptionsButton={alwaysShowOptionsButton}
+                    pinned={!!pinnedId && p.id === pinnedId}
+                    onTogglePin={() => onTogglePinById(p.id)}
+                    onHideUser={!p.isLocal ? () => onHideById(p.id) : undefined}
+                    volume01={!p.isLocal ? getVolume01ById(p.id) : undefined}
+                    onSetVolume01={!p.isLocal ? (v) => onSetVolume01ById(p.id, v) : undefined}
+                    onOpenRemoveReport={!p.isLocal ? () => onOpenRemoveReportById(p.id) : undefined}
+                    onMakeAdmin={!p.isLocal ? () => onMakeAdminById(p.id) : undefined}
+                    onMuteAudio={!p.isLocal ? () => onMuteAudioById(p.id) : undefined}
+                    onMuteVideo={!p.isLocal ? () => onMuteVideoById(p.id) : undefined}
                 />
             ))}
         </div>
@@ -1081,11 +1574,18 @@ export function VideoRoom(props: VideoRoomProps) {
         audioOutputId,
         onRegisterVideoElement,
         onEditLocalDisplayName,
+
+        canModerate = false,
+        onMakeParticipantAdmin,
+        onMuteParticipantAudio,
+        onMuteParticipantVideo,
+        onKickParticipant,
+        onReportParticipant,
     } = props;
 
     const isLight = theme === "light";
 
-    // ✅ NEW: local display name override state (UI-level)
+    // ✅ local display name override state (UI-level)
     const [localNameOverride, setLocalNameOverride] = useState<string | null>(null);
 
     // edit modal state
@@ -1093,6 +1593,17 @@ export function VideoRoom(props: VideoRoomProps) {
     const [editValue, setEditValue] = useState("");
     const [editSaving, setEditSaving] = useState(false);
     const editInputRef = useRef<HTMLInputElement | null>(null);
+
+    // pin / hide / volume
+    const [pinnedId, setPinnedId] = useState<string | null>(null);
+    const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => new Set());
+    const [volumeById, setVolumeById] = useState<Record<string, number>>({}); // 0..1
+
+    // moderation modal
+    const [modOpen, setModOpen] = useState(false);
+    const [modTargetId, setModTargetId] = useState<string | null>(null);
+    const [reportText, setReportText] = useState("");
+    const [modBusy, setModBusy] = useState(false);
 
     // measure the real viewport available for tiles
     const { ref: roomRef, width: roomW, height: roomH } = useElementSize<HTMLDivElement>();
@@ -1110,9 +1621,11 @@ export function VideoRoom(props: VideoRoomProps) {
 
     const isMobileQuery = useMediaQuery("(max-width: 767px)");
     const isTabletQuery = useMediaQuery("(min-width: 768px) and (max-width: 1023px)");
+    const alwaysShowOptionsButton = isMobileQuery || isTabletQuery;
 
     const paddingBottomPx = showControls ? 96 : 12;
 
+    // apply audio output device
     useEffect(() => {
         const deviceId = audioOutputId;
         if (!deviceId || deviceId === "default") return;
@@ -1125,6 +1638,105 @@ export function VideoRoom(props: VideoRoomProps) {
         });
     }, [audioOutputId]);
 
+    // ensure volume map has all remote participants
+    useEffect(() => {
+        setVolumeById((prev) => {
+            const next = { ...prev };
+            let changed = false;
+
+            for (const p of participants) {
+                if (p.isLocal) continue;
+                if (typeof next[p.id] !== "number") {
+                    next[p.id] = 1;
+                    changed = true;
+                }
+            }
+
+            // cleanup removed
+            const alive = new Set(participants.filter((p) => !p.isLocal).map((p) => p.id));
+            for (const k of Object.keys(next)) {
+                if (!alive.has(k)) {
+                    delete next[k];
+                    changed = true;
+                }
+            }
+
+            return changed ? next : prev;
+        });
+    }, [participants]);
+
+    // if pinned leaves / gets hidden -> unpin
+    useEffect(() => {
+        if (!pinnedId) return;
+        if (hiddenIds.has(pinnedId)) setPinnedId(null);
+        const exists = participants.some((p) => p.id === pinnedId);
+        if (!exists) setPinnedId(null);
+    }, [pinnedId, hiddenIds, participants]);
+
+    const togglePinById = useCallback((id: string) => {
+        setPinnedId((cur) => (cur === id ? null : id));
+    }, []);
+
+    const hideById = useCallback((id: string) => {
+        setHiddenIds((prev) => {
+            const n = new Set(prev);
+            n.add(id);
+            return n;
+        });
+        // also silence immediately
+        setVolumeById((prev) => ({ ...prev, [id]: 0 }));
+    }, []);
+
+    const unhideAll = useCallback(() => {
+        setHiddenIds(new Set());
+    }, []);
+
+    const getVolume01ById = useCallback((id: string) => {
+        return clamp01(volumeById[id] ?? 1);
+    }, [volumeById]);
+
+    const setVolume01ById = useCallback((id: string, v: number) => {
+        const vv = clamp01(v);
+        setVolumeById((prev) => ({ ...prev, [id]: vv }));
+    }, []);
+
+    const openRemoveReportById = useCallback((id: string) => {
+        setModTargetId(id);
+        setReportText("");
+        setModOpen(true);
+    }, []);
+
+    const closeRemoveReport = useCallback(() => {
+        setModOpen(false);
+        setModTargetId(null);
+        setReportText("");
+        setModBusy(false);
+    }, []);
+
+    const makeAdminById = useCallback(async (id: string) => {
+        try { await onMakeParticipantAdmin?.(id); } catch { }
+    }, [onMakeParticipantAdmin]);
+
+    const muteAudioById = useCallback(async (id: string) => {
+        try { await onMuteParticipantAudio?.(id); } catch { }
+    }, [onMuteParticipantAudio]);
+
+    const muteVideoById = useCallback(async (id: string) => {
+        try { await onMuteParticipantVideo?.(id); } catch { }
+    }, [onMuteParticipantVideo]);
+
+    // ---------- filtered/sorted participants (hide + pin) ----------
+    const participantsFiltered = useMemo(() => {
+        const base = participants.filter((p) => !hiddenIds.has(p.id));
+        if (!pinnedId) return base;
+
+        const idx = base.findIndex((p) => p.id === pinnedId);
+        if (idx <= 0) return base;
+        const pinned = base[idx];
+        const rest = base.filter((p) => p.id !== pinnedId);
+        return [pinned, ...rest];
+    }, [participants, hiddenIds, pinnedId]);
+
     const PAGE_SIZE = 20;
     const SCROLL_STEP = 5;
 
@@ -1135,8 +1747,14 @@ export function VideoRoom(props: VideoRoomProps) {
 
     const [scrollIndex, setScrollIndex] = useState(0);
 
-    const screenSharer = useMemo(() => participants.find((p) => p.isScreenSharing && p.screenTrack), [participants]);
-    const localParticipant = useMemo(() => participants.find((p) => p.isLocal) || null, [participants]);
+    const screenSharer = useMemo(
+        () => participantsFiltered.find((p) => p.isScreenSharing && p.screenTrack),
+        [participantsFiltered]
+    );
+    const localParticipant = useMemo(
+        () => participantsFiltered.find((p) => p.isLocal) || null,
+        [participantsFiltered]
+    );
     const localId = localParticipant?.id ?? null;
 
     // keep override synced with initial name (only if override not set yet)
@@ -1149,8 +1767,8 @@ export function VideoRoom(props: VideoRoomProps) {
     }, [localParticipant?.displayName]);
 
     const baseParticipants = useMemo(() => {
-        return screenSharer ? participants.filter((p) => p.id !== screenSharer.id) : participants;
-    }, [participants, screenSharer]);
+        return screenSharer ? participantsFiltered.filter((p) => p.id !== screenSharer.id) : participantsFiltered;
+    }, [participantsFiltered, screenSharer]);
 
     const maxStartIndex = useMemo(() => Math.max(0, baseParticipants.length - PAGE_SIZE), [baseParticipants.length]);
     const canScroll = useMemo(() => baseParticipants.length > PAGE_SIZE, [baseParticipants.length]);
@@ -1263,7 +1881,6 @@ export function VideoRoom(props: VideoRoomProps) {
             await onEditLocalDisplayName?.(next);
         } catch (e) {
             console.error("onEditLocalDisplayName failed:", e);
-            // keep UI value anyway; you can decide later if you want rollback
         } finally {
             setEditSaving(false);
             setEditOpen(false);
@@ -1280,11 +1897,37 @@ export function VideoRoom(props: VideoRoomProps) {
         return () => window.removeEventListener("keydown", onKey);
     }, [editOpen, closeEditName, commitEditName]);
 
+    // moderation target resolved
+    const modTarget = useMemo(() => {
+        if (!modTargetId) return null;
+        return participants.find((p) => p.id === modTargetId) || null;
+    }, [modTargetId, participants]);
+
     return (
         <div className="relative w-full h-full flex flex-col min-h-0">
-            <AudioSink participants={participants} />
+            <AudioSink participants={participantsFiltered} volumeById={volumeById} />
 
             <div ref={roomRef} className="flex-1 relative min-h-0 overflow-hidden">
+                {/* Hidden users pill */}
+                {hiddenIds.size > 0 && (
+                    <div className="absolute top-3 left-3 z-40">
+                        <div
+                            className={
+                                "h-9 px-3 rounded-xl text-xs flex items-center gap-2 shadow-lg " +
+                                (isLight ? "bg-white/85 border border-black/10 text-black/70" : "bg-black/45 border border-white/10 text-white/80")
+                            }
+                        >
+                            <span>Hidden: {hiddenIds.size}</span>
+                            <button
+                                className={isLight ? "underline hover:opacity-80" : "underline hover:opacity-90"}
+                                onClick={unhideAll}
+                            >
+                                Unhide all
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {!screenSharer && (
                     <>
                         {useVeryNarrowMode ? (
@@ -1299,6 +1942,17 @@ export function VideoRoom(props: VideoRoomProps) {
                                     localId={localId}
                                     localDisplayNameOverride={localNameOverride}
                                     onOpenEditName={openEditName}
+                                    canModerate={canModerate}
+                                    alwaysShowOptionsButton={alwaysShowOptionsButton}
+                                    pinnedId={pinnedId}
+                                    onTogglePinById={togglePinById}
+                                    onHideById={hideById}
+                                    getVolume01ById={getVolume01ById}
+                                    onSetVolume01ById={setVolume01ById}
+                                    onOpenRemoveReportById={openRemoveReportById}
+                                    onMakeAdminById={makeAdminById}
+                                    onMuteAudioById={muteAudioById}
+                                    onMuteVideoById={muteVideoById}
                                 />
                             ) : (
                                 <MobileStackLayout
@@ -1309,6 +1963,17 @@ export function VideoRoom(props: VideoRoomProps) {
                                     localId={localId}
                                     localDisplayNameOverride={localNameOverride}
                                     onOpenEditName={openEditName}
+                                    canModerate={canModerate}
+                                    alwaysShowOptionsButton={alwaysShowOptionsButton}
+                                    pinnedId={pinnedId}
+                                    onTogglePinById={togglePinById}
+                                    onHideById={hideById}
+                                    getVolume01ById={getVolume01ById}
+                                    onSetVolume01ById={setVolume01ById}
+                                    onOpenRemoveReportById={openRemoveReportById}
+                                    onMakeAdminById={makeAdminById}
+                                    onMuteAudioById={muteAudioById}
+                                    onMuteVideoById={muteVideoById}
                                 />
                             )
                         ) : (
@@ -1324,6 +1989,17 @@ export function VideoRoom(props: VideoRoomProps) {
                                         localId={localId}
                                         localDisplayNameOverride={localNameOverride}
                                         onOpenEditName={openEditName}
+                                        canModerate={canModerate}
+                                        alwaysShowOptionsButton={alwaysShowOptionsButton}
+                                        pinnedId={pinnedId}
+                                        onTogglePinById={togglePinById}
+                                        onHideById={hideById}
+                                        getVolume01ById={getVolume01ById}
+                                        onSetVolume01ById={setVolume01ById}
+                                        onOpenRemoveReportById={openRemoveReportById}
+                                        onMakeAdminById={makeAdminById}
+                                        onMuteAudioById={muteAudioById}
+                                        onMuteVideoById={muteVideoById}
                                     />
                                 ) : (
                                     <GridLayout
@@ -1335,6 +2011,17 @@ export function VideoRoom(props: VideoRoomProps) {
                                         localId={localId}
                                         localDisplayNameOverride={localNameOverride}
                                         onOpenEditName={openEditName}
+                                        canModerate={canModerate}
+                                        alwaysShowOptionsButton={alwaysShowOptionsButton}
+                                        pinnedId={pinnedId}
+                                        onTogglePinById={togglePinById}
+                                        onHideById={hideById}
+                                        getVolume01ById={getVolume01ById}
+                                        onSetVolume01ById={setVolume01ById}
+                                        onOpenRemoveReportById={openRemoveReportById}
+                                        onMakeAdminById={makeAdminById}
+                                        onMuteAudioById={muteAudioById}
+                                        onMuteVideoById={muteVideoById}
                                     />
                                 )}
                             </>
@@ -1354,6 +2041,17 @@ export function VideoRoom(props: VideoRoomProps) {
                                 localId={localId}
                                 localDisplayNameOverride={localNameOverride}
                                 onOpenEditName={openEditName}
+                                canModerate={canModerate}
+                                alwaysShowOptionsButton={alwaysShowOptionsButton}
+                                pinnedId={pinnedId}
+                                onTogglePinById={togglePinById}
+                                onHideById={hideById}
+                                getVolume01ById={getVolume01ById}
+                                onSetVolume01ById={setVolume01ById}
+                                onOpenRemoveReportById={openRemoveReportById}
+                                onMakeAdminById={makeAdminById}
+                                onMuteAudioById={muteAudioById}
+                                onMuteVideoById={muteVideoById}
                             />
                         ) : (
                             <ScreenShareLayoutDesktop
@@ -1364,6 +2062,17 @@ export function VideoRoom(props: VideoRoomProps) {
                                 localId={localId}
                                 localDisplayNameOverride={localNameOverride}
                                 onOpenEditName={openEditName}
+                                canModerate={canModerate}
+                                alwaysShowOptionsButton={alwaysShowOptionsButton}
+                                pinnedId={pinnedId}
+                                onTogglePinById={togglePinById}
+                                onHideById={hideById}
+                                getVolume01ById={getVolume01ById}
+                                onSetVolume01ById={setVolume01ById}
+                                onOpenRemoveReportById={openRemoveReportById}
+                                onMakeAdminById={makeAdminById}
+                                onMuteAudioById={muteAudioById}
+                                onMuteVideoById={muteVideoById}
                             />
                         )}
                     </>
@@ -1434,7 +2143,6 @@ export function VideoRoom(props: VideoRoomProps) {
                     <div
                         className="absolute inset-0 z-50 flex items-center justify-center"
                         onMouseDown={(e) => {
-                            // click backdrop closes (but not when clicking inside modal)
                             if (e.target === e.currentTarget) closeEditName();
                         }}
                         style={{
@@ -1497,6 +2205,113 @@ export function VideoRoom(props: VideoRoomProps) {
                                     disabled={editSaving}
                                 >
                                     {editSaving ? "Saving..." : "Save"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* ✅ Remove / Report modal */}
+                {modOpen && modTarget && (
+                    <div
+                        className="absolute inset-0 z-50 flex items-center justify-center"
+                        onMouseDown={(e) => {
+                            if (e.target === e.currentTarget) closeRemoveReport();
+                        }}
+                        style={{
+                            background: isLight ? "rgba(0,0,0,0.35)" : "rgba(0,0,0,0.55)",
+                        }}
+                    >
+                        <div
+                            className={`w-[92%] max-w-[520px] rounded-2xl shadow-2xl p-4 ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
+                                }`}
+                            onMouseDown={(e) => e.stopPropagation()}
+                        >
+                            <div className="flex items-center justify-between">
+                                <div className={`text-sm font-semibold ${isLight ? "text-black/80" : "text-white/90"}`}>
+                                    Moderation
+                                </div>
+                                <button
+                                    className={`h-8 w-8 rounded-xl flex items-center justify-center ${isLight ? "hover:bg-black/5" : "hover:bg-white/10"
+                                        }`}
+                                    onClick={closeRemoveReport}
+                                    title="Close"
+                                    disabled={modBusy}
+                                >
+                                    ✕
+                                </button>
+                            </div>
+
+                            <div className={`mt-2 text-sm ${isLight ? "text-black/70" : "text-white/75"}`}>
+                                User: <span className="font-semibold">{modTarget.displayName || "Guest"}</span>
+                            </div>
+
+                            <div className={`mt-3 p-3 rounded-xl ${isLight ? "bg-black/5" : "bg-white/10"}`}>
+                                <div className={`text-[11px] ${isLight ? "text-black/55" : "text-white/55"}`}>
+                                    Report reason (optional)
+                                </div>
+                                <textarea
+                                    value={reportText}
+                                    onChange={(e) => setReportText(e.target.value)}
+                                    rows={3}
+                                    placeholder="What happened?"
+                                    className={`mt-2 w-full rounded-xl p-3 text-sm outline-none resize-none ${isLight
+                                        ? "bg-white border border-black/10 text-black"
+                                        : "bg-[#0B1220] border border-white/10 text-white"
+                                        }`}
+                                />
+                            </div>
+
+                            <div className="mt-4 flex items-center justify-end gap-2">
+                                <button
+                                    className={`h-10 px-3 rounded-xl text-sm ${isLight
+                                        ? "bg-black/5 hover:bg-black/10 text-black/80"
+                                        : "bg-white/10 hover:bg-white/15 text-white/85"
+                                        }`}
+                                    onClick={closeRemoveReport}
+                                    disabled={modBusy}
+                                >
+                                    Cancel
+                                </button>
+
+                                <button
+                                    className={`h-10 px-3 rounded-xl text-sm font-semibold ${isLight
+                                        ? "bg-red-600 text-white hover:bg-red-700"
+                                        : "bg-red-600 text-white hover:bg-red-700"
+                                        } ${(!onKickParticipant || modBusy) ? "opacity-60 cursor-not-allowed" : ""}`}
+                                    disabled={!onKickParticipant || modBusy}
+                                    onClick={async () => {
+                                        if (!onKickParticipant) return;
+                                        setModBusy(true);
+                                        try {
+                                            await onKickParticipant(modTarget.id);
+                                            closeRemoveReport();
+                                        } catch {
+                                            setModBusy(false);
+                                        }
+                                    }}
+                                >
+                                    Kick from room
+                                </button>
+
+                                <button
+                                    className={`h-10 px-3 rounded-xl text-sm font-semibold ${isLight
+                                        ? "bg-black text-white hover:opacity-90"
+                                        : "bg-blue-600 text-white hover:bg-blue-700"
+                                        } ${(!onReportParticipant || modBusy) ? "opacity-60 cursor-not-allowed" : ""}`}
+                                    disabled={!onReportParticipant || modBusy}
+                                    onClick={async () => {
+                                        if (!onReportParticipant) return;
+                                        setModBusy(true);
+                                        try {
+                                            await onReportParticipant(modTarget.id, reportText.trim());
+                                            closeRemoveReport();
+                                        } catch {
+                                            setModBusy(false);
+                                        }
+                                    }}
+                                >
+                                    Report user
                                 </button>
                             </div>
                         </div>
