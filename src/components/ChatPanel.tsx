@@ -90,6 +90,14 @@ function parseReplyBody(body: string): { quote: string | null; main: string } {
     return { quote: q || null, main };
 }
 
+function withTimeout<T>(p: Promise<T>, ms: number, label = "timeout"): Promise<T> {
+    let t: any;
+    const timeout = new Promise<T>((_, reject) => {
+        t = setTimeout(() => reject(new Error(label)), ms);
+    });
+    return Promise.race([p, timeout]).finally(() => clearTimeout(t));
+}
+
 function MessageCard({
     msg,
     mine,
@@ -463,6 +471,28 @@ export function ChatPanel({
 
     const pollingRef = useRef<number | null>(null);
 
+    // ✅ safety / lifecycle
+    const aliveRef = useRef(true);
+    useEffect(() => {
+        aliveRef.current = true;
+        return () => {
+            aliveRef.current = false;
+        };
+    }, []);
+
+    // request ids (ignore stale results)
+    const messagesReqIdRef = useRef(0);
+    const reactionsReqIdRef = useRef(0);
+
+    // in-flight locks + queued reload flags
+    const loadingMessagesRef = useRef(false);
+    const loadingReactionsRef = useRef(false);
+    const queuedMessagesReloadRef = useRef(false);
+    const queuedReactionsReloadRef = useRef(false);
+
+    // debounce for reactions reload
+    const reactionsReloadTimerRef = useRef<number | null>(null);
+
     // autoscroll control
     const atBottomRef = useRef<boolean>(true);
     const [unseenNew, setUnseenNew] = useState<number>(0);
@@ -479,6 +509,17 @@ export function ChatPanel({
 
     const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
         bottomRef.current?.scrollIntoView({ behavior });
+    };
+
+    const scheduleReloadReactions = (delayMs = 400) => {
+        if (reactionsReloadTimerRef.current) {
+            window.clearTimeout(reactionsReloadTimerRef.current);
+            reactionsReloadTimerRef.current = null;
+        }
+        reactionsReloadTimerRef.current = window.setTimeout(() => {
+            reactionsReloadTimerRef.current = null;
+            void loadReactions({ silent: true });
+        }, delayMs);
     };
 
     // ✅ inform parent that chat became visible
@@ -518,6 +559,7 @@ export function ChatPanel({
         (async () => {
             const { data } = await supabase.auth.getUser();
             const uid = data.user?.id ?? null;
+            if (!aliveRef.current) return;
             setUserId(uid);
 
             if (uid) {
@@ -526,6 +568,8 @@ export function ChatPanel({
                     .select("id, full_name, avatar_url")
                     .eq("id", uid)
                     .single();
+
+                if (!aliveRef.current) return;
 
                 if (p) {
                     setMeProfile(p as any);
@@ -553,6 +597,7 @@ export function ChatPanel({
 
         const map: Record<string, Profile> = {};
         (profs || []).forEach((p: any) => (map[p.id] = p));
+        if (!aliveRef.current) return;
         setProfilesById((prev) => ({ ...prev, ...map }));
     };
 
@@ -565,60 +610,154 @@ export function ChatPanel({
         };
     };
 
+    const getRecentMessageIdsForReactions = () => {
+        // only for non-optimistic (since reactions table references real ids)
+        const ids = messagesRef.current
+            .filter((m) => !!m.id && !m.id.startsWith("optimistic-"))
+            .slice(-300)
+            .map((m) => m.id);
+        // unique
+        return Array.from(new Set(ids));
+    };
+
     // ---------- load messages (initial + fallback)
-    const loadMessages = async () => {
+    const loadMessages = async (opts?: { silent?: boolean }) => {
         if (!sessionId) return;
 
-        setLoading(true);
-
-        const { data: rows, error } = await supabase
-            .from(MSG_TABLE)
-            .select("id, session_id, user_id, body, created_at")
-            .eq("session_id", sessionId)
-            .order("created_at", { ascending: true })
-            .limit(300);
-
-        if (error) {
-            console.error("chat load error:", error);
-            setMessages([]);
-            setLoading(false);
+        if (loadingMessagesRef.current) {
+            queuedMessagesReloadRef.current = true;
             return;
         }
 
-        const safeRows = (rows as any as MsgRow[]) || [];
-        await ensureProfiles(safeRows.map((r) => r.user_id));
-        setMessages(safeRows.map((r) => attachProfile(r)));
+        loadingMessagesRef.current = true;
+        const reqId = ++messagesReqIdRef.current;
 
-        setLoading(false);
+        if (!opts?.silent) setLoading(true);
+
+        try {
+            const q = supabase
+                .from(MSG_TABLE)
+                .select("id, session_id, user_id, body, created_at")
+                .eq("session_id", sessionId)
+                .order("created_at", { ascending: true })
+                .limit(300);
+
+            const { data: rows, error } = await withTimeout(q, 12000, "loadMessages timeout");
+
+            if (!aliveRef.current) return;
+            if (reqId !== messagesReqIdRef.current) return;
+
+            if (error) {
+                console.error("chat load error:", error);
+                setMessages([]);
+                return;
+            }
+
+            const safeRows = (rows as any as MsgRow[]) || [];
+            await ensureProfiles(safeRows.map((r) => r.user_id));
+
+            if (!aliveRef.current) return;
+            if (reqId !== messagesReqIdRef.current) return;
+
+            setMessages(safeRows.map((r) => attachProfile(r)));
+        } catch (e) {
+            console.warn("loadMessages failed:", e);
+            if (!aliveRef.current) return;
+            if (reqId !== messagesReqIdRef.current) return;
+            // keep whatever we had; just stop spinner
+        } finally {
+            if (aliveRef.current && reqId === messagesReqIdRef.current && !opts?.silent) {
+                setLoading(false);
+            }
+            loadingMessagesRef.current = false;
+
+            // if someone asked while we were loading — run once more silently
+            if (queuedMessagesReloadRef.current) {
+                queuedMessagesReloadRef.current = false;
+                void loadMessages({ silent: true });
+            }
+        }
     };
 
-    // ---------- load reactions
-    const loadReactions = async () => {
+    // ---------- load reactions (only for recent messages, debounced reload)
+    const loadReactions = async (opts?: { silent?: boolean }) => {
         if (!sessionId) return;
 
-        const { data, error } = await supabase
-            .from(REACTIONS_TABLE)
-            .select("id, session_id, message_id, user_id, emoji, created_at")
-            .eq("session_id", sessionId)
-            .limit(2000);
-
-        if (error) {
-            console.error("reactions load error:", error);
-            setReactions({});
-            setMyReactions({});
+        if (loadingReactionsRef.current) {
+            queuedReactionsReloadRef.current = true;
             return;
         }
 
-        const grouped = groupReactions((data as any as ReactionRow[]) || [], userId);
-        setReactions(grouped.counts);
-        setMyReactions(grouped.mine);
+        loadingReactionsRef.current = true;
+        const reqId = ++reactionsReqIdRef.current;
+
+        try {
+            const msgIds = getRecentMessageIdsForReactions();
+
+            if (msgIds.length === 0) {
+                if (!aliveRef.current) return;
+                if (reqId !== reactionsReqIdRef.current) return;
+                setReactions({});
+                setMyReactions({});
+                return;
+            }
+
+            const q = supabase
+                .from(REACTIONS_TABLE)
+                .select("id, session_id, message_id, user_id, emoji, created_at")
+                .eq("session_id", sessionId)
+                .in("message_id", msgIds)
+                // upper bound just in case; usually far smaller
+                .limit(5000);
+
+            const { data, error } = await withTimeout(q, 12000, "loadReactions timeout");
+
+            if (!aliveRef.current) return;
+            if (reqId !== reactionsReqIdRef.current) return;
+
+            if (error) {
+                console.error("reactions load error:", error);
+                setReactions({});
+                setMyReactions({});
+                return;
+            }
+
+            const grouped = groupReactions((data as any as ReactionRow[]) || [], userId);
+            setReactions(grouped.counts);
+            setMyReactions(grouped.mine);
+        } catch (e) {
+            console.warn("loadReactions failed:", e);
+            if (!aliveRef.current) return;
+            if (reqId !== reactionsReqIdRef.current) return;
+            // keep old reactions
+        } finally {
+            loadingReactionsRef.current = false;
+
+            if (queuedReactionsReloadRef.current) {
+                queuedReactionsReloadRef.current = false;
+                void loadReactions({ silent: true });
+            }
+        }
     };
 
-    // initial load
+    // initial load (messages then reactions) on session change
     useEffect(() => {
         if (!sessionId) return;
-        loadMessages();
-        loadReactions();
+
+        (async () => {
+            await loadMessages();
+            // after messages are set, load reactions for those message ids
+            await loadReactions();
+        })();
+
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sessionId]);
+
+    // when userId appears/changes: refresh "my reactions" mapping
+    useEffect(() => {
+        if (!sessionId) return;
+        // no need to reload messages, just rebuild mine[] by reloading reactions
+        void loadReactions({ silent: true });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionId, userId]);
 
@@ -642,6 +781,7 @@ export function ChatPanel({
                 if (!row?.id) return;
 
                 await ensureProfiles([row.user_id]);
+                if (!aliveRef.current) return;
 
                 const beforeAtBottom = isAtBottom();
                 atBottomRef.current = beforeAtBottom;
@@ -667,6 +807,8 @@ export function ChatPanel({
                 if (!beforeAtBottom && row.user_id !== userId) {
                     setUnseenNew((n) => Math.min(99, n + 1));
                 }
+
+                // reactions for a new message usually none, but if they appear quickly — we'll pick up via reactions channel.
             }
         );
 
@@ -678,6 +820,7 @@ export function ChatPanel({
                 if (!row?.id) return;
 
                 await ensureProfiles([row.user_id]);
+                if (!aliveRef.current) return;
 
                 setMessages((prev) => prev.map((m) => (m.id === row.id ? attachProfile(row) : m)));
             }
@@ -696,19 +839,29 @@ export function ChatPanel({
         channel.subscribe((status) => {
             console.log("chat channel status:", status);
 
-            // fallback polling
-            if (status !== "SUBSCRIBED") {
+            // ✅ smarter fallback polling:
+            // only when channel actually errors or times out
+            const shouldPoll = status === "CHANNEL_ERROR" || status === "TIMED_OUT";
+
+            if (shouldPoll) {
                 if (!pollingRef.current) {
                     pollingRef.current = window.setInterval(() => {
-                        loadMessages();
-                        loadReactions();
-                    }, 2500);
+                        void loadMessages({ silent: true });
+                        // reactions reload is cheap now, but still do it less often
+                        scheduleReloadReactions(0);
+                    }, 12000);
                 }
-            } else {
+                return;
+            }
+
+            if (status === "SUBSCRIBED") {
                 if (pollingRef.current) {
                     window.clearInterval(pollingRef.current);
                     pollingRef.current = null;
                 }
+                // catch-up on successful (re)subscribe without spinner
+                void loadMessages({ silent: true });
+                scheduleReloadReactions(0);
             }
         });
 
@@ -722,7 +875,7 @@ export function ChatPanel({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionId, userId]);
 
-    // ---------- realtime reactions
+    // ---------- realtime reactions (debounced reload)
     useEffect(() => {
         if (!sessionId) return;
 
@@ -737,7 +890,7 @@ export function ChatPanel({
                     filter: `session_id=eq.${sessionId}`,
                 },
                 () => {
-                    loadReactions();
+                    scheduleReloadReactions(400);
                 }
             )
             .subscribe((status) => {
@@ -745,6 +898,10 @@ export function ChatPanel({
             });
 
         return () => {
+            if (reactionsReloadTimerRef.current) {
+                window.clearTimeout(reactionsReloadTimerRef.current);
+                reactionsReloadTimerRef.current = null;
+            }
             supabase.removeChannel(ch);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -842,7 +999,7 @@ export function ChatPanel({
                     prev.map((m) => (m.id === messageId ? { ...m, body: prevBody } : m))
                 );
             } else {
-                loadMessages();
+                void loadMessages({ silent: true });
             }
         }
     };
@@ -927,6 +1084,8 @@ export function ChatPanel({
 
             if (error) {
                 console.warn("removeReaction error:", error);
+                // best effort resync
+                scheduleReloadReactions(200);
             }
             return;
         }
@@ -954,10 +1113,13 @@ export function ChatPanel({
                     .eq("message_id", messageId)
                     .eq("user_id", userId)
                     .eq("emoji", emoji);
+
+                scheduleReloadReactions(200);
                 return;
             }
 
             console.warn("addReaction error:", error);
+            scheduleReloadReactions(200);
         }
     };
 
