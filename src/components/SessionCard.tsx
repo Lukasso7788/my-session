@@ -6,15 +6,21 @@ import { SessionStageBar } from "./SessionStageBar";
 import type { SessionStage } from "../SessionConfig";
 
 /** =========================
- * ✅ Local Supabase client (no path imports)
+ * ✅ Global Supabase singleton (avoid multiple GoTrueClient instances)
  * Uses Vite env vars:
  * - VITE_SUPABASE_URL
  * - VITE_SUPABASE_ANON_KEY
  * ========================= */
-let _supabase: SupabaseClient | null = null;
+type GlobalAny = typeof globalThis & {
+    __mysession_supabase__?: SupabaseClient | null;
+    __mysession_supabase_inited__?: boolean;
+};
 
 function getSupabase(): SupabaseClient | null {
-    if (_supabase) return _supabase;
+    const g = globalThis as GlobalAny;
+    if (g.__mysession_supabase_inited__) return g.__mysession_supabase__ || null;
+
+    g.__mysession_supabase_inited__ = true;
 
     const env: any = (import.meta as any).env || {};
     const url =
@@ -31,14 +37,15 @@ function getSupabase(): SupabaseClient | null {
 
     if (!url || !anon) {
         console.warn("[SessionCard] Missing Supabase env vars (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY).");
+        g.__mysession_supabase__ = null;
         return null;
     }
 
-    _supabase = createClient(url, anon, {
+    g.__mysession_supabase__ = createClient(url, anon, {
         auth: { persistSession: true, autoRefreshToken: true },
     });
 
-    return _supabase;
+    return g.__mysession_supabase__ || null;
 }
 
 interface SessionCardProps {
@@ -112,6 +119,7 @@ function extractBookers(session: any): BookedUser[] {
     return out;
 }
 
+// ✅ NEW: infer visual type from title for newer/infinite room titles
 function inferTypeFromTitle(title: any): "Deep work" | "Pomodoro" | "Short sprints" | null {
     const t = safeLower(title);
     if (t.includes("silent") || t.includes("drop-in") || t.includes("drop in")) return "Deep work";
@@ -146,6 +154,7 @@ function resolveSessionType(session: any): "group" | "infinite" | "body" {
     if (sch && typeof sch === "object" && !Array.isArray(sch)) {
         if ((sch as any).kind === "infinite_room") return "infinite";
         if ((sch as any)?.timer?.phases) return "infinite";
+        if ((sch as any)?.phases) return "infinite";
     }
 
     if (safeLower(session?.format) === "body") return "body";
@@ -267,6 +276,7 @@ function DotsFallbackIcon({ size = 18 }: { size?: number }) {
  */
 function OptionsSmartIcon({ hovered, size = 18 }: { hovered: boolean; size?: number }) {
     const [useFallback, setUseFallback] = useState(false);
+
     if (useFallback) return <DotsFallbackIcon size={size} />;
 
     return (
@@ -312,6 +322,7 @@ function MenuItem({
     );
 }
 
+// ✅ Detect studio/custom sessions (prefer DB flag; fallback to formatLabel)
 function isCustomStudioSession(session: any): boolean {
     if (session?.is_custom === true) return true;
 
@@ -325,10 +336,13 @@ function isCustomStudioSession(session: any): boolean {
 }
 
 /** =========================
- * ✅ stages resolver (card uses same principle as SessionStageBar)
- * - supports duration_minutes
- * - avoids .order("position") hard-fail if column doesn't exist
- * - waits for auth session restore (RLS safe)
+ * ✅ Stages resolver (FIXED)
+ * Reason your timeline is grey:
+ * - your logs show REST /session_stages returns 404 -> table doesn't exist in Supabase
+ * - so we must NOT rely on that table, and instead derive from:
+ *   1) session.schedule.timer.phases (most common)
+ *   2) session_templates.schedule.timer.phases (by template id / embedded)
+ *   3) session.stages_json / session_templates.stages_json
  * ========================= */
 function tryParseJson<T = any>(x: any): T | null {
     if (!x) return null;
@@ -355,7 +369,6 @@ function normalizeStages(raw: any): SessionStage[] {
             const title = s.title ?? s.name ?? s.label ?? s.displayName;
             const color = s.color ?? s.stage_color ?? s.stageColor;
 
-            // ✅ durations
             const durationSeconds =
                 Number(s.durationSeconds) ||
                 Number(s.duration_seconds) ||
@@ -373,12 +386,9 @@ function normalizeStages(raw: any): SessionStage[] {
                 name: title ?? s.name,
                 color,
 
-                // keep multiple fields for compatibility
                 durationSeconds: durationSeconds || s.durationSeconds || s.seconds || s.duration_seconds,
                 duration_seconds: s.duration_seconds ?? s.durationSeconds ?? s.seconds,
                 seconds: s.seconds ?? s.durationSeconds ?? s.duration_seconds,
-
-                // optional minutes too (helps debugging)
                 duration_minutes: s.duration_minutes ?? s.durationMinutes,
             } as any;
         })
@@ -406,78 +416,220 @@ function sortStagesInClient(stages: any[]): any[] {
     });
 }
 
+function phasesToStages(phases: any[]): SessionStage[] {
+    const mapped = (phases || []).map((p: any, i: number) => {
+        const isBreak = !!(p?.isBreak || p?.break === true || p?.kind === "break" || p?.type === "break");
+        const kind = p?.kind || p?.type || (isBreak ? "break" : "focus");
+
+        const title =
+            p?.title ||
+            p?.label ||
+            p?.name ||
+            (isBreak ? "Break" : "Focus");
+
+        const durationSeconds =
+            Number(p?.seconds) ||
+            Number(p?.duration_seconds) ||
+            Number(p?.durationSeconds) ||
+            (Number(p?.duration_minutes) ? Number(p?.duration_minutes) * 60 : 0) ||
+            (Number(p?.minutes) ? Number(p?.minutes) * 60 : 0) ||
+            (Number(p?.duration) ? Number(p?.duration) * 60 : 0);
+
+        return {
+            id: String(p?.id ?? i),
+            kind,
+            title,
+            name: title,
+            color: p?.color,
+            durationSeconds,
+            seconds: p?.seconds,
+            duration_seconds: p?.duration_seconds,
+            duration_minutes: p?.duration_minutes ?? p?.minutes,
+            position: p?.position ?? p?.order_index ?? p?.order ?? i,
+        } as any;
+    });
+
+    return normalizeStages(sortStagesInClient(mapped));
+}
+
+function tryStagesFromSchedule(scheduleAny: any): SessionStage[] {
+    const schedule = tryParseJson<any>(scheduleAny);
+    if (!schedule || typeof schedule !== "object") return [];
+
+    const phases =
+        schedule?.timer?.phases ||
+        schedule?.phases ||
+        schedule?.timer?.blocks ||
+        schedule?.blocks;
+
+    if (Array.isArray(phases) && phases.length) return phasesToStages(phases);
+
+    // ultra fallback: timer.focus/break pairs (rare)
+    const focusSec = Number(schedule?.timer?.focusSeconds || schedule?.timer?.focus_seconds);
+    const breakSec = Number(schedule?.timer?.breakSeconds || schedule?.timer?.break_seconds);
+    const cycles = Number(schedule?.timer?.cycles || schedule?.timer?.rounds);
+
+    if (Number.isFinite(focusSec) && focusSec > 0 && Number.isFinite(breakSec) && breakSec > 0 && Number.isFinite(cycles) && cycles > 0) {
+        const ph: any[] = [];
+        for (let i = 0; i < cycles; i++) {
+            ph.push({ kind: "focus", title: `Focus`, seconds: focusSec, position: ph.length });
+            ph.push({ kind: "break", title: `Break`, seconds: breakSec, position: ph.length });
+        }
+        return phasesToStages(ph);
+    }
+
+    return [];
+}
+
 async function ensureAuthReady(sb: SupabaseClient) {
     try {
-        // restores persisted session before first RLS-protected select
         await sb.auth.getSession();
     } catch {
         // ignore
     }
 }
 
+// Avoid spamming 404 calls if table doesn't exist (your logs show it)
+let _hasSessionStagesTable: boolean | null = null;
+
+// cheap caches (card list can render 20+ sessions)
+const _stagesBySessionId = new Map<string, SessionStage[]>();
+const _stagesByTemplateId = new Map<string, SessionStage[]>();
+
+function isNotFoundErr(err: any): boolean {
+    const status = (err as any)?.status;
+    const msg = String((err as any)?.message || "");
+    return status === 404 || msg.toLowerCase().includes("not found");
+}
+
+function getTemplateIdFromSession(session: any): string | null {
+    const direct = session?.session_template_id || session?.template_id;
+    if (direct) return String(direct);
+
+    const embedded =
+        session?.session_template ||
+        session?.session_templates ||
+        session?.template ||
+        session?.templates;
+
+    if (embedded?.id) return String(embedded.id);
+
+    return null;
+}
+
+function getEmbeddedTemplate(session: any): any | null {
+    return (
+        session?.session_template ||
+        session?.session_templates ||
+        session?.template ||
+        session?.templates ||
+        null
+    );
+}
+
 async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
-    // 1) already nested
+    const sessionId = session?.id ? String(session.id) : "";
+    if (sessionId && _stagesBySessionId.has(sessionId)) return _stagesBySessionId.get(sessionId)!;
+
+    // 1) already nested arrays
     if (Array.isArray(session?.session_stages) && session.session_stages.length) {
-        return normalizeStages(sortStagesInClient(session.session_stages));
+        const out = normalizeStages(sortStagesInClient(session.session_stages));
+        if (sessionId) _stagesBySessionId.set(sessionId, out);
+        return out;
     }
     if (Array.isArray(session?.stages) && session.stages.length) {
-        return normalizeStages(sortStagesInClient(session.stages));
+        const out = normalizeStages(sortStagesInClient(session.stages));
+        if (sessionId) _stagesBySessionId.set(sessionId, out);
+        return out;
     }
 
-    // 2) JSON columns on session/template
+    // 2) JSON columns on session
     const fromSessionJson =
         tryParseJson<any[]>(session?.stages_json) ||
-        tryParseJson<any[]>(session?.stages) ||
         tryParseJson<any[]>(session?.session_stages_json);
     if (Array.isArray(fromSessionJson) && fromSessionJson.length) {
-        return normalizeStages(sortStagesInClient(fromSessionJson));
+        const out = normalizeStages(sortStagesInClient(fromSessionJson));
+        if (sessionId) _stagesBySessionId.set(sessionId, out);
+        return out;
+    }
+
+    // 3) ✅ MOST IMPORTANT: derive from session.schedule (this is likely what you have)
+    const scheduleStages = tryStagesFromSchedule(session?.schedule);
+    if (scheduleStages.length) {
+        if (sessionId) _stagesBySessionId.set(sessionId, scheduleStages);
+        return scheduleStages;
+    }
+
+    // 4) embedded template on session object (if SessionsPage query nested it)
+    const embeddedTemplate = getEmbeddedTemplate(session);
+    if (embeddedTemplate) {
+        const embStagesJson =
+            tryParseJson<any[]>(embeddedTemplate?.stages_json) ||
+            tryParseJson<any[]>(embeddedTemplate?.stages);
+
+        if (Array.isArray(embStagesJson) && embStagesJson.length) {
+            const out = normalizeStages(sortStagesInClient(embStagesJson));
+            if (sessionId) _stagesBySessionId.set(sessionId, out);
+            return out;
+        }
+
+        const embScheduleStages = tryStagesFromSchedule(embeddedTemplate?.schedule);
+        if (embScheduleStages.length) {
+            if (sessionId) _stagesBySessionId.set(sessionId, embScheduleStages);
+            return embScheduleStages;
+        }
     }
 
     const sb = getSupabase();
     if (!sb) return [];
     await ensureAuthReady(sb);
 
-    // 3) fetch from session_stages table
-    if (session?.id) {
+    // 5) session_stages table (optional; skip forever if missing)
+    if (_hasSessionStagesTable !== false && sessionId) {
         const { data: ssData, error: ssErr } = await sb
             .from("session_stages")
             .select("*")
             .eq("session_id", session.id);
 
-        if (!ssErr && Array.isArray(ssData) && ssData.length) {
-            return normalizeStages(sortStagesInClient(ssData));
+        if (ssErr) {
+            if (isNotFoundErr(ssErr)) _hasSessionStagesTable = false; // stop future calls
+        } else if (Array.isArray(ssData) && ssData.length) {
+            _hasSessionStagesTable = true;
+            const out = normalizeStages(sortStagesInClient(ssData));
+            _stagesBySessionId.set(sessionId, out);
+            return out;
         }
     }
 
-    // 4) template stages
-    const templateId = session?.session_template_id || session?.template_id;
+    // 6) session_templates fetch by template id (cached)
+    const templateId = getTemplateIdFromSession(session);
+    if (templateId && _stagesByTemplateId.has(templateId)) {
+        const out = _stagesByTemplateId.get(templateId)!;
+        if (sessionId) _stagesBySessionId.set(sessionId, out);
+        return out;
+    }
+
     if (templateId) {
         const { data: tData, error: tErr } = await sb
             .from("session_templates")
-            .select("stages, stages_json, schedule")
+            .select("id, stages, stages_json, schedule")
             .eq("id", templateId)
             .maybeSingle();
 
         if (!tErr && tData) {
             const sj = tryParseJson<any[]>(tData?.stages_json) || tryParseJson<any[]>(tData?.stages);
-            if (Array.isArray(sj) && sj.length) return normalizeStages(sortStagesInClient(sj));
+            if (Array.isArray(sj) && sj.length) {
+                const out = normalizeStages(sortStagesInClient(sj));
+                _stagesByTemplateId.set(templateId, out);
+                if (sessionId) _stagesBySessionId.set(sessionId, out);
+                return out;
+            }
 
-            const schedule = tryParseJson<any>(tData?.schedule);
-            const phases = schedule?.timer?.phases;
-            if (Array.isArray(phases) && phases.length) {
-                const mapped = phases.map((p: any, i: number) => ({
-                    id: `${i}`,
-                    kind: p?.kind || p?.type || (p?.isBreak ? "break" : "focus"),
-                    title: p?.title || p?.label || (p?.isBreak ? "Break" : "Focus"),
-                    durationSeconds:
-                        Number(p?.seconds) ||
-                        Number(p?.durationSeconds) ||
-                        (Number(p?.duration_minutes) ? Number(p?.duration_minutes) * 60 : 0) ||
-                        (Number(p?.minutes) ? Number(p?.minutes) * 60 : 0),
-                    color: p?.color,
-                    position: p?.position ?? i,
-                }));
-                return normalizeStages(sortStagesInClient(mapped));
+            const schedStages = tryStagesFromSchedule(tData?.schedule);
+            if (schedStages.length) {
+                _stagesByTemplateId.set(templateId, schedStages);
+                if (sessionId) _stagesBySessionId.set(sessionId, schedStages);
+                return schedStages;
             }
         }
     }
@@ -486,7 +638,7 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
 }
 
 /** =========================
- * ✅ live users resolver
+ * ✅ Live users resolver
  * ========================= */
 function normalizeUsers(raw: any[]): BookedUser[] {
     const users: BookedUser[] = (raw || [])
@@ -608,11 +760,9 @@ export default function SessionCard({
         return Date.now() >= t;
     }, [isInfinite, liveCount, session?.start_time]);
 
+    // ✅ IMPORTANT:
+    // For future sessions: don't pass real future start_time to StageBar (it will wrap and look "almost finished").
     const timelineStartTime = useMemo(() => {
-        // ✅ IMPORTANT:
-        // - For future scheduled sessions: do NOT feed future start_time into StageBar (it will look "almost finished").
-        // - For started sessions: use the real start_time
-        // - For infinite sessions without start_time: fallback to started_at/created_at/now
         const start = session?.start_time || session?.started_at || session?.created_at || "";
         if (!start) return String(Date.now());
         if (!hasStarted && session?.start_time) return String(Date.now());
@@ -660,25 +810,26 @@ export default function SessionCard({
         })
         : "";
 
-    // ✅ Load stages:
-    // re-run when userId appears (auth becomes available) + session changes
+    // ✅ Load stages (FIXED): do not depend on session_stages table; derive from schedule/template
     useEffect(() => {
         let cancelled = false;
+
         (async () => {
             try {
                 const s = await fetchStagesForSession(session);
-                if (!cancelled) setStages(s || []);
+                if (!cancelled) setStages(Array.isArray(s) ? s : []);
             } catch (e) {
-                console.error("fetchStagesForSession failed:", e);
+                console.error("[SessionCard] fetchStagesForSession failed:", e);
                 if (!cancelled) setStages([]);
             }
         })();
+
         return () => {
             cancelled = true;
         };
-    }, [session?.id, userId]);
+    }, [session?.id, session?.schedule, session?.session_template_id, session?.template_id, userId]);
 
-    // ✅ Load live users when started (and refresh)
+    // ✅ Load live users when started (and refresh occasionally)
     useEffect(() => {
         if (!session?.id) return;
         if (!hasStarted) {
@@ -693,7 +844,7 @@ export default function SessionCard({
                 const users = await fetchLiveUsers(String(session.id));
                 if (!cancelled) setLiveUsers(users || []);
             } catch (e) {
-                console.error("fetchLiveUsers failed:", e);
+                console.error("[SessionCard] fetchLiveUsers failed:", e);
                 if (!cancelled) setLiveUsers([]);
             }
         };
@@ -706,6 +857,7 @@ export default function SessionCard({
         };
     }, [session?.id, hasStarted, userId]);
 
+    // ✅ auto-switch to live tab when session started
     useEffect(() => {
         if (hasStarted) setPeopleTab("live");
         else setPeopleTab("booked");
@@ -1111,18 +1263,17 @@ export default function SessionCard({
                     </div>
                 </div>
 
-                {/* ✅ Timeline: EXACT same component/principle as SessionStageBar */}
-                <div className="w-full mt-2">
+                {/* ✅ Session timeline (now should actually render because stages are derived from schedule/template) */}
+                <div className="w-full mt-2 sessions-stage-bar">
                     {stages?.length ? (
                         <SessionStageBar stages={stages} startTime={timelineStartTime} />
                     ) : (
-                        // placeholder shaped like StageBar (so it visually matches)
-                        <div className="w-full h-2 rounded-full bg-[#111827]/5" title="Session timeline (coming soon)" />
+                        <div className="w-full h-2 rounded-full bg-[#111827]/5" title="Session timeline (no stages found)" />
                     )}
                 </div>
             </div>
 
-            {/* people modal */}
+            {/* people modal (booked + live switch) */}
             <ModalShell
                 title={hasStarted ? "People" : "People who booked this session"}
                 isOpen={isBookersModalOpen}
