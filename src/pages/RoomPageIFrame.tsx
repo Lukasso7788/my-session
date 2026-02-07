@@ -926,6 +926,7 @@ export default function RoomPageIFrame() {
     useAttendancePresence(session?.id && currentUserId ? String(session.id) : null, { heartbeatMs: 10_000 });
 
     const attendanceLeave = async () => {
+        stopAttendanceHeartbeat();
         try {
             if (session?.id) {
                 await supabase.rpc("attendance_leave", { p_session_id: String(session.id) });
@@ -935,20 +936,117 @@ export default function RoomPageIFrame() {
         }
     };
 
-    // best-effort on page close
+    const ATT_HEARTBEAT_MS = 10_000;
+    const attendanceHbTimerRef = useRef<number | null>(null);
+
+    const attendanceJoin = async () => {
+        try {
+            if (!session?.id) return;
+
+            // ✅ если RPC есть — идеально
+            await supabase.rpc("attendance_join", { p_session_id: String(session.id) });
+        } catch (e) {
+            // ✅ fallback если RPC нет: прямой upsert
+            try {
+                if (!session?.id || !currentUserId) return;
+
+                const nowIso = new Date().toISOString();
+                await supabase
+                    .from("session_attendance")
+                    .upsert(
+                        {
+                            session_id: String(session.id),
+                            user_id: String(currentUserId),
+                            joined_at: nowIso,
+                            left_at: null,
+                            last_seen_at: nowIso,
+                        },
+                        { onConflict: "session_id,user_id" }
+                    );
+            } catch (e2) {
+                console.log("attendanceJoin fallback failed:", e2);
+            }
+        }
+    };
+
+    const attendanceHeartbeat = async () => {
+        try {
+            if (!session?.id) return;
+            await supabase.rpc("attendance_heartbeat", { p_session_id: String(session.id) });
+        } catch (e) {
+            // fallback update last_seen_at напрямую
+            try {
+                if (!session?.id || !currentUserId) return;
+                await supabase
+                    .from("session_attendance")
+                    .update({ last_seen_at: new Date().toISOString(), left_at: null })
+                    .eq("session_id", String(session.id))
+                    .eq("user_id", String(currentUserId));
+            } catch { }
+        }
+    };
+
+    const startAttendanceHeartbeat = () => {
+        if (attendanceHbTimerRef.current) return;
+        attendanceHbTimerRef.current = window.setInterval(() => {
+            void attendanceHeartbeat();
+        }, ATT_HEARTBEAT_MS);
+    };
+
+    const stopAttendanceHeartbeat = () => {
+        if (!attendanceHbTimerRef.current) return;
+        window.clearInterval(attendanceHbTimerRef.current);
+        attendanceHbTimerRef.current = null;
+    };
+
+    // =========================
+    // ✅ LEAVE-ONCE (covers: SPA unmount, beforeunload, pagehide)
+    // =========================
+    const leaveOnceRef = useRef(false);
+
+    /**
+     * Best-effort "leave" that runs only once.
+     * Use `void leaveOnce()` in events, and `await leaveOnce()` in async flows.
+     */
+    const leaveOnce = async () => {
+        if (leaveOnceRef.current) return;
+        leaveOnceRef.current = true;
+
+        try {
+            await attendanceLeave(); // attendanceLeave() already calls stopAttendanceHeartbeat()
+        } catch { }
+
+        // On exit events we also try to dispose iframe (safe/no-throw)
+        try {
+            apiRef.current?.dispose?.();
+        } catch { }
+    };
+
+    // =========================
+    // ✅ EXIT HOOKS: beforeunload + pagehide + SPA unmount
+    // =========================
     useEffect(() => {
-        const onUnload = () => {
-            try {
-                void attendanceLeave();
-            } catch { }
-            try {
-                apiRef.current?.dispose?.();
-            } catch { }
+        // 1) hard exits (close tab, reload, navigate away)
+        const onBeforeUnload = () => { void leaveOnce(); };
+        const onPageHide = () => { void leaveOnce(); }; // ✅ Safari/iOS + bfcache cases
+
+        window.addEventListener("beforeunload", onBeforeUnload);
+        window.addEventListener("pagehide", onPageHide);
+
+        return () => {
+            window.removeEventListener("beforeunload", onBeforeUnload);
+            window.removeEventListener("pagehide", onPageHide);
         };
-        window.addEventListener("beforeunload", onUnload);
-        return () => window.removeEventListener("beforeunload", onUnload);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [session?.id]);
+
+    useEffect(() => {
+        // 2) SPA navigation (component unmount)
+        return () => {
+            void leaveOnce();
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Key to force recreate Jitsi iframe reliably
     const [jitsiKey, setJitsiKey] = useState(0);
@@ -1789,7 +1887,9 @@ export default function RoomPageIFrame() {
         const leaveToSessions = () => {
             if (destroyed) return;
             destroyed = true;
-            void attendanceLeave();
+
+            void leaveOnce();
+
             cleanup();
             navigate("/sessions", { replace: true });
         };
@@ -1994,6 +2094,10 @@ export default function RoomPageIFrame() {
                     localJoinedRef.current = true;
                     localParticipantIdRef.current = String(e?.id || "") || null;
 
+                    // ✅ отметиться в session_attendance
+                    await attendanceJoin();
+                    startAttendanceHeartbeat();
+
                     // ✅ Ensure local user is muted on join (fallback, in case config is ignored)
                     try {
                         const currentlyMuted =
@@ -2171,12 +2275,13 @@ export default function RoomPageIFrame() {
     const hangup = async () => {
         const api = apiRef.current;
 
-        await attendanceLeave();
+        await leaveOnce();
 
         if (!api) {
             navigate("/sessions", { replace: true });
             return;
         }
+
         try {
             api.executeCommand("hangup");
         } catch {
