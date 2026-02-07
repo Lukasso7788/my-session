@@ -452,8 +452,30 @@ function phasesToStages(phases: any): SessionStage[] {
     }
 
     const mapped = (arr || []).map((p: any, i: number) => {
-        const isBreak = !!(p?.isBreak || p?.break === true || p?.kind === "break" || p?.type === "break");
-        const kind = p?.kind || p?.type || (isBreak ? "break" : "focus");
+        const rawTitle = String(p?.title || p?.label || p?.name || "").toLowerCase();
+        const rawKind = String(
+            p?.kind ||
+            p?.type ||
+            p?.mode ||
+            p?.phase_type ||
+            p?.phaseType ||
+            p?.segmentType ||
+            p?.blockType ||
+            ""
+        ).toLowerCase();
+
+        const isBreak = !!(
+            p?.isBreak === true ||
+            p?.break === true ||
+            rawKind.includes("break") ||
+            rawKind.includes("rest") ||
+            rawKind.includes("pause") ||
+            rawTitle.includes("break") ||
+            rawTitle.includes("rest") ||
+            rawTitle.includes("pause")
+        );
+
+        const kind = rawKind || (isBreak ? "break" : "focus");
 
         const title =
             p?.title ||
@@ -843,12 +865,15 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
  * - same height as your grey placeholder (h-2)
  * - no timers, no intervals => zero re-render pressure
  * ========================= */
-function stageKindFallbackColor(kind: any) {
-    const k = safeLower(kind);
-    if (k.includes("break")) return "#F9ADA2";
-    if (k.includes("intro") || k.includes("welcome")) return "#80DF86";
-    if (k.includes("outro") || k.includes("end") || k.includes("wrap")) return "#80DF86";
-    if (k.includes("intent") || k.includes("checkin")) return "#ADD3FF";
+function stageFallbackColor(stage: any) {
+    const k = safeLower(stage?.kind);
+    const t = safeLower(stage?.title || stage?.name);
+
+    if (k.includes("break") || t.includes("break") || t.includes("rest") || t.includes("pause")) return "#F9ADA2";
+    if (k.includes("intro") || t.includes("intro") || t.includes("welcome") || t.includes("start")) return "#80DF86";
+    if (k.includes("outro") || t.includes("outro") || t.includes("wrap") || t.includes("end")) return "#80DF86";
+    if (k.includes("intent") || t.includes("intent") || t.includes("checkin") || t.includes("check-in") || t.includes("check in")) return "#ADD3FF";
+
     return "#4CA0FF"; // focus default
 }
 
@@ -873,7 +898,7 @@ function SessionTimelineThinBar({ stages }: { stages: SessionStage[] }) {
                 return {
                     key: String((s as any)?.id ?? (s as any)?.title ?? Math.random()),
                     seconds,
-                    color: (s as any)?.color || stageKindFallbackColor((s as any)?.kind),
+                    color: (s as any)?.color || stageFallbackColor(s),
                     label: String((s as any)?.title || (s as any)?.name || "Stage"),
                 };
             })
