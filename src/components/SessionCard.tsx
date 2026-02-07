@@ -1,9 +1,47 @@
 // src/components/SessionCard.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { supabase } from "../lib/supabaseClient"; // ✅ adjust path if yours differs
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { SessionStageBar } from "./SessionStageBar";
 import type { SessionStage } from "../SessionConfig";
+
+/** =========================
+ * ✅ Local Supabase client (no path imports)
+ * Uses Vite env vars:
+ * - VITE_SUPABASE_URL
+ * - VITE_SUPABASE_ANON_KEY
+ * ========================= */
+let _supabase: SupabaseClient | null = null;
+
+function getSupabase(): SupabaseClient | null {
+    if (_supabase) return _supabase;
+
+    const env: any = (import.meta as any).env || {};
+    const url =
+        env.VITE_SUPABASE_URL ||
+        env.VITE_PUBLIC_SUPABASE_URL ||
+        env.VITE_NEXT_PUBLIC_SUPABASE_URL ||
+        "";
+    const anon =
+        env.VITE_SUPABASE_ANON_KEY ||
+        env.VITE_SUPABASE_KEY ||
+        env.VITE_PUBLIC_SUPABASE_ANON_KEY ||
+        env.VITE_NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+        "";
+
+    if (!url || !anon) {
+        // Avoid crashing build/runtime if env is missing.
+        // Features that require DB will degrade gracefully.
+        console.warn("[SessionCard] Missing Supabase env vars (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY).");
+        return null;
+    }
+
+    _supabase = createClient(url, anon, {
+        auth: { persistSession: true, autoRefreshToken: true },
+    });
+
+    return _supabase;
+}
 
 interface SessionCardProps {
     session: any;
@@ -318,10 +356,11 @@ function normalizeStages(raw: any): SessionStage[] {
     return arr
         .map((s: any, idx: number) => {
             if (!s) return null;
-            // support different shapes
+
             const kind = s.kind ?? s.type ?? s.stage_kind ?? s.stageKind ?? s.blockKind;
             const title = s.title ?? s.name ?? s.label ?? s.displayName;
             const color = s.color ?? s.stage_color ?? s.stageColor;
+
             const durationSeconds =
                 Number(s.durationSeconds) ||
                 Number(s.duration_seconds) ||
@@ -334,7 +373,7 @@ function normalizeStages(raw: any): SessionStage[] {
                 id: s.id ?? `${idx}`,
                 kind,
                 title,
-                name: title ?? s.name, // SessionStageBar can use title/label/name
+                name: title ?? s.name,
                 color,
                 durationSeconds: durationSeconds || s.durationSeconds || s.seconds || s.duration_seconds,
                 duration_seconds: s.duration_seconds ?? s.durationSeconds ?? s.seconds,
@@ -360,9 +399,12 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
         tryParseJson<any[]>(session?.session_stages_json);
     if (Array.isArray(fromSessionJson) && fromSessionJson.length) return normalizeStages(fromSessionJson);
 
+    const sb = getSupabase();
+    if (!sb) return [];
+
     // 3) attempt fetch from session_stages table
     if (session?.id) {
-        const { data: ssData, error: ssErr } = await supabase
+        const { data: ssData, error: ssErr } = await sb
             .from("session_stages")
             .select("*")
             .eq("session_id", session.id)
@@ -374,7 +416,7 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
     // 4) attempt template stages
     const templateId = session?.session_template_id || session?.template_id;
     if (templateId) {
-        const { data: tData, error: tErr } = await supabase
+        const { data: tData, error: tErr } = await sb
             .from("session_templates")
             .select("stages, stages_json, schedule")
             .eq("id", templateId)
@@ -387,12 +429,14 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
             const schedule = tryParseJson<any>(tData?.schedule);
             const phases = schedule?.timer?.phases;
             if (Array.isArray(phases) && phases.length) {
-                // map phases to work/break with minutes->seconds
                 const mapped = phases.map((p: any, i: number) => ({
                     id: `${i}`,
                     kind: p?.kind || p?.type || (p?.isBreak ? "break" : "focus"),
                     title: p?.title || p?.label || (p?.isBreak ? "Break" : "Focus"),
-                    durationSeconds: Number(p?.seconds) || Number(p?.durationSeconds) || (Number(p?.minutes) ? Number(p?.minutes) * 60 : 0),
+                    durationSeconds:
+                        Number(p?.seconds) ||
+                        Number(p?.durationSeconds) ||
+                        (Number(p?.minutes) ? Number(p?.minutes) * 60 : 0),
                     color: p?.color,
                 }));
                 return normalizeStages(mapped);
@@ -431,8 +475,11 @@ function normalizeUsers(raw: any[]): BookedUser[] {
 }
 
 async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
+    const sb = getSupabase();
+    if (!sb) return [];
+
     // Best-effort: common attendance table shape
-    const { data, error } = await supabase
+    const { data, error } = await sb
         .from("session_attendance")
         .select("user_id, profiles:profiles(id, full_name, avatar_url), left_at, joined_at")
         .eq("session_id", sessionId)
@@ -441,7 +488,7 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
     if (!error && Array.isArray(data)) return normalizeUsers(data);
 
     // fallback table name
-    const { data: d2, error: e2 } = await supabase
+    const { data: d2, error: e2 } = await sb
         .from("session_participants")
         .select("user_id, profiles:profiles(id, full_name, avatar_url), left_at, joined_at")
         .eq("session_id", sessionId)
@@ -697,7 +744,9 @@ export default function SessionCard({
         try {
             const d = new Date(session.start_time);
             const pad = (n: number) => String(n).padStart(2, "0");
-            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
+                d.getMinutes()
+            )}`;
         } catch {
             return "";
         }
@@ -714,7 +763,9 @@ export default function SessionCard({
                 const d = new Date(session.start_time);
                 const pad = (n: number) => String(n).padStart(2, "0");
                 setEditStartLocal(
-                    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+                    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
+                        d.getMinutes()
+                    )}`
                 );
             } catch { }
         } else setEditStartLocal("");
@@ -1037,13 +1088,8 @@ export default function SessionCard({
                 {/* ✅ NEW: Session timeline (placement like CardV1) */}
                 <div className="w-full mt-2 sessions-stage-bar">
                     {stages?.length ? (
-                        <SessionStageBar
-                            stages={stages}
-                            startTime={session?.start_time || ""}
-                        // tooltips already inside SessionStageBar (name + duration)
-                        />
+                        <SessionStageBar stages={stages} startTime={session?.start_time || ""} />
                     ) : (
-                        // keep layout stable if no stages yet
                         <div className="w-full h-4 rounded-2xl bg-[#111827]/5" title="Session timeline (coming soon)" />
                     )}
                 </div>
@@ -1088,9 +1134,7 @@ export default function SessionCard({
                 <div className="mt-1 flex flex-col gap-2">
                     {modalCount === 0 ? (
                         <div className="text-[13px] text-[#606060]">
-                            {peopleTab === "live"
-                                ? "No one in the session right now."
-                                : "No one booked yet. Be the first."}
+                            {peopleTab === "live" ? "No one in the session right now." : "No one booked yet. Be the first."}
                         </div>
                     ) : (
                         modalUsers.map((u) => {
