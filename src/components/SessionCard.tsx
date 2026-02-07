@@ -2,7 +2,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { SessionStageBar } from "./SessionStageBar";
 import type { SessionStage } from "../SessionConfig";
 
 /** =========================
@@ -145,7 +144,14 @@ function resolveSessionType(session: any): "group" | "infinite" | "body" {
             try {
                 return JSON.parse(raw);
             } catch {
-                return null;
+                // sometimes it's double-encoded
+                try {
+                    const once = JSON.parse(raw);
+                    if (typeof once === "string") return JSON.parse(once);
+                    return once;
+                } catch {
+                    return null;
+                }
             }
         }
         return raw;
@@ -336,26 +342,39 @@ function isCustomStudioSession(session: any): boolean {
 }
 
 /** =========================
- * ✅ Stages resolver (FIXED)
- * Reason your timeline is grey:
- * - your logs show REST /session_stages returns 404 -> table doesn't exist in Supabase
- * - so we must NOT rely on that table, and instead derive from:
- *   1) session.schedule.timer.phases (most common)
- *   2) session_templates.schedule.timer.phases (by template id / embedded)
- *   3) session.stages_json / session_templates.stages_json
+ * ✅ Stages resolver (FIXED + MORE ROBUST)
+ * Goal:
+ * - DO NOT depend on session_stages table (you have 404 in logs)
+ * - Derive stages from:
+ *   1) session.schedule (phases/blocks/etc)
+ *   2) embedded template schedule (if nested)
+ *   3) session_templates.schedule by template_id
+ *   4) JSON columns (stages_json)
+ *   5) FINAL fallback: single Focus block by duration_minutes (for "1 uninterrupted hour" even if schedule is minimal)
  * ========================= */
 function tryParseJson<T = any>(x: any): T | null {
     if (!x) return null;
     if (typeof x === "object") return x as T;
+
     if (typeof x === "string") {
         const s = x.trim();
         if (!s) return null;
+
+        // normal json
         try {
             return JSON.parse(s) as T;
         } catch {
-            return null;
+            // double-encoded json (common with jsonb->string pipelines)
+            try {
+                const once = JSON.parse(s);
+                if (typeof once === "string") return JSON.parse(once) as T;
+                return once as T;
+            } catch {
+                return null;
+            }
         }
     }
+
     return null;
 }
 
@@ -375,6 +394,7 @@ function normalizeStages(raw: any): SessionStage[] {
                 Number(s.seconds) ||
                 (Number(s.duration_minutes) ? Number(s.duration_minutes) * 60 : 0) ||
                 (Number(s.durationMinutes) ? Number(s.durationMinutes) * 60 : 0) ||
+                // IMPORTANT: some schedules store duration in MINUTES as "duration"
                 (Number(s.duration) ? Number(s.duration) * 60 : 0) ||
                 (Number(s.minutes) ? Number(s.minutes) * 60 : 0);
 
@@ -416,8 +436,22 @@ function sortStagesInClient(stages: any[]): any[] {
     });
 }
 
-function phasesToStages(phases: any[]): SessionStage[] {
-    const mapped = (phases || []).map((p: any, i: number) => {
+function phasesToStages(phases: any): SessionStage[] {
+    // phases can be: array OR object map OR nested
+    let arr: any[] = [];
+
+    if (Array.isArray(phases)) arr = phases;
+    else if (phases && typeof phases === "object") {
+        // object-map, ex: { Focus: 60 } or { focus: { minutes: 60 } }
+        arr = Object.entries(phases).map(([k, v], i) => {
+            if (v && typeof v === "object") {
+                return { ...(v as any), title: (v as any)?.title || (v as any)?.name || k, position: (v as any)?.position ?? i };
+            }
+            return { title: k, minutes: v as any, position: i };
+        });
+    }
+
+    const mapped = (arr || []).map((p: any, i: number) => {
         const isBreak = !!(p?.isBreak || p?.break === true || p?.kind === "break" || p?.type === "break");
         const kind = p?.kind || p?.type || (isBreak ? "break" : "focus");
 
@@ -433,6 +467,7 @@ function phasesToStages(phases: any[]): SessionStage[] {
             Number(p?.durationSeconds) ||
             (Number(p?.duration_minutes) ? Number(p?.duration_minutes) * 60 : 0) ||
             (Number(p?.minutes) ? Number(p?.minutes) * 60 : 0) ||
+            // IMPORTANT: many templates store duration in minutes as "duration"
             (Number(p?.duration) ? Number(p?.duration) * 60 : 0);
 
         return {
@@ -444,7 +479,7 @@ function phasesToStages(phases: any[]): SessionStage[] {
             durationSeconds,
             seconds: p?.seconds,
             duration_seconds: p?.duration_seconds,
-            duration_minutes: p?.duration_minutes ?? p?.minutes,
+            duration_minutes: p?.duration_minutes ?? p?.minutes ?? (Number.isFinite(Number(p?.duration)) ? Number(p?.duration) : undefined),
             position: p?.position ?? p?.order_index ?? p?.order ?? i,
         } as any;
     });
@@ -452,30 +487,98 @@ function phasesToStages(phases: any[]): SessionStage[] {
     return normalizeStages(sortStagesInClient(mapped));
 }
 
+function extractPhasesFromScheduleObj(schedule: any): any[] | null {
+    if (!schedule) return null;
+    if (Array.isArray(schedule)) return schedule;
+
+    if (typeof schedule !== "object") return null;
+
+    // common direct paths
+    const candidates: any[] = [
+        schedule?.timer?.phases,
+        schedule?.timer?.segments,
+        schedule?.timer?.blocks,
+        schedule?.phases,
+        schedule?.segments,
+        schedule?.blocks,
+        schedule?.stages,
+        schedule?.items,
+        schedule?.agenda,
+        schedule?.timeline,
+        schedule?.steps,
+        schedule?.sequence,
+        schedule?.script?.phases,
+        schedule?.script?.blocks,
+        schedule?.data?.phases,
+        schedule?.data?.blocks,
+    ];
+
+    for (const c of candidates) {
+        if (Array.isArray(c) && c.length) return c;
+        if (c && typeof c === "object" && !Array.isArray(c)) {
+            // object-map (like {Focus: 60}) – treat as phases too
+            const keys = Object.keys(c);
+            if (keys.length) return keys.map((k) => ({ title: k, ...(typeof (c as any)[k] === "object" ? (c as any)[k] : { minutes: (c as any)[k] }) }));
+        }
+    }
+
+    // last resort: find first non-empty array property
+    for (const k of Object.keys(schedule)) {
+        const v = (schedule as any)[k];
+        if (Array.isArray(v) && v.length) return v;
+    }
+
+    return null;
+}
+
 function tryStagesFromSchedule(scheduleAny: any): SessionStage[] {
     const schedule = tryParseJson<any>(scheduleAny);
+
+    // schedule can be array directly
+    if (Array.isArray(schedule) && schedule.length) return phasesToStages(schedule);
+
     if (!schedule || typeof schedule !== "object") return [];
 
-    const phases =
-        schedule?.timer?.phases ||
-        schedule?.phases ||
-        schedule?.timer?.blocks ||
-        schedule?.blocks;
-
-    if (Array.isArray(phases) && phases.length) return phasesToStages(phases);
+    const phases = extractPhasesFromScheduleObj(schedule);
+    if (phases && phases.length) return phasesToStages(phases);
 
     // ultra fallback: timer.focus/break pairs (rare)
-    const focusSec = Number(schedule?.timer?.focusSeconds || schedule?.timer?.focus_seconds);
-    const breakSec = Number(schedule?.timer?.breakSeconds || schedule?.timer?.break_seconds);
-    const cycles = Number(schedule?.timer?.cycles || schedule?.timer?.rounds);
+    const focusSec = Number((schedule as any)?.timer?.focusSeconds || (schedule as any)?.timer?.focus_seconds);
+    const breakSec = Number((schedule as any)?.timer?.breakSeconds || (schedule as any)?.timer?.break_seconds);
+    const cycles = Number((schedule as any)?.timer?.cycles || (schedule as any)?.timer?.rounds);
 
-    if (Number.isFinite(focusSec) && focusSec > 0 && Number.isFinite(breakSec) && breakSec > 0 && Number.isFinite(cycles) && cycles > 0) {
+    if (
+        Number.isFinite(focusSec) && focusSec > 0 &&
+        Number.isFinite(breakSec) && breakSec > 0 &&
+        Number.isFinite(cycles) && cycles > 0
+    ) {
         const ph: any[] = [];
         for (let i = 0; i < cycles; i++) {
             ph.push({ kind: "focus", title: `Focus`, seconds: focusSec, position: ph.length });
             ph.push({ kind: "break", title: `Break`, seconds: breakSec, position: ph.length });
         }
         return phasesToStages(ph);
+    }
+
+    // fallback: schedule object may only contain total duration
+    const totalMinutes =
+        Number((schedule as any)?.duration_minutes) ||
+        Number((schedule as any)?.durationMinutes) ||
+        Number((schedule as any)?.minutes) ||
+        Number((schedule as any)?.duration);
+
+    if (Number.isFinite(totalMinutes) && totalMinutes > 0) {
+        return normalizeStages([
+            {
+                id: "0",
+                kind: "focus",
+                title: "Focus",
+                name: "Focus",
+                durationSeconds: totalMinutes * 60,
+                seconds: totalMinutes * 60,
+                position: 0,
+            } as any,
+        ]);
     }
 
     return [];
@@ -527,6 +630,22 @@ function getEmbeddedTemplate(session: any): any | null {
     );
 }
 
+function buildSingleFocusFromDurationMinutes(totalMinutes: any): SessionStage[] {
+    const m = Number(totalMinutes);
+    if (!Number.isFinite(m) || m <= 0) return [];
+    return normalizeStages([
+        {
+            id: "0",
+            kind: "focus",
+            title: "Focus",
+            name: "Focus",
+            durationSeconds: m * 60,
+            seconds: m * 60,
+            position: 0,
+        } as any,
+    ]);
+}
+
 async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
     const sessionId = session?.id ? String(session.id) : "";
     if (sessionId && _stagesBySessionId.has(sessionId)) return _stagesBySessionId.get(sessionId)!;
@@ -553,7 +672,7 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
         return out;
     }
 
-    // 3) ✅ MOST IMPORTANT: derive from session.schedule (this is likely what you have)
+    // 3) ✅ derive from session.schedule
     const scheduleStages = tryStagesFromSchedule(session?.schedule);
     if (scheduleStages.length) {
         if (sessionId) _stagesBySessionId.set(sessionId, scheduleStages);
@@ -578,10 +697,27 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
             if (sessionId) _stagesBySessionId.set(sessionId, embScheduleStages);
             return embScheduleStages;
         }
+
+        // embedded template may only carry duration
+        const embDur =
+            embeddedTemplate?.duration_minutes ??
+            embeddedTemplate?.durationMinutes ??
+            embeddedTemplate?.minutes ??
+            embeddedTemplate?.duration;
+        const embSingle = buildSingleFocusFromDurationMinutes(embDur);
+        if (embSingle.length) {
+            if (sessionId) _stagesBySessionId.set(sessionId, embSingle);
+            return embSingle;
+        }
     }
 
     const sb = getSupabase();
-    if (!sb) return [];
+    if (!sb) {
+        // FINAL fallback (no supabase): use session.duration_minutes
+        const localFallback = buildSingleFocusFromDurationMinutes(session?.duration_minutes);
+        if (sessionId && localFallback.length) _stagesBySessionId.set(sessionId, localFallback);
+        return localFallback;
+    }
     await ensureAuthReady(sb);
 
     // 5) session_stages table (optional; skip forever if missing)
@@ -610,9 +746,10 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
     }
 
     if (templateId) {
+        // include duration_minutes just in case it exists in your schema
         const { data: tData, error: tErr } = await sb
             .from("session_templates")
-            .select("id, stages, stages_json, schedule")
+            .select("id, stages, stages_json, schedule, duration_minutes")
             .eq("id", templateId)
             .maybeSingle();
 
@@ -631,10 +768,23 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
                 if (sessionId) _stagesBySessionId.set(sessionId, schedStages);
                 return schedStages;
             }
+
+            // ✅ SUPER IMPORTANT fallback for "1 uninterrupted hour" templates:
+            // sometimes template schedule is minimal/opaque, but duration_minutes exists
+            const tDur = (tData as any)?.duration_minutes;
+            const single = buildSingleFocusFromDurationMinutes(tDur || session?.duration_minutes);
+            if (single.length) {
+                _stagesByTemplateId.set(templateId, single);
+                if (sessionId) _stagesBySessionId.set(sessionId, single);
+                return single;
+            }
         }
     }
 
-    return [];
+    // FINAL fallback: session.duration_minutes
+    const finalFallback = buildSingleFocusFromDurationMinutes(session?.duration_minutes);
+    if (sessionId && finalFallback.length) _stagesBySessionId.set(sessionId, finalFallback);
+    return finalFallback;
 }
 
 /** =========================
@@ -686,6 +836,71 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
     if (!e2 && Array.isArray(d2)) return normalizeUsers(d2);
 
     return [];
+}
+
+/** =========================
+ * ✅ Thin timeline bar (NOT LIVE)
+ * - same height as your grey placeholder (h-2)
+ * - no timers, no intervals => zero re-render pressure
+ * ========================= */
+function stageKindFallbackColor(kind: any) {
+    const k = safeLower(kind);
+    if (k.includes("break")) return "#F9ADA2";
+    if (k.includes("intro") || k.includes("welcome")) return "#80DF86";
+    if (k.includes("outro") || k.includes("end") || k.includes("wrap")) return "#80DF86";
+    if (k.includes("intent") || k.includes("checkin")) return "#ADD3FF";
+    return "#4CA0FF"; // focus default
+}
+
+function getStageSeconds(s: any): number {
+    const n =
+        Number(s?.durationSeconds) ||
+        Number(s?.duration_seconds) ||
+        Number(s?.seconds) ||
+        (Number(s?.duration_minutes) ? Number(s?.duration_minutes) * 60 : 0) ||
+        (Number(s?.durationMinutes) ? Number(s?.durationMinutes) * 60 : 0) ||
+        (Number(s?.minutes) ? Number(s?.minutes) * 60 : 0) ||
+        (Number(s?.duration) ? Number(s?.duration) * 60 : 0);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function SessionTimelineThinBar({ stages }: { stages: SessionStage[] }) {
+    const segs = useMemo(() => {
+        const clean = (stages || [])
+            .map((s) => {
+                const seconds = getStageSeconds(s);
+                if (!seconds) return null;
+                return {
+                    key: String((s as any)?.id ?? (s as any)?.title ?? Math.random()),
+                    seconds,
+                    color: (s as any)?.color || stageKindFallbackColor((s as any)?.kind),
+                    label: String((s as any)?.title || (s as any)?.name || "Stage"),
+                };
+            })
+            .filter(Boolean) as { key: string; seconds: number; color: string; label: string }[];
+
+        return clean;
+    }, [stages]);
+
+    if (!segs.length) {
+        return <div className="w-full h-2 rounded-full bg-[#111827]/5" title="Session timeline (no stages found)" />;
+    }
+
+    return (
+        <div className="w-full h-2 rounded-full overflow-hidden bg-[#111827]/5 flex" title="Session timeline">
+            {segs.map((s, idx) => (
+                <div
+                    key={`${idx}-${s.key}`}
+                    className="h-full"
+                    style={{
+                        flex: `${Math.max(1, Math.round(s.seconds))} 1 0%`,
+                        backgroundColor: s.color,
+                    }}
+                    title={`${s.label} • ${Math.round(s.seconds / 60)} min`}
+                />
+            ))}
+        </div>
+    );
 }
 
 export default function SessionCard({
@@ -760,15 +975,6 @@ export default function SessionCard({
         return Date.now() >= t;
     }, [isInfinite, liveCount, session?.start_time]);
 
-    // ✅ IMPORTANT:
-    // For future sessions: don't pass real future start_time to StageBar (it will wrap and look "almost finished").
-    const timelineStartTime = useMemo(() => {
-        const start = session?.start_time || session?.started_at || session?.created_at || "";
-        if (!start) return String(Date.now());
-        if (!hasStarted && session?.start_time) return String(Date.now());
-        return String(start);
-    }, [hasStarted, session?.start_time, session?.started_at, session?.created_at]);
-
     const nameToTypeMap: Record<string, string> = {
         "1 Hour — Pomodoro 15/3": "Short sprints",
         "2 Hours — Pomodoro 15/3": "Short sprints",
@@ -810,7 +1016,7 @@ export default function SessionCard({
         })
         : "";
 
-    // ✅ Load stages (FIXED): do not depend on session_stages table; derive from schedule/template
+    // ✅ Load stages (FIXED + robust template support)
     useEffect(() => {
         let cancelled = false;
 
@@ -1263,13 +1469,9 @@ export default function SessionCard({
                     </div>
                 </div>
 
-                {/* ✅ Session timeline (now should actually render because stages are derived from schedule/template) */}
+                {/* ✅ Session timeline (thin + NOT LIVE) */}
                 <div className="w-full mt-2 sessions-stage-bar">
-                    {stages?.length ? (
-                        <SessionStageBar stages={stages} startTime={timelineStartTime} />
-                    ) : (
-                        <div className="w-full h-2 rounded-full bg-[#111827]/5" title="Session timeline (no stages found)" />
-                    )}
+                    <SessionTimelineThinBar stages={stages} />
                 </div>
             </div>
 
