@@ -371,7 +371,7 @@ function isCustomStudioSession(session: any): boolean {
 }
 
 /** =========================
- * ✅ Stages resolver (FIXED)
+ * ✅ Stages resolver
  * Derive from:
  *   1) session.schedule.timer.phases
  *   2) embedded template schedule
@@ -462,7 +462,6 @@ function phasesToStages(phases: any[]): SessionStage[] {
             (Number(p?.minutes) ? Number(p?.minutes) * 60 : 0) ||
             (Number(p?.duration) ? Number(p?.duration) * 60 : 0);
 
-        // NOTE: kind может быть пустым — это ОК.
         const kind = p?.kind || p?.type || p?.mode || undefined;
 
         return {
@@ -731,7 +730,6 @@ const LIVE_FALLBACK_JOIN_MAX_AGE_MS = 24 * 60 * 60 * 1000; // ✅ if last_seen_a
 function isColumnMissingErr(err: any, col: string): boolean {
     const status = (err as any)?.status;
     const msg = String((err as any)?.message || "").toLowerCase();
-    // PostgREST errors vary; handle the common patterns:
     return (
         status === 400 &&
         (msg.includes("does not exist") || msg.includes("unknown") || msg.includes("column")) &&
@@ -749,13 +747,9 @@ function filterActiveRows(rows: any[], cutoffMs: number): any[] {
         const ls = parseTimeMs(r?.last_seen_at);
         if (ls != null) return ls >= cutoffMs;
 
-        // ✅ IMPORTANT:
-        // If last_seen_at is missing or NULL (no heartbeat), do NOT drop user after 2 minutes.
-        // Fallback to joined_at with a generous max age (24h).
         const j = parseTimeMs(r?.joined_at);
         if (j != null) return j >= joinCutoffMs;
 
-        // if neither exists, accept row (best-effort)
         return true;
     });
 }
@@ -829,7 +823,7 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
 }
 
 /** =========================
- * ✅ Stage visuals (fix colors + "Celebrate and Farewell" + custom indigo)
+ * ✅ Stage visuals
  * ========================= */
 type StageKind =
     | "welcome"
@@ -846,10 +840,10 @@ const KIND_META: Record<StageKind, { label: string; color: string }> = {
     intentions: { label: "Intentions", color: "#38BDF8" }, // sky
     focus: { label: "Focus", color: "#3B82F6" }, // blue
     break: { label: "Break", color: "#FDA4AF" }, // rose
-    checkin: { label: "Check-in", color: "#38BDF8" }, // sky (same as intentions)
+    checkin: { label: "Check-in", color: "#38BDF8" }, // sky
     recap: { label: "Recap", color: "#A78BFA" }, // violet
     celebrate: { label: "Celebrate", color: "#F472B6" }, // pink
-    custom: { label: "Custom", color: "#6366F1" }, // ✅ indigo (match Custom session label)
+    custom: { label: "Custom", color: "#6366F1" }, // indigo
 };
 
 function normKey(raw: any) {
@@ -862,7 +856,6 @@ function normKey(raw: any) {
 function normalizeKind(raw: any): StageKind {
     const k = normKey(raw);
 
-    // ✅ Farewell should be GREEN (treat as "welcome" color group)
     if (k.includes("farewell") || k.includes("goodbye") || k === "celebrate-and-farewell") {
         return "welcome";
     }
@@ -885,7 +878,7 @@ function inferKindFromText(text: any): StageKind | null {
     const k = normKey(t);
 
     if (k.includes("farewell") || k.includes("goodbye") || k.includes("closing"))
-        return "welcome"; // ✅ green group
+        return "welcome";
     if (k.includes("welcome") || k.includes("intro")) return "welcome";
     if (k.includes("intention")) return "intentions";
     if (k.includes("check-in") || k.includes("checkin")) return "checkin";
@@ -908,7 +901,6 @@ function getStageKind(stage: any): StageKind {
 
     const k0 = rawKind ? normalizeKind(rawKind) : null;
 
-    // If kind is missing/garbage — infer from title/name
     const title = stage?.title ?? stage?.name ?? stage?.label ?? stage?.displayName ?? "";
     const k1 = inferKindFromText(title);
 
@@ -933,7 +925,6 @@ function resolveStageColor(stage: any, kind: StageKind) {
 
     const s = String(raw).trim().toLowerCase();
 
-    // If DB sends same default-blue for everything — override by kind
     if (
         s === "#4ca0ff" ||
         s === "rgb(76,160,255)" ||
@@ -1022,6 +1013,21 @@ function computeNowStage(
     };
 }
 
+/** =========================
+ * ✅ Room param resolver (uuid preferred; fallback to custom_slug)
+ * ========================= */
+function getRoomParam(session: any): string {
+    const id = session?.id != null ? String(session.id).trim() : "";
+    if (id) return id;
+    const slug = session?.custom_slug != null ? String(session.custom_slug).trim() : "";
+    return slug;
+}
+
+function buildLoginNext(urlPath: string): string {
+    const next = urlPath || "/sessions";
+    return `/login?next=${encodeURIComponent(next)}`;
+}
+
 export default function SessionCard({
     session,
     userId,
@@ -1036,7 +1042,9 @@ export default function SessionCard({
     const navigate = useNavigate();
     const isHost = session.host_id === userId;
 
-    const initialIsBooked = session.session_bookings?.some((b: any) => b.user_id === userId);
+    const initialIsBooked =
+        session.session_bookings?.some((b: any) => b.user_id === userId) ||
+        session?.is_booked === true;
     const [isBookingConfirmed, setIsBookingConfirmed] = useState<boolean>(!!initialIsBooked);
 
     const [isHoveringCancel, setIsHoveringCancel] = useState(false);
@@ -1204,9 +1212,9 @@ export default function SessionCard({
         return () => {
             cancelled = true;
         };
-    }, [session?.id, session?.schedule, session?.session_template_id, session?.template_id, userId]);
+    }, [session?.id, session?.schedule, session?.session_template_id, session?.template_id]);
 
-    // ✅ Precompute stages with normalized kind + color (fixes "all same color" issue)
+    // ✅ Precompute stages with normalized kind + color
     const stagesVisual = useMemo(() => {
         return (stages || []).map((s) => {
             const v = resolveStageVisualLocal(s as any);
@@ -1222,8 +1230,7 @@ export default function SessionCard({
         });
     }, [stages]);
 
-    // ✅ Poll live users (active = last_seen_at within window)
-    // To reduce load when you have many cards: poll only for infinite / started / has live / near start.
+    // ✅ Poll live users
     const shouldPollLive = useMemo(() => {
         if (!session?.id) return false;
         if (isInfinite) return true;
@@ -1272,7 +1279,7 @@ export default function SessionCard({
         else setPeopleTab("booked");
     }, [hasLiveNow, session?.id]);
 
-    // ✅ compute current stage only when info popover open (and only then tick)
+    // ✅ compute current stage only when info popover open
     useEffect(() => {
         if (!isInfoOpen) {
             setNowStage(null);
@@ -1338,6 +1345,10 @@ export default function SessionCard({
     };
 
     const handleBookSession = () => {
+        if (!userId) {
+            navigate(buildLoginNext("/sessions"));
+            return;
+        }
         onBook(session.id);
         setIsBookingConfirmed(true);
         ensureCurrentUserAsBooked();
@@ -1345,6 +1356,7 @@ export default function SessionCard({
     };
 
     const handleCancelBooking = () => {
+        if (!userId) return;
         onCancelBooking(session.id);
         setIsBookingConfirmed(false);
         removeCurrentUserFromBooked();
@@ -1364,10 +1376,24 @@ export default function SessionCard({
     };
 
     const handleJoinRoom = () => {
+        const roomParam = getRoomParam(session);
+        if (!roomParam) return;
+
+        const nextPath = `/room-iframe/${roomParam}`;
+
+        // ✅ RoomPageIFrame requires auth — redirect early for nicer UX
+        if (!userId) {
+            navigate(buildLoginNext(nextPath));
+            return;
+        }
+
         try {
-            onJoin(session.id);
+            // keep uuid if available; fallback to roomParam
+            const idForJoin = session?.id ? String(session.id) : roomParam;
+            onJoin(idForJoin);
         } catch { }
-        navigate(`/room-iframe/${session.id}`);
+
+        navigate(nextPath);
     };
 
     const maxStack = 6;
@@ -1467,7 +1493,7 @@ export default function SessionCard({
     );
 
     const canEdit = isHost && !!onEditSession;
-    const canInvite = isHost;
+    const canInvite = isHost && !!onInviteToSession;
     const canCancelBooking = !!isBookingConfirmed;
     const canCancelSession = isHost;
 
@@ -1700,7 +1726,7 @@ export default function SessionCard({
                                                         </div>
                                                     )}
 
-                                                    {/* timeline with moving tick (props are passed safely via "as any") */}
+                                                    {/* timeline */}
                                                     {stagesVisual?.length ? (
                                                         <div className="w-full">
                                                             <SessionStageBar
@@ -1732,7 +1758,6 @@ export default function SessionCard({
                         <div className="hidden xl:flex items-center gap-6">
                             <div className="w-px h-10 bg-[#D9D9D9]" />
                             <div className="text-center">
-                                {/* ✅ FIX: 0 must render as 0 (no em-dash) */}
                                 <div className="text-[32px] font-bold text-brandBlack">{liveNowCount}</div>
                                 <div className="text-[10px] text-[#606060] font-light -mt-1">
                                     {shouldPollLive ? "in the session now" : "live count soon"}
@@ -1861,8 +1886,6 @@ export default function SessionCard({
                         </div>
                     </div>
                 </div>
-
-                {/* ✅ TIMELINE REMOVED from card body (now only in Info popover) */}
             </div>
 
             {/* people modal (booked + live switch) */}
