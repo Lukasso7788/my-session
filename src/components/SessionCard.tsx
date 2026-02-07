@@ -30,8 +30,6 @@ function getSupabase(): SupabaseClient | null {
         "";
 
     if (!url || !anon) {
-        // Avoid crashing build/runtime if env is missing.
-        // Features that require DB will degrade gracefully.
         console.warn("[SessionCard] Missing Supabase env vars (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY).");
         return null;
     }
@@ -52,7 +50,6 @@ interface SessionCardProps {
     onJoin: (sessionId: string) => void;
     onDelete: (sessionId: string) => void;
 
-    // ✅ NEW: чтобы edit реально синкался в Supabase — реализуешь в SessionsPage
     onEditSession?: (
         sessionId: string,
         updates: {
@@ -62,10 +59,8 @@ interface SessionCardProps {
         }
     ) => void | Promise<any>;
 
-    // ✅ NEW: пока UI-хук (email invite)
     onInviteToSession?: (sessionId: string, payload: { email: string; message?: string }) => void | Promise<any>;
 
-    // ✅ optional: чтобы “твоя” аватарка сразу появлялась при Book без ожидания refetch
     currentUser?: { id: string; full_name?: string; avatar_url?: string; email?: string };
 }
 
@@ -106,7 +101,6 @@ function extractBookers(session: any): BookedUser[] {
         })
         .filter(Boolean);
 
-    // de-dupe
     const seen = new Set<string>();
     const out: BookedUser[] = [];
     for (const u of users) {
@@ -118,7 +112,6 @@ function extractBookers(session: any): BookedUser[] {
     return out;
 }
 
-// ✅ NEW: infer visual type from title for newer/infinite room titles
 function inferTypeFromTitle(title: any): "Deep work" | "Pomodoro" | "Short sprints" | null {
     const t = safeLower(title);
     if (t.includes("silent") || t.includes("drop-in") || t.includes("drop in")) return "Deep work";
@@ -274,7 +267,6 @@ function DotsFallbackIcon({ size = 18 }: { size?: number }) {
  */
 function OptionsSmartIcon({ hovered, size = 18 }: { hovered: boolean; size?: number }) {
     const [useFallback, setUseFallback] = useState(false);
-
     if (useFallback) return <DotsFallbackIcon size={size} />;
 
     return (
@@ -320,7 +312,6 @@ function MenuItem({
     );
 }
 
-// ✅ Detect studio/custom sessions (prefer DB flag; fallback to formatLabel)
 function isCustomStudioSession(session: any): boolean {
     if (session?.is_custom === true) return true;
 
@@ -334,7 +325,10 @@ function isCustomStudioSession(session: any): boolean {
 }
 
 /** =========================
- * ✅ NEW: stages resolver
+ * ✅ stages resolver (card uses same principle as SessionStageBar)
+ * - supports duration_minutes
+ * - avoids .order("position") hard-fail if column doesn't exist
+ * - waits for auth session restore (RLS safe)
  * ========================= */
 function tryParseJson<T = any>(x: any): T | null {
     if (!x) return null;
@@ -361,10 +355,13 @@ function normalizeStages(raw: any): SessionStage[] {
             const title = s.title ?? s.name ?? s.label ?? s.displayName;
             const color = s.color ?? s.stage_color ?? s.stageColor;
 
+            // ✅ durations
             const durationSeconds =
                 Number(s.durationSeconds) ||
                 Number(s.duration_seconds) ||
                 Number(s.seconds) ||
+                (Number(s.duration_minutes) ? Number(s.duration_minutes) * 60 : 0) ||
+                (Number(s.durationMinutes) ? Number(s.durationMinutes) * 60 : 0) ||
                 (Number(s.duration) ? Number(s.duration) * 60 : 0) ||
                 (Number(s.minutes) ? Number(s.minutes) * 60 : 0);
 
@@ -375,21 +372,56 @@ function normalizeStages(raw: any): SessionStage[] {
                 title,
                 name: title ?? s.name,
                 color,
+
+                // keep multiple fields for compatibility
                 durationSeconds: durationSeconds || s.durationSeconds || s.seconds || s.duration_seconds,
                 duration_seconds: s.duration_seconds ?? s.durationSeconds ?? s.seconds,
                 seconds: s.seconds ?? s.durationSeconds ?? s.duration_seconds,
+
+                // optional minutes too (helps debugging)
+                duration_minutes: s.duration_minutes ?? s.durationMinutes,
             } as any;
         })
         .filter(Boolean);
 }
 
+function sortStagesInClient(stages: any[]): any[] {
+    const toNum = (x: any) => (Number.isFinite(Number(x)) ? Number(x) : null);
+    return [...(stages || [])].sort((a, b) => {
+        const ap =
+            toNum(a?.position) ??
+            toNum(a?.order_index) ??
+            toNum(a?.order) ??
+            toNum(a?.idx) ??
+            toNum(a?.index) ??
+            0;
+        const bp =
+            toNum(b?.position) ??
+            toNum(b?.order_index) ??
+            toNum(b?.order) ??
+            toNum(b?.idx) ??
+            toNum(b?.index) ??
+            0;
+        return ap - bp;
+    });
+}
+
+async function ensureAuthReady(sb: SupabaseClient) {
+    try {
+        // restores persisted session before first RLS-protected select
+        await sb.auth.getSession();
+    } catch {
+        // ignore
+    }
+}
+
 async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
     // 1) already nested
     if (Array.isArray(session?.session_stages) && session.session_stages.length) {
-        return normalizeStages(session.session_stages);
+        return normalizeStages(sortStagesInClient(session.session_stages));
     }
     if (Array.isArray(session?.stages) && session.stages.length) {
-        return normalizeStages(session.stages);
+        return normalizeStages(sortStagesInClient(session.stages));
     }
 
     // 2) JSON columns on session/template
@@ -397,23 +429,27 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
         tryParseJson<any[]>(session?.stages_json) ||
         tryParseJson<any[]>(session?.stages) ||
         tryParseJson<any[]>(session?.session_stages_json);
-    if (Array.isArray(fromSessionJson) && fromSessionJson.length) return normalizeStages(fromSessionJson);
+    if (Array.isArray(fromSessionJson) && fromSessionJson.length) {
+        return normalizeStages(sortStagesInClient(fromSessionJson));
+    }
 
     const sb = getSupabase();
     if (!sb) return [];
+    await ensureAuthReady(sb);
 
-    // 3) attempt fetch from session_stages table
+    // 3) fetch from session_stages table
     if (session?.id) {
         const { data: ssData, error: ssErr } = await sb
             .from("session_stages")
             .select("*")
-            .eq("session_id", session.id)
-            .order("position", { ascending: true });
+            .eq("session_id", session.id);
 
-        if (!ssErr && Array.isArray(ssData) && ssData.length) return normalizeStages(ssData);
+        if (!ssErr && Array.isArray(ssData) && ssData.length) {
+            return normalizeStages(sortStagesInClient(ssData));
+        }
     }
 
-    // 4) attempt template stages
+    // 4) template stages
     const templateId = session?.session_template_id || session?.template_id;
     if (templateId) {
         const { data: tData, error: tErr } = await sb
@@ -424,7 +460,7 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
 
         if (!tErr && tData) {
             const sj = tryParseJson<any[]>(tData?.stages_json) || tryParseJson<any[]>(tData?.stages);
-            if (Array.isArray(sj) && sj.length) return normalizeStages(sj);
+            if (Array.isArray(sj) && sj.length) return normalizeStages(sortStagesInClient(sj));
 
             const schedule = tryParseJson<any>(tData?.schedule);
             const phases = schedule?.timer?.phases;
@@ -436,10 +472,12 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
                     durationSeconds:
                         Number(p?.seconds) ||
                         Number(p?.durationSeconds) ||
+                        (Number(p?.duration_minutes) ? Number(p?.duration_minutes) * 60 : 0) ||
                         (Number(p?.minutes) ? Number(p?.minutes) * 60 : 0),
                     color: p?.color,
+                    position: p?.position ?? i,
                 }));
-                return normalizeStages(mapped);
+                return normalizeStages(sortStagesInClient(mapped));
             }
         }
     }
@@ -448,7 +486,7 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
 }
 
 /** =========================
- * ✅ NEW: live users resolver
+ * ✅ live users resolver
  * ========================= */
 function normalizeUsers(raw: any[]): BookedUser[] {
     const users: BookedUser[] = (raw || [])
@@ -477,8 +515,8 @@ function normalizeUsers(raw: any[]): BookedUser[] {
 async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
     const sb = getSupabase();
     if (!sb) return [];
+    await ensureAuthReady(sb);
 
-    // Best-effort: common attendance table shape
     const { data, error } = await sb
         .from("session_attendance")
         .select("user_id, profiles:profiles(id, full_name, avatar_url), left_at, joined_at")
@@ -487,7 +525,6 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
 
     if (!error && Array.isArray(data)) return normalizeUsers(data);
 
-    // fallback table name
     const { data: d2, error: e2 } = await sb
         .from("session_participants")
         .select("user_id, profiles:profiles(id, full_name, avatar_url), left_at, joined_at")
@@ -525,16 +562,13 @@ export default function SessionCard({
     const CANCEL_HOVER_DELAY_MS = 120;
     const [cancelHoverTimer, setCancelHoverTimer] = useState<number | null>(null);
 
-    // ✅ booked people
     const initialBookers = useMemo(() => extractBookers(session), [session]);
     const [bookers, setBookers] = useState<BookedUser[]>(initialBookers);
 
-    // ✅ NEW: stages + live users
     const [stages, setStages] = useState<SessionStage[]>([]);
     const [liveUsers, setLiveUsers] = useState<BookedUser[]>([]);
     const [peopleTab, setPeopleTab] = useState<"booked" | "live">("booked");
 
-    // ✅ modals / menu
     const [isBookersModalOpen, setIsBookersModalOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
@@ -574,6 +608,17 @@ export default function SessionCard({
         return Date.now() >= t;
     }, [isInfinite, liveCount, session?.start_time]);
 
+    const timelineStartTime = useMemo(() => {
+        // ✅ IMPORTANT:
+        // - For future scheduled sessions: do NOT feed future start_time into StageBar (it will look "almost finished").
+        // - For started sessions: use the real start_time
+        // - For infinite sessions without start_time: fallback to started_at/created_at/now
+        const start = session?.start_time || session?.started_at || session?.created_at || "";
+        if (!start) return String(Date.now());
+        if (!hasStarted && session?.start_time) return String(Date.now());
+        return String(start);
+    }, [hasStarted, session?.start_time, session?.started_at, session?.created_at]);
+
     const nameToTypeMap: Record<string, string> = {
         "1 Hour — Pomodoro 15/3": "Short sprints",
         "2 Hours — Pomodoro 15/3": "Short sprints",
@@ -586,7 +631,6 @@ export default function SessionCard({
     const inferredType = inferTypeFromTitle(session.title);
     const baseResolvedType = nameToTypeMap[session.title] || inferredType || session.type || "Deep work";
 
-    // ✅ Custom label override (only for studio/custom builder sessions)
     const custom = isCustomStudioSession(session);
     const resolvedType = custom ? "Custom session" : baseResolvedType;
 
@@ -594,8 +638,6 @@ export default function SessionCard({
         "Deep work": { color: "#3B82F6", bg: "#E4EDFF", icon: "/icons/deepwork.svg" },
         Pomodoro: { color: "#EF4444", bg: "#FFE4E4", icon: "/icons/pomodoro.svg" },
         "Short sprints": { color: "#22C55E", bg: "#E5FFE9", icon: "/icons/sprints.svg" },
-
-        // ✅ Custom
         "Custom session": { color: "#6366F1", bg: "#EEF2FF", icon: "/icons/custom.svg" },
     };
 
@@ -618,7 +660,8 @@ export default function SessionCard({
         })
         : "";
 
-    // ✅ NEW: load stages from Supabase (or nested) once per session
+    // ✅ Load stages:
+    // re-run when userId appears (auth becomes available) + session changes
     useEffect(() => {
         let cancelled = false;
         (async () => {
@@ -633,9 +676,9 @@ export default function SessionCard({
         return () => {
             cancelled = true;
         };
-    }, [session?.id]);
+    }, [session?.id, userId]);
 
-    // ✅ NEW: load live users when started (and refresh occasionally)
+    // ✅ Load live users when started (and refresh)
     useEffect(() => {
         if (!session?.id) return;
         if (!hasStarted) {
@@ -656,14 +699,13 @@ export default function SessionCard({
         };
 
         run();
-        const timer = window.setInterval(run, 15000); // cheap refresh
+        const timer = window.setInterval(run, 15000);
         return () => {
             cancelled = true;
             window.clearInterval(timer);
         };
-    }, [session?.id, hasStarted]);
+    }, [session?.id, hasStarted, userId]);
 
-    // ✅ auto-switch to live tab when session started
     useEffect(() => {
         if (hasStarted) setPeopleTab("live");
         else setPeopleTab("booked");
@@ -716,7 +758,6 @@ export default function SessionCard({
         setIsHoveringCancel(false);
     };
 
-    // ✅ Go to IFRAME room (back to original behavior)
     const handleJoinRoom = () => {
         try {
             onJoin(session.id);
@@ -724,7 +765,6 @@ export default function SessionCard({
         navigate(`/room-iframe/${session.id}`);
     };
 
-    // ✅ avatars stack
     const maxStack = 6;
 
     const bookedCount = bookers.length;
@@ -737,16 +777,13 @@ export default function SessionCard({
     const stackUsers = inlineUsers.slice(0, maxStack);
     const remaining = inlineCount - stackUsers.length;
 
-    // ✅ edit modal state
     const [editTitle, setEditTitle] = useState<string>(session?.title || "");
     const [editStartLocal, setEditStartLocal] = useState<string>(() => {
         if (!session?.start_time) return "";
         try {
             const d = new Date(session.start_time);
             const pad = (n: number) => String(n).padStart(2, "0");
-            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
-                d.getMinutes()
-            )}`;
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
         } catch {
             return "";
         }
@@ -763,16 +800,13 @@ export default function SessionCard({
                 const d = new Date(session.start_time);
                 const pad = (n: number) => String(n).padStart(2, "0");
                 setEditStartLocal(
-                    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
-                        d.getMinutes()
-                    )}`
+                    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
                 );
             } catch { }
         } else setEditStartLocal("");
         setEditMaxParticipants(session?.max_participants == null ? "" : String(session?.max_participants));
     }, [session?.id]);
 
-    // ✅ invite modal state
     const [inviteEmail, setInviteEmail] = useState<string>("");
     const [inviteMessage, setInviteMessage] = useState<string>("");
 
@@ -824,7 +858,6 @@ export default function SessionCard({
     const canCancelBooking = !!isBookingConfirmed;
     const canCancelSession = isHost;
 
-    // ✅ People inline (Booked OR Live)
     const peopleInline = (
         <button
             type="button"
@@ -890,14 +923,11 @@ export default function SessionCard({
           w-full gap-4
         "
             >
-                {/* TOP ROW (same as before, just wrapped so timeline can sit under) */}
                 <div className="flex flex-col xl:flex-row w-full gap-6">
-                    {/* INFO */}
                     <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 flex-1">
                         <div className="flex flex-col gap-3 w-full">
                             <h3 className="text-[24px] md:text-[29px] font-bold leading-tight">{session.title}</h3>
 
-                            {/* ✅ meta row */}
                             <div className="flex flex-wrap items-center gap-4 text-[12px] text-[#606060]">
                                 <Link to={`/profile/${session.host_id}`} className="flex items-center gap-1 hover:opacity-70">
                                     <img src="/icons/host.svg" className="w-4 h-4 opacity-70" alt="" />
@@ -917,7 +947,6 @@ export default function SessionCard({
                                     </div>
                                 )}
 
-                                {/* ✅ label + people рядом */}
                                 <div className="inline-flex items-center gap-3">
                                     <div
                                         className="inline-flex items-center gap-1 px-3 py-1 rounded-full border"
@@ -950,7 +979,6 @@ export default function SessionCard({
                             </div>
                         </div>
 
-                        {/* live count (desktop) */}
                         <div className="hidden xl:flex items-center gap-6">
                             <div className="w-px h-10 bg-[#D9D9D9]" />
                             <div className="text-center">
@@ -962,7 +990,6 @@ export default function SessionCard({
                         </div>
                     </div>
 
-                    {/* BUTTONS */}
                     <div className="flex flex-col sm:flex-row max-[480px]:flex-col gap-3 w-full xl:w-auto items-center justify-center">
                         {isBookingConfirmed ? confirmedBookingButton : bookSessionButton}
 
@@ -986,7 +1013,6 @@ export default function SessionCard({
                             Join session
                         </button>
 
-                        {/* options */}
                         <div ref={optionsRef} className="relative w-full xl:w-auto">
                             <button
                                 type="button"
@@ -1085,23 +1111,23 @@ export default function SessionCard({
                     </div>
                 </div>
 
-                {/* ✅ NEW: Session timeline (placement like CardV1) */}
-                <div className="w-full mt-2 sessions-stage-bar">
+                {/* ✅ Timeline: EXACT same component/principle as SessionStageBar */}
+                <div className="w-full mt-2">
                     {stages?.length ? (
-                        <SessionStageBar stages={stages} startTime={session?.start_time || ""} />
+                        <SessionStageBar stages={stages} startTime={timelineStartTime} />
                     ) : (
-                        <div className="w-full h-4 rounded-2xl bg-[#111827]/5" title="Session timeline (coming soon)" />
+                        // placeholder shaped like StageBar (so it visually matches)
+                        <div className="w-full h-2 rounded-full bg-[#111827]/5" title="Session timeline (coming soon)" />
                     )}
                 </div>
             </div>
 
-            {/* people modal (booked + live switch) */}
+            {/* people modal */}
             <ModalShell
                 title={hasStarted ? "People" : "People who booked this session"}
                 isOpen={isBookersModalOpen}
                 onClose={() => setIsBookersModalOpen(false)}
             >
-                {/* tabs if started */}
                 {hasStarted && (
                     <div className="flex items-center gap-2 mb-4">
                         <button
