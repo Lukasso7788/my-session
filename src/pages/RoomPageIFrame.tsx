@@ -277,6 +277,48 @@ const STAGE_COLORS: Record<string, string> = {
     outro: "#80DF86",
 };
 
+// ============================================
+// ✅ SAFE realtime cleanup (prevents `unsubscribe is not a function`)
+// Works across supabase-js versions / return shapes.
+// ============================================
+function safeRemoveRealtimeChannel(ch: any) {
+    if (!ch) return;
+
+    // direct channel.unsubscribe()
+    try {
+        if (typeof ch.unsubscribe === "function") {
+            void ch.unsubscribe();
+            return;
+        }
+    } catch { }
+
+    const sb: any = supabase as any;
+
+    // supabase.removeChannel(channel)
+    try {
+        if (typeof sb.removeChannel === "function") {
+            void sb.removeChannel(ch);
+            return;
+        }
+    } catch { }
+
+    // old realtime client shapes
+    try {
+        if (typeof sb.removeSubscription === "function") {
+            void sb.removeSubscription(ch);
+            return;
+        }
+    } catch { }
+
+    // very old: client has `realtime.removeChannel`
+    try {
+        if (sb.realtime && typeof sb.realtime.removeChannel === "function") {
+            void sb.realtime.removeChannel(ch);
+            return;
+        }
+    } catch { }
+}
+
 // ===============================
 // JITSI EXTERNAL API LOADER
 // ===============================
@@ -593,7 +635,9 @@ function useMediaQuery(query: string) {
             mql.addEventListener("change", onChange);
             return () => mql.removeEventListener("change", onChange);
         } catch {
+            // @ts-ignore
             mql.addListener(onChange);
+            // @ts-ignore
             return () => mql.removeListener(onChange);
         }
     }, [query]);
@@ -702,6 +746,8 @@ export default function RoomPageIFrame() {
 
     // close reactions menu when panel is used
     const [showReactionsMenu, setShowReactionsMenu] = useState(false);
+    const reactionsMenuRef = useRef<HTMLDivElement | null>(null);
+
     useEffect(() => {
         if (rightPanelOpen) setShowReactionsMenu(false);
     }, [rightPanelOpen, rightTab]);
@@ -709,6 +755,20 @@ export default function RoomPageIFrame() {
     useEffect(() => {
         if (rightPanelOpen) setShowMoreMenu(false);
     }, [rightPanelOpen, rightTab]);
+
+    // ✅ click-outside for reactions menu (MUST be before early returns)
+    useEffect(() => {
+        if (!showReactionsMenu) return;
+
+        const handleClickOutside = (e: MouseEvent) => {
+            const target = e.target as Node | null;
+            if (!reactionsMenuRef.current || !target) return;
+            if (!reactionsMenuRef.current.contains(target)) setShowReactionsMenu(false);
+        };
+
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [showReactionsMenu]);
 
     // Close ⋯ menu by click outside
     useEffect(() => {
@@ -838,7 +898,7 @@ export default function RoomPageIFrame() {
 
         return () => {
             cancelled = true;
-            supabase.removeChannel(ch);
+            safeRemoveRealtimeChannel(ch);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [authStatus, sessionId, currentUserId, chatReadKey]);
@@ -1498,7 +1558,6 @@ export default function RoomPageIFrame() {
                 sessionId
             )}&user_id=eq.${encodeURIComponent(currentUserId)}`;
 
-            // IMPORTANT: keepalive true
             void fetch(url, {
                 method: "PATCH",
                 headers: {
@@ -1533,7 +1592,6 @@ export default function RoomPageIFrame() {
     // hard exits
     useEffect(() => {
         const onBeforeUnload = () => {
-            // do both: keepalive + best-effort async
             void leaveOnce({ dispose: false, keepalive: true });
         };
         const onPageHide = () => {
@@ -1591,7 +1649,6 @@ export default function RoomPageIFrame() {
             });
         }
 
-        // stable sort: most recently seen first
         out.sort((a, b) => {
             const ta = a.last_seen_at ? new Date(a.last_seen_at).getTime() : 0;
             const tb = b.last_seen_at ? new Date(b.last_seen_at).getTime() : 0;
@@ -1620,7 +1677,6 @@ export default function RoomPageIFrame() {
         lastAttendanceFetchAtRef.current = now;
 
         try {
-            // NOTE: requires relationship session_attendance.user_id -> profiles.id
             const { data, error } = await supabase
                 .from("session_attendance")
                 .select("user_id,last_seen_at,left_at,profiles(full_name,avatar_url)")
@@ -1631,16 +1687,13 @@ export default function RoomPageIFrame() {
             const online = computeOnline(Array.isArray(data) ? data : []);
             setOnlineUsers(online);
 
-            // ✅ primary count source
             if (online.length > 0) setParticipantsNow(online.length);
             else {
-                // fallback: if nobody yet in attendance, use Jitsi list length
                 const fallbackCount = participantRows?.length || 0;
                 if (fallbackCount > 0) setParticipantsNow(fallbackCount);
             }
-        } catch (e) {
-            // don't spam UI; just keep last state
-            // console.log("fetchOnlineUsers error", e);
+        } catch {
+            // keep last state
         }
     };
 
@@ -1667,7 +1720,7 @@ export default function RoomPageIFrame() {
                 window.clearTimeout(attendanceFetchTimerRef.current);
                 attendanceFetchTimerRef.current = null;
             }
-            supabase.removeChannel(ch);
+            safeRemoveRealtimeChannel(ch);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [authStatus, sessionId, currentUserId]);
@@ -1706,9 +1759,8 @@ export default function RoomPageIFrame() {
             if (capacityTriggeredRef.current) return;
 
             const remote = Array.isArray(api.getParticipantsInfo?.()) ? api.getParticipantsInfo() : [];
-            const count = 1 + remote.length; // local + remote
+            const count = 1 + remote.length;
 
-            // keep Jitsi-derived count as fallback; attendance count will override shortly
             setParticipantsNow((prev) => (prev > 0 ? prev : count));
 
             if (count <= maxParticipants) return;
@@ -1716,7 +1768,6 @@ export default function RoomPageIFrame() {
             capacityTriggeredRef.current = true;
 
             if (isHost || localIsModeratorRef.current) {
-                // kick the just-joined participant if provided
                 const pid = String(joinedParticipantId || "");
                 if (pid && !kickedIdsRef.current.has(pid)) {
                     kickedIdsRef.current.add(pid);
@@ -1732,7 +1783,6 @@ export default function RoomPageIFrame() {
                 return;
             }
 
-            // not moderator -> self-leave
             setCapacityError(`Room is full (${maxParticipants}). Redirecting…`);
             try {
                 api.executeCommand?.("hangup");
@@ -1794,7 +1844,6 @@ export default function RoomPageIFrame() {
             const merged = [localRow, ...remoteRows.filter((r) => r.id !== localId)];
             setParticipantRows(merged);
 
-            // fallback count if attendance not yet ready
             setParticipantsNow((prev) => (onlineUsers.length > 0 ? onlineUsers.length : Math.max(prev || 0, merged.length)));
         } catch { }
     };
@@ -1952,8 +2001,9 @@ export default function RoomPageIFrame() {
 
         return () => {
             try {
-                supabase.removeChannel(ch);
+                if (reactionsChannelRef.current === ch) reactionsChannelRef.current = null;
             } catch { }
+            safeRemoveRealtimeChannel(ch);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [authStatus, sessionId, currentUserId]);
@@ -1961,7 +2011,6 @@ export default function RoomPageIFrame() {
     const sendReaction = async (type: ReactionType) => {
         if (!sessionId || !currentUserId) return;
 
-        // local float
         pushReaction({
             type,
             fromUserId: currentUserId,
@@ -1988,7 +2037,6 @@ export default function RoomPageIFrame() {
         if (!iframeContainerRef.current) return;
         if (!roomName) return;
 
-        // reset flags on each init
         leaveOnceRef.current = false;
         localJoinedRef.current = false;
         capacityTriggeredRef.current = false;
@@ -2026,29 +2074,24 @@ export default function RoomPageIFrame() {
                     supportedCmdsRef.current = null;
                 }
 
-                // ---- events
                 api.addEventListener?.("videoConferenceJoined", async (e: any) => {
                     try {
                         localJoinedRef.current = true;
                         const pid = String(e?.id || e?.participantId || "");
                         if (pid) localParticipantIdRef.current = pid;
 
-                        // join attendance + start heartbeat
                         await attendanceJoin();
                         startAttendanceHeartbeat();
                         void fetchOnlineUsers(true);
 
-                        // initial participants list
                         void refreshParticipantsList(api);
 
-                        // capacity check
                         await maybeKickOrRejectIfOverLimit(api);
                     } catch { }
                 });
 
                 api.addEventListener?.("videoConferenceLeft", async () => {
                     try {
-                        // ensure leave is recorded even if user leaves via internal flow
                         await leaveOnce({ dispose: true, keepalive: true });
                     } catch { }
                 });
@@ -2063,7 +2106,6 @@ export default function RoomPageIFrame() {
                 api.addEventListener?.("audioMuteStatusChanged", (e: any) => {
                     const m = !!e?.muted;
                     setMutedAudio(m);
-                    // update local row quickly
                     setParticipantRows((prev) => prev.map((r) => (r.isLocal ? { ...r, audioMuted: m } : r)));
                 });
 
@@ -2097,7 +2139,6 @@ export default function RoomPageIFrame() {
                 });
 
                 api.addEventListener?.("participantRoleChanged", (e: any) => {
-                    // e: { id, role }
                     try {
                         const pid = String(e?.id || "");
                         const role = String(e?.role || "").toLowerCase();
@@ -2108,12 +2149,10 @@ export default function RoomPageIFrame() {
                     } catch { }
                 });
 
-                // best-effort: set tile view on
                 try {
                     api.executeCommand?.("setTileView", true);
                 } catch { }
 
-                // keep list fresh occasionally (cheap)
                 window.setTimeout(() => void refreshParticipantsList(api), 800);
                 window.setTimeout(() => void refreshParticipantsList(api), 2500);
             } catch (e: any) {
@@ -2158,14 +2197,12 @@ export default function RoomPageIFrame() {
         leavingUiRef.current = true;
 
         try {
-            // leave meeting first (will also fire videoConferenceLeft)
             try {
                 apiRef.current?.executeCommand?.("hangup");
             } catch { }
 
             await leaveOnce({ dispose: true, keepalive: true });
         } catch {
-            // fallback
             try {
                 keepaliveLeaveWrite();
             } catch { }
@@ -2365,20 +2402,6 @@ export default function RoomPageIFrame() {
         </div>
     );
 
-    const reactionsMenuRef = useRef<HTMLDivElement | null>(null);
-    useEffect(() => {
-        if (!showReactionsMenu) return;
-
-        const handleClickOutside = (e: MouseEvent) => {
-            const target = e.target as Node | null;
-            if (!reactionsMenuRef.current || !target) return;
-            if (!reactionsMenuRef.current.contains(target)) setShowReactionsMenu(false);
-        };
-
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, [showReactionsMenu]);
-
     return (
         <div className={`h-[100dvh] overflow-hidden ${pageBg}`}>
             {/* top */}
@@ -2388,9 +2411,7 @@ export default function RoomPageIFrame() {
                         <div className="flex items-start justify-between gap-4">
                             <div className="min-w-0">
                                 <p className={`font-inter font-semibold text-[18px] truncate ${strongText}`}>{session.title}</p>
-                                <p className={`font-inter text-[13px] ${subtleText}`}>
-                                    {participantsCountLabel} participants
-                                </p>
+                                <p className={`font-inter text-[13px] ${subtleText}`}>{participantsCountLabel} participants</p>
                             </div>
 
                             <div className="flex items-center gap-2 shrink-0">
@@ -2422,8 +2443,8 @@ export default function RoomPageIFrame() {
                                     <button
                                         onClick={() => setSelectedUser(session.host_profile || null)}
                                         className={`max-[480px]:hidden flex items-center gap-2 px-3 py-1.5 rounded-xl border transition font-inter text-[13px] ${isLight
-                                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                                : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                             }`}
                                     >
                                         <span className="flex items-center gap-1 leading-none">
