@@ -30,6 +30,9 @@ import AdhdProductivityPage from "./pages/seo/AdhdProductivityPage";
 // ✅ 404
 import NotFoundPage from "./pages/NotFoundPage";
 
+// ✅ UI playground (local testing page)
+import SessionCardsPlayground from "./SessionCardsPlayground";
+
 export default function App() {
   console.log("[ROUTER] App mounted");
 
@@ -48,6 +51,9 @@ export default function App() {
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/profile/:id" element={<PublicProfilePage />} />
 
+          {/* ✅ UI Playground */}
+          <Route path="/ui-playground" element={<SessionCardsPlayground />} />
+
           {/* Legal */}
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/data-deletion" element={<DataDeletionPage />} />
@@ -55,7 +61,10 @@ export default function App() {
           {/* ✅ Canonical SEO pages */}
           <Route path="/body-doubling" element={<BodyDoublingPage />} />
           <Route path="/online-coworking" element={<OnlineCoworkingPage />} />
-          <Route path="/group-focus-sessions" element={<GroupFocusSessionsPage />} />
+          <Route
+            path="/group-focus-sessions"
+            element={<GroupFocusSessionsPage />}
+          />
           <Route path="/silent-coworking" element={<SilentCoworkingPage />} />
           <Route path="/adhd-productivity" element={<AdhdProductivityPage />} />
 
