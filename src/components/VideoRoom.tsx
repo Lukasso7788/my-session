@@ -49,6 +49,8 @@ type VideoRoomProps = {
 
     /**
      * ✅ moderation capabilities (host/moderator)
+     * If omitted, component will try to auto-detect host via localParticipant role fields.
+     * Recommended: pass explicit boolean from Supabase host_user_id check.
      */
     canModerate?: boolean;
 
@@ -59,6 +61,10 @@ type VideoRoomProps = {
     onMuteParticipantAudio?: (participantId: string) => void | Promise<void>;
     onMuteParticipantVideo?: (participantId: string) => void | Promise<void>;
     onKickParticipant?: (participantId: string) => void | Promise<void>;
+
+    /**
+     * ✅ anyone can report
+     */
     onReportParticipant?: (participantId: string, reason: string) => void | Promise<void>;
 };
 
@@ -76,6 +82,10 @@ function clamp01(n: number) {
     return Math.max(0, Math.min(1, n));
 }
 
+/**
+ * Best-effort detection of "host/moderator/admin".
+ * Prefer passing canModerate from Supabase host_user_id (deterministic).
+ */
 function guessIsAdmin(p: JitsiParticipant): boolean {
     const anyP = p as any;
     const role = String(anyP?.role ?? anyP?.conferenceRole ?? "").toLowerCase();
@@ -137,7 +147,6 @@ function safeTrackId(track?: any): string {
 function attachTrackToMedia(track: JitsiTrack | undefined, element: HTMLMediaElement | null) {
     if (!track || !element) return;
 
-    // ✅ safety: detach before attach (avoid double attachments / stale streams)
     try {
         track.detach?.(element);
     } catch { }
@@ -212,7 +221,6 @@ function useTrackStreamVersion(track: any) {
     return v;
 }
 
-/** small helper: responsive bool without extra deps */
 function useMediaQuery(query: string) {
     const [matches, setMatches] = useState(false);
 
@@ -234,7 +242,6 @@ function useMediaQuery(query: string) {
     return matches;
 }
 
-/** Measure an element (width/height) via ResizeObserver (fallback to window resize). */
 function useElementSize<T extends HTMLElement>() {
     const [node, setNode] = useState<T | null>(null);
     const [size, setSize] = useState({ width: 0, height: 0 });
@@ -320,25 +327,25 @@ function ParticipantTile({
     fit = "contain",
     onRegisterVideoElement,
 
-    // local name edit
     editable,
     displayNameOverride,
     onOpenEditName,
 
-    // per-participant volume
     volume01,
     onSetVolume01,
 
-    // moderation + UI actions
     canModerate,
     alwaysShowOptionsButton,
     pinned,
     onTogglePin,
     onHideUser,
+
     onMakeAdmin,
     onMuteAudio,
     onMuteVideo,
-    onOpenRemoveReport,
+
+    // report for anyone
+    onOpenReport,
 }: {
     theme: "dark" | "light";
     participant: JitsiParticipant;
@@ -350,7 +357,7 @@ function ParticipantTile({
     displayNameOverride?: string | null;
     onOpenEditName?: () => void;
 
-    volume01?: number; // 0..1 (remote only)
+    volume01?: number;
     onSetVolume01?: (next: number) => void;
 
     canModerate?: boolean;
@@ -364,14 +371,13 @@ function ParticipantTile({
     onMuteAudio?: () => void | Promise<void>;
     onMuteVideo?: () => void | Promise<void>;
 
-    onOpenRemoveReport?: () => void;
+    onOpenReport?: () => void;
 }) {
     const videoRef = useRef<HTMLVideoElement | null>(null);
 
     const hasVideoTrack = !!participant.videoTrack;
     const streamV = useTrackStreamVersion(participant.videoTrack);
 
-    // hover/options state
     const [hovered, setHovered] = useState(false);
     const [optionsOpen, setOptionsOpen] = useState(false);
     const optionsRef = useRef<HTMLDivElement | null>(null);
@@ -389,7 +395,6 @@ function ParticipantTile({
         return () => document.removeEventListener("mousedown", onDoc);
     }, [optionsOpen]);
 
-    // ✅ IMPORTANT: register <video> element so engine can "black video recovery" reattach correctly
     const handleVideoRef = useCallback(
         (el: HTMLVideoElement | null) => {
             videoRef.current = el;
@@ -404,7 +409,6 @@ function ParticipantTile({
         };
     }, [onRegisterVideoElement, participant.id]);
 
-    // ✅ attach/detach via helper
     useEffect(() => {
         const el = videoRef.current;
         if (!el) return;
@@ -414,10 +418,7 @@ function ParticipantTile({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [participant.videoTrack, participant.isLocal, streamV]);
 
-    // NOTE: "aspect-video" tailwind class may be missing in your build → we enforce aspectRatio via inline style.
     const aspectStyle: React.CSSProperties | undefined = forceAspect ? { aspectRatio: "16 / 9" } : undefined;
-
-    // camera tiles look better with slight "headroom" bias (more top than bottom)
     const objectClass = fit === "cover" ? "object-cover object-[50%_35%]" : "object-contain object-center";
 
     const showPlaceholder = !hasVideoTrack || participant.videoMuted;
@@ -434,11 +435,7 @@ function ParticipantTile({
             : "bg-black/45 border border-white/10 text-white/80";
 
     const ringClassBase = theme === "light" ? "ring-1 ring-black/10" : "ring-1 ring-white/10";
-    const ringPinned =
-        theme === "light"
-            ? "ring-2 ring-blue-500/50"
-            : "ring-2 ring-blue-400/45";
-
+    const ringPinned = theme === "light" ? "ring-2 ring-blue-500/50" : "ring-2 ring-blue-400/45";
     const ringClass = pinned ? ringPinned : ringClassBase;
 
     const optionsBtnBg =
@@ -451,23 +448,25 @@ function ParticipantTile({
             ? "bg-white border border-black/10 text-black/80"
             : "bg-[#020617] border border-white/10 text-white/85";
 
-    const menuItemHover =
-        theme === "light" ? "hover:bg-black/5" : "hover:bg-white/10";
-
-    const separator =
-        theme === "light" ? "bg-black/10" : "bg-white/10";
+    const menuItemHover = theme === "light" ? "hover:bg-black/5" : "hover:bg-white/10";
+    const separator = theme === "light" ? "bg-black/10" : "bg-white/10";
 
     const isAdmin = guessIsAdmin(participant);
+    const isSelf = !!editable && participant.isLocal;
+
+    const hasReportOption = !participant.isLocal && !!onOpenReport;
 
     const hasOptions =
-        (!!editable && !!onOpenEditName) ||
+        (editable && !!onOpenEditName) ||
         (!participant.isLocal && typeof volume01 === "number" && !!onSetVolume01) ||
         (!!onTogglePin) ||
         (!!onHideUser) ||
-        (!!canModerate && !participant.isLocal && (!!onMakeAdmin || !!onMuteAudio || !!onMuteVideo || !!onOpenRemoveReport));
+        hasReportOption ||
+        (!!canModerate &&
+            !participant.isLocal &&
+            (!!onMakeAdmin || !!onMuteAudio || !!onMuteVideo));
 
-    const showOptionsBtn =
-        hasOptions && (hovered || optionsOpen || !!alwaysShowOptionsButton);
+    const showOptionsBtn = hasOptions && (hovered || optionsOpen || !!alwaysShowOptionsButton);
 
     return (
         <div
@@ -483,7 +482,6 @@ function ParticipantTile({
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => {
                 setHovered(false);
-                // ✅ do NOT auto-close menu on mouseleave (prevents accidental close)
             }}
         >
             <video
@@ -497,7 +495,6 @@ function ParticipantTile({
                 }
             />
 
-            {/* ✅ Placeholder overlay: centered + NO "Camera off" */}
             {showPlaceholder && (
                 <div className={`absolute inset-0 flex flex-col items-center justify-center text-center ${placeholderBg}`}>
                     <div className="relative w-16 h-16 rounded-full overflow-hidden border border-black/10">
@@ -531,7 +528,10 @@ function ParticipantTile({
                             theme={theme}
                         />
                         {isAdmin && (
-                            <span className={`text-[11px] px-1.5 py-0.5 rounded-md ${theme === "light" ? "bg-black/5 text-black/60" : "bg-white/10 text-white/70"}`}>
+                            <span
+                                className={`text-[11px] px-1.5 py-0.5 rounded-md ${theme === "light" ? "bg-black/5 text-black/60" : "bg-white/10 text-white/70"
+                                    }`}
+                            >
                                 admin
                             </span>
                         )}
@@ -576,7 +576,10 @@ function ParticipantTile({
                             {/* Volume (remote only, for everyone) */}
                             {!participant.isLocal && typeof volume01 === "number" && !!onSetVolume01 && (
                                 <div className="px-3 py-2">
-                                    <div className={`flex items-center justify-between text-[11px] ${theme === "light" ? "text-black/55" : "text-white/55"}`}>
+                                    <div
+                                        className={`flex items-center justify-between text-[11px] ${theme === "light" ? "text-black/55" : "text-white/55"
+                                            }`}
+                                    >
                                         <span>Volume</span>
                                         <span>{Math.round(clamp01(volume01) * 100)}%</span>
                                     </div>
@@ -593,21 +596,27 @@ function ParticipantTile({
                                     />
                                     <div className="mt-2 flex items-center gap-2">
                                         <button
-                                            className={`h-7 px-2 rounded-lg text-[11px] ${theme === "light" ? "bg-black/5 hover:bg-black/10" : "bg-white/10 hover:bg-white/15"
+                                            className={`h-7 px-2 rounded-lg text-[11px] ${theme === "light"
+                                                ? "bg-black/5 hover:bg-black/10"
+                                                : "bg-white/10 hover:bg-white/15"
                                                 }`}
                                             onClick={() => onSetVolume01(0)}
                                         >
                                             0%
                                         </button>
                                         <button
-                                            className={`h-7 px-2 rounded-lg text-[11px] ${theme === "light" ? "bg-black/5 hover:bg-black/10" : "bg-white/10 hover:bg-white/15"
+                                            className={`h-7 px-2 rounded-lg text-[11px] ${theme === "light"
+                                                ? "bg-black/5 hover:bg-black/10"
+                                                : "bg-white/10 hover:bg-white/15"
                                                 }`}
                                             onClick={() => onSetVolume01(0.5)}
                                         >
                                             50%
                                         </button>
                                         <button
-                                            className={`h-7 px-2 rounded-lg text-[11px] ${theme === "light" ? "bg-black/5 hover:bg-black/10" : "bg-white/10 hover:bg-white/15"
+                                            className={`h-7 px-2 rounded-lg text-[11px] ${theme === "light"
+                                                ? "bg-black/5 hover:bg-black/10"
+                                                : "bg-white/10 hover:bg-white/15"
                                                 }`}
                                             onClick={() => onSetVolume01(1)}
                                         >
@@ -617,9 +626,10 @@ function ParticipantTile({
                                 </div>
                             )}
 
-                            <div className={`h-px w-full ${separator}`} />
+                            {(!!onTogglePin || !!onHideUser || hasReportOption) && (
+                                <div className={`h-px w-full ${separator}`} />
+                            )}
 
-                            {/* Pin / Hide (local-only actions) */}
                             {!!onTogglePin && (
                                 <button
                                     type="button"
@@ -646,7 +656,24 @@ function ParticipantTile({
                                 </button>
                             )}
 
-                            {/* Moderator actions */}
+                            {/* ✅ Report (anyone, remote only) */}
+                            {!participant.isLocal && !!onOpenReport && (
+                                <button
+                                    type="button"
+                                    className={`w-full text-left px-3 py-2 text-sm ${theme === "light"
+                                        ? "text-red-600 hover:bg-red-50"
+                                        : "text-red-400 hover:bg-white/10"
+                                        }`}
+                                    onClick={() => {
+                                        setOptionsOpen(false);
+                                        onOpenReport?.();
+                                    }}
+                                >
+                                    🚩 Report user
+                                </button>
+                            )}
+
+                            {/* Host-only controls */}
                             {canModerate && !participant.isLocal && (
                                 <>
                                     {(!!onMakeAdmin || !!onMuteAudio || !!onMuteVideo) && (
@@ -691,23 +718,6 @@ function ParticipantTile({
                                             🎥 Turn off camera
                                         </button>
                                     )}
-
-                                    {!!onOpenRemoveReport && (
-                                        <>
-                                            <div className={`h-px w-full ${separator}`} />
-                                            <button
-                                                type="button"
-                                                className={`w-full text-left px-3 py-2 text-sm ${theme === "light" ? "text-red-600 hover:bg-red-50" : "text-red-400 hover:bg-white/10"
-                                                    }`}
-                                                onClick={() => {
-                                                    setOptionsOpen(false);
-                                                    onOpenRemoveReport?.();
-                                                }}
-                                            >
-                                                Remove / report user
-                                            </button>
-                                        </>
-                                    )}
                                 </>
                             )}
                         </div>
@@ -715,7 +725,7 @@ function ParticipantTile({
                 </div>
             )}
 
-            {/* Bottom label (fixed height; edit icon doesn't change layout) */}
+            {/* Bottom label */}
             <div
                 className={
                     `absolute left-3 bottom-3 rounded-lg px-2 h-7 text-[11px] flex items-center gap-2 ${labelBg}`
@@ -724,38 +734,56 @@ function ParticipantTile({
                 <div className="flex items-center gap-1 min-w-0">
                     <span className="truncate max-w-[160px] leading-none">{name}</span>
 
-                    {/* ✅ edit icon: ALWAYS rendered (reserved space), only fades/zooms on hover */}
-                    {editable && (
-                        <button
-                            type="button"
-                            className={
-                                `h-6 w-6 rounded-md flex items-center justify-center transition-all duration-150 ` +
-                                (hovered
-                                    ? (theme === "light" ? "opacity-100 scale-100 hover:bg-black/5" : "opacity-100 scale-100 hover:bg-white/10")
-                                    : "opacity-0 scale-95 pointer-events-none")
-                            }
-                            title="Edit name"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onOpenEditName?.();
-                            }}
-                        >
-                            <span className="text-[12px] leading-none">✎</span>
-                        </button>
-                    )}
-
                     {isAdmin && (
-                        <span className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-md ${theme === "light" ? "bg-black/5 text-black/55" : "bg-white/10 text-white/65"}`}>
+                        <span
+                            className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-md ${theme === "light" ? "bg-black/5 text-black/55" : "bg-white/10 text-white/65"
+                                }`}
+                        >
                             admin
                         </span>
                     )}
                 </div>
 
-                <Icon
-                    name={participant.audioMuted ? "mic-off" : "mic-on"}
-                    className="w-3.5 h-3.5 opacity-80"
-                    theme={theme}
-                />
+                {/* ✅ Self-view: mic icon BEFORE pencil; pencil animates in (label "stretches") */}
+                {isSelf ? (
+                    <>
+                        <Icon
+                            name={participant.audioMuted ? "mic-off" : "mic-on"}
+                            className="w-3.5 h-3.5 opacity-80"
+                            theme={theme}
+                        />
+
+                        <div
+                            className={
+                                "overflow-hidden transition-all duration-200 " +
+                                (hovered
+                                    ? "max-w-[28px] opacity-100"
+                                    : "max-w-0 opacity-0 pointer-events-none")
+                            }
+                        >
+                            <button
+                                type="button"
+                                className={
+                                    `h-6 w-6 rounded-md flex items-center justify-center ` +
+                                    (theme === "light" ? "hover:bg-black/5" : "hover:bg-white/10")
+                                }
+                                title="Edit name"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onOpenEditName?.();
+                                }}
+                            >
+                                <span className="text-[12px] leading-none">✎</span>
+                            </button>
+                        </div>
+                    </>
+                ) : (
+                    <Icon
+                        name={participant.audioMuted ? "mic-off" : "mic-on"}
+                        className="w-3.5 h-3.5 opacity-80"
+                        theme={theme}
+                    />
+                )}
             </div>
         </div>
     );
@@ -763,10 +791,9 @@ function ParticipantTile({
 
 // ----------------------- Layout helpers -----------------------
 function computeCols(count: number, containerWidth: number) {
-    // hard guarantees
     if (count <= 1) return 1;
     if (count === 2) return 2;
-    if (count === 4) return 2; // ✅ always 2x2
+    if (count === 4) return 2;
 
     if (count === 3) return containerWidth >= 900 ? 3 : 2;
     if (count === 5) return containerWidth >= 900 ? 3 : 2;
@@ -782,7 +809,7 @@ function calcMaxGridWidthPx(params: {
     rows: number;
     gapPx: number;
     paddingPx: number;
-    aspectHOverW: number; // height / width, for 16:9 it's 9/16
+    aspectHOverW: number;
 }) {
     const { containerWidth, containerHeight, cols, rows, gapPx, paddingPx, aspectHOverW } = params;
 
@@ -818,7 +845,8 @@ function GridLayout({
     onHideById,
     getVolume01ById,
     onSetVolume01ById,
-    onOpenRemoveReportById,
+
+    onOpenReportById,
     onMakeAdminById,
     onMuteAudioById,
     onMuteVideoById,
@@ -843,7 +871,7 @@ function GridLayout({
     getVolume01ById: (id: string) => number;
     onSetVolume01ById: (id: string, v: number) => void;
 
-    onOpenRemoveReportById: (id: string) => void;
+    onOpenReportById: (id: string) => void;
 
     onMakeAdminById: (id: string) => void | Promise<void>;
     onMuteAudioById: (id: string) => void | Promise<void>;
@@ -933,7 +961,7 @@ function GridLayout({
                         onHideUser={!p.isLocal ? () => onHideById(p.id) : undefined}
                         volume01={!p.isLocal ? getVolume01ById(p.id) : undefined}
                         onSetVolume01={!p.isLocal ? (v) => onSetVolume01ById(p.id, v) : undefined}
-                        onOpenRemoveReport={!p.isLocal ? () => onOpenRemoveReportById(p.id) : undefined}
+                        onOpenReport={!p.isLocal ? () => onOpenReportById(p.id) : undefined}
                         onMakeAdmin={!p.isLocal ? () => onMakeAdminById(p.id) : undefined}
                         onMuteAudio={!p.isLocal ? () => onMuteAudioById(p.id) : undefined}
                         onMuteVideo={!p.isLocal ? () => onMuteVideoById(p.id) : undefined}
@@ -966,7 +994,7 @@ function GridLayout({
                                     onHideUser={!p.isLocal ? () => onHideById(p.id) : undefined}
                                     volume01={!p.isLocal ? getVolume01ById(p.id) : undefined}
                                     onSetVolume01={!p.isLocal ? (v) => onSetVolume01ById(p.id, v) : undefined}
-                                    onOpenRemoveReport={!p.isLocal ? () => onOpenRemoveReportById(p.id) : undefined}
+                                    onOpenReport={!p.isLocal ? () => onOpenReportById(p.id) : undefined}
                                     onMakeAdmin={!p.isLocal ? () => onMakeAdminById(p.id) : undefined}
                                     onMuteAudio={!p.isLocal ? () => onMuteAudioById(p.id) : undefined}
                                     onMuteVideo={!p.isLocal ? () => onMuteVideoById(p.id) : undefined}
@@ -999,7 +1027,8 @@ function P2PLayout({
     onHideById,
     getVolume01ById,
     onSetVolume01ById,
-    onOpenRemoveReportById,
+
+    onOpenReportById,
     onMakeAdminById,
     onMuteAudioById,
     onMuteVideoById,
@@ -1025,7 +1054,7 @@ function P2PLayout({
     getVolume01ById: (id: string) => number;
     onSetVolume01ById: (id: string, v: number) => void;
 
-    onOpenRemoveReportById: (id: string) => void;
+    onOpenReportById: (id: string) => void;
 
     onMakeAdminById: (id: string) => void | Promise<void>;
     onMuteAudioById: (id: string) => void | Promise<void>;
@@ -1086,7 +1115,7 @@ function P2PLayout({
                         onHideUser={!p.isLocal ? () => onHideById(p.id) : undefined}
                         volume01={!p.isLocal ? getVolume01ById(p.id) : undefined}
                         onSetVolume01={!p.isLocal ? (v) => onSetVolume01ById(p.id, v) : undefined}
-                        onOpenRemoveReport={!p.isLocal ? () => onOpenRemoveReportById(p.id) : undefined}
+                        onOpenReport={!p.isLocal ? () => onOpenReportById(p.id) : undefined}
                         onMakeAdmin={!p.isLocal ? () => onMakeAdminById(p.id) : undefined}
                         onMuteAudio={!p.isLocal ? () => onMuteAudioById(p.id) : undefined}
                         onMuteVideo={!p.isLocal ? () => onMuteVideoById(p.id) : undefined}
@@ -1097,10 +1126,6 @@ function P2PLayout({
     );
 }
 
-/**
- * ✅ Phones with 1–2 participants:
- * Keep TRUE 16:9 (no squish/stretch) and center tiles in the frame.
- */
 function MobileFillLayout({
     theme,
     pageParticipants,
@@ -1120,7 +1145,8 @@ function MobileFillLayout({
     onHideById,
     getVolume01ById,
     onSetVolume01ById,
-    onOpenRemoveReportById,
+
+    onOpenReportById,
     onMakeAdminById,
     onMuteAudioById,
     onMuteVideoById,
@@ -1146,7 +1172,7 @@ function MobileFillLayout({
     getVolume01ById: (id: string) => number;
     onSetVolume01ById: (id: string, v: number) => void;
 
-    onOpenRemoveReportById: (id: string) => void;
+    onOpenReportById: (id: string) => void;
 
     onMakeAdminById: (id: string) => void | Promise<void>;
     onMuteAudioById: (id: string) => void | Promise<void>;
@@ -1193,7 +1219,7 @@ function MobileFillLayout({
                             onHideUser={!p.isLocal ? () => onHideById(p.id) : undefined}
                             volume01={!p.isLocal ? getVolume01ById(p.id) : undefined}
                             onSetVolume01={!p.isLocal ? (v) => onSetVolume01ById(p.id, v) : undefined}
-                            onOpenRemoveReport={!p.isLocal ? () => onOpenRemoveReportById(p.id) : undefined}
+                            onOpenReport={!p.isLocal ? () => onOpenReportById(p.id) : undefined}
                             onMakeAdmin={!p.isLocal ? () => onMakeAdminById(p.id) : undefined}
                             onMuteAudio={!p.isLocal ? () => onMuteAudioById(p.id) : undefined}
                             onMuteVideo={!p.isLocal ? () => onMuteVideoById(p.id) : undefined}
@@ -1205,7 +1231,6 @@ function MobileFillLayout({
     );
 }
 
-/** For narrow phones with 3+ participants: scroll list, but with REAL aspect ratio. */
 function MobileStackLayout({
     theme,
     pageParticipants,
@@ -1223,7 +1248,8 @@ function MobileStackLayout({
     onHideById,
     getVolume01ById,
     onSetVolume01ById,
-    onOpenRemoveReportById,
+
+    onOpenReportById,
     onMakeAdminById,
     onMuteAudioById,
     onMuteVideoById,
@@ -1247,7 +1273,7 @@ function MobileStackLayout({
     getVolume01ById: (id: string) => number;
     onSetVolume01ById: (id: string, v: number) => void;
 
-    onOpenRemoveReportById: (id: string) => void;
+    onOpenReportById: (id: string) => void;
 
     onMakeAdminById: (id: string) => void | Promise<void>;
     onMuteAudioById: (id: string) => void | Promise<void>;
@@ -1276,7 +1302,7 @@ function MobileStackLayout({
                     onHideUser={!p.isLocal ? () => onHideById(p.id) : undefined}
                     volume01={!p.isLocal ? getVolume01ById(p.id) : undefined}
                     onSetVolume01={!p.isLocal ? (v) => onSetVolume01ById(p.id, v) : undefined}
-                    onOpenRemoveReport={!p.isLocal ? () => onOpenRemoveReportById(p.id) : undefined}
+                    onOpenReport={!p.isLocal ? () => onOpenReportById(p.id) : undefined}
                     onMakeAdmin={!p.isLocal ? () => onMakeAdminById(p.id) : undefined}
                     onMuteAudio={!p.isLocal ? () => onMuteAudioById(p.id) : undefined}
                     onMuteVideo={!p.isLocal ? () => onMuteVideoById(p.id) : undefined}
@@ -1303,7 +1329,8 @@ function ScreenShareLayoutDesktop({
     onHideById,
     getVolume01ById,
     onSetVolume01ById,
-    onOpenRemoveReportById,
+
+    onOpenReportById,
     onMakeAdminById,
     onMuteAudioById,
     onMuteVideoById,
@@ -1327,7 +1354,7 @@ function ScreenShareLayoutDesktop({
     getVolume01ById: (id: string) => number;
     onSetVolume01ById: (id: string, v: number) => void;
 
-    onOpenRemoveReportById: (id: string) => void;
+    onOpenReportById: (id: string) => void;
 
     onMakeAdminById: (id: string) => void | Promise<void>;
     onMuteAudioById: (id: string) => void | Promise<void>;
@@ -1408,7 +1435,7 @@ function ScreenShareLayoutDesktop({
                             onHideUser={!p.isLocal ? () => onHideById(p.id) : undefined}
                             volume01={!p.isLocal ? getVolume01ById(p.id) : undefined}
                             onSetVolume01={!p.isLocal ? (v) => onSetVolume01ById(p.id, v) : undefined}
-                            onOpenRemoveReport={!p.isLocal ? () => onOpenRemoveReportById(p.id) : undefined}
+                            onOpenReport={!p.isLocal ? () => onOpenReportById(p.id) : undefined}
                             onMakeAdmin={!p.isLocal ? () => onMakeAdminById(p.id) : undefined}
                             onMuteAudio={!p.isLocal ? () => onMuteAudioById(p.id) : undefined}
                             onMuteVideo={!p.isLocal ? () => onMuteVideoById(p.id) : undefined}
@@ -1438,7 +1465,8 @@ function ScreenShareLayoutMobile({
     onHideById,
     getVolume01ById,
     onSetVolume01ById,
-    onOpenRemoveReportById,
+
+    onOpenReportById,
     onMakeAdminById,
     onMuteAudioById,
     onMuteVideoById,
@@ -1463,7 +1491,7 @@ function ScreenShareLayoutMobile({
     getVolume01ById: (id: string) => number;
     onSetVolume01ById: (id: string, v: number) => void;
 
-    onOpenRemoveReportById: (id: string) => void;
+    onOpenReportById: (id: string) => void;
 
     onMakeAdminById: (id: string) => void | Promise<void>;
     onMuteAudioById: (id: string) => void | Promise<void>;
@@ -1547,7 +1575,7 @@ function ScreenShareLayoutMobile({
                     onHideUser={!p.isLocal ? () => onHideById(p.id) : undefined}
                     volume01={!p.isLocal ? getVolume01ById(p.id) : undefined}
                     onSetVolume01={!p.isLocal ? (v) => onSetVolume01ById(p.id, v) : undefined}
-                    onOpenRemoveReport={!p.isLocal ? () => onOpenRemoveReportById(p.id) : undefined}
+                    onOpenReport={!p.isLocal ? () => onOpenReportById(p.id) : undefined}
                     onMakeAdmin={!p.isLocal ? () => onMakeAdminById(p.id) : undefined}
                     onMuteAudio={!p.isLocal ? () => onMuteAudioById(p.id) : undefined}
                     onMuteVideo={!p.isLocal ? () => onMuteVideoById(p.id) : undefined}
@@ -1575,7 +1603,7 @@ export function VideoRoom(props: VideoRoomProps) {
         onRegisterVideoElement,
         onEditLocalDisplayName,
 
-        canModerate = false,
+        canModerate: canModerateProp,
         onMakeParticipantAdmin,
         onMuteParticipantAudio,
         onMuteParticipantVideo,
@@ -1585,30 +1613,25 @@ export function VideoRoom(props: VideoRoomProps) {
 
     const isLight = theme === "light";
 
-    // ✅ local display name override state (UI-level)
     const [localNameOverride, setLocalNameOverride] = useState<string | null>(null);
 
-    // edit modal state
     const [editOpen, setEditOpen] = useState(false);
     const [editValue, setEditValue] = useState("");
     const [editSaving, setEditSaving] = useState(false);
     const editInputRef = useRef<HTMLInputElement | null>(null);
 
-    // pin / hide / volume
     const [pinnedId, setPinnedId] = useState<string | null>(null);
     const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => new Set());
-    const [volumeById, setVolumeById] = useState<Record<string, number>>({}); // 0..1
+    const [volumeById, setVolumeById] = useState<Record<string, number>>({});
 
-    // moderation modal
-    const [modOpen, setModOpen] = useState(false);
-    const [modTargetId, setModTargetId] = useState<string | null>(null);
+    // ✅ report modal is for everyone; kick button inside is host-only
+    const [reportOpen, setReportOpen] = useState(false);
+    const [reportTargetId, setReportTargetId] = useState<string | null>(null);
     const [reportText, setReportText] = useState("");
-    const [modBusy, setModBusy] = useState(false);
+    const [reportBusy, setReportBusy] = useState(false);
 
-    // measure the real viewport available for tiles
     const { ref: roomRef, width: roomW, height: roomH } = useElementSize<HTMLDivElement>();
 
-    // fallback for first render (SSR / zero-size initial)
     const fallbackW = typeof window !== "undefined" ? window.innerWidth : 1200;
     const fallbackH = typeof window !== "undefined" ? window.innerHeight : 800;
 
@@ -1638,7 +1661,6 @@ export function VideoRoom(props: VideoRoomProps) {
         });
     }, [audioOutputId]);
 
-    // ensure volume map has all remote participants
     useEffect(() => {
         setVolumeById((prev) => {
             const next = { ...prev };
@@ -1652,7 +1674,6 @@ export function VideoRoom(props: VideoRoomProps) {
                 }
             }
 
-            // cleanup removed
             const alive = new Set(participants.filter((p) => !p.isLocal).map((p) => p.id));
             for (const k of Object.keys(next)) {
                 if (!alive.has(k)) {
@@ -1665,7 +1686,6 @@ export function VideoRoom(props: VideoRoomProps) {
         });
     }, [participants]);
 
-    // if pinned leaves / gets hidden -> unpin
     useEffect(() => {
         if (!pinnedId) return;
         if (hiddenIds.has(pinnedId)) setPinnedId(null);
@@ -1683,7 +1703,6 @@ export function VideoRoom(props: VideoRoomProps) {
             n.add(id);
             return n;
         });
-        // also silence immediately
         setVolumeById((prev) => ({ ...prev, [id]: 0 }));
     }, []);
 
@@ -1691,41 +1710,16 @@ export function VideoRoom(props: VideoRoomProps) {
         setHiddenIds(new Set());
     }, []);
 
-    const getVolume01ById = useCallback((id: string) => {
-        return clamp01(volumeById[id] ?? 1);
-    }, [volumeById]);
+    const getVolume01ById = useCallback(
+        (id: string) => clamp01(volumeById[id] ?? 1),
+        [volumeById]
+    );
 
     const setVolume01ById = useCallback((id: string, v: number) => {
         const vv = clamp01(v);
         setVolumeById((prev) => ({ ...prev, [id]: vv }));
     }, []);
 
-    const openRemoveReportById = useCallback((id: string) => {
-        setModTargetId(id);
-        setReportText("");
-        setModOpen(true);
-    }, []);
-
-    const closeRemoveReport = useCallback(() => {
-        setModOpen(false);
-        setModTargetId(null);
-        setReportText("");
-        setModBusy(false);
-    }, []);
-
-    const makeAdminById = useCallback(async (id: string) => {
-        try { await onMakeParticipantAdmin?.(id); } catch { }
-    }, [onMakeParticipantAdmin]);
-
-    const muteAudioById = useCallback(async (id: string) => {
-        try { await onMuteParticipantAudio?.(id); } catch { }
-    }, [onMuteParticipantAudio]);
-
-    const muteVideoById = useCallback(async (id: string) => {
-        try { await onMuteParticipantVideo?.(id); } catch { }
-    }, [onMuteParticipantVideo]);
-
-    // ---------- filtered/sorted participants (hide + pin) ----------
     const participantsFiltered = useMemo(() => {
         const base = participants.filter((p) => !hiddenIds.has(p.id));
         if (!pinnedId) return base;
@@ -1757,7 +1751,14 @@ export function VideoRoom(props: VideoRoomProps) {
     );
     const localId = localParticipant?.id ?? null;
 
-    // keep override synced with initial name (only if override not set yet)
+    // ✅ determine host/moderator:
+    const autoCanModerate = useMemo(() => {
+        if (!localParticipant) return false;
+        return guessIsAdmin(localParticipant);
+    }, [localParticipant]);
+
+    const canModerate = typeof canModerateProp === "boolean" ? canModerateProp : autoCanModerate;
+
     useEffect(() => {
         if (!localParticipant) return;
         if (localNameOverride !== null) return;
@@ -1844,7 +1845,6 @@ export function VideoRoom(props: VideoRoomProps) {
     const count = pageParticipants.length;
 
     const useVeryNarrowMode = isVeryNarrow || (isMobileQuery && isNarrowForColumns);
-
     const stackTwoOnThisViewport =
         count === 2 && !useVeryNarrowMode && (isTabletQuery || (isMobileQuery && effectiveW < 640) || isCompact);
 
@@ -1852,8 +1852,7 @@ export function VideoRoom(props: VideoRoomProps) {
 
     // ---------------- Edit name handlers ----------------
     const openEditName = useCallback(() => {
-        const current =
-            (localNameOverride ?? localParticipant?.displayName ?? "").trim() || "Yaroslav";
+        const current = (localNameOverride ?? localParticipant?.displayName ?? "").trim() || "Yaroslav";
         setEditValue(current);
         setEditOpen(true);
         setTimeout(() => editInputRef.current?.focus(), 0);
@@ -1867,14 +1866,10 @@ export function VideoRoom(props: VideoRoomProps) {
     const commitEditName = useCallback(async () => {
         if (editSaving) return;
         const next = editValue.trim();
-
-        // minimal validation: 1..30 chars
         if (!next || next.length < 1) return;
         if (next.length > 30) return;
 
         setEditSaving(true);
-
-        // optimistic UI
         setLocalNameOverride(next);
 
         try {
@@ -1897,24 +1892,50 @@ export function VideoRoom(props: VideoRoomProps) {
         return () => window.removeEventListener("keydown", onKey);
     }, [editOpen, closeEditName, commitEditName]);
 
-    // moderation target resolved
-    const modTarget = useMemo(() => {
-        if (!modTargetId) return null;
-        return participants.find((p) => p.id === modTargetId) || null;
-    }, [modTargetId, participants]);
+    // ---------------- Report modal (for anyone) ----------------
+    const openReportById = useCallback((id: string) => {
+        setReportTargetId(id);
+        setReportText("");
+        setReportOpen(true);
+    }, []);
+
+    const closeReport = useCallback(() => {
+        setReportOpen(false);
+        setReportTargetId(null);
+        setReportText("");
+        setReportBusy(false);
+    }, []);
+
+    const reportTarget = useMemo(() => {
+        if (!reportTargetId) return null;
+        return participants.find((p) => p.id === reportTargetId) || null;
+    }, [reportTargetId, participants]);
+
+    const makeAdminById = useCallback(async (id: string) => {
+        try { await onMakeParticipantAdmin?.(id); } catch { }
+    }, [onMakeParticipantAdmin]);
+
+    const muteAudioById = useCallback(async (id: string) => {
+        try { await onMuteParticipantAudio?.(id); } catch { }
+    }, [onMuteParticipantAudio]);
+
+    const muteVideoById = useCallback(async (id: string) => {
+        try { await onMuteParticipantVideo?.(id); } catch { }
+    }, [onMuteParticipantVideo]);
 
     return (
         <div className="relative w-full h-full flex flex-col min-h-0">
             <AudioSink participants={participantsFiltered} volumeById={volumeById} />
 
             <div ref={roomRef} className="flex-1 relative min-h-0 overflow-hidden">
-                {/* Hidden users pill */}
                 {hiddenIds.size > 0 && (
                     <div className="absolute top-3 left-3 z-40">
                         <div
                             className={
                                 "h-9 px-3 rounded-xl text-xs flex items-center gap-2 shadow-lg " +
-                                (isLight ? "bg-white/85 border border-black/10 text-black/70" : "bg-black/45 border border-white/10 text-white/80")
+                                (isLight
+                                    ? "bg-white/85 border border-black/10 text-black/70"
+                                    : "bg-black/45 border border-white/10 text-white/80")
                             }
                         >
                             <span>Hidden: {hiddenIds.size}</span>
@@ -1949,7 +1970,7 @@ export function VideoRoom(props: VideoRoomProps) {
                                     onHideById={hideById}
                                     getVolume01ById={getVolume01ById}
                                     onSetVolume01ById={setVolume01ById}
-                                    onOpenRemoveReportById={openRemoveReportById}
+                                    onOpenReportById={openReportById}
                                     onMakeAdminById={makeAdminById}
                                     onMuteAudioById={muteAudioById}
                                     onMuteVideoById={muteVideoById}
@@ -1970,7 +1991,7 @@ export function VideoRoom(props: VideoRoomProps) {
                                     onHideById={hideById}
                                     getVolume01ById={getVolume01ById}
                                     onSetVolume01ById={setVolume01ById}
-                                    onOpenRemoveReportById={openRemoveReportById}
+                                    onOpenReportById={openReportById}
                                     onMakeAdminById={makeAdminById}
                                     onMuteAudioById={muteAudioById}
                                     onMuteVideoById={muteVideoById}
@@ -1996,7 +2017,7 @@ export function VideoRoom(props: VideoRoomProps) {
                                         onHideById={hideById}
                                         getVolume01ById={getVolume01ById}
                                         onSetVolume01ById={setVolume01ById}
-                                        onOpenRemoveReportById={openRemoveReportById}
+                                        onOpenReportById={openReportById}
                                         onMakeAdminById={makeAdminById}
                                         onMuteAudioById={muteAudioById}
                                         onMuteVideoById={muteVideoById}
@@ -2018,7 +2039,7 @@ export function VideoRoom(props: VideoRoomProps) {
                                         onHideById={hideById}
                                         getVolume01ById={getVolume01ById}
                                         onSetVolume01ById={setVolume01ById}
-                                        onOpenRemoveReportById={openRemoveReportById}
+                                        onOpenReportById={openReportById}
                                         onMakeAdminById={makeAdminById}
                                         onMuteAudioById={muteAudioById}
                                         onMuteVideoById={muteVideoById}
@@ -2048,7 +2069,7 @@ export function VideoRoom(props: VideoRoomProps) {
                                 onHideById={hideById}
                                 getVolume01ById={getVolume01ById}
                                 onSetVolume01ById={setVolume01ById}
-                                onOpenRemoveReportById={openRemoveReportById}
+                                onOpenReportById={openReportById}
                                 onMakeAdminById={makeAdminById}
                                 onMuteAudioById={muteAudioById}
                                 onMuteVideoById={muteVideoById}
@@ -2069,7 +2090,7 @@ export function VideoRoom(props: VideoRoomProps) {
                                 onHideById={hideById}
                                 getVolume01ById={getVolume01ById}
                                 onSetVolume01ById={setVolume01ById}
-                                onOpenRemoveReportById={openRemoveReportById}
+                                onOpenReportById={openReportById}
                                 onMakeAdminById={makeAdminById}
                                 onMuteAudioById={muteAudioById}
                                 onMuteVideoById={muteVideoById}
@@ -2211,12 +2232,12 @@ export function VideoRoom(props: VideoRoomProps) {
                     </div>
                 )}
 
-                {/* ✅ Remove / Report modal */}
-                {modOpen && modTarget && (
+                {/* ✅ Report modal (anyone). Kick button is host-only. */}
+                {reportOpen && reportTarget && (
                     <div
                         className="absolute inset-0 z-50 flex items-center justify-center"
                         onMouseDown={(e) => {
-                            if (e.target === e.currentTarget) closeRemoveReport();
+                            if (e.target === e.currentTarget) closeReport();
                         }}
                         style={{
                             background: isLight ? "rgba(0,0,0,0.35)" : "rgba(0,0,0,0.55)",
@@ -2229,21 +2250,21 @@ export function VideoRoom(props: VideoRoomProps) {
                         >
                             <div className="flex items-center justify-between">
                                 <div className={`text-sm font-semibold ${isLight ? "text-black/80" : "text-white/90"}`}>
-                                    Moderation
+                                    {canModerate ? "Report / remove user" : "Report user"}
                                 </div>
                                 <button
                                     className={`h-8 w-8 rounded-xl flex items-center justify-center ${isLight ? "hover:bg-black/5" : "hover:bg-white/10"
                                         }`}
-                                    onClick={closeRemoveReport}
+                                    onClick={closeReport}
                                     title="Close"
-                                    disabled={modBusy}
+                                    disabled={reportBusy}
                                 >
                                     ✕
                                 </button>
                             </div>
 
                             <div className={`mt-2 text-sm ${isLight ? "text-black/70" : "text-white/75"}`}>
-                                User: <span className="font-semibold">{modTarget.displayName || "Guest"}</span>
+                                User: <span className="font-semibold">{reportTarget.displayName || "Guest"}</span>
                             </div>
 
                             <div className={`mt-3 p-3 rounded-xl ${isLight ? "bg-black/5" : "bg-white/10"}`}>
@@ -2268,50 +2289,54 @@ export function VideoRoom(props: VideoRoomProps) {
                                         ? "bg-black/5 hover:bg-black/10 text-black/80"
                                         : "bg-white/10 hover:bg-white/15 text-white/85"
                                         }`}
-                                    onClick={closeRemoveReport}
-                                    disabled={modBusy}
+                                    onClick={closeReport}
+                                    disabled={reportBusy}
                                 >
                                     Cancel
                                 </button>
 
-                                <button
-                                    className={`h-10 px-3 rounded-xl text-sm font-semibold ${isLight
-                                        ? "bg-red-600 text-white hover:bg-red-700"
-                                        : "bg-red-600 text-white hover:bg-red-700"
-                                        } ${(!onKickParticipant || modBusy) ? "opacity-60 cursor-not-allowed" : ""}`}
-                                    disabled={!onKickParticipant || modBusy}
-                                    onClick={async () => {
-                                        if (!onKickParticipant) return;
-                                        setModBusy(true);
-                                        try {
-                                            await onKickParticipant(modTarget.id);
-                                            closeRemoveReport();
-                                        } catch {
-                                            setModBusy(false);
-                                        }
-                                    }}
-                                >
-                                    Kick from room
-                                </button>
+                                {/* host-only kick */}
+                                {canModerate && (
+                                    <button
+                                        className={`h-10 px-3 rounded-xl text-sm font-semibold ${isLight
+                                            ? "bg-red-600 text-white hover:bg-red-700"
+                                            : "bg-red-600 text-white hover:bg-red-700"
+                                            } ${(!onKickParticipant || reportBusy) ? "opacity-60 cursor-not-allowed" : ""}`}
+                                        disabled={!onKickParticipant || reportBusy}
+                                        onClick={async () => {
+                                            if (!onKickParticipant) return;
+                                            setReportBusy(true);
+                                            try {
+                                                await onKickParticipant(reportTarget.id);
+                                                closeReport();
+                                            } catch {
+                                                setReportBusy(false);
+                                            }
+                                        }}
+                                    >
+                                        Kick from room
+                                    </button>
+                                )}
 
+                                {/* anyone can report */}
                                 <button
                                     className={`h-10 px-3 rounded-xl text-sm font-semibold ${isLight
                                         ? "bg-black text-white hover:opacity-90"
                                         : "bg-blue-600 text-white hover:bg-blue-700"
-                                        } ${(!onReportParticipant || modBusy) ? "opacity-60 cursor-not-allowed" : ""}`}
-                                    disabled={!onReportParticipant || modBusy}
+                                        } ${(!onReportParticipant || reportBusy) ? "opacity-60 cursor-not-allowed" : ""}`}
+                                    disabled={!onReportParticipant || reportBusy}
                                     onClick={async () => {
                                         if (!onReportParticipant) return;
-                                        setModBusy(true);
+                                        setReportBusy(true);
                                         try {
-                                            await onReportParticipant(modTarget.id, reportText.trim());
-                                            closeRemoveReport();
+                                            await onReportParticipant(reportTarget.id, reportText.trim());
+                                            closeReport();
                                         } catch {
-                                            setModBusy(false);
+                                            setReportBusy(false);
                                         }
                                     }}
                                 >
-                                    Report user
+                                    Submit report
                                 </button>
                             </div>
                         </div>
