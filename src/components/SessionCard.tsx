@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { SessionStageBar, resolveStageVisual } from "./SessionStageBar";
+import { SessionStageBar } from "./SessionStageBar";
 import type { SessionStage } from "../SessionConfig";
 
 /** =========================
@@ -73,7 +73,12 @@ interface SessionCardProps {
         payload: { email: string; message?: string }
     ) => void | Promise<any>;
 
-    currentUser?: { id: string; full_name?: string; avatar_url?: string; email?: string };
+    currentUser?: {
+        id: string;
+        full_name?: string;
+        avatar_url?: string;
+        email?: string;
+    };
 }
 
 type BookedUser = { id: string; full_name?: string; avatar_url?: string };
@@ -339,7 +344,9 @@ function MenuItem({
         <button
             className={[
                 "w-full text-left px-3 py-2 rounded-[12px] text-[13px] font-semibold flex items-center gap-2 transition",
-                outlined ? "border border-[#E5E7EB] hover:border-[#111827] hover:bg-[#F6F6F6]" : "hover:bg-[#F3F4F6]",
+                outlined
+                    ? "border border-[#E5E7EB] hover:border-[#111827] hover:bg-[#F6F6F6]"
+                    : "hover:bg-[#F3F4F6]",
                 danger ? "text-[#F65252] hover:bg-[#FFF1F2]" : "text-[#111827]",
             ].join(" ")}
             onClick={onClick}
@@ -413,7 +420,8 @@ function normalizeStages(raw: any): SessionStage[] {
                 name: title ?? s.name,
                 color,
 
-                durationSeconds: durationSeconds || s.durationSeconds || s.seconds || s.duration_seconds,
+                durationSeconds:
+                    durationSeconds || s.durationSeconds || s.seconds || s.duration_seconds,
                 duration_seconds: s.duration_seconds ?? s.durationSeconds ?? s.seconds,
                 seconds: s.seconds ?? s.durationSeconds ?? s.duration_seconds,
                 duration_minutes: s.duration_minutes ?? s.durationMinutes,
@@ -455,7 +463,6 @@ function phasesToStages(phases: any[]): SessionStage[] {
             (Number(p?.duration) ? Number(p?.duration) * 60 : 0);
 
         // NOTE: kind может быть пустым — это ОК.
-        // StageBar сам распознает по title/name и покрасит правильно.
         const kind = p?.kind || p?.type || p?.mode || undefined;
 
         return {
@@ -705,6 +712,130 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
     return [];
 }
 
+/** =========================
+ * ✅ Stage visuals (fix colors + "Celebrate and Farewell" + custom indigo)
+ * ========================= */
+type StageKind =
+    | "welcome"
+    | "intentions"
+    | "focus"
+    | "break"
+    | "checkin"
+    | "recap"
+    | "celebrate"
+    | "custom";
+
+const KIND_META: Record<StageKind, { label: string; color: string }> = {
+    welcome: { label: "Welcome", color: "#34D399" }, // emerald
+    intentions: { label: "Intentions", color: "#38BDF8" }, // sky
+    focus: { label: "Focus", color: "#3B82F6" }, // blue
+    break: { label: "Break", color: "#FDA4AF" }, // rose
+    checkin: { label: "Check-in", color: "#38BDF8" }, // sky (same as intentions)
+    recap: { label: "Recap", color: "#A78BFA" }, // violet
+    celebrate: { label: "Celebrate", color: "#F472B6" }, // pink
+    custom: { label: "Custom", color: "#6366F1" }, // ✅ indigo (match Custom session label)
+};
+
+function normKey(raw: any) {
+    return String(raw || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, "-");
+}
+
+function normalizeKind(raw: any): StageKind {
+    const k = normKey(raw);
+
+    // ✅ Farewell should be GREEN (treat as "welcome" color group)
+    if (k.includes("farewell") || k.includes("goodbye") || k === "celebrate-and-farewell") {
+        return "welcome";
+    }
+
+    if (k === "check-in" || k === "checkin" || k === "check_in") return "checkin";
+    if (k === "intention" || k === "intentions") return "intentions";
+    if (k === "welcome") return "welcome";
+    if (k === "focus") return "focus";
+    if (k === "break") return "break";
+    if (k === "recap") return "recap";
+    if (k === "celebrate" || k === "celebration") return "celebrate";
+    if (k === "custom") return "custom";
+
+    return "custom";
+}
+
+function inferKindFromText(text: any): StageKind | null {
+    const t = String(text || "").trim();
+    if (!t) return null;
+    const k = normKey(t);
+
+    if (k.includes("farewell") || k.includes("goodbye") || k.includes("closing"))
+        return "welcome"; // ✅ green group
+    if (k.includes("welcome") || k.includes("intro")) return "welcome";
+    if (k.includes("intention")) return "intentions";
+    if (k.includes("check-in") || k.includes("checkin")) return "checkin";
+    if (k.includes("focus") || k.includes("work") || k.includes("deep")) return "focus";
+    if (k.includes("break") || k.includes("rest")) return "break";
+    if (k.includes("recap") || k.includes("reflection") || k.includes("review")) return "recap";
+    if (k.includes("celebrate") || k.includes("celebration")) return "celebrate";
+    if (k.includes("custom")) return "custom";
+
+    return null;
+}
+
+function getStageKind(stage: any): StageKind {
+    const rawKind =
+        stage?.kind ??
+        stage?.type ??
+        stage?.stageKind ??
+        stage?.stage_kind ??
+        stage?.blockKind;
+
+    const k0 = rawKind ? normalizeKind(rawKind) : null;
+
+    // If kind is missing/garbage — infer from title/name
+    const title = stage?.title ?? stage?.name ?? stage?.label ?? stage?.displayName ?? "";
+    const k1 = inferKindFromText(title);
+
+    return (k0 || k1 || "custom") as StageKind;
+}
+
+function getDisplayName(stage: any, kind: StageKind) {
+    const name = String(
+        stage?.title ??
+        stage?.label ??
+        stage?.displayName ??
+        stage?.name ??
+        ""
+    ).trim();
+
+    return name || KIND_META[kind].label;
+}
+
+function resolveStageColor(stage: any, kind: StageKind) {
+    const raw = stage?.color;
+    if (!raw) return KIND_META[kind].color;
+
+    const s = String(raw).trim().toLowerCase();
+
+    // If DB sends same default-blue for everything — override by kind
+    if (
+        s === "#4ca0ff" ||
+        s === "rgb(76,160,255)" ||
+        s === "rgba(76,160,255,1)"
+    ) {
+        return KIND_META[kind].color;
+    }
+
+    return raw;
+}
+
+function resolveStageVisualLocal(stage: any) {
+    const kind = getStageKind(stage);
+    const name = getDisplayName(stage, kind);
+    const color = resolveStageColor(stage, kind);
+    return { kind, name, color };
+}
+
 /** === local time parser for current-stage calc (only used when info open) === */
 function parseTimeMs(input: any): number | null {
     if (input == null) return null;
@@ -750,6 +881,11 @@ function getStageSeconds(stage: any): number {
     if (Number.isFinite(mins) && mins > 0) return mins * 60;
 
     return 0;
+}
+
+/** ✅ IMPORTANT: must exist at module scope (fixes "clamp is not defined") */
+function clamp(n: number, a: number, b: number) {
+    return Math.max(a, Math.min(b, n));
 }
 
 function computeNowStage(
@@ -843,12 +979,12 @@ export default function SessionCard({
     const [isOptionsOpen, setIsOptionsOpen] = useState(false);
     const optionsRef = useRef<HTMLDivElement | null>(null);
 
-    // ✅ NEW: Info popover
+    // ✅ Info popover
     const [isInfoOpen, setIsInfoOpen] = useState(false);
     const [isInfoPinned, setIsInfoPinned] = useState(false);
     const infoRef = useRef<HTMLDivElement | null>(null);
 
-    // ✅ NEW: current stage state (only recompute when info open)
+    // ✅ current stage state
     const [nowStage, setNowStage] = useState<{
         name: string;
         color: string;
@@ -895,8 +1031,7 @@ export default function SessionCard({
         return Date.now() >= t;
     }, [isInfinite, liveCount, session?.start_time]);
 
-    // ✅ IMPORTANT:
-    // For future sessions: don't pass real future start_time to StageBar.
+    // For future sessions: don't pass real future start_time to stage timeline.
     const timelineStartTime = useMemo(() => {
         const start = session?.start_time || session?.started_at || session?.created_at || "";
         if (!start) return String(Date.now());
@@ -964,6 +1099,22 @@ export default function SessionCard({
         };
     }, [session?.id, session?.schedule, session?.session_template_id, session?.template_id, userId]);
 
+    // ✅ Precompute stages with normalized kind + color (fixes "all same color" issue)
+    const stagesVisual = useMemo(() => {
+        return (stages || []).map((s) => {
+            const v = resolveStageVisualLocal(s as any);
+            const baseTitle = (s as any)?.title ?? (s as any)?.name ?? (s as any)?.label ?? v.name;
+
+            return {
+                ...(s as any),
+                title: baseTitle,
+                name: v.name,
+                kind: v.kind,
+                color: v.color,
+            } as SessionStage;
+        });
+    }, [stages]);
+
     // ✅ Load live users when started (and refresh occasionally)
     useEffect(() => {
         if (!session?.id) return;
@@ -998,43 +1149,49 @@ export default function SessionCard({
         else setPeopleTab("booked");
     }, [hasStarted, session?.id]);
 
-    // ✅ NEW: compute current stage only when info popover open (and only then tick)
+    // ✅ compute current stage only when info popover open (and only then tick)
     useEffect(() => {
         if (!isInfoOpen) {
             setNowStage(null);
             return;
         }
-        if (!stages?.length) {
+        if (!stagesVisual?.length) {
             setNowStage(null);
             return;
         }
 
+        const scheduleObj = tryParseJson<any>(session?.schedule);
         const cycleSeconds =
-            Number((tryParseJson<any>(session?.schedule) as any)?.timer?.cycleSeconds) ||
-            Number((tryParseJson<any>(session?.schedule) as any)?.timer?.cycle_seconds) ||
+            Number(scheduleObj?.timer?.cycleSeconds) ||
+            Number(scheduleObj?.timer?.cycle_seconds) ||
             undefined;
 
         const everyMs = isInfinite ? 15000 : 1000;
 
         const tick = () => {
-            const res = computeNowStage(stages, timelineStartTime, cycleSeconds);
-            if (!res?.curStage) {
+            try {
+                const res = computeNowStage(stagesVisual, timelineStartTime, cycleSeconds);
+                if (!res?.curStage) {
+                    setNowStage(null);
+                    return;
+                }
+                const v = resolveStageVisualLocal(res.curStage as any);
+                setNowStage({
+                    name: v.name,
+                    color: v.color,
+                    kind: v.kind,
+                    leftSec: res.stageLeft,
+                });
+            } catch (e) {
+                console.error("[SessionCard] nowStage tick failed:", e);
                 setNowStage(null);
-                return;
             }
-            const v = resolveStageVisual(res.curStage as any);
-            setNowStage({
-                name: v.name,
-                color: v.color,
-                kind: v.kind,
-                leftSec: res.stageLeft,
-            });
         };
 
         tick();
         const timer = window.setInterval(tick, everyMs);
         return () => window.clearInterval(timer);
-    }, [isInfoOpen, stages, timelineStartTime, isInfinite, session?.schedule]);
+    }, [isInfoOpen, stagesVisual, timelineStartTime, isInfinite, session?.schedule]);
 
     const ensureCurrentUserAsBooked = () => {
         if (!userId) return;
@@ -1250,14 +1407,13 @@ export default function SessionCard({
 
     // ✅ description: prefer session.description, else template description if nested
     const embeddedTemplate = getEmbeddedTemplate(session);
-    const description =
-        String(
-            session?.description ??
-            embeddedTemplate?.description ??
-            session?.session_template?.description ??
-            session?.template?.description ??
-            ""
-        ).trim();
+    const description = String(
+        session?.description ??
+        embeddedTemplate?.description ??
+        session?.session_template?.description ??
+        session?.template?.description ??
+        ""
+    ).trim();
 
     // cycleSeconds is optional; StageBar also works without it
     const scheduleObj = tryParseJson<any>(session?.schedule);
@@ -1340,7 +1496,7 @@ export default function SessionCard({
 
                                     {peopleInline}
 
-                                    {/* ✅ NEW: Info icon (hover + click) */}
+                                    {/* ✅ Info icon (hover + click) */}
                                     <div
                                         ref={infoRef}
                                         className="relative"
@@ -1421,15 +1577,17 @@ export default function SessionCard({
                                                         </div>
                                                     )}
 
-                                                    {/* timeline with moving tick */}
-                                                    {stages?.length ? (
+                                                    {/* timeline with moving tick (props are passed safely via "as any") */}
+                                                    {stagesVisual?.length ? (
                                                         <div className="w-full">
                                                             <SessionStageBar
-                                                                stages={stages}
-                                                                startTime={timelineStartTime}
-                                                                cycleSeconds={cycleSeconds}
-                                                                progressStyle="tick"
-                                                                tickEveryMs={tickEveryMs}
+                                                                {...({
+                                                                    stages: stagesVisual,
+                                                                    startTime: timelineStartTime,
+                                                                    cycleSeconds,
+                                                                    progressStyle: "tick",
+                                                                    tickEveryMs,
+                                                                } as any)}
                                                             />
                                                             <div className="mt-2 text-[11px] text-[#606060]">
                                                                 {isInfinite
@@ -1621,7 +1779,9 @@ export default function SessionCard({
                 <div className="mt-1 flex flex-col gap-2">
                     {modalCount === 0 ? (
                         <div className="text-[13px] text-[#606060]">
-                            {peopleTab === "live" ? "No one in the session right now." : "No one booked yet. Be the first."}
+                            {peopleTab === "live"
+                                ? "No one in the session right now."
+                                : "No one booked yet. Be the first."}
                         </div>
                     ) : (
                         modalUsers.map((u) => {
