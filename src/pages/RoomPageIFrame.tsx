@@ -927,12 +927,32 @@ export default function RoomPageIFrame() {
 
     const attendanceLeave = async () => {
         stopAttendanceHeartbeat();
+
+        if (!session?.id || !currentUserId) return;
+
+        const nowIso = new Date().toISOString();
+
+        // 1) RPC
         try {
-            if (session?.id) {
-                await supabase.rpc("attendance_leave", { p_session_id: String(session.id) });
-            }
+            const { error } = await supabase.rpc("attendance_leave", { p_session_id: String(session.id) });
+            if (!error) return;
+
+            console.log("attendance_leave rpc error:", error);
         } catch (e) {
-            console.log("attendance_leave exception:", e);
+            console.log("attendance_leave rpc exception:", e);
+        }
+
+        // 2) fallback UPDATE
+        try {
+            const { error } = await supabase
+                .from("session_attendance")
+                .update({ left_at: nowIso, last_seen_at: nowIso })
+                .eq("session_id", String(session.id))
+                .eq("user_id", String(currentUserId));
+
+            if (error) console.log("attendance_leave fallback error:", error);
+        } catch (e2) {
+            console.log("attendance_leave fallback exception:", e2);
         }
     };
 
@@ -940,49 +960,67 @@ export default function RoomPageIFrame() {
     const attendanceHbTimerRef = useRef<number | null>(null);
 
     const attendanceJoin = async () => {
+        if (!session?.id || !currentUserId) return;
+
+        const nowIso = new Date().toISOString();
+
+        // 1) RPC
         try {
-            if (!session?.id) return;
+            const { error } = await supabase.rpc("attendance_join", { p_session_id: String(session.id) });
+            if (!error) return;
 
-            // ✅ если RPC есть — идеально
-            await supabase.rpc("attendance_join", { p_session_id: String(session.id) });
+            console.log("attendance_join rpc error:", error);
         } catch (e) {
-            // ✅ fallback если RPC нет: прямой upsert
-            try {
-                if (!session?.id || !currentUserId) return;
+            console.log("attendance_join rpc exception:", e);
+        }
 
-                const nowIso = new Date().toISOString();
-                await supabase
-                    .from("session_attendance")
-                    .upsert(
-                        {
-                            session_id: String(session.id),
-                            user_id: String(currentUserId),
-                            joined_at: nowIso,
-                            left_at: null,
-                            last_seen_at: nowIso,
-                        },
-                        { onConflict: "session_id,user_id" }
-                    );
-            } catch (e2) {
-                console.log("attendanceJoin fallback failed:", e2);
-            }
+        // 2) fallback UPSERT
+        try {
+            const { error } = await supabase
+                .from("session_attendance")
+                .upsert(
+                    {
+                        session_id: String(session.id),
+                        user_id: String(currentUserId),
+                        joined_at: nowIso,
+                        left_at: null,
+                        last_seen_at: nowIso,
+                    },
+                    { onConflict: "session_id,user_id" }
+                );
+
+            if (error) console.log("attendance_join fallback error:", error);
+        } catch (e2) {
+            console.log("attendance_join fallback exception:", e2);
         }
     };
 
     const attendanceHeartbeat = async () => {
+        if (!session?.id || !currentUserId) return;
+
+        const nowIso = new Date().toISOString();
+
+        // 1) RPC
         try {
-            if (!session?.id) return;
-            await supabase.rpc("attendance_heartbeat", { p_session_id: String(session.id) });
+            const { error } = await supabase.rpc("attendance_heartbeat", { p_session_id: String(session.id) });
+            if (!error) return;
+
+            console.log("attendance_heartbeat rpc error:", error);
         } catch (e) {
-            // fallback update last_seen_at напрямую
-            try {
-                if (!session?.id || !currentUserId) return;
-                await supabase
-                    .from("session_attendance")
-                    .update({ last_seen_at: new Date().toISOString(), left_at: null })
-                    .eq("session_id", String(session.id))
-                    .eq("user_id", String(currentUserId));
-            } catch { }
+            console.log("attendance_heartbeat rpc exception:", e);
+        }
+
+        // 2) fallback UPDATE
+        try {
+            const { error } = await supabase
+                .from("session_attendance")
+                .update({ last_seen_at: nowIso, left_at: null })
+                .eq("session_id", String(session.id))
+                .eq("user_id", String(currentUserId));
+
+            if (error) console.log("attendance_heartbeat fallback error:", error);
+        } catch (e2) {
+            console.log("attendance_heartbeat fallback exception:", e2);
         }
     };
 
@@ -1002,21 +1040,33 @@ export default function RoomPageIFrame() {
     // =========================
     // ✅ LEAVE-ONCE (covers: SPA unmount, beforeunload, pagehide)
     // =========================
+    // =========================
+    // ✅ LEAVE SAFETY (UI Leave button)
+    // =========================
+    const leavingUiRef = useRef(false);
+    const leaveRedirectTimerRef = useRef<number | null>(null);
+
+    const clearLeaveRedirectTimer = () => {
+        if (!leaveRedirectTimerRef.current) return;
+        window.clearTimeout(leaveRedirectTimerRef.current);
+        leaveRedirectTimerRef.current = null;
+    };
+
     const leaveOnceRef = useRef(false);
 
-    /**
-     * Best-effort "leave" that runs only once.
-     * Use `void leaveOnce()` in events, and `await leaveOnce()` in async flows.
-     */
-    const leaveOnce = async () => {
+    type LeaveOnceOpts = { dispose?: boolean };
+
+    const leaveOnce = async (opts: LeaveOnceOpts = {}) => {
         if (leaveOnceRef.current) return;
         leaveOnceRef.current = true;
 
         try {
-            await attendanceLeave(); // attendanceLeave() already calls stopAttendanceHeartbeat()
+            await attendanceLeave(); // stopAttendanceHeartbeat() внутри
         } catch { }
 
-        // On exit events we also try to dispose iframe (safe/no-throw)
+        // dispose по умолчанию TRUE (для beforeunload/pagehide/unmount)
+        if (opts.dispose === false) return;
+
         try {
             apiRef.current?.dispose?.();
         } catch { }
@@ -1888,7 +1938,8 @@ export default function RoomPageIFrame() {
             if (destroyed) return;
             destroyed = true;
 
-            void leaveOnce();
+            clearLeaveRedirectTimer(); // ✅ важно
+            void leaveOnce();          // тут ок (это уже “поздно”, события уже пришли)
 
             cleanup();
             navigate("/sessions", { replace: true });
@@ -2273,11 +2324,27 @@ export default function RoomPageIFrame() {
     };
 
     const hangup = async () => {
+        // 0) защита от двойного клика
+        if (leavingUiRef.current) return;
+        leavingUiRef.current = true;
+
         const api = apiRef.current;
 
-        await leaveOnce();
+        // 1) записать left_at, но НЕ убивать iframe
+        await leaveOnce({ dispose: false });
 
+        // 2) страховка: даже если Jitsi не пришлёт события — уйдём на /sessions
+        clearLeaveRedirectTimer();
+        leaveRedirectTimerRef.current = window.setTimeout(() => {
+            try { apiRef.current?.dispose?.(); } catch { }
+            apiRef.current = null;
+            supportedCmdsRef.current = null;
+            navigate("/sessions", { replace: true });
+        }, 600);
+
+        // 3) попросить Jitsi выйти
         if (!api) {
+            clearLeaveRedirectTimer();
             navigate("/sessions", { replace: true });
             return;
         }
@@ -2285,6 +2352,7 @@ export default function RoomPageIFrame() {
         try {
             api.executeCommand("hangup");
         } catch {
+            clearLeaveRedirectTimer();
             navigate("/sessions", { replace: true });
         }
     };
