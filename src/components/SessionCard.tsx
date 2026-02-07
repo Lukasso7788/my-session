@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { SessionStageBar, resolveStageVisual } from "./SessionStageBar";
 import type { SessionStage } from "../SessionConfig";
 
 /** =========================
@@ -35,7 +36,9 @@ function getSupabase(): SupabaseClient | null {
         "";
 
     if (!url || !anon) {
-        console.warn("[SessionCard] Missing Supabase env vars (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY).");
+        console.warn(
+            "[SessionCard] Missing Supabase env vars (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)."
+        );
         g.__mysession_supabase__ = null;
         return null;
     }
@@ -65,7 +68,10 @@ interface SessionCardProps {
         }
     ) => void | Promise<any>;
 
-    onInviteToSession?: (sessionId: string, payload: { email: string; message?: string }) => void | Promise<any>;
+    onInviteToSession?: (
+        sessionId: string,
+        payload: { email: string; message?: string }
+    ) => void | Promise<any>;
 
     currentUser?: { id: string; full_name?: string; avatar_url?: string; email?: string };
 }
@@ -119,10 +125,14 @@ function extractBookers(session: any): BookedUser[] {
 }
 
 // ✅ NEW: infer visual type from title for newer/infinite room titles
-function inferTypeFromTitle(title: any): "Deep work" | "Pomodoro" | "Short sprints" | null {
+function inferTypeFromTitle(
+    title: any
+): "Deep work" | "Pomodoro" | "Short sprints" | null {
     const t = safeLower(title);
-    if (t.includes("silent") || t.includes("drop-in") || t.includes("drop in")) return "Deep work";
-    if (t.includes("deep work") || t.includes("deepwork") || t.includes("uninterrupted")) return "Deep work";
+    if (t.includes("silent") || t.includes("drop-in") || t.includes("drop in"))
+        return "Deep work";
+    if (t.includes("deep work") || t.includes("deepwork") || t.includes("uninterrupted"))
+        return "Deep work";
     if (t.includes("pomodoro")) return "Pomodoro";
     if (/\b25\s*[/\-]\s*5\b/.test(t)) return "Pomodoro";
     if (/\b15\s*[/\-]\s*3\b/.test(t)) return "Short sprints";
@@ -144,14 +154,7 @@ function resolveSessionType(session: any): "group" | "infinite" | "body" {
             try {
                 return JSON.parse(raw);
             } catch {
-                // sometimes it's double-encoded
-                try {
-                    const once = JSON.parse(raw);
-                    if (typeof once === "string") return JSON.parse(once);
-                    return once;
-                } catch {
-                    return null;
-                }
+                return null;
             }
         }
         return raw;
@@ -178,9 +181,16 @@ function AvatarCircle({ user, size = 28 }: { user: BookedUser; size?: number }) 
             title={label}
         >
             {user?.avatar_url ? (
-                <img src={user.avatar_url} alt={label} className="w-full h-full object-cover" draggable={false} />
+                <img
+                    src={user.avatar_url}
+                    alt={label}
+                    className="w-full h-full object-cover"
+                    draggable={false}
+                />
             ) : (
-                <div className="text-[10px] font-semibold text-[#111827] select-none">{initials}</div>
+                <div className="text-[10px] font-semibold text-[#111827] select-none">
+                    {initials}
+                </div>
             )}
         </div>
     );
@@ -205,7 +215,9 @@ function ModalShell({
         <div className="fixed inset-0 z-[9999]">
             <div className="absolute inset-0 bg-black/40" onClick={onClose} />
             <div className="absolute inset-0 flex items-center justify-center p-4">
-                <div className={`w-full ${widthClass} rounded-[24px] bg-white border border-[#E5E7EB] shadow-xl`}>
+                <div
+                    className={`w-full ${widthClass} rounded-[24px] bg-white border border-[#E5E7EB] shadow-xl`}
+                >
                     <div className="px-5 py-4 flex items-center justify-between border-b border-[#F0F0F0]">
                         <div className="text-[16px] font-bold text-[#111827]">{title}</div>
                         <button
@@ -262,6 +274,16 @@ function IconTrash({ size = 16 }: { size?: number }) {
             <path d="M10 11v7M14 11v7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
             <path d="M6 7l1 14h10l1-14" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
             <path d="M9 7V4h6v3" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+        </svg>
+    );
+}
+
+function IconInfo({ size = 16 }: { size?: number }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" />
+            <path d="M12 10v7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            <path d="M12 7.25h.01" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
         </svg>
     );
 }
@@ -342,39 +364,25 @@ function isCustomStudioSession(session: any): boolean {
 }
 
 /** =========================
- * ✅ Stages resolver (FIXED + MORE ROBUST)
- * Goal:
- * - DO NOT depend on session_stages table (you have 404 in logs)
- * - Derive stages from:
- *   1) session.schedule (phases/blocks/etc)
- *   2) embedded template schedule (if nested)
- *   3) session_templates.schedule by template_id
- *   4) JSON columns (stages_json)
- *   5) FINAL fallback: single Focus block by duration_minutes (for "1 uninterrupted hour" even if schedule is minimal)
+ * ✅ Stages resolver (FIXED)
+ * Derive from:
+ *   1) session.schedule.timer.phases
+ *   2) embedded template schedule
+ *   3) session.stages_json / template.stages_json
+ *   4) optional session_stages table
  * ========================= */
 function tryParseJson<T = any>(x: any): T | null {
     if (!x) return null;
     if (typeof x === "object") return x as T;
-
     if (typeof x === "string") {
         const s = x.trim();
         if (!s) return null;
-
-        // normal json
         try {
             return JSON.parse(s) as T;
         } catch {
-            // double-encoded json (common with jsonb->string pipelines)
-            try {
-                const once = JSON.parse(s);
-                if (typeof once === "string") return JSON.parse(once) as T;
-                return once as T;
-            } catch {
-                return null;
-            }
+            return null;
         }
     }
-
     return null;
 }
 
@@ -394,7 +402,6 @@ function normalizeStages(raw: any): SessionStage[] {
                 Number(s.seconds) ||
                 (Number(s.duration_minutes) ? Number(s.duration_minutes) * 60 : 0) ||
                 (Number(s.durationMinutes) ? Number(s.durationMinutes) * 60 : 0) ||
-                // IMPORTANT: some schedules store duration in MINUTES as "duration"
                 (Number(s.duration) ? Number(s.duration) * 60 : 0) ||
                 (Number(s.minutes) ? Number(s.minutes) * 60 : 0);
 
@@ -436,72 +443,31 @@ function sortStagesInClient(stages: any[]): any[] {
     });
 }
 
-function phasesToStages(phases: any): SessionStage[] {
-    // phases can be: array OR object map OR nested
-    let arr: any[] = [];
-
-    if (Array.isArray(phases)) arr = phases;
-    else if (phases && typeof phases === "object") {
-        // object-map, ex: { Focus: 60 } or { focus: { minutes: 60 } }
-        arr = Object.entries(phases).map(([k, v], i) => {
-            if (v && typeof v === "object") {
-                return { ...(v as any), title: (v as any)?.title || (v as any)?.name || k, position: (v as any)?.position ?? i };
-            }
-            return { title: k, minutes: v as any, position: i };
-        });
-    }
-
-    const mapped = (arr || []).map((p: any, i: number) => {
-        const rawTitle = String(p?.title || p?.label || p?.name || "").toLowerCase();
-        const rawKind = String(
-            p?.kind ||
-            p?.type ||
-            p?.mode ||
-            p?.phase_type ||
-            p?.phaseType ||
-            p?.segmentType ||
-            p?.blockType ||
-            ""
-        ).toLowerCase();
-
-        const isBreak = !!(
-            p?.isBreak === true ||
-            p?.break === true ||
-            rawKind.includes("break") ||
-            rawKind.includes("rest") ||
-            rawKind.includes("pause") ||
-            rawTitle.includes("break") ||
-            rawTitle.includes("rest") ||
-            rawTitle.includes("pause")
-        );
-
-        const kind = rawKind || (isBreak ? "break" : "focus");
-
-        const title =
-            p?.title ||
-            p?.label ||
-            p?.name ||
-            (isBreak ? "Break" : "Focus");
-
+function phasesToStages(phases: any[]): SessionStage[] {
+    const mapped = (phases || []).map((p: any, i: number) => {
+        const title = p?.title || p?.label || p?.name || "";
         const durationSeconds =
             Number(p?.seconds) ||
             Number(p?.duration_seconds) ||
             Number(p?.durationSeconds) ||
             (Number(p?.duration_minutes) ? Number(p?.duration_minutes) * 60 : 0) ||
             (Number(p?.minutes) ? Number(p?.minutes) * 60 : 0) ||
-            // IMPORTANT: many templates store duration in minutes as "duration"
             (Number(p?.duration) ? Number(p?.duration) * 60 : 0);
+
+        // NOTE: kind может быть пустым — это ОК.
+        // StageBar сам распознает по title/name и покрасит правильно.
+        const kind = p?.kind || p?.type || p?.mode || undefined;
 
         return {
             id: String(p?.id ?? i),
             kind,
-            title,
-            name: title,
+            title: title || undefined,
+            name: title || undefined,
             color: p?.color,
             durationSeconds,
             seconds: p?.seconds,
             duration_seconds: p?.duration_seconds,
-            duration_minutes: p?.duration_minutes ?? p?.minutes ?? (Number.isFinite(Number(p?.duration)) ? Number(p?.duration) : undefined),
+            duration_minutes: p?.duration_minutes ?? p?.minutes,
             position: p?.position ?? p?.order_index ?? p?.order ?? i,
         } as any;
     });
@@ -509,65 +475,21 @@ function phasesToStages(phases: any): SessionStage[] {
     return normalizeStages(sortStagesInClient(mapped));
 }
 
-function extractPhasesFromScheduleObj(schedule: any): any[] | null {
-    if (!schedule) return null;
-    if (Array.isArray(schedule)) return schedule;
-
-    if (typeof schedule !== "object") return null;
-
-    // common direct paths
-    const candidates: any[] = [
-        schedule?.timer?.phases,
-        schedule?.timer?.segments,
-        schedule?.timer?.blocks,
-        schedule?.phases,
-        schedule?.segments,
-        schedule?.blocks,
-        schedule?.stages,
-        schedule?.items,
-        schedule?.agenda,
-        schedule?.timeline,
-        schedule?.steps,
-        schedule?.sequence,
-        schedule?.script?.phases,
-        schedule?.script?.blocks,
-        schedule?.data?.phases,
-        schedule?.data?.blocks,
-    ];
-
-    for (const c of candidates) {
-        if (Array.isArray(c) && c.length) return c;
-        if (c && typeof c === "object" && !Array.isArray(c)) {
-            // object-map (like {Focus: 60}) – treat as phases too
-            const keys = Object.keys(c);
-            if (keys.length) return keys.map((k) => ({ title: k, ...(typeof (c as any)[k] === "object" ? (c as any)[k] : { minutes: (c as any)[k] }) }));
-        }
-    }
-
-    // last resort: find first non-empty array property
-    for (const k of Object.keys(schedule)) {
-        const v = (schedule as any)[k];
-        if (Array.isArray(v) && v.length) return v;
-    }
-
-    return null;
-}
-
 function tryStagesFromSchedule(scheduleAny: any): SessionStage[] {
     const schedule = tryParseJson<any>(scheduleAny);
-
-    // schedule can be array directly
-    if (Array.isArray(schedule) && schedule.length) return phasesToStages(schedule);
-
     if (!schedule || typeof schedule !== "object") return [];
 
-    const phases = extractPhasesFromScheduleObj(schedule);
-    if (phases && phases.length) return phasesToStages(phases);
+    const phases =
+        schedule?.timer?.phases ||
+        schedule?.phases ||
+        schedule?.timer?.blocks ||
+        schedule?.blocks;
 
-    // ultra fallback: timer.focus/break pairs (rare)
-    const focusSec = Number((schedule as any)?.timer?.focusSeconds || (schedule as any)?.timer?.focus_seconds);
-    const breakSec = Number((schedule as any)?.timer?.breakSeconds || (schedule as any)?.timer?.break_seconds);
-    const cycles = Number((schedule as any)?.timer?.cycles || (schedule as any)?.timer?.rounds);
+    if (Array.isArray(phases) && phases.length) return phasesToStages(phases);
+
+    const focusSec = Number(schedule?.timer?.focusSeconds || schedule?.timer?.focus_seconds);
+    const breakSec = Number(schedule?.timer?.breakSeconds || schedule?.timer?.break_seconds);
+    const cycles = Number(schedule?.timer?.cycles || schedule?.timer?.rounds);
 
     if (
         Number.isFinite(focusSec) && focusSec > 0 &&
@@ -576,31 +498,10 @@ function tryStagesFromSchedule(scheduleAny: any): SessionStage[] {
     ) {
         const ph: any[] = [];
         for (let i = 0; i < cycles; i++) {
-            ph.push({ kind: "focus", title: `Focus`, seconds: focusSec, position: ph.length });
-            ph.push({ kind: "break", title: `Break`, seconds: breakSec, position: ph.length });
+            ph.push({ title: `Focus`, seconds: focusSec, position: ph.length });
+            ph.push({ title: `Break`, seconds: breakSec, position: ph.length });
         }
         return phasesToStages(ph);
-    }
-
-    // fallback: schedule object may only contain total duration
-    const totalMinutes =
-        Number((schedule as any)?.duration_minutes) ||
-        Number((schedule as any)?.durationMinutes) ||
-        Number((schedule as any)?.minutes) ||
-        Number((schedule as any)?.duration);
-
-    if (Number.isFinite(totalMinutes) && totalMinutes > 0) {
-        return normalizeStages([
-            {
-                id: "0",
-                kind: "focus",
-                title: "Focus",
-                name: "Focus",
-                durationSeconds: totalMinutes * 60,
-                seconds: totalMinutes * 60,
-                position: 0,
-            } as any,
-        ]);
     }
 
     return [];
@@ -614,10 +515,7 @@ async function ensureAuthReady(sb: SupabaseClient) {
     }
 }
 
-// Avoid spamming 404 calls if table doesn't exist (your logs show it)
 let _hasSessionStagesTable: boolean | null = null;
-
-// cheap caches (card list can render 20+ sessions)
 const _stagesBySessionId = new Map<string, SessionStage[]>();
 const _stagesByTemplateId = new Map<string, SessionStage[]>();
 
@@ -652,27 +550,10 @@ function getEmbeddedTemplate(session: any): any | null {
     );
 }
 
-function buildSingleFocusFromDurationMinutes(totalMinutes: any): SessionStage[] {
-    const m = Number(totalMinutes);
-    if (!Number.isFinite(m) || m <= 0) return [];
-    return normalizeStages([
-        {
-            id: "0",
-            kind: "focus",
-            title: "Focus",
-            name: "Focus",
-            durationSeconds: m * 60,
-            seconds: m * 60,
-            position: 0,
-        } as any,
-    ]);
-}
-
 async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
     const sessionId = session?.id ? String(session.id) : "";
     if (sessionId && _stagesBySessionId.has(sessionId)) return _stagesBySessionId.get(sessionId)!;
 
-    // 1) already nested arrays
     if (Array.isArray(session?.session_stages) && session.session_stages.length) {
         const out = normalizeStages(sortStagesInClient(session.session_stages));
         if (sessionId) _stagesBySessionId.set(sessionId, out);
@@ -684,7 +565,6 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
         return out;
     }
 
-    // 2) JSON columns on session
     const fromSessionJson =
         tryParseJson<any[]>(session?.stages_json) ||
         tryParseJson<any[]>(session?.session_stages_json);
@@ -694,14 +574,12 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
         return out;
     }
 
-    // 3) ✅ derive from session.schedule
     const scheduleStages = tryStagesFromSchedule(session?.schedule);
     if (scheduleStages.length) {
         if (sessionId) _stagesBySessionId.set(sessionId, scheduleStages);
         return scheduleStages;
     }
 
-    // 4) embedded template on session object (if SessionsPage query nested it)
     const embeddedTemplate = getEmbeddedTemplate(session);
     if (embeddedTemplate) {
         const embStagesJson =
@@ -719,30 +597,12 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
             if (sessionId) _stagesBySessionId.set(sessionId, embScheduleStages);
             return embScheduleStages;
         }
-
-        // embedded template may only carry duration
-        const embDur =
-            embeddedTemplate?.duration_minutes ??
-            embeddedTemplate?.durationMinutes ??
-            embeddedTemplate?.minutes ??
-            embeddedTemplate?.duration;
-        const embSingle = buildSingleFocusFromDurationMinutes(embDur);
-        if (embSingle.length) {
-            if (sessionId) _stagesBySessionId.set(sessionId, embSingle);
-            return embSingle;
-        }
     }
 
     const sb = getSupabase();
-    if (!sb) {
-        // FINAL fallback (no supabase): use session.duration_minutes
-        const localFallback = buildSingleFocusFromDurationMinutes(session?.duration_minutes);
-        if (sessionId && localFallback.length) _stagesBySessionId.set(sessionId, localFallback);
-        return localFallback;
-    }
+    if (!sb) return [];
     await ensureAuthReady(sb);
 
-    // 5) session_stages table (optional; skip forever if missing)
     if (_hasSessionStagesTable !== false && sessionId) {
         const { data: ssData, error: ssErr } = await sb
             .from("session_stages")
@@ -750,7 +610,7 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
             .eq("session_id", session.id);
 
         if (ssErr) {
-            if (isNotFoundErr(ssErr)) _hasSessionStagesTable = false; // stop future calls
+            if (isNotFoundErr(ssErr)) _hasSessionStagesTable = false;
         } else if (Array.isArray(ssData) && ssData.length) {
             _hasSessionStagesTable = true;
             const out = normalizeStages(sortStagesInClient(ssData));
@@ -759,7 +619,6 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
         }
     }
 
-    // 6) session_templates fetch by template id (cached)
     const templateId = getTemplateIdFromSession(session);
     if (templateId && _stagesByTemplateId.has(templateId)) {
         const out = _stagesByTemplateId.get(templateId)!;
@@ -768,10 +627,9 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
     }
 
     if (templateId) {
-        // include duration_minutes just in case it exists in your schema
         const { data: tData, error: tErr } = await sb
             .from("session_templates")
-            .select("id, stages, stages_json, schedule, duration_minutes")
+            .select("id, stages, stages_json, schedule, description")
             .eq("id", templateId)
             .maybeSingle();
 
@@ -790,23 +648,10 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
                 if (sessionId) _stagesBySessionId.set(sessionId, schedStages);
                 return schedStages;
             }
-
-            // ✅ SUPER IMPORTANT fallback for "1 uninterrupted hour" templates:
-            // sometimes template schedule is minimal/opaque, but duration_minutes exists
-            const tDur = (tData as any)?.duration_minutes;
-            const single = buildSingleFocusFromDurationMinutes(tDur || session?.duration_minutes);
-            if (single.length) {
-                _stagesByTemplateId.set(templateId, single);
-                if (sessionId) _stagesBySessionId.set(sessionId, single);
-                return single;
-            }
         }
     }
 
-    // FINAL fallback: session.duration_minutes
-    const finalFallback = buildSingleFocusFromDurationMinutes(session?.duration_minutes);
-    if (sessionId && finalFallback.length) _stagesBySessionId.set(sessionId, finalFallback);
-    return finalFallback;
+    return [];
 }
 
 /** =========================
@@ -860,72 +705,102 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
     return [];
 }
 
-/** =========================
- * ✅ Thin timeline bar (NOT LIVE)
- * - same height as your grey placeholder (h-2)
- * - no timers, no intervals => zero re-render pressure
- * ========================= */
-function stageFallbackColor(stage: any) {
-    const k = safeLower(stage?.kind);
-    const t = safeLower(stage?.title || stage?.name);
+/** === local time parser for current-stage calc (only used when info open) === */
+function parseTimeMs(input: any): number | null {
+    if (input == null) return null;
 
-    if (k.includes("break") || t.includes("break") || t.includes("rest") || t.includes("pause")) return "#F9ADA2";
-    if (k.includes("intro") || t.includes("intro") || t.includes("welcome") || t.includes("start")) return "#80DF86";
-    if (k.includes("outro") || t.includes("outro") || t.includes("wrap") || t.includes("end")) return "#80DF86";
-    if (k.includes("intent") || t.includes("intent") || t.includes("checkin") || t.includes("check-in") || t.includes("check in")) return "#ADD3FF";
-
-    return "#4CA0FF"; // focus default
-}
-
-function getStageSeconds(s: any): number {
-    const n =
-        Number(s?.durationSeconds) ||
-        Number(s?.duration_seconds) ||
-        Number(s?.seconds) ||
-        (Number(s?.duration_minutes) ? Number(s?.duration_minutes) * 60 : 0) ||
-        (Number(s?.durationMinutes) ? Number(s?.durationMinutes) * 60 : 0) ||
-        (Number(s?.minutes) ? Number(s?.minutes) * 60 : 0) ||
-        (Number(s?.duration) ? Number(s?.duration) * 60 : 0);
-    return Number.isFinite(n) && n > 0 ? n : 0;
-}
-
-function SessionTimelineThinBar({ stages }: { stages: SessionStage[] }) {
-    const segs = useMemo(() => {
-        const clean = (stages || [])
-            .map((s) => {
-                const seconds = getStageSeconds(s);
-                if (!seconds) return null;
-                return {
-                    key: String((s as any)?.id ?? (s as any)?.title ?? Math.random()),
-                    seconds,
-                    color: (s as any)?.color || stageFallbackColor(s),
-                    label: String((s as any)?.title || (s as any)?.name || "Stage"),
-                };
-            })
-            .filter(Boolean) as { key: string; seconds: number; color: string; label: string }[];
-
-        return clean;
-    }, [stages]);
-
-    if (!segs.length) {
-        return <div className="w-full h-2 rounded-full bg-[#111827]/5" title="Session timeline (no stages found)" />;
+    if (input instanceof Date) {
+        const t = input.getTime();
+        return Number.isFinite(t) ? t : null;
     }
 
-    return (
-        <div className="w-full h-2 rounded-full overflow-hidden bg-[#111827]/5 flex" title="Session timeline">
-            {segs.map((s, idx) => (
-                <div
-                    key={`${idx}-${s.key}`}
-                    className="h-full"
-                    style={{
-                        flex: `${Math.max(1, Math.round(s.seconds))} 1 0%`,
-                        backgroundColor: s.color,
-                    }}
-                    title={`${s.label} • ${Math.round(s.seconds / 60)} min`}
-                />
-            ))}
-        </div>
-    );
+    if (typeof input === "number") {
+        if (!Number.isFinite(input)) return null;
+        const ms = input < 1e12 ? input * 1000 : input;
+        return Number.isFinite(ms) ? ms : null;
+    }
+
+    if (typeof input === "string") {
+        const s = input.trim();
+        if (!s) return null;
+
+        if (/^\d+$/.test(s)) {
+            const n = Number(s);
+            if (!Number.isFinite(n)) return null;
+            const ms = n < 1e12 ? n * 1000 : n;
+            return Number.isFinite(ms) ? ms : null;
+        }
+
+        const t = Date.parse(s);
+        return Number.isFinite(t) ? t : null;
+    }
+
+    return null;
+}
+
+function getStageSeconds(stage: any): number {
+    const s =
+        Number(stage?.durationSeconds) ||
+        Number(stage?.duration_seconds) ||
+        Number(stage?.seconds);
+
+    if (Number.isFinite(s) && s > 0) return s;
+
+    const mins = Number(stage?.duration ?? stage?.minutes);
+    if (Number.isFinite(mins) && mins > 0) return mins * 60;
+
+    return 0;
+}
+
+function computeNowStage(
+    stages: SessionStage[],
+    startTime: string,
+    cycleSeconds?: number
+) {
+    const startMs = parseTimeMs(startTime);
+    const stageSecondsList = (stages || []).map((s) => Math.max(0, getStageSeconds(s)));
+    const totalStagesSeconds = Math.max(1, stageSecondsList.reduce((a, v) => a + v, 0));
+    const loopSeconds = (Number(cycleSeconds) || 0) > 0 ? Number(cycleSeconds) : totalStagesSeconds;
+
+    const elapsedSec = startMs ? Math.floor((Date.now() - startMs) / 1000) : 0;
+    const raw = Number.isFinite(elapsedSec) ? elapsedSec : 0;
+    const normalized = loopSeconds > 0 ? ((raw % loopSeconds) + loopSeconds) % loopSeconds : raw;
+
+    let total = 0;
+    let stageIndex = 0;
+    let stageProgress = 0;
+
+    const firstNonZero = stageSecondsList.findIndex((x) => x > 0);
+    if (firstNonZero >= 0) stageIndex = firstNonZero;
+
+    for (let i = 0; i < stages.length; i++) {
+        const durSec = stageSecondsList[i] || 0;
+        const nextTotal = total + durSec;
+
+        if (durSec <= 0) continue;
+
+        if (normalized < nextTotal) {
+            stageIndex = i;
+            const stageElapsed = normalized - total;
+            stageProgress = clamp(stageElapsed / durSec, 0, 1);
+            break;
+        }
+
+        total = nextTotal;
+        stageIndex = i;
+    }
+
+    const curStage = stages[stageIndex] || null;
+    const curDur = stageSecondsList[stageIndex] || 0;
+    const stageElapsed = curDur > 0 ? Math.round(stageProgress * curDur) : 0;
+    const stageLeft = curDur > 0 ? Math.max(0, curDur - stageElapsed) : 0;
+
+    return {
+        stageIndex,
+        stageProgress,
+        curStage,
+        stageLeft,
+    };
 }
 
 export default function SessionCard({
@@ -968,6 +843,19 @@ export default function SessionCard({
     const [isOptionsOpen, setIsOptionsOpen] = useState(false);
     const optionsRef = useRef<HTMLDivElement | null>(null);
 
+    // ✅ NEW: Info popover
+    const [isInfoOpen, setIsInfoOpen] = useState(false);
+    const [isInfoPinned, setIsInfoPinned] = useState(false);
+    const infoRef = useRef<HTMLDivElement | null>(null);
+
+    // ✅ NEW: current stage state (only recompute when info open)
+    const [nowStage, setNowStage] = useState<{
+        name: string;
+        color: string;
+        kind: any;
+        leftSec: number;
+    } | null>(null);
+
     useEffect(() => setIsBookingConfirmed(!!initialIsBooked), [session.id, initialIsBooked]);
     useEffect(() => setBookers(initialBookers), [initialBookers]);
 
@@ -979,13 +867,20 @@ export default function SessionCard({
 
     useEffect(() => {
         function onDocClick(e: MouseEvent) {
-            if (!isOptionsOpen) return;
             const t = e.target as any;
-            if (optionsRef.current && !optionsRef.current.contains(t)) setIsOptionsOpen(false);
+
+            if (isOptionsOpen && optionsRef.current && !optionsRef.current.contains(t)) {
+                setIsOptionsOpen(false);
+            }
+
+            if (isInfoOpen && infoRef.current && !infoRef.current.contains(t)) {
+                setIsInfoOpen(false);
+                setIsInfoPinned(false);
+            }
         }
         document.addEventListener("mousedown", onDocClick);
         return () => document.removeEventListener("mousedown", onDocClick);
-    }, [isOptionsOpen]);
+    }, [isOptionsOpen, isInfoOpen]);
 
     const sessionType = resolveSessionType(session);
     const isInfinite = sessionType === "infinite";
@@ -999,6 +894,15 @@ export default function SessionCard({
         if (!Number.isFinite(t)) return false;
         return Date.now() >= t;
     }, [isInfinite, liveCount, session?.start_time]);
+
+    // ✅ IMPORTANT:
+    // For future sessions: don't pass real future start_time to StageBar.
+    const timelineStartTime = useMemo(() => {
+        const start = session?.start_time || session?.started_at || session?.created_at || "";
+        if (!start) return String(Date.now());
+        if (!hasStarted && session?.start_time) return String(Date.now());
+        return String(start);
+    }, [hasStarted, session?.start_time, session?.started_at, session?.created_at]);
 
     const nameToTypeMap: Record<string, string> = {
         "1 Hour — Pomodoro 15/3": "Short sprints",
@@ -1041,7 +945,7 @@ export default function SessionCard({
         })
         : "";
 
-    // ✅ Load stages (FIXED + robust template support)
+    // ✅ Load stages
     useEffect(() => {
         let cancelled = false;
 
@@ -1093,6 +997,44 @@ export default function SessionCard({
         if (hasStarted) setPeopleTab("live");
         else setPeopleTab("booked");
     }, [hasStarted, session?.id]);
+
+    // ✅ NEW: compute current stage only when info popover open (and only then tick)
+    useEffect(() => {
+        if (!isInfoOpen) {
+            setNowStage(null);
+            return;
+        }
+        if (!stages?.length) {
+            setNowStage(null);
+            return;
+        }
+
+        const cycleSeconds =
+            Number((tryParseJson<any>(session?.schedule) as any)?.timer?.cycleSeconds) ||
+            Number((tryParseJson<any>(session?.schedule) as any)?.timer?.cycle_seconds) ||
+            undefined;
+
+        const everyMs = isInfinite ? 15000 : 1000;
+
+        const tick = () => {
+            const res = computeNowStage(stages, timelineStartTime, cycleSeconds);
+            if (!res?.curStage) {
+                setNowStage(null);
+                return;
+            }
+            const v = resolveStageVisual(res.curStage as any);
+            setNowStage({
+                name: v.name,
+                color: v.color,
+                kind: v.kind,
+                leftSec: res.stageLeft,
+            });
+        };
+
+        tick();
+        const timer = window.setInterval(tick, everyMs);
+        return () => window.clearInterval(timer);
+    }, [isInfoOpen, stages, timelineStartTime, isInfinite, session?.schedule]);
 
     const ensureCurrentUserAsBooked = () => {
         if (!userId) return;
@@ -1203,10 +1145,17 @@ export default function SessionCard({
         flex items-center justify-center gap-2
         transition-all duration-200 ease-in-out
         w-full xl:w-auto
-        ${isHoveringBook ? "text-[#65D46C] border border-[#65D46C] bg-[#65D46C]/10" : "border border-brandBlack text-brandBlack bg-white"}
+        ${isHoveringBook
+                    ? "text-[#65D46C] border border-[#65D46C] bg-[#65D46C]/10"
+                    : "border border-brandBlack text-brandBlack bg-white"
+                }
       `}
         >
-            <img src={isHoveringBook ? "/icons/book-session-green.svg" : "/icons/book-session.svg"} className="w-4 h-4" alt="" />
+            <img
+                src={isHoveringBook ? "/icons/book-session-green.svg" : "/icons/book-session.svg"}
+                className="w-4 h-4"
+                alt=""
+            />
             <span>Book session</span>
         </button>
     );
@@ -1221,7 +1170,10 @@ export default function SessionCard({
         flex items-center justify-center
         transition-all duration-300 ease-in-out
         w-full xl:w-auto
-        ${isHoveringCancel ? "px-6 border border-[#F65252] bg-[#F65252]/5 text-[#F65252]" : "px-5 border border-[#65D46C] bg-[#65D46C]/10 text-[#65D46C]"}
+        ${isHoveringCancel
+                    ? "px-6 border border-[#F65252] bg-[#F65252]/5 text-[#F65252]"
+                    : "px-5 border border-[#65D46C] bg-[#65D46C]/10 text-[#65D46C]"
+                }
       `}
             style={{ willChange: "width, padding" }}
         >
@@ -1256,7 +1208,11 @@ export default function SessionCard({
                 <>
                     <div className="flex items-center">
                         {stackUsers.map((u, idx) => (
-                            <div key={u.id} className="relative" style={{ marginLeft: idx === 0 ? 0 : -10, zIndex: 50 - idx }}>
+                            <div
+                                key={u.id}
+                                className="relative"
+                                style={{ marginLeft: idx === 0 ? 0 : -10, zIndex: 50 - idx }}
+                            >
                                 <AvatarCircle user={u} size={26} />
                             </div>
                         ))}
@@ -1292,6 +1248,26 @@ export default function SessionCard({
     const modalUsers = peopleTab === "live" ? liveUsers : bookers;
     const modalCount = peopleTab === "live" ? liveUsersCount : bookedCount;
 
+    // ✅ description: prefer session.description, else template description if nested
+    const embeddedTemplate = getEmbeddedTemplate(session);
+    const description =
+        String(
+            session?.description ??
+            embeddedTemplate?.description ??
+            session?.session_template?.description ??
+            session?.template?.description ??
+            ""
+        ).trim();
+
+    // cycleSeconds is optional; StageBar also works without it
+    const scheduleObj = tryParseJson<any>(session?.schedule);
+    const cycleSeconds =
+        Number(scheduleObj?.timer?.cycleSeconds) ||
+        Number(scheduleObj?.timer?.cycle_seconds) ||
+        undefined;
+
+    const tickEveryMs = isInfinite ? 15000 : 1000;
+
     return (
         <>
             <div
@@ -1309,10 +1285,15 @@ export default function SessionCard({
                 <div className="flex flex-col xl:flex-row w-full gap-6">
                     <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 flex-1">
                         <div className="flex flex-col gap-3 w-full">
-                            <h3 className="text-[24px] md:text-[29px] font-bold leading-tight">{session.title}</h3>
+                            <h3 className="text-[24px] md:text-[29px] font-bold leading-tight">
+                                {session.title}
+                            </h3>
 
                             <div className="flex flex-wrap items-center gap-4 text-[12px] text-[#606060]">
-                                <Link to={`/profile/${session.host_id}`} className="flex items-center gap-1 hover:opacity-70">
+                                <Link
+                                    to={`/profile/${session.host_id}`}
+                                    className="flex items-center gap-1 hover:opacity-70"
+                                >
                                     <img src="/icons/host.svg" className="w-4 h-4 opacity-70" alt="" />
                                     <span>Host</span>
                                     <span className="underline underline-offset-2">{session.host_name}</span>
@@ -1358,6 +1339,111 @@ export default function SessionCard({
                                     </div>
 
                                     {peopleInline}
+
+                                    {/* ✅ NEW: Info icon (hover + click) */}
+                                    <div
+                                        ref={infoRef}
+                                        className="relative"
+                                        onMouseEnter={() => setIsInfoOpen(true)}
+                                        onMouseLeave={() => {
+                                            if (!isInfoPinned) setIsInfoOpen(false);
+                                        }}
+                                    >
+                                        <button
+                                            type="button"
+                                            className="h-8 w-8 rounded-full border border-[#E5E7EB] bg-white hover:bg-[#F3F4F6] flex items-center justify-center transition"
+                                            title="Info"
+                                            aria-label="Info"
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                setIsInfoOpen(true);
+                                                setIsInfoPinned((v) => !v);
+                                            }}
+                                        >
+                                            <span className="text-[#111827] opacity-80">
+                                                <IconInfo size={16} />
+                                            </span>
+                                        </button>
+
+                                        {isInfoOpen && (
+                                            <div
+                                                className="
+                          absolute left-0 top-[38px]
+                          z-[250]
+                          w-[420px] max-w-[85vw]
+                          rounded-[18px]
+                          border border-[#E5E7EB]
+                          bg-white
+                          shadow-xl
+                          overflow-hidden
+                        "
+                                            >
+                                                <div className="px-4 py-3 text-[12px] text-[#606060] border-b border-[#F3F4F6] flex items-center justify-between">
+                                                    <span>Session info</span>
+                                                    {isInfoPinned && (
+                                                        <span className="text-[11px] text-[#111827]/60">Pinned</span>
+                                                    )}
+                                                </div>
+
+                                                <div className="p-4 flex flex-col gap-3">
+                                                    {description ? (
+                                                        <div className="text-[13px] text-[#111827] leading-snug">
+                                                            {description}
+                                                        </div>
+                                                    ) : (
+                                                        <div className="text-[12px] text-[#606060]">
+                                                            No description yet.
+                                                        </div>
+                                                    )}
+
+                                                    {/* current stage */}
+                                                    {nowStage && (
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="text-[12px] text-[#606060]">Current:</div>
+                                                            <div
+                                                                className="inline-flex items-center gap-2 px-3 py-1 rounded-full border"
+                                                                style={{
+                                                                    borderColor: nowStage.color,
+                                                                    backgroundColor: `${nowStage.color}20`,
+                                                                    color: nowStage.color,
+                                                                    fontSize: 12,
+                                                                    fontWeight: 600,
+                                                                }}
+                                                            >
+                                                                <span>{nowStage.name}</span>
+                                                                {Number.isFinite(nowStage.leftSec) && nowStage.leftSec > 0 && (
+                                                                    <span className="opacity-80 font-semibold">
+                                                                        · {Math.ceil(nowStage.leftSec / 60)}m left
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* timeline with moving tick */}
+                                                    {stages?.length ? (
+                                                        <div className="w-full">
+                                                            <SessionStageBar
+                                                                stages={stages}
+                                                                startTime={timelineStartTime}
+                                                                cycleSeconds={cycleSeconds}
+                                                                progressStyle="tick"
+                                                                tickEveryMs={tickEveryMs}
+                                                            />
+                                                            <div className="mt-2 text-[11px] text-[#606060]">
+                                                                {isInfinite
+                                                                    ? "Updates every 15s for infinite rooms (low CPU)."
+                                                                    : "Live timeline (1s tick)."}
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="w-full h-2 rounded-full bg-[#111827]/5" />
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1381,12 +1467,12 @@ export default function SessionCard({
                             onMouseEnter={() => setIsHoveringJoinIframe(true)}
                             onMouseLeave={() => setIsHoveringJoinIframe(false)}
                             className="
-              h-12 rounded-full px-6 text-[14px] font-semibold
-              flex items-center justify-center
-              transition-all duration-200 ease-in-out
-              w-full xl:w-auto
-              border
-            "
+                h-12 rounded-full px-6 text-[14px] font-semibold
+                flex items-center justify-center
+                transition-all duration-200 ease-in-out
+                w-full xl:w-auto
+                border
+              "
                             style={{
                                 borderColor: isHoveringJoinIframe ? joinHoverBg : "#111827",
                                 color: isHoveringJoinIframe ? "white" : "#111827",
@@ -1403,11 +1489,11 @@ export default function SessionCard({
                                 onMouseEnter={() => setIsHoveringOptions(true)}
                                 onMouseLeave={() => setIsHoveringOptions(false)}
                                 className="
-                h-12 w-full xl:w-12
-                rounded-full border
-                flex items-center justify-center
-                transition-all duration-200 ease-in-out
-              "
+                  h-12 w-full xl:w-12
+                  rounded-full border
+                  flex items-center justify-center
+                  transition-all duration-200 ease-in-out
+                "
                                 title="Options"
                                 aria-label="Options"
                                 style={{
@@ -1422,15 +1508,15 @@ export default function SessionCard({
                             {isOptionsOpen && (
                                 <div
                                     className="
-                  absolute right-0 top-[52px]
-                  z-[200]
-                  w-[260px]
-                  rounded-[18px]
-                  border border-[#E5E7EB]
-                  bg-white
-                  shadow-xl
-                  overflow-hidden
-                "
+                    absolute right-0 top-[52px]
+                    z-[200]
+                    w-[260px]
+                    rounded-[18px]
+                    border border-[#E5E7EB]
+                    bg-white
+                    shadow-xl
+                    overflow-hidden
+                  "
                                 >
                                     <div className="px-4 py-3 text-[12px] text-[#606060] border-b border-[#F3F4F6]">
                                         Session options
@@ -1494,10 +1580,7 @@ export default function SessionCard({
                     </div>
                 </div>
 
-                {/* ✅ Session timeline (thin + NOT LIVE) */}
-                <div className="w-full mt-2 sessions-stage-bar">
-                    <SessionTimelineThinBar stages={stages} />
-                </div>
+                {/* ✅ TIMELINE REMOVED from card body (now only in Info popover) */}
             </div>
 
             {/* people modal (booked + live switch) */}
