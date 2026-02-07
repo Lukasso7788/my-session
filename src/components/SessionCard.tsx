@@ -1,6 +1,9 @@
 // src/components/SessionCard.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { supabase } from "../lib/supabaseClient"; // ✅ adjust path if yours differs
+import { SessionStageBar } from "./SessionStageBar";
+import type { SessionStage } from "../SessionConfig";
 
 interface SessionCardProps {
     session: any;
@@ -292,6 +295,163 @@ function isCustomStudioSession(session: any): boolean {
     return false;
 }
 
+/** =========================
+ * ✅ NEW: stages resolver
+ * ========================= */
+function tryParseJson<T = any>(x: any): T | null {
+    if (!x) return null;
+    if (typeof x === "object") return x as T;
+    if (typeof x === "string") {
+        const s = x.trim();
+        if (!s) return null;
+        try {
+            return JSON.parse(s) as T;
+        } catch {
+            return null;
+        }
+    }
+    return null;
+}
+
+function normalizeStages(raw: any): SessionStage[] {
+    const arr = Array.isArray(raw) ? raw : [];
+    return arr
+        .map((s: any, idx: number) => {
+            if (!s) return null;
+            // support different shapes
+            const kind = s.kind ?? s.type ?? s.stage_kind ?? s.stageKind ?? s.blockKind;
+            const title = s.title ?? s.name ?? s.label ?? s.displayName;
+            const color = s.color ?? s.stage_color ?? s.stageColor;
+            const durationSeconds =
+                Number(s.durationSeconds) ||
+                Number(s.duration_seconds) ||
+                Number(s.seconds) ||
+                (Number(s.duration) ? Number(s.duration) * 60 : 0) ||
+                (Number(s.minutes) ? Number(s.minutes) * 60 : 0);
+
+            return {
+                ...(s || {}),
+                id: s.id ?? `${idx}`,
+                kind,
+                title,
+                name: title ?? s.name, // SessionStageBar can use title/label/name
+                color,
+                durationSeconds: durationSeconds || s.durationSeconds || s.seconds || s.duration_seconds,
+                duration_seconds: s.duration_seconds ?? s.durationSeconds ?? s.seconds,
+                seconds: s.seconds ?? s.durationSeconds ?? s.duration_seconds,
+            } as any;
+        })
+        .filter(Boolean);
+}
+
+async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
+    // 1) already nested
+    if (Array.isArray(session?.session_stages) && session.session_stages.length) {
+        return normalizeStages(session.session_stages);
+    }
+    if (Array.isArray(session?.stages) && session.stages.length) {
+        return normalizeStages(session.stages);
+    }
+
+    // 2) JSON columns on session/template
+    const fromSessionJson =
+        tryParseJson<any[]>(session?.stages_json) ||
+        tryParseJson<any[]>(session?.stages) ||
+        tryParseJson<any[]>(session?.session_stages_json);
+    if (Array.isArray(fromSessionJson) && fromSessionJson.length) return normalizeStages(fromSessionJson);
+
+    // 3) attempt fetch from session_stages table
+    if (session?.id) {
+        const { data: ssData, error: ssErr } = await supabase
+            .from("session_stages")
+            .select("*")
+            .eq("session_id", session.id)
+            .order("position", { ascending: true });
+
+        if (!ssErr && Array.isArray(ssData) && ssData.length) return normalizeStages(ssData);
+    }
+
+    // 4) attempt template stages
+    const templateId = session?.session_template_id || session?.template_id;
+    if (templateId) {
+        const { data: tData, error: tErr } = await supabase
+            .from("session_templates")
+            .select("stages, stages_json, schedule")
+            .eq("id", templateId)
+            .maybeSingle();
+
+        if (!tErr && tData) {
+            const sj = tryParseJson<any[]>(tData?.stages_json) || tryParseJson<any[]>(tData?.stages);
+            if (Array.isArray(sj) && sj.length) return normalizeStages(sj);
+
+            const schedule = tryParseJson<any>(tData?.schedule);
+            const phases = schedule?.timer?.phases;
+            if (Array.isArray(phases) && phases.length) {
+                // map phases to work/break with minutes->seconds
+                const mapped = phases.map((p: any, i: number) => ({
+                    id: `${i}`,
+                    kind: p?.kind || p?.type || (p?.isBreak ? "break" : "focus"),
+                    title: p?.title || p?.label || (p?.isBreak ? "Break" : "Focus"),
+                    durationSeconds: Number(p?.seconds) || Number(p?.durationSeconds) || (Number(p?.minutes) ? Number(p?.minutes) * 60 : 0),
+                    color: p?.color,
+                }));
+                return normalizeStages(mapped);
+            }
+        }
+    }
+
+    return [];
+}
+
+/** =========================
+ * ✅ NEW: live users resolver
+ * ========================= */
+function normalizeUsers(raw: any[]): BookedUser[] {
+    const users: BookedUser[] = (raw || [])
+        .map((row: any) => {
+            const p = row?.profiles || row?.profile || row?.user || null;
+            const uid = row?.user_id || row?.userId || p?.id || row?.id;
+            if (!uid) return null;
+            return {
+                id: String(uid),
+                full_name: p?.full_name ?? p?.name ?? row?.full_name ?? row?.name,
+                avatar_url: p?.avatar_url ?? row?.avatar_url,
+            } as BookedUser;
+        })
+        .filter(Boolean);
+
+    const seen = new Set<string>();
+    const out: BookedUser[] = [];
+    for (const u of users) {
+        if (seen.has(u.id)) continue;
+        seen.add(u.id);
+        out.push(u);
+    }
+    return out;
+}
+
+async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
+    // Best-effort: common attendance table shape
+    const { data, error } = await supabase
+        .from("session_attendance")
+        .select("user_id, profiles:profiles(id, full_name, avatar_url), left_at, joined_at")
+        .eq("session_id", sessionId)
+        .is("left_at", null);
+
+    if (!error && Array.isArray(data)) return normalizeUsers(data);
+
+    // fallback table name
+    const { data: d2, error: e2 } = await supabase
+        .from("session_participants")
+        .select("user_id, profiles:profiles(id, full_name, avatar_url), left_at, joined_at")
+        .eq("session_id", sessionId)
+        .is("left_at", null);
+
+    if (!e2 && Array.isArray(d2)) return normalizeUsers(d2);
+
+    return [];
+}
+
 export default function SessionCard({
     session,
     userId,
@@ -321,6 +481,11 @@ export default function SessionCard({
     // ✅ booked people
     const initialBookers = useMemo(() => extractBookers(session), [session]);
     const [bookers, setBookers] = useState<BookedUser[]>(initialBookers);
+
+    // ✅ NEW: stages + live users
+    const [stages, setStages] = useState<SessionStage[]>([]);
+    const [liveUsers, setLiveUsers] = useState<BookedUser[]>([]);
+    const [peopleTab, setPeopleTab] = useState<"booked" | "live">("booked");
 
     // ✅ modals / menu
     const [isBookersModalOpen, setIsBookersModalOpen] = useState(false);
@@ -352,6 +517,15 @@ export default function SessionCard({
     const sessionType = resolveSessionType(session);
     const isInfinite = sessionType === "infinite";
     const liveCount: number | null = typeof session?.live_count === "number" ? session.live_count : null;
+
+    const hasStarted = useMemo(() => {
+        if (isInfinite) return true;
+        if (liveCount != null && liveCount > 0) return true;
+        if (!session?.start_time) return false;
+        const t = Date.parse(String(session.start_time));
+        if (!Number.isFinite(t)) return false;
+        return Date.now() >= t;
+    }, [isInfinite, liveCount, session?.start_time]);
 
     const nameToTypeMap: Record<string, string> = {
         "1 Hour — Pomodoro 15/3": "Short sprints",
@@ -396,6 +570,57 @@ export default function SessionCard({
             minute: "2-digit",
         })
         : "";
+
+    // ✅ NEW: load stages from Supabase (or nested) once per session
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const s = await fetchStagesForSession(session);
+                if (!cancelled) setStages(s || []);
+            } catch (e) {
+                console.error("fetchStagesForSession failed:", e);
+                if (!cancelled) setStages([]);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [session?.id]);
+
+    // ✅ NEW: load live users when started (and refresh occasionally)
+    useEffect(() => {
+        if (!session?.id) return;
+        if (!hasStarted) {
+            setLiveUsers([]);
+            return;
+        }
+
+        let cancelled = false;
+
+        const run = async () => {
+            try {
+                const users = await fetchLiveUsers(String(session.id));
+                if (!cancelled) setLiveUsers(users || []);
+            } catch (e) {
+                console.error("fetchLiveUsers failed:", e);
+                if (!cancelled) setLiveUsers([]);
+            }
+        };
+
+        run();
+        const timer = window.setInterval(run, 15000); // cheap refresh
+        return () => {
+            cancelled = true;
+            window.clearInterval(timer);
+        };
+    }, [session?.id, hasStarted]);
+
+    // ✅ auto-switch to live tab when session started
+    useEffect(() => {
+        if (hasStarted) setPeopleTab("live");
+        else setPeopleTab("booked");
+    }, [hasStarted, session?.id]);
 
     const ensureCurrentUserAsBooked = () => {
         if (!userId) return;
@@ -454,9 +679,16 @@ export default function SessionCard({
 
     // ✅ avatars stack
     const maxStack = 6;
+
     const bookedCount = bookers.length;
-    const stackUsers = bookers.slice(0, maxStack);
-    const remaining = bookedCount - stackUsers.length;
+    const liveUsersCount = liveUsers.length;
+
+    const inlinePeopleMode: "booked" | "live" = hasStarted ? "live" : "booked";
+    const inlineUsers = inlinePeopleMode === "live" ? liveUsers : bookers;
+    const inlineCount = inlinePeopleMode === "live" ? liveUsersCount : bookedCount;
+
+    const stackUsers = inlineUsers.slice(0, maxStack);
+    const remaining = inlineCount - stackUsers.length;
 
     // ✅ edit modal state
     const [editTitle, setEditTitle] = useState<string>(session?.title || "");
@@ -465,9 +697,7 @@ export default function SessionCard({
         try {
             const d = new Date(session.start_time);
             const pad = (n: number) => String(n).padStart(2, "0");
-            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
-                d.getMinutes()
-            )}`;
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
         } catch {
             return "";
         }
@@ -484,9 +714,7 @@ export default function SessionCard({
                 const d = new Date(session.start_time);
                 const pad = (n: number) => String(n).padStart(2, "0");
                 setEditStartLocal(
-                    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
-                        d.getMinutes()
-                    )}`
+                    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
                 );
             } catch { }
         } else setEditStartLocal("");
@@ -545,16 +773,18 @@ export default function SessionCard({
     const canCancelBooking = !!isBookingConfirmed;
     const canCancelSession = isHost;
 
-    // ✅ People booked inline (to sit next to label pill)
-    const peopleBookedInline = (
+    // ✅ People inline (Booked OR Live)
+    const peopleInline = (
         <button
             type="button"
             onClick={() => setIsBookersModalOpen(true)}
             className="inline-flex items-center gap-2 hover:opacity-80 transition text-left whitespace-nowrap"
-            title="People who booked"
+            title={inlinePeopleMode === "live" ? "People in the session now" : "People who booked"}
         >
-            {bookedCount === 0 ? (
-                <div className="text-[12px] text-[#606060] whitespace-nowrap">Booked: 0</div>
+            {inlineCount === 0 ? (
+                <div className="text-[12px] text-[#606060] whitespace-nowrap">
+                    {inlinePeopleMode === "live" ? "In session: 0" : "Booked: 0"}
+                </div>
             ) : (
                 <>
                     <div className="flex items-center">
@@ -577,12 +807,23 @@ export default function SessionCard({
                     </div>
 
                     <div className="text-[12px] text-[#606060] font-normal">
-                        Booked: <span className="font-medium">{bookedCount}</span>
+                        {inlinePeopleMode === "live" ? (
+                            <>
+                                In session: <span className="font-medium">{inlineCount}</span>
+                            </>
+                        ) : (
+                            <>
+                                Booked: <span className="font-medium">{inlineCount}</span>
+                            </>
+                        )}
                     </div>
                 </>
             )}
         </button>
     );
+
+    const modalUsers = peopleTab === "live" ? liveUsers : bookers;
+    const modalCount = peopleTab === "live" ? liveUsersCount : bookedCount;
 
     return (
         <>
@@ -594,131 +835,133 @@ export default function SessionCard({
           transition-all duration-200
           hover:bg-[#F6F6F6] hover:border-[#A3A3A3]
           p-6
-          flex flex-col xl:flex-row
-          w-full gap-6
+          flex flex-col
+          w-full gap-4
         "
             >
-                {/* INFO */}
-                <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 flex-1">
-                    <div className="flex flex-col gap-3 w-full">
-                        <h3 className="text-[24px] md:text-[29px] font-bold leading-tight">{session.title}</h3>
+                {/* TOP ROW (same as before, just wrapped so timeline can sit under) */}
+                <div className="flex flex-col xl:flex-row w-full gap-6">
+                    {/* INFO */}
+                    <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 flex-1">
+                        <div className="flex flex-col gap-3 w-full">
+                            <h3 className="text-[24px] md:text-[29px] font-bold leading-tight">{session.title}</h3>
 
-                        {/* ✅ meta row */}
-                        <div className="flex flex-wrap items-center gap-4 text-[12px] text-[#606060]">
-                            <Link to={`/profile/${session.host_id}`} className="flex items-center gap-1 hover:opacity-70">
-                                <img src="/icons/host.svg" className="w-4 h-4 opacity-70" alt="" />
-                                <span>Host</span>
-                                <span className="underline underline-offset-2">{session.host_name}</span>
-                            </Link>
+                            {/* ✅ meta row */}
+                            <div className="flex flex-wrap items-center gap-4 text-[12px] text-[#606060]">
+                                <Link to={`/profile/${session.host_id}`} className="flex items-center gap-1 hover:opacity-70">
+                                    <img src="/icons/host.svg" className="w-4 h-4 opacity-70" alt="" />
+                                    <span>Host</span>
+                                    <span className="underline underline-offset-2">{session.host_name}</span>
+                                </Link>
 
-                            <div className="flex items-center gap-1">
-                                <img src="/icons/duration.svg" className="w-4 h-4 opacity-70" alt="" />
-                                <span>{isInfinite ? "Infinite" : `${session.duration_minutes} min`}</span>
-                            </div>
-
-                            {!isInfinite && (
                                 <div className="flex items-center gap-1">
-                                    <img src="/icons/date.svg" className="w-4 h-4 opacity-70" alt="" />
-                                    <span>{startDateString}</span>
+                                    <img src="/icons/duration.svg" className="w-4 h-4 opacity-70" alt="" />
+                                    <span>{isInfinite ? "Infinite" : `${session.duration_minutes} min`}</span>
                                 </div>
-                            )}
 
-                            {/* ✅ label + people booked рядом */}
-                            <div className="inline-flex items-center gap-3">
-                                <div
-                                    className="inline-flex items-center gap-1 px-3 py-1 rounded-full border"
-                                    style={{
-                                        backgroundColor: isHoveringCard ? t.color : t.bg,
-                                        color: isHoveringCard ? "white" : t.color,
-                                        borderColor: t.color,
-                                        fontSize: 10,
-                                        fontWeight: 500,
-                                    }}
-                                >
-                                    <img
-                                        src={
-                                            isHoveringCard
-                                                ? (t.icon.endsWith(".svg") ? t.icon.replace(".svg", "-white.svg") : t.icon)
-                                                : t.icon
-                                        }
-                                        className="w-4 h-4"
-                                        alt=""
-                                        onError={(e) => {
-                                            const img = e.currentTarget as HTMLImageElement;
-                                            img.src = "/icons/deepwork.svg";
+                                {!isInfinite && (
+                                    <div className="flex items-center gap-1">
+                                        <img src="/icons/date.svg" className="w-4 h-4 opacity-70" alt="" />
+                                        <span>{startDateString}</span>
+                                    </div>
+                                )}
+
+                                {/* ✅ label + people рядом */}
+                                <div className="inline-flex items-center gap-3">
+                                    <div
+                                        className="inline-flex items-center gap-1 px-3 py-1 rounded-full border"
+                                        style={{
+                                            backgroundColor: isHoveringCard ? t.color : t.bg,
+                                            color: isHoveringCard ? "white" : t.color,
+                                            borderColor: t.color,
+                                            fontSize: 10,
+                                            fontWeight: 500,
                                         }}
-                                    />
-                                    {resolvedType}
+                                    >
+                                        <img
+                                            src={
+                                                isHoveringCard
+                                                    ? (t.icon.endsWith(".svg") ? t.icon.replace(".svg", "-white.svg") : t.icon)
+                                                    : t.icon
+                                            }
+                                            className="w-4 h-4"
+                                            alt=""
+                                            onError={(e) => {
+                                                const img = e.currentTarget as HTMLImageElement;
+                                                img.src = "/icons/deepwork.svg";
+                                            }}
+                                        />
+                                        {resolvedType}
+                                    </div>
+
+                                    {peopleInline}
                                 </div>
+                            </div>
+                        </div>
 
-                                {peopleBookedInline}
+                        {/* live count (desktop) */}
+                        <div className="hidden xl:flex items-center gap-6">
+                            <div className="w-px h-10 bg-[#D9D9D9]" />
+                            <div className="text-center">
+                                <div className="text-[32px] font-bold text-brandBlack">{liveCount ?? "—"}</div>
+                                <div className="text-[10px] text-[#606060] font-light -mt-1">
+                                    {liveCount == null ? "live count soon" : "in the session now"}
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    {/* live count (desktop) */}
-                    <div className="hidden xl:flex items-center gap-6">
-                        <div className="w-px h-10 bg-[#D9D9D9]" />
-                        <div className="text-center">
-                            <div className="text-[32px] font-bold text-brandBlack">{liveCount ?? "—"}</div>
-                            <div className="text-[10px] text-[#606060] font-light -mt-1">
-                                {liveCount == null ? "live count soon" : "in the session now"}
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                    {/* BUTTONS */}
+                    <div className="flex flex-col sm:flex-row max-[480px]:flex-col gap-3 w-full xl:w-auto items-center justify-center">
+                        {isBookingConfirmed ? confirmedBookingButton : bookSessionButton}
 
-                {/* BUTTONS */}
-                <div className="flex flex-col sm:flex-row max-[480px]:flex-col gap-3 w-full xl:w-auto items-center justify-center">
-                    {isBookingConfirmed ? confirmedBookingButton : bookSessionButton}
-
-                    <button
-                        onClick={handleJoinRoom}
-                        onMouseEnter={() => setIsHoveringJoinIframe(true)}
-                        onMouseLeave={() => setIsHoveringJoinIframe(false)}
-                        className="
+                        <button
+                            onClick={handleJoinRoom}
+                            onMouseEnter={() => setIsHoveringJoinIframe(true)}
+                            onMouseLeave={() => setIsHoveringJoinIframe(false)}
+                            className="
               h-12 rounded-full px-6 text-[14px] font-semibold
               flex items-center justify-center
               transition-all duration-200 ease-in-out
               w-full xl:w-auto
               border
             "
-                        style={{
-                            borderColor: isHoveringJoinIframe ? joinHoverBg : "#111827",
-                            color: isHoveringJoinIframe ? "white" : "#111827",
-                            backgroundColor: isHoveringJoinIframe ? joinHoverBg : "transparent",
-                        }}
-                    >
-                        Join session
-                    </button>
+                            style={{
+                                borderColor: isHoveringJoinIframe ? joinHoverBg : "#111827",
+                                color: isHoveringJoinIframe ? "white" : "#111827",
+                                backgroundColor: isHoveringJoinIframe ? joinHoverBg : "transparent",
+                            }}
+                        >
+                            Join session
+                        </button>
 
-                    {/* options */}
-                    <div ref={optionsRef} className="relative w-full xl:w-auto">
-                        <button
-                            type="button"
-                            onClick={() => setIsOptionsOpen((v) => !v)}
-                            onMouseEnter={() => setIsHoveringOptions(true)}
-                            onMouseLeave={() => setIsHoveringOptions(false)}
-                            className="
+                        {/* options */}
+                        <div ref={optionsRef} className="relative w-full xl:w-auto">
+                            <button
+                                type="button"
+                                onClick={() => setIsOptionsOpen((v) => !v)}
+                                onMouseEnter={() => setIsHoveringOptions(true)}
+                                onMouseLeave={() => setIsHoveringOptions(false)}
+                                className="
                 h-12 w-full xl:w-12
                 rounded-full border
                 flex items-center justify-center
                 transition-all duration-200 ease-in-out
               "
-                            title="Options"
-                            aria-label="Options"
-                            style={{
-                                borderColor: isHoveringOptions ? joinHoverBg : "#111827",
-                                color: isHoveringOptions ? "white" : "#111827",
-                                backgroundColor: isHoveringOptions ? joinHoverBg : "transparent",
-                            }}
-                        >
-                            <OptionsSmartIcon hovered={isHoveringOptions} size={18} />
-                        </button>
+                                title="Options"
+                                aria-label="Options"
+                                style={{
+                                    borderColor: isHoveringOptions ? joinHoverBg : "#111827",
+                                    color: isHoveringOptions ? "white" : "#111827",
+                                    backgroundColor: isHoveringOptions ? joinHoverBg : "transparent",
+                                }}
+                            >
+                                <OptionsSmartIcon hovered={isHoveringOptions} size={18} />
+                            </button>
 
-                        {isOptionsOpen && (
-                            <div
-                                className="
+                            {isOptionsOpen && (
+                                <div
+                                    className="
                   absolute right-0 top-[52px]
                   z-[200]
                   w-[260px]
@@ -728,76 +971,129 @@ export default function SessionCard({
                   shadow-xl
                   overflow-hidden
                 "
-                            >
-                                <div className="px-4 py-3 text-[12px] text-[#606060] border-b border-[#F3F4F6]">Session options</div>
+                                >
+                                    <div className="px-4 py-3 text-[12px] text-[#606060] border-b border-[#F3F4F6]">
+                                        Session options
+                                    </div>
 
-                                <div className="p-2 flex flex-col gap-1">
-                                    {canEdit && (
-                                        <MenuItem
-                                            icon={<IconEdit />}
-                                            label="Edit…"
-                                            outlined
-                                            onClick={() => {
-                                                setIsOptionsOpen(false);
-                                                setIsEditModalOpen(true);
-                                            }}
-                                        />
-                                    )}
+                                    <div className="p-2 flex flex-col gap-1">
+                                        {canEdit && (
+                                            <MenuItem
+                                                icon={<IconEdit />}
+                                                label="Edit…"
+                                                outlined
+                                                onClick={() => {
+                                                    setIsOptionsOpen(false);
+                                                    setIsEditModalOpen(true);
+                                                }}
+                                            />
+                                        )}
 
-                                    {canInvite && (
-                                        <MenuItem
-                                            icon={<IconInvite />}
-                                            label="Invite…"
-                                            onClick={() => {
-                                                setIsOptionsOpen(false);
-                                                setIsInviteModalOpen(true);
-                                            }}
-                                        />
-                                    )}
+                                        {canInvite && (
+                                            <MenuItem
+                                                icon={<IconInvite />}
+                                                label="Invite…"
+                                                onClick={() => {
+                                                    setIsOptionsOpen(false);
+                                                    setIsInviteModalOpen(true);
+                                                }}
+                                            />
+                                        )}
 
-                                    {canCancelBooking && (
-                                        <MenuItem
-                                            icon={<IconCancel />}
-                                            label="Cancel booking"
-                                            danger
-                                            onClick={() => {
-                                                setIsOptionsOpen(false);
-                                                handleCancelBooking();
-                                            }}
-                                        />
-                                    )}
+                                        {canCancelBooking && (
+                                            <MenuItem
+                                                icon={<IconCancel />}
+                                                label="Cancel booking"
+                                                danger
+                                                onClick={() => {
+                                                    setIsOptionsOpen(false);
+                                                    handleCancelBooking();
+                                                }}
+                                            />
+                                        )}
 
-                                    {canCancelSession && (
-                                        <MenuItem
-                                            icon={<IconTrash />}
-                                            label="Cancel session"
-                                            danger
-                                            onClick={() => {
-                                                setIsOptionsOpen(false);
-                                                onDelete(session.id);
-                                            }}
-                                        />
-                                    )}
+                                        {canCancelSession && (
+                                            <MenuItem
+                                                icon={<IconTrash />}
+                                                label="Cancel session"
+                                                danger
+                                                onClick={() => {
+                                                    setIsOptionsOpen(false);
+                                                    onDelete(session.id);
+                                                }}
+                                            />
+                                        )}
 
-                                    {!canEdit && !canInvite && !canCancelBooking && !canCancelSession && (
-                                        <div className="px-3 py-2 text-[12px] text-[#606060]">No actions available</div>
-                                    )}
+                                        {!canEdit && !canInvite && !canCancelBooking && !canCancelSession && (
+                                            <div className="px-3 py-2 text-[12px] text-[#606060]">No actions available</div>
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            )}
+                        </div>
                     </div>
+                </div>
+
+                {/* ✅ NEW: Session timeline (placement like CardV1) */}
+                <div className="w-full mt-2 sessions-stage-bar">
+                    {stages?.length ? (
+                        <SessionStageBar
+                            stages={stages}
+                            startTime={session?.start_time || ""}
+                        // tooltips already inside SessionStageBar (name + duration)
+                        />
+                    ) : (
+                        // keep layout stable if no stages yet
+                        <div className="w-full h-4 rounded-2xl bg-[#111827]/5" title="Session timeline (coming soon)" />
+                    )}
                 </div>
             </div>
 
-            {/* bookers modal */}
-            <ModalShell title="People who booked this session" isOpen={isBookersModalOpen} onClose={() => setIsBookersModalOpen(false)}>
-                <div className="text-[12px] text-[#606060]">{bookedCount} booked</div>
+            {/* people modal (booked + live switch) */}
+            <ModalShell
+                title={hasStarted ? "People" : "People who booked this session"}
+                isOpen={isBookersModalOpen}
+                onClose={() => setIsBookersModalOpen(false)}
+            >
+                {/* tabs if started */}
+                {hasStarted && (
+                    <div className="flex items-center gap-2 mb-4">
+                        <button
+                            className={[
+                                "h-9 px-4 rounded-full text-[13px] font-semibold border transition",
+                                peopleTab === "live"
+                                    ? "border-[#111827] bg-[#111827] text-white"
+                                    : "border-[#E5E7EB] bg-white text-[#111827] hover:bg-[#F3F4F6]",
+                            ].join(" ")}
+                            onClick={() => setPeopleTab("live")}
+                        >
+                            In session ({liveUsersCount})
+                        </button>
+                        <button
+                            className={[
+                                "h-9 px-4 rounded-full text-[13px] font-semibold border transition",
+                                peopleTab === "booked"
+                                    ? "border-[#111827] bg-[#111827] text-white"
+                                    : "border-[#E5E7EB] bg-white text-[#111827] hover:bg-[#F3F4F6]",
+                            ].join(" ")}
+                            onClick={() => setPeopleTab("booked")}
+                        >
+                            Booked ({bookedCount})
+                        </button>
+                    </div>
+                )}
 
-                <div className="mt-4 flex flex-col gap-2">
-                    {bookedCount === 0 ? (
-                        <div className="text-[13px] text-[#606060]">No one booked yet. Be the first.</div>
+                {!hasStarted && <div className="text-[12px] text-[#606060]">{bookedCount} booked</div>}
+
+                <div className="mt-1 flex flex-col gap-2">
+                    {modalCount === 0 ? (
+                        <div className="text-[13px] text-[#606060]">
+                            {peopleTab === "live"
+                                ? "No one in the session right now."
+                                : "No one booked yet. Be the first."}
+                        </div>
                     ) : (
-                        bookers.map((u) => {
+                        modalUsers.map((u) => {
                             const label = u.full_name || "Participant";
                             return (
                                 <Link
