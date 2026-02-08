@@ -26,6 +26,13 @@ import { SessionStageBar } from "../components/SessionStageBar";
 import { UserProfileModal } from "../components/UserProfileModal";
 import ChatPanel from "../components/ChatPanel";
 
+type HostProfile = {
+    id: string;
+    full_name: string;
+    avatar_url?: string | null;
+    bio?: string | null;
+};
+
 type Stage = {
     name: string;
     duration: number; // minutes (display/legacy)
@@ -607,6 +614,7 @@ export default function RoomPageIFrame() {
 
     const [session, setSession] = useState<any>(null);
     const [loading, setLoading] = useState(true);
+    const [selectedUser, setSelectedUser] = useState<HostProfile | null>(null);
 
     const sessionId = useMemo(() => String(session?.id || ""), [session?.id]);
 
@@ -662,7 +670,6 @@ export default function RoomPageIFrame() {
     const [stagebarStartTime, setStagebarStartTime] = useState<string>("");
     const [stagebarCycleSeconds, setStagebarCycleSeconds] = useState<number | undefined>(undefined);
 
-    const [selectedUser, setSelectedUser] = useState<any>(null);
     const [lastErr, setLastErr] = useState<string>("");
 
     // capacity enforcement
@@ -2337,8 +2344,22 @@ export default function RoomPageIFrame() {
                     <div className="flex-1 px-6 py-4">
                         <div className="flex items-start justify-between gap-4">
                             <div className="min-w-0">
-                                <p className={`font-inter font-semibold text-[18px] truncate ${strongText}`}>{String(session?.title || "Session")}</p>
-                                <p className={`font-inter text-[13px] ${subtleText}`}>{participantsCount} participants</p>
+                                <div className="flex items-center gap-2 min-w-0">
+                                    <p className={`min-w-0 font-inter font-semibold text-[18px] truncate ${strongText}`}>
+                                        {String(session?.title || "Session")}
+                                    </p>
+
+                                    <span
+                                        className={[
+                                            "shrink-0 px-2 py-[3px] rounded-lg border text-[12px] font-inter",
+                                            chipBg,
+                                            isLight ? "text-black/65" : "text-white/80",
+                                        ].join(" ")}
+                                        title="Participants now / limit"
+                                    >
+                                        {participantsCount}/{maxParticipants}
+                                    </span>
+                                </div>
                             </div>
 
                             <div className="flex items-center gap-2 shrink-0">
@@ -2363,12 +2384,17 @@ export default function RoomPageIFrame() {
                                 {session.host_profile && (
                                     <button
                                         onClick={() => setSelectedUser(session.host_profile || null)}
-                                        className={`max-[480px]:hidden flex items-center gap-2 px-3 py-1.5 rounded-xl border transition font-inter text-[13px] ${isLight
+                                        className={`max-[480px]:hidden flex items-center gap-2 px-3 py-1.5 rounded-xl border transition text-[13px] ${isLight
                                                 ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
                                                 : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                             }`}
+                                        title="Host profile"
                                     >
-                                        <span className="font-semibold">Host: {String(session.host_profile.full_name || "Host")}</span>
+                                        <ParticipantsSmartIcon theme={theme} className="w-4 h-4 opacity-90" />
+                                        <span className="font-inter">
+                                            <span className="font-light">Host:</span>{" "}
+                                            <span className="font-bold">{String(session.host_profile.full_name || "Host")}</span>
+                                        </span>
                                     </button>
                                 )}
                             </div>
