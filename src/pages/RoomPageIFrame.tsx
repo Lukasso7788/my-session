@@ -9,15 +9,13 @@
 // - ✅ Allow opening by UUID OR by sessions.custom_slug (no uuid cast error)
 // - ✅ Require login to enter room (redirect to /login on unauth)
 //
-// ✅ NEW (ported features from RoomPage):
-// - Participants right panel (search + list)
-// - Emoji reactions with micro-label (sender name), delivered via Supabase realtime broadcast
-// - Bottom controls rearranged: Participants (left), media (center), Chat+Intentions+Leave (right)
-//
-// ✅ FIX (attendance):
-// - Always write left_at on Leave button
-// - Best-effort write left_at on tab close / reload / pagehide with keepalive fetch + user JWT
-// - Online count derived from session_attendance (last_seen window), usable for SessionCard
+// ✅ Ported + fixed (parity with RoomPage):
+// - Right panel rendered ONLY ONCE (desktop OR mobile overlay) -> no double-mount flicker
+// - Theme propagated to html + body (class + data-theme + color-scheme)
+// - Kick layout recalculation on panel toggle (dispatch resize) + ResizeObserver for container
+// - Chat unread badge (always-on)
+// - Stage sounds (finite + infinite) + welcome loop
+// - Attendance join/heartbeat/leave + keepalive leave write (best-effort)
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -90,7 +88,8 @@ declare global {
 // ===============================
 // helpers: uuid / slug
 // ===============================
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function sanitizeSlug(input: string) {
     const raw = String(input || "").trim().toLowerCase();
@@ -99,64 +98,6 @@ function sanitizeSlug(input: string) {
     return clean;
 }
 
-// ===============================
-// JITSI DOMAINS (PRIMARY + FALLBACK) + ✅ TEST OVERRIDE
-// ===============================
-const DEFAULT_JITSI_DOMAIN = "jitsi.mysession.club";
-
-const ALL_JITSI_DOMAINS = [
-    DEFAULT_JITSI_DOMAIN,
-    "meet-eu.mysession.club",
-    "meet-us-east.mysession.club",
-    "meet-apac.mysession.club",
-] as const;
-
-const FORCE_JITSI_DOMAIN = String((import.meta as any).env.VITE_FORCE_JITSI_DOMAIN || "").trim();
-const FORCE_JITSI_ONLY = (import.meta as any).env.VITE_FORCE_JITSI_ONLY === "true";
-
-type JitsiDomain = (typeof ALL_JITSI_DOMAINS)[number] | string;
-
-function domainsForSession(session: any): readonly string[] {
-    if (FORCE_JITSI_DOMAIN) {
-        const uniq = (d: string, i: number, arr: string[]) => arr.indexOf(d) === i;
-        if (FORCE_JITSI_ONLY) return [FORCE_JITSI_DOMAIN];
-        return [FORCE_JITSI_DOMAIN, ...ALL_JITSI_DOMAINS].filter(uniq);
-    }
-
-    const preferred = String(session?.jitsi_domain || "").trim();
-    if (preferred) return [preferred, ...ALL_JITSI_DOMAINS.filter((d) => d !== preferred)];
-    return ALL_JITSI_DOMAINS;
-}
-
-const TOOLBAR_MOUNT_BUTTONS = ["settings"];
-const TOOLBAR_VISIBLE_BUTTONS: string[] = [];
-const JITSI_CUSTOM_CSS_PATH = "/jitsi-custom.css";
-
-const CHAT_MSG_TABLE = "session_chat_messages";
-
-// ====== AUDIO ======
-const STAGE_SOUND_MAP: Record<string, string> = {
-    intentions: "/sounds/intentions.mp3",
-    checkin: "/sounds/intentions.mp3",
-    focus: "/sounds/focus.mp3",
-    break: "/sounds/break_start.mp3",
-    outro: "/sounds/outro.mp3",
-    celebrate: "/sounds/outro.mp3",
-};
-const BREAK_END_SOUND = "/sounds/break_end.mp3";
-const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
-
-// ====== participants limit ======
-const DEFAULT_MAX_PARTICIPANTS = 16;
-const MIN_PARTICIPANTS = 3;
-const MAX_PARTICIPANTS = 64;
-
-// ====== attendance ======
-// online = left_at is null AND last_seen_at is within this window
-const ATT_HEARTBEAT_MS = 10_000;
-const ONLINE_WINDOW_MS = 35_000;
-
-// ====== helpers ======
 function safeParseJson(raw: any) {
     if (!raw) return null;
     if (typeof raw === "string") {
@@ -189,7 +130,7 @@ function parse50505(raw: any): { focus: number; break: number; intentions: numbe
     return { focus, break: br, intentions };
 }
 
-// ✅ Session Studio / builder wrappers
+// Session Studio / builder wrappers
 function unwrapScheduleBlocks(parsed: any): any {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return parsed;
 
@@ -216,11 +157,15 @@ function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: numbe
     if (!anyPhases) return [];
 
     const toSeconds = (raw: any): number => {
-        const explicitSeconds = Number(raw?.seconds) || Number(raw?.duration_seconds) || Number(raw?.durationSeconds);
+        const explicitSeconds =
+            Number(raw?.seconds) || Number(raw?.duration_seconds) || Number(raw?.durationSeconds);
         if (explicitSeconds > 0) return explicitSeconds;
 
         const explicitMinutes =
-            Number(raw?.minutes) || Number(raw?.mins) || Number(raw?.duration_minutes) || Number(raw?.durationMinutes);
+            Number(raw?.minutes) ||
+            Number(raw?.mins) ||
+            Number(raw?.duration_minutes) ||
+            Number(raw?.durationMinutes);
         if (explicitMinutes > 0) return explicitMinutes * 60;
 
         const n = typeof raw === "number" ? raw : Number(raw?.duration ?? raw?.value ?? raw ?? 0);
@@ -244,7 +189,8 @@ function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: numbe
         return Object.entries(anyPhases)
             .map(([k, v]: any) => {
                 const name = String(k || "");
-                const seconds = typeof v === "number" ? (v <= 180 ? Number(v) * 60 : Number(v)) : toSeconds(v);
+                const seconds =
+                    typeof v === "number" ? (v <= 180 ? Number(v) * 60 : Number(v)) : toSeconds(v);
                 return { name, seconds };
             })
             .filter((x) => x.seconds > 0);
@@ -264,7 +210,8 @@ function phaseToStageType(phaseNameLower: string): Stage["type"] {
     return "focus";
 }
 
-const CUSTOM_BLOCK_GRADIENT = "linear-gradient(90deg, #5286F6 0%, #65D46C 40%, #F65252 80%, #F65252 100%)";
+const CUSTOM_BLOCK_GRADIENT =
+    "linear-gradient(90deg, #5286F6 0%, #65D46C 40%, #F65252 80%, #F65252 100%)";
 const STAGE_COLORS: Record<string, string> = {
     intro: "#80DF86",
     intentions: "#ADD3FF",
@@ -278,13 +225,11 @@ const STAGE_COLORS: Record<string, string> = {
 };
 
 // ============================================
-// ✅ SAFE realtime cleanup (prevents `unsubscribe is not a function`)
-// Works across supabase-js versions / return shapes.
+// realtime cleanup safe
 // ============================================
 function safeRemoveRealtimeChannel(ch: any) {
     if (!ch) return;
 
-    // direct channel.unsubscribe()
     try {
         if (typeof ch.unsubscribe === "function") {
             void ch.unsubscribe();
@@ -294,7 +239,6 @@ function safeRemoveRealtimeChannel(ch: any) {
 
     const sb: any = supabase as any;
 
-    // supabase.removeChannel(channel)
     try {
         if (typeof sb.removeChannel === "function") {
             void sb.removeChannel(ch);
@@ -302,7 +246,6 @@ function safeRemoveRealtimeChannel(ch: any) {
         }
     } catch { }
 
-    // old realtime client shapes
     try {
         if (typeof sb.removeSubscription === "function") {
             void sb.removeSubscription(ch);
@@ -310,7 +253,6 @@ function safeRemoveRealtimeChannel(ch: any) {
         }
     } catch { }
 
-    // very old: client has `realtime.removeChannel`
     try {
         if (sb.realtime && typeof sb.realtime.removeChannel === "function") {
             void sb.realtime.removeChannel(ch);
@@ -318,6 +260,59 @@ function safeRemoveRealtimeChannel(ch: any) {
         }
     } catch { }
 }
+
+// ===============================
+// JITSI DOMAINS (PRIMARY + FALLBACK) + TEST OVERRIDE
+// ===============================
+const DEFAULT_JITSI_DOMAIN = "jitsi.mysession.club";
+const ALL_JITSI_DOMAINS = [
+    DEFAULT_JITSI_DOMAIN,
+    "meet-eu.mysession.club",
+    "meet-us-east.mysession.club",
+    "meet-apac.mysession.club",
+] as const;
+
+const FORCE_JITSI_DOMAIN = String((import.meta as any).env.VITE_FORCE_JITSI_DOMAIN || "").trim();
+const FORCE_JITSI_ONLY = (import.meta as any).env.VITE_FORCE_JITSI_ONLY === "true";
+
+type JitsiDomain = (typeof ALL_JITSI_DOMAINS)[number] | string;
+
+function domainsForSession(session: any): readonly string[] {
+    if (FORCE_JITSI_DOMAIN) {
+        const uniq = (d: string, i: number, arr: string[]) => arr.indexOf(d) === i;
+        if (FORCE_JITSI_ONLY) return [FORCE_JITSI_DOMAIN];
+        return [FORCE_JITSI_DOMAIN, ...ALL_JITSI_DOMAINS].filter(uniq);
+    }
+
+    const preferred = String(session?.jitsi_domain || "").trim();
+    if (preferred) return [preferred, ...ALL_JITSI_DOMAINS.filter((d) => d !== preferred)];
+    return ALL_JITSI_DOMAINS;
+}
+
+const TOOLBAR_MOUNT_BUTTONS = ["settings"];
+const TOOLBAR_VISIBLE_BUTTONS: string[] = [];
+const JITSI_CUSTOM_CSS_PATH = "/jitsi-custom.css";
+
+// ====== AUDIO ======
+const STAGE_SOUND_MAP: Record<string, string> = {
+    intentions: "/sounds/intentions.mp3",
+    checkin: "/sounds/intentions.mp3",
+    focus: "/sounds/focus.mp3",
+    break: "/sounds/break_start.mp3",
+    outro: "/sounds/outro.mp3",
+    celebrate: "/sounds/outro.mp3",
+};
+const BREAK_END_SOUND = "/sounds/break_end.mp3";
+const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
+
+// ====== participants limit ======
+const DEFAULT_MAX_PARTICIPANTS = 16;
+const MIN_PARTICIPANTS = 3;
+const MAX_PARTICIPANTS = 64;
+
+// ====== attendance ======
+const ATT_HEARTBEAT_MS = 10_000;
+const ONLINE_WINDOW_MS = 35_000;
 
 // ===============================
 // JITSI EXTERNAL API LOADER
@@ -509,7 +504,6 @@ function Icon({
     );
 }
 
-// ✅ Inline icons to avoid missing assets on mobile
 function UsersInlineIcon({ className = "w-4 h-4" }: { className?: string }) {
     return (
         <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
@@ -545,31 +539,13 @@ function UsersInlineIcon({ className = "w-4 h-4" }: { className?: string }) {
     );
 }
 
-function RefreshInlineIcon({ className = "w-4 h-4" }: { className?: string }) {
-    return (
-        <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
-            <path
-                d="M21 12a9 9 0 0 1-15.4 6.4"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-            />
-            <path
-                d="M3 12a9 9 0 0 1 15.4-6.4"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-            />
-            <path d="M21 7v5h-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M3 17v-5h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-    );
-}
-
 function ParticipantsSmartIcon({ theme, className = "w-4 h-4" }: { theme: RoomTheme; className?: string }) {
-    const candidates = [`/icons/participants-${theme}.svg`, `/icons/participants.svg`, `/icons/users-${theme}.svg`, `/icons/users.svg`];
+    const candidates = [
+        `/icons/participants-${theme}.svg`,
+        `/icons/participants.svg`,
+        `/icons/users-${theme}.svg`,
+        `/icons/users.svg`,
+    ];
     const [idx, setIdx] = useState(0);
     const [inline, setInline] = useState(false);
 
@@ -579,33 +555,6 @@ function ParticipantsSmartIcon({ theme, className = "w-4 h-4" }: { theme: RoomTh
     }, [theme]);
 
     if (inline) return <UsersInlineIcon className={className} />;
-
-    const src = candidates[idx] || candidates[candidates.length - 1];
-    return (
-        <img
-            src={src}
-            onError={() => {
-                if (idx < candidates.length - 1) setIdx((x) => x + 1);
-                else setInline(true);
-            }}
-            className={className}
-            alt=""
-            draggable={false}
-        />
-    );
-}
-
-function ReloadSmartIcon({ theme, className = "w-4 h-4" }: { theme: RoomTheme; className?: string }) {
-    const candidates = [`/icons/reload-${theme}.svg`, `/icons/reload.svg`, `/icons/refresh-${theme}.svg`, `/icons/refresh.svg`];
-    const [idx, setIdx] = useState(0);
-    const [inline, setInline] = useState(false);
-
-    useEffect(() => {
-        setIdx(0);
-        setInline(false);
-    }, [theme]);
-
-    if (inline) return <RefreshInlineIcon className={className} />;
 
     const src = candidates[idx] || candidates[candidates.length - 1];
     return (
@@ -661,14 +610,13 @@ export default function RoomPageIFrame() {
 
     const sessionId = useMemo(() => String(session?.id || ""), [session?.id]);
 
-    // ✅ auth gate
+    // auth gate
     const [authStatus, setAuthStatus] = useState<"checking" | "authed" | "redirecting">("checking");
     const [userName, setUserName] = useState<string>("");
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-
-    // keep user JWT for keepalive leave write
     const accessTokenRef = useRef<string>("");
 
+    // theme
     const [theme, setTheme] = useState<RoomTheme>(() => {
         try {
             const v = String(localStorage.getItem("room_theme") || "").toLowerCase();
@@ -685,8 +633,27 @@ export default function RoomPageIFrame() {
         } catch { }
     }, [theme]);
 
+    // ✅ propagate theme to html+body (parity with RoomPage)
+    useEffect(() => {
+        try {
+            const root = document.documentElement;
+            const body = document.body;
+            const isDark = theme === "dark";
+
+            root.classList.toggle("dark", isDark);
+            body.classList.toggle("dark", isDark);
+
+            root.setAttribute("data-theme", theme);
+            body.setAttribute("data-theme", theme);
+
+            (root.style as any).colorScheme = theme;
+            (body.style as any).colorScheme = theme;
+        } catch { }
+    }, [theme]);
+
     const isLgUp = useMediaQuery("(min-width: 1024px)");
 
+    // stages
     const [stages, setStages] = useState<Stage[]>([]);
     const [hoveredStage, setHoveredStage] = useState<Stage | null>(null);
     const [currentStage, setCurrentStage] = useState(0);
@@ -698,7 +665,7 @@ export default function RoomPageIFrame() {
     const [selectedUser, setSelectedUser] = useState<any>(null);
     const [lastErr, setLastErr] = useState<string>("");
 
-    // capacity enforcement UI
+    // capacity enforcement
     const [capacityError, setCapacityError] = useState<string | null>(null);
     const capacityTriggeredRef = useRef(false);
     const localJoinedRef = useRef(false);
@@ -708,18 +675,18 @@ export default function RoomPageIFrame() {
 
     // iframe state
     const [tile, setTile] = useState(true);
-    const [mutedAudio, setMutedAudio] = useState(false);
+    const [mutedAudio, setMutedAudio] = useState(true); // startWithAudioMuted
     const [mutedVideo, setMutedVideo] = useState(false);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [apiReady, setApiReady] = useState(false);
 
-    // ✅ live participant count for UI (from session_attendance primarily)
+    // live participant count
     const [participantsNow, setParticipantsNow] = useState<number>(0);
 
-    // ✅ online users (from session_attendance + profiles) — THIS is what SessionCard wants too
+    // online users (attendance)
     const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
 
-    // ✅ participants list (right panel) from Jitsi API
+    // participants list (from Jitsi)
     const [participantRows, setParticipantRows] = useState<ParticipantRow[]>([]);
     const [participantsSearch, setParticipantsSearch] = useState("");
 
@@ -727,7 +694,7 @@ export default function RoomPageIFrame() {
     const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(false);
     const [rightTab, setRightTab] = useState<RightPanelTab>(null);
 
-    // MOBILE ⋯ MENU (<=480)
+    // MOBILE ⋯ MENU
     const [showMoreMenu, setShowMoreMenu] = useState(false);
     const moreMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -744,7 +711,46 @@ export default function RoomPageIFrame() {
         });
     };
 
-    // close reactions menu when panel is used
+    // ✅ kick resize when panel toggles (parity with RoomPage)
+    useEffect(() => {
+        const fire = () => {
+            try {
+                window.dispatchEvent(new Event("resize"));
+            } catch { }
+        };
+        requestAnimationFrame(fire);
+        const t1 = window.setTimeout(fire, 60);
+        const t2 = window.setTimeout(fire, 220);
+        return () => {
+            window.clearTimeout(t1);
+            window.clearTimeout(t2);
+        };
+    }, [rightPanelOpen, rightTab]);
+
+    // ✅ ResizeObserver for container changes
+    const videoWrapRef = useRef<HTMLDivElement | null>(null);
+    useEffect(() => {
+        const el = videoWrapRef.current;
+        if (!el || typeof ResizeObserver === "undefined") return;
+
+        let raf = 0;
+        const ro = new ResizeObserver(() => {
+            window.cancelAnimationFrame(raf);
+            raf = window.requestAnimationFrame(() => {
+                try {
+                    window.dispatchEvent(new Event("resize"));
+                } catch { }
+            });
+        });
+        ro.observe(el);
+
+        return () => {
+            window.cancelAnimationFrame(raf);
+            ro.disconnect();
+        };
+    }, []);
+
+    // close menus when panel used
     const [showReactionsMenu, setShowReactionsMenu] = useState(false);
     const reactionsMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -756,7 +762,7 @@ export default function RoomPageIFrame() {
         if (rightPanelOpen) setShowMoreMenu(false);
     }, [rightPanelOpen, rightTab]);
 
-    // ✅ click-outside for reactions menu (MUST be before early returns)
+    // click outside reactions
     useEffect(() => {
         if (!showReactionsMenu) return;
 
@@ -770,7 +776,7 @@ export default function RoomPageIFrame() {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, [showReactionsMenu]);
 
-    // Close ⋯ menu by click outside
+    // click outside ⋯ menu
     useEffect(() => {
         if (!showMoreMenu) return;
 
@@ -799,8 +805,10 @@ export default function RoomPageIFrame() {
     }, []);
 
     // =========================
-    // ✅ CHAT UNREAD BADGE (always-on)
+    // CHAT UNREAD BADGE (always-on)
     // =========================
+    const CHAT_MSG_TABLE = "session_chat_messages";
+
     const [unreadChat, setUnreadChat] = useState<number>(0);
     const chatVisibleRef = useRef<boolean>(false);
     const lastChatReadAtRef = useRef<number>(0);
@@ -903,12 +911,128 @@ export default function RoomPageIFrame() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [authStatus, sessionId, currentUserId, chatReadKey]);
 
+    // =========================
+    // reactions via broadcast
+    // =========================
+    const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([]);
+    const reactionIdRef = useRef<number>(0);
+    const reactionsChannelRef = useRef<any>(null);
+
+    useEffect(() => {
+        if (authStatus !== "authed") return;
+        if (!sessionId) return;
+        if (!currentUserId) return;
+
+        const ch = supabase
+            .channel(`reactions:${sessionId}`, {
+                config: { broadcast: { self: false }, presence: { key: currentUserId } },
+            })
+            .on("broadcast", { event: "reaction" }, (payload: any) => {
+                const p = payload?.payload || payload;
+                const t = String(p?.type || "") as ReactionType;
+                const fromUserId = String(p?.fromUserId || "");
+                const fromName = String(p?.fromName || "User");
+
+                if (!t || !reactionEmoji[t]) return;
+                const id = reactionIdRef.current + 1;
+                reactionIdRef.current = id;
+
+                setFloatingReactions((prev) => [...prev, { id, type: t, fromUserId, fromName }]);
+                window.setTimeout(() => {
+                    setFloatingReactions((prev) => prev.filter((r) => r.id !== id));
+                }, 1500);
+            })
+            .subscribe();
+
+        reactionsChannelRef.current = ch;
+
+        return () => {
+            reactionsChannelRef.current = null;
+            safeRemoveRealtimeChannel(ch);
+        };
+    }, [authStatus, sessionId, currentUserId]);
+
+    const sendReaction = (type: ReactionType) => {
+        try {
+            if (!sessionId || !currentUserId) return;
+            const ch = reactionsChannelRef.current;
+            if (!ch) return;
+
+            void ch.send({
+                type: "broadcast",
+                event: "reaction",
+                payload: {
+                    type,
+                    fromUserId: currentUserId,
+                    fromName: userName || "User",
+                    at: Date.now(),
+                },
+            });
+        } catch { }
+    };
+
+    // =========================
+    // auth gate
+    // =========================
+    useEffect(() => {
+        (async () => {
+            setAuthStatus("checking");
+
+            try {
+                const { data: ud } = await supabase.auth.getUser();
+                const u = ud.user;
+
+                if (!u) {
+                    setCurrentUserId(null);
+                    setUserName("");
+                    accessTokenRef.current = "";
+                    setAuthStatus("redirecting");
+
+                    const redirect = encodeURIComponent(location.pathname + location.search);
+                    navigate(`/login?redirect=${redirect}`, { replace: true });
+                    return;
+                }
+
+                setCurrentUserId(u.id);
+
+                try {
+                    const { data: sd } = await supabase.auth.getSession();
+                    accessTokenRef.current = String(sd.session?.access_token || "");
+                } catch {
+                    accessTokenRef.current = "";
+                }
+
+                let name =
+                    (u?.user_metadata?.full_name as string) ||
+                    (u?.user_metadata?.name as string) ||
+                    (u?.email ? u.email.split("@")[0] : "");
+
+                if (!name && u?.id) {
+                    const { data: p } = await supabase.from("profiles").select("full_name").eq("id", u.id).single();
+                    name = p?.full_name || "";
+                }
+
+                setUserName(name || "User");
+                setAuthStatus("authed");
+            } catch {
+                setCurrentUserId(null);
+                setUserName("");
+                accessTokenRef.current = "";
+                setAuthStatus("redirecting");
+
+                const redirect = encodeURIComponent(location.pathname + location.search);
+                navigate(`/login?redirect=${redirect}`, { replace: true });
+            }
+        })();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [navigate, location.pathname, location.search]);
+
     const isHost = useMemo(() => {
         const sid = String(session?.host_id || "");
         return !!currentUserId && !!sid && currentUserId === sid;
     }, [currentUserId, session?.host_id]);
 
-    // ✅ max participants
+    // max participants
     const maxParticipants = useMemo(() => {
         const n = Number(session?.max_participants);
         if (Number.isFinite(n) && n >= MIN_PARTICIPANTS) {
@@ -917,7 +1041,7 @@ export default function RoomPageIFrame() {
         return DEFAULT_MAX_PARTICIPANTS;
     }, [session]);
 
-    // ✅ Room name
+    // Room name
     const roomName = useMemo(() => {
         const fallback = idOrSlug ? `session-${idOrSlug}` : "session-unknown";
 
@@ -964,7 +1088,9 @@ export default function RoomPageIFrame() {
         const title = String(session?.title || "").toLowerCase();
 
         const tpl = session?.session_templates;
-        const tplName = Array.isArray(tpl) ? String(tpl?.[0]?.name || tpl?.[0]?.title || "") : String(tpl?.name || tpl?.title || "");
+        const tplName = Array.isArray(tpl)
+            ? String(tpl?.[0]?.name || tpl?.[0]?.title || "")
+            : String(tpl?.name || tpl?.title || "");
         const tplKey = Array.isArray(tpl)
             ? String(tpl?.[0]?.key || tpl?.[0]?.slug || tpl?.[0]?.type || "")
             : String(tpl?.key || tpl?.slug || tpl?.type || "");
@@ -975,62 +1101,6 @@ export default function RoomPageIFrame() {
     }, [session]);
 
     // ============================================
-    // AUTH GATE (NO GUESTS) + grab access token
-    // ============================================
-    useEffect(() => {
-        (async () => {
-            setAuthStatus("checking");
-
-            try {
-                const { data: ud } = await supabase.auth.getUser();
-                const u = ud.user;
-
-                if (!u) {
-                    setCurrentUserId(null);
-                    setUserName("");
-                    accessTokenRef.current = "";
-                    setAuthStatus("redirecting");
-
-                    const redirect = encodeURIComponent(location.pathname + location.search);
-                    navigate(`/login?redirect=${redirect}`, { replace: true });
-                    return;
-                }
-
-                setCurrentUserId(u.id);
-
-                // session token (for keepalive leave write)
-                try {
-                    const { data: sd } = await supabase.auth.getSession();
-                    accessTokenRef.current = String(sd.session?.access_token || "");
-                } catch {
-                    accessTokenRef.current = "";
-                }
-
-                let name =
-                    (u?.user_metadata?.full_name as string) ||
-                    (u?.user_metadata?.name as string) ||
-                    (u?.email ? u.email.split("@")[0] : "");
-
-                if (!name && u?.id) {
-                    const { data: p } = await supabase.from("profiles").select("full_name").eq("id", u.id).single();
-                    name = p?.full_name || "";
-                }
-
-                setUserName(name || "User");
-                setAuthStatus("authed");
-            } catch {
-                setCurrentUserId(null);
-                setUserName("");
-                accessTokenRef.current = "";
-                setAuthStatus("redirecting");
-                const redirect = encodeURIComponent(location.pathname + location.search);
-                navigate(`/login?redirect=${redirect}`, { replace: true });
-            }
-        })();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [navigate, location.pathname, location.search]);
-
-    // ============================================
     // LOAD SESSION + BUILD STAGES (UUID OR SLUG)
     // ============================================
     useEffect(() => {
@@ -1039,14 +1109,14 @@ export default function RoomPageIFrame() {
 
             setLoading(true);
 
-            const selectStr = "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)";
+            const selectStr =
+                "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)";
 
             try {
                 const isUuid = UUID_RE.test(idOrSlug);
                 const slug = sanitizeSlug(idOrSlug);
 
                 const q = supabase.from("sessions").select(selectStr);
-
                 const { data, error } = isUuid ? await q.eq("id", idOrSlug).single() : await q.eq("custom_slug", slug).single();
 
                 if (data && !error) {
@@ -1089,7 +1159,8 @@ export default function RoomPageIFrame() {
                                     if (lower.includes("celebrate") || lower.includes("celebration")) return "celebrate";
                                     if (lower.includes("custom")) return "custom";
                                     if (lower.includes("break") || lower.includes("rest") || lower.includes("pause")) return "break";
-                                    if (lower.includes("outro") || lower.includes("wrap") || lower.includes("farewell") || lower.includes("end")) return "outro";
+                                    if (lower.includes("outro") || lower.includes("wrap") || lower.includes("farewell") || lower.includes("end"))
+                                        return "outro";
                                     if (lower.includes("focus")) return "focus";
                                     return "focus";
                                 };
@@ -1098,9 +1169,14 @@ export default function RoomPageIFrame() {
                                     rawType && rawType !== "stage" && rawType !== "block" ? inferTypeFromText(rawType) : inferTypeFromText(labelLower);
 
                                 const secondsExplicit =
-                                    Number(b?.seconds) || Number(b?.duration_seconds) || Number(b?.durationSeconds) || Number(b?.duration_sec) || 0;
+                                    Number(b?.seconds) ||
+                                    Number(b?.duration_seconds) ||
+                                    Number(b?.durationSeconds) ||
+                                    Number(b?.duration_sec) ||
+                                    0;
 
-                                const minsLike = Number(b?.minutes) || Number(b?.mins) || Number(b?.duration_minutes) || Number(b?.durationMinutes) || 0;
+                                const minsLike =
+                                    Number(b?.minutes) || Number(b?.mins) || Number(b?.duration_minutes) || Number(b?.durationMinutes) || 0;
 
                                 const n = typeof b === "number" ? b : Number(b?.duration ?? b?.value ?? 0);
 
@@ -1365,12 +1441,12 @@ export default function RoomPageIFrame() {
         });
 
         const sumStageSeconds = stageSeconds.reduce((acc, v) => acc + v, 0);
-        const loopSeconds = (Number(stagebarCycleSeconds) || 0) > 0 ? Number(stagebarCycleSeconds) : Math.max(1, sumStageSeconds);
+        const loopSeconds =
+            (Number(stagebarCycleSeconds) || 0) > 0 ? Number(stagebarCycleSeconds) : Math.max(1, sumStageSeconds);
 
         const timer = window.setInterval(() => {
             const now = Date.now();
             const diffSecRaw = (now - startMs) / 1000;
-
             const diffSec = loopSeconds > 0 && isInfiniteRoom ? ((diffSecRaw % loopSeconds) + loopSeconds) % loopSeconds : diffSecRaw;
 
             let total = 0;
@@ -1453,110 +1529,70 @@ export default function RoomPageIFrame() {
 
     const attendanceJoin = async () => {
         if (!sessionId || !currentUserId) return;
-
         const nowIso = new Date().toISOString();
 
-        // 1) RPC
         try {
             const { error } = await supabase.rpc("attendance_join", { p_session_id: sessionId });
             if (!error) return;
-            console.log("attendance_join rpc error:", error);
-        } catch (e) {
-            console.log("attendance_join rpc exception:", e);
-        }
+        } catch { }
 
-        // 2) fallback UPSERT
         try {
-            const { error } = await supabase
+            await supabase
                 .from("session_attendance")
                 .upsert(
-                    {
-                        session_id: sessionId,
-                        user_id: currentUserId,
-                        joined_at: nowIso,
-                        left_at: null,
-                        last_seen_at: nowIso,
-                    },
+                    { session_id: sessionId, user_id: currentUserId, joined_at: nowIso, left_at: null, last_seen_at: nowIso },
                     { onConflict: "session_id,user_id" }
                 );
-            if (error) console.log("attendance_join fallback error:", error);
-        } catch (e2) {
-            console.log("attendance_join fallback exception:", e2);
-        }
+        } catch { }
     };
 
     const attendanceHeartbeat = async () => {
         if (!sessionId || !currentUserId) return;
-
         const nowIso = new Date().toISOString();
 
-        // 1) RPC
         try {
             const { error } = await supabase.rpc("attendance_heartbeat", { p_session_id: sessionId });
             if (!error) return;
-            console.log("attendance_heartbeat rpc error:", error);
-        } catch (e) {
-            console.log("attendance_heartbeat rpc exception:", e);
-        }
+        } catch { }
 
-        // 2) fallback UPDATE
         try {
-            const { error } = await supabase
+            await supabase
                 .from("session_attendance")
                 .update({ last_seen_at: nowIso, left_at: null })
                 .eq("session_id", sessionId)
                 .eq("user_id", currentUserId);
-
-            if (error) console.log("attendance_heartbeat fallback error:", error);
-        } catch (e2) {
-            console.log("attendance_heartbeat fallback exception:", e2);
-        }
+        } catch { }
     };
 
     const attendanceLeave = async () => {
         stopAttendanceHeartbeat();
-
         if (!sessionId || !currentUserId) return;
-
         const nowIso = new Date().toISOString();
 
-        // 1) RPC
         try {
             const { error } = await supabase.rpc("attendance_leave", { p_session_id: sessionId });
             if (!error) return;
-            console.log("attendance_leave rpc error:", error);
-        } catch (e) {
-            console.log("attendance_leave rpc exception:", e);
-        }
+        } catch { }
 
-        // 2) fallback UPDATE
         try {
-            const { error } = await supabase
+            await supabase
                 .from("session_attendance")
                 .update({ left_at: nowIso, last_seen_at: nowIso })
                 .eq("session_id", sessionId)
                 .eq("user_id", currentUserId);
-
-            if (error) console.log("attendance_leave fallback error:", error);
-        } catch (e2) {
-            console.log("attendance_leave fallback exception:", e2);
-        }
+        } catch { }
     };
 
-    // keepalive write on hard exits
     const keepaliveLeaveWrite = () => {
         try {
             if (!sessionId || !currentUserId) return;
             const supabaseUrl = String((import.meta as any).env.VITE_SUPABASE_URL || "").trim();
             const anonKey = String((import.meta as any).env.VITE_SUPABASE_ANON_KEY || "").trim();
             const token = String(accessTokenRef.current || "");
-
             if (!supabaseUrl || !anonKey || !token) return;
 
             const nowIso = new Date().toISOString();
-            const url = `${supabaseUrl}/rest/v1/session_attendance?session_id=eq.${encodeURIComponent(
-                sessionId
-            )}&user_id=eq.${encodeURIComponent(currentUserId)}`;
+            const url = `${supabaseUrl}/rest/v1/session_attendance?session_id=eq.${encodeURIComponent(sessionId)}&user_id=eq.${encodeURIComponent(currentUserId)}`;
 
             void fetch(url, {
                 method: "PATCH",
@@ -1589,7 +1625,6 @@ export default function RoomPageIFrame() {
         } catch { }
     };
 
-    // hard exits
     useEffect(() => {
         const onBeforeUnload = () => {
             void leaveOnce({ dispose: false, keepalive: true });
@@ -1608,7 +1643,6 @@ export default function RoomPageIFrame() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionId, currentUserId]);
 
-    // SPA unmount
     useEffect(() => {
         return () => {
             void leaveOnce({ dispose: true, keepalive: false });
@@ -1617,7 +1651,7 @@ export default function RoomPageIFrame() {
     }, []);
 
     // ============================================
-    // Live online users from session_attendance (for count + SessionCard)
+    // Live online users from session_attendance
     // ============================================
     const attendanceFetchTimerRef = useRef<number | null>(null);
     const lastAttendanceFetchAtRef = useRef<number>(0);
@@ -1706,13 +1740,9 @@ export default function RoomPageIFrame() {
 
         const ch = supabase
             .channel(`attendance-live:${sessionId}`)
-            .on(
-                "postgres_changes",
-                { event: "*", schema: "public", table: "session_attendance", filter: `session_id=eq.${sessionId}` },
-                () => {
-                    void fetchOnlineUsers(false);
-                }
-            )
+            .on("postgres_changes", { event: "*", schema: "public", table: "session_attendance", filter: `session_id=eq.${sessionId}` }, () => {
+                void fetchOnlineUsers(false);
+            })
             .subscribe();
 
         return () => {
@@ -1749,6 +1779,11 @@ export default function RoomPageIFrame() {
 
         setParticipantsNow(0);
         setParticipantRows([]);
+
+        setMutedAudio(true);
+        setMutedVideo(false);
+        setIsScreenSharing(false);
+        setTile(true);
 
         setJitsiKey((x) => x + 1);
     };
@@ -1792,9 +1827,7 @@ export default function RoomPageIFrame() {
         } catch { }
     };
 
-    // ============================================
-    // Participants list helpers (Jitsi External API)
-    // ============================================
+    // Participants list from Jitsi
     const refreshParticipantsList = async (api: any) => {
         try {
             const localId = String(localParticipantIdRef.current || "local");
@@ -1821,7 +1854,8 @@ export default function RoomPageIFrame() {
                                     ? p.muted
                                     : undefined;
 
-                    const videoMuted = typeof p?.isVideoMuted === "boolean" ? p.isVideoMuted : typeof p?.videoMuted === "boolean" ? p.videoMuted : undefined;
+                    const videoMuted =
+                        typeof p?.isVideoMuted === "boolean" ? p.isVideoMuted : typeof p?.videoMuted === "boolean" ? p.videoMuted : undefined;
 
                     return {
                         id: pid,
@@ -1848,316 +1882,151 @@ export default function RoomPageIFrame() {
         } catch { }
     };
 
+    // ✅ THIS was your broken part (file truncation) — now complete and correct:
     useEffect(() => {
         if (!(rightPanelOpen && rightTab === "participants")) return;
         const api = apiRef.current;
         if (!api) return;
         void refreshParticipantsList(api);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rightPanelOpen, rightTab]);
+    }, [rightPanelOpen, rightTab, apiReady, mutedAudio, mutedVideo]);
 
     const filteredParticipants = useMemo(() => {
         const q = participantsSearch.trim().toLowerCase();
-        if (!q) return participantRows;
-        return participantRows.filter((p) => (p.displayName || "").toLowerCase().includes(q));
+        const base = participantRows || [];
+        if (!q) return base;
+        return base.filter((p) => (p.isLocal ? "you" : p.displayName || "guest").toLowerCase().includes(q));
     }, [participantRows, participantsSearch]);
 
-    const renderParticipantRow = (p: ParticipantRow) => {
-        const name = p.isLocal ? "You" : p.displayName || "Guest";
-        const initials =
-            name
-                .split(" ")
-                .filter(Boolean)
-                .slice(0, 2)
-                .map((x) => x[0]?.toUpperCase())
-                .join("") || "U";
-
-        const audioKnown = typeof p.audioMuted === "boolean";
-        const videoKnown = typeof p.videoMuted === "boolean";
-
-        return (
-            <div key={p.id} className={`flex items-center justify-between px-3 py-2 rounded-xl transition ${isLight ? "hover:bg-black/5" : "hover:bg-white/5"}`}>
-                <div className="flex items-center gap-3 min-w-0">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${isLight ? "bg-blue-500/15 text-blue-700" : "bg-emerald-500/80 text-[#02140B]"}`}>
-                        {initials}
-                    </div>
-                    <div className="min-w-0">
-                        <div className={`text-[13px] font-medium truncate ${isLight ? "text-black/85" : "text-white/90"}`}>{name}</div>
-                        <div className={`text-[11px] truncate ${isLight ? "text-black/45" : "text-white/45"}`}>{p.isLocal ? "Team member" : "Participant"}</div>
-                    </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                    <div
-                        className={
-                            "w-8 h-8 rounded-lg flex items-center justify-center " +
-                            (!audioKnown ? (isLight ? "bg-black/5" : "bg-white/5") : p.audioMuted ? (isLight ? "bg-red-500/10" : "bg-red-500/20") : isLight ? "bg-black/5" : "bg-white/5")
-                        }
-                        title={!audioKnown ? "Audio status unknown" : p.audioMuted ? "Muted" : "Unmuted"}
-                    >
-                        <Icon
-                            name={audioKnown && p.audioMuted ? "mic-off" : "mic-on"}
-                            theme={audioKnown && p.audioMuted ? "dark" : theme}
-                            className={`w-4 h-4 ${audioKnown && p.audioMuted ? "opacity-90" : "opacity-80"}`}
-                        />
-                    </div>
-
-                    <div
-                        className={
-                            "w-8 h-8 rounded-lg flex items-center justify-center " +
-                            (!videoKnown ? (isLight ? "bg-black/5" : "bg-white/5") : p.videoMuted ? (isLight ? "bg-red-500/10" : "bg-red-500/20") : isLight ? "bg-black/5" : "bg-white/5")
-                        }
-                        title={!videoKnown ? "Video status unknown" : p.videoMuted ? "Video off" : "Video on"}
-                    >
-                        <Icon name={videoKnown && p.videoMuted ? "camera-off" : "camera-on"} theme={theme} className={`w-4 h-4 ${videoKnown && p.videoMuted ? "opacity-90" : "opacity-80"}`} />
-                    </div>
-                </div>
-            </div>
-        );
-    };
-
-    // ============================================
-    // ✅ Reactions via Supabase realtime broadcast
-    // ============================================
-    const reactionsChannelRef = useRef<any>(null);
-    const reactionIdRef = useRef<number>(0);
-    const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([]);
-    const profileNameCacheRef = useRef<Map<string, string>>(new Map());
-
-    const resolveProfileName = async (uid: string): Promise<string> => {
-        const id = String(uid || "");
-        if (!id) return "User";
-
-        const cached = profileNameCacheRef.current.get(id);
-        if (cached) return cached;
-
-        if (currentUserId && id === currentUserId) {
-            const n = userName || "You";
-            profileNameCacheRef.current.set(id, n);
-            return n;
-        }
-
-        try {
-            const { data } = await supabase.from("profiles").select("full_name").eq("id", id).single();
-            const n = String(data?.full_name || "User");
-            profileNameCacheRef.current.set(id, n);
-            return n;
-        } catch {
-            profileNameCacheRef.current.set(id, "User");
-            return "User";
-        }
-    };
-
-    const pushReaction = (r: Omit<FloatingReaction, "id">) => {
-        const rid = reactionIdRef.current + 1;
-        reactionIdRef.current = rid;
-
-        const item: FloatingReaction = { id: rid, ...r };
-        setFloatingReactions((prev) => [...prev, item]);
-
-        window.setTimeout(() => {
-            setFloatingReactions((prev) => prev.filter((x) => x.id !== rid));
-        }, 1500);
-    };
-
-    useEffect(() => {
-        if (authStatus !== "authed") return;
-        if (!sessionId) return;
-        if (!currentUserId) return;
-
-        const key = `reactions:${sessionId}`;
-
-        const ch = supabase.channel(key, {
-            config: {
-                broadcast: { ack: true, self: false },
-                presence: { key: currentUserId },
-            },
-        });
-
-        reactionsChannelRef.current = ch;
-
-        ch.on("broadcast", { event: "reaction" }, async (msg: any) => {
-            try {
-                const raw = msg?.payload;
-                const p = raw && typeof raw === "object" && "payload" in raw ? (raw as any).payload : raw;
-
-                const fromUserId = String(p?.user_id || "");
-                const type = String(p?.type || "") as ReactionType;
-
-                const sid = String(p?.session_id || "");
-                if (sid && sid !== sessionId) return;
-
-                if (!fromUserId || !type) return;
-                if (fromUserId === currentUserId) return;
-
-                const fromName = await resolveProfileName(fromUserId);
-                pushReaction({ type, fromUserId, fromName });
-            } catch (e) {
-                console.log("[reactions] handler error", e);
-            }
-        });
-
-        ch.subscribe();
-
-        return () => {
-            try {
-                if (reactionsChannelRef.current === ch) reactionsChannelRef.current = null;
-            } catch { }
-            safeRemoveRealtimeChannel(ch);
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [authStatus, sessionId, currentUserId]);
-
-    const sendReaction = async (type: ReactionType) => {
-        if (!sessionId || !currentUserId) return;
-
-        pushReaction({
-            type,
-            fromUserId: currentUserId,
-            fromName: userName || "You",
-        });
-
-        try {
-            const ch = reactionsChannelRef.current;
-            if (!ch) return;
-            await ch.send({
-                type: "broadcast",
-                event: "reaction",
-                payload: { session_id: sessionId, user_id: currentUserId, type },
-            });
-        } catch { }
-    };
-
-    // ============================================
-    // JITSI INIT
-    // ============================================
+    // create API when authed + session ready
     useEffect(() => {
         if (authStatus !== "authed") return;
         if (!session) return;
         if (!iframeContainerRef.current) return;
-        if (!roomName) return;
-
-        leaveOnceRef.current = false;
-        localJoinedRef.current = false;
-        capacityTriggeredRef.current = false;
-        localParticipantIdRef.current = null;
-        localIsModeratorRef.current = false;
+        if (!userName) return;
 
         let cancelled = false;
 
         (async () => {
             try {
                 setLastErr("");
-                setCapacityError(null);
+                setApiReady(false);
+
+                const parent = iframeContainerRef.current!;
+                const domains = domainsForSession(session);
 
                 const { api } = await createJitsiApiWithFallback({
-                    domains: domainsForSession(session),
+                    domains,
                     roomName,
-                    parentNode: iframeContainerRef.current!,
-                    userName: userName || "User",
+                    parentNode: parent,
+                    userName,
                     cssPathOnJitsiDomain: JITSI_CUSTOM_CSS_PATH,
                 });
 
                 if (cancelled) {
                     try {
-                        api?.dispose?.();
+                        api.dispose?.();
                     } catch { }
                     return;
                 }
 
                 apiRef.current = api;
-                setApiReady(true);
 
+                // supported commands (best-effort)
                 try {
-                    supportedCmdsRef.current = Array.isArray(api.getSupportedCommands?.()) ? api.getSupportedCommands() : null;
+                    const cmds = api.getSupportedCommands?.();
+                    supportedCmdsRef.current = Array.isArray(cmds) ? cmds : null;
                 } catch {
                     supportedCmdsRef.current = null;
                 }
 
-                api.addEventListener?.("videoConferenceJoined", async (e: any) => {
-                    try {
-                        localJoinedRef.current = true;
-                        const pid = String(e?.id || e?.participantId || "");
-                        if (pid) localParticipantIdRef.current = pid;
+                // listeners
+                const onJoined = (e: any) => {
+                    localJoinedRef.current = true;
 
-                        await attendanceJoin();
-                        startAttendanceHeartbeat();
-                        void fetchOnlineUsers(true);
+                    const pid = String(e?.id || e?.participantId || e?.roomName || "");
+                    if (pid) localParticipantIdRef.current = pid;
 
-                        void refreshParticipantsList(api);
+                    setApiReady(true);
 
-                        await maybeKickOrRejectIfOverLimit(api);
-                    } catch { }
-                });
+                    // attendance
+                    void attendanceJoin();
+                    startAttendanceHeartbeat();
 
-                api.addEventListener?.("videoConferenceLeft", async () => {
-                    try {
-                        await leaveOnce({ dispose: true, keepalive: true });
-                    } catch { }
-                });
+                    // participants snapshot
+                    void refreshParticipantsList(api);
 
-                api.addEventListener?.("readyToClose", async () => {
-                    try {
-                        await leaveOnce({ dispose: true, keepalive: true });
-                        navigate("/sessions", { replace: true });
-                    } catch { }
-                });
+                    // capacity check after join
+                    void maybeKickOrRejectIfOverLimit(api, undefined);
+                };
 
-                api.addEventListener?.("audioMuteStatusChanged", (e: any) => {
-                    const m = !!e?.muted;
-                    setMutedAudio(m);
-                    setParticipantRows((prev) => prev.map((r) => (r.isLocal ? { ...r, audioMuted: m } : r)));
-                });
+                const onParticipantJoined = (e: any) => {
+                    const pid = String(e?.id || e?.participantId || "");
+                    void maybeKickOrRejectIfOverLimit(api, pid);
+                    void refreshParticipantsList(api);
+                };
 
-                api.addEventListener?.("videoMuteStatusChanged", (e: any) => {
-                    const m = !!e?.muted;
-                    setMutedVideo(m);
-                    setParticipantRows((prev) => prev.map((r) => (r.isLocal ? { ...r, videoMuted: m } : r)));
-                });
+                const onParticipantLeft = () => {
+                    capacityTriggeredRef.current = false;
+                    void refreshParticipantsList(api);
+                };
 
-                api.addEventListener?.("screenSharingStatusChanged", (e: any) => {
-                    setIsScreenSharing(!!e?.on);
-                });
+                const onAudioMute = (e: any) => {
+                    setMutedAudio(!!e?.muted);
+                    void refreshParticipantsList(api);
+                };
 
-                api.addEventListener?.("tileViewChanged", (e: any) => {
-                    setTile(!!e?.enabled);
-                });
+                const onVideoMute = (e: any) => {
+                    setMutedVideo(!!e?.muted);
+                    void refreshParticipantsList(api);
+                };
 
-                api.addEventListener?.("participantJoined", async (e: any) => {
-                    try {
-                        void refreshParticipantsList(api);
-                        await maybeKickOrRejectIfOverLimit(api, String(e?.id || e?.participantId || ""));
-                    } catch { }
-                });
+                const onScreenShare = (e: any) => {
+                    // some builds: { on: boolean } / { sharing: boolean }
+                    const v = typeof e?.on === "boolean" ? e.on : typeof e?.sharing === "boolean" ? e.sharing : false;
+                    setIsScreenSharing(!!v);
+                };
 
-                api.addEventListener?.("participantLeft", async () => {
-                    try {
-                        void refreshParticipantsList(api);
-                        capacityTriggeredRef.current = false;
-                        setCapacityError(null);
-                    } catch { }
-                });
+                const onTile = (e: any) => {
+                    const v = typeof e?.enabled === "boolean" ? e.enabled : typeof e?.on === "boolean" ? e.on : true;
+                    setTile(!!v);
+                };
 
-                api.addEventListener?.("participantRoleChanged", (e: any) => {
-                    try {
-                        const pid = String(e?.id || "");
-                        const role = String(e?.role || "").toLowerCase();
-                        const myId = String(localParticipantIdRef.current || "");
-                        if (pid && myId && pid === myId) {
-                            localIsModeratorRef.current = role === "moderator";
-                        }
-                    } catch { }
-                });
+                const onRole = (e: any) => {
+                    const pid = String(e?.id || e?.participantId || "");
+                    const role = String(e?.role || "");
+                    if (!pid) return;
+                    if (localParticipantIdRef.current && pid === localParticipantIdRef.current) {
+                        localIsModeratorRef.current = role === "moderator";
+                    }
+                };
 
+                const onReadyToClose = async () => {
+                    await leaveOnce({ dispose: true, keepalive: true });
+                    navigate("/sessions", { replace: true });
+                };
+
+                api.addEventListener?.("videoConferenceJoined", onJoined);
+                api.addEventListener?.("participantJoined", onParticipantJoined);
+                api.addEventListener?.("participantLeft", onParticipantLeft);
+                api.addEventListener?.("audioMuteStatusChanged", onAudioMute);
+                api.addEventListener?.("videoMuteStatusChanged", onVideoMute);
+                api.addEventListener?.("screenSharingStatusChanged", onScreenShare);
+                api.addEventListener?.("tileViewChanged", onTile);
+                api.addEventListener?.("participantRoleChanged", onRole);
+                api.addEventListener?.("readyToClose", onReadyToClose);
+
+                // enforce tile view ON (best-effort)
                 try {
                     api.executeCommand?.("setTileView", true);
                 } catch { }
 
-                window.setTimeout(() => void refreshParticipantsList(api), 800);
-                window.setTimeout(() => void refreshParticipantsList(api), 2500);
+                // initial refresh
+                void refreshParticipantsList(api);
             } catch (e: any) {
-                const msg = String(e?.message || e || "Failed to start room");
-                setLastErr(msg);
+                console.log("Jitsi create error:", e);
+                setLastErr(String(e?.message || e || "Failed to load Jitsi"));
+                setApiReady(false);
             }
         })();
 
@@ -2167,15 +2036,15 @@ export default function RoomPageIFrame() {
                 apiRef.current?.dispose?.();
             } catch { }
             apiRef.current = null;
+            supportedCmdsRef.current = null;
             setApiReady(false);
             stopAttendanceHeartbeat();
-            stopWelcomeLoop();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [authStatus, sessionId, jitsiKey, roomName]);
 
     // ============================================
-    // Controls
+    // UI actions
     // ============================================
     const exec = (cmd: string, ...args: any[]) => {
         const api = apiRef.current;
@@ -2185,34 +2054,33 @@ export default function RoomPageIFrame() {
         } catch { }
     };
 
-    const toggleMic = () => exec("toggleAudio");
-    const toggleCamera = () => exec("toggleVideo");
-    const toggleScreen = () => exec("toggleShareScreen");
-    const toggleTile = () => exec("toggleTileView");
+    const handleToggleAudio = () => exec("toggleAudio");
+    const handleToggleVideo = () => exec("toggleVideo");
+    const handleToggleScreenShare = () => exec("toggleShareScreen");
+    const handleToggleTile = () => exec("toggleTileView");
 
-    const leavingUiRef = useRef(false);
-
-    const onLeaveClick = async () => {
-        if (leavingUiRef.current) return;
-        leavingUiRef.current = true;
-
+    const handleLeave = async () => {
         try {
-            try {
-                apiRef.current?.executeCommand?.("hangup");
-            } catch { }
+            exec("hangup");
+        } catch { }
+        await leaveOnce({ dispose: true, keepalive: true });
+        navigate("/sessions", { replace: true });
+    };
 
-            await leaveOnce({ dispose: true, keepalive: true });
+    const copyInviteLink = async () => {
+        try {
+            const url = window.location.href;
+            await navigator.clipboard.writeText(url);
+            setCapacityError("Link copied ✅");
+            window.setTimeout(() => setCapacityError(null), 1300);
         } catch {
-            try {
-                keepaliveLeaveWrite();
-            } catch { }
-        } finally {
-            navigate("/sessions", { replace: true });
+            setCapacityError("Could not copy link");
+            window.setTimeout(() => setCapacityError(null), 1200);
         }
     };
 
     // ============================================
-    // UI classes
+    // Page states
     // ============================================
     const pageBg = isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white";
     const topBarBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#111827]/40 border border-white/5";
@@ -2223,102 +2091,46 @@ export default function RoomPageIFrame() {
     const bottomBarBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#07101E]/85 border border-white/10";
     const ctlBtnBase = isLight ? "bg-black/5 hover:bg-black/10" : "bg-[#111827] hover:bg-[#1f2937]";
 
-    const participantsCountLabel = useMemo(() => {
-        const now = Number(participantsNow || 0);
-        const max = Number(maxParticipants || 0);
-        if (max > 0) return `${Math.max(0, now)} / ${max}`;
-        return String(Math.max(0, now));
-    }, [participantsNow, maxParticipants]);
+    const participantsCount = participantsNow || onlineUsers.length || participantRows.length || 0;
 
-    // ============================================
-    // Loading / auth redirects
-    // ============================================
-    if (authStatus === "redirecting") {
-        return <div className={`flex h-screen items-center justify-center ${pageBg}`}>Redirecting…</div>;
-    }
-
-    if (loading) {
-        return <div className={`flex h-screen items-center justify-center ${pageBg}`}>Loading session…</div>;
-    }
-
-    if (!session) {
-        return (
-            <div className={`flex h-screen items-center justify-center ${pageBg}`}>
-                <button
-                    className={`h-10 px-4 rounded-xl ${isLight ? "bg-black/5 hover:bg-black/10" : "bg-white/10 hover:bg-white/15"}`}
-                    onClick={() => navigate("/sessions")}
-                >
-                    Back
-                </button>
-            </div>
-        );
-    }
+    const switchTrack =
+        "w-[84px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
+    const switchTrackCls = isLight ? "bg-black/5 border-black/10 hover:bg-black/10" : "bg-white/5 border-white/10 hover:bg-white/10";
+    const switchThumb =
+        "absolute top-[2px] w-[26px] h-[26px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center";
+    const thumbTranslate = isLight ? "translateX(0px)" : "translateX(52px)";
 
     const ChatPanelAny = ChatPanel as any;
 
     const RightPanelBody = (
-        <div className={["rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col", panelBg, theme === "dark" ? "dark" : ""].join(" ")} data-theme={theme}>
+        <div
+            className={[
+                "rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col",
+                panelBg,
+                theme === "dark" ? "dark" : "",
+            ].join(" ")}
+            data-theme={theme}
+            style={{ colorScheme: theme }}
+        >
             {rightTab === "participants" && (
                 <div className="h-full min-h-0 flex flex-col">
                     <div className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
-                        <div className="flex items-center gap-2">
-                            <span className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Participants</span>
-                            <span className={`${isLight ? "text-black/50" : "text-white/55"} text-sm`}>({participantsCountLabel})</span>
+                        <div className="flex items-center gap-2 min-w-0">
+                            <span className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold truncate`}>
+                                Participants
+                            </span>
+                            <span className={`${isLight ? "text-black/50" : "text-white/55"} text-sm`}>
+                                ({participantsCount})
+                            </span>
                         </div>
-                        <div className="flex items-center gap-2">
-                            <button
-                                onClick={() => void fetchOnlineUsers(true)}
-                                className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"}`}
-                                title="Refresh"
-                            >
-                                <ReloadSmartIcon theme={theme} className="w-4 h-4 opacity-90" />
-                            </button>
-                            <button
-                                onClick={() => openRightTab(null)}
-                                className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"}`}
-                                title="Close"
-                            >
-                                ✕
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Online users (attendance-based) */}
-                    <div className="px-4 pt-4">
-                        <div className={`rounded-xl px-3 py-2 text-[12px] ${isLight ? "bg-black/5 border border-black/10 text-black/65" : "bg-[#0B1220]/70 border border-white/10 text-white/70"}`}>
-                            Online now: <span className="font-semibold">{onlineUsers.length}</span> (by presence)
-                        </div>
-                        {onlineUsers.length > 0 && (
-                            <div className="mt-3 flex flex-wrap gap-2">
-                                {onlineUsers.slice(0, 12).map((u) => {
-                                    const initials =
-                                        (u.full_name || "U")
-                                            .split(" ")
-                                            .filter(Boolean)
-                                            .slice(0, 2)
-                                            .map((x) => x[0]?.toUpperCase())
-                                            .join("") || "U";
-
-                                    return (
-                                        <div
-                                            key={u.user_id}
-                                            className={`h-9 px-3 rounded-full flex items-center gap-2 text-[12px] ${isLight ? "bg-white border border-black/10 text-black/75" : "bg-[#020617]/40 border border-white/10 text-white/80"}`}
-                                            title={u.full_name}
-                                        >
-                                            <div className={`w-7 h-7 rounded-full flex items-center justify-center font-semibold ${isLight ? "bg-blue-500/15 text-blue-700" : "bg-emerald-500/80 text-[#02140B]"}`}>
-                                                {initials}
-                                            </div>
-                                            <div className="max-w-[140px] truncate">{u.full_name}</div>
-                                        </div>
-                                    );
-                                })}
-                                {onlineUsers.length > 12 && (
-                                    <div className={`h-9 px-3 rounded-full flex items-center text-[12px] ${isLight ? "bg-black/5 text-black/60" : "bg-white/10 text-white/70"}`}>
-                                        +{onlineUsers.length - 12}
-                                    </div>
-                                )}
-                            </div>
-                        )}
+                        <button
+                            onClick={() => openRightTab(null)}
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                                }`}
+                            title="Close"
+                        >
+                            ✕
+                        </button>
                     </div>
 
                     <div className="p-4">
@@ -2327,13 +2139,103 @@ export default function RoomPageIFrame() {
                                 value={participantsSearch}
                                 onChange={(e) => setParticipantsSearch(e.target.value)}
                                 placeholder="Search participants..."
-                                className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${isLight ? "text-black/80 placeholder:text-black/40" : "text-white/85 placeholder:text-white/35"}`}
+                                className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${isLight ? "text-black/80 placeholder:text-black/40" : "text-white/85 placeholder:text-white/35"
+                                    }`}
                             />
                         </div>
                     </div>
 
                     <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
-                        <div className="flex flex-col gap-2">{filteredParticipants.map(renderParticipantRow)}</div>
+                        <div className="flex flex-col gap-2">
+                            {filteredParticipants.map((p) => {
+                                const name = p.isLocal ? "You" : p.displayName || "Guest";
+                                const initials =
+                                    name
+                                        .split(" ")
+                                        .filter(Boolean)
+                                        .slice(0, 2)
+                                        .map((x) => x[0]?.toUpperCase())
+                                        .join("") || "U";
+
+                                return (
+                                    <div
+                                        key={p.id}
+                                        className={`flex items-center justify-between px-3 py-2 rounded-xl transition ${isLight ? "hover:bg-black/5" : "hover:bg-white/5"
+                                            }`}
+                                    >
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <div
+                                                className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${isLight ? "bg-blue-500/15 text-blue-700" : "bg-emerald-500/80 text-[#02140B]"
+                                                    }`}
+                                            >
+                                                {initials}
+                                            </div>
+                                            <div className="min-w-0">
+                                                <div className={`text-[13px] font-medium truncate ${isLight ? "text-black/85" : "text-white/90"}`}>
+                                                    {name}
+                                                </div>
+                                                <div className={`text-[11px] truncate ${isLight ? "text-black/45" : "text-white/45"}`}>
+                                                    {p.isLocal ? "Team member" : "Participant"}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-2">
+                                            <div
+                                                className={
+                                                    "w-8 h-8 rounded-lg flex items-center justify-center " +
+                                                    (p.audioMuted
+                                                        ? isLight
+                                                            ? "bg-red-500/10"
+                                                            : "bg-red-500/20"
+                                                        : isLight
+                                                            ? "bg-black/5"
+                                                            : "bg-white/5")
+                                                }
+                                                title={p.audioMuted ? "Muted" : "Unmuted"}
+                                            >
+                                                <Icon
+                                                    name={p.audioMuted ? "mic-off" : "mic-on"}
+                                                    theme={theme}
+                                                    className={`w-4 h-4 ${p.audioMuted ? "opacity-90" : "opacity-80"}`}
+                                                />
+                                            </div>
+
+                                            <div
+                                                className={
+                                                    "w-8 h-8 rounded-lg flex items-center justify-center " +
+                                                    (p.videoMuted
+                                                        ? isLight
+                                                            ? "bg-red-500/10"
+                                                            : "bg-red-500/20"
+                                                        : isLight
+                                                            ? "bg-black/5"
+                                                            : "bg-white/5")
+                                                }
+                                                title={p.videoMuted ? "Video off" : "Video on"}
+                                            >
+                                                <Icon
+                                                    name={p.videoMuted ? "camera-off" : "camera-on"}
+                                                    theme={theme}
+                                                    className={`w-4 h-4 ${p.videoMuted ? "opacity-90" : "opacity-80"}`}
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    <div className={`p-4 border-t ${isLight ? "border-black/10" : "border-white/5"}`}>
+                        <button
+                            onClick={copyInviteLink}
+                            className={`w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 ${isLight ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
+                                }`}
+                        >
+                            <span className="text-lg">⎘</span>
+                            <span>Copy invite link</span>
+                        </button>
                     </div>
                 </div>
             )}
@@ -2344,7 +2246,8 @@ export default function RoomPageIFrame() {
                         <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Chat</div>
                         <button
                             onClick={() => openRightTab(null)}
-                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"}`}
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                                }`}
                             title="Close"
                         >
                             ✕
@@ -2354,10 +2257,10 @@ export default function RoomPageIFrame() {
                     <div className="flex-1 min-h-0 p-4 overflow-hidden">
                         <div className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight ? "bg-white/70 border border-black/10" : "bg-[#020617]/40 border border-white/10"}`}>
                             <div className="h-full min-h-0 flex flex-col overflow-hidden [&>*]:h-full [&>*]:min-h-0">
-                                {session?.id ? (
-                                    <div data-theme={theme} style={{ colorScheme: theme as any }} className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}>
+                                {sessionId ? (
+                                    <div data-theme={theme} style={{ colorScheme: theme }} className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}>
                                         <ChatPanelAny
-                                            sessionId={session.id}
+                                            sessionId={sessionId}
                                             theme={theme}
                                             showHeader={false}
                                             title="Chat"
@@ -2366,6 +2269,7 @@ export default function RoomPageIFrame() {
                                             hideHeader={true}
                                             authUserId={currentUserId}
                                             displayName={userName}
+                                            onAnyMessageSeen={() => markChatRead()}
                                         />
                                     </div>
                                 ) : null}
@@ -2381,7 +2285,8 @@ export default function RoomPageIFrame() {
                         <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Intentions</div>
                         <button
                             onClick={() => openRightTab(null)}
-                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"}`}
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                                }`}
                             title="Close"
                         >
                             ✕
@@ -2391,8 +2296,8 @@ export default function RoomPageIFrame() {
                     <div className="flex-1 min-h-0 overflow-hidden p-4">
                         <div className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight ? "bg-white/70 border border-black/10" : "bg-[#020617]/40 border border-white/10"}`}>
                             <div className="h-full min-h-0 overflow-y-auto [&>*]:min-h-0">
-                                <div data-theme={theme} style={{ colorScheme: theme as any }} className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}>
-                                    <IntentionsPanel key={`intentions-${session.id}-${theme}`} theme={theme} sessionId={session.id} timerText={remainingTime || "--:--"} />
+                                <div data-theme={theme} style={{ colorScheme: theme }} className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}>
+                                    <IntentionsPanel key={`intentions-${sessionId}-${theme}`} theme={theme} sessionId={sessionId} timerText={remainingTime || "--:--"} />
                                 </div>
                             </div>
                         </div>
@@ -2402,40 +2307,56 @@ export default function RoomPageIFrame() {
         </div>
     );
 
+    // ============================================
+    // render guards
+    // ============================================
+    if (authStatus === "redirecting") {
+        return <div className={`flex h-screen items-center justify-center ${pageBg}`}>Redirecting…</div>;
+    }
+
+    if (authStatus !== "authed") {
+        return <div className={`flex h-screen items-center justify-center ${pageBg}`}>Checking auth…</div>;
+    }
+
+    if (loading) {
+        return <div className={`flex h-screen items-center justify-center ${pageBg}`}>Loading session…</div>;
+    }
+
+    if (!session) {
+        return (
+            <div className={`flex h-screen items-center justify-center ${pageBg}`}>
+                <button onClick={() => navigate("/sessions")}>Back</button>
+            </div>
+        );
+    }
+
     return (
         <div className={`h-[100dvh] overflow-hidden ${pageBg}`}>
-            {/* top */}
             <div className="h-full w-full px-3 sm:px-5 pt-5 pb-[calc(110px+env(safe-area-inset-bottom))] flex flex-col gap-5 min-h-0">
                 <div className={`flex w-full rounded-2xl overflow-hidden ${topBarBg}`}>
                     <div className="flex-1 px-6 py-4">
                         <div className="flex items-start justify-between gap-4">
                             <div className="min-w-0">
-                                <p className={`font-inter font-semibold text-[18px] truncate ${strongText}`}>{session.title}</p>
-                                <p className={`font-inter text-[13px] ${subtleText}`}>{participantsCountLabel} participants</p>
+                                <p className={`font-inter font-semibold text-[18px] truncate ${strongText}`}>{String(session?.title || "Session")}</p>
+                                <p className={`font-inter text-[13px] ${subtleText}`}>{participantsCount} participants</p>
                             </div>
 
                             <div className="flex items-center gap-2 shrink-0">
                                 {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
                                     <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}>
                                         <Icon name="timer" theme={theme} className="w-4 h-4 opacity-80" alt="Timer" />
-                                        <span className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"}`}>
-                                            {remainingTime || "--:--"}
-                                        </span>
+                                        <span className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"}`}>{remainingTime || "--:--"}</span>
                                     </div>
                                 )}
 
                                 <button
                                     onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-                                    className={`w-[84px] h-[32px] rounded-full border relative transition flex items-center px-[3px] ${isLight ? "bg-black/5 border-black/10 hover:bg-black/10" : "bg-white/5 border-white/10 hover:bg-white/10"
-                                        }`}
+                                    className={`${switchTrack} ${switchTrackCls}`}
                                     title="Toggle theme"
                                     aria-label="Toggle theme"
                                 >
-                                    <div
-                                        className="absolute top-[2px] w-[26px] h-[26px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center"
-                                        style={{ transform: isLight ? "translateX(0px)" : "translateX(50px)" }}
-                                    >
-                                        <Icon name={isLight ? "theme-sun" : "theme-moon"} theme={theme} className="w-4 h-4" alt="" />
+                                    <div className={switchThumb} style={{ transform: thumbTranslate }}>
+                                        <Icon name={isLight ? "theme-sun" : "theme-moon"} theme={theme} className="w-4 h-4" />
                                     </div>
                                 </button>
 
@@ -2443,14 +2364,11 @@ export default function RoomPageIFrame() {
                                     <button
                                         onClick={() => setSelectedUser(session.host_profile || null)}
                                         className={`max-[480px]:hidden flex items-center gap-2 px-3 py-1.5 rounded-xl border transition font-inter text-[13px] ${isLight
-                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                                : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                             }`}
                                     >
-                                        <span className="flex items-center gap-1 leading-none">
-                                            <span className={isLight ? "font-normal text-black/55" : "font-normal text-white/70"}>Host:</span>
-                                            <span className="font-semibold">{session.host_profile.full_name}</span>
-                                        </span>
+                                        <span className="font-semibold">Host: {String(session.host_profile.full_name || "Host")}</span>
                                     </button>
                                 )}
                             </div>
@@ -2466,27 +2384,18 @@ export default function RoomPageIFrame() {
                     </div>
                 </div>
 
-                {/* main */}
-                <div className={"relative grid grid-rows-1 gap-5 flex-1 min-h-0 h-full " + (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")}>
-                    <div className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"}`}>
+                <div
+                    className={
+                        "relative grid grid-rows-1 gap-5 flex-1 min-h-0 h-full " +
+                        (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
+                    }
+                >
+                    <div
+                        ref={videoWrapRef}
+                        className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"}`}
+                    >
                         <div className="w-full h-full min-h-0">
-                            <div className="w-full h-full" ref={iframeContainerRef} key={jitsiKey} />
-                        </div>
-
-                        {/* floating reactions */}
-                        <div className="pointer-events-none absolute inset-0">
-                            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 flex flex-col gap-2 items-center">
-                                {floatingReactions.map((r) => (
-                                    <div
-                                        key={r.id}
-                                        className={`px-3 py-1.5 rounded-2xl shadow-lg text-[14px] flex items-center gap-2 ${isLight ? "bg-white border border-black/10 text-black/80" : "bg-[#020617] border border-white/10 text-white/90"
-                                            }`}
-                                    >
-                                        <span className="text-[18px]">{reactionEmoji[r.type]}</span>
-                                        <span className={`text-[12px] ${isLight ? "text-black/60" : "text-white/70"}`}>{r.fromName}</span>
-                                    </div>
-                                ))}
-                            </div>
+                            <div ref={iframeContainerRef} key={jitsiKey} className="w-full h-full min-h-0" />
                         </div>
 
                         {(lastErr || capacityError) && (
@@ -2495,19 +2404,28 @@ export default function RoomPageIFrame() {
                             </div>
                         )}
 
-                        {!apiReady && (
-                            <div className="absolute inset-0 flex items-center justify-center">
-                                <div className={`px-4 py-3 rounded-2xl shadow-lg ${isLight ? "bg-white border border-black/10 text-black/70" : "bg-[#020617] border border-white/10 text-white/80"}`}>
-                                    Connecting…
+                        {/* floating reactions overlay */}
+                        {floatingReactions.length > 0 && (
+                            <div className="pointer-events-none absolute inset-x-0 bottom-6 flex items-center justify-center">
+                                <div className={`px-3 py-2 rounded-2xl text-sm shadow-xl ${isLight ? "bg-white/90 border border-black/10 text-black/80" : "bg-[#020617]/80 border border-white/10 text-white/85"}`}>
+                                    {floatingReactions.slice(-2).map((r) => (
+                                        <div key={r.id} className="flex items-center gap-2">
+                                            <span className="text-lg leading-none">{reactionEmoji[r.type]}</span>
+                                            <span className="text-[12px] opacity-80 truncate max-w-[260px]">{r.fromName}</span>
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
                         )}
                     </div>
 
-                    {/* right panel desktop */}
-                    {rightPanelOpen && isLgUp && <div className="min-h-0 h-full overflow-hidden">{RightPanelBody}</div>}
+                    {/* ✅ Render only one variant */}
+                    {rightPanelOpen && isLgUp && (
+                        <div className="min-h-0 h-full overflow-hidden">
+                            {RightPanelBody}
+                        </div>
+                    )}
 
-                    {/* right panel mobile overlay */}
                     {rightPanelOpen && !isLgUp && (
                         <div className="absolute inset-0 z-40 min-h-0">
                             <div className="absolute inset-0 bg-black/40" onClick={() => openRightTab(null)} />
@@ -2521,10 +2439,14 @@ export default function RoomPageIFrame() {
             <div className="fixed inset-x-0 bottom-0 z-50">
                 <div className="w-full px-3 sm:px-5 pb-[calc(12px+env(safe-area-inset-bottom))]">
                     <div className={`h-[64px] sm:h-[74px] rounded-2xl shadow-2xl backdrop-blur grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4 ${bottomBarBg}`}>
-                        {/* left: participants + more menu */}
+                        {/* left group */}
                         <div className="flex items-center gap-2" ref={moreMenuRef}>
                             <div className="md:hidden relative">
-                                <button onClick={() => setShowMoreMenu((v) => !v)} className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`} title="Menu">
+                                <button
+                                    onClick={() => setShowMoreMenu((v) => !v)}
+                                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                                    title="Menu"
+                                >
                                     <span className={isLight ? "text-black/70" : "text-white/85"}>⋯</span>
                                 </button>
 
@@ -2540,7 +2462,6 @@ export default function RoomPageIFrame() {
                                             >
                                                 <ParticipantsSmartIcon theme={theme} className="w-4 h-4 opacity-90" />
                                                 <span>Participants</span>
-                                                <span className={`ml-auto text-[12px] ${isLight ? "text-black/45" : "text-white/45"}`}>{participantsCountLabel}</span>
                                             </button>
 
                                             <button
@@ -2551,12 +2472,14 @@ export default function RoomPageIFrame() {
                                                 className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
                                             >
                                                 <Icon name="chat" theme={theme} className="w-4 h-4 opacity-90" />
-                                                <span>Chat</span>
-                                                {unreadChat > 0 && (
-                                                    <span className={`ml-auto min-w-[22px] h-[18px] px-2 rounded-full text-[11px] flex items-center justify-center ${isLight ? "bg-blue-600 text-white" : "bg-emerald-500 text-[#02140B]"}`}>
-                                                        {unreadChat > 99 ? "99+" : unreadChat}
-                                                    </span>
-                                                )}
+                                                <span className="flex items-center gap-2">
+                                                    <span>Chat</span>
+                                                    {unreadChat > 0 && (
+                                                        <span className={`px-2 py-[2px] rounded-full text-[11px] font-semibold ${isLight ? "bg-red-600 text-white" : "bg-red-600 text-white"}`}>
+                                                            {unreadChat > 99 ? "99+" : unreadChat}
+                                                        </span>
+                                                    )}
+                                                </span>
                                             </button>
 
                                             <button
@@ -2574,12 +2497,23 @@ export default function RoomPageIFrame() {
 
                                             <button
                                                 onClick={() => {
+                                                    handleToggleTile();
+                                                    setShowMoreMenu(false);
+                                                }}
+                                                className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
+                                            >
+                                                <Icon name="tile-view" theme={theme} className="w-4 h-4 opacity-90" />
+                                                <span>{tile ? "Disable tile view" : "Enable tile view"}</span>
+                                            </button>
+
+                                            <button
+                                                onClick={() => {
                                                     forceReloadJitsi();
                                                     setShowMoreMenu(false);
                                                 }}
                                                 className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
                                             >
-                                                <ReloadSmartIcon theme={theme} className="w-4 h-4 opacity-90" />
+                                                <span className="opacity-80">⟳</span>
                                                 <span>Reload room</span>
                                             </button>
                                         </div>
@@ -2588,35 +2522,49 @@ export default function RoomPageIFrame() {
                             </div>
 
                             <div className="hidden md:flex items-center gap-2">
-                                <button onClick={() => openRightTab("participants")} className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`} title="Participants">
-                                    <ParticipantsSmartIcon theme={theme} className="w-5 h-5" />
+                                <button
+                                    onClick={() => openRightTab("participants")}
+                                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                                    title="Participants"
+                                >
+                                    <ParticipantsSmartIcon theme={theme} className="w-5 h-5 opacity-90" />
                                 </button>
 
-                                <button onClick={() => openRightTab("chat")} className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`} title="Chat">
-                                    <div className="relative">
-                                        <Icon name="chat" theme={theme} className="w-5 h-5" />
-                                        {unreadChat > 0 && (
-                                            <div className={`absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] flex items-center justify-center ${isLight ? "bg-blue-600 text-white" : "bg-emerald-500 text-[#02140B]"}`}>
-                                                {unreadChat > 99 ? "99+" : unreadChat}
-                                            </div>
-                                        )}
-                                    </div>
+                                <button
+                                    onClick={() => openRightTab("chat")}
+                                    className={`relative w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                                    title="Chat"
+                                >
+                                    <Icon name="chat" theme={theme} className="w-5 h-5" />
+                                    {unreadChat > 0 && (
+                                        <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[11px] font-semibold flex items-center justify-center">
+                                            {unreadChat > 99 ? "99+" : unreadChat}
+                                        </span>
+                                    )}
                                 </button>
 
-                                <button onClick={() => openRightTab("intentions")} className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`} title="Intentions">
+                                <button
+                                    onClick={() => openRightTab("intentions")}
+                                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                                    title="Intentions"
+                                >
                                     <Icon name="intentions" theme={theme} className="w-5 h-5" />
                                 </button>
 
-                                <button onClick={forceReloadJitsi} className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`} title="Reload room">
-                                    <ReloadSmartIcon theme={theme} className="w-5 h-5 opacity-90" />
+                                <button
+                                    onClick={handleToggleTile}
+                                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                                    title="Tile view"
+                                >
+                                    <Icon name="tile-view" theme={theme} className="w-5 h-5" />
                                 </button>
                             </div>
                         </div>
 
-                        {/* center: media */}
+                        {/* center media */}
                         <div className="flex items-center justify-center gap-2 sm:gap-3">
                             <button
-                                onClick={toggleMic}
+                                onClick={handleToggleAudio}
                                 className={"w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " + (mutedAudio ? "bg-red-600 hover:bg-red-700" : ctlBtnBase)}
                                 title="Toggle mic"
                             >
@@ -2624,7 +2572,7 @@ export default function RoomPageIFrame() {
                             </button>
 
                             <button
-                                onClick={toggleCamera}
+                                onClick={handleToggleVideo}
                                 className={"w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " + (mutedVideo ? "bg-red-600 hover:bg-red-700" : ctlBtnBase)}
                                 title="Toggle camera"
                             >
@@ -2632,15 +2580,11 @@ export default function RoomPageIFrame() {
                             </button>
 
                             <button
-                                onClick={toggleScreen}
+                                onClick={handleToggleScreenShare}
                                 className={"w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " + (isScreenSharing ? "bg-blue-600 hover:bg-blue-700" : ctlBtnBase)}
                                 title="Share screen"
                             >
                                 <Icon name="screen-share" theme={theme} className="w-5 h-5" />
-                            </button>
-
-                            <button onClick={toggleTile} className={`hidden sm:flex w-10 h-10 sm:w-11 sm:h-11 rounded-2xl items-center justify-center transition ${ctlBtnBase}`} title="Toggle tile view">
-                                <Icon name="tile-view" theme={theme} className="w-5 h-5" />
                             </button>
 
                             <div className="relative" ref={reactionsMenuRef}>
@@ -2657,11 +2601,11 @@ export default function RoomPageIFrame() {
                                         className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
                                             }`}
                                     >
-                                        {(Object.keys(reactionEmoji) as ReactionType[]).map((t) => (
+                                        {(["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown"] as ReactionType[]).map((t) => (
                                             <button
                                                 key={t}
                                                 onClick={() => {
-                                                    void sendReaction(t);
+                                                    sendReaction(t);
                                                     setShowReactionsMenu(false);
                                                 }}
                                                 className="hover:scale-[1.06] transition"
@@ -2675,14 +2619,23 @@ export default function RoomPageIFrame() {
                             </div>
                         </div>
 
-                        {/* right: leave */}
+                        {/* right actions */}
                         <div className="flex items-center justify-end gap-2 sm:gap-3">
-                            <button onClick={onLeaveClick} className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white`} title="Leave">
+                            <button
+                                onClick={handleLeave}
+                                className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${isLight ? "bg-red-600 hover:bg-red-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"
+                                    }`}
+                                title="Leave"
+                            >
                                 <Icon name="leave" theme={theme} className="w-5 h-5" />
                                 <span className="text-[14px]">Leave</span>
                             </button>
 
-                            <button onClick={onLeaveClick} className="sm:hidden w-10 h-10 rounded-2xl bg-red-600 hover:bg-red-700 text-white flex items-center justify-center" title="Leave">
+                            <button
+                                onClick={handleLeave}
+                                className="sm:hidden w-10 h-10 rounded-2xl bg-red-600 hover:bg-red-700 text-white flex items-center justify-center"
+                                title="Leave"
+                            >
                                 <Icon name="leave" theme={theme} className="w-5 h-5" />
                             </button>
                         </div>
