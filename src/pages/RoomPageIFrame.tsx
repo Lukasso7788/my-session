@@ -687,6 +687,55 @@ export default function RoomPageIFrame() {
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [apiReady, setApiReady] = useState(false);
 
+    // ✅ tile view enforcement (startup only)
+    const tileRef = useRef<boolean>(true);
+    const tileEventSeenRef = useRef<boolean>(false);
+    const tileEnforcedOnceRef = useRef<boolean>(false);
+
+    useEffect(() => {
+        tileRef.current = tile;
+    }, [tile]);
+
+    const enforceTileViewOn = (api?: any) => {
+        const a = api || apiRef.current;
+        if (!a) return;
+        if (tileEnforcedOnceRef.current) return;
+        tileEnforcedOnceRef.current = true;
+
+        const trySet = () => {
+            try {
+                a.executeCommand?.("setTileView", true);
+            } catch { }
+        };
+
+        const tryToggle = () => {
+            try {
+                a.executeCommand?.("toggleTileView");
+            } catch { }
+        };
+
+        // always try set (best path)
+        trySet();
+        window.setTimeout(trySet, 220);
+
+        // if we KNOW it's off -> toggle once
+        window.setTimeout(() => {
+            if (tileRef.current === true) return;
+            if (tileEventSeenRef.current) {
+                tryToggle();
+            } else {
+                // no event yet — try set again (safe)
+                trySet();
+            }
+        }, 520);
+
+        // last nudge (only if still off AND we have confirmation)
+        window.setTimeout(() => {
+            if (tileRef.current === true) return;
+            if (tileEventSeenRef.current) tryToggle();
+        }, 980);
+    };
+
     // live participant count
     const [participantsNow, setParticipantsNow] = useState<number>(0);
 
@@ -1792,6 +1841,9 @@ export default function RoomPageIFrame() {
         setIsScreenSharing(false);
         setTile(true);
 
+        tileEventSeenRef.current = false;
+        tileEnforcedOnceRef.current = false;
+
         setJitsiKey((x) => x + 1);
     };
 
@@ -1919,6 +1971,9 @@ export default function RoomPageIFrame() {
                 setLastErr("");
                 setApiReady(false);
 
+                tileEventSeenRef.current = false;
+                tileEnforcedOnceRef.current = false;
+
                 const parent = iframeContainerRef.current!;
                 const domains = domainsForSession(session);
 
@@ -1965,6 +2020,9 @@ export default function RoomPageIFrame() {
 
                     // capacity check after join
                     void maybeKickOrRejectIfOverLimit(api, undefined);
+
+                    // ✅ enforce tile view ON after join (robust)
+                    enforceTileViewOn(api);
                 };
 
                 const onParticipantJoined = (e: any) => {
@@ -1995,6 +2053,7 @@ export default function RoomPageIFrame() {
                 };
 
                 const onTile = (e: any) => {
+                    tileEventSeenRef.current = true;
                     const v = typeof e?.enabled === "boolean" ? e.enabled : typeof e?.on === "boolean" ? e.on : true;
                     setTile(!!v);
                 };
@@ -2023,13 +2082,16 @@ export default function RoomPageIFrame() {
                 api.addEventListener?.("participantRoleChanged", onRole);
                 api.addEventListener?.("readyToClose", onReadyToClose);
 
-                // enforce tile view ON (best-effort)
+                // enforce tile view ON (best-effort early)
                 try {
                     api.executeCommand?.("setTileView", true);
                 } catch { }
 
                 // initial refresh
                 void refreshParticipantsList(api);
+
+                // ✅ second pass enforce (after a short delay, before join event sometimes)
+                window.setTimeout(() => enforceTileViewOn(api), 420);
             } catch (e: any) {
                 console.log("Jitsi create error:", e);
                 setLastErr(String(e?.message || e || "Failed to load Jitsi"));
@@ -2101,7 +2163,7 @@ export default function RoomPageIFrame() {
     const participantsCount = participantsNow || onlineUsers.length || participantRows.length || 0;
 
     const switchTrack =
-        "w-[84px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
+        "w-[84px] max-[480px]:w-[78px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
     const switchTrackCls = isLight ? "bg-black/5 border-black/10 hover:bg-black/10" : "bg-white/5 border-white/10 hover:bg-white/10";
     const switchThumb =
         "absolute top-[2px] w-[26px] h-[26px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center";
@@ -2341,28 +2403,70 @@ export default function RoomPageIFrame() {
         <div className={`h-[100dvh] overflow-hidden ${pageBg}`}>
             <div className="h-full w-full px-3 sm:px-5 pt-5 pb-[calc(110px+env(safe-area-inset-bottom))] flex flex-col gap-5 min-h-0">
                 <div className={`flex w-full rounded-2xl overflow-hidden ${topBarBg}`}>
-                    <div className="flex-1 px-6 py-4">
-                        <div className="flex items-start justify-between gap-4">
-                            <div className="min-w-0">
-                                <div className="flex items-center gap-2 min-w-0">
-                                    <p className={`min-w-0 font-inter font-semibold text-[18px] truncate ${strongText}`}>
-                                        {String(session?.title || "Session")}
-                                    </p>
+                    <div className="flex-1 px-4 sm:px-6 py-3 sm:py-4">
+                        <div className="flex flex-col gap-2 max-[480px]:gap-2">
+                            {/* ROW 1: title + count (always 1 line) */}
+                            <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        <p className={`min-w-0 font-inter font-semibold text-[16px] sm:text-[18px] truncate ${strongText}`}>
+                                            {String(session?.title || "Session")}
+                                        </p>
 
-                                    <span
-                                        className={[
-                                            "shrink-0 px-2 py-[3px] rounded-lg border text-[12px] font-inter",
-                                            chipBg,
-                                            isLight ? "text-black/65" : "text-white/80",
-                                        ].join(" ")}
-                                        title="Participants now / limit"
+                                        <span
+                                            className={[
+                                                "shrink-0 px-2 py-[3px] rounded-lg border text-[12px] font-inter",
+                                                chipBg,
+                                                isLight ? "text-black/65" : "text-white/80",
+                                            ].join(" ")}
+                                            title="Participants now / limit"
+                                        >
+                                            {participantsCount}/{maxParticipants}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* desktop+ : controls stay here */}
+                                <div className="hidden min-[481px]:flex items-center gap-2 shrink-0">
+                                    {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
+                                        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}>
+                                            <Icon name="timer" theme={theme} className="w-4 h-4 opacity-80" alt="Timer" />
+                                            <span className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"}`}>{remainingTime || "--:--"}</span>
+                                        </div>
+                                    )}
+
+                                    <button
+                                        onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+                                        className={`${switchTrack} ${switchTrackCls}`}
+                                        title="Toggle theme"
+                                        aria-label="Toggle theme"
                                     >
-                                        {participantsCount}/{maxParticipants}
-                                    </span>
+                                        <div className={switchThumb} style={{ transform: thumbTranslate }}>
+                                            <Icon name={isLight ? "theme-sun" : "theme-moon"} theme={theme} className="w-4 h-4" />
+                                        </div>
+                                    </button>
+
+                                    {session.host_profile && (
+                                        <button
+                                            onClick={() => setSelectedUser(session.host_profile || null)}
+                                            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition text-[13px] ${isLight
+                                                    ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                                    : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                                }`}
+                                            title="Host profile"
+                                        >
+                                            <ParticipantsSmartIcon theme={theme} className="w-4 h-4 opacity-90" />
+                                            <span className="font-inter">
+                                                <span className="font-light">Host:</span>{" "}
+                                                <span className="font-bold">{String(session.host_profile.full_name || "Host")}</span>
+                                            </span>
+                                        </button>
+                                    )}
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-2 shrink-0">
+                            {/* ROW 2: controls (mobile <=480) */}
+                            <div className="min-[481px]:hidden flex items-center justify-end gap-2">
                                 {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
                                     <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}>
                                         <Icon name="timer" theme={theme} className="w-4 h-4 opacity-80" alt="Timer" />
@@ -2384,29 +2488,30 @@ export default function RoomPageIFrame() {
                                 {session.host_profile && (
                                     <button
                                         onClick={() => setSelectedUser(session.host_profile || null)}
-                                        className={`max-[480px]:hidden flex items-center gap-2 px-3 py-1.5 rounded-xl border transition text-[13px] ${isLight
-                                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                                : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                        className={`w-10 h-10 rounded-2xl flex items-center justify-center border transition ${isLight
+                                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70"
+                                                : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-white/85"
                                             }`}
-                                        title="Host profile"
+                                        title={`Host: ${String(session.host_profile.full_name || "Host")}`}
+                                        aria-label="Host profile"
                                     >
-                                        <ParticipantsSmartIcon theme={theme} className="w-4 h-4 opacity-90" />
-                                        <span className="font-inter">
-                                            <span className="font-light">Host:</span>{" "}
-                                            <span className="font-bold">{String(session.host_profile.full_name || "Host")}</span>
-                                        </span>
+                                        <ParticipantsSmartIcon theme={theme} className="w-5 h-5 opacity-90" />
                                     </button>
                                 )}
                             </div>
-                        </div>
 
-                        {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
-                            <div className="mt-3 w-full overflow-hidden">
-                                <div className="w-full overflow-hidden">
-                                    <SessionStageBar stages={stages} startTime={stagebarStartTime} cycleSeconds={stagebarCycleSeconds} onHoverStage={setHoveredStage} />
+                            {/* ROW 3: stage bar (full width) */}
+                            {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
+                                <div className="mt-1 max-[480px]:mt-1 w-full overflow-hidden">
+                                    <SessionStageBar
+                                        stages={stages}
+                                        startTime={stagebarStartTime}
+                                        cycleSeconds={stagebarCycleSeconds}
+                                        onHoverStage={setHoveredStage}
+                                    />
                                 </div>
-                            </div>
-                        )}
+                            )}
+                        </div>
                     </div>
                 </div>
 
