@@ -2450,8 +2450,8 @@ export default function RoomPageIFrame() {
                                         <button
                                             onClick={() => setSelectedUser(session.host_profile || null)}
                                             className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition text-[13px] ${isLight
-                                                    ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                                    : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                                : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                                 }`}
                                             title="Host profile"
                                         >
@@ -2466,7 +2466,7 @@ export default function RoomPageIFrame() {
                             </div>
 
                             {/* ROW 2: controls (mobile <=480) */}
-                            <div className="min-[481px]:hidden flex items-center justify-end gap-2">
+                            <div className="min-[481px]:hidden flex items-center justify-start gap-2">
                                 {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
                                     <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}>
                                         <Icon name="timer" theme={theme} className="w-4 h-4 opacity-80" alt="Timer" />
@@ -2489,8 +2489,8 @@ export default function RoomPageIFrame() {
                                     <button
                                         onClick={() => setSelectedUser(session.host_profile || null)}
                                         className={`w-10 h-10 rounded-2xl flex items-center justify-center border transition ${isLight
-                                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70"
-                                                : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-white/85"
+                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70"
+                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-white/85"
                                             }`}
                                         title={`Host: ${String(session.host_profile.full_name || "Host")}`}
                                         aria-label="Host profile"
