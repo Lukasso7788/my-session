@@ -1205,49 +1205,62 @@ export function RoomPage() {
     if (!joinRequested) return;
     if (engineRef.current) return;
 
-    const engine = new JitsiEngine({
-      onParticipantsUpdate: (list) => {
-        if (prevCountRef.current < 2 && list.length === 2) {
-          playOneShot("/sounds/user_joined.mp3", 0.9);
-        }
-        prevCountRef.current = list.length;
+    const JITSI_DOMAIN =
+      ((import.meta as any)?.env?.VITE_JITSI_DOMAIN as string) ||
+      (window as any).__JITSI_DOMAIN ||
+      "jitsi.mysession.club";
 
-        const sharer = list.find((p) => p.isScreenSharing);
-        setActiveScreenSharer(sharer ? sharer.id : null);
-
-        const updated = list.map((p) => {
-          if (!p.isLocal && p.displayName === "Guest") {
-            const hp = session.host_profile;
-            if (hp?.full_name && hp.id === p.id) {
-              return { ...p, displayName: hp.full_name };
-            }
+    const engine = new JitsiEngine(
+      {
+        onParticipantsUpdate: (list) => {
+          if (prevCountRef.current < 2 && list.length === 2) {
+            playOneShot("/sounds/user_joined.mp3", 0.9);
           }
-          return p;
-        });
+          prevCountRef.current = list.length;
 
-        setParticipants(updated);
+          const sharer = list.find((p) => p.isScreenSharing);
+          setActiveScreenSharer(sharer ? sharer.id : null);
+
+          const updated = list.map((p) => {
+            if (!p.isLocal && p.displayName === "Guest") {
+              const hp = session.host_profile;
+              if (hp?.full_name && hp.id === p.id) {
+                return { ...p, displayName: hp.full_name };
+              }
+            }
+            return p;
+          });
+
+          setParticipants(updated);
+        },
+
+        onConferenceJoin: () => {
+          setTimeout(() => loadDevices(), 0);
+        },
+
+        onReactionReceived: (_fromId, reaction) => {
+          const newId = reactionIdRef.current + 1;
+          reactionIdRef.current = newId;
+
+          setIncomingReactions((prev) => [...prev, { id: newId, type: reaction as ReactionType }]);
+
+          setTimeout(() => {
+            setIncomingReactions((prev) => prev.filter((r) => r.id !== newId));
+          }, 1500);
+        },
+
+        onError: (msg) => {
+          console.error("Jitsi error:", msg);
+          setLastErr(msg);
+        },
       },
-
-      onConferenceJoin: () => {
-        setTimeout(() => loadDevices(), 0);
-      },
-
-      onReactionReceived: (_fromId, reaction) => {
-        const newId = reactionIdRef.current + 1;
-        reactionIdRef.current = newId;
-
-        setIncomingReactions((prev) => [...prev, { id: newId, type: reaction as ReactionType }]);
-
-        setTimeout(() => {
-          setIncomingReactions((prev) => prev.filter((r) => r.id !== newId));
-        }, 1500);
-      },
-
-      onError: (msg) => {
-        console.error("Jitsi error:", msg);
-        setLastErr(msg);
-      },
-    });
+      {
+        jitsiDomain: JITSI_DOMAIN,
+        // необязательно, но можно явно:
+        // configPath: "/config.js",
+        // libPath: "/libs/lib-jitsi-meet.min.js",
+      }
+    );
 
     // apply persisted settings BEFORE join (devices + bg prefs)
     try {

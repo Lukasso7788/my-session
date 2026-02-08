@@ -76,7 +76,7 @@ function pickDefaultJitsiDomain(): string {
     // ignore
   }
 
-  return (fromVite || fromGlobal || "meet-eu.mysession.club").trim();
+  return (fromVite || fromGlobal || "jitsi.mysession.club").trim();
 }
 
 const DEFAULT_JITSI_DOMAIN = pickDefaultJitsiDomain();
