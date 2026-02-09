@@ -2401,7 +2401,7 @@ export default function RoomPageIFrame() {
 
     return (
         <div className={`h-[100dvh] overflow-hidden ${pageBg}`}>
-            <div className="h-full w-full px-3 sm:px-5 pt-5 pb-[calc(110px+env(safe-area-inset-bottom))] flex flex-col gap-5 min-h-0">
+            <div className="h-full w-full px-2 sm:px-3 pt-2 pb-[calc(72px+env(safe-area-inset-bottom))] sm:pb-[calc(82px+env(safe-area-inset-bottom))] flex flex-col gap-2 min-h-0">
                 <div className={`flex w-full rounded-2xl overflow-hidden ${topBarBg}`}>
                     <div className="flex-1 px-4 sm:px-6 py-3 sm:py-4">
                         <div className="flex flex-col gap-2 max-[480px]:gap-2">
@@ -2517,7 +2517,7 @@ export default function RoomPageIFrame() {
 
                 <div
                     className={
-                        "relative grid grid-rows-1 gap-5 flex-1 min-h-0 h-full " +
+                        "relative grid grid-rows-1 gap-2 sm:gap-3 flex-1 min-h-0 h-full " +
                         (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
                     }
                 >
@@ -2568,7 +2568,7 @@ export default function RoomPageIFrame() {
 
             {/* bottom bar */}
             <div className="fixed inset-x-0 bottom-0 z-50">
-                <div className="w-full px-3 sm:px-5 pb-[calc(12px+env(safe-area-inset-bottom))]">
+                <div className="w-full px-2 sm:px-3 pb-[calc(8px+env(safe-area-inset-bottom))]">
                     <div className={`h-[64px] sm:h-[74px] rounded-2xl shadow-2xl backdrop-blur grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4 ${bottomBarBg}`}>
                         {/* left group */}
                         <div className="flex items-center gap-2" ref={moreMenuRef}>
