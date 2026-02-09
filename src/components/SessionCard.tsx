@@ -796,6 +796,18 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
     const sb = getSupabase();
     if (!sb) return [];
     await ensureAuthReady(sb);
+    // ✅ 0) Try SECURITY DEFINER RPC first (bypasses RLS issues)
+    const { data: rpcData, error: rpcErr } = await sb.rpc("get_live_users", {
+        p_session_id: sessionId,
+    });
+
+    if (!rpcErr && Array.isArray(rpcData)) {
+        return (rpcData || []).map((r: any) => ({
+            id: String(r.user_id),
+            full_name: r.full_name ?? undefined,
+            avatar_url: r.avatar_url ?? undefined,
+        }));
+    }
 
     const cutoffMs = Date.now() - LIVE_ACTIVE_WINDOW_MS;
 
