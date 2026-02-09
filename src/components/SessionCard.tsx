@@ -752,7 +752,6 @@ function parseDbCount(v: any): number | null {
         const s = v.trim();
         if (!s) return null;
 
-        // allow "12", "12.0"
         const n = Number(s);
         return Number.isFinite(n) ? n : null;
     }
@@ -761,7 +760,7 @@ function parseDbCount(v: any): number | null {
 }
 
 const LIVE_ACTIVE_WINDOW_MS = 2 * 60 * 1000; // last_seen_at within 2 minutes = "in session now"
-const LIVE_FALLBACK_JOIN_MAX_AGE_MS = 24 * 60 * 60 * 1000; // ✅ if last_seen_at missing/null, accept joined_at within 24h
+const LIVE_FALLBACK_JOIN_MAX_AGE_MS = 24 * 60 * 60 * 1000; // ✅ if last_seen_at missing/null, accept joined_at/created_at within 24h
 
 function isColumnMissingErr(err: any, col: string): boolean {
     const status = (err as any)?.status;
@@ -778,12 +777,15 @@ function filterActiveRows(rows: any[], cutoffMs: number): any[] {
 
     return (rows || []).filter((r: any) => {
         if (!r) return false;
+
+        // left_at might not exist in your schema
         if (r?.left_at) return false;
 
         const ls = parseTimeMs(r?.last_seen_at);
         if (ls != null) return ls >= cutoffMs;
 
-        const j = parseTimeMs(r?.joined_at);
+        // joined_at might not exist; created_at is a good fallback in your current schema
+        const j = parseTimeMs(r?.joined_at ?? r?.created_at);
         if (j != null) return j >= joinCutoffMs;
 
         return true;
@@ -797,56 +799,118 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
 
     const cutoffMs = Date.now() - LIVE_ACTIVE_WINDOW_MS;
 
-    // 1) Try session_attendance
+    // IMPORTANT:
+    // Your current session_attendance schema (from your dump) has:
+    //   session_id, user_id, last_seen_at, created_at
+    // and does NOT have: left_at, joined_at
+    //
+    // So we must gracefully handle missing columns and still fetch profiles.
+
+    // 1) Try session_attendance (new/simple schema first)
     {
-        const selectWith =
-            "user_id, profiles:profiles(id, full_name, avatar_url), left_at, joined_at, last_seen_at";
-        const selectWithout =
-            "user_id, profiles:profiles(id, full_name, avatar_url), left_at, joined_at";
+        // ✅ Minimal select for your schema
+        const selectSimple =
+            "user_id, profiles:profiles(id, full_name, avatar_url), last_seen_at, created_at";
 
         let res = await sb
             .from("session_attendance")
-            .select(selectWith)
+            .select(selectSimple)
             .eq("session_id", sessionId)
-            .is("left_at", null)
-            .order("joined_at", { ascending: false });
+            .order("last_seen_at", { ascending: false });
 
+        // if last_seen_at doesn't exist, try ordering by created_at
         if (res.error && isColumnMissingErr(res.error, "last_seen_at")) {
             res = await sb
                 .from("session_attendance")
-                .select(selectWithout)
+                .select("user_id, profiles:profiles(id, full_name, avatar_url), created_at")
                 .eq("session_id", sessionId)
-                .is("left_at", null)
-                .order("joined_at", { ascending: false });
+                .order("created_at", { ascending: false });
         }
 
+        // If the table exists and query succeeded
         if (!res.error && Array.isArray(res.data)) {
             const rows = filterActiveRows(res.data, cutoffMs);
             return normalizeUsers(rows);
         }
-    }
 
-    // 2) Fallback to session_participants
-    {
-        const selectWith =
-            "user_id, profiles:profiles(id, full_name, avatar_url), left_at, joined_at, last_seen_at";
-        const selectWithout =
-            "user_id, profiles:profiles(id, full_name, avatar_url), left_at, joined_at";
+        // 1b) Try legacy schema with left_at/joined_at (if your prod has it)
+        const selectLegacy =
+            "user_id, profiles:profiles(id, full_name, avatar_url), left_at, joined_at, last_seen_at, created_at";
 
-        let res = await sb
-            .from("session_participants")
-            .select(selectWith)
+        let legacy = await sb
+            .from("session_attendance")
+            .select(selectLegacy)
             .eq("session_id", sessionId)
             .is("left_at", null)
             .order("joined_at", { ascending: false });
 
+        // If left_at missing => drop filter + select it out
+        if (legacy.error && isColumnMissingErr(legacy.error, "left_at")) {
+            legacy = await sb
+                .from("session_attendance")
+                .select("user_id, profiles:profiles(id, full_name, avatar_url), joined_at, last_seen_at, created_at")
+                .eq("session_id", sessionId)
+                .order("joined_at", { ascending: false });
+        }
+
+        // If joined_at missing => order by created_at
+        if (legacy.error && isColumnMissingErr(legacy.error, "joined_at")) {
+            legacy = await sb
+                .from("session_attendance")
+                .select("user_id, profiles:profiles(id, full_name, avatar_url), last_seen_at, created_at")
+                .eq("session_id", sessionId)
+                .order("created_at", { ascending: false });
+        }
+
+        // If last_seen_at missing => just created_at
+        if (legacy.error && isColumnMissingErr(legacy.error, "last_seen_at")) {
+            legacy = await sb
+                .from("session_attendance")
+                .select("user_id, profiles:profiles(id, full_name, avatar_url), created_at")
+                .eq("session_id", sessionId)
+                .order("created_at", { ascending: false });
+        }
+
+        if (!legacy.error && Array.isArray(legacy.data)) {
+            const rows = filterActiveRows(legacy.data, cutoffMs);
+            return normalizeUsers(rows);
+        }
+    }
+
+    // 2) Fallback to session_participants (some deployments use this)
+    {
+        const selectLegacy =
+            "user_id, profiles:profiles(id, full_name, avatar_url), left_at, joined_at, last_seen_at, created_at";
+
+        let res = await sb
+            .from("session_participants")
+            .select(selectLegacy)
+            .eq("session_id", sessionId)
+            .is("left_at", null)
+            .order("joined_at", { ascending: false });
+
+        if (res.error && isColumnMissingErr(res.error, "left_at")) {
+            res = await sb
+                .from("session_participants")
+                .select("user_id, profiles:profiles(id, full_name, avatar_url), joined_at, last_seen_at, created_at")
+                .eq("session_id", sessionId)
+                .order("joined_at", { ascending: false });
+        }
+
+        if (res.error && isColumnMissingErr(res.error, "joined_at")) {
+            res = await sb
+                .from("session_participants")
+                .select("user_id, profiles:profiles(id, full_name, avatar_url), last_seen_at, created_at")
+                .eq("session_id", sessionId)
+                .order("created_at", { ascending: false });
+        }
+
         if (res.error && isColumnMissingErr(res.error, "last_seen_at")) {
             res = await sb
                 .from("session_participants")
-                .select(selectWithout)
+                .select("user_id, profiles:profiles(id, full_name, avatar_url), created_at")
                 .eq("session_id", sessionId)
-                .is("left_at", null)
-                .order("joined_at", { ascending: false });
+                .order("created_at", { ascending: false });
         }
 
         if (!res.error && Array.isArray(res.data)) {
@@ -1458,6 +1522,7 @@ export default function SessionCard({
     const bookedStackUsers = bookers.slice(0, maxStack);
     const bookedRemaining = Math.max(0, bookedCount - bookedStackUsers.length);
 
+    // Show live avatars only when we actually have them
     const liveStackUsers = liveUsers.slice(0, maxStack);
     const liveRemaining = Math.max(0, liveNowCount - liveStackUsers.length);
 
@@ -1575,6 +1640,7 @@ export default function SessionCard({
                     </div>
                 ) : (
                     <>
+                        {/* ✅ Show avatars if we have profiles; otherwise only the count */}
                         {liveStackUsers.length > 0 && (
                             <div className="flex items-center">
                                 {liveStackUsers.map((u, idx) => (
