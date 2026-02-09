@@ -2401,7 +2401,7 @@ export default function RoomPageIFrame() {
 
     return (
         <div className={`h-[100dvh] overflow-hidden ${pageBg}`}>
-            <div className="h-full w-full px-2 sm:px-3 pt-2 pb-[calc(72px+env(safe-area-inset-bottom))] sm:pb-[calc(82px+env(safe-area-inset-bottom))] flex flex-col gap-2 min-h-0">
+            <div className="h-full w-full px-2 sm:px-3 pt-2 pb-[calc(80px+env(safe-area-inset-bottom))] sm:pb-[calc(90px+env(safe-area-inset-bottom))] flex flex-col gap-2 min-h-0">
                 <div className={`flex w-full rounded-2xl overflow-hidden ${topBarBg}`}>
                     <div className="flex-1 px-4 sm:px-6 py-3 sm:py-4">
                         <div className="flex flex-col gap-2 max-[480px]:gap-2">
