@@ -140,15 +140,12 @@ function InfiniteRoomsIntroCard() {
               <InfinityIcon className="w-5 h-5" />
             </div>
 
-            <h2 className="font-inter font-semibold text-[20px] sm:text-[24px] text-brandBlack">
-              24/7 Focus Rooms
-            </h2>
+            <h2 className="font-inter font-semibold text-[20px] sm:text-[24px] text-brandBlack">24/7 Focus Rooms</h2>
           </div>
 
           <p className="font-inter font-light text-[14px] sm:text-[16px] leading-[160%] text-brandBlack text-center max-w-[860px] mx-auto">
-            24/7 Focus Rooms are always open, giving you a structured space to focus whenever inspiration strikes.
-            Join at any time, follow the built-in workflow (Pomodoro or Deep Work), stay accountable with others,
-            and keep your momentum going — day or night.
+            24/7 Focus Rooms are always open, giving you a structured space to focus whenever inspiration strikes. Join at any time,
+            follow the built-in workflow (Pomodoro or Deep Work), stay accountable with others, and keep your momentum going — day or night.
           </p>
 
           <div className="w-full flex justify-center">
@@ -163,12 +160,8 @@ function InfiniteRoomsIntroCard() {
                   </div>
 
                   <div className="flex flex-col min-w-0 gap-1.5 sm:gap-2">
-                    <div className="font-inter font-semibold text-[13px] sm:text-[14px] text-brandBlack leading-snug">
-                      {f.title}
-                    </div>
-                    <div className="font-inter font-light text-[11px] sm:text-[12px] text-brandBlack/70 leading-snug">
-                      {f.subtitle}
-                    </div>
+                    <div className="font-inter font-semibold text-[13px] sm:text-[14px] text-brandBlack leading-snug">{f.title}</div>
+                    <div className="font-inter font-light text-[11px] sm:text-[12px] text-brandBlack/70 leading-snug">{f.subtitle}</div>
                   </div>
                 </div>
               ))}
@@ -189,16 +182,12 @@ function combineLocalDateTimeToISO(dateYMD: string, timeHHMM: string) {
 }
 
 function buildBodySchedule(duration: 25 | 50) {
-  // Главное: schedule НЕ null (колонка NOT NULL).
-  // Дальше — минимально адекватная структура (в будущем можно подключить к реальному таймеру).
   const kind = duration === 25 ? "pomodoro" : "deep_work";
   return {
     kind: "body_session",
     preset: kind,
     timer: {
-      phases: [
-        { name: "focus", minutes: duration, mode: kind },
-      ],
+      phases: [{ name: "focus", minutes: duration, mode: kind }],
     },
   };
 }
@@ -216,8 +205,13 @@ export function SessionsPage() {
   const [dateFilter, setDateFilter] = useState<string | null>(null);
 
   const [currentProfile, setCurrentProfile] = useState<BookingProfile | null>(null);
-
   const [howItWorksOpen, setHowItWorksOpen] = useState(false);
+
+  // ================
+  // Debug helper state (visible on page)
+  // ================
+  const [debugRpc, setDebugRpc] = useState<any>(null);
+  const [debugLastIds, setDebugLastIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (!howItWorksOpen) return;
@@ -275,14 +269,32 @@ export function SessionsPage() {
   const fetchLiveCounts = useCallback(async (sessionIds: string[]) => {
     if (!sessionIds.length) return;
 
+    // Keep last ids for debug panel
+    setDebugLastIds(sessionIds);
+
     try {
+      if (DEBUG) console.log("[DEBUG Sessions] get_live_counts args:", sessionIds);
+
       const { data, error } = await supabase.rpc("get_live_counts", {
         p_session_ids: sessionIds,
       });
+
+      if (DEBUG) console.log("[DEBUG Sessions] get_live_counts result:", { data, error });
+
+      setDebugRpc({
+        at: new Date().toISOString(),
+        argsCount: sessionIds.length,
+        data,
+        error: error ? { message: (error as any).message, details: (error as any).details, hint: (error as any).hint, code: (error as any).code } : null,
+      });
+
       if (error) throw error;
 
       const map = new Map<string, number>();
-      for (const row of data || []) map.set(row.session_id, row.live_count);
+      for (const row of (data as any[]) || []) {
+        // ожидаем: { session_id: uuid, live_count: int }
+        map.set(row.session_id, row.live_count);
+      }
 
       setSessions((prev) =>
         prev.map((s) => ({
@@ -334,7 +346,8 @@ export function SessionsPage() {
       if (error) throw error;
 
       const rows = (data || []) as unknown as SessionWithRelations[];
-      if (DEBUG) console.log("[DEBUG Sessions] Loaded:", rows);
+      if (DEBUG) console.log("[DEBUG Sessions] Loaded rows count:", rows.length);
+      if (DEBUG) console.log("[DEBUG Sessions] Loaded sample:", rows?.[0]);
 
       setSessions(rows);
 
@@ -415,11 +428,7 @@ export function SessionsPage() {
   const cancel = async (id: string) => {
     if (!user) return navigate("/login");
     try {
-      const { error } = await supabase
-        .from("session_bookings")
-        .delete()
-        .eq("session_id", id)
-        .eq("user_id", user.id);
+      const { error } = await supabase.from("session_bookings").delete().eq("session_id", id).eq("user_id", user.id);
 
       if (error) throw error;
       await fetchSessions();
@@ -439,10 +448,7 @@ export function SessionsPage() {
     }
   };
 
-  const editSession = async (
-    sessionId: string,
-    updates: { title?: string; start_time?: string; max_participants?: number | null }
-  ) => {
+  const editSession = async (sessionId: string, updates: { title?: string; start_time?: string; max_participants?: number | null }) => {
     if (!user) return navigate("/login");
     if (!updates || Object.keys(updates).length === 0) return;
 
@@ -494,7 +500,6 @@ export function SessionsPage() {
       ((user as any)?.email || "").trim() ||
       "Host";
 
-    // Title (как ты просил): "25min session" / "50min session"
     const title = payload.duration === 25 ? "25min session" : "50min session";
 
     const { error } = await supabase.from("sessions").insert({
@@ -508,8 +513,6 @@ export function SessionsPage() {
       status: "planned",
       is_silent: false,
       max_participants: 3,
-
-      // ✅ FIX: schedule NOT NULL
       schedule: buildBodySchedule(payload.duration),
     });
 
@@ -523,9 +526,48 @@ export function SessionsPage() {
 
   const topPad = sessionTypeTab === "group" ? "pt-[100px] pb-[50px]" : "pt-[56px] pb-[18px]";
 
+  // Extra debug: log session live_count snapshot when sessions change
+  useEffect(() => {
+    if (!DEBUG) return;
+    console.log("[DEBUG Sessions] live_count snapshot:", sessions.slice(0, 10).map((s) => ({ id: s.id, live_count: s.live_count, title: s.title })));
+  }, [sessions]);
+
   return (
     <div className="min-h-screen bg-white text-brandBlack font-inter">
       <main className="w-full px-3 md:px-6 lg:px-10 pb-12">
+        {/* DEBUG PANEL (top) */}
+        {DEBUG && (
+          <div className="mb-4 rounded-[14px] border border-[#E6E6E6] bg-[#FAFAFA] p-3 text-left">
+            <div className="text-[12px] font-semibold text-[#111827] mb-2">DEBUG: Sessions + live_count</div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <pre className="text-[11px] leading-snug bg-white border rounded p-2 overflow-auto max-h-[240px]">
+                {JSON.stringify(
+                  {
+                    sessionsCount: sessions.length,
+                    visibleCount: visibleSessions.length,
+                    tab: sessionTypeTab,
+                    dateFilter,
+                    first10: sessions.slice(0, 10).map((s) => ({ id: s.id, title: s.title, live_count: s.live_count })),
+                  },
+                  null,
+                  2
+                )}
+              </pre>
+
+              <pre className="text-[11px] leading-snug bg-white border rounded p-2 overflow-auto max-h-[240px]">
+                {JSON.stringify(
+                  {
+                    lastRpc: debugRpc,
+                    lastIdsSample: debugLastIds.slice(0, 10),
+                  },
+                  null,
+                  2
+                )}
+              </pre>
+            </div>
+          </div>
+        )}
+
         <div className={`text-center ${topPad}`}>
           {sessionTypeTab === "group" && (
             <h1 className="text-[24px] md:text-[28px] xl:text-[36px] font-normal leading-tight mx-auto">
@@ -580,8 +622,7 @@ export function SessionsPage() {
                 ) : visibleSessions.length === 0 ? (
                   <div className="p-2 text-center">
                     <p className="text-sm text-slate-600 mb-4">
-                      No active sessions{" "}
-                      {dateFilter && sessionTypeTab === "group" ? "for this date" : "available"}
+                      No active sessions {dateFilter && sessionTypeTab === "group" ? "for this date" : "available"}
                     </p>
 
                     {user && (
@@ -593,28 +634,35 @@ export function SessionsPage() {
                 ) : (
                   <div className="space-y-3 md:space-y-6">
                     {visibleSessions.map((s) => (
-                      <SessionCard
-                        key={s.id}
-                        session={s}
-                        userId={user?.id}
-                        currentUser={
-                          user?.id
-                            ? {
-                              id: user.id,
-                              full_name: currentProfile?.full_name || undefined,
-                              avatar_url: currentProfile?.avatar_url || undefined,
-                              email:
-                                (currentProfile?.email || (user as any)?.email || undefined) as any,
-                            }
-                            : undefined
-                        }
-                        onJoin={join}
-                        onBook={book}
-                        onCancelBooking={cancel}
-                        onDelete={remove}
-                        onEditSession={editSession}
-                        onInviteToSession={inviteToSession}
-                      />
+                      <div key={s.id}>
+                        {/* ultra-simple per-card debug line */}
+                        {DEBUG && (
+                          <div className="mb-1 text-[11px] opacity-70">
+                            {s.title} — live_count={String(s.live_count ?? "undefined")}
+                          </div>
+                        )}
+
+                        <SessionCard
+                          session={s}
+                          userId={user?.id}
+                          currentUser={
+                            user?.id
+                              ? {
+                                id: user.id,
+                                full_name: currentProfile?.full_name || undefined,
+                                avatar_url: currentProfile?.avatar_url || undefined,
+                                email: (currentProfile?.email || (user as any)?.email || undefined) as any,
+                              }
+                              : undefined
+                          }
+                          onJoin={join}
+                          onBook={book}
+                          onCancelBooking={cancel}
+                          onDelete={remove}
+                          onEditSession={editSession}
+                          onInviteToSession={inviteToSession}
+                        />
+                      </div>
                     ))}
                   </div>
                 )}
@@ -679,9 +727,7 @@ export function SessionsPage() {
             >
               <div className="px-6 py-5 sm:px-8 sm:py-6 flex items-start justify-between gap-4 border-b border-[#ECECEC]">
                 <div className="min-w-0">
-                  <h3 className="text-[18px] sm:text-[20px] font-semibold text-[#111827]">
-                    How MySession works
-                  </h3>
+                  <h3 className="text-[18px] sm:text-[20px] font-semibold text-[#111827]">How MySession works</h3>
                   <p className="text-[12px] sm:text-[13px] text-[#111827]/70 mt-1 leading-relaxed">
                     Step-by-step: create → join → follow stages → finish.
                   </p>
@@ -703,12 +749,7 @@ export function SessionsPage() {
                   title="Close"
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                    <path
-                      d="M18 6 6 18M6 6l12 12"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                    />
+                    <path d="M18 6 6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                   </svg>
                 </button>
               </div>
@@ -716,16 +757,12 @@ export function SessionsPage() {
               <div className="px-6 py-6 sm:px-8 sm:py-8 max-h-[75vh] overflow-auto">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827] mb-3">
-                      1) Choose a session
-                    </div>
+                    <div className="text-[13px] font-semibold text-[#111827] mb-3">1) Choose a session</div>
                     <ul className="text-[13px] text-[#111827]/80 leading-relaxed list-disc pl-5 space-y-2">
                       <li>
                         Pick a tab: <b>Group</b>, <b>Infinite</b> (24/7), or <b>body</b>.
                       </li>
-                      <li>
-                        Group/body sessions are scheduled (date/time). Infinite rooms are always open.
-                      </li>
+                      <li>Group/body sessions are scheduled (date/time). Infinite rooms are always open.</li>
                       <li>
                         You can <b>Book session</b> (optional) to save it — or just join.
                       </li>
@@ -735,7 +772,9 @@ export function SessionsPage() {
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
                     <div className="text-[13px] font-semibold text-[#111827] mb-3">2) Join & set up</div>
                     <ul className="text-[13px] text-[#111827]/80 leading-relaxed list-disc pl-5 space-y-2">
-                      <li>Click <b>Join session</b>.</li>
+                      <li>
+                        Click <b>Join session</b>.
+                      </li>
                       <li>Turn mic/cam on/off as you prefer. Screen-share is optional.</li>
                       <li>You’ll see the session flow: timer/stages (depending on room type).</li>
                     </ul>
@@ -745,8 +784,12 @@ export function SessionsPage() {
                     <div className="text-[13px] font-semibold text-[#111827] mb-3">3) Follow the workflow</div>
                     <ul className="text-[13px] text-[#111827]/80 leading-relaxed list-disc pl-5 space-y-2">
                       <li>Use stage prompts to stay aligned (check-in / intentions).</li>
-                      <li>During <b>Focus</b>, work silently or lightly co-work.</li>
-                      <li>During <b>Break</b>, rest/reset. Then go back to focus.</li>
+                      <li>
+                        During <b>Focus</b>, work silently or lightly co-work.
+                      </li>
+                      <li>
+                        During <b>Break</b>, rest/reset. Then go back to focus.
+                      </li>
                     </ul>
                   </div>
 
@@ -763,12 +806,8 @@ export function SessionsPage() {
                 <div className="my-7 border-t border-[#ECECEC]" />
 
                 <div className="flex items-center justify-between gap-4">
-                  <h4 className="text-[14px] sm:text-[15px] font-semibold text-[#111827]">
-                    Stages glossary (what each block means)
-                  </h4>
-                  <span className="text-[12px] text-[#111827]/60">
-                    (Some rooms may hide stages — e.g. silent rooms)
-                  </span>
+                  <h4 className="text-[14px] sm:text-[15px] font-semibold text-[#111827]">Stages glossary (what each block means)</h4>
+                  <span className="text-[12px] text-[#111827]/60">(Some rooms may hide stages — e.g. silent rooms)</span>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
