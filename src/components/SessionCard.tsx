@@ -799,16 +799,8 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
 
     const cutoffMs = Date.now() - LIVE_ACTIVE_WINDOW_MS;
 
-    // IMPORTANT:
-    // Your current session_attendance schema (from your dump) has:
-    //   session_id, user_id, last_seen_at, created_at
-    // and does NOT have: left_at, joined_at
-    //
-    // So we must gracefully handle missing columns and still fetch profiles.
-
-    // 1) Try session_attendance (new/simple schema first)
+    // 1) Try session_attendance
     {
-        // ✅ Minimal select for your schema
         const selectSimple =
             "user_id, profiles:profiles(id, full_name, avatar_url), last_seen_at, created_at";
 
@@ -818,7 +810,6 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
             .eq("session_id", sessionId)
             .order("last_seen_at", { ascending: false });
 
-        // if last_seen_at doesn't exist, try ordering by created_at
         if (res.error && isColumnMissingErr(res.error, "last_seen_at")) {
             res = await sb
                 .from("session_attendance")
@@ -827,13 +818,12 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
                 .order("created_at", { ascending: false });
         }
 
-        // If the table exists and query succeeded
         if (!res.error && Array.isArray(res.data)) {
             const rows = filterActiveRows(res.data, cutoffMs);
             return normalizeUsers(rows);
         }
 
-        // 1b) Try legacy schema with left_at/joined_at (if your prod has it)
+        // legacy attempt
         const selectLegacy =
             "user_id, profiles:profiles(id, full_name, avatar_url), left_at, joined_at, last_seen_at, created_at";
 
@@ -844,7 +834,6 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
             .is("left_at", null)
             .order("joined_at", { ascending: false });
 
-        // If left_at missing => drop filter + select it out
         if (legacy.error && isColumnMissingErr(legacy.error, "left_at")) {
             legacy = await sb
                 .from("session_attendance")
@@ -853,7 +842,6 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
                 .order("joined_at", { ascending: false });
         }
 
-        // If joined_at missing => order by created_at
         if (legacy.error && isColumnMissingErr(legacy.error, "joined_at")) {
             legacy = await sb
                 .from("session_attendance")
@@ -862,7 +850,6 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
                 .order("created_at", { ascending: false });
         }
 
-        // If last_seen_at missing => just created_at
         if (legacy.error && isColumnMissingErr(legacy.error, "last_seen_at")) {
             legacy = await sb
                 .from("session_attendance")
@@ -877,7 +864,7 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
         }
     }
 
-    // 2) Fallback to session_participants (some deployments use this)
+    // 2) Fallback to session_participants
     {
         const selectLegacy =
             "user_id, profiles:profiles(id, full_name, avatar_url), left_at, joined_at, last_seen_at, created_at";
@@ -936,14 +923,14 @@ type StageKind =
     | "custom";
 
 const KIND_META: Record<StageKind, { label: string; color: string }> = {
-    welcome: { label: "Welcome", color: "#34D399" }, // emerald
-    intentions: { label: "Intentions", color: "#38BDF8" }, // sky
-    focus: { label: "Focus", color: "#3B82F6" }, // blue
-    break: { label: "Break", color: "#FDA4AF" }, // rose
-    checkin: { label: "Check-in", color: "#38BDF8" }, // sky
-    recap: { label: "Recap", color: "#A78BFA" }, // violet
-    celebrate: { label: "Celebrate", color: "#F472B6" }, // pink
-    custom: { label: "Custom", color: "#6366F1" }, // indigo
+    welcome: { label: "Welcome", color: "#34D399" },
+    intentions: { label: "Intentions", color: "#38BDF8" },
+    focus: { label: "Focus", color: "#3B82F6" },
+    break: { label: "Break", color: "#FDA4AF" },
+    checkin: { label: "Check-in", color: "#38BDF8" },
+    recap: { label: "Recap", color: "#A78BFA" },
+    celebrate: { label: "Celebrate", color: "#F472B6" },
+    custom: { label: "Custom", color: "#6366F1" },
 };
 
 function normKey(raw: any) {
@@ -1161,6 +1148,7 @@ export default function SessionCard({
 
     const [stages, setStages] = useState<SessionStage[]>([]);
     const [liveUsers, setLiveUsers] = useState<BookedUser[]>([]);
+    const [isLiveLoading, setIsLiveLoading] = useState(false); // ✅ NEW
     const [peopleTab, setPeopleTab] = useState<"booked" | "live">("booked");
     const [peopleTabPinned, setPeopleTabPinned] = useState(false);
 
@@ -1350,7 +1338,7 @@ export default function SessionCard({
         });
     }, [stages]);
 
-    // ✅ Poll live users
+    // ✅ Poll live users (background)
     const shouldPollLive = useMemo(() => {
         if (!session?.id) return false;
         if (isInfinite) return true;
@@ -1392,6 +1380,39 @@ export default function SessionCard({
             window.clearInterval(timer);
         };
     }, [session?.id, shouldPollLive, isInfinite]);
+
+    // ✅ NEW: On-demand fetch when modal is open AND "live" tab selected
+    useEffect(() => {
+        if (!session?.id) return;
+        if (!isBookersModalOpen) return;
+        if (peopleTab !== "live") return;
+
+        let cancelled = false;
+
+        const run = async () => {
+            setIsLiveLoading(true);
+            try {
+                const users = await fetchLiveUsers(String(session.id));
+                if (!cancelled) setLiveUsers(users || []);
+            } catch (e) {
+                console.error("[SessionCard] modal fetchLiveUsers failed:", e);
+                if (!cancelled) setLiveUsers([]);
+            } finally {
+                if (!cancelled) setIsLiveLoading(false);
+            }
+        };
+
+        run();
+
+        // while modal open, keep it fresh even if shouldPollLive was false
+        const every = isInfinite ? 15000 : 8000;
+        const timer = window.setInterval(run, every);
+
+        return () => {
+            cancelled = true;
+            window.clearInterval(timer);
+        };
+    }, [session?.id, isBookersModalOpen, peopleTab, isInfinite]);
 
     useEffect(() => {
         if (peopleTabPinned) return; // не ломаем выбор юзера
@@ -1522,7 +1543,6 @@ export default function SessionCard({
     const bookedStackUsers = bookers.slice(0, maxStack);
     const bookedRemaining = Math.max(0, bookedCount - bookedStackUsers.length);
 
-    // Show live avatars only when we actually have them
     const liveStackUsers = liveUsers.slice(0, maxStack);
     const liveRemaining = Math.max(0, liveNowCount - liveStackUsers.length);
 
@@ -1640,7 +1660,6 @@ export default function SessionCard({
                     </div>
                 ) : (
                     <>
-                        {/* ✅ Show avatars if we have profiles; otherwise only the count */}
                         {liveStackUsers.length > 0 && (
                             <div className="flex items-center">
                                 {liveStackUsers.map((u, idx) => (
@@ -2138,7 +2157,9 @@ export default function SessionCard({
                         </div>
                     ) : peopleTab === "live" && modalUsers.length === 0 ? (
                         <div className="text-[13px] text-[#606060]">
-                            {liveNowCount} people are in the session right now (profiles may be private or still loading).
+                            {isLiveLoading
+                                ? "Loading people in the session…"
+                                : `${liveNowCount} people are in the session right now (profiles may be private or still loading).`}
                         </div>
                     ) : (
                         modalUsers.map((u) => {
