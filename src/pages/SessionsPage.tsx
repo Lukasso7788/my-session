@@ -140,12 +140,15 @@ function InfiniteRoomsIntroCard() {
               <InfinityIcon className="w-5 h-5" />
             </div>
 
-            <h2 className="font-inter font-semibold text-[20px] sm:text-[24px] text-brandBlack">24/7 Focus Rooms</h2>
+            <h2 className="font-inter font-semibold text-[20px] sm:text-[24px] text-brandBlack">
+              24/7 Focus Rooms
+            </h2>
           </div>
 
           <p className="font-inter font-light text-[14px] sm:text-[16px] leading-[160%] text-brandBlack text-center max-w-[860px] mx-auto">
-            24/7 Focus Rooms are always open, giving you a structured space to focus whenever inspiration strikes. Join at any time,
-            follow the built-in workflow (Pomodoro or Deep Work), stay accountable with others, and keep your momentum going — day or night.
+            24/7 Focus Rooms are always open, giving you a structured space to focus whenever inspiration strikes.
+            Join at any time, follow the built-in workflow (Pomodoro or Deep Work), stay accountable with others,
+            and keep your momentum going — day or night.
           </p>
 
           <div className="w-full flex justify-center">
@@ -160,8 +163,12 @@ function InfiniteRoomsIntroCard() {
                   </div>
 
                   <div className="flex flex-col min-w-0 gap-1.5 sm:gap-2">
-                    <div className="font-inter font-semibold text-[13px] sm:text-[14px] text-brandBlack leading-snug">{f.title}</div>
-                    <div className="font-inter font-light text-[11px] sm:text-[12px] text-brandBlack/70 leading-snug">{f.subtitle}</div>
+                    <div className="font-inter font-semibold text-[13px] sm:text-[14px] text-brandBlack leading-snug">
+                      {f.title}
+                    </div>
+                    <div className="font-inter font-light text-[11px] sm:text-[12px] text-brandBlack/70 leading-snug">
+                      {f.subtitle}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -205,13 +212,8 @@ export function SessionsPage() {
   const [dateFilter, setDateFilter] = useState<string | null>(null);
 
   const [currentProfile, setCurrentProfile] = useState<BookingProfile | null>(null);
-  const [howItWorksOpen, setHowItWorksOpen] = useState(false);
 
-  // ================
-  // Debug helper state (visible on page)
-  // ================
-  const [debugRpc, setDebugRpc] = useState<any>(null);
-  const [debugLastIds, setDebugLastIds] = useState<string[]>([]);
+  const [howItWorksOpen, setHowItWorksOpen] = useState(false);
 
   useEffect(() => {
     if (!howItWorksOpen) return;
@@ -222,7 +224,6 @@ export function SessionsPage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [howItWorksOpen]);
 
-  // Sync tab from querystring: /sessions?tab=group|infinite|body
   useEffect(() => {
     const tab = (searchParams.get("tab") || "").toLowerCase();
     if (tab === "group" || tab === "infinite" || tab === "body") {
@@ -234,12 +235,10 @@ export function SessionsPage() {
     }
   }, [searchParams]);
 
-  // Ensure body always has a dateFilter
   useEffect(() => {
     if (sessionTypeTab === "body" && !dateFilter) setDateFilter(todayLocalYMD());
   }, [sessionTypeTab, dateFilter]);
 
-  // Load current user profile (best effort)
   useEffect(() => {
     const run = async () => {
       if (!user?.id) {
@@ -267,39 +266,29 @@ export function SessionsPage() {
 
   // ONLINE NOW: fetch live counts from DB (cheap)
   const fetchLiveCounts = useCallback(async (sessionIds: string[]) => {
-    if (!sessionIds.length) return;
-
-    // Keep last ids for debug panel
-    setDebugLastIds(sessionIds);
+    const ids = (sessionIds || []).filter((x): x is string => typeof x === "string" && x.length > 0);
+    if (!ids.length) return;
 
     try {
-      if (DEBUG) console.log("[DEBUG Sessions] get_live_counts args:", sessionIds);
-
+      // ✅ Always call the TTL overload to avoid Postgres overload ambiguity
       const { data, error } = await supabase.rpc("get_live_counts", {
-        p_session_ids: sessionIds,
-      });
-
-      if (DEBUG) console.log("[DEBUG Sessions] get_live_counts result:", { data, error });
-
-      setDebugRpc({
-        at: new Date().toISOString(),
-        argsCount: sessionIds.length,
-        data,
-        error: error ? { message: (error as any).message, details: (error as any).details, hint: (error as any).hint, code: (error as any).code } : null,
+        p_session_ids: ids,
+        p_ttl_seconds: 90,
       });
 
       if (error) throw error;
 
       const map = new Map<string, number>();
-      for (const row of (data as any[]) || []) {
-        // ожидаем: { session_id: uuid, live_count: int }
-        map.set(row.session_id, row.live_count);
+      for (const row of (data || []) as any[]) {
+        if (row?.session_id) map.set(String(row.session_id), Number(row.live_count) || 0);
       }
+
+      if (DEBUG) console.log("[DEBUG Sessions] live_count map:", Object.fromEntries(map.entries()));
 
       setSessions((prev) =>
         prev.map((s) => ({
           ...s,
-          live_count: map.get(s.id) ?? 0,
+          live_count: map.get(String(s.id)) ?? 0,
         }))
       );
     } catch (e) {
@@ -307,7 +296,6 @@ export function SessionsPage() {
     }
   }, []);
 
-  // LOAD SESSIONS
   const fetchSessions = useCallback(async () => {
     if (DEBUG) console.log("[DEBUG Sessions] Fetch sessions…");
 
@@ -346,12 +334,11 @@ export function SessionsPage() {
       if (error) throw error;
 
       const rows = (data || []) as unknown as SessionWithRelations[];
-      if (DEBUG) console.log("[DEBUG Sessions] Loaded rows count:", rows.length);
-      if (DEBUG) console.log("[DEBUG Sessions] Loaded sample:", rows?.[0]);
+      if (DEBUG) console.log("[DEBUG Sessions] Loaded:", rows);
 
       setSessions(rows);
 
-      const ids = rows.map((s) => s.id).filter(Boolean);
+      const ids = rows.map((s) => String((s as any).id || "")).filter((x) => x.length > 0);
       await fetchLiveCounts(ids);
     } catch (err) {
       console.error("[DEBUG Sessions] FAILED LOADING:", err);
@@ -369,14 +356,16 @@ export function SessionsPage() {
     if (DEBUG) console.log("[DEBUG Sessions] Modal callback set");
   }, [modal, fetchSessions]);
 
-  const sessionIds = useMemo(() => sessions.map((s) => s.id).filter(Boolean), [sessions]);
+  const sessionIds = useMemo(
+    () => sessions.map((s) => String((s as any).id || "")).filter((x) => x.length > 0),
+    [sessions]
+  );
 
   useEffect(() => {
     const t = window.setInterval(() => fetchLiveCounts(sessionIds), 10_000);
     return () => window.clearInterval(t);
   }, [sessionIds, fetchLiveCounts]);
 
-  // HELPERS
   const isExpired = (s: SessionWithRelations) => {
     const type = resolveSessionType(s);
     if (type === "infinite") return false;
@@ -405,7 +394,6 @@ export function SessionsPage() {
     });
   }, [typeFilteredSessions, dateFilter, sessionTypeTab]);
 
-  // ACTIONS
   const join = (id: string) => {
     if (!user) return navigate("/login");
     navigate(`/room/${id}`);
@@ -428,7 +416,11 @@ export function SessionsPage() {
   const cancel = async (id: string) => {
     if (!user) return navigate("/login");
     try {
-      const { error } = await supabase.from("session_bookings").delete().eq("session_id", id).eq("user_id", user.id);
+      const { error } = await supabase
+        .from("session_bookings")
+        .delete()
+        .eq("session_id", id)
+        .eq("user_id", user.id);
 
       if (error) throw error;
       await fetchSessions();
@@ -448,7 +440,10 @@ export function SessionsPage() {
     }
   };
 
-  const editSession = async (sessionId: string, updates: { title?: string; start_time?: string; max_participants?: number | null }) => {
+  const editSession = async (
+    sessionId: string,
+    updates: { title?: string; start_time?: string; max_participants?: number | null }
+  ) => {
     if (!user) return navigate("/login");
     if (!updates || Object.keys(updates).length === 0) return;
 
@@ -487,7 +482,6 @@ export function SessionsPage() {
     modal.open();
   };
 
-  // BODY: create via 25/50 + date + time (writes to Supabase)
   const createBodySession = async (payload: { duration: 25 | 50; dateYMD: string; timeHHMM: string }) => {
     if (!user?.id) return navigate("/login");
 
@@ -526,48 +520,9 @@ export function SessionsPage() {
 
   const topPad = sessionTypeTab === "group" ? "pt-[100px] pb-[50px]" : "pt-[56px] pb-[18px]";
 
-  // Extra debug: log session live_count snapshot when sessions change
-  useEffect(() => {
-    if (!DEBUG) return;
-    console.log("[DEBUG Sessions] live_count snapshot:", sessions.slice(0, 10).map((s) => ({ id: s.id, live_count: s.live_count, title: s.title })));
-  }, [sessions]);
-
   return (
     <div className="min-h-screen bg-white text-brandBlack font-inter">
       <main className="w-full px-3 md:px-6 lg:px-10 pb-12">
-        {/* DEBUG PANEL (top) */}
-        {DEBUG && (
-          <div className="mb-4 rounded-[14px] border border-[#E6E6E6] bg-[#FAFAFA] p-3 text-left">
-            <div className="text-[12px] font-semibold text-[#111827] mb-2">DEBUG: Sessions + live_count</div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-              <pre className="text-[11px] leading-snug bg-white border rounded p-2 overflow-auto max-h-[240px]">
-                {JSON.stringify(
-                  {
-                    sessionsCount: sessions.length,
-                    visibleCount: visibleSessions.length,
-                    tab: sessionTypeTab,
-                    dateFilter,
-                    first10: sessions.slice(0, 10).map((s) => ({ id: s.id, title: s.title, live_count: s.live_count })),
-                  },
-                  null,
-                  2
-                )}
-              </pre>
-
-              <pre className="text-[11px] leading-snug bg-white border rounded p-2 overflow-auto max-h-[240px]">
-                {JSON.stringify(
-                  {
-                    lastRpc: debugRpc,
-                    lastIdsSample: debugLastIds.slice(0, 10),
-                  },
-                  null,
-                  2
-                )}
-              </pre>
-            </div>
-          </div>
-        )}
-
         <div className={`text-center ${topPad}`}>
           {sessionTypeTab === "group" && (
             <h1 className="text-[24px] md:text-[28px] xl:text-[36px] font-normal leading-tight mx-auto">
@@ -591,7 +546,6 @@ export function SessionsPage() {
             />
           </div>
 
-          {/* BODY */}
           {sessionTypeTab === "body" ? (
             <div className="w-full max-w-[980px] mx-auto">
               <BodyTriplingBody
@@ -634,35 +588,27 @@ export function SessionsPage() {
                 ) : (
                   <div className="space-y-3 md:space-y-6">
                     {visibleSessions.map((s) => (
-                      <div key={s.id}>
-                        {/* ultra-simple per-card debug line */}
-                        {DEBUG && (
-                          <div className="mb-1 text-[11px] opacity-70">
-                            {s.title} — live_count={String(s.live_count ?? "undefined")}
-                          </div>
-                        )}
-
-                        <SessionCard
-                          session={s}
-                          userId={user?.id}
-                          currentUser={
-                            user?.id
-                              ? {
-                                id: user.id,
-                                full_name: currentProfile?.full_name || undefined,
-                                avatar_url: currentProfile?.avatar_url || undefined,
-                                email: (currentProfile?.email || (user as any)?.email || undefined) as any,
-                              }
-                              : undefined
-                          }
-                          onJoin={join}
-                          onBook={book}
-                          onCancelBooking={cancel}
-                          onDelete={remove}
-                          onEditSession={editSession}
-                          onInviteToSession={inviteToSession}
-                        />
-                      </div>
+                      <SessionCard
+                        key={s.id}
+                        session={s}
+                        userId={user?.id}
+                        currentUser={
+                          user?.id
+                            ? {
+                              id: user.id,
+                              full_name: currentProfile?.full_name || undefined,
+                              avatar_url: currentProfile?.avatar_url || undefined,
+                              email: (currentProfile?.email || (user as any)?.email || undefined) as any,
+                            }
+                            : undefined
+                        }
+                        onJoin={join}
+                        onBook={book}
+                        onCancelBooking={cancel}
+                        onDelete={remove}
+                        onEditSession={editSession}
+                        onInviteToSession={inviteToSession}
+                      />
                     ))}
                   </div>
                 )}
@@ -672,7 +618,6 @@ export function SessionsPage() {
         </div>
       </main>
 
-      {/* Floating: How it works */}
       <button
         type="button"
         onClick={() => setHowItWorksOpen(true)}
@@ -707,7 +652,6 @@ export function SessionsPage() {
         <span className="text-[14px] font-semibold">How it works</span>
       </button>
 
-      {/* Modal: How it works */}
       {howItWorksOpen && (
         <div className="fixed inset-0 z-[70]">
           <div className="absolute inset-0 bg-black/40" onClick={() => setHowItWorksOpen(false)} />
@@ -806,7 +750,9 @@ export function SessionsPage() {
                 <div className="my-7 border-t border-[#ECECEC]" />
 
                 <div className="flex items-center justify-between gap-4">
-                  <h4 className="text-[14px] sm:text-[15px] font-semibold text-[#111827]">Stages glossary (what each block means)</h4>
+                  <h4 className="text-[14px] sm:text-[15px] font-semibold text-[#111827]">
+                    Stages glossary (what each block means)
+                  </h4>
                   <span className="text-[12px] text-[#111827]/60">(Some rooms may hide stages — e.g. silent rooms)</span>
                 </div>
 
@@ -814,7 +760,8 @@ export function SessionsPage() {
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
                     <div className="text-[13px] font-semibold text-[#111827]">Check-in</div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      Quick verbal sync: “What are you working on?” + “Any blockers?”. Short, supportive, no long stories.
+                      Quick verbal sync: “What are you working on?” + “Any blockers?”. Short, supportive, no long
+                      stories.
                     </p>
                   </div>
 
@@ -842,7 +789,8 @@ export function SessionsPage() {
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
                     <div className="text-[13px] font-semibold text-[#111827]">Custom block</div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      A flexible stage you can name anything: “Reading”, “Planning”, “Admin”, etc. Use it however you want.
+                      A flexible stage you can name anything: “Reading”, “Planning”, “Admin”, etc. Use it however you
+                      want.
                     </p>
                   </div>
 
@@ -857,7 +805,8 @@ export function SessionsPage() {
                 <div className="mt-7 rounded-[18px] border border-[#E6E6E6] bg-[#F7F7F7] p-5">
                   <div className="text-[13px] font-semibold text-[#111827]">Pro tip</div>
                   <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                    If you’re joining a <b>Silent</b> room: keep mic off, use the stage timer as guidance, and focus. No pressure to talk.
+                    If you’re joining a <b>Silent</b> room: keep mic off, use the stage timer as guidance, and focus. No
+                    pressure to talk.
                   </p>
                 </div>
 
