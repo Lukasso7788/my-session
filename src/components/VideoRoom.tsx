@@ -16,6 +16,11 @@ export type Reaction = {
 };
 
 type VideoRoomProps = {
+    /**
+     * * ✅ true когда открыта правая панель (chat / intentions / participants).
+     * Тогда для 3 участников делаем 2 сверху + 1 снизу.
+     */
+    uiPanelOpen?: boolean;
     theme?: "dark" | "light";
 
     participants: JitsiParticipant[];
@@ -834,6 +839,9 @@ function GridLayout({
     containerHeight,
     onRegisterVideoElement,
 
+    // ✅ NEW: if true and count===3 -> force 2 columns => 2+1
+    forceThreeAsTwoPlusOne,
+
     localId,
     localDisplayNameOverride,
     onOpenEditName,
@@ -856,6 +864,9 @@ function GridLayout({
     containerWidth: number;
     containerHeight: number;
     onRegisterVideoElement?: VideoRoomProps["onRegisterVideoElement"];
+
+    // ✅ NEW
+    forceThreeAsTwoPlusOne?: boolean;
 
     localId: string | null;
     localDisplayNameOverride: string | null;
@@ -880,10 +891,12 @@ function GridLayout({
     const paddingPx = containerWidth && containerWidth < 520 ? 8 : 12;
     const gapPx = containerWidth && containerWidth < 520 ? 8 : 12;
 
-    const cols = useMemo(() => computeCols(pageParticipants.length, containerWidth || 1200), [
-        pageParticipants.length,
-        containerWidth,
-    ]);
+    const cols = useMemo(() => {
+        // ✅ 핵: когда правая панель открыта и участников 3 -> всегда 2 колонки
+        if (forceThreeAsTwoPlusOne && pageParticipants.length === 3) return 2;
+        return computeCols(pageParticipants.length, containerWidth || 1200);
+    }, [pageParticipants.length, containerWidth, forceThreeAsTwoPlusOne]);
+
     const rows = useMemo(() => Math.ceil(pageParticipants.length / cols), [pageParticipants.length, cols]);
 
     const maxGridWidth = useMemo(() => {
@@ -1588,6 +1601,7 @@ function ScreenShareLayoutMobile({
 // ----------------------- Main -----------------------
 export function VideoRoom(props: VideoRoomProps) {
     const {
+        uiPanelOpen = false, // ✅ NEW
         theme = "dark",
         participants,
         onToggleAudio,
@@ -2029,6 +2043,7 @@ export function VideoRoom(props: VideoRoomProps) {
                                         containerWidth={effectiveW}
                                         containerHeight={effectiveH}
                                         onRegisterVideoElement={onRegisterVideoElement}
+                                        forceThreeAsTwoPlusOne={uiPanelOpen} // ✅ NEW
                                         localId={localId}
                                         localDisplayNameOverride={localNameOverride}
                                         onOpenEditName={openEditName}
