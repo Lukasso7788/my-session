@@ -795,7 +795,7 @@ function computeCols(count: number, containerWidth: number) {
     if (count === 2) return 2;
     if (count === 4) return 2;
 
-    if (count === 3) return containerWidth >= 900 ? 3 : 2;
+    if (count === 3) return containerWidth >= 1200 ? 3 : 2;
     if (count === 5) return containerWidth >= 900 ? 3 : 2;
     if (count === 6) return containerWidth >= 780 ? 3 : 2;
 
