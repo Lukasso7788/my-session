@@ -743,6 +743,23 @@ function parseTimeMs(input: any): number | null {
     return null;
 }
 
+/** ✅ NEW: parse Postgres counts that may come as bigint strings */
+function parseDbCount(v: any): number | null {
+    if (v == null) return null;
+    if (typeof v === "number") return Number.isFinite(v) ? v : null;
+
+    if (typeof v === "string") {
+        const s = v.trim();
+        if (!s) return null;
+
+        // allow "12", "12.0"
+        const n = Number(s);
+        return Number.isFinite(n) ? n : null;
+    }
+
+    return null;
+}
+
 const LIVE_ACTIVE_WINDOW_MS = 2 * 60 * 1000; // last_seen_at within 2 minutes = "in session now"
 const LIVE_FALLBACK_JOIN_MAX_AGE_MS = 24 * 60 * 60 * 1000; // ✅ if last_seen_at missing/null, accept joined_at within 24h
 
@@ -1091,7 +1108,6 @@ export default function SessionCard({
         setPeopleTabPinned(false);
     }, [session?.id]);
 
-
     const [isBookersModalOpen, setIsBookersModalOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
@@ -1141,8 +1157,14 @@ export default function SessionCard({
     const sessionType = resolveSessionType(session);
     const isInfinite = sessionType === "infinite";
 
-    const liveCountFromSession: number | null =
-        typeof session?.live_count === "number" ? session.live_count : null;
+    // ✅ FIX: live_count может прилетать строкой (bigint)
+    const liveCountFromSession: number | null = parseDbCount(
+        session?.live_count ??
+        session?.liveCount ??
+        session?.live_now_count ??
+        session?.liveNowCount ??
+        null
+    );
 
     const bookedCount = bookers.length;
     const liveUsersCount = liveUsers.length;
@@ -1193,7 +1215,8 @@ export default function SessionCard({
     };
 
     const inferredType = inferTypeFromTitle(session.title);
-    const baseResolvedType = nameToTypeMap[session.title] || inferredType || session.type || "Deep work";
+    const baseResolvedType =
+        nameToTypeMap[session.title] || inferredType || session.type || "Deep work";
 
     const custom = isCustomStudioSession(session);
     const resolvedType = custom ? "Custom session" : baseResolvedType;
@@ -1205,7 +1228,11 @@ export default function SessionCard({
         "Custom session": { color: "#6366F1", bg: "#EEF2FF", icon: "/icons/custom.svg" },
     };
 
-    const t = typeMap[resolvedType] || { color: "#111827", bg: "#E5E7EB", icon: "/icons/deepwork.svg" };
+    const t = typeMap[resolvedType] || {
+        color: "#111827",
+        bg: "#E5E7EB",
+        icon: "/icons/deepwork.svg",
+    };
 
     const JOIN_HOVER_BG: Record<string, string> = {
         "Deep work": "#5286F6",
@@ -1269,8 +1296,8 @@ export default function SessionCard({
         if (startMs == null) return false;
 
         const diff = startMs - Date.now();
-        const beforeMs = 6 * 60 * 60 * 1000;  // 6h before
-        const afterMs = 12 * 60 * 60 * 1000;  // 12h after
+        const beforeMs = 6 * 60 * 60 * 1000; // 6h before
+        const afterMs = 12 * 60 * 60 * 1000; // 12h after
         return diff <= beforeMs && diff >= -afterMs;
     }, [session?.id, isInfinite, liveNowCount, session?.start_time]);
 
@@ -1440,7 +1467,9 @@ export default function SessionCard({
         try {
             const d = new Date(session.start_time);
             const pad = (n: number) => String(n).padStart(2, "0");
-            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+                d.getHours()
+            )}:${pad(d.getMinutes())}`;
         } catch {
             return "";
         }
@@ -1457,7 +1486,9 @@ export default function SessionCard({
                 const d = new Date(session.start_time);
                 const pad = (n: number) => String(n).padStart(2, "0");
                 setEditStartLocal(
-                    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+                    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+                        d.getHours()
+                    )}:${pad(d.getMinutes())}`
                 );
             } catch { }
         } else setEditStartLocal("");
@@ -1550,9 +1581,17 @@ export default function SessionCard({
                                     <div
                                         key={u.id}
                                         className="relative"
-                                        style={{ marginLeft: idx === 0 ? 0 : -10, zIndex: 50 - idx }}
+                                        style={{
+                                            marginLeft: idx === 0 ? 0 : -10,
+                                            zIndex: 50 - idx,
+                                        }}
                                     >
-                                        <AvatarCircle user={u} size={26} isLive={true} showLiveDot={true} />
+                                        <AvatarCircle
+                                            user={u}
+                                            size={26}
+                                            isLive={true}
+                                            showLiveDot={true}
+                                        />
                                     </div>
                                 ))}
                                 {liveRemaining > 0 && (
@@ -1599,7 +1638,10 @@ export default function SessionCard({
                                     <div
                                         key={u.id}
                                         className="relative"
-                                        style={{ marginLeft: idx === 0 ? 0 : -10, zIndex: 50 - idx }}
+                                        style={{
+                                            marginLeft: idx === 0 ? 0 : -10,
+                                            zIndex: 50 - idx,
+                                        }}
                                     >
                                         <AvatarCircle
                                             user={u}
@@ -1711,7 +1753,9 @@ export default function SessionCard({
                                         <img
                                             src={
                                                 isHoveringCard
-                                                    ? (t.icon.endsWith(".svg") ? t.icon.replace(".svg", "-white.svg") : t.icon)
+                                                    ? t.icon.endsWith(".svg")
+                                                        ? t.icon.replace(".svg", "-white.svg")
+                                                        : t.icon
                                                     : t.icon
                                             }
                                             className="w-4 h-4"
@@ -1768,7 +1812,9 @@ export default function SessionCard({
                                                 <div className="px-4 py-3 text-[12px] text-[#606060] border-b border-[#F3F4F6] flex items-center justify-between">
                                                     <span>Session info</span>
                                                     {isInfoPinned && (
-                                                        <span className="text-[11px] text-[#111827]/60">Pinned</span>
+                                                        <span className="text-[11px] text-[#111827]/60">
+                                                            Pinned
+                                                        </span>
                                                     )}
                                                 </div>
 
@@ -1786,7 +1832,9 @@ export default function SessionCard({
                                                     {/* current stage */}
                                                     {nowStage && (
                                                         <div className="flex items-center gap-2">
-                                                            <div className="text-[12px] text-[#606060]">Current:</div>
+                                                            <div className="text-[12px] text-[#606060]">
+                                                                Current:
+                                                            </div>
                                                             <div
                                                                 className="inline-flex items-center gap-2 px-3 py-1 rounded-full border"
                                                                 style={{
@@ -1798,11 +1846,16 @@ export default function SessionCard({
                                                                 }}
                                                             >
                                                                 <span>{nowStage.name}</span>
-                                                                {Number.isFinite(nowStage.leftSec) && nowStage.leftSec > 0 && (
-                                                                    <span className="opacity-80 font-semibold">
-                                                                        · {Math.ceil(nowStage.leftSec / 60)}m left
-                                                                    </span>
-                                                                )}
+                                                                {Number.isFinite(nowStage.leftSec) &&
+                                                                    nowStage.leftSec > 0 && (
+                                                                        <span className="opacity-80 font-semibold">
+                                                                            ·{" "}
+                                                                            {Math.ceil(
+                                                                                nowStage.leftSec / 60
+                                                                            )}
+                                                                            m left
+                                                                        </span>
+                                                                    )}
                                                             </div>
                                                         </div>
                                                     )}
@@ -1839,7 +1892,9 @@ export default function SessionCard({
                         <div className="hidden xl:flex items-center gap-6">
                             <div className="w-px h-10 bg-[#D9D9D9]" />
                             <div className="text-center">
-                                <div className="text-[32px] font-bold text-brandBlack">{liveNowCount}</div>
+                                <div className="text-[32px] font-bold text-brandBlack">
+                                    {liveNowCount}
+                                </div>
                                 <div className="text-[10px] text-[#606060] font-light -mt-1">
                                     {shouldPollLive ? "in the session now" : "live count soon"}
                                 </div>
@@ -1959,7 +2014,9 @@ export default function SessionCard({
                                         )}
 
                                         {!canEdit && !canInvite && !canCancelBooking && !canCancelSession && (
-                                            <div className="px-3 py-2 text-[12px] text-[#606060]">No actions available</div>
+                                            <div className="px-3 py-2 text-[12px] text-[#606060]">
+                                                No actions available
+                                            </div>
                                         )}
                                     </div>
                                 </div>
@@ -2018,48 +2075,58 @@ export default function SessionCard({
                             {liveNowCount} people are in the session right now (profiles may be private or still loading).
                         </div>
                     ) : (
-                                modalUsers.map((u) => {
-                                    const label = u.full_name || u.id || "Participant";
-                                    const isLive = liveIdSet.has(u.id);
+                        modalUsers.map((u) => {
+                            const label = u.full_name || u.id || "Participant";
+                            const isLive = liveIdSet.has(u.id);
 
-                                    return (
-                                        <Link
-                                            key={u.id}
-                                            to={`/profile/${u.id}`}
-                                            onClick={() => setIsBookersModalOpen(false)}
-                                            className="
+                            return (
+                                <Link
+                                    key={u.id}
+                                    to={`/profile/${u.id}`}
+                                    onClick={() => setIsBookersModalOpen(false)}
+                                    className="
                 flex items-center gap-3 px-3 py-2 rounded-[16px]
                 border border-[#F0F0F0]
                 hover:bg-[#F6F6F6] hover:border-[#E5E7EB]
                 transition
             "
-                                        >
-                                            <AvatarCircle
-                                                user={u}
-                                                size={34}
-                                                isLive={peopleTab === "live" ? true : isLive}
-                                                showLiveDot={true}
-                                            />
+                                >
+                                    <AvatarCircle
+                                        user={u}
+                                        size={34}
+                                        isLive={peopleTab === "live" ? true : isLive}
+                                        showLiveDot={true}
+                                    />
 
-                                            <div className="flex flex-col min-w-0 flex-1">
-                                                <div className="text-[13px] font-semibold text-[#111827] truncate">{label}</div>
+                                    <div className="flex flex-col min-w-0 flex-1">
+                                        <div className="text-[13px] font-semibold text-[#111827] truncate">
+                                            {label}
+                                        </div>
 
-                                                {peopleTab === "booked" && isLive && (
-                                                    <div className="text-[11px] text-[#65D46C] font-semibold">Online</div>
-                                                )}
+                                        {peopleTab === "booked" && isLive && (
+                                            <div className="text-[11px] text-[#65D46C] font-semibold">
+                                                Online
                                             </div>
-                                        </Link>
-                                    );
-                                })
+                                        )}
+                                    </div>
+                                </Link>
+                            );
+                        })
                     )}
                 </div>
             </ModalShell>
 
             {/* edit modal */}
-            <ModalShell title="Edit session" isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)}>
+            <ModalShell
+                title="Edit session"
+                isOpen={isEditModalOpen}
+                onClose={() => setIsEditModalOpen(false)}
+            >
                 <div className="flex flex-col gap-4">
                     <div>
-                        <div className="text-[12px] font-semibold text-[#111827] mb-1">Title</div>
+                        <div className="text-[12px] font-semibold text-[#111827] mb-1">
+                            Title
+                        </div>
                         <input
                             value={editTitle}
                             onChange={(e) => setEditTitle(e.target.value)}
@@ -2069,18 +2136,24 @@ export default function SessionCard({
                     </div>
 
                     <div>
-                        <div className="text-[12px] font-semibold text-[#111827] mb-1">Start time</div>
+                        <div className="text-[12px] font-semibold text-[#111827] mb-1">
+                            Start time
+                        </div>
                         <input
                             value={editStartLocal}
                             onChange={(e) => setEditStartLocal(e.target.value)}
                             type="datetime-local"
                             className="w-full h-11 px-4 rounded-[14px] border border-[#E5E7EB] outline-none focus:border-[#111827]"
                         />
-                        <div className="text-[11px] text-[#606060] mt-1">Uses your local timezone.</div>
+                        <div className="text-[11px] text-[#606060] mt-1">
+                            Uses your local timezone.
+                        </div>
                     </div>
 
                     <div>
-                        <div className="text-[12px] font-semibold text-[#111827] mb-1">Participants limit</div>
+                        <div className="text-[12px] font-semibold text-[#111827] mb-1">
+                            Participants limit
+                        </div>
                         <input
                             value={editMaxParticipants}
                             onChange={(e) => setEditMaxParticipants(e.target.value)}
@@ -2138,12 +2211,18 @@ export default function SessionCard({
             </ModalShell>
 
             {/* invite modal */}
-            <ModalShell title="Invite to session" isOpen={isInviteModalOpen} onClose={() => setIsInviteModalOpen(false)}>
+            <ModalShell
+                title="Invite to session"
+                isOpen={isInviteModalOpen}
+                onClose={() => setIsInviteModalOpen(false)}
+            >
                 <div className="flex flex-col gap-4">
                     <div className="text-[12px] text-[#606060]">Invite someone by email.</div>
 
                     <div>
-                        <div className="text-[12px] font-semibold text-[#111827] mb-1">Email</div>
+                        <div className="text-[12px] font-semibold text-[#111827] mb-1">
+                            Email
+                        </div>
                         <input
                             value={inviteEmail}
                             onChange={(e) => setInviteEmail(e.target.value)}
@@ -2153,7 +2232,9 @@ export default function SessionCard({
                     </div>
 
                     <div>
-                        <div className="text-[12px] font-semibold text-[#111827] mb-1">Message (optional)</div>
+                        <div className="text-[12px] font-semibold text-[#111827] mb-1">
+                            Message (optional)
+                        </div>
                         <textarea
                             value={inviteMessage}
                             onChange={(e) => setInviteMessage(e.target.value)}
