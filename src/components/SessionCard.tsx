@@ -346,6 +346,28 @@ function OptionsSmartIcon({ hovered, size = 18 }: { hovered: boolean; size?: num
     );
 }
 
+function InfoSmartIcon({ hovered, size = 16 }: { hovered: boolean; size?: number }) {
+    const [useFallback, setUseFallback] = useState(false);
+
+    if (useFallback) return <IconInfo size={size} />;
+
+    return (
+        <img
+            src="/icons/info.svg"
+            alt=""
+            draggable={false}
+            onError={() => setUseFallback(true)}
+            style={{
+                width: size,
+                height: size,
+                // делаем белой на hover/pinned ровно как options
+                filter: hovered ? "brightness(0) invert(1)" : "none",
+                opacity: 0.85,
+            }}
+        />
+    );
+}
+
 function MenuItem({
     icon,
     label,
