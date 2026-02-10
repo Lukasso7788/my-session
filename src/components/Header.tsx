@@ -55,7 +55,7 @@ export default function Header() {
         const params = new URLSearchParams(location.search);
         const tab = (params.get("tab") || "group").toLowerCase();
 
-        if (tab === "infinite" || tab === "body" || tab === "group") return tab;
+        if (tab === "infinite" || tab === "body" || tab === "group") return tab as SessionTabId;
         return "group";
     }, [location.search]);
 
@@ -144,11 +144,7 @@ export default function Header() {
                                                 isHover ? "bg-black/5" : "bg-transparent",
                                             ].join(" ")}
                                         >
-                                            <img
-                                                src={showActiveIcon ? t.iconActive : t.iconInactive}
-                                                className="w-5 h-5"
-                                                alt=""
-                                            />
+                                            <img src={showActiveIcon ? t.iconActive : t.iconInactive} className="w-5 h-5" alt="" />
                                             <span
                                                 className={[
                                                     "text-sm",
@@ -165,12 +161,13 @@ export default function Header() {
                         )}
                     </div>
 
-                    {/* Pricing + Updates */}
+                    {/* Pricing + Focus plan (Latest updates removed) */}
                     <button onClick={() => navigate("/pricing")} className="hover:text-[#2F2F2F]">
                         Pricing
                     </button>
+
                     <button onClick={() => navigate("/focus-plan")} className="hover:text-[#2F2F2F]">
-                        Latest updates
+                        Focus plan
                     </button>
                 </nav>
 
@@ -218,11 +215,11 @@ export default function Header() {
                                         onMouseEnter={() => setHoverCreate(true)}
                                         onMouseLeave={() => setHoverCreate(false)}
                                         className={`
-                                            hidden md:inline-flex items-center gap-2 px-6 py-3 rounded-full
-                                            border text-base font-medium transition-colors duration-200
-                                            border-[#2F2F2F]
-                                            ${hoverCreate ? "bg-[#2F2F2F] text-white" : "hover:bg-slate-50"}
-                                        `}
+                      hidden md:inline-flex items-center gap-2 px-6 py-3 rounded-full
+                      border text-base font-medium transition-colors duration-200
+                      border-[#2F2F2F]
+                      ${hoverCreate ? "bg-[#2F2F2F] text-white" : "hover:bg-slate-50"}
+                    `}
                                     >
                                         <img
                                             src={hoverCreate ? "/icons/create-session-white.svg" : "/icons/create-session.svg"}
@@ -325,7 +322,7 @@ export default function Header() {
                                 </div>
                             </div>
 
-                            {/* Pricing + Updates */}
+                            {/* Pricing + Focus plan (Latest updates removed) */}
                             <button
                                 onClick={() => {
                                     navigate("/pricing");
@@ -338,12 +335,12 @@ export default function Header() {
 
                             <button
                                 onClick={() => {
-                                    navigate("/updates");
+                                    navigate("/focus-plan");
                                     setMobileMenu(false);
                                 }}
                                 className="text-left"
                             >
-                                Latest updates
+                                Focus plan
                             </button>
 
                             {user && (
