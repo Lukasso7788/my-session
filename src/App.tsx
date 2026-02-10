@@ -8,6 +8,7 @@ import RoomPageIFrame from "./pages/RoomPageIFrame";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import ProfilePage from "./pages/ProfilePage";
+import FocusPlanPage from "./pages/FocusPlanPage";
 import PublicProfilePage from "./pages/PublicProfilePage";
 import AuthCallback from "./pages/AuthCallback";
 
@@ -50,6 +51,7 @@ export default function App() {
           <Route path="/updates" element={<UpdatesPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/profile/:id" element={<PublicProfilePage />} />
+          <Route path="/focus-plan" element={<FocusPlanPage />} />
 
           {/* ✅ UI Playground */}
           <Route path="/ui-playground" element={<SessionCardsPlayground />} />

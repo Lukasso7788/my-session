@@ -642,9 +642,13 @@ export function IntentionsPanel({
 
             <IconButton
               theme={theme}
-              title="If Pin is unavailable, pop-out window will be used"
-              onClick={(e) => e.preventDefault()}
-              className="cursor-default"
+              title="Open Focus plan"
+              onClick={(e) => {
+                e.preventDefault();
+                const sid = (rawSessionId || sessionId || "").trim();
+                if (!sid) return;
+                window.open(`/focus-plan?sessionId=${encodeURIComponent(sid)}`, "_blank", "noopener,noreferrer");
+              }}
             >
               <ExternalLink size={16} />
             </IconButton>

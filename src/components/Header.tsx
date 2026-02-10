@@ -169,7 +169,7 @@ export default function Header() {
                     <button onClick={() => navigate("/pricing")} className="hover:text-[#2F2F2F]">
                         Pricing
                     </button>
-                    <button onClick={() => navigate("/updates")} className="hover:text-[#2F2F2F]">
+                    <button onClick={() => navigate("/focus-plan")} className="hover:text-[#2F2F2F]">
                         Latest updates
                     </button>
                 </nav>
