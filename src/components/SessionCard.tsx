@@ -1694,23 +1694,16 @@ export default function SessionCard({
                     </div>
                 ) : (
                     <>
+                        {/* ✅ Hide avatars on mobile, keep on md+ */}
                         {liveStackUsers.length > 0 && (
-                            <div className="flex items-center">
+                            <div className="hidden md:flex items-center">
                                 {liveStackUsers.map((u, idx) => (
                                     <div
                                         key={u.id}
                                         className="relative"
-                                        style={{
-                                            marginLeft: idx === 0 ? 0 : -10,
-                                            zIndex: 50 - idx,
-                                        }}
+                                        style={{ marginLeft: idx === 0 ? 0 : -10, zIndex: 50 - idx }}
                                     >
-                                        <AvatarCircle
-                                            user={u}
-                                            size={26}
-                                            isLive={true}
-                                            showLiveDot={true}
-                                        />
+                                        <AvatarCircle user={u} size={26} isLive={true} showLiveDot={true} />
                                     </div>
                                 ))}
                                 {liveRemaining > 0 && (
@@ -1751,16 +1744,14 @@ export default function SessionCard({
                     </div>
                 ) : (
                     <>
+                        {/* ✅ Hide avatars on mobile, keep on md+ */}
                         {bookedStackUsers.length > 0 && (
-                            <div className="flex items-center">
+                            <div className="hidden md:flex items-center">
                                 {bookedStackUsers.map((u, idx) => (
                                     <div
                                         key={u.id}
                                         className="relative"
-                                        style={{
-                                            marginLeft: idx === 0 ? 0 : -10,
-                                            zIndex: 50 - idx,
-                                        }}
+                                        style={{ marginLeft: idx === 0 ? 0 : -10, zIndex: 50 - idx }}
                                     >
                                         <AvatarCircle
                                             user={u}
