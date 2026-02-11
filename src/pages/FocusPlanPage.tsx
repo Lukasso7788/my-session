@@ -3,18 +3,26 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { Check, Trash2, Plus, ExternalLink, RefreshCw } from "lucide-react";
-import {
-    type FocusPlan,
-    type FocusPlanItem,
-    listPlans,
-    createPlan as apiCreatePlan,
-    updatePlanTitle as apiUpdatePlanTitle,
-    deletePlan as apiDeletePlan,
-    listPlanItems,
-    addPlanItem as apiAddPlanItem,
-    updatePlanItem as apiUpdatePlanItem,
-    deletePlanItem as apiDeletePlanItem,
-} from "../lib/focusPlans";
+
+type FocusPlan = {
+    id: string;
+    user_id: string;
+    title: string;
+    created_at: string;
+    updated_at: string;
+};
+
+type FocusPlanItem = {
+    id: string;
+    plan_id: string;
+    user_id: string;
+    text: string;
+    target_date: string | null; // YYYY-MM-DD
+    session_id: string | null;
+    created_at: string;
+    completed: boolean;
+    sort_order: number;
+};
 
 type SessionLite = {
     id: string;
@@ -136,6 +144,14 @@ export default function FocusPlanPage() {
     // ===== auth =====
     useEffect(() => {
         supabase.auth.getUser().then(({ data }) => setUser(data.user || null));
+
+        const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+            setUser(session?.user || null);
+        });
+
+        return () => {
+            sub.subscription.unsubscribe();
+        };
     }, []);
 
     // ===== sessions list =====
@@ -246,10 +262,24 @@ export default function FocusPlanPage() {
     // ===== plans (Supabase) =====
     const reloadPlans = async () => {
         if (!user?.id) return;
+
         setPlansLoading(true);
         try {
-            const p = await listPlans();
+            const { data, error } = await supabase
+                .from("focus_plans")
+                .select("*")
+                .eq("user_id", user.id)
+                .order("updated_at", { ascending: false });
+
+            if (error || !Array.isArray(data)) {
+                setPlans([]);
+                setSelectedPlanId(null);
+                return;
+            }
+
+            const p = data as FocusPlan[];
             setPlans(p);
+
             if (!selectedPlanId) setSelectedPlanId(p[0]?.id || null);
             else if (p.length && !p.some((x) => x.id === selectedPlanId)) setSelectedPlanId(p[0]?.id || null);
         } catch {
@@ -273,10 +303,25 @@ export default function FocusPlanPage() {
 
     // items load for selected plan
     const reloadItems = async (planId: string) => {
+        if (!user?.id) return;
+
         setItemsLoading(true);
         try {
-            const its = await listPlanItems(planId);
-            setItems(its);
+            const { data, error } = await supabase
+                .from("focus_plan_items")
+                .select("*")
+                .eq("user_id", user.id)
+                .eq("plan_id", planId)
+                .order("sort_order", { ascending: true })
+                .order("created_at", { ascending: false });
+
+            if (error || !Array.isArray(data)) {
+                setItems([]);
+                setAttachedItemIds({});
+                return;
+            }
+
+            setItems(data as FocusPlanItem[]);
             setAttachedItemIds({}); // UI-only
         } catch {
             setItems([]);
@@ -330,6 +375,8 @@ export default function FocusPlanPage() {
                 if (out.length >= 24) break;
             }
             setLibrary(out);
+        } catch {
+            if (seq === libSeqRef.current) setLibrary([]);
         } finally {
             if (seq === libSeqRef.current) setLoadingLibrary(false);
         }
@@ -349,20 +396,35 @@ export default function FocusPlanPage() {
         if (!t) return;
 
         try {
-            const p = await apiCreatePlan(t);
+            const { data, error } = await supabase
+                .from("focus_plans")
+                .insert({ user_id: user.id, title: t })
+                .select("*")
+                .single();
+
+            if (error || !data) return;
+
             setNewPlanTitle("");
             setEditingPlanTitle(false);
+
             await reloadPlans();
-            setSelectedPlanId(p.id);
+            setSelectedPlanId((data as FocusPlan).id);
         } catch {
-            // keep silent MVP
+            // silent MVP
         }
     };
 
     const deletePlan = async (id: string) => {
         if (!requireAuth()) return;
         try {
-            await apiDeletePlan(id);
+            const { error } = await supabase
+                .from("focus_plans")
+                .delete()
+                .eq("id", id)
+                .eq("user_id", user.id);
+
+            if (error) return;
+
             await reloadPlans();
         } catch {
             // silent
@@ -385,7 +447,14 @@ export default function FocusPlanPage() {
         if (!t) return;
 
         try {
-            await apiUpdatePlanTitle(selectedPlan.id, t);
+            const { error } = await supabase
+                .from("focus_plans")
+                .update({ title: t })
+                .eq("id", selectedPlan.id)
+                .eq("user_id", user.id);
+
+            if (error) return;
+
             setEditingPlanTitle(false);
             await reloadPlans();
         } catch {
@@ -410,15 +479,24 @@ export default function FocusPlanPage() {
         const sid = newItemSessionId ? String(newItemSessionId) : null;
 
         try {
-            const inserted = await apiAddPlanItem(selectedPlan.id, {
-                text,
-                target_date: due,
-                session_id: sid,
-                sort_order: 0,
-            });
+            const { data, error } = await supabase
+                .from("focus_plan_items")
+                .insert({
+                    user_id: user.id,
+                    plan_id: selectedPlan.id,
+                    text,
+                    target_date: due,
+                    session_id: sid,
+                    sort_order: 0,
+                    completed: false,
+                })
+                .select("*")
+                .single();
+
+            if (error || !data) return;
 
             // optimistic: prepend
-            setItems((prev) => [inserted, ...prev]);
+            setItems((prev) => [data as FocusPlanItem, ...prev]);
             setNewItemText("");
             setNewItemDueDate("");
         } catch {
@@ -435,7 +513,13 @@ export default function FocusPlanPage() {
         setItems((x) => x.filter((it) => it.id !== itemId));
 
         try {
-            await apiDeletePlanItem(itemId);
+            const { error } = await supabase
+                .from("focus_plan_items")
+                .delete()
+                .eq("id", itemId)
+                .eq("user_id", user.id);
+
+            if (error) setItems(prev);
         } catch {
             setItems(prev);
         }
@@ -455,7 +539,16 @@ export default function FocusPlanPage() {
         setItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, completed: nextVal } : it)));
 
         try {
-            await apiUpdatePlanItem(itemId, { completed: nextVal });
+            const { error } = await supabase
+                .from("focus_plan_items")
+                .update({ completed: nextVal })
+                .eq("id", itemId)
+                .eq("user_id", user.id);
+
+            if (error) {
+                // revert
+                setItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, completed: !nextVal } : it)));
+            }
         } catch {
             // revert
             setItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, completed: !nextVal } : it)));
@@ -497,11 +590,21 @@ export default function FocusPlanPage() {
         );
 
         try {
-            await apiUpdatePlanItem(editingItemId, {
-                text,
-                target_date: due,
-                session_id: sid,
-            });
+            const { error } = await supabase
+                .from("focus_plan_items")
+                .update({
+                    text,
+                    target_date: due,
+                    session_id: sid,
+                })
+                .eq("id", editingItemId)
+                .eq("user_id", user.id);
+
+            if (error) {
+                setItems(prev);
+                return;
+            }
+
             cancelEditItem();
         } catch {
             setItems(prev);

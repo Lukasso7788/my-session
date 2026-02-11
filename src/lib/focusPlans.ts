@@ -21,20 +21,31 @@ export type FocusPlanItem = {
     sort_order: number;
 };
 
-export async function listPlans() {
+function assertUserId(userId?: string | null) {
+    const uid = String(userId || "").trim();
+    if (!uid) throw new Error("Not authenticated (missing userId)");
+    return uid;
+}
+
+export async function listPlans(userId: string) {
+    const uid = assertUserId(userId);
+
     const { data, error } = await supabase
         .from("focus_plans")
         .select("*")
+        .eq("user_id", uid)
         .order("updated_at", { ascending: false });
 
     if (error) throw error;
     return (data ?? []) as FocusPlan[];
 }
 
-export async function createPlan(title: string) {
+export async function createPlan(userId: string, title: string) {
+    const uid = assertUserId(userId);
+
     const { data, error } = await supabase
         .from("focus_plans")
-        .insert({ title })
+        .insert({ user_id: uid, title })
         .select("*")
         .single();
 
@@ -42,11 +53,14 @@ export async function createPlan(title: string) {
     return data as FocusPlan;
 }
 
-export async function updatePlanTitle(planId: string, title: string) {
+export async function updatePlanTitle(userId: string, planId: string, title: string) {
+    const uid = assertUserId(userId);
+
     const { data, error } = await supabase
         .from("focus_plans")
         .update({ title })
         .eq("id", planId)
+        .eq("user_id", uid)
         .select("*")
         .single();
 
@@ -54,16 +68,26 @@ export async function updatePlanTitle(planId: string, title: string) {
     return data as FocusPlan;
 }
 
-export async function deletePlan(planId: string) {
-    const { error } = await supabase.from("focus_plans").delete().eq("id", planId);
+export async function deletePlan(userId: string, planId: string) {
+    const uid = assertUserId(userId);
+
+    const { error } = await supabase
+        .from("focus_plans")
+        .delete()
+        .eq("id", planId)
+        .eq("user_id", uid);
+
     if (error) throw error;
 }
 
-export async function listPlanItems(planId: string) {
+export async function listPlanItems(userId: string, planId: string) {
+    const uid = assertUserId(userId);
+
     const { data, error } = await supabase
         .from("focus_plan_items")
         .select("*")
         .eq("plan_id", planId)
+        .eq("user_id", uid)
         .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true });
 
@@ -71,15 +95,22 @@ export async function listPlanItems(planId: string) {
     return (data ?? []) as FocusPlanItem[];
 }
 
-export async function addPlanItem(planId: string, payload: {
-    text: string;
-    target_date?: string | null; // YYYY-MM-DD
-    session_id?: string | null;
-    sort_order?: number;
-}) {
+export async function addPlanItem(
+    userId: string,
+    planId: string,
+    payload: {
+        text: string;
+        target_date?: string | null; // YYYY-MM-DD
+        session_id?: string | null;
+        sort_order?: number;
+    }
+) {
+    const uid = assertUserId(userId);
+
     const { data, error } = await supabase
         .from("focus_plan_items")
         .insert({
+            user_id: uid,
             plan_id: planId,
             text: payload.text,
             target_date: payload.target_date ?? null,
@@ -93,14 +124,18 @@ export async function addPlanItem(planId: string, payload: {
     return data as FocusPlanItem;
 }
 
-export async function updatePlanItem(itemId: string, patch: Partial<Pick<
-    FocusPlanItem,
-    "text" | "target_date" | "session_id" | "completed" | "sort_order"
->>) {
+export async function updatePlanItem(
+    userId: string,
+    itemId: string,
+    patch: Partial<Pick<FocusPlanItem, "text" | "target_date" | "session_id" | "completed" | "sort_order">>
+) {
+    const uid = assertUserId(userId);
+
     const { data, error } = await supabase
         .from("focus_plan_items")
         .update(patch)
         .eq("id", itemId)
+        .eq("user_id", uid)
         .select("*")
         .single();
 
@@ -108,7 +143,14 @@ export async function updatePlanItem(itemId: string, patch: Partial<Pick<
     return data as FocusPlanItem;
 }
 
-export async function deletePlanItem(itemId: string) {
-    const { error } = await supabase.from("focus_plan_items").delete().eq("id", itemId);
+export async function deletePlanItem(userId: string, itemId: string) {
+    const uid = assertUserId(userId);
+
+    const { error } = await supabase
+        .from("focus_plan_items")
+        .delete()
+        .eq("id", itemId)
+        .eq("user_id", uid);
+
     if (error) throw error;
 }
