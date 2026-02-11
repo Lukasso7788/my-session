@@ -1,30 +1,7 @@
 // src/components/CreateSessionModal.tsx
 // Full file replacement
-// Keeps: Custom link slug + Max participants + Session Timeline + fixed Create button logic for Studio
-// NEW (scheduling in advance):
-// ✅ Schedule mode: Single / Daily series / Weekly series
-// ✅ Weekly series = same weekday + same time (base start_time), repeats every 7 days
-// ✅ Hard cap: last occurrence must be within 14 days from "now" (2 weeks ahead)
-// ✅ Series + custom slug: auto-suffixes with date (yyyy-mm-dd) to avoid collisions + checks collisions
-//
-// UI FIXES:
-// ✅ Desktop modal is wide / near full-screen with internal scroll
-// ✅ Mobile 360px overflow fixed (min-w-0 + wrapping + stacked hint/preview)
-// ✅ Icon padding consistent (Scheduling / Custom link / Studio)
-// ✅ Remove "(different UI than FlowN)" text
-// ✅ Studio: "kind + title input" always on top (especially mobile)
-// ✅ Studio minutes controls: [-][input][+] always one row on 360px
-// ✅ Reduced paddings/gaps on mobile
-//
-// NEW (Session Studio reordering UX):
-// ✅ Click a block to select it, then use keyboard ↑ / ↓ to move it
-// ✅ Optional: Delete/Backspace removes selected block
-// ✅ Drag & drop reordering (drag the block itself; no special handle)
-//
-// NEW (Flow-like drag improvements):
-// ✅ Auto-scroll modal content while dragging near top/bottom
-// ✅ Trello-style drop indicator line (before/after card + end-of-list)
-// ✅ Smooth reorder animation (FLIP) for keyboard moves + drops
+// ✅ Removed server region picker entirely (no auto/manual domain in modal)
+// ✅ All sessions created with fixed EU domain: jitsi.mysession.club (can later be moved to DB default/other sources)
 
 import {
   useState,
@@ -58,44 +35,9 @@ interface CreateSessionModalProps {
   onSessionCreated: () => void;
 }
 
-// ===============================
-// JITSI REGIONAL DOMAINS
-// ===============================
-const JITSI_DOMAINS = [
-  { value: "meet-eu.mysession.club", label: "EU (Europe)" },
-  { value: "meet-us-east.mysession.club", label: "US East" },
-  { value: "meet-apac.mysession.club", label: "APAC (Asia-Pacific)" },
-] as const;
-
-type JitsiDomain = (typeof JITSI_DOMAINS)[number]["value"];
-
-function guessJitsiDomainByTimezone(): { domain: JitsiDomain; reason: string } {
-  let tz = "";
-  try {
-    tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
-  } catch {
-    tz = "";
-  }
-
-  const t = tz.toLowerCase();
-
-  if (t.startsWith("america/")) {
-    return { domain: "meet-us-east.mysession.club", reason: `timezone=${tz}` };
-  }
-
-  if (
-    t.startsWith("asia/") ||
-    t.startsWith("australia/") ||
-    t.startsWith("pacific/")
-  ) {
-    return { domain: "meet-apac.mysession.club", reason: `timezone=${tz}` };
-  }
-
-  return {
-    domain: "meet-eu.mysession.club",
-    reason: tz ? `timezone=${tz}` : "timezone=unknown",
-  };
-}
+// ✅ Fixed EU domain (no picker in UI)
+// If you later move domain selection to other sources / DB default, you can remove this field from insert.
+const FIXED_JITSI_DOMAIN = "jitsi.mysession.club";
 
 function nowLocalForDatetimeInput(): string {
   const d = new Date();
@@ -502,22 +444,6 @@ export function CreateSessionModal({
     "idle" | "invalid" | "checking" | "taken" | "available"
   >("idle");
 
-  // ---------- JITSI DOMAIN ----------
-  const autoGuess = useMemo(() => guessJitsiDomainByTimezone(), [isOpen]);
-  const [useAutoDomain, setUseAutoDomain] = useState(true);
-  const [manualDomain, setManualDomain] =
-    useState<JitsiDomain>("meet-eu.mysession.club");
-
-  useEffect(() => {
-    if (!isOpen) return;
-    setUseAutoDomain(true);
-    setManualDomain(autoGuess.domain);
-  }, [isOpen, autoGuess.domain]);
-
-  const effectiveDomain: JitsiDomain = useAutoDomain
-    ? autoGuess.domain
-    : manualDomain;
-
   // ---------- SESSION STUDIO ----------
   const [studioEnabled, setStudioEnabled] = useState(false);
   const [studioBlocks, setStudioBlocks] = useState<StudioBlock[]>([]);
@@ -526,7 +452,7 @@ export function CreateSessionModal({
   // DnD state
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
-  const [dropEdge, setDropEdge] = useState<"before" | "after">("after"); // Trello-style insertion line
+  const [dropEdge, setDropEdge] = useState<"before" | "after">("after");
   const END_DROP_ID = "__end__";
 
   const [maxParticipants, setMaxParticipants] = useState<number>(
@@ -775,7 +701,6 @@ export function CreateSessionModal({
   const setTransparentDragImage = (dt: DataTransfer) => {
     try {
       const img = new Image();
-      // 1x1 transparent gif
       img.src =
         "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
       dt.setDragImage(img, 0, 0);
@@ -825,8 +750,8 @@ export function CreateSessionModal({
     }
 
     const rect = scroller.getBoundingClientRect();
-    const threshold = 80; // px near top/bottom to start scrolling
-    const maxSpeed = 18; // px per frame (tuned to feel "Flow-ish")
+    const threshold = 80;
+    const maxSpeed = 18;
 
     const topZone = rect.top + threshold;
     const bottomZone = rect.bottom - threshold;
@@ -928,7 +853,6 @@ export function CreateSessionModal({
         const from = prev.findIndex((b) => b.id === dragId);
         if (from < 0) return prev;
 
-        // drop to end
         if (overId === END_DROP_ID) {
           const copy = [...prev];
           const [item] = copy.splice(from, 1);
@@ -944,10 +868,8 @@ export function CreateSessionModal({
         const copy = [...prev];
         const [item] = copy.splice(from, 1);
 
-        // after removal, the "to" index may shift
         const toAfterRemoval = from < to ? to - 1 : to;
-        const insertIndex =
-          toAfterRemoval + (edge === "after" ? 1 : 0);
+        const insertIndex = toAfterRemoval + (edge === "after" ? 1 : 0);
 
         const finalIndex = clamp(insertIndex, 0, copy.length);
         copy.splice(finalIndex, 0, item);
@@ -1262,7 +1184,9 @@ export function CreateSessionModal({
           daily_room_url: dailyUrls[idx],
           status: "planned",
           created_at: new Date().toISOString(),
-          jitsi_domain: effectiveDomain,
+
+          // ✅ fixed / no UI selection
+          jitsi_domain: FIXED_JITSI_DOMAIN,
 
           max_participants: effectiveMaxParticipants,
           custom_slug: customSlugForRow,
@@ -1309,17 +1233,6 @@ export function CreateSessionModal({
 
   const hostName = profile?.full_name || user?.email || "Unknown host";
   const minDateTime = nowLocalForDatetimeInput();
-
-  const effectiveDomainLabel =
-    JITSI_DOMAINS.find((d) => d.value === effectiveDomain)?.label ||
-    effectiveDomain;
-
-  // ✅ tighter on mobile, still roomy on desktop
-  const overlayClass =
-    "fixed inset-0 bg-black/50 z-50 p-2 sm:p-3 md:p-4 flex items-center justify-center";
-
-  const panelClass =
-    "bg-white w-full h-full rounded-[20px] shadow-2xl flex flex-col overflow-hidden";
 
   const origin =
     typeof window !== "undefined" && window.location?.origin
@@ -1369,6 +1282,12 @@ export function CreateSessionModal({
       : false) ||
     !!scheduleAdvanceError ||
     isCreating;
+
+  const overlayClass =
+    "fixed inset-0 bg-black/50 z-50 p-2 sm:p-3 md:p-4 flex items-center justify-center";
+
+  const panelClass =
+    "bg-white w-full h-full rounded-[20px] shadow-2xl flex flex-col overflow-hidden";
 
   return (
     <div className={overlayClass}>
@@ -1433,8 +1352,8 @@ export function CreateSessionModal({
                 </div>
               </div>
 
-              {/* Row 2: Scheduling + Custom link + Region */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
+              {/* Row 2: Scheduling + Custom link */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
                 {/* Scheduling */}
                 <div className="border border-gray-200 rounded-[18px] bg-white p-3 sm:p-4">
                   <div className="flex items-start gap-3">
@@ -1686,56 +1605,16 @@ export function CreateSessionModal({
                           </div>
                         </div>
                       </div>
+
+                      <div className="mt-2 text-[12px] font-inter text-gray-500">
+                        Video server:{" "}
+                        <span className="font-semibold text-brandBlack">
+                          {FIXED_JITSI_DOMAIN}
+                        </span>
+                        {" "} (fixed)
+                      </div>
                     </div>
                   </div>
-                </div>
-
-                {/* JITSI REGION */}
-                <div className="border border-gray-200 rounded-[18px] bg-white p-3 sm:p-4">
-                  <label className="block text-[14px] font-medium text-brandBlack mb-2 font-inter">
-                    Video server region
-                  </label>
-
-                  <div className="flex items-center justify-between gap-3">
-                    <label className="flex items-center gap-2 cursor-pointer select-none min-w-0">
-                      <input
-                        type="checkbox"
-                        checked={useAutoDomain}
-                        onChange={(e) => setUseAutoDomain(e.target.checked)}
-                        className="w-4 h-4"
-                      />
-                      <span className="text-[14px] text-brandBlack font-inter">
-                        Auto (recommended)
-                      </span>
-                    </label>
-
-                    <span className="text-[12px] text-gray-500 font-inter whitespace-nowrap">
-                      {useAutoDomain
-                        ? `Picked: ${effectiveDomainLabel}`
-                        : `Manual: ${effectiveDomainLabel}`}
-                    </span>
-                  </div>
-
-                  {!useAutoDomain && (
-                    <select
-                      value={manualDomain}
-                      onChange={(e) =>
-                        setManualDomain(e.target.value as JitsiDomain)
-                      }
-                      className="mt-3 w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter bg-white"
-                    >
-                      {JITSI_DOMAINS.map((d) => (
-                        <option key={d.value} value={d.value}>
-                          {d.label} — {d.value}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-
-                  <p className="mt-2 text-[12px] text-gray-500 font-inter">
-                    All participants will join the same Jitsi domain saved in the
-                    session.
-                  </p>
                 </div>
               </div>
 
@@ -1766,8 +1645,7 @@ export function CreateSessionModal({
                         />
 
                         <img
-                          src={`/icons/${(t as any).icon || t.name.toLowerCase()
-                            }.svg`}
+                          src={`/icons/${(t as any).icon || t.name.toLowerCase()}.svg`}
                           className="w-4 h-4"
                           alt=""
                           draggable={false}
@@ -2018,7 +1896,9 @@ export function CreateSessionModal({
                               const isDragging = draggingId === b.id;
 
                               const isOverSelf =
-                                dragOverId === b.id && draggingId && draggingId !== b.id;
+                                dragOverId === b.id &&
+                                draggingId &&
+                                draggingId !== b.id;
 
                               return (
                                 <div
@@ -2038,7 +1918,10 @@ export function CreateSessionModal({
                                     } else if (e.key === "ArrowDown") {
                                       e.preventDefault();
                                       moveBlock(b.id, 1);
-                                    } else if (e.key === "Delete" || e.key === "Backspace") {
+                                    } else if (
+                                      e.key === "Delete" ||
+                                      e.key === "Backspace"
+                                    ) {
                                       if (!isInteractiveEl(e.target)) {
                                         e.preventDefault();
                                         removeBlock(b.id);
@@ -2056,7 +1939,10 @@ export function CreateSessionModal({
 
                                     try {
                                       e.dataTransfer.effectAllowed = "move";
-                                      e.dataTransfer.setData("text/plain", b.id);
+                                      e.dataTransfer.setData(
+                                        "text/plain",
+                                        b.id
+                                      );
                                       setTransparentDragImage(e.dataTransfer);
                                     } catch {
                                       // ignore
@@ -2070,8 +1956,9 @@ export function CreateSessionModal({
 
                                     updateAutoScrollFromClientY(e.clientY);
 
-                                    // determine insert edge (before/after) from cursor position
-                                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                    const rect = (
+                                      e.currentTarget as HTMLElement
+                                    ).getBoundingClientRect();
                                     const mid = rect.top + rect.height / 2;
                                     const edge: "before" | "after" =
                                       e.clientY < mid ? "before" : "after";
@@ -2084,14 +1971,18 @@ export function CreateSessionModal({
 
                                     const dragIdFromData = (() => {
                                       try {
-                                        return e.dataTransfer.getData("text/plain") || "";
+                                        return (
+                                          e.dataTransfer.getData("text/plain") ||
+                                          ""
+                                        );
                                       } catch {
                                         return "";
                                       }
                                     })();
 
                                     const dragId = draggingId || dragIdFromData;
-                                    if (dragId) moveBlockTo(dragId, b.id, dropEdge);
+                                    if (dragId)
+                                      moveBlockTo(dragId, b.id, dropEdge);
 
                                     setDraggingId(null);
                                     setDragOverId(null);
@@ -2116,7 +2007,6 @@ export function CreateSessionModal({
                                   }
                                   title="Drag to reorder. Click + use ↑/↓ to move."
                                 >
-                                  {/* Trello-style drop line */}
                                   {isOverSelf && (
                                     <div
                                       className={
@@ -2128,7 +2018,6 @@ export function CreateSessionModal({
                                     />
                                   )}
 
-                                  {/* ✅ Top: kind pill + actions */}
                                   <div className="flex items-center justify-between gap-2">
                                     <span className="px-2 py-1 rounded-full border border-gray-200 text-[10px] sm:text-[11px] font-inter text-gray-600 whitespace-nowrap">
                                       {b.kind}
@@ -2175,7 +2064,6 @@ export function CreateSessionModal({
                                     </div>
                                   </div>
 
-                                  {/* ✅ Title input ALWAYS full width and on top */}
                                   <div className="mt-2">
                                     <input
                                       value={b.title}
@@ -2189,7 +2077,6 @@ export function CreateSessionModal({
                                     />
                                   </div>
 
-                                  {/* ✅ Minutes controls: one row even on 360px */}
                                   <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                                     <span className="text-[12px] text-gray-500 font-inter shrink-0">
                                       Minutes
@@ -2245,7 +2132,6 @@ export function CreateSessionModal({
                                     </div>
                                   </div>
 
-                                  {/* Quick minutes */}
                                   <div
                                     className="mt-2 flex items-center gap-2 flex-wrap"
                                     onClick={(e) => e.stopPropagation()}
@@ -2265,21 +2151,23 @@ export function CreateSessionModal({
                               );
                             })}
 
-                            {/* End-of-list drop zone (so you can drop below the last card) */}
                             {draggingId && (
                               <div
                                 className="relative h-10 rounded-[14px] border border-dashed border-gray-200 bg-gray-50/60"
                                 onDragOver={(e) => {
                                   e.preventDefault();
                                   updateAutoScrollFromClientY(e.clientY);
-                                  if (dragOverId !== END_DROP_ID) setDragOverId(END_DROP_ID);
+                                  if (dragOverId !== END_DROP_ID)
+                                    setDragOverId(END_DROP_ID);
                                   if (dropEdge !== "after") setDropEdge("after");
                                 }}
                                 onDrop={(e) => {
                                   e.preventDefault();
                                   const dragIdFromData = (() => {
                                     try {
-                                      return e.dataTransfer.getData("text/plain") || "";
+                                      return (
+                                        e.dataTransfer.getData("text/plain") || ""
+                                      );
                                     } catch {
                                       return "";
                                     }
