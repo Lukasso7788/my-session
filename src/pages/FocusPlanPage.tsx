@@ -3,6 +3,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { Check, Trash2, Plus, ExternalLink, RefreshCw } from "lucide-react";
+import {
+    type FocusPlan,
+    type FocusPlanItem,
+    listPlans,
+    createPlan as apiCreatePlan,
+    updatePlanTitle as apiUpdatePlanTitle,
+    deletePlan as apiDeletePlan,
+    listPlanItems,
+    addPlanItem as apiAddPlanItem,
+    updatePlanItem as apiUpdatePlanItem,
+    deletePlanItem as apiDeletePlanItem,
+} from "../lib/focusPlans";
 
 type SessionLite = {
     id: string;
@@ -24,26 +36,6 @@ type IntentionRow = {
         full_name?: string;
         avatar_url?: string;
     };
-};
-
-type PlanItem = {
-    id: string;
-    text: string;
-    due_at?: string | null; // ISO
-    session_id?: string | null; // UUID
-    done?: boolean;
-
-    // local UX flags (MVP)
-    attached?: boolean; // user clicked "Attach to session"
-    attached_at?: string | null; // ISO
-};
-
-type Plan = {
-    id: string;
-    title: string;
-    created_at: string;
-    updated_at: string;
-    items: PlanItem[];
 };
 
 const UUID_RE =
@@ -69,17 +61,15 @@ function fmtWhen(iso?: string | null) {
     }
 }
 
-function fmtDue(iso?: string | null) {
-    if (!iso) return "";
-    const ms = Date.parse(String(iso));
+function fmtDueDate(yyyyMmDd?: string | null) {
+    if (!yyyyMmDd) return "";
+    const ms = Date.parse(`${yyyyMmDd}T00:00:00.000Z`);
     if (!Number.isFinite(ms)) return "";
     try {
-        return new Date(ms).toLocaleString("en-US", {
+        return new Date(ms).toLocaleDateString("en-US", {
             weekday: "short",
             month: "short",
             day: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
         });
     } catch {
         return "";
@@ -89,44 +79,6 @@ function fmtDue(iso?: string | null) {
 function buildLoginNext(urlPath: string) {
     const next = urlPath || "/sessions";
     return `/login?next=${encodeURIComponent(next)}`;
-}
-
-function uid(prefix = "id") {
-    return `${prefix}-${Math.random().toString(16).slice(2)}-${Date.now()}`;
-}
-
-function storageKey(userId: string) {
-    return `mysession_focus_plans_v1_${userId}`;
-}
-
-function safeParsePlans(raw: string | null): Plan[] {
-    if (!raw) return [];
-    try {
-        const v = JSON.parse(raw);
-        if (!Array.isArray(v)) return [];
-        // very light validation
-        return v
-            .filter((p) => p && typeof p === "object" && typeof p.id === "string")
-            .map((p) => ({
-                id: String(p.id),
-                title: String(p.title || "Plan"),
-                created_at: String(p.created_at || new Date().toISOString()),
-                updated_at: String(p.updated_at || new Date().toISOString()),
-                items: Array.isArray(p.items)
-                    ? p.items.map((it: any) => ({
-                        id: String(it.id || uid("item")),
-                        text: String(it.text || "").trim(),
-                        due_at: it.due_at ? String(it.due_at) : null,
-                        session_id: it.session_id ? String(it.session_id) : null,
-                        done: Boolean(it.done),
-                        attached: Boolean(it.attached),
-                        attached_at: it.attached_at ? String(it.attached_at) : null,
-                    }))
-                    : [],
-            }));
-    } catch {
-        return [];
-    }
 }
 
 export default function FocusPlanPage() {
@@ -150,9 +102,13 @@ export default function FocusPlanPage() {
     const [library, setLibrary] = useState<IntentionRow[]>([]);
     const [loadingLibrary, setLoadingLibrary] = useState(false);
 
-    // plans
-    const [plans, setPlans] = useState<Plan[]>([]);
+    // plans + items (Supabase)
+    const [plans, setPlans] = useState<FocusPlan[]>([]);
+    const [plansLoading, setPlansLoading] = useState(false);
     const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+
+    const [items, setItems] = useState<FocusPlanItem[]>([]);
+    const [itemsLoading, setItemsLoading] = useState(false);
 
     // plan create/rename
     const [newPlanTitle, setNewPlanTitle] = useState("");
@@ -161,17 +117,18 @@ export default function FocusPlanPage() {
 
     // item add form
     const [newItemText, setNewItemText] = useState("");
-    const [newItemDueLocal, setNewItemDueLocal] = useState(""); // "YYYY-MM-DDTHH:mm" local
+    const [newItemDueDate, setNewItemDueDate] = useState(""); // YYYY-MM-DD
     const [newItemSessionId, setNewItemSessionId] = useState<string>("");
 
     // item edit
     const [editingItemId, setEditingItemId] = useState<string | null>(null);
     const [editingItemText, setEditingItemText] = useState("");
-    const [editingItemDueLocal, setEditingItemDueLocal] = useState("");
+    const [editingItemDueDate, setEditingItemDueDate] = useState("");
     const [editingItemSessionId, setEditingItemSessionId] = useState<string>("");
 
     // attach loading
     const [attachingItemId, setAttachingItemId] = useState<string | null>(null);
+    const [attachedItemIds, setAttachedItemIds] = useState<Record<string, boolean>>({});
 
     // seq guards
     const libSeqRef = useRef(0);
@@ -279,42 +236,65 @@ export default function FocusPlanPage() {
         return sessions.find((s) => String(s.id) === String(defaultSessionId)) || null;
     }, [sessions, defaultSessionId]);
 
-    // ===== plans persistence (localStorage MVP) =====
+    // ===== auth guard =====
+    const requireAuth = () => {
+        if (user?.id) return true;
+        navigate(buildLoginNext("/focus-plan"));
+        return false;
+    };
+
+    // ===== plans (Supabase) =====
+    const reloadPlans = async () => {
+        if (!user?.id) return;
+        setPlansLoading(true);
+        try {
+            const p = await listPlans();
+            setPlans(p);
+            if (!selectedPlanId) setSelectedPlanId(p[0]?.id || null);
+            else if (p.length && !p.some((x) => x.id === selectedPlanId)) setSelectedPlanId(p[0]?.id || null);
+        } catch {
+            setPlans([]);
+            setSelectedPlanId(null);
+        } finally {
+            setPlansLoading(false);
+        }
+    };
+
     useEffect(() => {
         if (!user?.id) return;
-
-        const key = storageKey(user.id);
-        const loaded = safeParsePlans(localStorage.getItem(key));
-
-        if (loaded.length === 0) {
-            const now = new Date().toISOString();
-            const starter: Plan = {
-                id: uid("plan"),
-                title: "My plan",
-                created_at: now,
-                updated_at: now,
-                items: [],
-            };
-            setPlans([starter]);
-            setSelectedPlanId(starter.id);
-            localStorage.setItem(key, JSON.stringify([starter]));
-            return;
-        }
-
-        setPlans(loaded);
-        setSelectedPlanId(loaded[0]?.id || null);
+        reloadPlans();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id]);
-
-    const persistPlans = (next: Plan[]) => {
-        if (!user?.id) return;
-        setPlans(next);
-        localStorage.setItem(storageKey(user.id), JSON.stringify(next));
-    };
 
     const selectedPlan = useMemo(() => {
         if (!selectedPlanId) return null;
         return plans.find((p) => p.id === selectedPlanId) || null;
     }, [plans, selectedPlanId]);
+
+    // items load for selected plan
+    const reloadItems = async (planId: string) => {
+        setItemsLoading(true);
+        try {
+            const its = await listPlanItems(planId);
+            setItems(its);
+            setAttachedItemIds({}); // UI-only
+        } catch {
+            setItems([]);
+            setAttachedItemIds({});
+        } finally {
+            setItemsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (!user?.id) return;
+        if (!selectedPlanId) {
+            setItems([]);
+            return;
+        }
+        reloadItems(selectedPlanId);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id, selectedPlanId]);
 
     // ===== library (recent unique intentions) =====
     const loadLibrary = async () => {
@@ -361,43 +341,32 @@ export default function FocusPlanPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id]);
 
-    // ===== auth guard =====
-    const requireAuth = () => {
-        if (user?.id) return true;
-        navigate(buildLoginNext("/focus-plan"));
-        return false;
-    };
-
     // ===== plan actions =====
-    const createPlan = () => {
+    const createPlan = async () => {
         if (!requireAuth()) return;
 
         const t = newPlanTitle.trim();
         if (!t) return;
 
-        const now = new Date().toISOString();
-        const p: Plan = {
-            id: uid("plan"),
-            title: t,
-            created_at: now,
-            updated_at: now,
-            items: [],
-        };
-
-        const next = [p, ...plans];
-        persistPlans(next);
-        setSelectedPlanId(p.id);
-        setNewPlanTitle("");
-        setEditingPlanTitle(false);
+        try {
+            const p = await apiCreatePlan(t);
+            setNewPlanTitle("");
+            setEditingPlanTitle(false);
+            await reloadPlans();
+            setSelectedPlanId(p.id);
+        } catch {
+            // keep silent MVP
+        }
     };
 
-    const deletePlan = (id: string) => {
+    const deletePlan = async (id: string) => {
         if (!requireAuth()) return;
-        const next = plans.filter((p) => p.id !== id);
-        persistPlans(next);
-
-        if (selectedPlanId === id) {
-            setSelectedPlanId(next[0]?.id || null);
+        try {
+            await apiDeletePlan(id);
+            await reloadPlans();
+        } catch {
+            // silent
+        } finally {
             setEditingPlanTitle(false);
         }
     };
@@ -408,19 +377,20 @@ export default function FocusPlanPage() {
         setPlanTitleDraft(selectedPlan.title || "");
     };
 
-    const saveRenamePlan = () => {
+    const saveRenamePlan = async () => {
         if (!requireAuth()) return;
         if (!selectedPlan) return;
 
         const t = planTitleDraft.trim();
         if (!t) return;
 
-        const now = new Date().toISOString();
-        const next = plans.map((p) =>
-            p.id === selectedPlan.id ? { ...p, title: t, updated_at: now } : p
-        );
-        persistPlans(next);
-        setEditingPlanTitle(false);
+        try {
+            await apiUpdatePlanTitle(selectedPlan.id, t);
+            setEditingPlanTitle(false);
+            await reloadPlans();
+        } catch {
+            // silent
+        }
     };
 
     const cancelRenamePlan = () => {
@@ -429,141 +399,125 @@ export default function FocusPlanPage() {
     };
 
     // ===== item actions =====
-    const addItemToPlan = () => {
+    const addItemToPlan = async () => {
         if (!requireAuth()) return;
         if (!selectedPlan) return;
 
         const text = newItemText.trim();
         if (!text) return;
 
-        const dueIso = newItemDueLocal ? new Date(newItemDueLocal).toISOString() : null;
+        const due = newItemDueDate ? newItemDueDate : null; // YYYY-MM-DD
         const sid = newItemSessionId ? String(newItemSessionId) : null;
 
-        const now = new Date().toISOString();
-        const item: PlanItem = {
-            id: uid("item"),
-            text,
-            due_at: dueIso,
-            session_id: sid,
-            done: false,
-            attached: false,
-            attached_at: null,
-        };
+        try {
+            const inserted = await apiAddPlanItem(selectedPlan.id, {
+                text,
+                target_date: due,
+                session_id: sid,
+                sort_order: 0,
+            });
 
-        const next = plans.map((p) =>
-            p.id === selectedPlan.id ? { ...p, items: [item, ...p.items], updated_at: now } : p
-        );
-        persistPlans(next);
-
-        setNewItemText("");
-        setNewItemDueLocal("");
-        // keep session selection as-is (good UX)
-    };
-
-    const deleteItem = (itemId: string) => {
-        if (!requireAuth()) return;
-        if (!selectedPlan) return;
-
-        const now = new Date().toISOString();
-        const next = plans.map((p) =>
-            p.id === selectedPlan.id
-                ? { ...p, items: p.items.filter((it) => it.id !== itemId), updated_at: now }
-                : p
-        );
-        persistPlans(next);
-
-        if (editingItemId === itemId) {
-            setEditingItemId(null);
-            setEditingItemText("");
-            setEditingItemDueLocal("");
-            setEditingItemSessionId("");
+            // optimistic: prepend
+            setItems((prev) => [inserted, ...prev]);
+            setNewItemText("");
+            setNewItemDueDate("");
+        } catch {
+            // silent
         }
     };
 
-    const toggleItemDone = (itemId: string) => {
+    const deleteItem = async (itemId: string) => {
         if (!requireAuth()) return;
         if (!selectedPlan) return;
 
-        const now = new Date().toISOString();
-        const next = plans.map((p) =>
-            p.id === selectedPlan.id
-                ? {
-                    ...p,
-                    updated_at: now,
-                    items: p.items.map((it) =>
-                        it.id === itemId ? { ...it, done: !Boolean(it.done) } : it
-                    ),
-                }
-                : p
-        );
-        persistPlans(next);
+        // optimistic remove
+        const prev = items;
+        setItems((x) => x.filter((it) => it.id !== itemId));
+
+        try {
+            await apiDeletePlanItem(itemId);
+        } catch {
+            setItems(prev);
+        }
+
+        if (editingItemId === itemId) cancelEditItem();
     };
 
-    const startEditItem = (it: PlanItem) => {
+    const toggleItemDone = async (itemId: string) => {
+        if (!requireAuth()) return;
+
+        const cur = items.find((x) => x.id === itemId);
+        if (!cur) return;
+
+        const nextVal = !Boolean(cur.completed);
+
+        // optimistic
+        setItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, completed: nextVal } : it)));
+
+        try {
+            await apiUpdatePlanItem(itemId, { completed: nextVal });
+        } catch {
+            // revert
+            setItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, completed: !nextVal } : it)));
+        }
+    };
+
+    const startEditItem = (it: FocusPlanItem) => {
         setEditingItemId(it.id);
         setEditingItemText(it.text || "");
         setEditingItemSessionId(it.session_id || "");
-        setEditingItemDueLocal(it.due_at ? new Date(it.due_at).toISOString().slice(0, 16) : "");
+        setEditingItemDueDate(it.target_date || "");
     };
 
     const cancelEditItem = () => {
         setEditingItemId(null);
         setEditingItemText("");
-        setEditingItemDueLocal("");
+        setEditingItemDueDate("");
         setEditingItemSessionId("");
     };
 
-    const saveEditItem = () => {
+    const saveEditItem = async () => {
         if (!requireAuth()) return;
-        if (!selectedPlan) return;
         if (!editingItemId) return;
 
         const text = editingItemText.trim();
         if (!text) return;
 
-        const dueIso = editingItemDueLocal ? new Date(editingItemDueLocal).toISOString() : null;
+        const due = editingItemDueDate ? editingItemDueDate : null;
         const sid = editingItemSessionId ? String(editingItemSessionId) : null;
 
-        const now = new Date().toISOString();
-        const next = plans.map((p) =>
-            p.id === selectedPlan.id
-                ? {
-                    ...p,
-                    updated_at: now,
-                    items: p.items.map((it) =>
-                        it.id === editingItemId
-                            ? {
-                                ...it,
-                                text,
-                                due_at: dueIso,
-                                session_id: sid,
-                                // editing changes may invalidate "attached" meaning
-                                attached: it.attached && it.session_id === sid ? it.attached : false,
-                                attached_at: it.attached && it.session_id === sid ? it.attached_at : null,
-                            }
-                            : it
-                    ),
-                }
-                : p
+        // optimistic
+        const prev = items;
+        setItems((x) =>
+            x.map((it) =>
+                it.id === editingItemId
+                    ? { ...it, text, target_date: due, session_id: sid }
+                    : it
+            )
         );
-        persistPlans(next);
-        cancelEditItem();
+
+        try {
+            await apiUpdatePlanItem(editingItemId, {
+                text,
+                target_date: due,
+                session_id: sid,
+            });
+            cancelEditItem();
+        } catch {
+            setItems(prev);
+        }
     };
 
     const addLibraryTextToPlan = (text: string) => {
         if (!requireAuth()) return;
-        if (!selectedPlan) return;
-
         const t = String(text || "").trim();
         if (!t) return;
-
         setNewItemText(t);
     };
 
     // attach = create real intention row (so it appears in room panel)
-    const attachItemToSession = async (item: PlanItem) => {
+    const attachItemToSession = async (item: FocusPlanItem) => {
         if (!requireAuth()) return;
-        if (!selectedPlan) return;
 
         const sid = String(item.session_id || "").trim();
         const text = String(item.text || "").trim();
@@ -586,23 +540,10 @@ export default function FocusPlanPage() {
                     .from("intentions")
                     .insert([{ user_id: user.id, session_id: sid, text, completed: false }]);
 
-                // if insert fails, just keep UI untouched
                 if (error) return;
             }
 
-            const now = new Date().toISOString();
-            const next = plans.map((p) =>
-                p.id === selectedPlan.id
-                    ? {
-                        ...p,
-                        updated_at: now,
-                        items: p.items.map((it) =>
-                            it.id === item.id ? { ...it, attached: true, attached_at: now } : it
-                        ),
-                    }
-                    : p
-            );
-            persistPlans(next);
+            setAttachedItemIds((m) => ({ ...m, [item.id]: true }));
             loadLibrary();
         } finally {
             setAttachingItemId(null);
@@ -659,6 +600,8 @@ export default function FocusPlanPage() {
             </div>
         );
     }
+
+    const planItemsCount = items.length;
 
     return (
         <div className={pageWrap}>
@@ -780,9 +723,25 @@ export default function FocusPlanPage() {
                 <div className="mt-6 grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-4">
                     {/* left: plans */}
                     <div className={softCard}>
-                        <div className="text-[16px] font-bold text-[#111827]">Plans</div>
-                        <div className="mt-1 text-[13px] text-[#606060]">
-                            Create a plan, then add items.
+                        <div className="flex items-start justify-between gap-3">
+                            <div>
+                                <div className="text-[16px] font-bold text-[#111827]">Plans</div>
+                                <div className="mt-1 text-[13px] text-[#606060]">
+                                    Create a plan, then add items.
+                                </div>
+                            </div>
+
+                            <button
+                                className={btnGhost}
+                                onClick={() => reloadPlans()}
+                                type="button"
+                                title="Refresh plans"
+                            >
+                                <span className="inline-flex items-center gap-2">
+                                    <RefreshCw size={16} />
+                                    Refresh
+                                </span>
+                            </button>
                         </div>
 
                         {/* create plan */}
@@ -794,7 +753,12 @@ export default function FocusPlanPage() {
                                 placeholder="New plan title…"
                                 className={"flex-1 " + inputPill}
                             />
-                            <button className={btnPrimary} onClick={createPlan} type="button" title="Create plan">
+                            <button
+                                className={btnPrimary}
+                                onClick={createPlan}
+                                type="button"
+                                title="Create plan"
+                            >
                                 <span className="inline-flex items-center gap-2">
                                     <Plus size={16} />
                                     Create
@@ -804,11 +768,17 @@ export default function FocusPlanPage() {
 
                         {/* plan list */}
                         <div className="mt-4 flex flex-col gap-2">
-                            {plans.length === 0 ? (
-                                <div className="text-[13px] text-[#606060] italic">No plans yet.</div>
+                            {plansLoading ? (
+                                <div className="text-[13px] text-[#606060] italic">Loading plans…</div>
+                            ) : plans.length === 0 ? (
+                                <div className="text-[13px] text-[#606060] italic">
+                                    No plans yet. Create your first one above.
+                                </div>
                             ) : (
                                 plans.map((p) => {
                                     const active = p.id === selectedPlanId;
+                                    const count = active ? planItemsCount : undefined;
+
                                     return (
                                         <button
                                             key={p.id}
@@ -840,7 +810,7 @@ export default function FocusPlanPage() {
                                                             active ? "text-white/70" : "text-[#606060]",
                                                         ].join(" ")}
                                                     >
-                                                        {p.items.length} items
+                                                        {typeof count === "number" ? `${count} items` : "—"}
                                                     </div>
                                                 </div>
 
@@ -916,6 +886,18 @@ export default function FocusPlanPage() {
                                             Updated: {fmtWhen(selectedPlan.updated_at)}
                                         </div>
                                     </div>
+
+                                    <button
+                                        className={btnGhost}
+                                        onClick={() => selectedPlanId && reloadItems(selectedPlanId)}
+                                        type="button"
+                                        title="Refresh items"
+                                    >
+                                        <span className="inline-flex items-center gap-2">
+                                            <RefreshCw size={16} />
+                                            Refresh
+                                        </span>
+                                    </button>
                                 </div>
 
                                 {/* add item */}
@@ -942,9 +924,9 @@ export default function FocusPlanPage() {
                                                     Due date (optional)
                                                 </div>
                                                 <input
-                                                    type="datetime-local"
-                                                    value={newItemDueLocal}
-                                                    onChange={(e) => setNewItemDueLocal(e.target.value)}
+                                                    type="date"
+                                                    value={newItemDueDate}
+                                                    onChange={(e) => setNewItemDueDate(e.target.value)}
                                                     className={inputPill}
                                                 />
                                             </div>
@@ -995,7 +977,7 @@ export default function FocusPlanPage() {
                                                 className={btnGhost}
                                                 onClick={() => {
                                                     setNewItemText("");
-                                                    setNewItemDueLocal("");
+                                                    setNewItemDueDate("");
                                                 }}
                                                 type="button"
                                             >
@@ -1012,19 +994,23 @@ export default function FocusPlanPage() {
                                             Items
                                         </div>
                                         <div className="text-[12px] text-[#606060]">
-                                            {selectedPlan.items.length} total
+                                            {items.length} total
                                         </div>
                                     </div>
 
                                     <div className="mt-3 flex flex-col gap-2">
-                                        {selectedPlan.items.length === 0 ? (
+                                        {itemsLoading ? (
+                                            <div className="text-[13px] text-[#606060] italic">
+                                                Loading items…
+                                            </div>
+                                        ) : items.length === 0 ? (
                                             <div className="text-[13px] text-[#606060] italic">
                                                 Add your first item above.
                                             </div>
                                         ) : (
-                                            selectedPlan.items.map((it) => {
+                                            items.map((it) => {
                                                 const isEditing = editingItemId === it.id;
-                                                const done = Boolean(it.done);
+                                                const done = Boolean(it.completed);
 
                                                 const session =
                                                     it.session_id
@@ -1036,7 +1022,7 @@ export default function FocusPlanPage() {
                                                     UUID_RE.test(String(it.session_id)) &&
                                                     String(it.text || "").trim().length > 0;
 
-                                                const attached = Boolean(it.attached);
+                                                const attached = Boolean(attachedItemIds[it.id]);
 
                                                 return (
                                                     <div
@@ -1069,9 +1055,12 @@ export default function FocusPlanPage() {
                                                                     </div>
 
                                                                     <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px] text-[#606060]">
-                                                                        {it.due_at ? (
+                                                                        {it.target_date ? (
                                                                             <span className="px-3 py-1 rounded-full border border-[#E5E7EB] bg-white">
-                                                                                Due: <span className="font-semibold text-[#111827]">{fmtDue(it.due_at)}</span>
+                                                                                Due:{" "}
+                                                                                <span className="font-semibold text-[#111827]">
+                                                                                    {fmtDueDate(it.target_date)}
+                                                                                </span>
                                                                             </span>
                                                                         ) : null}
 
@@ -1089,7 +1078,8 @@ export default function FocusPlanPage() {
                                                                             </span>
                                                                         ) : it.session_id ? (
                                                                             <span className="px-3 py-1 rounded-full border border-[#E5E7EB] bg-white">
-                                                                                Session: <span className="font-semibold text-[#111827]">resolving…</span>
+                                                                                Session:{" "}
+                                                                                <span className="font-semibold text-[#111827]">resolving…</span>
                                                                             </span>
                                                                         ) : (
                                                                             <span className="px-3 py-1 rounded-full border border-[#E5E7EB] bg-white">
@@ -1149,9 +1139,9 @@ export default function FocusPlanPage() {
                                                                             Due date (optional)
                                                                         </div>
                                                                         <input
-                                                                            type="datetime-local"
-                                                                            value={editingItemDueLocal}
-                                                                            onChange={(e) => setEditingItemDueLocal(e.target.value)}
+                                                                            type="date"
+                                                                            value={editingItemDueDate}
+                                                                            onChange={(e) => setEditingItemDueDate(e.target.value)}
                                                                             className={inputPill}
                                                                         />
                                                                     </div>
@@ -1224,9 +1214,7 @@ export default function FocusPlanPage() {
                                                                     onClick={() => attachItemToSession(it)}
                                                                     type="button"
                                                                     disabled={!canAttach || attachingItemId === it.id}
-                                                                    style={{
-                                                                        opacity: canAttach ? 1 : 0.5,
-                                                                    }}
+                                                                    style={{ opacity: canAttach ? 1 : 0.5 }}
                                                                     title={
                                                                         !canAttach
                                                                             ? "Set session + intention text first"
