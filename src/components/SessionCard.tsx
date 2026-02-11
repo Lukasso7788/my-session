@@ -418,6 +418,10 @@ function isCustomStudioSession(session: any): boolean {
  *   2) embedded template schedule
  *   3) session.stages_json / template.stages_json
  *   4) optional session_stages table
+ *
+ * ✅ FIX for Custom sessions:
+ * - if list query doesn't include schedule/stages_json (common optimization),
+ *   fetch missing fields from "sessions" on-demand to render SessionStageBar.
  * ========================= */
 function tryParseJson<T = any>(x: any): T | null {
     if (!x) return null;
@@ -526,9 +530,16 @@ function tryStagesFromSchedule(scheduleAny: any): SessionStage[] {
     const schedule = tryParseJson<any>(scheduleAny);
     if (!schedule || typeof schedule !== "object") return [];
 
+    // ✅ broaden keys (custom/studio schedules often differ)
     const phases =
         schedule?.timer?.phases ||
+        schedule?.timer?.timeline ||
+        schedule?.timer?.stages ||
+        schedule?.timer?.segments ||
         schedule?.phases ||
+        schedule?.timeline ||
+        schedule?.stages ||
+        schedule?.segments ||
         schedule?.timer?.blocks ||
         schedule?.blocks;
 
@@ -569,6 +580,48 @@ let _hasSessionStagesTable: boolean | null = null;
 const _stagesBySessionId = new Map<string, SessionStage[]>();
 const _stagesByTemplateId = new Map<string, SessionStage[]>();
 
+// ✅ NEW: cache for "sessions" extra fetch (when list query omits schedule/stages_json)
+const _sessionExtrasById = new Map<string, any | null>();
+
+function looksLikeUuid(x: any): boolean {
+    const s = String(x || "").trim();
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        s
+    );
+}
+
+async function fetchSessionExtrasForStages(sessionId: string): Promise<any | null> {
+    const sid = String(sessionId || "").trim();
+    if (!sid) return null;
+    if (!looksLikeUuid(sid)) return null;
+
+    if (_sessionExtrasById.has(sid)) return _sessionExtrasById.get(sid) || null;
+
+    const sb = getSupabase();
+    if (!sb) {
+        _sessionExtrasById.set(sid, null);
+        return null;
+    }
+
+    await ensureAuthReady(sb);
+
+    const { data, error } = await sb
+        .from("sessions")
+        .select(
+            "id, schedule, stages_json, session_stages_json, session_template_id, template_id, description, created_at"
+        )
+        .eq("id", sid)
+        .maybeSingle();
+
+    if (error || !data) {
+        _sessionExtrasById.set(sid, null);
+        return null;
+    }
+
+    _sessionExtrasById.set(sid, data);
+    return data;
+}
+
 function isNotFoundErr(err: any): boolean {
     const status = (err as any)?.status;
     const msg = String((err as any)?.message || "");
@@ -604,6 +657,7 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
     const sessionId = session?.id ? String(session.id) : "";
     if (sessionId && _stagesBySessionId.has(sessionId)) return _stagesBySessionId.get(sessionId)!;
 
+    // 0) already embedded in the session object
     if (Array.isArray(session?.session_stages) && session.session_stages.length) {
         const out = normalizeStages(sortStagesInClient(session.session_stages));
         if (sessionId) _stagesBySessionId.set(sessionId, out);
@@ -649,10 +703,25 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
         }
     }
 
+    // ✅ 1) Try DB fetches
     const sb = getSupabase();
-    if (!sb) return [];
+    if (!sb) {
+        // last fallback from duration (works even without Supabase)
+        const durMin = Number(session?.duration_minutes);
+        if (Number.isFinite(durMin) && durMin > 0) {
+            const out = normalizeStages(
+                sortStagesInClient([
+                    { id: "0", kind: "focus", title: "Focus", durationMinutes: durMin, position: 0 },
+                ])
+            );
+            if (sessionId) _stagesBySessionId.set(sessionId, out);
+            return out;
+        }
+        return [];
+    }
     await ensureAuthReady(sb);
 
+    // 1a) session_stages table
     if (_hasSessionStagesTable !== false && sessionId) {
         const { data: ssData, error: ssErr } = await sb
             .from("session_stages")
@@ -669,6 +738,7 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
         }
     }
 
+    // 1b) template cache / template fetch (if template id is known from list query)
     const templateId = getTemplateIdFromSession(session);
     if (templateId && _stagesByTemplateId.has(templateId)) {
         const out = _stagesByTemplateId.get(templateId)!;
@@ -700,6 +770,82 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
                 return schedStages;
             }
         }
+    }
+
+    // ✅ 2) FINAL FIX: If the list page didn't select schedule/stages_json for Custom sessions,
+    // fetch missing fields from "sessions" and try again.
+    if (sessionId) {
+        const extra = await fetchSessionExtrasForStages(sessionId);
+        if (extra) {
+            const sj =
+                tryParseJson<any[]>(extra?.stages_json) ||
+                tryParseJson<any[]>(extra?.session_stages_json);
+            if (Array.isArray(sj) && sj.length) {
+                const out = normalizeStages(sortStagesInClient(sj));
+                _stagesBySessionId.set(sessionId, out);
+                return out;
+            }
+
+            const schedStages = tryStagesFromSchedule(extra?.schedule);
+            if (schedStages.length) {
+                _stagesBySessionId.set(sessionId, schedStages);
+                return schedStages;
+            }
+
+            // if extra has template id (but list object didn't), try template fetch once
+            const tid =
+                extra?.session_template_id ||
+                extra?.template_id ||
+                session?.session_template_id ||
+                session?.template_id ||
+                null;
+
+            const tidStr = tid ? String(tid) : "";
+            if (tidStr) {
+                if (_stagesByTemplateId.has(tidStr)) {
+                    const out = _stagesByTemplateId.get(tidStr)!;
+                    _stagesBySessionId.set(sessionId, out);
+                    return out;
+                }
+
+                const { data: tData, error: tErr } = await sb
+                    .from("session_templates")
+                    .select("id, stages, stages_json, schedule, description")
+                    .eq("id", tidStr)
+                    .maybeSingle();
+
+                if (!tErr && tData) {
+                    const tj =
+                        tryParseJson<any[]>(tData?.stages_json) ||
+                        tryParseJson<any[]>(tData?.stages);
+                    if (Array.isArray(tj) && tj.length) {
+                        const out = normalizeStages(sortStagesInClient(tj));
+                        _stagesByTemplateId.set(tidStr, out);
+                        _stagesBySessionId.set(sessionId, out);
+                        return out;
+                    }
+
+                    const ts = tryStagesFromSchedule(tData?.schedule);
+                    if (ts.length) {
+                        _stagesByTemplateId.set(tidStr, ts);
+                        _stagesBySessionId.set(sessionId, ts);
+                        return ts;
+                    }
+                }
+            }
+        }
+    }
+
+    // ✅ 3) Absolute fallback: show a single "Focus" block based on duration_minutes
+    const durMin = Number(session?.duration_minutes);
+    if (Number.isFinite(durMin) && durMin > 0) {
+        const out = normalizeStages(
+            sortStagesInClient([
+                { id: "0", kind: "focus", title: "Focus", durationMinutes: durMin, position: 0 },
+            ])
+        );
+        if (sessionId) _stagesBySessionId.set(sessionId, out);
+        return out;
     }
 
     return [];
@@ -1337,7 +1483,7 @@ export default function SessionCard({
         })
         : "";
 
-    // ✅ Load stages
+    // ✅ Load stages (this now works for Custom sessions too, even if list query omitted schedule/stages_json)
     useEffect(() => {
         let cancelled = false;
 
