@@ -13,6 +13,11 @@ import {
   Pin,
   PinOff,
   ExternalLink,
+  ListPlus,
+  ChevronDown,
+  ChevronUp,
+  RefreshCw,
+  Search,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useParams } from "react-router-dom";
@@ -37,12 +42,9 @@ type IntentionsPanelProps = {
   theme?: RoomTheme;
 
   // ✅ Timer from top-bar (recommended)
-  // Pass remainingTime from RoomPageIFrame: timerText={remainingTime || "--:--"}
   timerText?: string;
 
   // ✅ IMPORTANT:
-  // Pass EXACT SAME className that you use for the timer text in RoomPageIFrame.
-  // This makes timer typography 1:1 identical (except we force Inter + font-normal).
   timerTextClassName?: string;
 };
 
@@ -63,6 +65,61 @@ declare global {
 
 const OVERLAY_FONT_FAMILY =
   'Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"';
+
+// =========================
+// ✅ Focus-plan localStorage types (MVP)
+// =========================
+type PlanItem = {
+  id: string;
+  text: string;
+  due_at?: string | null;
+  session_id?: string | null;
+  done?: boolean;
+  attached?: boolean;
+  attached_at?: string | null;
+};
+
+type Plan = {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  items: PlanItem[];
+};
+
+function storageKey(userId: string) {
+  return `mysession_focus_plans_v1_${userId}`;
+}
+
+function safeParsePlans(raw: string | null): Plan[] {
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    if (!Array.isArray(v)) return [];
+    return v
+      .filter((p) => p && typeof p === "object" && typeof p.id === "string")
+      .map((p) => ({
+        id: String((p as any).id),
+        title: String((p as any).title || "Plan"),
+        created_at: String((p as any).created_at || new Date().toISOString()),
+        updated_at: String((p as any).updated_at || new Date().toISOString()),
+        items: Array.isArray((p as any).items)
+          ? (p as any).items.map((it: any) => ({
+            id: String(it?.id || ""),
+            text: String(it?.text || "").trim(),
+            due_at: it?.due_at ? String(it.due_at) : null,
+            session_id: it?.session_id ? String(it.session_id) : null,
+            done: Boolean(it?.done),
+            attached: Boolean(it?.attached),
+            attached_at: it?.attached_at ? String(it.attached_at) : null,
+          }))
+          : [],
+      }))
+      .filter((p) => p.id && Array.isArray(p.items));
+  } catch {
+    return [];
+  }
+}
 
 function IconButton({
   title,
@@ -132,11 +189,9 @@ function TimerSmartIcon({
 }
 
 function copyStylesToDocument(from: Document, to: Document) {
-  // Best-effort: clone <style> and relevant <link> into target doc
   try {
     const nodes = Array.from(
       from.querySelectorAll<HTMLStyleElement | HTMLLinkElement>(
-        // include stylesheet + font-related helpers (preconnect/preload)
         'style, link[rel="stylesheet"], link[rel="preconnect"], link[rel="preload"]'
       )
     );
@@ -197,6 +252,16 @@ export function IntentionsPanel({
   );
   const [overlayOpen, setOverlayOpen] = useState(false);
 
+  // =========================
+  // ✅ Import from Plans state
+  // =========================
+  const [plansOpen, setPlansOpen] = useState(false);
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [selectedPlanId, setSelectedPlanId] = useState<string>("");
+  const [planSearch, setPlanSearch] = useState("");
+  const [importingItemId, setImportingItemId] = useState<string | null>(null);
+  const [plansLastLoadedAt, setPlansLastLoadedAt] = useState<string>("");
+
   // tokens
   const titleText = isLight ? "text-black/85" : "text-white/85";
   const mutedText = isLight ? "text-black/50" : "text-white/45";
@@ -227,6 +292,17 @@ export function IntentionsPanel({
   const teamCardCls = isLight
     ? "rounded-xl border border-black/10 px-3 py-2.5 bg-white/70 hover:bg-white transition"
     : "rounded-xl border border-white/5 px-3 py-2.5 bg-[#0B1220]/55 hover:bg-[#0B1220]/75 transition";
+
+  const subCardCls = isLight
+    ? "rounded-xl border border-black/10 bg-white/70"
+    : "rounded-xl border border-white/10 bg-[#0B1220]/55";
+
+  const ghostBtn = isLight
+    ? "border border-black/10 bg-black/0 hover:bg-black/5 text-black/75"
+    : "border border-white/10 bg-white/0 hover:bg-white/5 text-white/80";
+
+  const primaryBtn =
+    "bg-emerald-500 hover:bg-emerald-600 text-[#02140B] font-semibold";
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
@@ -385,6 +461,147 @@ export function IntentionsPanel({
   );
 
   const teamIntentions = useMemo(() => intentions, [intentions]);
+
+  const myTextSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const i of myIntentions) {
+      const t = String(i?.text || "").trim().toLowerCase();
+      if (t) set.add(t);
+    }
+    return set;
+  }, [myIntentions]);
+
+  // =========================
+  // ✅ Plans load / sync
+  // =========================
+  const loadPlansFromStorage = useCallback(() => {
+    if (!user?.id) {
+      setPlans([]);
+      setSelectedPlanId("");
+      return;
+    }
+
+    try {
+      const key = storageKey(user.id);
+      const parsed = safeParsePlans(localStorage.getItem(key));
+      setPlans(parsed);
+
+      if (parsed.length && !selectedPlanId) setSelectedPlanId(parsed[0].id);
+      if (parsed.length && selectedPlanId && !parsed.find((p) => p.id === selectedPlanId)) {
+        setSelectedPlanId(parsed[0].id);
+      }
+
+      setPlansLastLoadedAt(new Date().toISOString());
+    } catch {
+      setPlans([]);
+      setSelectedPlanId("");
+      setPlansLastLoadedAt(new Date().toISOString());
+    }
+  }, [user?.id, selectedPlanId]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    loadPlansFromStorage();
+  }, [user?.id, loadPlansFromStorage]);
+
+  // listen storage changes (if focus-plan open in another tab)
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const key = storageKey(user.id);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === key) loadPlansFromStorage();
+    };
+
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [user?.id, loadPlansFromStorage]);
+
+  const selectedPlan = useMemo(() => {
+    if (!selectedPlanId) return null;
+    return plans.find((p) => p.id === selectedPlanId) || null;
+  }, [plans, selectedPlanId]);
+
+  const planItemsVisible = useMemo(() => {
+    const p = selectedPlan;
+    if (!p) return [];
+
+    const q = String(planSearch || "").trim().toLowerCase();
+    const base = (p.items || []).filter((it) => String(it?.text || "").trim().length > 0);
+
+    if (!q) return base;
+    return base.filter((it) => String(it.text || "").toLowerCase().includes(q));
+  }, [selectedPlan, planSearch]);
+
+  const markPlanItemAttached = useCallback(
+    (planId: string, itemId: string) => {
+      if (!user?.id) return;
+
+      const key = storageKey(user.id);
+      const now = new Date().toISOString();
+
+      const nextPlans = plans.map((p) => {
+        if (p.id !== planId) return p;
+        return {
+          ...p,
+          updated_at: now,
+          items: (p.items || []).map((it) =>
+            it.id === itemId ? { ...it, attached: true, attached_at: now } : it
+          ),
+        };
+      });
+
+      setPlans(nextPlans);
+      try {
+        localStorage.setItem(key, JSON.stringify(nextPlans));
+      } catch {
+        // ignore
+      }
+    },
+    [plans, user?.id]
+  );
+
+  const importPlanItemToThisSession = useCallback(
+    async (item: PlanItem) => {
+      if (!user?.id || !sessionId) return;
+
+      const text = String(item?.text || "").trim();
+      if (!text) return;
+
+      // if already in current session (by text), do nothing
+      if (myTextSet.has(text.toLowerCase())) return;
+
+      setImportingItemId(item.id);
+
+      try {
+        // avoid duplicates from DB side too
+        const { data: existing } = await supabase
+          .from("intentions")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("session_id", sessionId)
+          .eq("text", text)
+          .limit(1);
+
+        if (!existing || existing.length === 0) {
+          const { error } = await supabase
+            .from("intentions")
+            .insert([{ user_id: user.id, session_id: sessionId, text, completed: false }]);
+
+          if (error) return;
+        }
+
+        // refresh intentions list
+        loadIntentions(sessionId);
+
+        // mark attached in local plans (nice UX)
+        if (selectedPlanId) markPlanItemAttached(selectedPlanId, item.id);
+      } finally {
+        setImportingItemId(null);
+      }
+    },
+    [user?.id, sessionId, myTextSet, loadIntentions, selectedPlanId, markPlanItemAttached]
+  );
 
   const handleAddIntention = async () => {
     if (!newIntention.trim() || !user || !sessionId) return;
@@ -586,8 +803,7 @@ export function IntentionsPanel({
 
   const headerTitle = isLight ? "text-black/85" : "text-white/85";
 
-  // ✅ Timer typography: allow passing size/etc from RoomPageIFrame,
-  // but ALWAYS force Inter + font-normal here (and keep tabular nums).
+  // ✅ Timer typography
   const timerTextCls =
     `tabular-nums text-[12px] ${timerTextClassName || ""} font-inter font-normal`.trim();
 
@@ -647,7 +863,11 @@ export function IntentionsPanel({
                 e.preventDefault();
                 const sid = (rawSessionId || sessionId || "").trim();
                 if (!sid) return;
-                window.open(`/focus-plan?sessionId=${encodeURIComponent(sid)}`, "_blank", "noopener,noreferrer");
+                window.open(
+                  `/focus-plan?sessionId=${encodeURIComponent(sid)}`,
+                  "_blank",
+                  "noopener,noreferrer"
+                );
               }}
             >
               <ExternalLink size={16} />
@@ -684,6 +904,198 @@ export function IntentionsPanel({
             >
               Add
             </button>
+          </div>
+
+          {/* ✅ Import from Plans */}
+          <div className={subCardCls + " p-3 mb-4"}>
+            <button
+              type="button"
+              onClick={() => setPlansOpen((v) => !v)}
+              className={[
+                "w-full flex items-center justify-between gap-3 px-3 py-2 rounded-xl transition",
+                isLight ? "hover:bg-black/5" : "hover:bg-white/5",
+              ].join(" ")}
+            >
+              <div className="flex items-center gap-2">
+                <ListPlus size={16} className={isLight ? "text-black/60" : "text-white/70"} />
+                <div className={"text-[13px] font-semibold " + (isLight ? "text-black/80" : "text-white/85")}>
+                  Import from my plans
+                </div>
+                <div className={"text-[11px] " + mutedText}>
+                  (adds into this session)
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className={"h-9 px-3 rounded-xl text-[12px] font-semibold transition " + ghostBtn}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    loadPlansFromStorage();
+                  }}
+                  title="Refresh plans"
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <RefreshCw size={14} />
+                    Refresh
+                  </span>
+                </button>
+
+                {plansOpen ? (
+                  <ChevronUp size={16} className={isLight ? "text-black/50" : "text-white/60"} />
+                ) : (
+                  <ChevronDown size={16} className={isLight ? "text-black/50" : "text-white/60"} />
+                )}
+              </div>
+            </button>
+
+            {plansOpen ? (
+              <div className="mt-3">
+                {plans.length === 0 ? (
+                  <div className={"text-[12px] italic " + mutedText}>
+                    No plans found. Create a plan in Focus plan page.
+                    {plansLastLoadedAt ? ` (checked ${new Date(plansLastLoadedAt).toLocaleTimeString()})` : ""}
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex flex-col gap-2">
+                      <div className={"text-[11px] font-semibold " + mutedText}>Plan</div>
+                      <select
+                        value={selectedPlanId}
+                        onChange={(e) => setSelectedPlanId(e.target.value)}
+                        className={
+                          isLight
+                            ? "w-full h-11 px-3 rounded-xl border border-black/10 bg-white text-[13px] font-semibold text-black/85 outline-none focus:ring-1 focus:ring-emerald-500"
+                            : "w-full h-11 px-3 rounded-xl border border-white/10 bg-[#0B1220]/70 text-[13px] font-semibold text-white/85 outline-none focus:ring-1 focus:ring-emerald-500"
+                        }
+                      >
+                        {plans.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.title} ({p.items?.length || 0})
+                          </option>
+                        ))}
+                      </select>
+
+                      <div className={"text-[11px] font-semibold " + mutedText + " mt-2"}>Search</div>
+                      <div className="flex items-center gap-2">
+                        <div
+                          className={[
+                            "h-11 w-11 rounded-xl border flex items-center justify-center",
+                            isLight ? "border-black/10 bg-white" : "border-white/10 bg-[#0B1220]/70",
+                          ].join(" ")}
+                        >
+                          <Search size={16} className={isLight ? "text-black/40" : "text-white/45"} />
+                        </div>
+
+                        <input
+                          value={planSearch}
+                          onChange={(e) => setPlanSearch(e.target.value)}
+                          placeholder="Type to filter plan items..."
+                          className={"flex-1 " + inputCls}
+                        />
+                      </div>
+                    </div>
+
+                    <div className={"h-px my-3 " + divider} />
+
+                    {!selectedPlan ? (
+                      <div className={"text-[12px] italic " + mutedText}>Select a plan.</div>
+                    ) : planItemsVisible.length === 0 ? (
+                      <div className={"text-[12px] italic " + mutedText}>
+                        No items match your filter.
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        {planItemsVisible.slice(0, 20).map((it) => {
+                          const text = String(it.text || "").trim();
+                          const alreadyInSession = myTextSet.has(text.toLowerCase());
+                          const attached = Boolean(it.attached);
+
+                          const rowBg = isLight ? "bg-white/70 hover:bg-white" : "bg-[#0B1220]/55 hover:bg-[#0B1220]/75";
+                          const rowBorder = isLight ? "border-black/10" : "border-white/10";
+
+                          return (
+                            <div
+                              key={it.id}
+                              className={[
+                                "rounded-xl border px-3 py-2.5 transition",
+                                rowBg,
+                                rowBorder,
+                              ].join(" ")}
+                            >
+                              <div className="flex items-start gap-3">
+                                <div className="flex-1 min-w-0">
+                                  <div
+                                    className={[
+                                      "text-[13px] break-words leading-5",
+                                      it.done
+                                        ? isLight
+                                          ? "text-black/45 line-through"
+                                          : "text-white/50 line-through"
+                                        : isLight
+                                          ? "text-black/80"
+                                          : "text-white/80",
+                                    ].join(" ")}
+                                  >
+                                    {text}
+                                  </div>
+
+                                  <div className={"mt-1 text-[11px] " + mutedText}>
+                                    {attached ? "Marked attached in plan" : "Plan item"}
+                                    {it.due_at ? ` · Due: ${new Date(it.due_at).toLocaleString()}` : ""}
+                                  </div>
+                                </div>
+
+                                {alreadyInSession ? (
+                                  <div className="shrink-0">
+                                    <div
+                                      className={[
+                                        "h-10 px-3 rounded-xl text-[12px] font-semibold inline-flex items-center gap-2",
+                                        isLight ? "bg-black/5 text-black/60 border border-black/10" : "bg-white/5 text-white/70 border border-white/10",
+                                      ].join(" ")}
+                                      title="Already in this session"
+                                    >
+                                      <Check size={16} />
+                                      Added
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => importPlanItemToThisSession(it)}
+                                    disabled={importingItemId === it.id}
+                                    className={[
+                                      "shrink-0 h-10 px-3 rounded-xl text-[12px] font-semibold transition inline-flex items-center gap-2",
+                                      importingItemId === it.id ? "opacity-70" : "opacity-100",
+                                      primaryBtn,
+                                    ].join(" ")}
+                                    title="Import into this session"
+                                  >
+                                    <ListPlus size={16} />
+                                    {importingItemId === it.id ? "Import..." : "Import"}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {planItemsVisible.length > 20 ? (
+                          <div className={"text-[11px] italic mt-1 " + mutedText}>
+                            Showing first 20 items (filter to find more).
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+
+                    <div className={"mt-3 text-[11px] " + mutedText}>
+                      Tip: attach items here to quickly push them into the room. Full editing stays in Focus plan.
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : null}
           </div>
 
           {loading ? (
