@@ -1313,10 +1313,6 @@ export default function FocusPlanPage() {
                                             </div>
                                         )}
                                     </div>
-
-                                    <div className="mt-4 text-[12px] text-[#606060]">
-                                        MVP storage: plans are saved locally in your browser (per user). Next step can be sync to Supabase.
-                                    </div>
                                 </div>
                             </>
                         )}
