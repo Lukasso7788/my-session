@@ -98,6 +98,22 @@ function withTimeout<T>(p: Promise<T>, ms: number, label = "timeout"): Promise<T
     return Promise.race([p, timeout]).finally(() => clearTimeout(t));
 }
 
+function normalizeMessageIds(ids: string[]) {
+    // keep order, unique, no optimistic, and last 300
+    const seen = new Set<string>();
+    const out: string[] = [];
+
+    for (const id of ids) {
+        if (!id) continue;
+        if (id.startsWith("optimistic-")) continue;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        out.push(id);
+    }
+
+    return out.length > 300 ? out.slice(out.length - 300) : out;
+}
+
 function MessageCard({
     msg,
     mine,
@@ -611,22 +627,17 @@ export function ChatPanel({
     };
 
     const getRecentMessageIdsForReactions = () => {
-        // only for non-optimistic (since reactions table references real ids)
-        const ids = messagesRef.current
-            .filter((m) => !!m.id && !m.id.startsWith("optimistic-"))
-            .slice(-300)
-            .map((m) => m.id);
-        // unique
-        return Array.from(new Set(ids));
+        const ids = messagesRef.current.map((m) => m.id);
+        return normalizeMessageIds(ids);
     };
 
     // ---------- load messages (initial + fallback)
-    const loadMessages = async (opts?: { silent?: boolean }) => {
-        if (!sessionId) return;
+    const loadMessages = async (opts?: { silent?: boolean }): Promise<Msg[] | null> => {
+        if (!sessionId) return null;
 
         if (loadingMessagesRef.current) {
             queuedMessagesReloadRef.current = true;
-            return;
+            return null;
         }
 
         loadingMessagesRef.current = true;
@@ -644,27 +655,36 @@ export function ChatPanel({
 
             const { data: rows, error } = await withTimeout(q, 12000, "loadMessages timeout");
 
-            if (!aliveRef.current) return;
-            if (reqId !== messagesReqIdRef.current) return;
+            if (!aliveRef.current) return null;
+            if (reqId !== messagesReqIdRef.current) return null;
 
             if (error) {
                 console.error("chat load error:", error);
                 setMessages([]);
-                return;
+                messagesRef.current = [];
+                return [];
             }
 
             const safeRows = (rows as any as MsgRow[]) || [];
             await ensureProfiles(safeRows.map((r) => r.user_id));
 
-            if (!aliveRef.current) return;
-            if (reqId !== messagesReqIdRef.current) return;
+            if (!aliveRef.current) return null;
+            if (reqId !== messagesReqIdRef.current) return null;
 
-            setMessages(safeRows.map((r) => attachProfile(r)));
+            const attached = safeRows.map((r) => attachProfile(r));
+
+            // ✅ КЛЮЧЕВОЕ: синхронно обновляем ref ДО/ВМЕСТЕ с setMessages,
+            // чтобы последующий loadReactions не видел пустой список.
+            messagesRef.current = attached;
+            setMessages(attached);
+
+            return attached;
         } catch (e) {
             console.warn("loadMessages failed:", e);
-            if (!aliveRef.current) return;
-            if (reqId !== messagesReqIdRef.current) return;
+            if (!aliveRef.current) return null;
+            if (reqId !== messagesReqIdRef.current) return null;
             // keep whatever we had; just stop spinner
+            return null;
         } finally {
             if (aliveRef.current && reqId === messagesReqIdRef.current && !opts?.silent) {
                 setLoading(false);
@@ -680,7 +700,7 @@ export function ChatPanel({
     };
 
     // ---------- load reactions (only for recent messages, debounced reload)
-    const loadReactions = async (opts?: { silent?: boolean }) => {
+    const loadReactions = async (opts?: { silent?: boolean; messageIds?: string[] }) => {
         if (!sessionId) return;
 
         if (loadingReactionsRef.current) {
@@ -692,7 +712,11 @@ export function ChatPanel({
         const reqId = ++reactionsReqIdRef.current;
 
         try {
-            const msgIds = getRecentMessageIdsForReactions();
+            const msgIdsRaw = opts?.messageIds && opts.messageIds.length > 0
+                ? opts.messageIds
+                : getRecentMessageIdsForReactions();
+
+            const msgIds = normalizeMessageIds(msgIdsRaw);
 
             if (msgIds.length === 0) {
                 if (!aliveRef.current) return;
@@ -740,16 +764,18 @@ export function ChatPanel({
         }
     };
 
+    // ✅ reload messages then reactions without the race
+    const reloadAll = async (opts?: { silent?: boolean }) => {
+        const loaded = await loadMessages(opts);
+        const list = loaded ?? messagesRef.current;
+        const ids = normalizeMessageIds(list.map((m) => m.id));
+        await loadReactions({ silent: true, messageIds: ids });
+    };
+
     // initial load (messages then reactions) on session change
     useEffect(() => {
         if (!sessionId) return;
-
-        (async () => {
-            await loadMessages();
-            // after messages are set, load reactions for those message ids
-            await loadReactions();
-        })();
-
+        void reloadAll({ silent: false });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionId]);
 
@@ -757,7 +783,8 @@ export function ChatPanel({
     useEffect(() => {
         if (!sessionId) return;
         // no need to reload messages, just rebuild mine[] by reloading reactions
-        void loadReactions({ silent: true });
+        const ids = normalizeMessageIds(messagesRef.current.map((m) => m.id));
+        void loadReactions({ silent: true, messageIds: ids });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionId, userId]);
 
@@ -846,9 +873,7 @@ export function ChatPanel({
             if (shouldPoll) {
                 if (!pollingRef.current) {
                     pollingRef.current = window.setInterval(() => {
-                        void loadMessages({ silent: true });
-                        // reactions reload is cheap now, but still do it less often
-                        scheduleReloadReactions(0);
+                        void reloadAll({ silent: true });
                     }, 12000);
                 }
                 return;
@@ -860,8 +885,7 @@ export function ChatPanel({
                     pollingRef.current = null;
                 }
                 // catch-up on successful (re)subscribe without spinner
-                void loadMessages({ silent: true });
-                scheduleReloadReactions(0);
+                void reloadAll({ silent: true });
             }
         });
 
