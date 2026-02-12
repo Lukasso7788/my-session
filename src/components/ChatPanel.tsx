@@ -46,26 +46,6 @@ function formatTime(iso?: string) {
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-// группировка реакций:
-// - counts: message_id -> emoji -> count
-// - mine:   message_id -> emoji -> true (если я ставил)
-function groupReactions(rows: ReactionRow[], myUserId: string | null) {
-    const counts: Record<string, Record<string, number>> = {};
-    const mine: Record<string, Record<string, boolean>> = {};
-
-    for (const r of rows) {
-        if (!counts[r.message_id]) counts[r.message_id] = {};
-        counts[r.message_id][r.emoji] = (counts[r.message_id][r.emoji] || 0) + 1;
-
-        if (myUserId && r.user_id === myUserId) {
-            if (!mine[r.message_id]) mine[r.message_id] = {};
-            mine[r.message_id][r.emoji] = true;
-        }
-    }
-
-    return { counts, mine };
-}
-
 // --- Reply parsing: вытягиваем цитату из тела сообщения, чтобы красиво отрендерить
 function parseReplyBody(body: string): { quote: string | null; main: string } {
     if (!body) return { quote: null, main: "" };
@@ -112,6 +92,37 @@ function normalizeMessageIds(ids: string[]) {
     }
 
     return out.length > 300 ? out.slice(out.length - 300) : out;
+}
+
+/** -----------------------
+ *  In-memory cache (fix "messages disappear" on open/close)
+ *  ----------------------*/
+type ChatCacheEntry = {
+    ts: number;
+    messages: Msg[];
+    reactions: Record<string, Record<string, number>>;
+    myReactions: Record<string, Record<string, boolean>>;
+    profilesById: Record<string, Profile>;
+    meProfile: Profile | null;
+};
+const CHAT_CACHE = new Map<string, ChatCacheEntry>();
+const CACHE_MAX = 8;
+
+function setChatCache(sessionId: string, entry: ChatCacheEntry) {
+    CHAT_CACHE.set(sessionId, entry);
+
+    // simple cap (drop oldest)
+    if (CHAT_CACHE.size > CACHE_MAX) {
+        let oldestKey: string | null = null;
+        let oldestTs = Infinity;
+        for (const [k, v] of CHAT_CACHE.entries()) {
+            if (v.ts < oldestTs) {
+                oldestTs = v.ts;
+                oldestKey = k;
+            }
+        }
+        if (oldestKey) CHAT_CACHE.delete(oldestKey);
+    }
 }
 
 function MessageCard({
@@ -506,14 +517,19 @@ export function ChatPanel({
     const queuedMessagesReloadRef = useRef(false);
     const queuedReactionsReloadRef = useRef(false);
 
-    // debounce for reactions reload
-    const reactionsReloadTimerRef = useRef<number | null>(null);
-
     // autoscroll control
     const atBottomRef = useRef<boolean>(true);
     const [unseenNew, setUnseenNew] = useState<number>(0);
 
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
+
+    // bootstrap timestamp (avoid noisy reloads)
+    const bootTsRef = useRef<number>(0);
+
+    // pending reaction ops dedupe (avoid optimistic + realtime double-apply)
+    const pendingReactionOpsRef = useRef<Map<string, number>>(new Map());
+    const reactionKey = (ev: string, messageId: string, emoji: string, uid: string) =>
+        `${ev}|${messageId}|${emoji}|${uid}`;
 
     const isAtBottom = () => {
         const el = listRef.current;
@@ -527,16 +543,49 @@ export function ChatPanel({
         bottomRef.current?.scrollIntoView({ behavior });
     };
 
-    const scheduleReloadReactions = (delayMs = 400) => {
-        if (reactionsReloadTimerRef.current) {
-            window.clearTimeout(reactionsReloadTimerRef.current);
-            reactionsReloadTimerRef.current = null;
+    // ✅ hydrate from cache on session change (instant UI on open/close)
+    useEffect(() => {
+        if (!sessionId) return;
+
+        const cached = CHAT_CACHE.get(sessionId);
+        if (cached) {
+            messagesRef.current = cached.messages || [];
+            profilesByIdRef.current = cached.profilesById || {};
+            meProfileRef.current = cached.meProfile || null;
+
+            setMessages(cached.messages || []);
+            setReactions(cached.reactions || {});
+            setMyReactions(cached.myReactions || {});
+            setProfilesById(cached.profilesById || {});
+            setMeProfile(cached.meProfile || null);
+
+            setLoading(false);
+        } else {
+            messagesRef.current = [];
+            setMessages([]);
+            setReactions({});
+            setMyReactions({});
+            setReplyTo(null);
+            setText("");
+            setUnseenNew(0);
+            setLoading(true);
         }
-        reactionsReloadTimerRef.current = window.setTimeout(() => {
-            reactionsReloadTimerRef.current = null;
-            void loadReactions({ silent: true });
-        }, delayMs);
-    };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sessionId]);
+
+    // persist cache (lightweight)
+    useEffect(() => {
+        if (!sessionId) return;
+        setChatCache(sessionId, {
+            ts: Date.now(),
+            messages: messagesRef.current,
+            reactions,
+            myReactions,
+            profilesById: profilesByIdRef.current,
+            meProfile: meProfileRef.current,
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sessionId, messages, reactions, myReactions, profilesById, meProfile]);
 
     // ✅ inform parent that chat became visible
     useEffect(() => {
@@ -643,7 +692,8 @@ export function ChatPanel({
         loadingMessagesRef.current = true;
         const reqId = ++messagesReqIdRef.current;
 
-        if (!opts?.silent) setLoading(true);
+        // IMPORTANT: если у нас уже есть сообщения (например из cache) — не показываем спиннер
+        if (!opts?.silent && messagesRef.current.length === 0) setLoading(true);
 
         try {
             const q = supabase
@@ -653,16 +703,15 @@ export function ChatPanel({
                 .order("created_at", { ascending: true })
                 .limit(300);
 
-            const { data: rows, error } = await withTimeout(q, 12000, "loadMessages timeout");
+            const { data: rows, error } = await withTimeout(q as any, 12000, "loadMessages timeout");
 
             if (!aliveRef.current) return null;
             if (reqId !== messagesReqIdRef.current) return null;
 
             if (error) {
+                // ✅ FIX: не чистим чат на transient error (это и давало "пропадания")
                 console.error("chat load error:", error);
-                setMessages([]);
-                messagesRef.current = [];
-                return [];
+                return null;
             }
 
             const safeRows = (rows as any as MsgRow[]) || [];
@@ -673,8 +722,7 @@ export function ChatPanel({
 
             const attached = safeRows.map((r) => attachProfile(r));
 
-            // ✅ КЛЮЧЕВОЕ: синхронно обновляем ref ДО/ВМЕСТЕ с setMessages,
-            // чтобы последующий loadReactions не видел пустой список.
+            // ✅ sync ref before setState
             messagesRef.current = attached;
             setMessages(attached);
 
@@ -683,7 +731,7 @@ export function ChatPanel({
             console.warn("loadMessages failed:", e);
             if (!aliveRef.current) return null;
             if (reqId !== messagesReqIdRef.current) return null;
-            // keep whatever we had; just stop spinner
+            // keep whatever we had
             return null;
         } finally {
             if (aliveRef.current && reqId === messagesReqIdRef.current && !opts?.silent) {
@@ -699,7 +747,7 @@ export function ChatPanel({
         }
     };
 
-    // ---------- load reactions (only for recent messages, debounced reload)
+    // ---------- load reactions (initial only + rare resync)
     const loadReactions = async (opts?: { silent?: boolean; messageIds?: string[] }) => {
         if (!sessionId) return;
 
@@ -712,15 +760,15 @@ export function ChatPanel({
         const reqId = ++reactionsReqIdRef.current;
 
         try {
-            const msgIdsRaw = opts?.messageIds && opts.messageIds.length > 0
-                ? opts.messageIds
-                : getRecentMessageIdsForReactions();
+            const msgIdsRaw =
+                opts?.messageIds && opts.messageIds.length > 0 ? opts.messageIds : getRecentMessageIdsForReactions();
 
             const msgIds = normalizeMessageIds(msgIdsRaw);
 
             if (msgIds.length === 0) {
                 if (!aliveRef.current) return;
                 if (reqId !== reactionsReqIdRef.current) return;
+                // leave as-is (no messages)
                 setReactions({});
                 setMyReactions({});
                 return;
@@ -731,24 +779,37 @@ export function ChatPanel({
                 .select("id, session_id, message_id, user_id, emoji, created_at")
                 .eq("session_id", sessionId)
                 .in("message_id", msgIds)
-                // upper bound just in case; usually far smaller
                 .limit(5000);
 
-            const { data, error } = await withTimeout(q, 12000, "loadReactions timeout");
+            const { data, error } = await withTimeout(q as any, 12000, "loadReactions timeout");
 
             if (!aliveRef.current) return;
             if (reqId !== reactionsReqIdRef.current) return;
 
             if (error) {
                 console.error("reactions load error:", error);
-                setReactions({});
-                setMyReactions({});
+                // ✅ don't wipe on error
                 return;
             }
 
-            const grouped = groupReactions((data as any as ReactionRow[]) || [], userId);
-            setReactions(grouped.counts);
-            setMyReactions(grouped.mine);
+            const rows = (data as any as ReactionRow[]) || [];
+
+            // full rebuild of counts + mine (but only on bootstrap/resync)
+            const counts: Record<string, Record<string, number>> = {};
+            const mine: Record<string, Record<string, boolean>> = {};
+
+            for (const r of rows) {
+                if (!counts[r.message_id]) counts[r.message_id] = {};
+                counts[r.message_id][r.emoji] = (counts[r.message_id][r.emoji] || 0) + 1;
+
+                if (userId && r.user_id === userId) {
+                    if (!mine[r.message_id]) mine[r.message_id] = {};
+                    mine[r.message_id][r.emoji] = true;
+                }
+            }
+
+            setReactions(counts);
+            setMyReactions(mine);
         } catch (e) {
             console.warn("loadReactions failed:", e);
             if (!aliveRef.current) return;
@@ -764,31 +825,44 @@ export function ChatPanel({
         }
     };
 
-    // ✅ reload messages then reactions without the race
-    const reloadAll = async (opts?: { silent?: boolean }) => {
-        const loaded = await loadMessages(opts);
+    // ✅ bootstrap: load messages once, then reactions once
+    const bootstrap = async (opts?: { silent?: boolean; force?: boolean }) => {
+        if (!sessionId) return;
+
+        const now = Date.now();
+        if (!opts?.force && now - bootTsRef.current < 15000) return;
+
+        const loaded = await loadMessages({ silent: opts?.silent });
         const list = loaded ?? messagesRef.current;
         const ids = normalizeMessageIds(list.map((m) => m.id));
         await loadReactions({ silent: true, messageIds: ids });
+
+        bootTsRef.current = now;
     };
 
-    // initial load (messages then reactions) on session change
+    // initial bootstrap on session change
     useEffect(() => {
         if (!sessionId) return;
-        void reloadAll({ silent: false });
+        void bootstrap({ silent: false, force: true });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionId]);
 
-    // when userId appears/changes: refresh "my reactions" mapping
+    // if userId becomes available later — refresh "mine" mapping once
     useEffect(() => {
         if (!sessionId) return;
-        // no need to reload messages, just rebuild mine[] by reloading reactions
-        const ids = normalizeMessageIds(messagesRef.current.map((m) => m.id));
-        void loadReactions({ silent: true, messageIds: ids });
+        if (!userId) return;
+
+        // if we already have reactions but myReactions is empty (because uid was null) -> rebuild once
+        const hasAnyReactions = Object.keys(reactions).length > 0;
+        const hasAnyMy = Object.keys(myReactions).length > 0;
+        if (hasAnyReactions && !hasAnyMy) {
+            const ids = normalizeMessageIds(messagesRef.current.map((m) => m.id));
+            void loadReactions({ silent: true, messageIds: ids });
+        }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionId, userId]);
 
-    // ---------- realtime messages: update state directly
+    // ---------- realtime messages: update state directly (sync messagesRef)
     useEffect(() => {
         if (!sessionId) return;
 
@@ -822,20 +896,21 @@ export function ChatPanel({
 
                     const merged = attachProfile(row);
 
+                    let next: Msg[];
                     if (idxOptimistic !== -1) {
-                        const next = [...prev];
+                        next = [...prev];
                         next[idxOptimistic] = merged;
-                        return next;
+                    } else {
+                        next = [...prev, merged];
                     }
 
-                    return [...prev, merged];
+                    messagesRef.current = next;
+                    return next;
                 });
 
                 if (!beforeAtBottom && row.user_id !== userId) {
                     setUnseenNew((n) => Math.min(99, n + 1));
                 }
-
-                // reactions for a new message usually none, but if they appear quickly — we'll pick up via reactions channel.
             }
         );
 
@@ -849,7 +924,11 @@ export function ChatPanel({
                 await ensureProfiles([row.user_id]);
                 if (!aliveRef.current) return;
 
-                setMessages((prev) => prev.map((m) => (m.id === row.id ? attachProfile(row) : m)));
+                setMessages((prev) => {
+                    const next = prev.map((m) => (m.id === row.id ? attachProfile(row) : m));
+                    messagesRef.current = next;
+                    return next;
+                });
             }
         );
 
@@ -859,22 +938,40 @@ export function ChatPanel({
             (payload: any) => {
                 const deletedId = payload?.old?.id as string | undefined;
                 if (!deletedId) return;
-                setMessages((prev) => prev.filter((m) => m.id !== deletedId));
+
+                setMessages((prev) => {
+                    const next = prev.filter((m) => m.id !== deletedId);
+                    messagesRef.current = next;
+                    return next;
+                });
+
+                // cleanup reactions for deleted message (UI sanity)
+                setReactions((prev) => {
+                    if (!prev[deletedId]) return prev;
+                    const next = { ...prev };
+                    delete next[deletedId];
+                    return next;
+                });
+                setMyReactions((prev) => {
+                    if (!prev[deletedId]) return prev;
+                    const next = { ...prev };
+                    delete next[deletedId];
+                    return next;
+                });
             }
         );
 
         channel.subscribe((status) => {
             console.log("chat channel status:", status);
 
-            // ✅ smarter fallback polling:
-            // only when channel actually errors or times out
+            // fallback polling only when channel errors/timeouts
             const shouldPoll = status === "CHANNEL_ERROR" || status === "TIMED_OUT";
 
             if (shouldPoll) {
                 if (!pollingRef.current) {
                     pollingRef.current = window.setInterval(() => {
-                        void reloadAll({ silent: true });
-                    }, 12000);
+                        void bootstrap({ silent: true, force: true });
+                    }, 15000);
                 }
                 return;
             }
@@ -884,8 +981,10 @@ export function ChatPanel({
                     window.clearInterval(pollingRef.current);
                     pollingRef.current = null;
                 }
-                // catch-up on successful (re)subscribe without spinner
-                void reloadAll({ silent: true });
+                // ✅ do NOT spam reload; only if empty (or after long gap)
+                if (messagesRef.current.length === 0) {
+                    void bootstrap({ silent: true, force: true });
+                }
             }
         });
 
@@ -899,9 +998,90 @@ export function ChatPanel({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionId, userId]);
 
-    // ---------- realtime reactions (debounced reload)
+    // ---------- realtime reactions (incremental updates, no reload spam)
     useEffect(() => {
         if (!sessionId) return;
+
+        const applyInsert = (r: ReactionRow) => {
+            setReactions((prev) => {
+                const next = { ...prev };
+                const msgMap = { ...(next[r.message_id] || {}) };
+                msgMap[r.emoji] = (msgMap[r.emoji] || 0) + 1;
+                next[r.message_id] = msgMap;
+                return next;
+            });
+
+            if (userId && r.user_id === userId) {
+                setMyReactions((prev) => {
+                    const next = { ...prev };
+                    const mineMap = { ...(next[r.message_id] || {}) };
+                    mineMap[r.emoji] = true;
+                    next[r.message_id] = mineMap;
+                    return next;
+                });
+            }
+        };
+
+        const applyDelete = (r: ReactionRow) => {
+            setReactions((prev) => {
+                const curMsg = prev[r.message_id];
+                if (!curMsg) return prev;
+
+                const next = { ...prev };
+                const msgMap = { ...curMsg };
+                const cur = Number(msgMap[r.emoji] || 0);
+                const n = Math.max(0, cur - 1);
+
+                if (n <= 0) {
+                    delete msgMap[r.emoji];
+                } else {
+                    msgMap[r.emoji] = n;
+                }
+
+                if (Object.keys(msgMap).length === 0) {
+                    delete next[r.message_id];
+                } else {
+                    next[r.message_id] = msgMap;
+                }
+                return next;
+            });
+
+            if (userId && r.user_id === userId) {
+                setMyReactions((prev) => {
+                    const curMsg = prev[r.message_id];
+                    if (!curMsg) return prev;
+
+                    const next = { ...prev };
+                    const mineMap = { ...curMsg };
+                    delete mineMap[r.emoji];
+
+                    if (Object.keys(mineMap).length === 0) {
+                        delete next[r.message_id];
+                    } else {
+                        next[r.message_id] = mineMap;
+                    }
+                    return next;
+                });
+            }
+        };
+
+        const shouldSkipFromPending = (ev: string, r: ReactionRow) => {
+            // only dedupe our own user ops; otherwise don't skip
+            if (!userId || r.user_id !== userId) return false;
+
+            const key = reactionKey(ev, r.message_id, r.emoji, r.user_id);
+            const ts = pendingReactionOpsRef.current.get(key);
+            if (!ts) return false;
+
+            if (Date.now() - ts < 6000) {
+                pendingReactionOpsRef.current.delete(key);
+                return true;
+            }
+
+            // stale, let it pass
+            pendingReactionOpsRef.current.delete(key);
+            return false;
+        };
 
         const ch = supabase
             .channel(`chat-reactions:${sessionId}`)
@@ -913,8 +1093,36 @@ export function ChatPanel({
                     table: REACTIONS_TABLE,
                     filter: `session_id=eq.${sessionId}`,
                 },
-                () => {
-                    scheduleReloadReactions(400);
+                (payload: any) => {
+                    const ev: string = payload?.eventType || payload?.type || payload?.event || "";
+                    const n = payload?.new as ReactionRow | undefined;
+                    const o = payload?.old as ReactionRow | undefined;
+
+                    if (ev === "INSERT" && n) {
+                        if (shouldSkipFromPending("INSERT", n)) return;
+                        applyInsert(n);
+                        return;
+                    }
+
+                    if (ev === "DELETE" && o) {
+                        if (shouldSkipFromPending("DELETE", o)) return;
+                        applyDelete(o);
+                        return;
+                    }
+
+                    if (ev === "UPDATE" && o && n) {
+                        // handle emoji/user change (rare)
+                        // decrement old
+                        if (!(userId && o.user_id === userId && shouldSkipFromPending("UPDATE", o))) {
+                            applyDelete(o);
+                            applyInsert(n);
+                        }
+                        return;
+                    }
+
+                    // fallback: if payload shape is weird, do one rare resync
+                    // (не спамим, только когда реально что-то странное)
+                    void loadReactions({ silent: true, messageIds: getRecentMessageIdsForReactions() });
                 }
             )
             .subscribe((status) => {
@@ -922,10 +1130,6 @@ export function ChatPanel({
             });
 
         return () => {
-            if (reactionsReloadTimerRef.current) {
-                window.clearTimeout(reactionsReloadTimerRef.current);
-                reactionsReloadTimerRef.current = null;
-            }
             supabase.removeChannel(ch);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -947,7 +1151,6 @@ export function ChatPanel({
         const el = composerRef.current;
         if (!el) return;
 
-        // reset then set
         el.style.height = "0px";
         const next = Math.min(el.scrollHeight, 140);
         el.style.height = `${next}px`;
@@ -978,7 +1181,11 @@ export function ChatPanel({
 
         atBottomRef.current = true;
 
-        setMessages((prev) => [...prev, optimistic]);
+        setMessages((prev) => {
+            const next = [...prev, optimistic];
+            messagesRef.current = next;
+            return next;
+        });
         setText("");
         setReplyTo(null);
 
@@ -991,7 +1198,11 @@ export function ChatPanel({
 
         if (error) {
             console.error("chat send error:", error);
-            setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
+            setMessages((prev) => {
+                const next = prev.filter((m) => m.id !== optimistic.id);
+                messagesRef.current = next;
+                return next;
+            });
             setText(composed);
             return;
         }
@@ -1000,12 +1211,13 @@ export function ChatPanel({
     const updateMessage = async (messageId: string, newBody: string) => {
         if (!userId || !sessionId) return;
 
-        // optimistic update
         const prevBody = messagesRef.current.find((m) => m.id === messageId)?.body ?? null;
 
-        setMessages((prev) =>
-            prev.map((m) => (m.id === messageId ? { ...m, body: newBody } : m))
-        );
+        setMessages((prev) => {
+            const next = prev.map((m) => (m.id === messageId ? { ...m, body: newBody } : m));
+            messagesRef.current = next;
+            return next;
+        });
 
         const { error } = await supabase
             .from(MSG_TABLE)
@@ -1017,11 +1229,12 @@ export function ChatPanel({
         if (error) {
             console.error("chat update error:", error);
 
-            // revert (best effort)
             if (prevBody !== null) {
-                setMessages((prev) =>
-                    prev.map((m) => (m.id === messageId ? { ...m, body: prevBody } : m))
-                );
+                setMessages((prev) => {
+                    const next = prev.map((m) => (m.id === messageId ? { ...m, body: prevBody } : m));
+                    messagesRef.current = next;
+                    return next;
+                });
             } else {
                 void loadMessages({ silent: true });
             }
@@ -1031,9 +1244,13 @@ export function ChatPanel({
     const deleteMessage = async (messageId: string) => {
         if (!userId || !sessionId) return;
 
-        // optimistic remove
         const snapshot = messagesRef.current;
-        setMessages((prev) => prev.filter((m) => m.id !== messageId));
+
+        setMessages((prev) => {
+            const next = prev.filter((m) => m.id !== messageId);
+            messagesRef.current = next;
+            return next;
+        });
 
         const { error } = await supabase
             .from(MSG_TABLE)
@@ -1044,8 +1261,8 @@ export function ChatPanel({
 
         if (error) {
             console.error("chat delete error:", error);
-            // revert
             setMessages(snapshot);
+            messagesRef.current = snapshot;
         }
     };
 
@@ -1096,6 +1313,10 @@ export function ChatPanel({
             return next;
         });
 
+        // mark expected realtime event to dedupe
+        const expectedEv = already ? "DELETE" : "INSERT";
+        pendingReactionOpsRef.current.set(reactionKey(expectedEv, messageId, emoji, userId), Date.now());
+
         // DB action
         if (already) {
             const { error } = await supabase
@@ -1108,8 +1329,8 @@ export function ChatPanel({
 
             if (error) {
                 console.warn("removeReaction error:", error);
-                // best effort resync
-                scheduleReloadReactions(200);
+                // resync (rare)
+                void loadReactions({ silent: true, messageIds: getRecentMessageIdsForReactions() });
             }
             return;
         }
@@ -1130,6 +1351,9 @@ export function ChatPanel({
                 msg.toLowerCase().includes("unique");
 
             if (isDup) {
+                // if it's duplicate, toggle off
+                pendingReactionOpsRef.current.set(reactionKey("DELETE", messageId, emoji, userId), Date.now());
+
                 await supabase
                     .from(REACTIONS_TABLE)
                     .delete()
@@ -1138,12 +1362,12 @@ export function ChatPanel({
                     .eq("user_id", userId)
                     .eq("emoji", emoji);
 
-                scheduleReloadReactions(200);
+                void loadReactions({ silent: true, messageIds: getRecentMessageIdsForReactions() });
                 return;
             }
 
             console.warn("addReaction error:", error);
-            scheduleReloadReactions(200);
+            void loadReactions({ silent: true, messageIds: getRecentMessageIdsForReactions() });
         }
     };
 
