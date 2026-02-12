@@ -321,6 +321,15 @@ const MAX_PARTICIPANTS = 64;
 const ATT_HEARTBEAT_MS = 10_000;
 const ONLINE_WINDOW_MS = 35_000;
 
+// ====== adaptive video quality ======
+// 1–2 => 720p, 3–4 => 480p, 5+ => 360p
+function pickTargetVideoHeight(participantsTotal: number) {
+    const n = Math.max(1, Math.floor(Number(participantsTotal || 1)));
+    if (n <= 2) return 720;
+    if (n <= 4) return 480;
+    return 360;
+}
+
 // ===============================
 // JITSI EXTERNAL API LOADER
 // ===============================
@@ -421,6 +430,16 @@ async function createJitsiApiWithFallback(args: {
                     conferenceInfo: { alwaysVisible: [], autoHide: [] },
 
                     toolbarButtons: TOOLBAR_MOUNT_BUTTONS,
+
+                    // ✅ allow high quality by default (we still adapt at runtime)
+                    resolution: 720,
+                    constraints: {
+                        video: {
+                            height: { ideal: 720, max: 720, min: 180 },
+                        },
+                    },
+                    enableLayerSuspension: true,
+                    disableSimulcast: false,
 
                     ...(cssUrl ? { customCssUrl: cssUrl } : {}),
                 },
@@ -1816,6 +1835,76 @@ export default function RoomPageIFrame() {
     // ============================================
     const [jitsiKey, setJitsiKey] = useState(0);
 
+    // ✅ adaptive video quality state
+    const lastAppliedVideoHeightRef = useRef<number>(0);
+    const videoQualityTimerRef = useRef<number | null>(null);
+
+    const clearVideoQualityTimer = () => {
+        if (videoQualityTimerRef.current) {
+            window.clearTimeout(videoQualityTimerRef.current);
+            videoQualityTimerRef.current = null;
+        }
+    };
+
+    const applyAdaptiveVideoQualityNow = (api: any, participantsTotal: number) => {
+        if (!api) return;
+
+        const target = pickTargetVideoHeight(participantsTotal);
+
+        // avoid spam
+        if (lastAppliedVideoHeightRef.current === target) return;
+        lastAppliedVideoHeightRef.current = target;
+
+        const cmds = supportedCmdsRef.current;
+        const supports = (c: string) => !cmds || cmds.includes(c);
+
+        // Newer: receiver constraints (some builds accept {constraints:{maxHeight}}, some {maxHeight})
+        if (supports("setReceiverConstraints")) {
+            try {
+                api.executeCommand?.("setReceiverConstraints", { constraints: { maxHeight: target } });
+                return;
+            } catch { }
+            try {
+                api.executeCommand?.("setReceiverConstraints", { maxHeight: target });
+                return;
+            } catch { }
+        }
+
+        // Older: setVideoQuality (usually accepts height)
+        try {
+            if (supports("setVideoQuality")) api.executeCommand?.("setVideoQuality", target);
+            else api.executeCommand?.("setVideoQuality", target);
+            return;
+        } catch { }
+
+        // Extra fallback (harmless if unsupported)
+        try {
+            if (supports("setVideoResolution")) api.executeCommand?.("setVideoResolution", target);
+        } catch { }
+    };
+
+    const scheduleAdaptiveVideoQuality = (api: any, participantsTotal: number, immediate = false) => {
+        if (!api) return;
+
+        const run = () => {
+            // ensure still same api instance
+            if (!apiRef.current || apiRef.current !== api) return;
+            applyAdaptiveVideoQualityNow(api, participantsTotal);
+        };
+
+        if (immediate) {
+            clearVideoQualityTimer();
+            run();
+            return;
+        }
+
+        clearVideoQualityTimer();
+        videoQualityTimerRef.current = window.setTimeout(() => {
+            videoQualityTimerRef.current = null;
+            run();
+        }, 450);
+    };
+
     const forceReloadJitsi = () => {
         try {
             apiRef.current?.dispose?.();
@@ -1843,6 +1932,10 @@ export default function RoomPageIFrame() {
 
         tileEventSeenRef.current = false;
         tileEnforcedOnceRef.current = false;
+
+        // reset adaptive quality state
+        clearVideoQualityTimer();
+        lastAppliedVideoHeightRef.current = 0;
 
         setJitsiKey((x) => x + 1);
     };
@@ -1937,7 +2030,12 @@ export default function RoomPageIFrame() {
             const merged = [localRow, ...remoteRows.filter((r) => r.id !== localId)];
             setParticipantRows(merged);
 
-            setParticipantsNow((prev) => (onlineUsers.length > 0 ? onlineUsers.length : Math.max(prev || 0, merged.length)));
+            const totalInRoom = merged.length;
+
+            setParticipantsNow((prev) => (onlineUsers.length > 0 ? onlineUsers.length : Math.max(prev || 0, totalInRoom)));
+
+            // ✅ adaptive video quality based on actual room participants (not attendance)
+            scheduleAdaptiveVideoQuality(api, totalInRoom, false);
         } catch { }
     };
 
@@ -1973,6 +2071,10 @@ export default function RoomPageIFrame() {
 
                 tileEventSeenRef.current = false;
                 tileEnforcedOnceRef.current = false;
+
+                // reset adaptive quality state for new api instance
+                clearVideoQualityTimer();
+                lastAppliedVideoHeightRef.current = 0;
 
                 const parent = iframeContainerRef.current!;
                 const domains = domainsForSession(session);
@@ -2023,6 +2125,10 @@ export default function RoomPageIFrame() {
 
                     // ✅ enforce tile view ON after join (robust)
                     enforceTileViewOn(api);
+
+                    // ✅ quality: after join, do an immediate pass as well (helps when room starts as 1–2 ppl)
+                    const initialTotal = 1 + (Array.isArray(api.getParticipantsInfo?.()) ? api.getParticipantsInfo().length : 0);
+                    scheduleAdaptiveVideoQuality(api, initialTotal, true);
                 };
 
                 const onParticipantJoined = (e: any) => {
@@ -2092,6 +2198,12 @@ export default function RoomPageIFrame() {
 
                 // ✅ second pass enforce (after a short delay, before join event sometimes)
                 window.setTimeout(() => enforceTileViewOn(api), 420);
+
+                // ✅ quality: another delayed pass (some builds start low until conference is fully up)
+                window.setTimeout(() => {
+                    const total = 1 + (Array.isArray(api.getParticipantsInfo?.()) ? api.getParticipantsInfo().length : 0);
+                    scheduleAdaptiveVideoQuality(api, total, true);
+                }, 900);
             } catch (e: any) {
                 console.log("Jitsi create error:", e);
                 setLastErr(String(e?.message || e || "Failed to load Jitsi"));
@@ -2108,6 +2220,8 @@ export default function RoomPageIFrame() {
             supportedCmdsRef.current = null;
             setApiReady(false);
             stopAttendanceHeartbeat();
+
+            clearVideoQualityTimer();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [authStatus, sessionId, jitsiKey, roomName]);
