@@ -69,6 +69,7 @@ type VideoRoomProps = {
 
     /**
      * ✅ anyone can report
+     * Parent should persist report to Supabase (e.g. insert into a `participant_reports` table).
      */
     onReportParticipant?: (participantId: string, reason: string) => void | Promise<void>;
 };
@@ -349,6 +350,9 @@ function ParticipantTile({
     onMuteAudio,
     onMuteVideo,
 
+    // host-only kick: opens confirm modal in parent
+    onOpenKick,
+
     // report for anyone
     onOpenReport,
 }: {
@@ -375,6 +379,8 @@ function ParticipantTile({
     onMakeAdmin?: () => void | Promise<void>;
     onMuteAudio?: () => void | Promise<void>;
     onMuteVideo?: () => void | Promise<void>;
+
+    onOpenKick?: () => void;
 
     onOpenReport?: () => void;
 }) {
@@ -460,6 +466,7 @@ function ParticipantTile({
     const isSelf = !!editable && participant.isLocal;
 
     const hasReportOption = !participant.isLocal && !!onOpenReport;
+    const hasKickOption = !!canModerate && !participant.isLocal && !!onOpenKick;
 
     const hasOptions =
         (editable && !!onOpenEditName) ||
@@ -467,6 +474,7 @@ function ParticipantTile({
         (!!onTogglePin) ||
         (!!onHideUser) ||
         hasReportOption ||
+        hasKickOption ||
         (!!canModerate &&
             !participant.isLocal &&
             (!!onMakeAdmin || !!onMuteAudio || !!onMuteVideo));
@@ -631,7 +639,7 @@ function ParticipantTile({
                                 </div>
                             )}
 
-                            {(!!onTogglePin || !!onHideUser || hasReportOption) && (
+                            {(!!onTogglePin || !!onHideUser || hasReportOption || hasKickOption) && (
                                 <div className={`h-px w-full ${separator}`} />
                             )}
 
@@ -681,7 +689,7 @@ function ParticipantTile({
                             {/* Host-only controls */}
                             {canModerate && !participant.isLocal && (
                                 <>
-                                    {(!!onMakeAdmin || !!onMuteAudio || !!onMuteVideo) && (
+                                    {(!!onMakeAdmin || !!onMuteAudio || !!onMuteVideo || !!onOpenKick) && (
                                         <div className={`h-px w-full ${separator}`} />
                                     )}
 
@@ -721,6 +729,22 @@ function ParticipantTile({
                                             }}
                                         >
                                             🎥 Turn off camera
+                                        </button>
+                                    )}
+
+                                    {!!onOpenKick && (
+                                        <button
+                                            type="button"
+                                            className={`w-full text-left px-3 py-2 text-sm ${theme === "light"
+                                                ? "text-red-700 hover:bg-red-50"
+                                                : "text-red-300 hover:bg-white/10"
+                                                }`}
+                                            onClick={() => {
+                                                setOptionsOpen(false);
+                                                onOpenKick?.();
+                                            }}
+                                        >
+                                            ⛔ Kick from room
                                         </button>
                                     )}
                                 </>
@@ -855,6 +879,7 @@ function GridLayout({
     onSetVolume01ById,
 
     onOpenReportById,
+    onOpenKickById,
     onMakeAdminById,
     onMuteAudioById,
     onMuteVideoById,
@@ -883,6 +908,7 @@ function GridLayout({
     onSetVolume01ById: (id: string, v: number) => void;
 
     onOpenReportById: (id: string) => void;
+    onOpenKickById: (id: string) => void;
 
     onMakeAdminById: (id: string) => void | Promise<void>;
     onMuteAudioById: (id: string) => void | Promise<void>;
@@ -975,6 +1001,7 @@ function GridLayout({
                         volume01={!p.isLocal ? getVolume01ById(p.id) : undefined}
                         onSetVolume01={!p.isLocal ? (v) => onSetVolume01ById(p.id, v) : undefined}
                         onOpenReport={!p.isLocal ? () => onOpenReportById(p.id) : undefined}
+                        onOpenKick={!p.isLocal ? () => onOpenKickById(p.id) : undefined}
                         onMakeAdmin={!p.isLocal ? () => onMakeAdminById(p.id) : undefined}
                         onMuteAudio={!p.isLocal ? () => onMuteAudioById(p.id) : undefined}
                         onMuteVideo={!p.isLocal ? () => onMuteVideoById(p.id) : undefined}
@@ -1008,6 +1035,7 @@ function GridLayout({
                                     volume01={!p.isLocal ? getVolume01ById(p.id) : undefined}
                                     onSetVolume01={!p.isLocal ? (v) => onSetVolume01ById(p.id, v) : undefined}
                                     onOpenReport={!p.isLocal ? () => onOpenReportById(p.id) : undefined}
+                                    onOpenKick={!p.isLocal ? () => onOpenKickById(p.id) : undefined}
                                     onMakeAdmin={!p.isLocal ? () => onMakeAdminById(p.id) : undefined}
                                     onMuteAudio={!p.isLocal ? () => onMuteAudioById(p.id) : undefined}
                                     onMuteVideo={!p.isLocal ? () => onMuteVideoById(p.id) : undefined}
@@ -1042,6 +1070,7 @@ function P2PLayout({
     onSetVolume01ById,
 
     onOpenReportById,
+    onOpenKickById,
     onMakeAdminById,
     onMuteAudioById,
     onMuteVideoById,
@@ -1068,6 +1097,7 @@ function P2PLayout({
     onSetVolume01ById: (id: string, v: number) => void;
 
     onOpenReportById: (id: string) => void;
+    onOpenKickById: (id: string) => void;
 
     onMakeAdminById: (id: string) => void | Promise<void>;
     onMuteAudioById: (id: string) => void | Promise<void>;
@@ -1129,6 +1159,7 @@ function P2PLayout({
                         volume01={!p.isLocal ? getVolume01ById(p.id) : undefined}
                         onSetVolume01={!p.isLocal ? (v) => onSetVolume01ById(p.id, v) : undefined}
                         onOpenReport={!p.isLocal ? () => onOpenReportById(p.id) : undefined}
+                        onOpenKick={!p.isLocal ? () => onOpenKickById(p.id) : undefined}
                         onMakeAdmin={!p.isLocal ? () => onMakeAdminById(p.id) : undefined}
                         onMuteAudio={!p.isLocal ? () => onMuteAudioById(p.id) : undefined}
                         onMuteVideo={!p.isLocal ? () => onMuteVideoById(p.id) : undefined}
@@ -1160,6 +1191,7 @@ function MobileFillLayout({
     onSetVolume01ById,
 
     onOpenReportById,
+    onOpenKickById,
     onMakeAdminById,
     onMuteAudioById,
     onMuteVideoById,
@@ -1186,6 +1218,7 @@ function MobileFillLayout({
     onSetVolume01ById: (id: string, v: number) => void;
 
     onOpenReportById: (id: string) => void;
+    onOpenKickById: (id: string) => void;
 
     onMakeAdminById: (id: string) => void | Promise<void>;
     onMuteAudioById: (id: string) => void | Promise<void>;
@@ -1233,6 +1266,7 @@ function MobileFillLayout({
                             volume01={!p.isLocal ? getVolume01ById(p.id) : undefined}
                             onSetVolume01={!p.isLocal ? (v) => onSetVolume01ById(p.id, v) : undefined}
                             onOpenReport={!p.isLocal ? () => onOpenReportById(p.id) : undefined}
+                            onOpenKick={!p.isLocal ? () => onOpenKickById(p.id) : undefined}
                             onMakeAdmin={!p.isLocal ? () => onMakeAdminById(p.id) : undefined}
                             onMuteAudio={!p.isLocal ? () => onMuteAudioById(p.id) : undefined}
                             onMuteVideo={!p.isLocal ? () => onMuteVideoById(p.id) : undefined}
@@ -1263,6 +1297,7 @@ function MobileStackLayout({
     onSetVolume01ById,
 
     onOpenReportById,
+    onOpenKickById,
     onMakeAdminById,
     onMuteAudioById,
     onMuteVideoById,
@@ -1287,6 +1322,7 @@ function MobileStackLayout({
     onSetVolume01ById: (id: string, v: number) => void;
 
     onOpenReportById: (id: string) => void;
+    onOpenKickById: (id: string) => void;
 
     onMakeAdminById: (id: string) => void | Promise<void>;
     onMuteAudioById: (id: string) => void | Promise<void>;
@@ -1316,6 +1352,7 @@ function MobileStackLayout({
                     volume01={!p.isLocal ? getVolume01ById(p.id) : undefined}
                     onSetVolume01={!p.isLocal ? (v) => onSetVolume01ById(p.id, v) : undefined}
                     onOpenReport={!p.isLocal ? () => onOpenReportById(p.id) : undefined}
+                    onOpenKick={!p.isLocal ? () => onOpenKickById(p.id) : undefined}
                     onMakeAdmin={!p.isLocal ? () => onMakeAdminById(p.id) : undefined}
                     onMuteAudio={!p.isLocal ? () => onMuteAudioById(p.id) : undefined}
                     onMuteVideo={!p.isLocal ? () => onMuteVideoById(p.id) : undefined}
@@ -1344,6 +1381,7 @@ function ScreenShareLayoutDesktop({
     onSetVolume01ById,
 
     onOpenReportById,
+    onOpenKickById,
     onMakeAdminById,
     onMuteAudioById,
     onMuteVideoById,
@@ -1368,6 +1406,7 @@ function ScreenShareLayoutDesktop({
     onSetVolume01ById: (id: string, v: number) => void;
 
     onOpenReportById: (id: string) => void;
+    onOpenKickById: (id: string) => void;
 
     onMakeAdminById: (id: string) => void | Promise<void>;
     onMuteAudioById: (id: string) => void | Promise<void>;
@@ -1449,6 +1488,7 @@ function ScreenShareLayoutDesktop({
                             volume01={!p.isLocal ? getVolume01ById(p.id) : undefined}
                             onSetVolume01={!p.isLocal ? (v) => onSetVolume01ById(p.id, v) : undefined}
                             onOpenReport={!p.isLocal ? () => onOpenReportById(p.id) : undefined}
+                            onOpenKick={!p.isLocal ? () => onOpenKickById(p.id) : undefined}
                             onMakeAdmin={!p.isLocal ? () => onMakeAdminById(p.id) : undefined}
                             onMuteAudio={!p.isLocal ? () => onMuteAudioById(p.id) : undefined}
                             onMuteVideo={!p.isLocal ? () => onMuteVideoById(p.id) : undefined}
@@ -1480,6 +1520,7 @@ function ScreenShareLayoutMobile({
     onSetVolume01ById,
 
     onOpenReportById,
+    onOpenKickById,
     onMakeAdminById,
     onMuteAudioById,
     onMuteVideoById,
@@ -1505,6 +1546,7 @@ function ScreenShareLayoutMobile({
     onSetVolume01ById: (id: string, v: number) => void;
 
     onOpenReportById: (id: string) => void;
+    onOpenKickById: (id: string) => void;
 
     onMakeAdminById: (id: string) => void | Promise<void>;
     onMuteAudioById: (id: string) => void | Promise<void>;
@@ -1589,6 +1631,7 @@ function ScreenShareLayoutMobile({
                     volume01={!p.isLocal ? getVolume01ById(p.id) : undefined}
                     onSetVolume01={!p.isLocal ? (v) => onSetVolume01ById(p.id, v) : undefined}
                     onOpenReport={!p.isLocal ? () => onOpenReportById(p.id) : undefined}
+                    onOpenKick={!p.isLocal ? () => onOpenKickById(p.id) : undefined}
                     onMakeAdmin={!p.isLocal ? () => onMakeAdminById(p.id) : undefined}
                     onMuteAudio={!p.isLocal ? () => onMuteAudioById(p.id) : undefined}
                     onMuteVideo={!p.isLocal ? () => onMuteVideoById(p.id) : undefined}
@@ -1643,6 +1686,11 @@ export function VideoRoom(props: VideoRoomProps) {
     const [reportTargetId, setReportTargetId] = useState<string | null>(null);
     const [reportText, setReportText] = useState("");
     const [reportBusy, setReportBusy] = useState(false);
+
+    // ✅ host-only kick confirm (direct kick without reporting)
+    const [kickOpen, setKickOpen] = useState(false);
+    const [kickTargetId, setKickTargetId] = useState<string | null>(null);
+    const [kickBusy, setKickBusy] = useState(false);
 
     const { ref: roomRef, width: roomW, height: roomH } = useElementSize<HTMLDivElement>();
 
@@ -1925,6 +1973,24 @@ export function VideoRoom(props: VideoRoomProps) {
         return participants.find((p) => p.id === reportTargetId) || null;
     }, [reportTargetId, participants]);
 
+    // ---------------- Kick modal (host-only) ----------------
+    const openKickById = useCallback((id: string) => {
+        setKickTargetId(id);
+        setKickOpen(true);
+        setKickBusy(false);
+    }, []);
+
+    const closeKick = useCallback(() => {
+        setKickOpen(false);
+        setKickTargetId(null);
+        setKickBusy(false);
+    }, []);
+
+    const kickTarget = useMemo(() => {
+        if (!kickTargetId) return null;
+        return participants.find((p) => p.id === kickTargetId) || null;
+    }, [kickTargetId, participants]);
+
     const makeAdminById = useCallback(async (id: string) => {
         try { await onMakeParticipantAdmin?.(id); } catch { }
     }, [onMakeParticipantAdmin]);
@@ -1985,6 +2051,7 @@ export function VideoRoom(props: VideoRoomProps) {
                                     getVolume01ById={getVolume01ById}
                                     onSetVolume01ById={setVolume01ById}
                                     onOpenReportById={openReportById}
+                                    onOpenKickById={openKickById}
                                     onMakeAdminById={makeAdminById}
                                     onMuteAudioById={muteAudioById}
                                     onMuteVideoById={muteVideoById}
@@ -2006,6 +2073,7 @@ export function VideoRoom(props: VideoRoomProps) {
                                     getVolume01ById={getVolume01ById}
                                     onSetVolume01ById={setVolume01ById}
                                     onOpenReportById={openReportById}
+                                    onOpenKickById={openKickById}
                                     onMakeAdminById={makeAdminById}
                                     onMuteAudioById={muteAudioById}
                                     onMuteVideoById={muteVideoById}
@@ -2032,6 +2100,7 @@ export function VideoRoom(props: VideoRoomProps) {
                                         getVolume01ById={getVolume01ById}
                                         onSetVolume01ById={setVolume01ById}
                                         onOpenReportById={openReportById}
+                                        onOpenKickById={openKickById}
                                         onMakeAdminById={makeAdminById}
                                         onMuteAudioById={muteAudioById}
                                         onMuteVideoById={muteVideoById}
@@ -2055,6 +2124,7 @@ export function VideoRoom(props: VideoRoomProps) {
                                         getVolume01ById={getVolume01ById}
                                         onSetVolume01ById={setVolume01ById}
                                         onOpenReportById={openReportById}
+                                        onOpenKickById={openKickById}
                                         onMakeAdminById={makeAdminById}
                                         onMuteAudioById={muteAudioById}
                                         onMuteVideoById={muteVideoById}
@@ -2085,6 +2155,7 @@ export function VideoRoom(props: VideoRoomProps) {
                                 getVolume01ById={getVolume01ById}
                                 onSetVolume01ById={setVolume01ById}
                                 onOpenReportById={openReportById}
+                                onOpenKickById={openKickById}
                                 onMakeAdminById={makeAdminById}
                                 onMuteAudioById={muteAudioById}
                                 onMuteVideoById={muteVideoById}
@@ -2106,6 +2177,7 @@ export function VideoRoom(props: VideoRoomProps) {
                                 getVolume01ById={getVolume01ById}
                                 onSetVolume01ById={setVolume01ById}
                                 onOpenReportById={openReportById}
+                                onOpenKickById={openKickById}
                                 onMakeAdminById={makeAdminById}
                                 onMuteAudioById={muteAudioById}
                                 onMuteVideoById={muteVideoById}
@@ -2241,6 +2313,78 @@ export function VideoRoom(props: VideoRoomProps) {
                                     disabled={editSaving}
                                 >
                                     {editSaving ? "Saving..." : "Save"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* ✅ Kick modal (host-only, direct kick) */}
+                {kickOpen && kickTarget && (
+                    <div
+                        className="absolute inset-0 z-50 flex items-center justify-center"
+                        onMouseDown={(e) => {
+                            if (e.target === e.currentTarget) closeKick();
+                        }}
+                        style={{
+                            background: isLight ? "rgba(0,0,0,0.35)" : "rgba(0,0,0,0.55)",
+                        }}
+                    >
+                        <div
+                            className={`w-[92%] max-w-[520px] rounded-2xl shadow-2xl p-4 ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
+                                }`}
+                            onMouseDown={(e) => e.stopPropagation()}
+                        >
+                            <div className="flex items-center justify-between">
+                                <div className={`text-sm font-semibold ${isLight ? "text-black/80" : "text-white/90"}`}>
+                                    Kick user
+                                </div>
+                                <button
+                                    className={`h-8 w-8 rounded-xl flex items-center justify-center ${isLight ? "hover:bg-black/5" : "hover:bg-white/10"
+                                        }`}
+                                    onClick={closeKick}
+                                    title="Close"
+                                    disabled={kickBusy}
+                                >
+                                    ✕
+                                </button>
+                            </div>
+
+                            <div className={`mt-2 text-sm ${isLight ? "text-black/70" : "text-white/75"}`}>
+                                Are you sure you want to kick{" "}
+                                <span className="font-semibold">{kickTarget.displayName || "Guest"}</span>?
+                            </div>
+
+                            <div className="mt-4 flex items-center justify-end gap-2">
+                                <button
+                                    className={`h-10 px-3 rounded-xl text-sm ${isLight
+                                        ? "bg-black/5 hover:bg-black/10 text-black/80"
+                                        : "bg-white/10 hover:bg-white/15 text-white/85"
+                                        }`}
+                                    onClick={closeKick}
+                                    disabled={kickBusy}
+                                >
+                                    Cancel
+                                </button>
+
+                                <button
+                                    className={`h-10 px-3 rounded-xl text-sm font-semibold ${isLight
+                                        ? "bg-red-600 text-white hover:bg-red-700"
+                                        : "bg-red-600 text-white hover:bg-red-700"
+                                        } ${(!onKickParticipant || kickBusy) ? "opacity-60 cursor-not-allowed" : ""}`}
+                                    disabled={!onKickParticipant || kickBusy}
+                                    onClick={async () => {
+                                        if (!onKickParticipant) return;
+                                        setKickBusy(true);
+                                        try {
+                                            await onKickParticipant(kickTarget.id);
+                                            closeKick();
+                                        } catch {
+                                            setKickBusy(false);
+                                        }
+                                    }}
+                                >
+                                    {kickBusy ? "Kicking..." : "Kick"}
                                 </button>
                             </div>
                         </div>
