@@ -10,7 +10,7 @@
 // ✅ FIX (STAGES): recognize "check-in / check in / check_in" as intentions + enable stage sounds in infinite rooms too
 //
 // ✅ LAYOUT UPDATE (parity with RoomPageIFrame):
-// - New Top Bar layout (ported conceptually from iFrame top bar)
+// - Top Bar layout ported 1:1 from iFrame (rows + mobile split)
 // - Reduced paddings/gaps to maximize video space
 // - Grid/panel spacing aligned (smaller gaps + slightly narrower right panel)
 
@@ -68,6 +68,7 @@ type SessionRow = {
   daily_room_url?: string | null;
   host_profile?: HostProfile | null;
   session_templates?: SessionTemplate | SessionTemplate[] | null;
+  max_participants?: number | null; // ✅ used by top bar chip
 };
 
 type MediaDevicesResult = {
@@ -232,6 +233,17 @@ function Icon({
       draggable={false}
     />
   );
+}
+
+// ✅ keep parity with iframe (icon wrapper)
+function ParticipantsSmartIcon({
+  theme,
+  className = "w-4 h-4",
+}: {
+  theme: RoomTheme;
+  className?: string;
+}) {
+  return <Icon name="participants" theme={theme} className={className} alt="" />;
 }
 
 const reactionEmoji: Record<ReactionType, string> = {
@@ -1088,7 +1100,8 @@ export function RoomPage() {
                 num(blk.duration) ||
                 0;
 
-              const seconds = num(blk.seconds) || num(blk.durationSeconds) || num(blk.duration_seconds) || 0;
+              const seconds =
+                num(blk.seconds) || num(blk.durationSeconds) || num(blk.duration_seconds) || 0;
 
               const durationSeconds = seconds > 0 ? seconds : minutes > 0 ? minutes * 60 : 0;
               const displayMinutes = minutes > 0 ? minutes : seconds > 0 ? Math.max(1, Math.round(seconds / 60)) : 0;
@@ -1604,12 +1617,21 @@ export function RoomPage() {
   const filteredParticipants = useMemo(() => {
     const q = participantsSearch.trim().toLowerCase();
     if (!q) return participants;
-    return participants.filter((p) => (p.isLocal ? "you" : p.displayName || "guest").toLowerCase().includes(q));
+    return participants.filter((p) =>
+      (p.isLocal ? "you" : p.displayName || "guest").toLowerCase().includes(q)
+    );
   }, [participants, participantsSearch]);
 
   const participantsCount = participants.length;
 
-  const switchTrack = "w-[84px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
+  const maxParticipants = useMemo(() => {
+    const raw = num((session as any)?.max_participants);
+    const v = raw > 0 ? raw : 16;
+    return Math.max(2, Math.min(50, Math.round(v)));
+  }, [session]);
+
+  const switchTrack =
+    "w-[84px] max-[480px]:w-[78px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
   const switchTrackCls = isLight
     ? "bg-black/5 border-black/10 hover:bg-black/10"
     : "bg-white/5 border-white/10 hover:bg-white/10";
@@ -1617,7 +1639,7 @@ export function RoomPage() {
   const switchThumb =
     "absolute top-[2px] w-[26px] h-[26px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center";
 
-  const thumbTranslate = isLight ? "translateX(0px)" : "translateX(50px)";
+  const thumbTranslate = isLight ? "translateX(0px)" : "translateX(52px)";
 
   const videoWrapRef = useRef<HTMLDivElement | null>(null);
 
@@ -1796,7 +1818,9 @@ export function RoomPage() {
           <div className={`p-3 border-t ${isLight ? "border-black/10" : "border-white/5"}`}>
             <button
               onClick={() => { }}
-              className={`w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 ${isLight ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
+              className={`w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 ${isLight
+                  ? "bg-blue-600 hover:bg-blue-700 text-white"
+                  : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
                 }`}
             >
               <span className="text-lg">+</span>
@@ -1829,7 +1853,9 @@ export function RoomPage() {
 
           <div className="flex-1 min-h-0 p-3 overflow-hidden">
             <div
-              className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight ? "bg-white/70 border border-black/10" : "bg-[#020617]/40 border border-white/10"
+              className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight
+                  ? "bg-white/70 border border-black/10"
+                  : "bg-[#020617]/40 border border-white/10"
                 }`}
             >
               <div className="h-full min-h-0 flex flex-col overflow-hidden [&>*]:h-full [&>*]:min-h-0">
@@ -1881,7 +1907,9 @@ export function RoomPage() {
 
           <div className="flex-1 min-h-0 overflow-hidden p-3">
             <div
-              className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight ? "bg-white/70 border border-black/10" : "bg-[#020617]/40 border border-white/10"
+              className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight
+                  ? "bg-white/70 border border-black/10"
+                  : "bg-[#020617]/40 border border-white/10"
                 }`}
             >
               <div className="h-full min-h-0 overflow-y-auto [&>*]:min-h-0">
@@ -1905,24 +1933,75 @@ export function RoomPage() {
     </div>
   );
 
-  // ✅ Top Bar (updated layout / tighter spacing like IFrame)
+  // ✅ Top Bar (ported 1:1 from RoomPageIFrame)
   const TopBar = (
     <div className={`flex w-full rounded-2xl overflow-hidden ${topBarBg}`}>
-      <div className="flex-1 px-4 sm:px-5 py-3 sm:py-3.5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className={`font-inter font-semibold text-[16px] sm:text-[17px] truncate ${strongText}`}>
-              {session.title}
-            </p>
+      <div className="flex-1 px-4 sm:px-6 py-3 sm:py-4">
+        <div className="flex flex-col gap-2 max-[480px]:gap-2">
+          {/* ROW 1: title + count (always 1 line) */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <p className={`min-w-0 font-inter font-semibold text-[16px] sm:text-[18px] truncate ${strongText}`}>
+                  {String(session?.title || "Session")}
+                </p>
 
-            {/* короткая строка как в iframe: только число */}
-            <p className={`font-inter text-[12px] ${subtleText}`}>
-              👥 {participantsCount}
-            </p>
+                <span
+                  className={[
+                    "shrink-0 px-2 py-[3px] rounded-lg border text-[12px] font-inter",
+                    chipBg,
+                    isLight ? "text-black/65" : "text-white/80",
+                  ].join(" ")}
+                  title="Participants now / limit"
+                >
+                  {participantsCount}/{maxParticipants}
+                </span>
+              </div>
+            </div>
+
+            {/* desktop+ : controls stay here */}
+            <div className="hidden min-[481px]:flex items-center gap-2 shrink-0">
+              {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
+                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}>
+                  <Icon name="timer" theme={theme} className="w-4 h-4 opacity-80" alt="Timer" />
+                  <span className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"}`}>
+                    {remainingTime || "--:--"}
+                  </span>
+                </div>
+              )}
+
+              <button
+                onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+                className={`${switchTrack} ${switchTrackCls}`}
+                title="Toggle theme"
+                aria-label="Toggle theme"
+              >
+                <div className={switchThumb} style={{ transform: thumbTranslate }}>
+                  <Icon name={isLight ? "theme-sun" : "theme-moon"} theme={theme} className="w-4 h-4" />
+                </div>
+              </button>
+
+              {session.host_profile && (
+                <button
+                  onClick={() => setSelectedUser(session.host_profile || null)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition text-[13px] ${isLight
+                      ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                      : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                    }`}
+                  title="Host profile"
+                >
+                  <ParticipantsSmartIcon theme={theme} className="w-4 h-4 opacity-90" />
+                  <span className="font-inter">
+                    <span className="font-light">Host:</span>{" "}
+                    <span className="font-bold">{String(session.host_profile.full_name || "Host")}</span>
+                  </span>
+                </button>
+              )}
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            {/* timer chip */}
+          {/* ROW 2: controls (mobile <=480) */}
+          <div className="min-[481px]:hidden flex items-center justify-start gap-2">
             {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
               <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}>
                 <Icon name="timer" theme={theme} className="w-4 h-4 opacity-80" alt="Timer" />
@@ -1932,19 +2011,6 @@ export function RoomPage() {
               </div>
             )}
 
-            {/* ✅ participants chip: ИКОНКА + ТОЛЬКО ЧИСЛО, кликом открываем панель */}
-            <button
-              onClick={() => openRightTab("participants")}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl transition ${chipBg}`}
-              title="Participants"
-            >
-              <Icon name="participants" theme={theme} className="w-4 h-4 opacity-90" alt="" />
-              <span className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"}`}>
-                {participantsCount}
-              </span>
-            </button>
-
-            {/* theme switch */}
             <button
               onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
               className={`${switchTrack} ${switchTrackCls}`}
@@ -1952,40 +2018,28 @@ export function RoomPage() {
               aria-label="Toggle theme"
             >
               <div className={switchThumb} style={{ transform: thumbTranslate }}>
-                <Icon
-                  name={isLight ? "theme-sun" : "theme-moon"}
-                  theme={theme}
-                  className="w-4 h-4"
-                  alt={isLight ? "Light" : "Dark"}
-                />
+                <Icon name={isLight ? "theme-sun" : "theme-moon"} theme={theme} className="w-4 h-4" />
               </div>
             </button>
 
-            {/* host chip (оставляем как было, но чуть компактнее) */}
             {session.host_profile && (
               <button
                 onClick={() => setSelectedUser(session.host_profile || null)}
-                className={`max-[480px]:hidden flex items-center gap-2 px-3 py-1.5 rounded-xl border transition font-inter text-[13px] ${isLight
-                    ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                    : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                className={`w-10 h-10 rounded-2xl flex items-center justify-center border transition ${isLight
+                    ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70"
+                    : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-white/85"
                   }`}
+                title={`Host: ${String(session.host_profile.full_name || "Host")}`}
+                aria-label="Host profile"
               >
-                <Icon name="host_session_icon" theme={theme} className="h-5 w-5 opacity-90" alt="" />
-                <span className="flex items-center gap-1 leading-none">
-                  <span className={isLight ? "font-normal text-black/55" : "font-normal text-white/70"}>
-                    Host:
-                  </span>
-                  <span className="font-semibold">{session.host_profile.full_name}</span>
-                </span>
+                <ParticipantsSmartIcon theme={theme} className="w-5 h-5 opacity-90" />
               </button>
             )}
           </div>
-        </div>
 
-        {/* stagebar ближе к хедеру (меньше расстояние как в iframe) */}
-        {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
-          <div className="mt-2 w-full overflow-hidden">
-            <div className="w-full overflow-hidden">
+          {/* ROW 3: stage bar (full width) */}
+          {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
+            <div className="mt-1 max-[480px]:mt-1 w-full overflow-hidden">
               <SessionStageBar
                 stages={stages}
                 startTime={stagebarStartTime}
@@ -1993,8 +2047,8 @@ export function RoomPage() {
                 onHoverStage={setHoveredStage}
               />
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
