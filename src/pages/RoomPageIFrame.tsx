@@ -715,10 +715,11 @@ export default function RoomPageIFrame() {
         tileRef.current = tile;
     }, [tile]);
 
-    const enforceTileViewOn = (api?: any) => {
+    const forceTileViewOnAfterJoin = (api?: any) => {
         const a = api || apiRef.current;
         if (!a) return;
         if (tileEnforcedOnceRef.current) return;
+
         tileEnforcedOnceRef.current = true;
 
         const trySet = () => {
@@ -727,32 +728,11 @@ export default function RoomPageIFrame() {
             } catch { }
         };
 
-        const tryToggle = () => {
-            try {
-                a.executeCommand?.("toggleTileView");
-            } catch { }
-        };
-
-        // always try set (best path)
+        // важное: несколько попыток после join — у Jitsi часто команды “встают” не сразу
         trySet();
-        window.setTimeout(trySet, 220);
-
-        // if we KNOW it's off -> toggle once
-        window.setTimeout(() => {
-            if (tileRef.current === true) return;
-            if (tileEventSeenRef.current) {
-                tryToggle();
-            } else {
-                // no event yet — try set again (safe)
-                trySet();
-            }
-        }, 520);
-
-        // last nudge (only if still off AND we have confirmation)
-        window.setTimeout(() => {
-            if (tileRef.current === true) return;
-            if (tileEventSeenRef.current) tryToggle();
-        }, 980);
+        window.setTimeout(trySet, 180);
+        window.setTimeout(trySet, 520);
+        window.setTimeout(trySet, 1100);
     };
 
     // live participant count
@@ -2124,7 +2104,7 @@ export default function RoomPageIFrame() {
                     void maybeKickOrRejectIfOverLimit(api, undefined);
 
                     // ✅ enforce tile view ON after join (robust)
-                    enforceTileViewOn(api);
+                    forceTileViewOnAfterJoin(api);
 
                     // ✅ quality: after join, do an immediate pass as well (helps when room starts as 1–2 ppl)
                     const initialTotal = 1 + (Array.isArray(api.getParticipantsInfo?.()) ? api.getParticipantsInfo().length : 0);
@@ -2188,16 +2168,8 @@ export default function RoomPageIFrame() {
                 api.addEventListener?.("participantRoleChanged", onRole);
                 api.addEventListener?.("readyToClose", onReadyToClose);
 
-                // enforce tile view ON (best-effort early)
-                try {
-                    api.executeCommand?.("setTileView", true);
-                } catch { }
-
                 // initial refresh
                 void refreshParticipantsList(api);
-
-                // ✅ second pass enforce (after a short delay, before join event sometimes)
-                window.setTimeout(() => enforceTileViewOn(api), 420);
 
                 // ✅ quality: another delayed pass (some builds start low until conference is fully up)
                 window.setTimeout(() => {
