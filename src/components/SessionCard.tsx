@@ -422,10 +422,15 @@ function isCustomStudioSession(session: any): boolean {
  * ✅ FIX for Custom sessions:
  * - if list query doesn't include schedule/stages_json (common optimization),
  *   fetch missing fields from "sessions" on-demand to render SessionStageBar.
+ *
+ * ✅ IMPORTANT FIX (jsonb schedule):
+ * - session.schedule can be a jsonb ARRAY directly in Postgres (Supabase),
+ *   e.g. [{name:"Focus", minutes:50}, ...]
+ *   -> we must parse it as timeline and map to stages.
  * ========================= */
 function tryParseJson<T = any>(x: any): T | null {
     if (!x) return null;
-    if (typeof x === "object") return x as T;
+    if (typeof x === "object") return x as T; // ✅ arrays (jsonb) also hit this branch
     if (typeof x === "string") {
         const s = x.trim();
         if (!s) return null;
@@ -528,26 +533,39 @@ function phasesToStages(phases: any[]): SessionStage[] {
 
 function tryStagesFromSchedule(scheduleAny: any): SessionStage[] {
     const schedule = tryParseJson<any>(scheduleAny);
-    if (!schedule || typeof schedule !== "object") return [];
+    if (!schedule) return [];
+
+    // ✅ FIX: jsonb array schedule stored directly in sessions.schedule
+    // Example:
+    // [
+    //   { "name": "Welcome & Set-up", "minutes": 5 },
+    //   { "name": "Focus", "minutes": 50 },
+    //   ...
+    // ]
+    if (Array.isArray(schedule) && schedule.length) {
+        return phasesToStages(schedule);
+    }
+
+    if (typeof schedule !== "object") return [];
 
     // ✅ broaden keys (custom/studio schedules often differ)
     const phases =
-        schedule?.timer?.phases ||
-        schedule?.timer?.timeline ||
-        schedule?.timer?.stages ||
-        schedule?.timer?.segments ||
-        schedule?.phases ||
-        schedule?.timeline ||
-        schedule?.stages ||
-        schedule?.segments ||
-        schedule?.timer?.blocks ||
-        schedule?.blocks;
+        (schedule as any)?.timer?.phases ||
+        (schedule as any)?.timer?.timeline ||
+        (schedule as any)?.timer?.stages ||
+        (schedule as any)?.timer?.segments ||
+        (schedule as any)?.phases ||
+        (schedule as any)?.timeline ||
+        (schedule as any)?.stages ||
+        (schedule as any)?.segments ||
+        (schedule as any)?.timer?.blocks ||
+        (schedule as any)?.blocks;
 
     if (Array.isArray(phases) && phases.length) return phasesToStages(phases);
 
-    const focusSec = Number(schedule?.timer?.focusSeconds || schedule?.timer?.focus_seconds);
-    const breakSec = Number(schedule?.timer?.breakSeconds || schedule?.timer?.break_seconds);
-    const cycles = Number(schedule?.timer?.cycles || schedule?.timer?.rounds);
+    const focusSec = Number((schedule as any)?.timer?.focusSeconds || (schedule as any)?.timer?.focus_seconds);
+    const breakSec = Number((schedule as any)?.timer?.breakSeconds || (schedule as any)?.timer?.break_seconds);
+    const cycles = Number((schedule as any)?.timer?.cycles || (schedule as any)?.timer?.rounds);
 
     if (
         Number.isFinite(focusSec) &&
@@ -678,6 +696,7 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
         return out;
     }
 
+    // ✅ IMPORTANT: schedule can be jsonb array OR object -> handled in tryStagesFromSchedule
     const scheduleStages = tryStagesFromSchedule(session?.schedule);
     if (scheduleStages.length) {
         if (sessionId) _stagesBySessionId.set(sessionId, scheduleStages);
@@ -1123,8 +1142,9 @@ function normKey(raw: any) {
 function normalizeKind(raw: any): StageKind {
     const k = normKey(raw);
 
+    // ✅ FIX: farewell/closing is NOT welcome
     if (k.includes("farewell") || k.includes("goodbye") || k === "celebrate-and-farewell") {
-        return "welcome";
+        return "celebrate";
     }
 
     if (k === "check-in" || k === "checkin" || k === "check_in") return "checkin";
@@ -1144,8 +1164,9 @@ function inferKindFromText(text: any): StageKind | null {
     if (!t) return null;
     const k = normKey(t);
 
+    // ✅ FIX: farewell/closing should be celebrate
     if (k.includes("farewell") || k.includes("goodbye") || k.includes("closing"))
-        return "welcome";
+        return "celebrate";
     if (k.includes("welcome") || k.includes("intro")) return "welcome";
     if (k.includes("intention")) return "intentions";
     if (k.includes("check-in") || k.includes("checkin")) return "checkin";
@@ -1483,7 +1504,7 @@ export default function SessionCard({
         })
         : "";
 
-    // ✅ Load stages (this now works for Custom sessions too, even if list query omitted schedule/stages_json)
+    // ✅ Load stages (now supports jsonb array schedule)
     useEffect(() => {
         let cancelled = false;
 
@@ -1613,8 +1634,8 @@ export default function SessionCard({
 
         const scheduleObj = tryParseJson<any>(session?.schedule);
         const cycleSeconds =
-            Number(scheduleObj?.timer?.cycleSeconds) ||
-            Number(scheduleObj?.timer?.cycle_seconds) ||
+            Number((scheduleObj as any)?.timer?.cycleSeconds) ||
+            Number((scheduleObj as any)?.timer?.cycle_seconds) ||
             undefined;
 
         const everyMs = isInfinite ? 15000 : 1000;
@@ -1757,7 +1778,9 @@ export default function SessionCard({
                 );
             } catch { }
         } else setEditStartLocal("");
-        setEditMaxParticipants(session?.max_participants == null ? "" : String(session?.max_participants));
+        setEditMaxParticipants(
+            session?.max_participants == null ? "" : String(session?.max_participants)
+        );
     }, [session?.id]);
 
     const [inviteEmail, setInviteEmail] = useState<string>("");
@@ -1946,8 +1969,8 @@ export default function SessionCard({
     // cycleSeconds is optional; StageBar also works without it
     const scheduleObj = tryParseJson<any>(session?.schedule);
     const cycleSeconds =
-        Number(scheduleObj?.timer?.cycleSeconds) ||
-        Number(scheduleObj?.timer?.cycle_seconds) ||
+        Number((scheduleObj as any)?.timer?.cycleSeconds) ||
+        Number((scheduleObj as any)?.timer?.cycle_seconds) ||
         undefined;
 
     const tickEveryMs = isInfinite ? 15000 : 1000;
