@@ -1669,7 +1669,7 @@ export function RoomPage() {
       {rightTab === "participants" && (
         <div className="h-full min-h-0 flex flex-col">
           <div
-            className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
+            className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
               }`}
           >
             <div className="flex items-center gap-2">
@@ -1711,7 +1711,7 @@ export function RoomPage() {
             </div>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
+          <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-3">
             <div className="flex flex-col gap-2">
               {filteredParticipants.map((p) => {
                 const name = p.isLocal ? "You" : p.displayName || "Guest";
@@ -1793,7 +1793,7 @@ export function RoomPage() {
             </div>
           </div>
 
-          <div className={`p-4 border-t ${isLight ? "border-black/10" : "border-white/5"}`}>
+          <div className={`p-3 border-t ${isLight ? "border-black/10" : "border-white/5"}`}>
             <button
               onClick={() => { }}
               className={`w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 ${isLight ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
@@ -1809,7 +1809,7 @@ export function RoomPage() {
       {rightTab === "chat" && (
         <div className="h-full min-h-0 flex flex-col">
           <div
-            className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
+            className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
               }`}
           >
             <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>
@@ -1827,7 +1827,7 @@ export function RoomPage() {
             </button>
           </div>
 
-          <div className="flex-1 min-h-0 p-4 overflow-hidden">
+          <div className="flex-1 min-h-0 p-3 overflow-hidden">
             <div
               className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight ? "bg-white/70 border border-black/10" : "bg-[#020617]/40 border border-white/10"
                 }`}
@@ -1861,7 +1861,7 @@ export function RoomPage() {
       {rightTab === "intentions" && (
         <div className="h-full min-h-0 flex flex-col">
           <div
-            className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
+            className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
               }`}
           >
             <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>
@@ -1879,7 +1879,7 @@ export function RoomPage() {
             </button>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-hidden p-4">
+          <div className="flex-1 min-h-0 overflow-hidden p-3">
             <div
               className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight ? "bg-white/70 border border-black/10" : "bg-[#020617]/40 border border-white/10"
                 }`}
@@ -1908,34 +1908,43 @@ export function RoomPage() {
   // ✅ Top Bar (updated layout / tighter spacing like IFrame)
   const TopBar = (
     <div className={`flex w-full rounded-2xl overflow-hidden ${topBarBg}`}>
-      <div className="flex-1 px-4 sm:px-5 py-3 sm:py-4">
+      <div className="flex-1 px-4 sm:px-5 py-3 sm:py-3.5">
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex flex-col gap-1">
-            <p className={`font-inter font-semibold text-[16px] sm:text-[18px] truncate ${strongText}`}>
+          <div className="min-w-0">
+            <p className={`font-inter font-semibold text-[16px] sm:text-[17px] truncate ${strongText}`}>
               {session.title}
             </p>
 
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-xl ${chipBg}`}>
-                <Icon name="participants" theme={theme} className="w-4 h-4 opacity-80" alt="" />
-                <span className={`font-inter text-[12px] ${isLight ? "text-black/70" : "text-white/85"}`}>
-                  {participantsCount}
-                </span>
-                <span className={`font-inter text-[12px] ${subtleText}`}>participants</span>
-              </div>
-
-              {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
-                <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-xl ${chipBg}`}>
-                  <Icon name="timer" theme={theme} className="w-4 h-4 opacity-80" alt="Timer" />
-                  <span className={`font-inter text-[12px] ${isLight ? "text-black/75" : "text-white/90"}`}>
-                    {remainingTime || "--:--"}
-                  </span>
-                </div>
-              )}
-            </div>
+            {/* короткая строка как в iframe: только число */}
+            <p className={`font-inter text-[12px] ${subtleText}`}>
+              👥 {participantsCount}
+            </p>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {/* timer chip */}
+            {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
+              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}>
+                <Icon name="timer" theme={theme} className="w-4 h-4 opacity-80" alt="Timer" />
+                <span className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"}`}>
+                  {remainingTime || "--:--"}
+                </span>
+              </div>
+            )}
+
+            {/* ✅ participants chip: ИКОНКА + ТОЛЬКО ЧИСЛО, кликом открываем панель */}
+            <button
+              onClick={() => openRightTab("participants")}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl transition ${chipBg}`}
+              title="Participants"
+            >
+              <Icon name="participants" theme={theme} className="w-4 h-4 opacity-90" alt="" />
+              <span className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"}`}>
+                {participantsCount}
+              </span>
+            </button>
+
+            {/* theme switch */}
             <button
               onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
               className={`${switchTrack} ${switchTrackCls}`}
@@ -1952,10 +1961,11 @@ export function RoomPage() {
               </div>
             </button>
 
+            {/* host chip (оставляем как было, но чуть компактнее) */}
             {session.host_profile && (
               <button
                 onClick={() => setSelectedUser(session.host_profile || null)}
-                className={`max-[520px]:hidden flex items-center gap-2 px-3 py-2 rounded-xl border transition font-inter text-[13px] ${isLight
+                className={`max-[480px]:hidden flex items-center gap-2 px-3 py-1.5 rounded-xl border transition font-inter text-[13px] ${isLight
                     ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
                     : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                   }`}
@@ -1972,6 +1982,7 @@ export function RoomPage() {
           </div>
         </div>
 
+        {/* stagebar ближе к хедеру (меньше расстояние как в iframe) */}
         {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
           <div className="mt-2 w-full overflow-hidden">
             <div className="w-full overflow-hidden">
@@ -2029,13 +2040,13 @@ export function RoomPage() {
 
       <div className={`h-[100dvh] overflow-hidden ${pageBg}`}>
         {/* ✅ tighter paddings/gaps (parity with iFrame: more video space) */}
-        <div className="h-full w-full px-3 sm:px-5 pt-3 sm:pt-4 pb-[calc(92px+env(safe-area-inset-bottom))] sm:pb-[calc(104px+env(safe-area-inset-bottom))] flex flex-col gap-3 sm:gap-4 min-h-0">
+        <div className="h-full w-full px-2 sm:px-4 pt-3 pb-[calc(84px+env(safe-area-inset-bottom))] sm:pb-[calc(94px+env(safe-area-inset-bottom))] flex flex-col gap-3 sm:gap-4 min-h-0">
           {TopBar}
 
           <div
             className={
               "relative grid grid-rows-1 gap-3 sm:gap-4 flex-1 min-h-0 h-full " +
-              (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),400px]" : "grid-cols-1")
+              (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),380px] xl:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
             }
           >
             <div
@@ -2088,7 +2099,7 @@ export function RoomPage() {
             {rightPanelOpen && !isLgUp && (
               <div className="absolute inset-0 z-40 min-h-0">
                 <div className="absolute inset-0 bg-black/40" onClick={() => openRightTab(null)} />
-                <div className="absolute inset-x-0 top-0 bottom-0 p-2 min-h-0">{RightPanelBody}</div>
+                <div className="absolute inset-x-0 top-0 bottom-0 p-1 sm:p-2 min-h-0">{RightPanelBody}</div>
               </div>
             )}
           </div>
@@ -2096,7 +2107,7 @@ export function RoomPage() {
 
         {/* bottom controls unchanged; only minor outer padding tuned */}
         <div className="fixed inset-x-0 bottom-0 z-50">
-          <div className="w-full px-3 sm:px-5 pb-[calc(10px+env(safe-area-inset-bottom))]">
+          <div className="w-full px-2 sm:px-4 pb-[calc(8px+env(safe-area-inset-bottom))]">
             <div
               className={`h-[64px] sm:h-[74px] rounded-2xl shadow-2xl backdrop-blur grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4 ${bottomBarBg}`}
             >
