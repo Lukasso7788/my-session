@@ -8,6 +8,11 @@
 // ✅ NEW: Pre-join modal (devices + name + constraints) blocks Jitsi join until user confirms
 // ✅ FIX (CHAT): render RightPanel only ONCE (desktop OR mobile) to avoid double-mounting ChatPanel (causes auth/login flicker)
 // ✅ FIX (STAGES): recognize "check-in / check in / check_in" as intentions + enable stage sounds in infinite rooms too
+//
+// ✅ LAYOUT UPDATE (parity with RoomPageIFrame):
+// - New Top Bar layout (ported conceptually from iFrame top bar)
+// - Reduced paddings/gaps to maximize video space
+// - Grid/panel spacing aligned (smaller gaps + slightly narrower right panel)
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -148,16 +153,30 @@ function inferStageTypeFromLabel(raw: string): Stage["type"] {
 
   // intro/outro first
   if (k.includes("welcome") || k.includes("intro")) return "intro";
-  if (k.includes("outro") || k.includes("farewell") || k.includes("celebrat") || k.includes("finish") || k.includes("end")) return "outro";
+  if (
+    k.includes("outro") ||
+    k.includes("farewell") ||
+    k.includes("celebrat") ||
+    k.includes("finish") ||
+    k.includes("end")
+  )
+    return "outro";
 
   // check-in / intentions
-  if (k.includes("checkin") || k.includes("intention") || k.includes("checkinspoken")) return "intentions";
+  if (k.includes("checkin") || k.includes("intention") || k.includes("checkinspoken"))
+    return "intentions";
 
   // break/rest
   if (k.includes("break") || k.includes("rest") || k.includes("pause")) return "break";
 
   // focus/work
-  if (k.includes("focus") || k.includes("work") || k.includes("deepwork") || k.includes("pomodoro")) return "focus";
+  if (
+    k.includes("focus") ||
+    k.includes("work") ||
+    k.includes("deepwork") ||
+    k.includes("pomodoro")
+  )
+    return "focus";
 
   return "focus";
 }
@@ -238,9 +257,7 @@ function safeParseJson(raw: unknown): unknown | null {
   return raw;
 }
 
-function parse50505(
-  raw: unknown
-): { focus: number; break: number; intentions: number } | null {
+function parse50505(raw: unknown): { focus: number; break: number; intentions: number } | null {
   if (typeof raw !== "string") return null;
   const s = raw.trim();
   const m1 = s.match(/^(\d+)\s*\/\s*(\d+)\s*\/\s*(\d+)$/);
@@ -268,7 +285,10 @@ function normalizeInfinitePhases(anyPhases: unknown): { name: string; seconds: n
       if (explicitSeconds > 0) return explicitSeconds;
 
       const explicitMinutes =
-        num(raw.minutes) || num(raw.mins) || num(raw.duration_minutes) || num(raw.durationMinutes);
+        num(raw.minutes) ||
+        num(raw.mins) ||
+        num(raw.duration_minutes) ||
+        num(raw.durationMinutes);
       if (explicitMinutes > 0) return explicitMinutes * 60;
 
       const n = num(raw.duration ?? raw.value ?? raw);
@@ -317,11 +337,24 @@ function phaseToStageType(phaseName: string): Stage["type"] {
 
   // intro/outro first
   if (k.includes("welcome") || k.includes("intro")) return "intro";
-  if (k.includes("outro") || k.includes("farewell") || k.includes("celebrat") || k.includes("finish") || k.includes("end")) return "outro";
+  if (
+    k.includes("outro") ||
+    k.includes("farewell") ||
+    k.includes("celebrat") ||
+    k.includes("finish") ||
+    k.includes("end")
+  )
+    return "outro";
 
   if (k.includes("checkin") || k.includes("intention")) return "intentions";
   if (k.includes("break") || k.includes("rest") || k.includes("pause")) return "break";
-  if (k.includes("focus") || k.includes("work") || k.includes("deepwork") || k.includes("pomodoro")) return "focus";
+  if (
+    k.includes("focus") ||
+    k.includes("work") ||
+    k.includes("deepwork") ||
+    k.includes("pomodoro")
+  )
+    return "focus";
 
   return "focus";
 }
@@ -392,7 +425,9 @@ function useMediaQuery(query: string) {
       mql.addEventListener("change", onChange);
       return () => mql.removeEventListener("change", onChange);
     } catch {
+      // @ts-ignore
       mql.addListener(onChange);
+      // @ts-ignore
       return () => mql.removeListener(onChange);
     }
   }, [query]);
@@ -454,11 +489,11 @@ function PreJoinModal({
     <div className={overlay} data-theme={theme} style={{ colorScheme: theme }}>
       <div className={backdrop} onClick={onCancel} />
       <div className={card}>
-        <div className={`px-6 py-5 border-b ${isLight ? "border-black/10" : "border-white/10"}`}>
+        <div
+          className={`px-6 py-5 border-b ${isLight ? "border-black/10" : "border-white/10"}`}
+        >
           <div className="flex items-center justify-between">
-            <div className="font-inter font-semibold text-[16px]">
-              Before you join
-            </div>
+            <div className="font-inter font-semibold text-[16px]">Before you join</div>
             <button
               onClick={onCancel}
               className={`w-9 h-9 rounded-2xl flex items-center justify-center ${btnGhost}`}
@@ -467,9 +502,7 @@ function PreJoinModal({
               ✕
             </button>
           </div>
-          <div className={`mt-1 text-[12px] ${labelCls}`}>
-            Pick devices + name. Then join.
-          </div>
+          <div className={`mt-1 text-[12px] ${labelCls}`}>Pick devices + name. Then join.</div>
         </div>
 
         <div className="px-6 py-5 flex flex-col gap-4">
@@ -600,18 +633,25 @@ function PreJoinModal({
                 Refresh devices
               </button>
 
-              <div className={`text-[12px] ${labelCls}`}>
-                Tip: allow mic/camera to see device names
-              </div>
+              <div className={`text-[12px] ${labelCls}`}>Tip: allow mic/camera to see device names</div>
             </div>
           </div>
         </div>
 
-        <div className={`px-6 py-5 border-t flex items-center justify-end gap-3 ${isLight ? "border-black/10" : "border-white/10"}`}>
-          <button onClick={onCancel} className={`h-11 px-5 rounded-2xl text-[13px] font-semibold ${btnGhost}`}>
+        <div
+          className={`px-6 py-5 border-t flex items-center justify-end gap-3 ${isLight ? "border-black/10" : "border-white/10"
+            }`}
+        >
+          <button
+            onClick={onCancel}
+            className={`h-11 px-5 rounded-2xl text-[13px] font-semibold ${btnGhost}`}
+          >
             Cancel
           </button>
-          <button onClick={onJoin} className={`h-11 px-6 rounded-2xl text-[13px] font-semibold ${btnPrimary}`}>
+          <button
+            onClick={onJoin}
+            className={`h-11 px-6 rounded-2xl text-[13px] font-semibold ${btnPrimary}`}
+          >
             Join room
           </button>
         </div>
@@ -674,7 +714,9 @@ export function RoomPage() {
   const bottomBarBg = isLight
     ? "bg-white/85 border border-black/10"
     : "bg-[#07101E]/85 border border-white/10";
-  const ctlBtnBase = isLight ? "bg-black/5 hover:bg-black/10" : "bg-[#111827] hover:bg-[#1f2937]";
+  const ctlBtnBase = isLight
+    ? "bg-black/5 hover:bg-black/10"
+    : "bg-[#111827] hover:bg-[#1f2937]";
 
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -739,7 +781,9 @@ export function RoomPage() {
 
   const [activeScreenSharer, setActiveScreenSharer] = useState<string | null>(null);
 
-  const [incomingReactions, setIncomingReactions] = useState<{ id: number; type: ReactionType }[]>([]);
+  const [incomingReactions, setIncomingReactions] = useState<{ id: number; type: ReactionType }[]>(
+    []
+  );
   const reactionIdRef = useRef<number>(0);
 
   const [localReactions, setLocalReactions] = useState<{ id: number; type: ReactionType }[]>([]);
@@ -1010,12 +1054,7 @@ export function RoomPage() {
         }
 
         if (isRecord(parsed)) {
-          const maybeBlocks =
-            parsed.blocks ||
-            parsed.script ||
-            parsed.agenda ||
-            parsed.items ||
-            parsed.stages;
+          const maybeBlocks = parsed.blocks || parsed.script || parsed.agenda || parsed.items || parsed.stages;
 
           if (Array.isArray(maybeBlocks)) parsed = maybeBlocks;
         }
@@ -1049,15 +1088,10 @@ export function RoomPage() {
                 num(blk.duration) ||
                 0;
 
-              const seconds =
-                num(blk.seconds) ||
-                num(blk.durationSeconds) ||
-                num(blk.duration_seconds) ||
-                0;
+              const seconds = num(blk.seconds) || num(blk.durationSeconds) || num(blk.duration_seconds) || 0;
 
               const durationSeconds = seconds > 0 ? seconds : minutes > 0 ? minutes * 60 : 0;
-              const displayMinutes =
-                minutes > 0 ? minutes : seconds > 0 ? Math.max(1, Math.round(seconds / 60)) : 0;
+              const displayMinutes = minutes > 0 ? minutes : seconds > 0 ? Math.max(1, Math.round(seconds / 60)) : 0;
 
               if (durationSeconds <= 0 || displayMinutes <= 0) return null;
 
@@ -1101,7 +1135,9 @@ export function RoomPage() {
               type === "focus"
                 ? "Focus"
                 : type === "intentions"
-                  ? (isCheckInLikeLabel(rawPhaseName) ? "Check-in" : "Intentions")
+                  ? isCheckInLikeLabel(rawPhaseName)
+                    ? "Check-in"
+                    : "Intentions"
                   : type === "break"
                     ? "Break"
                     : type === "intro"
@@ -1125,25 +1161,16 @@ export function RoomPage() {
           setStages(formatted);
 
           const anchor = String(
-            str(parsed.anchor_ts) ||
-            str(parsed.anchorTs) ||
-            str(s?.start_time) ||
-            fallbackStart
+            str(parsed.anchor_ts) || str(parsed.anchorTs) || str(s?.start_time) || fallbackStart
           );
           setStagebarStartTime(anchor);
 
           const sumSeconds = phases.reduce((acc, p) => acc + (Number(p.seconds) || 0), 0);
 
           const timerCycle =
-            timer && isRecord(timer)
-              ? num(timer.cycle_seconds) || num(timer.cycleSeconds)
-              : 0;
+            timer && isRecord(timer) ? num(timer.cycle_seconds) || num(timer.cycleSeconds) : 0;
 
-          let cycleSeconds =
-            timerCycle ||
-            num(parsed.cycle_seconds) ||
-            num(parsed.cycleSeconds) ||
-            0;
+          let cycleSeconds = timerCycle || num(parsed.cycle_seconds) || num(parsed.cycleSeconds) || 0;
 
           if (!cycleSeconds || cycleSeconds <= 0) cycleSeconds = sumSeconds;
           if (cycleSeconds < sumSeconds) cycleSeconds = sumSeconds;
@@ -1171,7 +1198,11 @@ export function RoomPage() {
         (u?.email ? u.email.split("@")[0] : "");
 
       if (!name && u?.id) {
-        const { data: p } = await supabase.from("profiles").select("full_name").eq("id", u.id).single();
+        const { data: p } = await supabase
+          .from("profiles")
+          .select("full_name")
+          .eq("id", u.id)
+          .single();
         name = str((p as unknown as { full_name?: unknown } | null)?.full_name);
       }
 
@@ -1256,9 +1287,6 @@ export function RoomPage() {
       },
       {
         jitsiDomain: JITSI_DOMAIN,
-        // необязательно, но можно явно:
-        // configPath: "/config.js",
-        // libPath: "/libs/lib-jitsi-meet.min.js",
       }
     );
 
@@ -1312,7 +1340,6 @@ export function RoomPage() {
         : `session-${session.id}`);
 
     const safeRoomName = roomNameRaw.toLowerCase().replace(/[^a-z0-9-_]/g, "");
-
     const nameToUse = (displayName || userName || "Guest").trim() || "Guest";
 
     engine
@@ -1441,7 +1468,9 @@ export function RoomPage() {
         if (diffSec < next) {
           active = i;
           const rem = next - diffSec;
-          setRemainingTime(`${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`);
+          setRemainingTime(
+            `${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`
+          );
           found = true;
           break;
         }
@@ -1480,7 +1509,6 @@ export function RoomPage() {
         } else {
           stopWelcomeLoop();
           if (newType) {
-            // allow raw types but prefer normalized known ones
             const t = inferStageTypeFromLabel(String(newType));
             const sound = STAGE_SOUND_MAP[t];
             if (sound) playOneShot(sound);
@@ -1496,10 +1524,7 @@ export function RoomPage() {
     return () => window.clearInterval(timer);
   }, [stagebarStartTime, stages, isSilentRoom, isInfiniteRoom, stagebarCycleSeconds]);
 
-  const localParticipant = useMemo(
-    () => participants.find((p) => p.isLocal) || null,
-    [participants]
-  );
+  const localParticipant = useMemo(() => participants.find((p) => p.isLocal) || null, [participants]);
 
   const isAudioMuted = !!localParticipant?.audioMuted;
   const isVideoMuted = !!localParticipant?.videoMuted;
@@ -1567,7 +1592,9 @@ export function RoomPage() {
       mql.addEventListener("change", onChange);
       return () => mql.removeEventListener("change", onChange);
     } catch {
+      // @ts-ignore
       mql.addListener(onChange);
+      // @ts-ignore
       return () => mql.removeListener(onChange);
     }
   }, []);
@@ -1577,15 +1604,12 @@ export function RoomPage() {
   const filteredParticipants = useMemo(() => {
     const q = participantsSearch.trim().toLowerCase();
     if (!q) return participants;
-    return participants.filter((p) =>
-      (p.isLocal ? "you" : p.displayName || "guest").toLowerCase().includes(q)
-    );
+    return participants.filter((p) => (p.isLocal ? "you" : p.displayName || "guest").toLowerCase().includes(q));
   }, [participants, participantsSearch]);
 
   const participantsCount = participants.length;
 
-  const switchTrack =
-    "w-[84px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
+  const switchTrack = "w-[84px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
   const switchTrackCls = isLight
     ? "bg-black/5 border-black/10 hover:bg-black/10"
     : "bg-white/5 border-white/10 hover:bg-white/10";
@@ -1620,11 +1644,7 @@ export function RoomPage() {
   }, []);
 
   if (loading) {
-    return (
-      <div className={`flex h-screen justify-center items-center ${pageBg}`}>
-        Loading session...
-      </div>
-    );
+    return <div className={`flex h-screen justify-center items-center ${pageBg}`}>Loading session...</div>;
   }
 
   if (!session) {
@@ -1663,8 +1683,8 @@ export function RoomPage() {
             <button
               onClick={() => openRightTab(null)}
               className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                ? "bg-black/5 hover:bg-black/10 text-black/60"
-                : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                  ? "bg-black/5 hover:bg-black/10 text-black/60"
+                  : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
                 }`}
               title="Close"
             >
@@ -1674,14 +1694,18 @@ export function RoomPage() {
 
           <div className="p-4">
             <div
-              className={`rounded-xl px-3 py-2 ${isLight ? "bg-black/5 border border-black/10" : "bg-[#0B1220]/70 border border-white/10"
+              className={`rounded-xl px-3 py-2 ${isLight
+                  ? "bg-black/5 border border-black/10"
+                  : "bg-[#0B1220]/70 border border-white/10"
                 }`}
             >
               <input
                 value={participantsSearch}
                 onChange={(e) => setParticipantsSearch(e.target.value)}
                 placeholder="Search participants..."
-                className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${isLight ? "text-black/80 placeholder:text-black/40" : "text-white/85 placeholder:text-white/35"
+                className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${isLight
+                    ? "text-black/80 placeholder:text-black/40"
+                    : "text-white/85 placeholder:text-white/35"
                   }`}
               />
             </div>
@@ -1784,7 +1808,6 @@ export function RoomPage() {
 
       {rightTab === "chat" && (
         <div className="h-full min-h-0 flex flex-col">
-          {/* ✅ Header restored */}
           <div
             className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
               }`}
@@ -1795,8 +1818,8 @@ export function RoomPage() {
             <button
               onClick={() => openRightTab(null)}
               className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                ? "bg-black/5 hover:bg-black/10 text-black/60"
-                : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                  ? "bg-black/5 hover:bg-black/10 text-black/60"
+                  : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
                 }`}
               title="Close"
             >
@@ -1822,7 +1845,6 @@ export function RoomPage() {
                       showHeader={false}
                       title="Chat"
                       onClose={() => openRightTab(null)}
-                      // defensive props (safe even if ignored)
                       embedded={true}
                       hideHeader={true}
                       authUserId={authUserId}
@@ -1848,8 +1870,8 @@ export function RoomPage() {
             <button
               onClick={() => openRightTab(null)}
               className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                ? "bg-black/5 hover:bg-black/10 text-black/60"
-                : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                  ? "bg-black/5 hover:bg-black/10 text-black/60"
+                  : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
                 }`}
               title="Close"
             >
@@ -1863,7 +1885,11 @@ export function RoomPage() {
                 }`}
             >
               <div className="h-full min-h-0 overflow-y-auto [&>*]:min-h-0">
-                <div data-theme={theme} style={{ colorScheme: theme }} className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}>
+                <div
+                  data-theme={theme}
+                  style={{ colorScheme: theme }}
+                  className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
+                >
                   <IntentionsPanel
                     key={`intentions-${session.id}-${theme}`}
                     theme={theme}
@@ -1879,6 +1905,89 @@ export function RoomPage() {
     </div>
   );
 
+  // ✅ Top Bar (updated layout / tighter spacing like IFrame)
+  const TopBar = (
+    <div className={`flex w-full rounded-2xl overflow-hidden ${topBarBg}`}>
+      <div className="flex-1 px-4 sm:px-5 py-3 sm:py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex flex-col gap-1">
+            <p className={`font-inter font-semibold text-[16px] sm:text-[18px] truncate ${strongText}`}>
+              {session.title}
+            </p>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-xl ${chipBg}`}>
+                <Icon name="participants" theme={theme} className="w-4 h-4 opacity-80" alt="" />
+                <span className={`font-inter text-[12px] ${isLight ? "text-black/70" : "text-white/85"}`}>
+                  {participantsCount}
+                </span>
+                <span className={`font-inter text-[12px] ${subtleText}`}>participants</span>
+              </div>
+
+              {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
+                <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-xl ${chipBg}`}>
+                  <Icon name="timer" theme={theme} className="w-4 h-4 opacity-80" alt="Timer" />
+                  <span className={`font-inter text-[12px] ${isLight ? "text-black/75" : "text-white/90"}`}>
+                    {remainingTime || "--:--"}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+              className={`${switchTrack} ${switchTrackCls}`}
+              title="Toggle theme"
+              aria-label="Toggle theme"
+            >
+              <div className={switchThumb} style={{ transform: thumbTranslate }}>
+                <Icon
+                  name={isLight ? "theme-sun" : "theme-moon"}
+                  theme={theme}
+                  className="w-4 h-4"
+                  alt={isLight ? "Light" : "Dark"}
+                />
+              </div>
+            </button>
+
+            {session.host_profile && (
+              <button
+                onClick={() => setSelectedUser(session.host_profile || null)}
+                className={`max-[520px]:hidden flex items-center gap-2 px-3 py-2 rounded-xl border transition font-inter text-[13px] ${isLight
+                    ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                    : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                  }`}
+              >
+                <Icon name="host_session_icon" theme={theme} className="h-5 w-5 opacity-90" alt="" />
+                <span className="flex items-center gap-1 leading-none">
+                  <span className={isLight ? "font-normal text-black/55" : "font-normal text-white/70"}>
+                    Host:
+                  </span>
+                  <span className="font-semibold">{session.host_profile.full_name}</span>
+                </span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
+          <div className="mt-2 w-full overflow-hidden">
+            <div className="w-full overflow-hidden">
+              <SessionStageBar
+                stages={stages}
+                startTime={stagebarStartTime}
+                cycleSeconds={stagebarCycleSeconds}
+                onHoverStage={setHoveredStage}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <>
       <PreJoinModal
@@ -1891,17 +2000,14 @@ export function RoomPage() {
           loadBrowserDevices().catch(() => { });
         }}
         onCancel={() => {
-          // cancel = leave
           navigate("/sessions", { replace: true });
         }}
         onJoin={() => {
           const pj = prejoinRef.current;
 
-          // update names
           const nm = (pj.displayName || displayName || userName || "Guest").trim() || "Guest";
           setDisplayName(nm);
 
-          // persist device + output
           const nextMedia: RoomMediaSettings = {
             ...mediaSettingsRef.current,
             videoInputId: pj.videoInputId || mediaSettingsRef.current.videoInputId || "",
@@ -1922,84 +2028,14 @@ export function RoomPage() {
       />
 
       <div className={`h-[100dvh] overflow-hidden ${pageBg}`}>
-        <div className="h-full w-full px-3 sm:px-5 pt-5 pb-[calc(110px+env(safe-area-inset-bottom))] flex flex-col gap-5 min-h-0">
-          <div className={`flex w-full rounded-2xl overflow-hidden ${topBarBg}`}>
-            <div className="flex-1 px-6 py-4">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <p className={`font-inter font-semibold text-[18px] truncate ${strongText}`}>
-                    {session.title}
-                  </p>
-                  <p className={`font-inter text-[13px] ${subtleText}`}>
-                    {participantsCount} participants
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
-                    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}>
-                      <Icon name="timer" theme={theme} className="w-4 h-4 opacity-80" alt="Timer" />
-                      <span className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"}`}>
-                        {remainingTime || "--:--"}
-                      </span>
-                    </div>
-                  )}
-
-                  <button
-                    onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-                    className={`${switchTrack} ${switchTrackCls}`}
-                    title="Toggle theme"
-                    aria-label="Toggle theme"
-                  >
-                    <div className={switchThumb} style={{ transform: thumbTranslate }}>
-                      <Icon
-                        name={isLight ? "theme-sun" : "theme-moon"}
-                        theme={theme}
-                        className="w-4 h-4"
-                        alt={isLight ? "Light" : "Dark"}
-                      />
-                    </div>
-                  </button>
-
-                  {session.host_profile && (
-                    <button
-                      onClick={() => setSelectedUser(session.host_profile || null)}
-                      className={`max-[480px]:hidden flex items-center gap-2 px-3 py-1.5 rounded-xl border transition font-inter text-[13px] ${isLight
-                        ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                        : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
-                        }`}
-                    >
-                      <Icon name="host_session_icon" theme={theme} className="h-5 w-5 opacity-90" alt="" />
-                      <span className="flex items-center gap-1 leading-none">
-                        <span className={isLight ? "font-normal text-black/55" : "font-normal text-white/70"}>
-                          Host:
-                        </span>
-                        <span className="font-semibold">{session.host_profile.full_name}</span>
-                      </span>
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
-                <div className="mt-3 w-full overflow-hidden">
-                  <div className="w-full overflow-hidden">
-                    <SessionStageBar
-                      stages={stages}
-                      startTime={stagebarStartTime}
-                      cycleSeconds={stagebarCycleSeconds}
-                      onHoverStage={setHoveredStage}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+        {/* ✅ tighter paddings/gaps (parity with iFrame: more video space) */}
+        <div className="h-full w-full px-3 sm:px-5 pt-3 sm:pt-4 pb-[calc(92px+env(safe-area-inset-bottom))] sm:pb-[calc(104px+env(safe-area-inset-bottom))] flex flex-col gap-3 sm:gap-4 min-h-0">
+          {TopBar}
 
           <div
             className={
-              "relative grid grid-rows-1 gap-5 flex-1 min-h-0 h-full " +
-              (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
+              "relative grid grid-rows-1 gap-3 sm:gap-4 flex-1 min-h-0 h-full " +
+              (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),400px]" : "grid-cols-1")
             }
           >
             <div
@@ -2046,28 +2082,24 @@ export function RoomPage() {
 
             {/* ✅ Render only one variant */}
             {rightPanelOpen && isLgUp && (
-              <div className="min-h-0 h-full overflow-hidden">
-                {RightPanelBody}
-              </div>
+              <div className="min-h-0 h-full overflow-hidden">{RightPanelBody}</div>
             )}
 
             {rightPanelOpen && !isLgUp && (
               <div className="absolute inset-0 z-40 min-h-0">
-                <div
-                  className="absolute inset-0 bg-black/40"
-                  onClick={() => openRightTab(null)}
-                />
-                <div className="absolute inset-x-0 top-0 bottom-0 p-2 min-h-0">
-                  {RightPanelBody}
-                </div>
+                <div className="absolute inset-0 bg-black/40" onClick={() => openRightTab(null)} />
+                <div className="absolute inset-x-0 top-0 bottom-0 p-2 min-h-0">{RightPanelBody}</div>
               </div>
             )}
           </div>
         </div>
 
+        {/* bottom controls unchanged; only minor outer padding tuned */}
         <div className="fixed inset-x-0 bottom-0 z-50">
-          <div className="w-full px-3 sm:px-5 pb-[calc(12px+env(safe-area-inset-bottom))]">
-            <div className={`h-[64px] sm:h-[74px] rounded-2xl shadow-2xl backdrop-blur grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4 ${bottomBarBg}`}>
+          <div className="w-full px-3 sm:px-5 pb-[calc(10px+env(safe-area-inset-bottom))]">
+            <div
+              className={`h-[64px] sm:h-[74px] rounded-2xl shadow-2xl backdrop-blur grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4 ${bottomBarBg}`}
+            >
               <div className="flex items-center gap-2" ref={moreMenuRef}>
                 <div className="md:hidden relative">
                   <button
@@ -2080,13 +2112,17 @@ export function RoomPage() {
 
                   {showMoreMenu && (
                     <div className="absolute bottom-[76px] sm:bottom-[86px] left-0">
-                      <div className={`w-[240px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}>
+                      <div
+                        className={`w-[240px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
+                          }`}
+                      >
                         <button
                           onClick={() => {
                             openRightTab("participants");
                             setShowMoreMenu(false);
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"
+                            }`}
                         >
                           <Icon name="participants" theme={theme} className="w-4 h-4 opacity-90" />
                           <span>Participants</span>
@@ -2097,7 +2133,8 @@ export function RoomPage() {
                             openRightTab("chat");
                             setShowMoreMenu(false);
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"
+                            }`}
                         >
                           <Icon name="chat" theme={theme} className="w-4 h-4 opacity-90" />
                           <span>Chat</span>
@@ -2108,7 +2145,8 @@ export function RoomPage() {
                             openRightTab("intentions");
                             setShowMoreMenu(false);
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"
+                            }`}
                         >
                           <Icon name="intentions" theme={theme} className="w-4 h-4 opacity-90" />
                           <span>Intentions</span>
@@ -2122,7 +2160,8 @@ export function RoomPage() {
                             setTimeout(() => loadDevices(), 0);
                             setShowMoreMenu(false);
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"
+                            }`}
                         >
                           <Icon name="settings" theme={theme} className="w-4 h-4 opacity-90" />
                           <span>Video settings</span>
