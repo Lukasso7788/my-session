@@ -13,6 +13,11 @@
 // - Top Bar layout ported 1:1 from iFrame (rows + mobile split)
 // - Reduced paddings/gaps to maximize video space
 // - Grid/panel spacing aligned (smaller gaps + slightly narrower right panel)
+//
+// ✅ NEW (PREJOIN):
+// - Local self-preview (camera) inside pre-join modal
+// - Background controls inside pre-join modal: none / blur / image (URL or upload -> data URL)
+// - Persists bg prefs to localStorage and applies on join via engine setBackgroundPrefs/setBackgroundEffect
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -269,7 +274,9 @@ function safeParseJson(raw: unknown): unknown | null {
   return raw;
 }
 
-function parse50505(raw: unknown): { focus: number; break: number; intentions: number } | null {
+function parse50505(
+  raw: unknown
+): { focus: number; break: number; intentions: number } | null {
   if (typeof raw !== "string") return null;
   const s = raw.trim();
   const m1 = s.match(/^(\d+)\s*\/\s*(\d+)\s*\/\s*(\d+)$/);
@@ -281,7 +288,8 @@ function parse50505(raw: unknown): { focus: number; break: number; intentions: n
   const br = Number(m[2]);
   const intentions = Number(m[3]);
 
-  if (!Number.isFinite(focus) || !Number.isFinite(br) || !Number.isFinite(intentions)) return null;
+  if (!Number.isFinite(focus) || !Number.isFinite(br) || !Number.isFinite(intentions))
+    return null;
   if (focus <= 0 || br <= 0 || intentions <= 0) return null;
 
   return { focus, break: br, intentions };
@@ -453,6 +461,8 @@ function PreJoinModal({
   devices,
   value,
   onChange,
+  media,
+  onMediaChange,
   onJoin,
   onCancel,
   onRefreshDevices,
@@ -462,10 +472,76 @@ function PreJoinModal({
   devices: MediaDevicesResult;
   value: PreJoinSettings;
   onChange: (next: PreJoinSettings) => void;
+
+  media: RoomMediaSettings;
+  onMediaChange: (next: RoomMediaSettings) => void;
+
   onJoin: () => void;
   onCancel: () => void;
   onRefreshDevices: () => void;
 }) {
+  const videoElRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [previewErr, setPreviewErr] = useState<string>("");
+
+  // Start/stop local preview (camera) while modal open
+  useEffect(() => {
+    if (!open) return;
+
+    const stop = () => {
+      try {
+        const s = streamRef.current;
+        if (s) s.getTracks().forEach((t) => t.stop());
+      } catch { }
+      streamRef.current = null;
+
+      try {
+        if (videoElRef.current) {
+          // @ts-ignore
+          videoElRef.current.srcObject = null;
+        }
+      } catch { }
+    };
+
+    const start = async () => {
+      stop();
+      setPreviewErr("");
+
+      if (!value.videoEnabled) return;
+
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          setPreviewErr("Camera preview not supported in this browser.");
+          return;
+        }
+
+        const constraints: MediaStreamConstraints = {
+          video: value.videoInputId
+            ? { deviceId: { exact: value.videoInputId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+            : { width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false,
+        };
+
+        const s = await navigator.mediaDevices.getUserMedia(constraints);
+        streamRef.current = s;
+
+        if (videoElRef.current) {
+          // @ts-ignore
+          videoElRef.current.srcObject = s;
+          await videoElRef.current.play().catch(() => { });
+        }
+      } catch (e: any) {
+        console.error("prejoin preview getUserMedia error:", e);
+        setPreviewErr(e?.message ? String(e.message) : "Failed to start camera preview.");
+      }
+    };
+
+    start();
+
+    return () => stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, value.videoEnabled, value.videoInputId]);
+
   if (!open) return null;
 
   const isLight = theme === "light";
@@ -473,7 +549,7 @@ function PreJoinModal({
   const overlay = "fixed inset-0 z-[999] flex items-center justify-center px-3";
   const backdrop = "absolute inset-0 bg-black/55";
   const card = [
-    "relative w-full max-w-[520px] rounded-3xl shadow-2xl overflow-hidden",
+    "relative w-full max-w-[780px] rounded-3xl shadow-2xl overflow-hidden",
     isLight ? "bg-white text-black" : "bg-[#020617] text-white",
     "border",
     isLight ? "border-black/10" : "border-white/10",
@@ -497,6 +573,76 @@ function PreJoinModal({
     ? "bg-black/5 hover:bg-black/10 text-black/70"
     : "bg-white/5 hover:bg-white/10 text-white/80";
 
+  const pill = (active: boolean) =>
+    [
+      "h-9 px-3 rounded-2xl text-[12px] font-semibold border transition",
+      active
+        ? isLight
+          ? "bg-blue-600 text-white border-blue-600"
+          : "bg-emerald-500 text-[#02140B] border-emerald-500"
+        : isLight
+          ? "bg-black/5 text-black/70 border-black/10 hover:bg-black/10"
+          : "bg-white/5 text-white/80 border-white/10 hover:bg-white/10",
+    ].join(" ");
+
+  const previewWrapCls = [
+    "relative w-full aspect-video rounded-2xl overflow-hidden border",
+    isLight ? "border-black/10 bg-black/5" : "border-white/10 bg-white/5",
+  ].join(" ");
+
+  const previewBgStyle: React.CSSProperties =
+    media.bgMode === "image" && media.bgImageUrl
+      ? {
+        backgroundImage: `url(${media.bgImageUrl})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      }
+      : {};
+
+  const previewVideoStyle: React.CSSProperties =
+    media.bgMode === "blur"
+      ? { filter: "blur(7px) saturate(1.1) contrast(1.05)" }
+      : {};
+
+  const handlePickBgMode = (mode: RoomMediaSettings["bgMode"]) => {
+    if (mode === "none") {
+      onMediaChange({ ...media, bgMode: "none", bgImageUrl: undefined });
+      return;
+    }
+    if (mode === "blur") {
+      onMediaChange({ ...media, bgMode: "blur" });
+      return;
+    }
+    if (mode === "image") {
+      onMediaChange({ ...media, bgMode: "image" });
+      return;
+    }
+  };
+
+  const handleUploadBg = async (file: File | null) => {
+    if (!file) return;
+    try {
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result || ""));
+        r.onerror = () => reject(new Error("File read error"));
+        r.readAsDataURL(file);
+      });
+
+      if (!dataUrl || !dataUrl.startsWith("data:image/")) {
+        return;
+      }
+
+      onMediaChange({
+        ...media,
+        bgMode: "image",
+        bgImageUrl: dataUrl,
+      });
+    } catch (e) {
+      console.warn("bg upload error:", e);
+    }
+  };
+
   return (
     <div className={overlay} data-theme={theme} style={{ colorScheme: theme }}>
       <div className={backdrop} onClick={onCancel} />
@@ -514,138 +660,286 @@ function PreJoinModal({
               ✕
             </button>
           </div>
-          <div className={`mt-1 text-[12px] ${labelCls}`}>Pick devices + name. Then join.</div>
+          <div className={`mt-1 text-[12px] ${labelCls}`}>
+            Preview yourself, pick devices + background, then join.
+          </div>
         </div>
 
-        <div className="px-6 py-5 flex flex-col gap-4">
-          {/* name */}
-          <div className="flex flex-col gap-2">
-            <div className={`text-[12px] ${labelCls}`}>Display name</div>
-            <div className={`rounded-2xl px-4 py-3 ${inputWrap}`}>
-              <input
-                value={value.displayName}
-                onChange={(e) => onChange({ ...value, displayName: e.target.value })}
-                placeholder="Your name…"
-                className={`w-full bg-transparent outline-none text-[14px] ${inputCls}`}
+        <div className="px-6 py-5 grid grid-cols-1 lg:grid-cols-[1fr,360px] gap-5">
+          {/* LEFT: Preview + Background */}
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <div className={`text-[12px] ${labelCls}`}>Your preview</div>
+              <div className={`text-[12px] ${labelCls}`}>
+                {value.videoEnabled ? "Camera ON" : "Camera OFF"}
+              </div>
+            </div>
+
+            <div className={previewWrapCls} style={previewBgStyle}>
+              {/* subtle overlay so bg image is visible even when video covers it */}
+              {media.bgMode === "image" && media.bgImageUrl && (
+                <div className="absolute inset-0 bg-black/20" />
+              )}
+
+              {/* video */}
+              <video
+                ref={videoElRef}
+                playsInline
+                muted
+                autoPlay
+                className="absolute inset-0 w-full h-full object-cover"
+                style={previewVideoStyle}
               />
+
+              {/* if image mode: make video slightly transparent so bg shows */}
+              {media.bgMode === "image" && media.bgImageUrl && (
+                <div className="absolute inset-0 pointer-events-none bg-black/15" />
+              )}
+
+              {/* overlay text */}
+              {!value.videoEnabled && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div
+                    className={`px-4 py-2 rounded-xl text-[12px] ${isLight ? "bg-white/80 text-black/70" : "bg-black/40 text-white/80"}`}
+                  >
+                    Turn on “Video enabled” to preview.
+                  </div>
+                </div>
+              )}
+
+              {!!previewErr && (
+                <div className="absolute inset-x-0 bottom-0 p-3">
+                  <div className="text-[12px] bg-red-600 text-white px-3 py-2 rounded-xl shadow">
+                    {previewErr}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className={`rounded-2xl p-4 ${inputWrap}`}>
+              <div className="flex items-center justify-between gap-2">
+                <div className={`text-[12px] ${labelCls}`}>Background</div>
+                <div className={`text-[12px] ${labelCls}`}>Applied on join</div>
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className={pill(media.bgMode === "none")}
+                  onClick={() => handlePickBgMode("none")}
+                >
+                  None
+                </button>
+                <button
+                  type="button"
+                  className={pill(media.bgMode === "blur")}
+                  onClick={() => handlePickBgMode("blur")}
+                >
+                  Blur
+                </button>
+                <button
+                  type="button"
+                  className={pill(media.bgMode === "image")}
+                  onClick={() => handlePickBgMode("image")}
+                >
+                  Image
+                </button>
+              </div>
+
+              {media.bgMode === "image" && (
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-2">
+                    <div className={`text-[12px] ${labelCls}`}>Image URL</div>
+                    <div className={`rounded-2xl px-4 py-3 ${isLight ? "bg-white/70 border border-black/10" : "bg-black/20 border border-white/10"}`}>
+                      <input
+                        value={media.bgImageUrl || ""}
+                        onChange={(e) =>
+                          onMediaChange({
+                            ...media,
+                            bgMode: "image",
+                            bgImageUrl: e.target.value.trim() || undefined,
+                          })
+                        }
+                        placeholder="https://… or data:image/…"
+                        className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <div className={`text-[12px] ${labelCls}`}>Upload</div>
+                    <label
+                      className={`h-[46px] rounded-2xl px-4 flex items-center justify-between cursor-pointer ${isLight ? "bg-white/70 border border-black/10 hover:bg-white" : "bg-black/20 border border-white/10 hover:bg-black/30"}`}
+                      title="Upload background image (stored as data URL)"
+                    >
+                      <span className={`text-[13px] ${labelCls}`}>Choose file…</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => handleUploadBg(e.target.files?.[0] || null)}
+                      />
+                      <span className={`text-[12px] ${isLight ? "text-black/45" : "text-white/45"}`}>
+                        PNG/JPG
+                      </span>
+                    </label>
+                  </div>
+
+                  <div className="sm:col-span-2 flex items-center justify-between">
+                    <div className={`text-[12px] ${labelCls}`}>
+                      Tip: pick a simple background for best segmentation.
+                    </div>
+                    <button
+                      type="button"
+                      className={`h-9 px-3 rounded-2xl text-[12px] font-semibold ${btnGhost}`}
+                      onClick={() => onMediaChange({ ...media, bgMode: "image", bgImageUrl: undefined })}
+                    >
+                      Clear image
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* devices */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* RIGHT: Name + Devices + toggles */}
+          <div className="flex flex-col gap-4">
+            {/* name */}
             <div className="flex flex-col gap-2">
-              <div className={`text-[12px] ${labelCls}`}>Microphone</div>
-              <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
-                <select
-                  value={value.audioInputId}
-                  onChange={(e) => onChange({ ...value, audioInputId: e.target.value })}
-                  className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
-                >
-                  <option value="">Default</option>
-                  {devices.audioInputs.map((d, i) => (
-                    <option key={d.deviceId} value={d.deviceId}>
-                      {deviceLabel(d, `Microphone ${i + 1}`)}
-                    </option>
-                  ))}
-                </select>
+              <div className={`text-[12px] ${labelCls}`}>Display name</div>
+              <div className={`rounded-2xl px-4 py-3 ${inputWrap}`}>
+                <input
+                  value={value.displayName}
+                  onChange={(e) => onChange({ ...value, displayName: e.target.value })}
+                  placeholder="Your name…"
+                  className={`w-full bg-transparent outline-none text-[14px] ${inputCls}`}
+                />
               </div>
             </div>
 
-            <div className="flex flex-col gap-2">
-              <div className={`text-[12px] ${labelCls}`}>Camera</div>
-              <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
-                <select
-                  value={value.videoInputId}
-                  onChange={(e) => onChange({ ...value, videoInputId: e.target.value })}
-                  className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
-                >
-                  <option value="">Default</option>
-                  {devices.videoInputs.map((d, i) => (
-                    <option key={d.deviceId} value={d.deviceId}>
-                      {deviceLabel(d, `Camera ${i + 1}`)}
-                    </option>
-                  ))}
-                </select>
+            {/* devices */}
+            <div className="grid grid-cols-1 gap-3">
+              <div className="flex flex-col gap-2">
+                <div className={`text-[12px] ${labelCls}`}>Microphone</div>
+                <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
+                  <select
+                    value={value.audioInputId}
+                    onChange={(e) => onChange({ ...value, audioInputId: e.target.value })}
+                    className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
+                  >
+                    <option value="">Default</option>
+                    {devices.audioInputs.map((d, i) => (
+                      <option key={d.deviceId} value={d.deviceId}>
+                        {deviceLabel(d, `Microphone ${i + 1}`)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <div className={`text-[12px] ${labelCls}`}>Camera</div>
+                <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
+                  <select
+                    value={value.videoInputId}
+                    onChange={(e) => onChange({ ...value, videoInputId: e.target.value })}
+                    className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
+                  >
+                    <option value="">Default</option>
+                    {devices.videoInputs.map((d, i) => (
+                      <option key={d.deviceId} value={d.deviceId}>
+                        {deviceLabel(d, `Camera ${i + 1}`)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <div className={`text-[12px] ${labelCls}`}>Speaker</div>
+                <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
+                  <select
+                    value={value.audioOutputId}
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      onChange({ ...value, audioOutputId: id });
+                      // keep media speaker in sync so it applies on join + later
+                      onMediaChange({ ...media, audioOutputId: id || "default" });
+                    }}
+                    className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
+                  >
+                    <option value="default">Default</option>
+                    {devices.audioOutputs.map((d, i) => (
+                      <option key={d.deviceId} value={d.deviceId}>
+                        {deviceLabel(d, `Speaker ${i + 1}`)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
 
-            <div className="sm:col-span-2 flex flex-col gap-2">
-              <div className={`text-[12px] ${labelCls}`}>Speaker</div>
-              <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
-                <select
-                  value={value.audioOutputId}
-                  onChange={(e) => onChange({ ...value, audioOutputId: e.target.value })}
-                  className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
-                >
-                  <option value="default">Default</option>
-                  {devices.audioOutputs.map((d, i) => (
-                    <option key={d.deviceId} value={d.deviceId}>
-                      {deviceLabel(d, `Speaker ${i + 1}`)}
-                    </option>
-                  ))}
-                </select>
+            {/* toggles */}
+            <div className={`rounded-2xl p-4 ${inputWrap}`}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="flex items-center gap-2 text-[13px]">
+                  <input
+                    type="checkbox"
+                    checked={value.audioEnabled}
+                    onChange={(e) => onChange({ ...value, audioEnabled: e.target.checked })}
+                  />
+                  <span className={labelCls}>Audio enabled</span>
+                </label>
+
+                <label className="flex items-center gap-2 text-[13px]">
+                  <input
+                    type="checkbox"
+                    checked={value.videoEnabled}
+                    onChange={(e) => onChange({ ...value, videoEnabled: e.target.checked })}
+                  />
+                  <span className={labelCls}>Video enabled</span>
+                </label>
+
+                <label className="flex items-center gap-2 text-[13px]">
+                  <input
+                    type="checkbox"
+                    checked={value.echoCancellation}
+                    onChange={(e) => onChange({ ...value, echoCancellation: e.target.checked })}
+                  />
+                  <span className={labelCls}>Echo cancellation</span>
+                </label>
+
+                <label className="flex items-center gap-2 text-[13px]">
+                  <input
+                    type="checkbox"
+                    checked={value.noiseSuppression}
+                    onChange={(e) => onChange({ ...value, noiseSuppression: e.target.checked })}
+                  />
+                  <span className={labelCls}>Noise suppression</span>
+                </label>
+
+                <label className="flex items-center gap-2 text-[13px] sm:col-span-2">
+                  <input
+                    type="checkbox"
+                    checked={value.autoGainControl}
+                    onChange={(e) => onChange({ ...value, autoGainControl: e.target.checked })}
+                  />
+                  <span className={labelCls}>Auto gain control</span>
+                </label>
               </div>
-            </div>
-          </div>
 
-          {/* toggles */}
-          <div className={`rounded-2xl p-4 ${inputWrap}`}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <label className="flex items-center gap-2 text-[13px]">
-                <input
-                  type="checkbox"
-                  checked={value.audioEnabled}
-                  onChange={(e) => onChange({ ...value, audioEnabled: e.target.checked })}
-                />
-                <span className={labelCls}>Audio enabled</span>
-              </label>
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <button
+                  onClick={onRefreshDevices}
+                  className={`h-10 px-4 rounded-2xl text-[13px] ${btnGhost}`}
+                >
+                  Refresh devices
+                </button>
 
-              <label className="flex items-center gap-2 text-[13px]">
-                <input
-                  type="checkbox"
-                  checked={value.videoEnabled}
-                  onChange={(e) => onChange({ ...value, videoEnabled: e.target.checked })}
-                />
-                <span className={labelCls}>Video enabled</span>
-              </label>
-
-              <label className="flex items-center gap-2 text-[13px]">
-                <input
-                  type="checkbox"
-                  checked={value.echoCancellation}
-                  onChange={(e) => onChange({ ...value, echoCancellation: e.target.checked })}
-                />
-                <span className={labelCls}>Echo cancellation</span>
-              </label>
-
-              <label className="flex items-center gap-2 text-[13px]">
-                <input
-                  type="checkbox"
-                  checked={value.noiseSuppression}
-                  onChange={(e) => onChange({ ...value, noiseSuppression: e.target.checked })}
-                />
-                <span className={labelCls}>Noise suppression</span>
-              </label>
-
-              <label className="flex items-center gap-2 text-[13px] sm:col-span-2">
-                <input
-                  type="checkbox"
-                  checked={value.autoGainControl}
-                  onChange={(e) => onChange({ ...value, autoGainControl: e.target.checked })}
-                />
-                <span className={labelCls}>Auto gain control</span>
-              </label>
-            </div>
-
-            <div className="mt-3 flex items-center justify-between">
-              <button
-                onClick={onRefreshDevices}
-                className={`h-10 px-4 rounded-2xl text-[13px] ${btnGhost}`}
-              >
-                Refresh devices
-              </button>
-
-              <div className={`text-[12px] ${labelCls}`}>Tip: allow mic/camera to see device names</div>
+                <div className={`text-[12px] ${labelCls}`}>
+                  Tip: allow mic/camera to see device names
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1066,7 +1360,8 @@ export function RoomPage() {
         }
 
         if (isRecord(parsed)) {
-          const maybeBlocks = parsed.blocks || parsed.script || parsed.agenda || parsed.items || parsed.stages;
+          const maybeBlocks =
+            parsed.blocks || parsed.script || parsed.agenda || parsed.items || parsed.stages;
 
           if (Array.isArray(maybeBlocks)) parsed = maybeBlocks;
         }
@@ -1104,7 +1399,12 @@ export function RoomPage() {
                 num(blk.seconds) || num(blk.durationSeconds) || num(blk.duration_seconds) || 0;
 
               const durationSeconds = seconds > 0 ? seconds : minutes > 0 ? minutes * 60 : 0;
-              const displayMinutes = minutes > 0 ? minutes : seconds > 0 ? Math.max(1, Math.round(seconds / 60)) : 0;
+              const displayMinutes =
+                minutes > 0
+                  ? minutes
+                  : seconds > 0
+                    ? Math.max(1, Math.round(seconds / 60))
+                    : 0;
 
               if (durationSeconds <= 0 || displayMinutes <= 0) return null;
 
@@ -1174,16 +1474,25 @@ export function RoomPage() {
           setStages(formatted);
 
           const anchor = String(
-            str(parsed.anchor_ts) || str(parsed.anchorTs) || str(s?.start_time) || fallbackStart
+            str(parsed.anchor_ts) ||
+            str(parsed.anchorTs) ||
+            str(s?.start_time) ||
+            fallbackStart
           );
           setStagebarStartTime(anchor);
 
           const sumSeconds = phases.reduce((acc, p) => acc + (Number(p.seconds) || 0), 0);
 
           const timerCycle =
-            timer && isRecord(timer) ? num(timer.cycle_seconds) || num(timer.cycleSeconds) : 0;
+            timer && isRecord(timer)
+              ? num(timer.cycle_seconds) || num(timer.cycleSeconds)
+              : 0;
 
-          let cycleSeconds = timerCycle || num(parsed.cycle_seconds) || num(parsed.cycleSeconds) || 0;
+          let cycleSeconds =
+            timerCycle ||
+            num(parsed.cycle_seconds) ||
+            num(parsed.cycleSeconds) ||
+            0;
 
           if (!cycleSeconds || cycleSeconds <= 0) cycleSeconds = sumSeconds;
           if (cycleSeconds < sumSeconds) cycleSeconds = sumSeconds;
@@ -1537,7 +1846,10 @@ export function RoomPage() {
     return () => window.clearInterval(timer);
   }, [stagebarStartTime, stages, isSilentRoom, isInfiniteRoom, stagebarCycleSeconds]);
 
-  const localParticipant = useMemo(() => participants.find((p) => p.isLocal) || null, [participants]);
+  const localParticipant = useMemo(
+    () => participants.find((p) => p.isLocal) || null,
+    [participants]
+  );
 
   const isAudioMuted = !!localParticipant?.audioMuted;
   const isVideoMuted = !!localParticipant?.videoMuted;
@@ -1666,7 +1978,11 @@ export function RoomPage() {
   }, []);
 
   if (loading) {
-    return <div className={`flex h-screen justify-center items-center ${pageBg}`}>Loading session...</div>;
+    return (
+      <div className={`flex h-screen justify-center items-center ${pageBg}`}>
+        Loading session...
+      </div>
+    );
   }
 
   if (!session) {
@@ -1695,7 +2011,9 @@ export function RoomPage() {
               }`}
           >
             <div className="flex items-center gap-2">
-              <span className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>
+              <span
+                className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}
+              >
                 Participants
               </span>
               <span className={`${isLight ? "text-black/50" : "text-white/55"} text-sm`}>
@@ -1753,16 +2071,24 @@ export function RoomPage() {
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div
-                        className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${isLight ? "bg-blue-500/15 text-blue-700" : "bg-emerald-500/80 text-[#02140B]"
+                        className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${isLight
+                            ? "bg-blue-500/15 text-blue-700"
+                            : "bg-emerald-500/80 text-[#02140B]"
                           }`}
                       >
                         {initials}
                       </div>
                       <div className="min-w-0">
-                        <div className={`text-[13px] font-medium truncate ${isLight ? "text-black/85" : "text-white/90"}`}>
+                        <div
+                          className={`text-[13px] font-medium truncate ${isLight ? "text-black/85" : "text-white/90"
+                            }`}
+                        >
                           {name}
                         </div>
-                        <div className={`text-[11px] truncate ${isLight ? "text-black/45" : "text-white/45"}`}>
+                        <div
+                          className={`text-[11px] truncate ${isLight ? "text-black/45" : "text-white/45"
+                            }`}
+                        >
                           {p.isLocal ? "Team member" : "Participant"}
                         </div>
                       </div>
@@ -1942,7 +2268,9 @@ export function RoomPage() {
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="flex items-center gap-2 min-w-0">
-                <p className={`min-w-0 font-inter font-semibold text-[16px] sm:text-[18px] truncate ${strongText}`}>
+                <p
+                  className={`min-w-0 font-inter font-semibold text-[16px] sm:text-[18px] truncate ${strongText}`}
+                >
                   {String(session?.title || "Session")}
                 </p>
 
@@ -1977,7 +2305,11 @@ export function RoomPage() {
                 aria-label="Toggle theme"
               >
                 <div className={switchThumb} style={{ transform: thumbTranslate }}>
-                  <Icon name={isLight ? "theme-sun" : "theme-moon"} theme={theme} className="w-4 h-4" />
+                  <Icon
+                    name={isLight ? "theme-sun" : "theme-moon"}
+                    theme={theme}
+                    className="w-4 h-4"
+                  />
                 </div>
               </button>
 
@@ -1993,7 +2325,9 @@ export function RoomPage() {
                   <ParticipantsSmartIcon theme={theme} className="w-4 h-4 opacity-90" />
                   <span className="font-inter">
                     <span className="font-light">Host:</span>{" "}
-                    <span className="font-bold">{String(session.host_profile.full_name || "Host")}</span>
+                    <span className="font-bold">
+                      {String(session.host_profile.full_name || "Host")}
+                    </span>
                   </span>
                 </button>
               )}
@@ -2018,7 +2352,11 @@ export function RoomPage() {
               aria-label="Toggle theme"
             >
               <div className={switchThumb} style={{ transform: thumbTranslate }}>
-                <Icon name={isLight ? "theme-sun" : "theme-moon"} theme={theme} className="w-4 h-4" />
+                <Icon
+                  name={isLight ? "theme-sun" : "theme-moon"}
+                  theme={theme}
+                  className="w-4 h-4"
+                />
               </div>
             </button>
 
@@ -2061,6 +2399,13 @@ export function RoomPage() {
         devices={devices}
         value={prejoin}
         onChange={setPrejoin}
+        media={mediaSettings}
+        onMediaChange={(next) => {
+          setMediaSettings(next);
+          mediaSettingsRef.current = next;
+          setSelectedAudioOutputId(next.audioOutputId || "default");
+          saveStoredMediaSettings(next);
+        }}
         onRefreshDevices={() => {
           loadBrowserDevices().catch(() => { });
         }}
@@ -2100,12 +2445,16 @@ export function RoomPage() {
           <div
             className={
               "relative grid grid-rows-1 gap-3 sm:gap-4 flex-1 min-h-0 h-full " +
-              (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),380px] xl:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
+              (rightPanelOpen
+                ? "lg:grid-cols-[minmax(0,1fr),380px] xl:grid-cols-[minmax(0,1fr),420px]"
+                : "grid-cols-1")
             }
           >
             <div
               ref={videoWrapRef}
-              className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
+              className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight
+                  ? "bg-white/70 border border-black/10"
+                  : "bg-[#0B1220]/45 border border-white/5"
                 }`}
             >
               <div className="w-full h-full min-h-0">
@@ -2153,7 +2502,9 @@ export function RoomPage() {
             {rightPanelOpen && !isLgUp && (
               <div className="absolute inset-0 z-40 min-h-0">
                 <div className="absolute inset-0 bg-black/40" onClick={() => openRightTab(null)} />
-                <div className="absolute inset-x-0 top-0 bottom-0 p-1 sm:p-2 min-h-0">{RightPanelBody}</div>
+                <div className="absolute inset-x-0 top-0 bottom-0 p-1 sm:p-2 min-h-0">
+                  {RightPanelBody}
+                </div>
               </div>
             )}
           </div>
@@ -2178,7 +2529,9 @@ export function RoomPage() {
                   {showMoreMenu && (
                     <div className="absolute bottom-[76px] sm:bottom-[86px] left-0">
                       <div
-                        className={`w-[240px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
+                        className={`w-[240px] rounded-2xl shadow-2xl overflow-hidden ${isLight
+                            ? "bg-white border border-black/10"
+                            : "bg-[#020617] border border-white/10"
                           }`}
                       >
                         <button
@@ -2186,7 +2539,9 @@ export function RoomPage() {
                             openRightTab("participants");
                             setShowMoreMenu(false);
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"
+                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight
+                              ? "text-black/75 hover:bg-black/5"
+                              : "text-white/85 hover:bg-white/5"
                             }`}
                         >
                           <Icon name="participants" theme={theme} className="w-4 h-4 opacity-90" />
@@ -2198,7 +2553,9 @@ export function RoomPage() {
                             openRightTab("chat");
                             setShowMoreMenu(false);
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"
+                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight
+                              ? "text-black/75 hover:bg-black/5"
+                              : "text-white/85 hover:bg-white/5"
                             }`}
                         >
                           <Icon name="chat" theme={theme} className="w-4 h-4 opacity-90" />
@@ -2210,7 +2567,9 @@ export function RoomPage() {
                             openRightTab("intentions");
                             setShowMoreMenu(false);
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"
+                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight
+                              ? "text-black/75 hover:bg-black/5"
+                              : "text-white/85 hover:bg-white/5"
                             }`}
                         >
                           <Icon name="intentions" theme={theme} className="w-4 h-4 opacity-90" />
@@ -2225,7 +2584,9 @@ export function RoomPage() {
                             setTimeout(() => loadDevices(), 0);
                             setShowMoreMenu(false);
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"
+                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight
+                              ? "text-black/75 hover:bg-black/5"
+                              : "text-white/85 hover:bg-white/5"
                             }`}
                         >
                           <Icon name="settings" theme={theme} className="w-4 h-4 opacity-90" />
@@ -2298,7 +2659,11 @@ export function RoomPage() {
                   }
                   title="Toggle camera"
                 >
-                  <Icon name={isVideoMuted ? "camera-off" : "camera-on"} theme={theme} className="w-5 h-5" />
+                  <Icon
+                    name={isVideoMuted ? "camera-off" : "camera-on"}
+                    theme={theme}
+                    className="w-5 h-5"
+                  />
                 </button>
 
                 <button
@@ -2323,10 +2688,14 @@ export function RoomPage() {
 
                   {showReactionsMenu && (
                     <div
-                      className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
+                      className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl ${isLight
+                          ? "bg-white border border-black/10"
+                          : "bg-[#020617] border border-white/10"
                         }`}
                     >
-                      {(["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown"] as ReactionType[]).map((t) => (
+                      {(
+                        ["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown"] as ReactionType[]
+                      ).map((t) => (
                         <button
                           key={t}
                           onClick={() => {
@@ -2347,7 +2716,9 @@ export function RoomPage() {
               <div className="flex items-center justify-end gap-2 sm:gap-3">
                 <button
                   onClick={handleLeave}
-                  className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${isLight ? "bg-red-600 hover:bg-red-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"
+                  className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${isLight
+                      ? "bg-red-600 hover:bg-red-700 text-white"
+                      : "bg-red-600 hover:bg-red-700 text-white"
                     }`}
                   title="Leave"
                 >
@@ -2383,7 +2754,9 @@ export function RoomPage() {
           }}
         />
 
-        {selectedUser && <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />}
+        {selectedUser && (
+          <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
+        )}
       </div>
     </>
   );
