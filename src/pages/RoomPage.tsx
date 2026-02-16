@@ -517,7 +517,11 @@ function PreJoinModal({
 
         const constraints: MediaStreamConstraints = {
           video: value.videoInputId
-            ? { deviceId: { exact: value.videoInputId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+            ? {
+              deviceId: { exact: value.videoInputId },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            }
             : { width: { ideal: 1280 }, height: { ideal: 720 } },
           audio: false,
         };
@@ -648,7 +652,8 @@ function PreJoinModal({
       <div className={backdrop} onClick={onCancel} />
       <div className={card}>
         <div
-          className={`px-6 py-5 border-b ${isLight ? "border-black/10" : "border-white/10"}`}
+          className={`px-6 py-5 border-b ${isLight ? "border-black/10" : "border-white/10"
+            }`}
         >
           <div className="flex items-center justify-between">
             <div className="font-inter font-semibold text-[16px]">Before you join</div>
@@ -676,12 +681,10 @@ function PreJoinModal({
             </div>
 
             <div className={previewWrapCls} style={previewBgStyle}>
-              {/* subtle overlay so bg image is visible even when video covers it */}
               {media.bgMode === "image" && media.bgImageUrl && (
                 <div className="absolute inset-0 bg-black/20" />
               )}
 
-              {/* video */}
               <video
                 ref={videoElRef}
                 playsInline
@@ -691,16 +694,15 @@ function PreJoinModal({
                 style={previewVideoStyle}
               />
 
-              {/* if image mode: make video slightly transparent so bg shows */}
               {media.bgMode === "image" && media.bgImageUrl && (
                 <div className="absolute inset-0 pointer-events-none bg-black/15" />
               )}
 
-              {/* overlay text */}
               {!value.videoEnabled && (
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div
-                    className={`px-4 py-2 rounded-xl text-[12px] ${isLight ? "bg-white/80 text-black/70" : "bg-black/40 text-white/80"}`}
+                    className={`px-4 py-2 rounded-xl text-[12px] ${isLight ? "bg-white/80 text-black/70" : "bg-black/40 text-white/80"
+                      }`}
                   >
                     Turn on “Video enabled” to preview.
                   </div>
@@ -750,7 +752,12 @@ function PreJoinModal({
                 <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="flex flex-col gap-2">
                     <div className={`text-[12px] ${labelCls}`}>Image URL</div>
-                    <div className={`rounded-2xl px-4 py-3 ${isLight ? "bg-white/70 border border-black/10" : "bg-black/20 border border-white/10"}`}>
+                    <div
+                      className={`rounded-2xl px-4 py-3 ${isLight
+                          ? "bg-white/70 border border-black/10"
+                          : "bg-black/20 border border-white/10"
+                        }`}
+                    >
                       <input
                         value={media.bgImageUrl || ""}
                         onChange={(e) =>
@@ -769,7 +776,10 @@ function PreJoinModal({
                   <div className="flex flex-col gap-2">
                     <div className={`text-[12px] ${labelCls}`}>Upload</div>
                     <label
-                      className={`h-[46px] rounded-2xl px-4 flex items-center justify-between cursor-pointer ${isLight ? "bg-white/70 border border-black/10 hover:bg-white" : "bg-black/20 border border-white/10 hover:bg-black/30"}`}
+                      className={`h-[46px] rounded-2xl px-4 flex items-center justify-between cursor-pointer ${isLight
+                          ? "bg-white/70 border border-black/10 hover:bg-white"
+                          : "bg-black/20 border border-white/10 hover:bg-black/30"
+                        }`}
                       title="Upload background image (stored as data URL)"
                     >
                       <span className={`text-[13px] ${labelCls}`}>Choose file…</span>
@@ -779,7 +789,10 @@ function PreJoinModal({
                         className="hidden"
                         onChange={(e) => handleUploadBg(e.target.files?.[0] || null)}
                       />
-                      <span className={`text-[12px] ${isLight ? "text-black/45" : "text-white/45"}`}>
+                      <span
+                        className={`text-[12px] ${isLight ? "text-black/45" : "text-white/45"
+                          }`}
+                      >
                         PNG/JPG
                       </span>
                     </label>
@@ -792,7 +805,9 @@ function PreJoinModal({
                     <button
                       type="button"
                       className={`h-9 px-3 rounded-2xl text-[12px] font-semibold ${btnGhost}`}
-                      onClick={() => onMediaChange({ ...media, bgMode: "image", bgImageUrl: undefined })}
+                      onClick={() =>
+                        onMediaChange({ ...media, bgMode: "image", bgImageUrl: undefined })
+                      }
                     >
                       Clear image
                     </button>
@@ -863,7 +878,6 @@ function PreJoinModal({
                     onChange={(e) => {
                       const id = e.target.value;
                       onChange({ ...value, audioOutputId: id });
-                      // keep media speaker in sync so it applies on join + later
                       onMediaChange({ ...media, audioOutputId: id || "default" });
                     }}
                     className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
@@ -904,7 +918,9 @@ function PreJoinModal({
                   <input
                     type="checkbox"
                     checked={value.echoCancellation}
-                    onChange={(e) => onChange({ ...value, echoCancellation: e.target.checked })}
+                    onChange={(e) =>
+                      onChange({ ...value, echoCancellation: e.target.checked })
+                    }
                   />
                   <span className={labelCls}>Echo cancellation</span>
                 </label>
@@ -913,7 +929,9 @@ function PreJoinModal({
                   <input
                     type="checkbox"
                     checked={value.noiseSuppression}
-                    onChange={(e) => onChange({ ...value, noiseSuppression: e.target.checked })}
+                    onChange={(e) =>
+                      onChange({ ...value, noiseSuppression: e.target.checked })
+                    }
                   />
                   <span className={labelCls}>Noise suppression</span>
                 </label>
@@ -922,7 +940,9 @@ function PreJoinModal({
                   <input
                     type="checkbox"
                     checked={value.autoGainControl}
-                    onChange={(e) => onChange({ ...value, autoGainControl: e.target.checked })}
+                    onChange={(e) =>
+                      onChange({ ...value, autoGainControl: e.target.checked })
+                    }
                   />
                   <span className={labelCls}>Auto gain control</span>
                 </label>
@@ -1012,8 +1032,6 @@ export function RoomPage() {
   const chipBg = isLight
     ? "bg-black/5 border border-black/10"
     : "bg-[#0B1220]/70 border border-white/5";
-  const subtleText = isLight ? "text-black/55" : "text-[#9CA3AF]";
-  const strongText = isLight ? "text-black/85" : "text-[#F3F4F6]/90";
   const panelBg = isLight
     ? "bg-white/85 border border-black/10"
     : "bg-[#0B1220]/55 border border-white/5";
@@ -1255,12 +1273,9 @@ export function RoomPage() {
       if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) return;
 
       try {
-        // Ask permission so labels appear (best-effort)
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
         stream.getTracks().forEach((t) => t.stop());
-      } catch {
-        // ignore (user may block)
-      }
+      } catch { }
 
       const list = await navigator.mediaDevices.enumerateDevices();
       const videoInputs = list.filter((d) => d.kind === "videoinput");
@@ -1269,7 +1284,6 @@ export function RoomPage() {
 
       setDevices({ videoInputs, audioInputs, audioOutputs });
 
-      // set defaults if empty
       setMediaSettings((prev) => ({
         ...prev,
         videoInputId: prev.videoInputId || videoInputs?.[0]?.deviceId || "",
@@ -1320,6 +1334,25 @@ export function RoomPage() {
     } catch (e) {
       console.error("loadDevices error:", e);
       await loadBrowserDevices();
+    }
+  };
+
+  // ✅ APPLY BG EFFECT (guarantee on join + retries)
+  const applyBackgroundNow = async () => {
+    try {
+      const base = engineRef.current;
+      if (!base) return;
+      const eng = base as unknown as JitsiEngineExt;
+
+      const ms = mediaSettingsRef.current;
+      if (!ms) return;
+
+      await eng.setBackgroundEffect?.({
+        mode: ms.bgMode,
+        imageUrl: ms.bgImageUrl,
+      });
+    } catch (e) {
+      console.warn("applyBackgroundNow warning:", e);
     }
   };
 
@@ -1543,7 +1576,6 @@ export function RoomPage() {
     if (joinRequested) return;
 
     setPrejoinOpen(true);
-    // best-effort load devices (so selects are populated)
     loadBrowserDevices().catch(() => { });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, session, displayName, userName, joinRequested]);
@@ -1589,6 +1621,11 @@ export function RoomPage() {
 
         onConferenceJoin: () => {
           setTimeout(() => loadDevices(), 0);
+
+          // ✅ GUARANTEE BG/APPLY on actual local track availability (join moment) + retries
+          setTimeout(() => applyBackgroundNow(), 0);
+          setTimeout(() => applyBackgroundNow(), 450);
+          setTimeout(() => applyBackgroundNow(), 1400);
         },
 
         onReactionReceived: (_fromId, reaction) => {
@@ -1620,7 +1657,6 @@ export function RoomPage() {
 
       const pj = prejoinRef.current;
 
-      // optional engine fields (mute + constraints)
       const msExt = engine.mediaSettings as unknown as EngineMediaSettingsExt;
       msExt.startWithAudioMuted = !pj.audioEnabled;
       msExt.startWithVideoMuted = !pj.videoEnabled;
@@ -1722,10 +1758,6 @@ export function RoomPage() {
     }
   };
 
-  const handleToggleAudio = () => engineRef.current?.toggleAudioMute();
-  const handleToggleVideo = () => engineRef.current?.toggleVideoMute();
-  const handleToggleScreenShare = () => engineRef.current?.toggleScreenShare();
-
   const handleLeave = async () => {
     try {
       if (id && authUserId) {
@@ -1807,7 +1839,6 @@ export function RoomPage() {
 
       setCurrentStage(active);
 
-      // ✅ sounds for BOTH finite and infinite rooms
       const stage = stages[active];
 
       if (!firstTickDoneRef.current) {
@@ -2259,17 +2290,16 @@ export function RoomPage() {
     </div>
   );
 
-  // ✅ Top Bar (ported 1:1 from RoomPageIFrame)
   const TopBar = (
     <div className={`flex w-full rounded-2xl overflow-hidden ${topBarBg}`}>
       <div className="flex-1 px-4 sm:px-6 py-3 sm:py-4">
         <div className="flex flex-col gap-2 max-[480px]:gap-2">
-          {/* ROW 1: title + count (always 1 line) */}
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="flex items-center gap-2 min-w-0">
                 <p
-                  className={`min-w-0 font-inter font-semibold text-[16px] sm:text-[18px] truncate ${strongText}`}
+                  className={`min-w-0 font-inter font-semibold text-[16px] sm:text-[18px] truncate ${isLight ? "text-black/85" : "text-[#F3F4F6]/90"
+                    }`}
                 >
                   {String(session?.title || "Session")}
                 </p>
@@ -2287,12 +2317,14 @@ export function RoomPage() {
               </div>
             </div>
 
-            {/* desktop+ : controls stay here */}
             <div className="hidden min-[481px]:flex items-center gap-2 shrink-0">
               {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
                 <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}>
                   <Icon name="timer" theme={theme} className="w-4 h-4 opacity-80" alt="Timer" />
-                  <span className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"}`}>
+                  <span
+                    className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"
+                      }`}
+                  >
                     {remainingTime || "--:--"}
                   </span>
                 </div>
@@ -2334,12 +2366,14 @@ export function RoomPage() {
             </div>
           </div>
 
-          {/* ROW 2: controls (mobile <=480) */}
           <div className="min-[481px]:hidden flex items-center justify-start gap-2">
             {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
               <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}>
                 <Icon name="timer" theme={theme} className="w-4 h-4 opacity-80" alt="Timer" />
-                <span className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"}`}>
+                <span
+                  className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"
+                    }`}
+                >
                   {remainingTime || "--:--"}
                 </span>
               </div>
@@ -2375,7 +2409,6 @@ export function RoomPage() {
             )}
           </div>
 
-          {/* ROW 3: stage bar (full width) */}
           {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
             <div className="mt-1 max-[480px]:mt-1 w-full overflow-hidden">
               <SessionStageBar
@@ -2438,7 +2471,6 @@ export function RoomPage() {
       />
 
       <div className={`h-[100dvh] overflow-hidden ${pageBg}`}>
-        {/* ✅ tighter paddings/gaps (parity with iFrame: more video space) */}
         <div className="h-full w-full px-2 sm:px-4 pt-3 pb-[calc(84px+env(safe-area-inset-bottom))] sm:pb-[calc(94px+env(safe-area-inset-bottom))] flex flex-col gap-3 sm:gap-4 min-h-0">
           {TopBar}
 
@@ -2461,9 +2493,9 @@ export function RoomPage() {
                 <VideoRoom
                   theme={theme}
                   participants={participants}
-                  onToggleAudio={handleToggleAudio}
-                  onToggleVideo={handleToggleVideo}
-                  onToggleScreenShare={handleToggleScreenShare}
+                  onToggleAudio={() => engineRef.current?.toggleAudioMute()}
+                  onToggleVideo={() => engineRef.current?.toggleVideoMute()}
+                  onToggleScreenShare={() => engineRef.current?.toggleScreenShare()}
                   onLeave={handleLeave}
                   activeScreenSharer={activeScreenSharer}
                   incomingReactions={incomingReactions}
@@ -2494,7 +2526,6 @@ export function RoomPage() {
               )}
             </div>
 
-            {/* ✅ Render only one variant */}
             {rightPanelOpen && isLgUp && (
               <div className="min-h-0 h-full overflow-hidden">{RightPanelBody}</div>
             )}
@@ -2510,12 +2541,12 @@ export function RoomPage() {
           </div>
         </div>
 
-        {/* bottom controls unchanged; only minor outer padding tuned */}
         <div className="fixed inset-x-0 bottom-0 z-50">
           <div className="w-full px-2 sm:px-4 pb-[calc(8px+env(safe-area-inset-bottom))]">
             <div
               className={`h-[64px] sm:h-[74px] rounded-2xl shadow-2xl backdrop-blur grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4 ${bottomBarBg}`}
             >
+              {/* LEFT */}
               <div className="flex items-center gap-2" ref={moreMenuRef}>
                 <div className="md:hidden relative">
                   <button
@@ -2635,6 +2666,7 @@ export function RoomPage() {
                 </div>
               </div>
 
+              {/* CENTER */}
               <div className="flex items-center justify-center gap-2 sm:gap-3">
                 <button
                   onClick={() => engineRef.current?.toggleAudioMute()}
@@ -2713,12 +2745,11 @@ export function RoomPage() {
                 </div>
               </div>
 
+              {/* RIGHT */}
               <div className="flex items-center justify-end gap-2 sm:gap-3">
                 <button
                   onClick={handleLeave}
-                  className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${isLight
-                      ? "bg-red-600 hover:bg-red-700 text-white"
-                      : "bg-red-600 hover:bg-red-700 text-white"
+                  className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${isLight ? "bg-red-600 hover:bg-red-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"
                     }`}
                   title="Leave"
                 >
