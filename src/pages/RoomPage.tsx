@@ -464,8 +464,6 @@ function useMediaQuery(query: string) {
 }
 
 export function RoomPage() {
-  // remind-you style: you picked me for strategy — so we execute. actions > thoughts.
-
   const [theme, setTheme] = useState<RoomTheme>(() => {
     try {
       const v = String(localStorage.getItem("room_theme") || "").toLowerCase();
@@ -2106,8 +2104,7 @@ export function RoomPage() {
               <div className="flex items-center justify-end gap-2 sm:gap-3">
                 <button
                   onClick={handleLeave}
-                  className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${"bg-red-600 hover:bg-red-700 text-white"
-                    }`}
+                  className={`hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 ${"bg-red-600 hover:bg-red-700 text-white"}`}
                   title="Leave"
                 >
                   <Icon name="leave" theme={theme} className="w-5 h-5" />
@@ -2127,56 +2124,59 @@ export function RoomPage() {
         </div>
 
         {/* ✅ Unified modal: prejoin + settings */}
-        <RoomMediaSettingsModalAny
-          open={openUnifiedModal}
-          onClose={() => {
-            if (inPrejoinMode) {
-              // user tried to close prejoin => leave room page (same as old behavior)
-              navigate("/sessions", { replace: true });
-              return;
-            }
-            setSettingsOpen(false);
-          }}
-          devices={devices}
-          value={mediaSettings}
-          onRefreshDevices={loadDevices}
-          onChange={(next: RoomMediaSettings) => {
-            // keep UI reactive for bottom bar audioOutput preview etc
-            setMediaSettings(next);
-            setSelectedAudioOutputId(next.audioOutputId || "default");
-          }}
-          // prejoin extras (RoomMediaSettingsModal must support this; we cast to any above)
-          prejoin={{
-            enabled: inPrejoinMode,
-            value: prejoinExtras,
-            onChange: (next: PrejoinExtras) => {
-              setPrejoinExtras(next);
-              saveStoredPrejoinExtras(next);
-            },
-            primaryLabel: "Join room",
-          }}
-          onApply={async (next: RoomMediaSettings) => {
-            // If prejoin: DO NOT touch engine. Just persist, then allow join.
-            if (inPrejoinMode) {
+        {openUnifiedModal && (
+          <RoomMediaSettingsModalAny
+            key={inPrejoinMode ? "prejoin" : "settings"} // ✅ force remount between modes (prejoin vs in-room)
+            open={openUnifiedModal}
+            onClose={() => {
+              if (inPrejoinMode) {
+                // user tried to close prejoin => leave room page (same as old behavior)
+                navigate("/sessions", { replace: true });
+                return;
+              }
+              setSettingsOpen(false);
+            }}
+            devices={devices}
+            value={mediaSettings}
+            onRefreshDevices={loadDevices}
+            onChange={(next: RoomMediaSettings) => {
+              // keep UI reactive for bottom bar audioOutput preview etc
               setMediaSettings(next);
               setSelectedAudioOutputId(next.audioOutputId || "default");
-              saveStoredMediaSettings(next);
+            }}
+            // prejoin extras (RoomMediaSettingsModal must support this; we cast to any above)
+            prejoin={{
+              enabled: inPrejoinMode,
+              value: prejoinExtras,
+              onChange: (next: PrejoinExtras) => {
+                setPrejoinExtras(next);
+                saveStoredPrejoinExtras(next);
+              },
+              primaryLabel: "Join room",
+            }}
+            onApply={async (next: RoomMediaSettings) => {
+              // If prejoin: DO NOT touch engine. Just persist, then allow join.
+              if (inPrejoinMode) {
+                setMediaSettings(next);
+                setSelectedAudioOutputId(next.audioOutputId || "default");
+                saveStoredMediaSettings(next);
 
-              // commit name
-              const pj = prejoinExtrasRef.current;
-              const nm = (pj.displayName || displayName || userName || "Guest").trim() || "Guest";
-              setDisplayName(nm);
+                // commit name
+                const pj = prejoinExtrasRef.current;
+                const nm = (pj.displayName || displayName || userName || "Guest").trim() || "Guest";
+                setDisplayName(nm);
 
-              setPrejoinOpen(false);
-              setJoinRequested(true);
-              return;
-            }
+                setPrejoinOpen(false);
+                setJoinRequested(true);
+                return;
+              }
 
-            // In-room settings
-            await applyMediaSettings(next);
-            setSettingsOpen(false);
-          }}
-        />
+              // In-room settings
+              await applyMediaSettings(next);
+              setSettingsOpen(false);
+            }}
+          />
+        )}
 
         {selectedUser && <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />}
       </div>
