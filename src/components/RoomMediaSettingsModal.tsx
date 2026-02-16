@@ -1,15 +1,19 @@
 // src/components/RoomMediaSettingsModal.tsx
-// Ключевая идея:
-// - НЕ ревокать blob:, который уже "commit/applied" (даже если value ещё не успел обновиться)
-// - ревокать временные blob: при закрытии без Apply
-// - опционально: ревокать старый committed blob: с задержкой после смены на другой фон
+// Unified modal: can act as BOTH
+// - Pre-join modal (name + toggles) AND
+// - In-room media settings modal (devices + background)
+// Key ideas:
+// - Do NOT revoke committed blob: (Apply race-safe)
+// - Revoke temporary blob: on close without apply
+// - Optional: revoke old committed blob: with delay after switching background
 //
-// ✅ FIX: модалка теперь нормально СКРОЛЛИТСЯ и на мобиле, и на ПК:
-// - header и footer фиксированы
-// - скроллится только центральная часть (контент)
-// - блокируем скролл страницы под модалкой
+// ✅ FIX: modal scrolls correctly (header/footer fixed, body scrolls)
+// ✅ FIX: lock body scroll while open
+// ✅ NEW: optional Pre-join fields (display name + audio/video toggles + audio processing)
+// ✅ NEW: live local camera preview in modal (best-effort), with background preview (blur/image)
+// ✅ Backward-compatible: if you use only onApply -> works as before
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { X, RefreshCcw } from "lucide-react";
 
 type BgMode = "none" | "blur" | "image";
@@ -28,6 +32,15 @@ type DevicesLists = {
     audioOutputs: MediaDeviceInfo[];
 };
 
+export type RoomPrejoinExtras = {
+    displayName: string;
+    audioEnabled: boolean;
+    videoEnabled: boolean;
+    echoCancellation: boolean;
+    noiseSuppression: boolean;
+    autoGainControl: boolean;
+};
+
 type Props = {
     open: boolean;
     onClose: () => void;
@@ -38,7 +51,25 @@ type Props = {
     onRefreshDevices?: () => void | Promise<void>;
     onChange?: (next: RoomMediaSettings) => void;
 
+    // ✅ Backward compatible: keep using onApply if you want
     onApply: (next: RoomMediaSettings) => void | Promise<void>;
+
+    // ✅ Optional "prejoin" layer (extra fields + primary action label)
+    prejoin?: {
+        enabled: boolean; // if true => show prejoin fields
+        value: RoomPrejoinExtras;
+        onChange?: (next: RoomPrejoinExtras) => void;
+
+        // primary action becomes "Join" (or custom) and calls this AFTER onApply succeeds
+        onPrimary?: (payload: { media: RoomMediaSettings; prejoin: RoomPrejoinExtras }) => void | Promise<void>;
+        primaryLabel?: string; // default "Join"
+        title?: string; // default "Before you join"
+        subtitle?: string; // optional
+    };
+
+    // Optional custom title/subtitle for "settings" mode
+    title?: string; // default "Media settings"
+    subtitle?: string;
 };
 
 const DEFAULT_BACKGROUNDS: { id: string; url: string; label: string }[] = [
@@ -64,13 +95,31 @@ export function RoomMediaSettingsModal({
     onRefreshDevices,
     onChange,
     onApply,
+
+    prejoin,
+    title,
+    subtitle,
 }: Props) {
+    const isPrejoin = !!prejoin?.enabled;
+
     const [draft, setDraft] = useState<RoomMediaSettings>({
         videoInputId: value?.videoInputId || "",
         audioInputId: value?.audioInputId || "",
         audioOutputId: value?.audioOutputId || "default",
         bgMode: value?.bgMode || "none",
         bgImageUrl: value?.bgImageUrl,
+    });
+
+    const [pjDraft, setPjDraft] = useState<RoomPrejoinExtras>(() => {
+        const v = prejoin?.value;
+        return {
+            displayName: v?.displayName || "",
+            audioEnabled: v?.audioEnabled ?? true,
+            videoEnabled: v?.videoEnabled ?? true,
+            echoCancellation: v?.echoCancellation ?? true,
+            noiseSuppression: v?.noiseSuppression ?? true,
+            autoGainControl: v?.autoGainControl ?? true,
+        };
     });
 
     const videoInputs = devices?.videoInputs ?? [];
@@ -131,7 +180,6 @@ export function RoomMediaSettingsModal({
         const prevOverflow = body.style.overflow;
         const prevPaddingRight = body.style.paddingRight;
 
-        // (не идеально, но помогает, чтобы не прыгала страница из-за исчезновения scrollbar)
         const scrollbarW = window.innerWidth - document.documentElement.clientWidth;
         body.style.overflow = "hidden";
         if (scrollbarW > 0) body.style.paddingRight = `${scrollbarW}px`;
@@ -156,6 +204,18 @@ export function RoomMediaSettingsModal({
             bgImageUrl: value?.bgImageUrl,
         });
 
+        if (isPrejoin) {
+            const v = prejoin?.value;
+            setPjDraft({
+                displayName: v?.displayName || "",
+                audioEnabled: v?.audioEnabled ?? true,
+                videoEnabled: v?.videoEnabled ?? true,
+                echoCancellation: v?.echoCancellation ?? true,
+                noiseSuppression: v?.noiseSuppression ?? true,
+                autoGainControl: v?.autoGainControl ?? true,
+            });
+        }
+
         onRefreshDevices?.();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open]);
@@ -173,11 +233,19 @@ export function RoomMediaSettingsModal({
         });
     }, [open, videoInputs, audioInputs]);
 
-    // push changes to parent (optional)
+    // push media changes to parent (optional)
     useEffect(() => {
         if (!open) return;
         onChange?.(draft);
     }, [draft, open, onChange]);
+
+    // push prejoin changes to parent (optional)
+    useEffect(() => {
+        if (!open) return;
+        if (!isPrejoin) return;
+        prejoin?.onChange?.(pjDraft);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pjDraft, open, isPrejoin]);
 
     // ────────────────────────────────────────────────────────────────────────────
     // DRAFT BLOB URL CLEANUP
@@ -200,8 +268,16 @@ export function RoomMediaSettingsModal({
     }, [draft.bgImageUrl, open]);
 
     const canApply = useMemo(() => {
-        return !!draft.videoInputId && !!draft.audioInputId && !!draft.audioOutputId;
-    }, [draft]);
+        const baseOk = !!draft.videoInputId && !!draft.audioInputId && !!draft.audioOutputId;
+        if (!baseOk) return false;
+
+        if (isPrejoin) {
+            const nm = (pjDraft.displayName || "").trim();
+            // displayName required for prejoin
+            return nm.length > 0;
+        }
+        return true;
+    }, [draft, isPrejoin, pjDraft.displayName]);
 
     if (!open) return null;
 
@@ -228,7 +304,7 @@ export function RoomMediaSettingsModal({
         onClose();
     };
 
-    const handleApply = async () => {
+    const handleApplyCore = async () => {
         // ✅ критично: считаем текущий draft.bgImageUrl "committed" СРАЗУ,
         // чтобы handleClose не ревокнул его до того, как родитель обновит value.
         committedBgUrlRef.current = draft.bgImageUrl;
@@ -239,17 +315,108 @@ export function RoomMediaSettingsModal({
         await onApply(draft);
     };
 
+    const handlePrimary = async () => {
+        await handleApplyCore();
+        if (isPrejoin && prejoin?.onPrimary) {
+            await prejoin.onPrimary({ media: draft, prejoin: pjDraft });
+        }
+    };
+
+    // ────────────────────────────────────────────────────────────────────────────
+    // ✅ Local camera preview (best-effort)
+    // ────────────────────────────────────────────────────────────────────────────
+    const previewVideoRef = useRef<HTMLVideoElement | null>(null);
+    const previewStreamRef = useRef<MediaStream | null>(null);
+    const [previewErr, setPreviewErr] = useState<string>("");
+
+    const stopPreview = () => {
+        try {
+            const s = previewStreamRef.current;
+            if (s) s.getTracks().forEach((t) => t.stop());
+        } catch { }
+        previewStreamRef.current = null;
+
+        try {
+            if (previewVideoRef.current) {
+                // @ts-ignore
+                previewVideoRef.current.srcObject = null;
+            }
+        } catch { }
+    };
+
+    useEffect(() => {
+        if (!open) return;
+
+        const shouldPreview = isPrejoin ? pjDraft.videoEnabled : true;
+
+        const start = async () => {
+            stopPreview();
+            setPreviewErr("");
+
+            if (!shouldPreview) return;
+            if (!navigator.mediaDevices?.getUserMedia) {
+                setPreviewErr("Camera preview not supported in this browser.");
+                return;
+            }
+
+            try {
+                const constraints: MediaStreamConstraints = {
+                    video: draft.videoInputId
+                        ? { deviceId: { exact: draft.videoInputId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+                        : { width: { ideal: 1280 }, height: { ideal: 720 } },
+                    audio: false,
+                };
+
+                const s = await navigator.mediaDevices.getUserMedia(constraints);
+                previewStreamRef.current = s;
+
+                if (previewVideoRef.current) {
+                    // @ts-ignore
+                    previewVideoRef.current.srcObject = s;
+                    await previewVideoRef.current.play().catch(() => { });
+                }
+            } catch (e: any) {
+                console.warn("media modal preview getUserMedia error:", e);
+                setPreviewErr(e?.message ? String(e.message) : "Failed to start camera preview.");
+            }
+        };
+
+        start();
+
+        return () => stopPreview();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, draft.videoInputId, isPrejoin, pjDraft.videoEnabled]);
+
+    // Preview styling for bg
+    const previewWrapStyle: React.CSSProperties =
+        draft.bgMode === "image" && draft.bgImageUrl
+            ? {
+                backgroundImage: `url(${draft.bgImageUrl})`,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+            }
+            : {};
+
+    const previewVideoStyle: React.CSSProperties =
+        draft.bgMode === "blur"
+            ? { filter: "blur(8px) saturate(1.15) contrast(1.06)" }
+            : {};
+
+    const headerTitle = isPrejoin ? prejoin?.title || "Before you join" : title || "Media settings";
+    const headerSubtitle = isPrejoin ? prejoin?.subtitle : subtitle;
+
+    const primaryLabel = isPrejoin ? prejoin?.primaryLabel || "Join" : "Apply";
+
     return (
         <div className="fixed inset-0 z-[60]">
             {/* overlay */}
             <div className="absolute inset-0 bg-black/60" onClick={handleClose} />
 
-            {/* ✅ wrapper: центрируем, но ограничиваем высоту */}
+            {/* wrapper */}
             <div className="absolute inset-0 flex items-center justify-center p-3 sm:p-5">
-                {/* ✅ modal: flex-col + max-h => скроллится body */}
                 <div
                     className="
-            w-[92vw] max-w-[640px]
+            w-[92vw] max-w-[720px]
             max-h-[calc(100vh-24px)]
             sm:max-h-[calc(100vh-40px)]
             rounded-2xl border border-white/10 bg-[#0B1220] shadow-xl
@@ -258,9 +425,14 @@ export function RoomMediaSettingsModal({
                     role="dialog"
                     aria-modal="true"
                 >
-                    {/* HEADER (фиксированный) */}
+                    {/* HEADER (fixed) */}
                     <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 shrink-0">
-                        <div className="text-white/90 font-semibold">Media settings</div>
+                        <div className="min-w-0">
+                            <div className="text-white/90 font-semibold truncate">{headerTitle}</div>
+                            {headerSubtitle ? (
+                                <div className="mt-0.5 text-[12px] text-white/55 truncate">{headerSubtitle}</div>
+                            ) : null}
+                        </div>
 
                         <div className="flex items-center gap-2">
                             <button
@@ -283,11 +455,122 @@ export function RoomMediaSettingsModal({
                         </div>
                     </div>
 
-                    {/* ✅ BODY (скроллится) */}
+                    {/* BODY (scrolls) */}
                     <div
                         className="px-5 py-4 space-y-4 overflow-y-auto overscroll-contain"
                         style={{ WebkitOverflowScrolling: "touch" }}
                     >
+                        {/* PREVIEW */}
+                        <div>
+                            <div className="text-[12px] text-white/60 mb-2">Preview</div>
+
+                            <div
+                                className="relative w-full aspect-video rounded-2xl overflow-hidden border border-white/10 bg-white/5"
+                                style={previewWrapStyle}
+                            >
+                                {/* subtle overlay so background image is visible */}
+                                {draft.bgMode === "image" && draft.bgImageUrl ? (
+                                    <div className="absolute inset-0 bg-black/20" />
+                                ) : null}
+
+                                <video
+                                    ref={previewVideoRef}
+                                    playsInline
+                                    muted
+                                    autoPlay
+                                    className="absolute inset-0 w-full h-full object-cover"
+                                    style={previewVideoStyle}
+                                />
+
+                                {/* for image mode: slight dark veil to make segmentation-like look */}
+                                {draft.bgMode === "image" && draft.bgImageUrl ? (
+                                    <div className="absolute inset-0 pointer-events-none bg-black/15" />
+                                ) : null}
+
+                                {isPrejoin && !pjDraft.videoEnabled ? (
+                                    <div className="absolute inset-0 flex items-center justify-center">
+                                        <div className="px-4 py-2 rounded-xl text-[12px] bg-black/40 text-white/80">
+                                            Turn on “Video enabled” to preview.
+                                        </div>
+                                    </div>
+                                ) : null}
+
+                                {!!previewErr ? (
+                                    <div className="absolute inset-x-0 bottom-0 p-3">
+                                        <div className="text-[12px] bg-red-600 text-white px-3 py-2 rounded-xl shadow">
+                                            {previewErr}
+                                        </div>
+                                    </div>
+                                ) : null}
+                            </div>
+
+                            <div className="mt-2 text-[11px] text-white/35">
+                                Preview is UI-only. On Apply/Join, background is applied to your <b>real camera stream</b> (blur / image).
+                            </div>
+                        </div>
+
+                        {/* PREJOIN FIELDS */}
+                        {isPrejoin ? (
+                            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3">
+                                <div>
+                                    <div className="text-[12px] text-white/60 mb-2">Display name</div>
+                                    <input
+                                        value={pjDraft.displayName}
+                                        onChange={(e) => setPjDraft((p) => ({ ...p, displayName: e.target.value }))}
+                                        placeholder="Your name…"
+                                        className="w-full h-11 rounded-xl bg-[#111827] border border-white/10 px-3 text-[13px] text-white/85 outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <label className="flex items-center gap-2 text-[13px] text-white/80">
+                                        <input
+                                            type="checkbox"
+                                            checked={pjDraft.audioEnabled}
+                                            onChange={(e) => setPjDraft((p) => ({ ...p, audioEnabled: e.target.checked }))}
+                                        />
+                                        <span>Audio enabled</span>
+                                    </label>
+
+                                    <label className="flex items-center gap-2 text-[13px] text-white/80">
+                                        <input
+                                            type="checkbox"
+                                            checked={pjDraft.videoEnabled}
+                                            onChange={(e) => setPjDraft((p) => ({ ...p, videoEnabled: e.target.checked }))}
+                                        />
+                                        <span>Video enabled</span>
+                                    </label>
+
+                                    <label className="flex items-center gap-2 text-[13px] text-white/70">
+                                        <input
+                                            type="checkbox"
+                                            checked={pjDraft.echoCancellation}
+                                            onChange={(e) => setPjDraft((p) => ({ ...p, echoCancellation: e.target.checked }))}
+                                        />
+                                        <span>Echo cancellation</span>
+                                    </label>
+
+                                    <label className="flex items-center gap-2 text-[13px] text-white/70">
+                                        <input
+                                            type="checkbox"
+                                            checked={pjDraft.noiseSuppression}
+                                            onChange={(e) => setPjDraft((p) => ({ ...p, noiseSuppression: e.target.checked }))}
+                                        />
+                                        <span>Noise suppression</span>
+                                    </label>
+
+                                    <label className="flex items-center gap-2 text-[13px] text-white/70 sm:col-span-2">
+                                        <input
+                                            type="checkbox"
+                                            checked={pjDraft.autoGainControl}
+                                            onChange={(e) => setPjDraft((p) => ({ ...p, autoGainControl: e.target.checked }))}
+                                        />
+                                        <span>Auto gain control</span>
+                                    </label>
+                                </div>
+                            </div>
+                        ) : null}
+
                         {/* Camera */}
                         <div>
                             <div className="text-[12px] text-white/60 mb-2">Camera</div>
@@ -399,7 +682,6 @@ export function RoomMediaSettingsModal({
                                             const file = e.target.files?.[0];
                                             if (!file) return;
                                             setCustomFile(file);
-                                            // чтобы второй раз тот же файл можно было выбрать:
                                             e.currentTarget.value = "";
                                         }}
                                     />
@@ -447,7 +729,7 @@ export function RoomMediaSettingsModal({
                         </div>
                     </div>
 
-                    {/* FOOTER (фиксированный) */}
+                    {/* FOOTER (fixed) */}
                     <div className="px-5 py-4 border-t border-white/10 flex items-center justify-end gap-2 shrink-0">
                         <button
                             onClick={handleClose}
@@ -456,16 +738,19 @@ export function RoomMediaSettingsModal({
                         >
                             Cancel
                         </button>
+
                         <button
-                            onClick={handleApply}
+                            onClick={isPrejoin ? handlePrimary : handleApplyCore}
                             disabled={!canApply}
                             className={
                                 "h-11 px-5 rounded-xl font-semibold text-[13px] transition " +
-                                (canApply ? "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]" : "bg-[#111827] text-white/35 cursor-not-allowed")
+                                (canApply
+                                    ? "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
+                                    : "bg-[#111827] text-white/35 cursor-not-allowed")
                             }
                             type="button"
                         >
-                            Apply
+                            {primaryLabel}
                         </button>
                     </div>
                 </div>
