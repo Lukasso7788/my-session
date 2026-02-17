@@ -471,6 +471,10 @@ async function createJitsiApiWithFallback(args: {
                 api.executeCommand?.("subject", "");
             } catch { }
 
+            try {
+                api.executeCommand?.("displayName", args.userName);
+            } catch { }
+
             args.onDomainChosen?.(domain);
             return { api, domain: domain as JitsiDomain };
         } catch (e) {
@@ -1057,14 +1061,33 @@ export default function RoomPageIFrame() {
                     accessTokenRef.current = "";
                 }
 
-                let name =
-                    (u?.user_metadata?.full_name as string) ||
-                    (u?.user_metadata?.name as string) ||
-                    (u?.email ? u.email.split("@")[0] : "");
+                let name = "";
 
-                if (!name && u?.id) {
-                    const { data: p } = await supabase.from("profiles").select("full_name").eq("id", u.id).single();
-                    name = p?.full_name || "";
+                // 1) ✅ ПЕРВЫМ делом пробуем profiles.full_name
+                if (u?.id) {
+                    try {
+                        const { data: p } = await supabase
+                            .from("profiles")
+                            .select("full_name")
+                            .eq("id", u.id)
+                            .single();
+
+                        name = String(p?.full_name || "").trim();
+                    } catch {
+                        // если профиля нет / RLS / ошибка — просто молча падаем в fallback
+                    }
+                }
+
+                // 2) fallback: user_metadata (гугловое) — только если в profiles пусто
+                if (!name) {
+                    name =
+                        String((u as any)?.user_metadata?.full_name || "").trim() ||
+                        String((u as any)?.user_metadata?.name || "").trim();
+                }
+
+                // 3) fallback: email
+                if (!name) {
+                    name = u?.email ? String(u.email.split("@")[0] || "").trim() : "";
                 }
 
                 setUserName(name || "User");
@@ -2092,6 +2115,23 @@ export default function RoomPageIFrame() {
                     if (pid) localParticipantIdRef.current = pid;
 
                     setApiReady(true);
+
+                    // ✅ re-apply displayName after join (robust)
+                    try {
+                        api.executeCommand?.("displayName", userName);
+                    } catch { }
+
+                    window.setTimeout(() => {
+                        try {
+                            api.executeCommand?.("displayName", userName);
+                        } catch { }
+                    }, 250);
+
+                    window.setTimeout(() => {
+                        try {
+                            api.executeCommand?.("displayName", userName);
+                        } catch { }
+                    }, 900);
 
                     // attendance
                     void attendanceJoin();
