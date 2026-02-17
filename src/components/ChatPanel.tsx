@@ -70,6 +70,21 @@ function parseReplyBody(body: string): { quote: string | null; main: string } {
     return { quote: q || null, main };
 }
 
+function collapseWs(s: string) {
+    return String(s || "")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+// ✅ reply header should quote only the "main" (not nested quotes)
+function quotePreviewForReply(body: string, maxLen = 220) {
+    const { main } = parseReplyBody(body || "");
+    const oneLine = collapseWs(main);
+    if (!oneLine) return "";
+    if (oneLine.length <= maxLen) return oneLine;
+    return oneLine.slice(0, Math.max(0, maxLen - 1)) + "…";
+}
+
 function withTimeout<T>(p: Promise<T>, ms: number, label = "timeout"): Promise<T> {
     let t: any;
     const timeout = new Promise<T>((_, reject) => {
@@ -125,6 +140,15 @@ function setChatCache(sessionId: string, entry: ChatCacheEntry) {
     }
 }
 
+type ReactionDetailsState = {
+    open: boolean;
+    messageId: string;
+    emoji: string;
+    loading: boolean;
+    userIds: string[];
+    error?: string | null;
+};
+
 function MessageCard({
     msg,
     mine,
@@ -132,6 +156,7 @@ function MessageCard({
     reactionsCounts,
     myReactions,
     onToggleReaction,
+    onOpenReactionDetails,
     isLight,
     canEdit,
     onUpdateMessage,
@@ -143,6 +168,7 @@ function MessageCard({
     reactionsCounts: Record<string, number> | undefined;
     myReactions: Record<string, boolean> | undefined;
     onToggleReaction: (messageId: string, emoji: string) => void;
+    onOpenReactionDetails: (messageId: string, emoji: string) => void;
     isLight: boolean;
 
     canEdit: boolean;
@@ -415,8 +441,13 @@ function MessageCard({
                                     key={emoji}
                                     type="button"
                                     className={reactionPillBase + " " + (isMine ? reactionPillMine : "")}
-                                    onClick={() => onToggleReaction(msg.id, emoji)}
-                                    title={isMine ? `Remove ${emoji}` : `React ${emoji}`}
+                                    onClick={() => onOpenReactionDetails(msg.id, emoji)}
+                                    onContextMenu={(e) => {
+                                        // ✅ quick toggle without modal
+                                        e.preventDefault();
+                                        onToggleReaction(msg.id, emoji);
+                                    }}
+                                    title={"Click — who reacted • Right-click — toggle"}
                                 >
                                     <span>{emoji}</span>
                                     <span className={reactionCountCls}>{count}</span>
@@ -487,6 +518,16 @@ export function ChatPanel({
     // reactions: counts + mine
     const [reactions, setReactions] = useState<Record<string, Record<string, number>>>({});
     const [myReactions, setMyReactions] = useState<Record<string, Record<string, boolean>>>({});
+
+    // ✅ reactions details modal
+    const [reactionDetails, setReactionDetails] = useState<ReactionDetailsState>({
+        open: false,
+        messageId: "",
+        emoji: "",
+        loading: false,
+        userIds: [],
+        error: null,
+    });
 
     const [text, setText] = useState("");
     const [loading, setLoading] = useState(true);
@@ -679,6 +720,99 @@ export function ChatPanel({
         const ids = messagesRef.current.map((m) => m.id);
         return normalizeMessageIds(ids);
     };
+
+    // ---------- reaction details modal helpers
+    const closeReactionDetails = () => {
+        setReactionDetails({
+            open: false,
+            messageId: "",
+            emoji: "",
+            loading: false,
+            userIds: [],
+            error: null,
+        });
+    };
+
+    const loadReactionDetails = async (messageId: string, emoji: string) => {
+        if (!sessionId) return;
+
+        setReactionDetails((prev) => ({
+            ...prev,
+            open: true,
+            messageId,
+            emoji,
+            loading: true,
+            error: null,
+            userIds: [],
+        }));
+
+        try {
+            const q = supabase
+                .from(REACTIONS_TABLE)
+                .select("id, session_id, message_id, user_id, emoji, created_at")
+                .eq("session_id", sessionId)
+                .eq("message_id", messageId)
+                .eq("emoji", emoji)
+                .order("created_at", { ascending: true })
+                .limit(5000);
+
+            const { data, error } = await withTimeout(q as any, 12000, "loadReactionDetails timeout");
+            if (!aliveRef.current) return;
+
+            if (error) {
+                console.error("reaction details load error:", error);
+                setReactionDetails((prev) => ({
+                    ...prev,
+                    open: true,
+                    loading: false,
+                    error: "Failed to load reactions",
+                    userIds: [],
+                }));
+                return;
+            }
+
+            const rows = ((data as any) || []) as ReactionRow[];
+            const ids = rows.map((r) => r.user_id).filter(Boolean);
+
+            await ensureProfiles(ids);
+
+            if (!aliveRef.current) return;
+
+            setReactionDetails((prev) => ({
+                ...prev,
+                open: true,
+                loading: false,
+                error: null,
+                userIds: ids,
+            }));
+        } catch (e) {
+            console.warn("loadReactionDetails failed:", e);
+            if (!aliveRef.current) return;
+            setReactionDetails((prev) => ({
+                ...prev,
+                open: true,
+                loading: false,
+                error: "Failed to load reactions",
+                userIds: [],
+            }));
+        }
+    };
+
+    const openReactionDetails = (messageId: string, emoji: string) => {
+        void loadReactionDetails(messageId, emoji);
+    };
+
+    useEffect(() => {
+        if (!reactionDetails.open) return;
+
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") closeReactionDetails();
+        };
+
+        document.addEventListener("keydown", onKey);
+        return () => document.removeEventListener("keydown", onKey);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [reactionDetails.open]);
 
     // ---------- load messages (initial + fallback)
     const loadMessages = async (opts?: { silent?: boolean }): Promise<Msg[] | null> => {
@@ -958,6 +1092,13 @@ export function ChatPanel({
                     delete next[deletedId];
                     return next;
                 });
+
+                // close modal if it was open for deleted message
+                setReactionDetails((prev) => {
+                    if (!prev.open) return prev;
+                    if (prev.messageId !== deletedId) return prev;
+                    return { open: false, messageId: "", emoji: "", loading: false, userIds: [], error: null };
+                });
             }
         );
 
@@ -1101,12 +1242,30 @@ export function ChatPanel({
                     if (ev === "INSERT" && n) {
                         if (shouldSkipFromPending("INSERT", n)) return;
                         applyInsert(n);
+
+                        // if modal open for this message+emoji — refresh list (light)
+                        setReactionDetails((prev) => {
+                            if (!prev.open) return prev;
+                            if (prev.messageId !== n.message_id) return prev;
+                            if (prev.emoji !== n.emoji) return prev;
+                            // append if missing
+                            if (prev.userIds.includes(n.user_id)) return prev;
+                            return { ...prev, userIds: [...prev.userIds, n.user_id] };
+                        });
                         return;
                     }
 
                     if (ev === "DELETE" && o) {
                         if (shouldSkipFromPending("DELETE", o)) return;
                         applyDelete(o);
+
+                        // if modal open for this message+emoji — remove user
+                        setReactionDetails((prev) => {
+                            if (!prev.open) return prev;
+                            if (prev.messageId !== o.message_id) return prev;
+                            if (prev.emoji !== o.emoji) return prev;
+                            return { ...prev, userIds: prev.userIds.filter((id) => id !== o.user_id) };
+                        });
                         return;
                     }
 
@@ -1121,7 +1280,6 @@ export function ChatPanel({
                     }
 
                     // fallback: if payload shape is weird, do one rare resync
-                    // (не спамим, только когда реально что-то странное)
                     void loadReactions({ silent: true, messageIds: getRecentMessageIdsForReactions() });
                 }
             )
@@ -1160,8 +1318,10 @@ export function ChatPanel({
         const raw = text.trim();
         if (!raw || !userId || !sessionId) return;
 
+        // ✅ quote only "main" (no nested quotes)
+        const replyQuote = replyTo ? quotePreviewForReply(replyTo.body, 240) : "";
         const replyHeader = replyTo
-            ? `↪ ${replyTo.profile?.full_name || "Participant"}: ${replyTo.body}`
+            ? `↪ ${replyTo.profile?.full_name || "Participant"}: ${replyQuote || "[message]"}`
             : null;
 
         const composed = replyHeader ? `${replyHeader}\n\n${raw}` : raw;
@@ -1373,8 +1533,169 @@ export function ChatPanel({
 
     const uiMessages = useMemo(() => messages, [messages]);
 
+    // -------- modal rendering data
+    const modalMessage = reactionDetails.open
+        ? messagesRef.current.find((m) => m.id === reactionDetails.messageId) || null
+        : null;
+
+    const modalMessageMain = modalMessage ? parseReplyBody(modalMessage.body).main : "";
+
+    const modalBg = isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10";
+    const modalTextPrimary = isLight ? "text-black/85" : "text-white/90";
+    const modalTextSecondary = isLight ? "text-black/55" : "text-white/55";
+    const modalBtn = isLight
+        ? "bg-black/5 hover:bg-black/10 border border-black/10 text-black/70"
+        : "bg-white/5 hover:bg-white/10 border border-white/10 text-white/75";
+
+    const modalPrimaryBtn = isLight
+        ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+        : "bg-emerald-600 hover:bg-emerald-700 text-white";
+
+    const canToggleInModal = !!reactionDetails.open && !!reactionDetails.messageId && !!reactionDetails.emoji;
+
+    const myReactedInModal =
+        canToggleInModal && !!myReactions?.[reactionDetails.messageId]?.[reactionDetails.emoji];
+
     return (
         <div className="h-full flex flex-col bg-transparent min-h-0 relative">
+            {/* ✅ Reaction Details Modal */}
+            {reactionDetails.open && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+                    <div
+                        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                        onClick={closeReactionDetails}
+                    />
+                    <div className={"relative w-[92vw] max-w-[520px] rounded-2xl shadow-2xl " + modalBg}>
+                        <div className={"px-5 py-4 border-b " + (isLight ? "border-black/10" : "border-white/10")}>
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className={"text-[14px] font-semibold " + modalTextPrimary}>
+                                        {reactionDetails.emoji} Reactions
+                                    </div>
+                                    <div className={"text-[12px] mt-0.5 " + modalTextSecondary}>
+                                        Click outside or press Esc to close
+                                    </div>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={closeReactionDetails}
+                                    className={"w-9 h-9 rounded-xl flex items-center justify-center transition " + modalBtn}
+                                    title="Close"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+
+                            {modalMessage && (
+                                <div className={"mt-3 rounded-xl px-3 py-2 text-[12px] " + (isLight ? "bg-black/5 border border-black/10" : "bg-white/5 border border-white/10")}>
+                                    <div className={"text-[11px] mb-1 " + modalTextSecondary}>Message</div>
+                                    <div className={modalTextPrimary + " whitespace-pre-wrap break-words"}>
+                                        {collapseWs(modalMessageMain).slice(0, 260) + (collapseWs(modalMessageMain).length > 260 ? "…" : "")}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="px-5 py-4">
+                            <div className="flex items-center justify-between gap-3">
+                                <div className={modalTextSecondary + " text-[12px]"}>
+                                    {reactionDetails.loading
+                                        ? "Loading…"
+                                        : `${reactionDetails.userIds.length} ${reactionDetails.userIds.length === 1 ? "person" : "people"
+                                        } reacted`}
+                                </div>
+
+                                {canToggleInModal && (
+                                    <button
+                                        type="button"
+                                        className={
+                                            "px-3 h-9 rounded-xl text-[13px] font-semibold border transition " +
+                                            (myReactedInModal ? modalBtn : modalPrimaryBtn + " border-emerald-500/40")
+                                        }
+                                        onClick={async () => {
+                                            // toggle + refresh list (robust)
+                                            await toggleReaction(reactionDetails.messageId, reactionDetails.emoji);
+                                            void loadReactionDetails(reactionDetails.messageId, reactionDetails.emoji);
+                                        }}
+                                        title={myReactedInModal ? "Remove my reaction" : "React"}
+                                    >
+                                        {myReactedInModal ? "Remove my reaction" : "Add my reaction"}
+                                    </button>
+                                )}
+                            </div>
+
+                            {reactionDetails.error && (
+                                <div className={"mt-3 text-[12px] " + (isLight ? "text-red-700" : "text-red-300")}>
+                                    {reactionDetails.error}
+                                </div>
+                            )}
+
+                            <div className="mt-4 max-h-[46vh] overflow-y-auto custom-scrollbar pr-1">
+                                {reactionDetails.loading && (
+                                    <div className="py-6 flex items-center justify-center">
+                                        <div
+                                            className={
+                                                "w-7 h-7 rounded-full border-2 animate-spin " +
+                                                (isLight ? "border-black/20 border-t-black/60" : "border-white/20 border-t-white/70")
+                                            }
+                                        />
+                                    </div>
+                                )}
+
+                                {!reactionDetails.loading && reactionDetails.userIds.length === 0 && !reactionDetails.error && (
+                                    <div className={modalTextSecondary + " text-[13px] italic py-6 text-center"}>
+                                        No reactions yet
+                                    </div>
+                                )}
+
+                                {!reactionDetails.loading && reactionDetails.userIds.length > 0 && (
+                                    <div className="space-y-2">
+                                        {reactionDetails.userIds.map((uid) => {
+                                            const prof =
+                                                profilesByIdRef.current[uid] ||
+                                                (uid === userId ? meProfileRef.current : null) ||
+                                                ({ id: uid, full_name: "Participant", avatar_url: null } as Profile);
+
+                                            const displayName =
+                                                uid === userId
+                                                    ? "You"
+                                                    : prof?.full_name || "Participant";
+
+                                            return (
+                                                <div
+                                                    key={uid}
+                                                    className={
+                                                        "flex items-center gap-3 rounded-xl px-3 py-2 border " +
+                                                        (isLight
+                                                            ? "bg-white border-black/10"
+                                                            : "bg-[#0B1220]/40 border-white/10")
+                                                    }
+                                                >
+                                                    <img
+                                                        src={avatarFromProfile(prof)}
+                                                        className="w-9 h-9 rounded-full object-cover"
+                                                        alt=""
+                                                    />
+                                                    <div className="min-w-0">
+                                                        <div className={modalTextPrimary + " text-[13px] truncate"}>
+                                                            {displayName}
+                                                        </div>
+                                                        <div className={modalTextSecondary + " text-[11px] truncate"}>
+                                                            {uid === userId ? "This is you" : ""}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* HEADER */}
             {showHeader && (
                 <div className={"px-5 py-4 border-b " + headerBorder}>
@@ -1437,6 +1758,7 @@ export function ChatPanel({
                             reactionsCounts={reactions[m.id]}
                             myReactions={myReactions[m.id]}
                             onToggleReaction={toggleReaction}
+                            onOpenReactionDetails={openReactionDetails}
                             isLight={isLight}
                             canEdit={canEdit}
                             onUpdateMessage={updateMessage}
@@ -1479,7 +1801,9 @@ export function ChatPanel({
                         <div className="min-w-0">
                             <div className={replyingLabel}>Replying</div>
                             <div className={"text-[11px] truncate " + replyingText}>
-                                {(replyTo.profile?.full_name || "Participant") + ": " + replyTo.body}
+                                {(replyTo.profile?.full_name || "Participant") +
+                                    ": " +
+                                    (quotePreviewForReply(replyTo.body, 220) || "[message]")}
                             </div>
                         </div>
                         <button
