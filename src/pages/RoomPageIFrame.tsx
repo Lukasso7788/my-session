@@ -31,6 +31,11 @@
 // - Ensure settings are actually available (TOOLBAR_BUTTONS contains "settings")
 // - Provide our own clickable ⚙ Settings overlay in prejoin + in-room
 // - Best-effort auto-open settings once during prejoin (toggleSettings)
+//
+// ✅ Avatar (NEW):
+// - Prefer Supabase profiles.avatar_url (public bucket)
+// - Fallback to Google auth avatar (user_metadata.picture / avatar_url)
+// - Inject into Jitsi as userInfo.avatarUrl + executeCommand("avatarUrl", ...)
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -148,7 +153,46 @@ function parse50505(raw: any): { focus: number; break: number; intentions: numbe
     return { focus, break: br, intentions };
 }
 
-// Session Studio / builder wrappers
+// ===============================
+// Avatar helpers (Supabase profile -> Google fallback)
+// ===============================
+const AVATARS_BUCKET = "avatars";
+
+function isProbablyUrl(s: string) {
+    return /^https?:\/\//i.test(String(s || "").trim());
+}
+
+function normalizeAvatarCandidate(raw: any): string {
+    const s = String(raw || "").trim();
+    if (!s || s === "null" || s === "undefined") return "";
+    return s;
+}
+
+async function resolveAvatarUrlFromProfilesField(avatarUrlOrPath: string): Promise<string> {
+    const v = normalizeAvatarCandidate(avatarUrlOrPath);
+    if (!v) return "";
+    if (isProbablyUrl(v)) return v;
+
+    // If they stored a storage path instead of a URL, build public URL from bucket
+    try {
+        const { data } = supabase.storage.from(AVATARS_BUCKET).getPublicUrl(v);
+        const u = String(data?.publicUrl || "").trim();
+        if (u) return u;
+    } catch { }
+
+    return "";
+}
+
+function getGoogleAvatarFromUser(u: any): string {
+    const meta = (u as any)?.user_metadata || {};
+    const pic = normalizeAvatarCandidate(meta?.picture);
+    const ava = normalizeAvatarCandidate(meta?.avatar_url);
+    const photo = normalizeAvatarCandidate(meta?.photo_url);
+    const image = normalizeAvatarCandidate(meta?.image);
+    const candidate = pic || ava || photo || image;
+    return isProbablyUrl(candidate) ? candidate : "";
+}
+
 function unwrapScheduleBlocks(parsed: any): any {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return parsed;
 
@@ -306,10 +350,7 @@ function domainsForSession(session: any): readonly string[] {
 }
 
 const TOOLBAR_MOUNT_BUTTONS = ["settings"];
-
-// ✅ FIX: settings must exist in interface toolbar config, иначе в prejoin оно просто “некуда” рисоваться.
 const TOOLBAR_VISIBLE_BUTTONS: string[] = ["settings"];
-
 const JITSI_CUSTOM_CSS_PATH = "/jitsi-custom.css";
 
 // ====== AUDIO ======
@@ -334,7 +375,6 @@ const ATT_HEARTBEAT_MS = 10_000;
 const ONLINE_WINDOW_MS = 35_000;
 
 // ====== adaptive video quality ======
-// 1–2 => 720p, 3–4 => 480p, 5+ => 360p
 function pickTargetVideoHeight(participantsTotal: number) {
     const n = Math.max(1, Math.floor(Number(participantsTotal || 1)));
     if (n <= 2) return 720;
@@ -396,6 +436,7 @@ async function createJitsiApiWithFallback(args: {
     roomName: string;
     parentNode: HTMLElement;
     userName: string;
+    userAvatarUrl?: string;
     subject?: string;
     cssPathOnJitsiDomain?: string;
     onDomainChosen?: (d: string) => void;
@@ -411,21 +452,24 @@ async function createJitsiApiWithFallback(args: {
             const cssPath = String(args.cssPathOnJitsiDomain || "").trim() || JITSI_CUSTOM_CSS_PATH;
             const cssUrl = `https://${domain}${cssPath}?v=${Date.now()}`;
 
+            const avatarUrl = String(args.userAvatarUrl || "").trim();
+
             const api = new window.JitsiMeetExternalAPI(domain, {
                 roomName: args.roomName,
                 parentNode: args.parentNode,
                 width: "100%",
                 height: "100%",
-                userInfo: { displayName: args.userName },
+                userInfo: {
+                    displayName: args.userName,
+                    ...(avatarUrl ? { avatarUrl } : {}),
+                },
 
                 configOverwrite: {
                     disableWelcomePage: true,
                     enableWelcomePage: false,
 
-                    // ✅ enable standard Jitsi prejoin screen (more keys for compatibility)
                     prejoinPageEnabled: true,
                     prejoinConfig: { enabled: true },
-                    // legacy / best-effort flags (ignored if unknown)
                     enablePrejoinPage: true as any,
 
                     requireDisplayName: false,
@@ -442,16 +486,13 @@ async function createJitsiApiWithFallback(args: {
                     filmStripOnly: false,
                     disableFilmstrip: true,
 
-                    // ✅ propagate pretty title into Jitsi (prejoin/meeting subject)
                     subject: String(args.subject || ""),
                     hideConferenceSubject: true,
                     hideConferenceTimer: true,
                     conferenceInfo: { alwaysVisible: [], autoHide: [] },
 
-                    // ⚠️ kept (harmless even if ignored in some builds)
                     toolbarButtons: TOOLBAR_MOUNT_BUTTONS,
 
-                    // ✅ allow high quality by default (we still adapt at runtime)
                     resolution: 720,
                     constraints: {
                         video: {
@@ -465,7 +506,6 @@ async function createJitsiApiWithFallback(args: {
                 },
 
                 interfaceConfigOverwrite: {
-                    // ✅ FIX: settings exists
                     TOOLBAR_BUTTONS: TOOLBAR_VISIBLE_BUTTONS,
 
                     TOOLBAR_ALWAYS_VISIBLE: false,
@@ -489,13 +529,17 @@ async function createJitsiApiWithFallback(args: {
                 },
             });
 
-            // best-effort: set subject again (some builds apply after init)
             try {
                 if (args.subject) api.executeCommand?.("subject", String(args.subject));
             } catch { }
 
             try {
                 api.executeCommand?.("displayName", args.userName);
+            } catch { }
+
+            // Best-effort: some builds prefer command over userInfo for avatar
+            try {
+                if (avatarUrl) api.executeCommand?.("avatarUrl", avatarUrl);
             } catch { }
 
             args.onDomainChosen?.(domain);
@@ -557,6 +601,7 @@ export default function RoomPageIFrame() {
     const [authStatus, setAuthStatus] = useState<"checking" | "authed" | "redirecting">("checking");
     const [userName, setUserName] = useState<string>("");
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+    const [userAvatarUrl, setUserAvatarUrl] = useState<string>(""); // ✅ NEW
     const accessTokenRef = useRef<string>("");
 
     // theme
@@ -576,7 +621,6 @@ export default function RoomPageIFrame() {
         } catch { }
     }, [theme]);
 
-    // ✅ propagate theme to html+body (parity with RoomPage)
     useEffect(() => {
         try {
             const root = document.documentElement;
@@ -617,18 +661,14 @@ export default function RoomPageIFrame() {
 
     // iframe state
     const [tile, setTile] = useState(true);
-    const [mutedAudio, setMutedAudio] = useState(true); // startWithAudioMuted
+    const [mutedAudio, setMutedAudio] = useState(true);
     const [mutedVideo, setMutedVideo] = useState(false);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [apiReady, setApiReady] = useState(false);
 
-    // ✅ prejoin fullscreen mode until user actually joins conference
     const [inPrejoin, setInPrejoin] = useState(true);
-
-    // ✅ prejoin settings auto-open once (best-effort)
     const prejoinSettingsAutoOpenedRef = useRef(false);
 
-    // ✅ tile view enforcement (startup only)
     const tileRef = useRef<boolean>(true);
     const tileEventSeenRef = useRef<boolean>(false);
     const tileEnforcedOnceRef = useRef<boolean>(false);
@@ -656,17 +696,11 @@ export default function RoomPageIFrame() {
         window.setTimeout(trySet, 1100);
     };
 
-    // live participant count
     const [participantsNow, setParticipantsNow] = useState<number>(0);
-
-    // online users (attendance)
     const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
-
-    // participants list (from Jitsi)
     const [participantRows, setParticipantRows] = useState<ParticipantRow[]>([]);
     const [participantsSearch, setParticipantsSearch] = useState("");
 
-    // right panel
     const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(false);
     const [rightTab, setRightTab] = useState<RightPanelTab>(null);
 
@@ -683,7 +717,6 @@ export default function RoomPageIFrame() {
         });
     };
 
-    // ✅ kick resize when panel toggles (parity with RoomPage)
     useEffect(() => {
         const fire = () => {
             try {
@@ -699,7 +732,6 @@ export default function RoomPageIFrame() {
         };
     }, [rightPanelOpen, rightTab]);
 
-    // ✅ ResizeObserver for container changes
     const videoWrapRef = useRef<HTMLDivElement | null>(null);
     useEffect(() => {
         const el = videoWrapRef.current;
@@ -722,7 +754,6 @@ export default function RoomPageIFrame() {
         };
     }, []);
 
-    // Escape closes panels/popovers
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
             if (e.key === "Escape") {
@@ -902,7 +933,7 @@ export default function RoomPageIFrame() {
     };
 
     // =========================
-    // auth gate
+    // auth gate (+ avatar resolve)
     // =========================
     useEffect(() => {
         (async () => {
@@ -915,6 +946,7 @@ export default function RoomPageIFrame() {
                 if (!u) {
                     setCurrentUserId(null);
                     setUserName("");
+                    setUserAvatarUrl("");
                     accessTokenRef.current = "";
                     setAuthStatus("redirecting");
 
@@ -933,16 +965,23 @@ export default function RoomPageIFrame() {
                 }
 
                 let name = "";
+                let profileAvatar = "";
 
-                // 1) ✅ ПЕРВЫМ делом пробуем profiles.full_name
+                // 1) ✅ profiles first (name + avatar)
                 if (u?.id) {
                     try {
-                        const { data: p } = await supabase.from("profiles").select("full_name").eq("id", u.id).single();
+                        const { data: p } = await supabase
+                            .from("profiles")
+                            .select("full_name, avatar_url")
+                            .eq("id", u.id)
+                            .single();
+
                         name = String(p?.full_name || "").trim();
+                        profileAvatar = await resolveAvatarUrlFromProfilesField(String(p?.avatar_url || "").trim());
                     } catch { }
                 }
 
-                // 2) fallback: user_metadata
+                // 2) fallback: user_metadata for name
                 if (!name) {
                     name =
                         String((u as any)?.user_metadata?.full_name || "").trim() ||
@@ -954,11 +993,17 @@ export default function RoomPageIFrame() {
                     name = u?.email ? String(u.email.split("@")[0] || "").trim() : "";
                 }
 
+                // Avatar fallback: Google auth avatar
+                const googleAvatar = getGoogleAvatarFromUser(u);
+                const finalAvatar = profileAvatar || googleAvatar || "";
+
                 setUserName(name || "User");
+                setUserAvatarUrl(finalAvatar);
                 setAuthStatus("authed");
             } catch {
                 setCurrentUserId(null);
                 setUserName("");
+                setUserAvatarUrl("");
                 accessTokenRef.current = "";
                 setAuthStatus("redirecting");
 
@@ -974,7 +1019,6 @@ export default function RoomPageIFrame() {
         return !!currentUserId && !!sid && currentUserId === sid;
     }, [currentUserId, session?.host_id]);
 
-    // max participants
     const maxParticipants = useMemo(() => {
         const n = Number(session?.max_participants);
         if (Number.isFinite(n) && n >= MIN_PARTICIPANTS) {
@@ -983,7 +1027,6 @@ export default function RoomPageIFrame() {
         return DEFAULT_MAX_PARTICIPANTS;
     }, [session]);
 
-    // Room name
     const roomName = useMemo(() => {
         const fallback = idOrSlug ? `session-${idOrSlug}` : "session-unknown";
 
@@ -1700,7 +1743,6 @@ export default function RoomPageIFrame() {
     // ============================================
     const [jitsiKey, setJitsiKey] = useState(0);
 
-    // ✅ adaptive video quality state
     const lastAppliedVideoHeightRef = useRef<number>(0);
     const videoQualityTimerRef = useRef<number | null>(null);
 
@@ -1765,7 +1807,6 @@ export default function RoomPageIFrame() {
         }, 450);
     };
 
-    // ✅ our command helper (supports list can be null)
     const supportsCmd = (cmd: string) => {
         const list = supportedCmdsRef.current;
         return !list || list.includes(cmd);
@@ -1775,9 +1816,19 @@ export default function RoomPageIFrame() {
         const api = apiRef.current;
         if (!api) return;
         try {
-            // Most builds support this
             if (supportsCmd("toggleSettings")) api.executeCommand?.("toggleSettings");
             else api.executeCommand?.("toggleSettings");
+        } catch { }
+    };
+
+    const applyJitsiAvatarBestEffort = (api: any, avatar: string) => {
+        const url = String(avatar || "").trim();
+        if (!api || !url) return;
+        try {
+            api.executeCommand?.("avatarUrl", url);
+        } catch { }
+        try {
+            api.executeCommand?.("avatar", url);
         } catch { }
     };
 
@@ -1813,7 +1864,6 @@ export default function RoomPageIFrame() {
         clearVideoQualityTimer();
         lastAppliedVideoHeightRef.current = 0;
 
-        // ✅ reset prejoin auto-open
         prejoinSettingsAutoOpenedRef.current = false;
 
         setJitsiKey((x) => x + 1);
@@ -1858,7 +1908,6 @@ export default function RoomPageIFrame() {
         } catch { }
     };
 
-    // Participants list from Jitsi
     const refreshParticipantsList = async (api: any) => {
         try {
             const localId = String(localParticipantIdRef.current || "local");
@@ -1951,7 +2000,6 @@ export default function RoomPageIFrame() {
                 setApiReady(false);
                 setInPrejoin(true);
 
-                // ✅ reset prejoin auto-open per init
                 prejoinSettingsAutoOpenedRef.current = false;
 
                 tileEventSeenRef.current = false;
@@ -1968,6 +2016,7 @@ export default function RoomPageIFrame() {
                     roomName,
                     parentNode: parent,
                     userName,
+                    userAvatarUrl: userAvatarUrl || "", // ✅ NEW
                     subject: sessionTitle,
                     cssPathOnJitsiDomain: JITSI_CUSTOM_CSS_PATH,
                 });
@@ -1988,7 +2037,15 @@ export default function RoomPageIFrame() {
                     supportedCmdsRef.current = null;
                 }
 
-                // ✅ best-effort: open Settings on prejoin once (so “prejoin настройки” точно всплывают)
+                // ✅ Best-effort: apply avatar early (prejoin)
+                if (userAvatarUrl) {
+                    window.setTimeout(() => {
+                        if (cancelled) return;
+                        if (apiRef.current !== api) return;
+                        applyJitsiAvatarBestEffort(api, userAvatarUrl);
+                    }, 150);
+                }
+
                 window.setTimeout(() => {
                     if (cancelled) return;
                     if (localJoinedRef.current) return;
@@ -2005,13 +2062,18 @@ export default function RoomPageIFrame() {
                     const pid = String(e?.id || e?.participantId || e?.roomName || "");
                     if (pid) localParticipantIdRef.current = pid;
 
-                    // ✅ once joined => exit fullscreen prejoin
                     setInPrejoin(false);
                     setApiReady(true);
 
                     try {
                         api.executeCommand?.("displayName", userName);
                     } catch { }
+
+                    // ✅ Best-effort re-apply avatar after join (some builds only accept it after join)
+                    if (userAvatarUrl) {
+                        window.setTimeout(() => applyJitsiAvatarBestEffort(api, userAvatarUrl), 120);
+                        window.setTimeout(() => applyJitsiAvatarBestEffort(api, userAvatarUrl), 650);
+                    }
 
                     window.setTimeout(() => {
                         try {
@@ -2122,7 +2184,7 @@ export default function RoomPageIFrame() {
             clearVideoQualityTimer();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [authStatus, sessionId, jitsiKey, roomName, sessionTitle]);
+    }, [authStatus, sessionId, jitsiKey, roomName, sessionTitle, userName, userAvatarUrl]);
 
     // ============================================
     // UI actions
@@ -2170,7 +2232,6 @@ export default function RoomPageIFrame() {
 
     const ChatPanelAny = ChatPanel as any;
 
-    // ✅ Prejoin UI is active while we haven't joined yet
     const isPrejoinUi = inPrejoin && !apiReady;
 
     const RightPanelBody = (
@@ -2224,18 +2285,36 @@ export default function RoomPageIFrame() {
                                         .map((x) => x[0]?.toUpperCase())
                                         .join("") || "U";
 
+                                // Optional: show local avatar in list only (safe + simple)
+                                const localAva = p.isLocal ? (userAvatarUrl || "") : "";
+
                                 return (
                                     <div
                                         key={p.id}
                                         className={`flex items-center justify-between px-3 py-2 rounded-xl transition ${isLight ? "hover:bg-black/5" : "hover:bg-white/5"}`}
                                     >
                                         <div className="flex items-center gap-3 min-w-0">
-                                            <div
-                                                className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${isLight ? "bg-blue-500/15 text-blue-700" : "bg-emerald-500/80 text-[#02140B]"
-                                                    }`}
-                                            >
-                                                {initials}
-                                            </div>
+                                            {localAva ? (
+                                                <img
+                                                    src={localAva}
+                                                    alt={name}
+                                                    className="w-10 h-10 rounded-full object-cover"
+                                                    referrerPolicy="no-referrer"
+                                                    onError={(e) => {
+                                                        try {
+                                                            (e.currentTarget as any).style.display = "none";
+                                                        } catch { }
+                                                    }}
+                                                />
+                                            ) : (
+                                                <div
+                                                    className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${isLight ? "bg-blue-500/15 text-blue-700" : "bg-emerald-500/80 text-[#02140B]"
+                                                        }`}
+                                                >
+                                                    {initials}
+                                                </div>
+                                            )}
+
                                             <div className="min-w-0">
                                                 <div className={`text-[13px] font-medium truncate ${isLight ? "text-black/85" : "text-white/90"}`}>{name}</div>
                                                 <div className={`text-[11px] truncate ${isLight ? "text-black/45" : "text-white/45"}`}>{p.isLocal ? "Team member" : "Participant"}</div>
@@ -2349,9 +2428,6 @@ export default function RoomPageIFrame() {
         </div>
     );
 
-    // ============================================
-    // render guards
-    // ============================================
     if (authStatus === "redirecting") {
         return <div className={`flex h-screen items-center justify-center ${pageBg}`}>Redirecting…</div>;
     }
@@ -2422,7 +2498,6 @@ export default function RoomPageIFrame() {
                             <div ref={iframeContainerRef} key={jitsiKey} className="w-full h-full min-h-0" />
                         </div>
 
-                        {/* ✅ MySession header overlays during prejoin */}
                         {isPrejoinUi && (
                             <>
                                 <div className="pointer-events-none absolute inset-x-0 top-0 z-20">
@@ -2431,7 +2506,6 @@ export default function RoomPageIFrame() {
                                     >
                                         <div className="flex items-center justify-between gap-3">
                                             <div className="flex items-center gap-3 min-w-0">
-                                                {/* ✅ MySession: Inter ExtraBold */}
                                                 <div
                                                     className={[
                                                         "font-inter font-extrabold tracking-tight",
@@ -2446,7 +2520,6 @@ export default function RoomPageIFrame() {
                                                 </div>
                                             </div>
 
-                                            {/* ✅ clickable settings in prejoin */}
                                             <div className="pointer-events-auto flex items-center gap-2 shrink-0">
                                                 <button
                                                     onClick={openJitsiSettings}
@@ -2473,8 +2546,6 @@ export default function RoomPageIFrame() {
                                         </div>
                                     </div>
                                 </div>
-
-                                {/* ✅ removed: bottom prejoin strip + text */}
                             </>
                         )}
 
@@ -2484,7 +2555,6 @@ export default function RoomPageIFrame() {
                             </div>
                         )}
 
-                        {/* floating reactions overlay */}
                         {floatingReactions.length > 0 && (
                             <div className="pointer-events-none absolute inset-x-0 bottom-6 flex items-center justify-center">
                                 <div
@@ -2502,7 +2572,6 @@ export default function RoomPageIFrame() {
                         )}
                     </div>
 
-                    {/* ✅ Render only one variant */}
                     {!isPrejoinUi && rightPanelOpen && isLgUp && <div className="min-h-0 h-full overflow-hidden">{RightPanelBody}</div>}
 
                     {!isPrejoinUi && rightPanelOpen && !isLgUp && (
@@ -2523,10 +2592,10 @@ export default function RoomPageIFrame() {
                     isScreenSharing={isScreenSharing}
                     unreadChat={unreadChat}
                     onOpenTab={(tab) => openRightTab(tab)}
-                    onToggleAudio={handleToggleAudio}
-                    onToggleVideo={handleToggleVideo}
-                    onToggleScreenShare={handleToggleScreenShare}
-                    onToggleTile={handleToggleTile}
+                    onToggleAudio={() => exec("toggleAudio")}
+                    onToggleVideo={() => exec("toggleVideo")}
+                    onToggleScreenShare={() => exec("toggleShareScreen")}
+                    onToggleTile={() => exec("toggleTileView")}
                     onReloadRoom={forceReloadJitsi}
                     onSendReaction={sendReaction}
                     onLeave={handleLeave}
