@@ -265,6 +265,7 @@ export class JitsiEngine {
   // resume recovery
   private resumeHandlersAttached = false;
   private hiddenAt: number | null = null;
+  private bgPausedByVisibility = false;
   private resumeRecoverTimer: any = null;
   private resumeRemovers: (() => void) | null = null;
 
@@ -389,6 +390,68 @@ export class JitsiEngine {
       return document.contains(el);
     } catch {
       return false;
+    }
+  }
+
+  // ---- BG performance profiles ----
+  private isMobileLike(): boolean {
+    try {
+      const ua = navigator.userAgent || "";
+      const touch = (navigator as any).maxTouchPoints || 0;
+      return /Android|iPhone|iPad|iPod/i.test(ua) || (touch > 1 && /Macintosh/i.test(ua));
+    } catch {
+      return false;
+    }
+  }
+
+  private pickBgProfile(hidden: boolean) {
+    const mobile = this.isMobileLike();
+    const cores = (navigator as any).hardwareConcurrency || 0;
+    const mem = (navigator as any).deviceMemory || 0;
+    const lowPower = mobile || (cores && cores <= 4) || (mem && mem <= 4);
+
+    if (hidden) {
+      return lowPower ? { w: 480, h: 270, fps: 10 } : { w: 640, h: 360, fps: 12 };
+    }
+
+    return lowPower ? { w: 640, h: 360, fps: 15 } : { w: 960, h: 540, fps: 20 };
+  }
+
+  private pickNormalProfile() {
+    const mobile = this.isMobileLike();
+    const cores = (navigator as any).hardwareConcurrency || 0;
+    const mem = (navigator as any).deviceMemory || 0;
+
+    // "low power" = мобилка или слабые девайсы
+    const lowPower = mobile || (cores && cores <= 4) || (mem && mem <= 4);
+
+    return lowPower
+      ? { w: 1280, h: 720, fps: 24 }  // мобилке/слабым 30 часто лишнее
+      : { w: 1280, h: 720, fps: 30 };
+  }
+
+  private getCaptureTrackForConstraints(): any | null {
+    // когда replaceTrack активен — constraints надо применять к базовой камере (она кормит процессор)
+    return (this.bgImplMode === "replaceTrack" ? this.bgBaseVideoTrack : this.localVideoTrack) || this.localVideoTrack;
+  }
+
+  private async applyVideoCaptureConstraints(profile: { w: number; h: number; fps: number }, reason: string) {
+    const track = this.getCaptureTrackForConstraints();
+    if (!track) return;
+
+    try {
+      const ms = await Promise.resolve(track.getOriginalStream?.());
+      const vt = ms?.getVideoTracks?.()?.[0];
+      if (!vt || typeof vt.applyConstraints !== "function") return;
+
+      await vt.applyConstraints({
+        width: { ideal: profile.w, max: profile.w },
+        height: { ideal: profile.h, max: profile.h },
+        frameRate: { ideal: profile.fps, max: profile.fps },
+      });
+    } catch (e) {
+      // если браузер/камера не поддерживает — это не критично
+      console.warn("[bg] applyConstraints failed:", reason, e);
     }
   }
 
@@ -1266,14 +1329,31 @@ export class JitsiEngine {
 
     const onVisibility = () => {
       if (this.disposed) return;
-      if (document.visibilityState === "hidden") {
+
+      const hidden = document.visibilityState === "hidden";
+
+      if (hidden) {
         this.hiddenAt = Date.now();
+
+        // ✅ ничего не "паузим" и не снимаем эффекты — просто режем capture ещё сильнее
+        if (this.bgPrefs.mode !== "none") {
+          void this.applyVideoCaptureConstraints(this.pickBgProfile(true), "visibility:hidden");
+        }
         return;
       }
+
       const dt = this.hiddenAt ? Date.now() - this.hiddenAt : 0;
       this.hiddenAt = null;
 
       void this.resumeAllAudioElements();
+
+      // ✅ вернулись — восстанавливаем профиль (bg или normal)
+      if (this.bgPrefs.mode !== "none") {
+        void this.applyVideoCaptureConstraints(this.pickBgProfile(false), "visibility:shown");
+      } else {
+        void this.applyVideoCaptureConstraints(this.pickNormalProfile(), "visibility:shown");
+      }
+
       if (dt > 15_000) this.scheduleResumeRecovery("visibility");
     };
 
@@ -1506,6 +1586,12 @@ export class JitsiEngine {
     this.bgPrefs = { mode: opts.mode, imageUrl: opts.imageUrl };
     this.mediaSettings.bgMode = opts.mode;
     this.mediaSettings.bgImageUrl = opts.imageUrl;
+
+    // ✅ ключевой фикс: если включаем blur/image — сразу режем capture
+    if (opts.mode !== "none") {
+      const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
+      await this.applyVideoCaptureConstraints(this.pickBgProfile(hidden), "setBackgroundEffect:pre");
+    }
 
     await this.enqueueBgOp("setBackgroundEffect", () => this.applyBgNow("setBackgroundEffect"));
 
@@ -1795,11 +1881,19 @@ export class JitsiEngine {
 
     this.bgApplying = true;
     try {
+      const prof = this.pickBgProfile(false);
+
       const opts = {
         mode: this.bgPrefs.mode,
         imageUrl: this.bgPrefs.imageUrl,
         backgroundType: this.bgPrefs.mode === "blur" ? "blur" : this.bgPrefs.mode === "image" ? "image" : "none",
         virtualSource: this.bgPrefs.imageUrl,
+
+        // PERF HINTS for backgroundEffect.ts
+        targetFps: prof.fps,
+        maxWidth: prof.w,
+        maxHeight: prof.h,
+        lowPower: this.isMobileLike(),
       };
 
       const processor = factory(opts);
@@ -1874,6 +1968,10 @@ export class JitsiEngine {
       this.bgProcessor = null;
       this.bgProcessedStream = null;
     }
+    // ✅ если фон реально выключен — возвращаем нормальный профиль capture
+    if (this.bgPrefs.mode === "none") {
+      await this.applyVideoCaptureConstraints(this.pickNormalProfile(), `clearAnyBg:${reason}`);
+    }
   }
 
   private canTrySetEffect(track: any) {
@@ -1889,6 +1987,16 @@ export class JitsiEngine {
     await this.ensureLocalVideoTrack();
     const track = this.localVideoTrack;
     if (!track) return;
+
+    // PERF: reduce capture cost when bg is enabled (and also when tab is hidden)
+    try {
+      const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
+      if (this.bgPrefs.mode !== "none") {
+        await this.applyVideoCaptureConstraints(this.pickBgProfile(hidden), `bg-on:${reason}`);
+      } else {
+        await this.applyVideoCaptureConstraints(this.pickNormalProfile(), `bg-off:${reason}`);
+      }
+    } catch { }
 
     if (this.bgPrefs.mode === "none") {
       await this.clearAnyBg(false, `applyBgNow:none:${reason}`);
@@ -2003,9 +2111,25 @@ export class JitsiEngine {
       }
     } catch { }
 
+    const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
+    const prof = this.bgPrefs.mode !== "none" ? this.pickBgProfile(hidden) : this.pickNormalProfile();
+
     const tracks = await this.JitsiMeetJS.createLocalTracks({
       devices: ["video"],
-      constraints: { video: this.mediaSettings.videoInputId ? { deviceId: { exact: this.mediaSettings.videoInputId } } : true },
+      constraints: {
+        video: this.mediaSettings.videoInputId
+          ? {
+            deviceId: { exact: this.mediaSettings.videoInputId },
+            width: { ideal: prof.w, max: prof.w },
+            height: { ideal: prof.h, max: prof.h },
+            frameRate: { ideal: prof.fps, max: prof.fps },
+          }
+          : {
+            width: { ideal: prof.w, max: prof.w },
+            height: { ideal: prof.h, max: prof.h },
+            frameRate: { ideal: prof.fps, max: prof.fps },
+          },
+      },
     });
 
     const newCamera = tracks.find((t: any) => t.getType?.() === "video");
@@ -2125,12 +2249,24 @@ export class JitsiEngine {
     if (this.disposed || !this.JitsiMeetJS || !this.conference || !this.localUserId) return;
 
     try {
+      const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
+      const prof = this.bgPrefs.mode !== "none" ? this.pickBgProfile(hidden) : this.pickNormalProfile();
+
       const tracks = await this.JitsiMeetJS.createLocalTracks({
         devices: ["video"],
         constraints: {
           video: this.mediaSettings.videoInputId
-            ? { deviceId: { exact: this.mediaSettings.videoInputId } }
-            : { height: { ideal: 720, max: 720 }, width: { ideal: 1280, max: 1280 }, frameRate: { ideal: 30, max: 30 } },
+            ? {
+              deviceId: { exact: this.mediaSettings.videoInputId },
+              width: { ideal: prof.w, max: prof.w },
+              height: { ideal: prof.h, max: prof.h },
+              frameRate: { ideal: prof.fps, max: prof.fps },
+            }
+            : {
+              width: { ideal: prof.w, max: prof.w },
+              height: { ideal: prof.h, max: prof.h },
+              frameRate: { ideal: prof.fps, max: prof.fps },
+            },
         },
       });
 
@@ -2211,11 +2347,25 @@ export class JitsiEngine {
     const J = (window as any).JitsiMeetJS;
     if (!J?.createLocalTracks) throw new Error("JitsiMeetJS.createLocalTracks not found");
 
+    const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
+    const prof = this.bgPrefs.mode !== "none" ? this.pickBgProfile(hidden) : this.pickNormalProfile();
+
     const newTracks = await J.createLocalTracks({
       devices: ["audio", "video"],
       constraints: {
         audio: audioInputId ? { deviceId: { exact: audioInputId } } : true,
-        video: videoInputId ? { deviceId: { exact: videoInputId } } : true,
+        video: videoInputId
+          ? {
+            deviceId: { exact: videoInputId },
+            width: { ideal: prof.w, max: prof.w },
+            height: { ideal: prof.h, max: prof.h },
+            frameRate: { ideal: prof.fps, max: prof.fps },
+          }
+          : {
+            width: { ideal: prof.w, max: prof.w },
+            height: { ideal: prof.h, max: prof.h },
+            frameRate: { ideal: prof.fps, max: prof.fps },
+          },
       },
     });
 
@@ -2255,14 +2405,26 @@ export class JitsiEngine {
     if (!this.JitsiMeetJS || !this.conference || !this.localUserId) return;
 
     try {
+      const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
+      const prof = this.bgPrefs.mode !== "none" ? this.pickBgProfile(hidden) : this.pickNormalProfile();
+
       const tracks = await this.JitsiMeetJS.createLocalTracks({
         devices: ["audio", "video"],
-        resolution: 720,
+        resolution: prof.h,
         constraints: {
           audio: this.mediaSettings.audioInputId ? { deviceId: { exact: this.mediaSettings.audioInputId } } : true,
           video: this.mediaSettings.videoInputId
-            ? { deviceId: { exact: this.mediaSettings.videoInputId } }
-            : { height: { ideal: 720, max: 720 }, width: { ideal: 1280, max: 1280 }, frameRate: { ideal: 30, max: 30 } },
+            ? {
+              deviceId: { exact: this.mediaSettings.videoInputId },
+              width: { ideal: prof.w, max: prof.w },
+              height: { ideal: prof.h, max: prof.h },
+              frameRate: { ideal: prof.fps, max: prof.fps },
+            }
+            : {
+              width: { ideal: prof.w, max: prof.w },
+              height: { ideal: prof.h, max: prof.h },
+              frameRate: { ideal: prof.fps, max: prof.fps },
+            },
         },
       });
 
