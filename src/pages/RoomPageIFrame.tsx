@@ -2519,30 +2519,6 @@ export default function RoomPageIFrame() {
                                                     {sessionTitle}
                                                 </div>
                                             </div>
-
-                                            <div className="pointer-events-auto flex items-center gap-2 shrink-0">
-                                                <button
-                                                    onClick={openJitsiSettings}
-                                                    className={`h-10 px-3 rounded-xl text-sm font-semibold shadow ${isLight
-                                                        ? "bg-white/95 border border-black/10 text-black/70 hover:bg-white"
-                                                        : "bg-[#020617]/85 border border-white/10 text-white/80 hover:bg-[#020617]"
-                                                        }`}
-                                                    title="Prejoin settings"
-                                                >
-                                                    ⚙ Settings
-                                                </button>
-
-                                                <button
-                                                    onClick={forceReloadJitsi}
-                                                    className={`h-10 px-3 rounded-xl text-sm font-semibold shadow ${isLight
-                                                        ? "bg-black/5 border border-black/10 text-black/60 hover:bg-black/10"
-                                                        : "bg-white/5 border border-white/10 text-white/70 hover:bg-white/10"
-                                                        }`}
-                                                    title="Reload room"
-                                                >
-                                                    ↻
-                                                </button>
-                                            </div>
                                         </div>
                                     </div>
                                 </div>
