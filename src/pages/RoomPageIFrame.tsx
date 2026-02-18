@@ -2183,7 +2183,6 @@ export default function RoomPageIFrame() {
             data-theme={theme}
             style={{ colorScheme: theme }}
         >
-            {/* ... (без изменений ниже, твой RightPanelBody полностью сохранён) */}
             {rightTab === "participants" && (
                 <div className="h-full min-h-0 flex flex-col">
                     <div className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
@@ -2423,21 +2422,7 @@ export default function RoomPageIFrame() {
                             <div ref={iframeContainerRef} key={jitsiKey} className="w-full h-full min-h-0" />
                         </div>
 
-                        {/* ✅ In-room settings quick button (our UI) */}
-                        {!isPrejoinUi && (
-                            <button
-                                onClick={openJitsiSettings}
-                                className={`absolute top-3 right-3 z-30 px-3 h-10 rounded-xl text-sm font-semibold shadow-lg pointer-events-auto ${isLight
-                                    ? "bg-white/90 border border-black/10 text-black/70 hover:bg-white"
-                                    : "bg-[#020617]/80 border border-white/10 text-white/80 hover:bg-[#020617]"
-                                    }`}
-                                title="Settings"
-                            >
-                                ⚙ Settings
-                            </button>
-                        )}
-
-                        {/* ✅ MySession header/footer overlays during prejoin */}
+                        {/* ✅ MySession header overlays during prejoin */}
                         {isPrejoinUi && (
                             <>
                                 <div className="pointer-events-none absolute inset-x-0 top-0 z-20">
@@ -2446,7 +2431,16 @@ export default function RoomPageIFrame() {
                                     >
                                         <div className="flex items-center justify-between gap-3">
                                             <div className="flex items-center gap-3 min-w-0">
-                                                <div className={`text-sm font-semibold ${isLight ? "text-black/80" : "text-white/85"}`}>MySession</div>
+                                                {/* ✅ MySession: Inter ExtraBold */}
+                                                <div
+                                                    className={[
+                                                        "font-inter font-extrabold tracking-tight",
+                                                        isLight ? "text-black/85" : "text-white/90",
+                                                    ].join(" ")}
+                                                >
+                                                    MySession
+                                                </div>
+
                                                 <div className={`text-sm font-semibold truncate ${isLight ? "text-black/80" : "text-white/85"}`}>
                                                     {sessionTitle}
                                                 </div>
@@ -2480,15 +2474,7 @@ export default function RoomPageIFrame() {
                                     </div>
                                 </div>
 
-                                <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20">
-                                    <div
-                                        className={`pointer-events-none px-4 pb-[max(10px,env(safe-area-inset-bottom))] pt-3 ${isLight ? "bg-white/85" : "bg-[#050F1A]/85"} backdrop-blur`}
-                                    >
-                                        <div className={`${isLight ? "text-black/50" : "text-white/50"} text-xs`}>
-                                            Нажми ⚙ Settings чтобы выбрать микрофон/камеру. Потом Join → и ты в комнате с нашим UI.
-                                        </div>
-                                    </div>
-                                </div>
+                                {/* ✅ removed: bottom prejoin strip + text */}
                             </>
                         )}
 
