@@ -20,6 +20,17 @@
 // ✅ Refactor:
 // - Top bar moved to <RoomTopBar />
 // - Bottom controls moved to <VideoControls /> (src/components/VideoControls.tsx)
+//
+// ✅ Prejoin (NEW):
+// - Enable Jitsi prejoin screen
+// - Fullscreen iframe until user clicks Join
+// - Hide name input + hide internal title via CSS inside iframe (jitsi-custom.css)
+// - Overlay our own title during prejoin
+//
+// ✅ Prejoin Settings FIX (THIS ITERATION):
+// - Ensure settings are actually available (TOOLBAR_BUTTONS contains "settings")
+// - Provide our own clickable ⚙ Settings overlay in prejoin + in-room
+// - Best-effort auto-open settings once during prejoin (toggleSettings)
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -295,7 +306,10 @@ function domainsForSession(session: any): readonly string[] {
 }
 
 const TOOLBAR_MOUNT_BUTTONS = ["settings"];
-const TOOLBAR_VISIBLE_BUTTONS: string[] = [];
+
+// ✅ FIX: settings must exist in interface toolbar config, иначе в prejoin оно просто “некуда” рисоваться.
+const TOOLBAR_VISIBLE_BUTTONS: string[] = ["settings"];
+
 const JITSI_CUSTOM_CSS_PATH = "/jitsi-custom.css";
 
 // ====== AUDIO ======
@@ -382,6 +396,7 @@ async function createJitsiApiWithFallback(args: {
     roomName: string;
     parentNode: HTMLElement;
     userName: string;
+    subject?: string;
     cssPathOnJitsiDomain?: string;
     onDomainChosen?: (d: string) => void;
 }) {
@@ -407,9 +422,14 @@ async function createJitsiApiWithFallback(args: {
                     disableWelcomePage: true,
                     enableWelcomePage: false,
 
-                    prejoinPageEnabled: false,
-                    prejoinConfig: { enabled: false },
+                    // ✅ enable standard Jitsi prejoin screen (more keys for compatibility)
+                    prejoinPageEnabled: true,
+                    prejoinConfig: { enabled: true },
+                    // legacy / best-effort flags (ignored if unknown)
+                    enablePrejoinPage: true as any,
+
                     requireDisplayName: false,
+                    readOnlyName: true,
 
                     disableDeepLinking: true,
                     disableInviteFunctions: true,
@@ -422,11 +442,13 @@ async function createJitsiApiWithFallback(args: {
                     filmStripOnly: false,
                     disableFilmstrip: true,
 
-                    subject: "",
+                    // ✅ propagate pretty title into Jitsi (prejoin/meeting subject)
+                    subject: String(args.subject || ""),
                     hideConferenceSubject: true,
                     hideConferenceTimer: true,
                     conferenceInfo: { alwaysVisible: [], autoHide: [] },
 
+                    // ⚠️ kept (harmless even if ignored in some builds)
                     toolbarButtons: TOOLBAR_MOUNT_BUTTONS,
 
                     // ✅ allow high quality by default (we still adapt at runtime)
@@ -443,7 +465,9 @@ async function createJitsiApiWithFallback(args: {
                 },
 
                 interfaceConfigOverwrite: {
+                    // ✅ FIX: settings exists
                     TOOLBAR_BUTTONS: TOOLBAR_VISIBLE_BUTTONS,
+
                     TOOLBAR_ALWAYS_VISIBLE: false,
                     TOOLBAR_TIMEOUT: 0,
                     TOOLBAR_TIMEOUT_NO_HOVER: 0,
@@ -465,8 +489,9 @@ async function createJitsiApiWithFallback(args: {
                 },
             });
 
+            // best-effort: set subject again (some builds apply after init)
             try {
-                api.executeCommand?.("subject", "");
+                if (args.subject) api.executeCommand?.("subject", String(args.subject));
             } catch { }
 
             try {
@@ -526,6 +551,7 @@ export default function RoomPageIFrame() {
     const [selectedUser, setSelectedUser] = useState<HostProfile | null>(null);
 
     const sessionId = useMemo(() => String(session?.id || ""), [session?.id]);
+    const sessionTitle = useMemo(() => String(session?.title || "Session"), [session?.title]);
 
     // auth gate
     const [authStatus, setAuthStatus] = useState<"checking" | "authed" | "redirecting">("checking");
@@ -595,6 +621,12 @@ export default function RoomPageIFrame() {
     const [mutedVideo, setMutedVideo] = useState(false);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [apiReady, setApiReady] = useState(false);
+
+    // ✅ prejoin fullscreen mode until user actually joins conference
+    const [inPrejoin, setInPrejoin] = useState(true);
+
+    // ✅ prejoin settings auto-open once (best-effort)
+    const prejoinSettingsAutoOpenedRef = useRef(false);
 
     // ✅ tile view enforcement (startup only)
     const tileRef = useRef<boolean>(true);
@@ -1733,6 +1765,22 @@ export default function RoomPageIFrame() {
         }, 450);
     };
 
+    // ✅ our command helper (supports list can be null)
+    const supportsCmd = (cmd: string) => {
+        const list = supportedCmdsRef.current;
+        return !list || list.includes(cmd);
+    };
+
+    const openJitsiSettings = () => {
+        const api = apiRef.current;
+        if (!api) return;
+        try {
+            // Most builds support this
+            if (supportsCmd("toggleSettings")) api.executeCommand?.("toggleSettings");
+            else api.executeCommand?.("toggleSettings");
+        } catch { }
+    };
+
     const forceReloadJitsi = () => {
         try {
             apiRef.current?.dispose?.();
@@ -1740,6 +1788,7 @@ export default function RoomPageIFrame() {
         apiRef.current = null;
         supportedCmdsRef.current = null;
         setApiReady(false);
+        setInPrejoin(true);
         if (iframeContainerRef.current) iframeContainerRef.current.innerHTML = "";
         setLastErr("");
 
@@ -1763,6 +1812,9 @@ export default function RoomPageIFrame() {
 
         clearVideoQualityTimer();
         lastAppliedVideoHeightRef.current = 0;
+
+        // ✅ reset prejoin auto-open
+        prejoinSettingsAutoOpenedRef.current = false;
 
         setJitsiKey((x) => x + 1);
     };
@@ -1897,6 +1949,10 @@ export default function RoomPageIFrame() {
             try {
                 setLastErr("");
                 setApiReady(false);
+                setInPrejoin(true);
+
+                // ✅ reset prejoin auto-open per init
+                prejoinSettingsAutoOpenedRef.current = false;
 
                 tileEventSeenRef.current = false;
                 tileEnforcedOnceRef.current = false;
@@ -1912,6 +1968,7 @@ export default function RoomPageIFrame() {
                     roomName,
                     parentNode: parent,
                     userName,
+                    subject: sessionTitle,
                     cssPathOnJitsiDomain: JITSI_CUSTOM_CSS_PATH,
                 });
 
@@ -1931,12 +1988,25 @@ export default function RoomPageIFrame() {
                     supportedCmdsRef.current = null;
                 }
 
+                // ✅ best-effort: open Settings on prejoin once (so “prejoin настройки” точно всплывают)
+                window.setTimeout(() => {
+                    if (cancelled) return;
+                    if (localJoinedRef.current) return;
+                    if (prejoinSettingsAutoOpenedRef.current) return;
+                    prejoinSettingsAutoOpenedRef.current = true;
+                    try {
+                        api.executeCommand?.("toggleSettings");
+                    } catch { }
+                }, 700);
+
                 const onJoined = (e: any) => {
                     localJoinedRef.current = true;
 
                     const pid = String(e?.id || e?.participantId || e?.roomName || "");
                     if (pid) localParticipantIdRef.current = pid;
 
+                    // ✅ once joined => exit fullscreen prejoin
+                    setInPrejoin(false);
                     setApiReady(true);
 
                     try {
@@ -2034,6 +2104,7 @@ export default function RoomPageIFrame() {
                 console.log("Jitsi create error:", e);
                 setLastErr(String(e?.message || e || "Failed to load Jitsi"));
                 setApiReady(false);
+                setInPrejoin(true);
             }
         })();
 
@@ -2045,12 +2116,13 @@ export default function RoomPageIFrame() {
             apiRef.current = null;
             supportedCmdsRef.current = null;
             setApiReady(false);
+            setInPrejoin(true);
             stopAttendanceHeartbeat();
 
             clearVideoQualityTimer();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [authStatus, sessionId, jitsiKey, roomName]);
+    }, [authStatus, sessionId, jitsiKey, roomName, sessionTitle]);
 
     // ============================================
     // UI actions
@@ -2098,6 +2170,9 @@ export default function RoomPageIFrame() {
 
     const ChatPanelAny = ChatPanel as any;
 
+    // ✅ Prejoin UI is active while we haven't joined yet
+    const isPrejoinUi = inPrejoin && !apiReady;
+
     const RightPanelBody = (
         <div
             className={[
@@ -2108,6 +2183,7 @@ export default function RoomPageIFrame() {
             data-theme={theme}
             style={{ colorScheme: theme }}
         >
+            {/* ... (без изменений ниже, твой RightPanelBody полностью сохранён) */}
             {rightTab === "participants" && (
                 <div className="h-full min-h-0 flex flex-col">
                     <div className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
@@ -2299,37 +2375,122 @@ export default function RoomPageIFrame() {
 
     return (
         <div className={`h-[100dvh] overflow-hidden ${pageBg}`}>
-            <div className="h-full w-full px-2 sm:px-3 pt-2 pb-[calc(80px+env(safe-area-inset-bottom))] sm:pb-[calc(90px+env(safe-area-inset-bottom))] flex flex-col gap-2 min-h-0">
-                <RoomTopBar
-                    theme={theme}
-                    sessionTitle={String(session?.title || "Session")}
-                    participantsCount={participantsCount}
-                    maxParticipants={maxParticipants}
-                    isSilentRoom={isSilentRoom}
-                    stages={stages as any}
-                    stagebarStartTime={stagebarStartTime}
-                    stagebarCycleSeconds={stagebarCycleSeconds}
-                    remainingTime={remainingTime}
-                    hostProfile={session?.host_profile || null}
-                    onHoverStage={setHoveredStage as any}
-                    onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-                    onOpenHostProfile={() => setSelectedUser((session?.host_profile as any) || null)}
-                />
+            <div
+                className={
+                    "h-full w-full flex flex-col min-h-0 " +
+                    (isPrejoinUi
+                        ? "p-0 gap-0"
+                        : "px-2 sm:px-3 pt-2 pb-[calc(80px+env(safe-area-inset-bottom))] sm:pb-[calc(90px+env(safe-area-inset-bottom))] gap-2")
+                }
+            >
+                {!isPrejoinUi && (
+                    <RoomTopBar
+                        theme={theme}
+                        sessionTitle={sessionTitle}
+                        participantsCount={participantsCount}
+                        maxParticipants={maxParticipants}
+                        isSilentRoom={isSilentRoom}
+                        stages={stages as any}
+                        stagebarStartTime={stagebarStartTime}
+                        stagebarCycleSeconds={stagebarCycleSeconds}
+                        remainingTime={remainingTime}
+                        hostProfile={session?.host_profile || null}
+                        onHoverStage={setHoveredStage as any}
+                        onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+                        onOpenHostProfile={() => setSelectedUser((session?.host_profile as any) || null)}
+                    />
+                )}
 
                 <div
                     className={
-                        "relative grid grid-rows-1 gap-2 sm:gap-3 flex-1 min-h-0 h-full " +
-                        (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
+                        isPrejoinUi
+                            ? "fixed inset-0 z-[60] grid grid-rows-1 grid-cols-1"
+                            : "relative grid grid-rows-1 gap-2 sm:gap-3 flex-1 min-h-0 h-full " +
+                            (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
                     }
                 >
                     <div
                         ref={videoWrapRef}
-                        className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
-                            }`}
+                        className={
+                            "relative overflow-hidden min-h-0 h-full " +
+                            (isPrejoinUi
+                                ? (isLight ? "bg-white" : "bg-[#050F1A]")
+                                : `rounded-2xl ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"}`
+                            )
+                        }
                     >
                         <div className="w-full h-full min-h-0">
                             <div ref={iframeContainerRef} key={jitsiKey} className="w-full h-full min-h-0" />
                         </div>
+
+                        {/* ✅ In-room settings quick button (our UI) */}
+                        {!isPrejoinUi && (
+                            <button
+                                onClick={openJitsiSettings}
+                                className={`absolute top-3 right-3 z-30 px-3 h-10 rounded-xl text-sm font-semibold shadow-lg pointer-events-auto ${isLight
+                                    ? "bg-white/90 border border-black/10 text-black/70 hover:bg-white"
+                                    : "bg-[#020617]/80 border border-white/10 text-white/80 hover:bg-[#020617]"
+                                    }`}
+                                title="Settings"
+                            >
+                                ⚙ Settings
+                            </button>
+                        )}
+
+                        {/* ✅ MySession header/footer overlays during prejoin */}
+                        {isPrejoinUi && (
+                            <>
+                                <div className="pointer-events-none absolute inset-x-0 top-0 z-20">
+                                    <div
+                                        className={`pointer-events-none px-4 pt-[max(10px,env(safe-area-inset-top))] pb-3 ${isLight ? "bg-white/85" : "bg-[#050F1A]/85"} backdrop-blur`}
+                                    >
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-3 min-w-0">
+                                                <div className={`text-sm font-semibold ${isLight ? "text-black/80" : "text-white/85"}`}>MySession</div>
+                                                <div className={`text-sm font-semibold truncate ${isLight ? "text-black/80" : "text-white/85"}`}>
+                                                    {sessionTitle}
+                                                </div>
+                                            </div>
+
+                                            {/* ✅ clickable settings in prejoin */}
+                                            <div className="pointer-events-auto flex items-center gap-2 shrink-0">
+                                                <button
+                                                    onClick={openJitsiSettings}
+                                                    className={`h-10 px-3 rounded-xl text-sm font-semibold shadow ${isLight
+                                                        ? "bg-white/95 border border-black/10 text-black/70 hover:bg-white"
+                                                        : "bg-[#020617]/85 border border-white/10 text-white/80 hover:bg-[#020617]"
+                                                        }`}
+                                                    title="Prejoin settings"
+                                                >
+                                                    ⚙ Settings
+                                                </button>
+
+                                                <button
+                                                    onClick={forceReloadJitsi}
+                                                    className={`h-10 px-3 rounded-xl text-sm font-semibold shadow ${isLight
+                                                        ? "bg-black/5 border border-black/10 text-black/60 hover:bg-black/10"
+                                                        : "bg-white/5 border border-white/10 text-white/70 hover:bg-white/10"
+                                                        }`}
+                                                    title="Reload room"
+                                                >
+                                                    ↻
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20">
+                                    <div
+                                        className={`pointer-events-none px-4 pb-[max(10px,env(safe-area-inset-bottom))] pt-3 ${isLight ? "bg-white/85" : "bg-[#050F1A]/85"} backdrop-blur`}
+                                    >
+                                        <div className={`${isLight ? "text-black/50" : "text-white/50"} text-xs`}>
+                                            Нажми ⚙ Settings чтобы выбрать микрофон/камеру. Потом Join → и ты в комнате с нашим UI.
+                                        </div>
+                                    </div>
+                                </div>
+                            </>
+                        )}
 
                         {(lastErr || capacityError) && (
                             <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow">
@@ -2356,9 +2517,9 @@ export default function RoomPageIFrame() {
                     </div>
 
                     {/* ✅ Render only one variant */}
-                    {rightPanelOpen && isLgUp && <div className="min-h-0 h-full overflow-hidden">{RightPanelBody}</div>}
+                    {!isPrejoinUi && rightPanelOpen && isLgUp && <div className="min-h-0 h-full overflow-hidden">{RightPanelBody}</div>}
 
-                    {rightPanelOpen && !isLgUp && (
+                    {!isPrejoinUi && rightPanelOpen && !isLgUp && (
                         <div className="absolute inset-0 z-40 min-h-0">
                             <div className="absolute inset-0 bg-black/40" onClick={() => openRightTab(null)} />
                             <div className="absolute inset-x-0 top-0 bottom-0 p-2 min-h-0">{RightPanelBody}</div>
@@ -2367,22 +2528,24 @@ export default function RoomPageIFrame() {
                 </div>
             </div>
 
-            <VideoControls
-                theme={theme}
-                tile={tile}
-                mutedAudio={mutedAudio}
-                mutedVideo={mutedVideo}
-                isScreenSharing={isScreenSharing}
-                unreadChat={unreadChat}
-                onOpenTab={(tab) => openRightTab(tab)}
-                onToggleAudio={handleToggleAudio}
-                onToggleVideo={handleToggleVideo}
-                onToggleScreenShare={handleToggleScreenShare}
-                onToggleTile={handleToggleTile}
-                onReloadRoom={forceReloadJitsi}
-                onSendReaction={sendReaction}
-                onLeave={handleLeave}
-            />
+            {!isPrejoinUi && (
+                <VideoControls
+                    theme={theme}
+                    tile={tile}
+                    mutedAudio={mutedAudio}
+                    mutedVideo={mutedVideo}
+                    isScreenSharing={isScreenSharing}
+                    unreadChat={unreadChat}
+                    onOpenTab={(tab) => openRightTab(tab)}
+                    onToggleAudio={handleToggleAudio}
+                    onToggleVideo={handleToggleVideo}
+                    onToggleScreenShare={handleToggleScreenShare}
+                    onToggleTile={handleToggleTile}
+                    onReloadRoom={forceReloadJitsi}
+                    onSendReaction={sendReaction}
+                    onLeave={handleLeave}
+                />
+            )}
 
             {selectedUser && <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />}
         </div>
