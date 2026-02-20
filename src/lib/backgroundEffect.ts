@@ -2,21 +2,27 @@
 // Canvas + (optional) MediaPipe SelfieSegmentation background effects.
 // Used by jitsiEngine replaceTrack pipeline (can be async safely).
 //
-// ✅ Adaptive degrader (auto quality scaler) based on runtime metrics.
+// ✅ This version adds:
+// 1) Adaptive "degrader" (auto quality scaler) based on runtime metrics (tick/seg/fps)
+// 2) Optional OffscreenCanvas + Worker renderer (reduces main-thread load)
+//    - main thread: grabs frames (ImageBitmap) + runs MediaPipe (optional)
+//    - worker: does all compositing/draw (foreground mask + blur/image bg) into OffscreenCanvas
 //
-// Key behavior:
-// - Measures: tick time, seg.send time, effective FPS
-// - Degrades: segFps -> maxWidth (requires restart) -> blurPx -> seg off (fallback-only)
-// - Upgrades carefully when stable
-// - Hidden tab: keepalive low FPS + NO segmentation
-// - Debug logs (default true on localhost)
+// Notes / reality check:
+// - You CANNOT truly “disable” browser tab-throttling. Browsers will throttle timers/RAF/video decode
+//   in background tabs for battery/CPU. What we do here:
+//     * hidden mode switches to low FPS keepalive
+//     * segmentation is disabled while hidden
+//     * worker keeps UI thread lighter when visible
 //
-// IMPORTANT integration note:
-// - When we restart due to width change, we create a NEW outStream + track.
-// - If your caller (jitsiEngine) does NOT re-replaceTrack when stream changes, you won't see the new quality.
-// - To avoid reliance on replaceTrack, set enableDegrader=true but remove width ladder (not done here).
+// How to use:
+// - createBackgroundEffect({ mode: "blur", fps: 30, maxWidth: 1280, ... })
+// - startEffect(inputStream) -> returns processed MediaStream (video from canvas + passthrough audio)
+// - stopEffect/dispose to stop.
 //
-// This file is self-contained.
+// Debug:
+// - debug defaults to true on localhost; otherwise false.
+// - Logs are prefixed with [bgEffect] (and [bgEffect:worker] for worker logs).
 
 export type BgMode = "none" | "blur" | "image";
 
@@ -27,25 +33,23 @@ type CreateOpts = {
     fps?: number; // default 30
     maxWidth?: number; // default 1280
 
+    // Optional knobs:
     debug?: boolean; // default true on localhost
     hiddenFps?: number; // default 1.5 (keepalive while hidden)
 
+    // Degrader tuning:
     enableDegrader?: boolean; // default true
     degradeWindowMs?: number; // default 2500
     upgradeWindowMs?: number; // default 8000
 
-    // Advanced:
-    restartOnWidthChange?: boolean; // default true (if false, width ladder changes won't apply until next start)
+    // Worker rendering:
+    enableWorker?: boolean; // default true if supported
 };
 
 type Processor = {
     startEffect: (input: MediaStream) => Promise<MediaStream> | MediaStream;
     stopEffect: () => Promise<void> | void;
     dispose: () => Promise<void> | void;
-
-    // Optional: lets caller observe restarts / new stream creation if they want to auto replaceTrack
-    // (safe to ignore)
-    onStream?: (cb: (stream: MediaStream) => void) => void;
 };
 
 function sleep(ms: number) {
@@ -69,6 +73,9 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
 }
 
 async function tryCreateSelfieSegmentation() {
+    // Optional dependency. If missing — return null, we will fallback.
+    // NOTE: bundler must be able to resolve this import.
+    // npm i @mediapipe/selfie_segmentation
     try {
         const mod: any = await import("@mediapipe/selfie_segmentation");
         const SelfieSegmentation = mod?.SelfieSegmentation;
@@ -79,7 +86,10 @@ async function tryCreateSelfieSegmentation() {
                 `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`,
         });
 
-        seg.setOptions({ modelSelection: 1 });
+        seg.setOptions({
+            modelSelection: 1, // 0 general, 1 landscape
+        });
+
         return seg;
     } catch {
         return null;
@@ -91,19 +101,27 @@ async function tryCreateSelfieSegmentation() {
 // -------------------------
 type QualityLevel = {
     name: string;
-    maxWidth: number;
-    segFps: number; // 0 disables segmentation
+
+    // “Processing maxWidth” (NOT the output captureStream size).
+    // We keep output size stable, but process internally at lower resolution to save CPU.
+    procMaxWidth: number;
+
+    // Segmentation fps (0 disables segmentation)
+    segFps: number;
+
+    // Blur strength
     blurPx: number;
 };
 
 const QUALITY_LADDER: QualityLevel[] = [
-    { name: "Q0-ultra", maxWidth: 1280, segFps: 10, blurPx: 10 },
-    { name: "Q1-high", maxWidth: 960, segFps: 8, blurPx: 8 },
-    { name: "Q2-med", maxWidth: 640, segFps: 6, blurPx: 6 },
-    { name: "Q3-low", maxWidth: 480, segFps: 3, blurPx: 4 },
-    { name: "Q4-min", maxWidth: 360, segFps: 0, blurPx: 2 }, // fallback-only
+    { name: "Q0-ultra", procMaxWidth: 1280, segFps: 10, blurPx: 10 },
+    { name: "Q1-high", procMaxWidth: 960, segFps: 8, blurPx: 8 },
+    { name: "Q2-med", procMaxWidth: 640, segFps: 6, blurPx: 6 },
+    { name: "Q3-low", procMaxWidth: 480, segFps: 3, blurPx: 4 },
+    { name: "Q4-min", procMaxWidth: 360, segFps: 0, blurPx: 2 },
 ];
 
+// Thresholds (tune if needed)
 const THRESH = {
     tickMsBad: 22,
     segMsBad: 70,
@@ -111,10 +129,25 @@ const THRESH = {
     effFpsGood: 26,
 };
 
+// Cooldowns to avoid thrashing
 const COOLDOWN = {
     changeQualityMs: 2500,
-    restartMs: 6000,
 };
+
+function supportsWorkerOffscreenPipeline() {
+    try {
+        const w: any = window as any;
+        const hasWorker = typeof w.Worker === "function";
+        const hasOffscreen = typeof w.OffscreenCanvas === "function";
+        const canTransfer =
+            typeof (HTMLCanvasElement.prototype as any).transferControlToOffscreen ===
+            "function";
+        const hasCreateImageBitmap = typeof w.createImageBitmap === "function";
+        return hasWorker && hasOffscreen && canTransfer && hasCreateImageBitmap;
+    } catch {
+        return false;
+    }
+}
 
 export function createBackgroundEffect(opts: CreateOpts): Processor {
     const mode: BgMode = opts.mode ?? "none";
@@ -128,8 +161,6 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
     const degradeWindowMs = clamp(opts.degradeWindowMs ?? 2500, 800, 20000);
     const upgradeWindowMs = clamp(opts.upgradeWindowMs ?? 8000, 2000, 30000);
 
-    const restartOnWidthChange = opts.restartOnWidthChange ?? true;
-
     const debugDefault = (() => {
         try {
             const host = String((window as any)?.location?.hostname ?? "");
@@ -140,6 +171,9 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
     })();
     const debug = opts.debug ?? debugDefault;
 
+    const enableWorker =
+        opts.enableWorker ?? (typeof window !== "undefined" && supportsWorkerOffscreenPipeline());
+
     const log = (...args: any[]) => {
         if (!debug) return;
         try {
@@ -149,18 +183,21 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
     };
 
     // -------------------------
-    // Runtime state
+    // Runtime mutable state
     // -------------------------
     let running = false;
 
     let rafId: number | null = null;
     let timerId: number | null = null;
     let vfcId: number | null = null;
+
     let tickInFlight = false;
 
     let videoEl: HTMLVideoElement | null = null;
+
+    // Output canvas must stay on main thread for captureStream()
     let canvas: HTMLCanvasElement | null = null;
-    let ctx: CanvasRenderingContext2D | null = null;
+    let ctx: CanvasRenderingContext2D | null = null; // used only if NOT using worker
 
     let outStream: MediaStream | null = null;
     let inputStream: MediaStream | null = null;
@@ -174,52 +211,172 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
     let segBusy = false;
     let lastSegAt = 0;
 
-    // Stream listeners
-    const streamListeners = new Set<(s: MediaStream) => void>();
-    const emitStream = (s: MediaStream) => {
-        streamListeners.forEach((cb) => {
-            try {
-                cb(s);
-            } catch { }
-        });
-    };
+    // Worker pipeline
+    let worker: Worker | null = null;
+    let workerReady = false;
+    let workerUse = false;
+    let workerLastRenderMs = 0;
+    let workerLastRenderAt = 0;
 
-    // Initial quality selection
+    // Quality state
     let qIndex = 0;
     {
+        // pick initial level based on baseMaxWidth
         let best = 0;
         for (let i = 0; i < QUALITY_LADDER.length; i++) {
-            if (QUALITY_LADDER[i].maxWidth <= baseMaxWidth) best = i;
+            if (QUALITY_LADDER[i].procMaxWidth <= baseMaxWidth) best = i;
         }
         qIndex = best;
-
-        // Don't mutate global ladder object across instances: copy blur override locally via active vars.
+        // start blur from user preference (cap)
+        QUALITY_LADDER[best] = {
+            ...QUALITY_LADDER[best],
+            blurPx: clamp(baseBlurPx, 0, 40),
+        };
     }
 
-    let activeMaxWidth = clamp(QUALITY_LADDER[qIndex].maxWidth, 320, 3840);
+    let activeProcMaxWidth = clamp(QUALITY_LADDER[qIndex].procMaxWidth, 240, 3840);
     let activeSegFps = clamp(QUALITY_LADDER[qIndex].segFps, 0, 30);
-    let activeBlurPx = clamp(
-        // start with user's blur but keep within current level's idea
-        baseBlurPx,
-        0,
-        40
-    );
+    let activeBlurPx = clamp(QUALITY_LADDER[qIndex].blurPx, 0, 40);
 
-    type Stats = { tickMsAvg: number; segMsAvg: number; effFpsAvg: number };
+    // EMA metrics
     let tickMsEMA = 0;
     let segMsEMA = 0;
     let effFpsEMA = 0;
-    let lastFrameAt = 0;
+    let bitmapMsEMA = 0;
 
+    let lastFrameAt = 0;
     let badSince = 0;
     let goodSince = 0;
-
     let lastQualityChangeAt = 0;
-    let lastRestartAt = 0;
 
-    // -------------------------
-    // Helpers
-    // -------------------------
+    const ema = (prev: number, next: number, alpha: number) =>
+        prev === 0 ? next : prev * (1 - alpha) + next * alpha;
+
+    const isVisible = () => {
+        try {
+            return document.visibilityState === "visible";
+        } catch {
+            return true;
+        }
+    };
+
+    const shouldUseVFC = () => {
+        try {
+            return (
+                isVisible() &&
+                !!videoEl &&
+                typeof (videoEl as any).requestVideoFrameCallback === "function"
+            );
+        } catch {
+            return false;
+        }
+    };
+
+    const resetMetrics = () => {
+        tickMsEMA = 0;
+        segMsEMA = 0;
+        effFpsEMA = 0;
+        bitmapMsEMA = 0;
+        workerLastRenderMs = 0;
+        workerLastRenderAt = 0;
+        lastFrameAt = 0;
+        badSince = 0;
+        goodSince = 0;
+    };
+
+    const applyQualityLevel = (idx: number) => {
+        const q = QUALITY_LADDER[clamp(idx, 0, QUALITY_LADDER.length - 1)];
+        activeProcMaxWidth = clamp(q.procMaxWidth, 240, 3840);
+        activeSegFps = clamp(q.segFps, 0, 30);
+        activeBlurPx = clamp(q.blurPx, 0, 40);
+
+        // push updates to worker
+        if (worker && workerReady) {
+            try {
+                worker.postMessage({
+                    type: "config",
+                    procMaxWidth: activeProcMaxWidth,
+                    blurPx: activeBlurPx,
+                    mode,
+                });
+            } catch { }
+        }
+    };
+
+    const maybeChangeQuality = async (dir: "down" | "up") => {
+        if (!enableDegrader) return;
+
+        const now = performance.now();
+        if (now - lastQualityChangeAt < COOLDOWN.changeQualityMs) return;
+
+        const nextIndex =
+            dir === "down"
+                ? Math.min(qIndex + 1, QUALITY_LADDER.length - 1)
+                : Math.max(qIndex - 1, 0);
+
+        if (nextIndex === qIndex) return;
+
+        lastQualityChangeAt = now;
+
+        const prev = QUALITY_LADDER[qIndex];
+        qIndex = nextIndex;
+        applyQualityLevel(qIndex);
+        const next = QUALITY_LADDER[qIndex];
+
+        log("QUALITY", dir.toUpperCase(), `${prev.name} -> ${next.name}`, {
+            procMaxWidth: activeProcMaxWidth,
+            segFps: activeSegFps,
+            blurPx: activeBlurPx,
+            ema: {
+                tickMs: tickMsEMA,
+                segMs: segMsEMA,
+                effFps: effFpsEMA,
+                bitmapMs: bitmapMsEMA,
+                workerMs: workerLastRenderMs,
+            },
+        });
+    };
+
+    const evaluateDegrader = async () => {
+        if (!enableDegrader || !running) return;
+        if (!isVisible()) return; // don't “learn” from hidden throttling
+
+        const now = performance.now();
+
+        const bad =
+            (tickMsEMA > THRESH.tickMsBad && tickMsEMA !== 0) ||
+            (segMsEMA > THRESH.segMsBad && segMsEMA !== 0) ||
+            (effFpsEMA > 0 && effFpsEMA < THRESH.effFpsBad);
+
+        const good =
+            (tickMsEMA > 0 && tickMsEMA < THRESH.tickMsBad * 0.75) &&
+            (segMsEMA === 0 || segMsEMA < THRESH.segMsBad * 0.75) &&
+            (effFpsEMA > THRESH.effFpsGood);
+
+        if (bad) {
+            if (!badSince) badSince = now;
+            goodSince = 0;
+            if (now - badSince >= degradeWindowMs) {
+                badSince = now;
+                await maybeChangeQuality("down");
+            }
+            return;
+        }
+
+        if (good) {
+            if (!goodSince) goodSince = now;
+            badSince = 0;
+            if (now - goodSince >= upgradeWindowMs) {
+                goodSince = now;
+                await maybeChangeQuality("up");
+            }
+            return;
+        }
+
+        badSince = 0;
+        goodSince = 0;
+    };
+
     const stopTracks = (s: MediaStream | null) => {
         try {
             s?.getTracks?.()?.forEach((t) => {
@@ -265,219 +422,355 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         vfcId = null;
     };
 
-    const isVisible = () => {
-        try {
-            return document.visibilityState === "visible";
-        } catch {
-            return true;
+    // -------------------------
+    // Worker implementation (inline via Blob)
+    // -------------------------
+    const makeWorker = () => {
+        // IMPORTANT: keep worker code self-contained. No imports.
+        const workerCode = `
+      let debug = false;
+      const log = (...a) => { if (!debug) return; try { console.debug("[bgEffect:worker]", ...a); } catch {} };
+
+      /** @type {OffscreenCanvas|null} */
+      let outCanvas = null;
+      /** @type {OffscreenCanvasRenderingContext2D|null} */
+      let outCtx = null;
+
+      // internal processing canvas (smaller) to reduce work
+      /** @type {OffscreenCanvas|null} */
+      let procCanvas = null;
+      /** @type {OffscreenCanvasRenderingContext2D|null} */
+      let procCtx = null;
+
+      /** @type {ImageBitmap|null} */
+      let bgBitmap = null;
+      /** @type {ImageBitmap|null} */
+      let lastMaskBmp = null;
+
+      let mode = "none";
+      let blurPx = 10;
+      let procMaxWidth = 1280;
+
+      // output size
+      let outW = 0, outH = 0;
+      // processing size
+      let procW = 0, procH = 0;
+
+      function clamp(n,a,b){ return Math.max(a, Math.min(b, n)); }
+
+      function pickScaled(w0,h0,maxW){
+        const scale = (w0 > maxW) ? (maxW / w0) : 1;
+        const w = Math.max(2, Math.round(w0 * scale));
+        const h = Math.max(2, Math.round(h0 * scale));
+        return { w, h };
+      }
+
+      function ensureProcCanvas(newW, newH){
+        if (!procCanvas || !procCtx || procW !== newW || procH !== newH){
+          procW = newW; procH = newH;
+          procCanvas = new OffscreenCanvas(procW, procH);
+          procCtx = procCanvas.getContext("2d", { alpha: true, desynchronized: true });
+          log("procCanvas resize", procW, procH);
         }
-    };
+      }
 
-    const shouldUseVFC = () => {
-        try {
-            return (
-                isVisible() &&
-                !!videoEl &&
-                typeof (videoEl as any).requestVideoFrameCallback === "function"
-            );
-        } catch {
-            return false;
+      function clearAll(){
+        try { if (outCtx && outW && outH) outCtx.clearRect(0,0,outW,outH); } catch {}
+        try { if (procCtx && procW && procH) procCtx.clearRect(0,0,procW,procH); } catch {}
+      }
+
+      function drawFallback(frameBmp){
+        // draw to proc canvas at reduced res
+        ensureProcCanvas(...Object.values(pickScaled(outW, outH, procMaxWidth)));
+        if (!procCtx) return;
+
+        procCtx.clearRect(0,0,procW,procH);
+
+        if (mode === "blur"){
+          procCtx.filter = "blur(" + blurPx + "px)";
+          procCtx.drawImage(frameBmp, 0, 0, procW, procH);
+          procCtx.filter = "none";
+        } else {
+          procCtx.drawImage(frameBmp, 0, 0, procW, procH);
         }
-    };
 
-    const pickScaled = (vw0: number, vh0: number, maxW: number) => {
-        const scale = vw0 > maxW ? maxW / vw0 : 1;
-        return {
-            w: Math.max(2, Math.round(vw0 * scale)),
-            h: Math.max(2, Math.round(vh0 * scale)),
-        };
-    };
+        // scale up to output
+        if (outCtx){
+          outCtx.clearRect(0,0,outW,outH);
+          outCtx.drawImage(procCanvas, 0,0, procW,procH, 0,0, outW,outH);
+        }
+      }
 
-    const resetMetrics = () => {
-        tickMsEMA = 0;
-        segMsEMA = 0;
-        effFpsEMA = 0;
-        lastFrameAt = 0;
-        badSince = 0;
-        goodSince = 0;
-    };
+      function drawWithMask(frameBmp){
+        // compose in proc canvas, then scale to output
+        ensureProcCanvas(...Object.values(pickScaled(outW, outH, procMaxWidth)));
+        if (!procCtx || !outCtx) return;
 
-    const ema = (prev: number, next: number, alpha: number) =>
-        prev === 0 ? next : prev * (1 - alpha) + next * alpha;
+        procCtx.clearRect(0,0,procW,procH);
 
-    const getStats = (): Stats => ({
-        tickMsAvg: tickMsEMA,
-        segMsAvg: segMsEMA,
-        effFpsAvg: effFpsEMA,
-    });
+        // 1) foreground
+        procCtx.save();
+        procCtx.drawImage(frameBmp, 0, 0, procW, procH);
+        procCtx.globalCompositeOperation = "destination-in";
+        if (lastMaskBmp) procCtx.drawImage(lastMaskBmp, 0, 0, procW, procH);
+        procCtx.restore();
 
-    const applyQualityLevel = (idx: number) => {
-        const q = QUALITY_LADDER[clamp(idx, 0, QUALITY_LADDER.length - 1)];
-        activeMaxWidth = clamp(q.maxWidth, 320, 3840);
-        activeSegFps = clamp(q.segFps, 0, 30);
+        // 2) background behind
+        procCtx.save();
+        procCtx.globalCompositeOperation = "destination-over";
 
-        // blur: follow ladder but never exceed user starting blur by too much? keep simple:
-        activeBlurPx = clamp(q.blurPx, 0, 40);
+        if (mode === "image" && bgBitmap){
+          procCtx.drawImage(bgBitmap, 0, 0, procW, procH);
+        } else if (mode === "blur"){
+          procCtx.filter = "blur(" + blurPx + "px)";
+          procCtx.drawImage(frameBmp, 0, 0, procW, procH);
+          procCtx.filter = "none";
+        } else {
+          procCtx.drawImage(frameBmp, 0, 0, procW, procH);
+        }
 
-        // If user wanted bigger blur, keep it on best tiers only:
-        if (idx <= 1) activeBlurPx = clamp(baseBlurPx, 0, 40);
-    };
+        procCtx.restore();
+        procCtx.globalCompositeOperation = "source-over";
 
-    // Forward declarations
-    const internalStart = async (input: MediaStream): Promise<MediaStream> => {
-        return input; // overwritten below
-    };
-    const internalStop = async (_full: boolean) => {
-        // overwritten below
-    };
+        // scale to output
+        outCtx.clearRect(0,0,outW,outH);
+        outCtx.drawImage(procCanvas, 0,0, procW,procH, 0,0, outW,outH);
+      }
 
-    const maybeChangeQuality = async (dir: "down" | "up") => {
-        if (!enableDegrader) return;
-        const now = performance.now();
-        if (now - lastQualityChangeAt < COOLDOWN.changeQualityMs) return;
+      self.onmessage = async (ev) => {
+        const msg = ev.data || {};
+        if (msg.type === "init"){
+          debug = !!msg.debug;
+          outCanvas = msg.canvas || null;
+          outW = msg.w|0; outH = msg.h|0;
+          outCtx = outCanvas ? outCanvas.getContext("2d", { alpha: true, desynchronized: true }) : null;
 
-        const nextIndex =
-            dir === "down"
-                ? Math.min(qIndex + 1, QUALITY_LADDER.length - 1)
-                : Math.max(qIndex - 1, 0);
+          mode = msg.mode || "none";
+          blurPx = clamp((msg.blurPx ?? 10)|0, 0, 80);
+          procMaxWidth = clamp((msg.procMaxWidth ?? 1280)|0, 240, 3840);
 
-        if (nextIndex === qIndex) return;
+          log("init", { outW, outH, mode, blurPx, procMaxWidth });
 
-        lastQualityChangeAt = now;
+          self.postMessage({ type: "ready" });
+          return;
+        }
 
-        const prev = QUALITY_LADDER[qIndex];
-        qIndex = nextIndex;
-        applyQualityLevel(qIndex);
-        const next = QUALITY_LADDER[qIndex];
+        if (msg.type === "config"){
+          if (typeof msg.mode === "string") mode = msg.mode;
+          if (typeof msg.blurPx === "number") blurPx = clamp(msg.blurPx|0, 0, 80);
+          if (typeof msg.procMaxWidth === "number") procMaxWidth = clamp(msg.procMaxWidth|0, 240, 3840);
+          log("config", { mode, blurPx, procMaxWidth });
+          return;
+        }
 
-        log("QUALITY", dir.toUpperCase(), `${prev.name} -> ${next.name}`, {
-            activeMaxWidth,
-            activeSegFps,
-            activeBlurPx,
-            stats: getStats(),
-        });
+        if (msg.type === "bg"){
+          // replace background bitmap
+          try { bgBitmap?.close?.(); } catch {}
+          bgBitmap = msg.bmp || null;
+          log("bg updated", !!bgBitmap);
+          return;
+        }
 
-        // Width change requires rebuild to actually apply
-        const widthChanged = prev.maxWidth !== next.maxWidth;
+        if (msg.type === "mask"){
+          // replace mask bitmap
+          try { lastMaskBmp?.close?.(); } catch {}
+          lastMaskBmp = msg.bmp || null;
+          return;
+        }
 
-        if (widthChanged && restartOnWidthChange) {
-            if (now - lastRestartAt < COOLDOWN.restartMs) {
-                log("restart skipped (cooldown)");
-                return;
+        if (msg.type === "frame"){
+          const t0 = performance.now();
+          const frameBmp = msg.bmp || null;
+          const hasMask = !!msg.hasMask && !!lastMaskBmp;
+
+          try{
+            if (!outCtx || !outCanvas || !frameBmp){
+              try { frameBmp?.close?.(); } catch {}
+              return;
             }
-            lastRestartAt = now;
 
-            if (inputStream) {
-                log("restarting pipeline to apply new maxWidth:", activeMaxWidth);
-                const wasRunning = running;
-                await internalStop(false);
-                if (wasRunning && inputStream) {
-                    const newStream = await internalStart(inputStream);
-                    // Notify listener (so jitsiEngine can re-replaceTrack if it wants)
-                    emitStream(newStream);
+            if (hasMask) drawWithMask(frameBmp);
+            else drawFallback(frameBmp);
+          } catch (e){
+            // fail silently
+          } finally {
+            try { frameBmp?.close?.(); } catch {}
+          }
+
+          const dt = performance.now() - t0;
+          // avoid spamming: send render time at most ~5Hz
+          const now = performance.now();
+          if (!self._lastAckAt || (now - self._lastAckAt) > 200){
+            self._lastAckAt = now;
+            self.postMessage({ type: "render", ms: dt });
+          }
+          return;
+        }
+
+        if (msg.type === "clear"){
+          clearAll();
+          return;
+        }
+      };
+    `;
+
+        const blob = new Blob([workerCode], { type: "application/javascript" });
+        const url = URL.createObjectURL(blob);
+        const w = new Worker(url);
+        // Revoke URL after worker loads a bit (safe)
+        setTimeout(() => {
+            try {
+                URL.revokeObjectURL(url);
+            } catch { }
+        }, 3000);
+        return w;
+    };
+
+    const initWorkerIfPossible = async (outW: number, outH: number) => {
+        workerReady = false;
+        workerUse = false;
+
+        if (!enableWorker) return;
+
+        if (!canvas) return;
+        if (!supportsWorkerOffscreenPipeline()) {
+            log("worker pipeline not supported, fallback to main-thread draw");
+            return;
+        }
+
+        try {
+            const off = (canvas as any).transferControlToOffscreen();
+            worker = makeWorker();
+
+            worker.onmessage = (ev: MessageEvent) => {
+                const m: any = ev.data || {};
+                if (m.type === "ready") {
+                    workerReady = true;
+                    workerUse = true;
+                    log("worker ready");
+                    // push initial background if already loaded
+                    if (bgImage && typeof (window as any).createImageBitmap === "function") {
+                        (window as any)
+                            .createImageBitmap(bgImage)
+                            .then((bmp: ImageBitmap) => {
+                                try {
+                                    worker?.postMessage({ type: "bg", bmp }, [bmp as any]);
+                                } catch {
+                                    try {
+                                        bmp.close?.();
+                                    } catch { }
+                                }
+                            })
+                            .catch(() => { });
+                    }
+                    return;
                 }
+                if (m.type === "render") {
+                    workerLastRenderMs = typeof m.ms === "number" ? m.ms : workerLastRenderMs;
+                    workerLastRenderAt = performance.now();
+                    return;
+                }
+            };
+
+            worker.onerror = () => {
+                log("worker error; disabling worker pipeline");
+                workerReady = false;
+                workerUse = false;
+                try {
+                    worker?.terminate();
+                } catch { }
+                worker = null;
+            };
+
+            worker.postMessage(
+                {
+                    type: "init",
+                    canvas: off,
+                    w: outW,
+                    h: outH,
+                    mode,
+                    blurPx: activeBlurPx,
+                    procMaxWidth: activeProcMaxWidth,
+                    debug,
+                },
+                [off]
+            );
+
+            // Wait a bit for ready
+            const t0 = Date.now();
+            while (!workerReady && Date.now() - t0 < 800) {
+                await sleep(10);
             }
-        } else if (widthChanged && !restartOnWidthChange) {
-            log("width changed but restartOnWidthChange=false; will apply next start()");
+
+            if (!workerReady) {
+                log("worker did not become ready in time; fallback to main-thread draw");
+                try {
+                    worker?.terminate();
+                } catch { }
+                worker = null;
+                workerUse = false;
+            }
+        } catch (e) {
+            log("worker init failed:", e);
+            try {
+                worker?.terminate();
+            } catch { }
+            worker = null;
+            workerUse = false;
         }
     };
 
-    const evaluateDegrader = async () => {
-        if (!enableDegrader) return;
-        if (!running) return;
-        if (!isVisible()) return;
+    // -------------------------
+    // Main-thread drawing (fallback if no worker)
+    // -------------------------
+    const drawFallbackMain = () => {
+        if (!running || !videoEl || !canvas || !ctx) return;
 
-        const s = getStats();
-        const now = performance.now();
+        const w = canvas.width;
+        const h = canvas.height;
 
-        const bad =
-            (s.tickMsAvg > THRESH.tickMsBad && s.tickMsAvg !== 0) ||
-            (s.segMsAvg > THRESH.segMsBad && s.segMsAvg !== 0) ||
-            (s.effFpsAvg > 0 && s.effFpsAvg < THRESH.effFpsBad);
+        ctx.clearRect(0, 0, w, h);
 
-        const good =
-            (s.tickMsAvg > 0 && s.tickMsAvg < THRESH.tickMsBad * 0.75) &&
-            (s.segMsAvg === 0 || s.segMsAvg < THRESH.segMsBad * 0.75) &&
-            s.effFpsAvg > THRESH.effFpsGood;
-
-        if (bad) {
-            if (!badSince) badSince = now;
-            goodSince = 0;
-            if (now - badSince >= degradeWindowMs) {
-                badSince = now;
-                await maybeChangeQuality("down");
-            }
+        if (mode === "blur") {
+            ctx.filter = `blur(${activeBlurPx}px)`;
+            ctx.drawImage(videoEl, 0, 0, w, h);
+            ctx.filter = "none";
             return;
         }
 
-        if (good) {
-            if (!goodSince) goodSince = now;
-            badSince = 0;
-            if (now - goodSince >= upgradeWindowMs) {
-                goodSince = now;
-                await maybeChangeQuality("up");
-            }
-            return;
-        }
-
-        badSince = 0;
-        goodSince = 0;
+        ctx.drawImage(videoEl, 0, 0, w, h);
     };
 
-    // -------------------------
-    // Drawing
-    // -------------------------
-    const tickDrawFallback = () => {
+    const drawWithMaskMain = () => {
         if (!running || !videoEl || !canvas || !ctx) return;
         const w = canvas.width;
         const h = canvas.height;
 
-        try {
-            ctx.clearRect(0, 0, w, h);
+        ctx.clearRect(0, 0, w, h);
 
-            if (mode === "blur") {
-                ctx.filter = `blur(${activeBlurPx}px)`;
-                ctx.drawImage(videoEl, 0, 0, w, h);
-                ctx.filter = "none";
-                return;
-            }
+        // 1) foreground
+        ctx.save();
+        ctx.drawImage(videoEl, 0, 0, w, h);
+        ctx.globalCompositeOperation = "destination-in";
+        if (lastMask) ctx.drawImage(lastMask, 0, 0, w, h);
+        ctx.restore();
 
+        // 2) background
+        ctx.save();
+        ctx.globalCompositeOperation = "destination-over";
+
+        if (mode === "image" && bgImage) {
+            ctx.drawImage(bgImage, 0, 0, w, h);
+        } else if (mode === "blur") {
+            ctx.filter = `blur(${activeBlurPx}px)`;
             ctx.drawImage(videoEl, 0, 0, w, h);
-        } catch { }
-    };
-
-    const tickDrawWithMask = () => {
-        if (!running || !videoEl || !canvas || !ctx) return;
-        const w = canvas.width;
-        const h = canvas.height;
-
-        try {
-            ctx.clearRect(0, 0, w, h);
-
-            // 1) foreground
-            ctx.save();
+            ctx.filter = "none";
+        } else {
             ctx.drawImage(videoEl, 0, 0, w, h);
-            ctx.globalCompositeOperation = "destination-in";
-            if (lastMask) ctx.drawImage(lastMask, 0, 0, w, h);
-            ctx.restore();
+        }
 
-            // 2) background
-            ctx.save();
-            ctx.globalCompositeOperation = "destination-over";
-
-            if (mode === "image" && bgImage) {
-                ctx.drawImage(bgImage, 0, 0, w, h);
-            } else if (mode === "blur") {
-                ctx.filter = `blur(${activeBlurPx}px)`;
-                ctx.drawImage(videoEl, 0, 0, w, h);
-                ctx.filter = "none";
-            } else {
-                ctx.drawImage(videoEl, 0, 0, w, h);
-            }
-
-            ctx.restore();
-            ctx.globalCompositeOperation = "source-over";
-        } catch { }
+        ctx.restore();
+        ctx.globalCompositeOperation = "source-over";
     };
 
     // -------------------------
@@ -526,7 +819,7 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         tickInFlight = true;
         const tStart = performance.now();
         try {
-            // FPS estimate (visible only)
+            // Effective FPS EMA (visible only)
             if (isVisible()) {
                 const now = performance.now();
                 if (lastFrameAt) {
@@ -537,18 +830,59 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
                 lastFrameAt = now;
             }
 
-            // Hidden: fallback only, segmentation OFF hard
+            // Hidden: keepalive draw but NO segmentation
             if (!isVisible()) {
-                tickDrawFallback();
+                // Worker: still send a frame sometimes (keeps stream “alive”)
+                if (workerUse && worker && workerReady && videoEl) {
+                    try {
+                        const tBmp0 = performance.now();
+                        const bmp: ImageBitmap = await (window as any).createImageBitmap(videoEl);
+                        const bmpDt = performance.now() - tBmp0;
+                        bitmapMsEMA = ema(bitmapMsEMA, bmpDt, 0.12);
+
+                        worker.postMessage({ type: "frame", bmp, hasMask: false }, [bmp as any]);
+                    } catch {
+                        // ignore
+                    }
+                } else {
+                    // main-thread fallback
+                    try {
+                        drawFallbackMain();
+                    } catch { }
+                }
                 return;
             }
 
-            // Draw
+            // Visible:
             const canUseMask = segReady && !!lastMask && activeSegFps > 0;
-            if (canUseMask) tickDrawWithMask();
-            else tickDrawFallback();
 
-            // Segmentation step (optional)
+            // Worker path:
+            if (workerUse && worker && workerReady && videoEl) {
+                try {
+                    const tBmp0 = performance.now();
+                    const bmp: ImageBitmap = await (window as any).createImageBitmap(videoEl);
+                    const bmpDt = performance.now() - tBmp0;
+                    bitmapMsEMA = ema(bitmapMsEMA, bmpDt, 0.12);
+
+                    worker.postMessage({ type: "frame", bmp, hasMask: canUseMask }, [bmp as any]);
+                } catch {
+                    // if createImageBitmap fails, fallback to main thread draw if possible
+                    if (ctx) {
+                        try {
+                            if (canUseMask) drawWithMaskMain();
+                            else drawFallbackMain();
+                        } catch { }
+                    }
+                }
+            } else {
+                // Main-thread draw:
+                try {
+                    if (canUseMask) drawWithMaskMain();
+                    else drawFallbackMain();
+                } catch { }
+            }
+
+            // Segmentation (visible only) - throttle by activeSegFps
             if (seg && segReady && !segBusy && videoEl && activeSegFps > 0) {
                 const now = performance.now();
                 const interval = 1000 / Math.max(1, activeSegFps);
@@ -556,6 +890,7 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
                 if (now - lastSegAt >= interval) {
                     lastSegAt = now;
                     segBusy = true;
+
                     const segStart = performance.now();
                     try {
                         await seg.send({ image: videoEl });
@@ -569,10 +904,12 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
                 }
             }
 
+            // Evaluate degrader
             await evaluateDegrader();
         } finally {
             const tickDt = performance.now() - tStart;
             tickMsEMA = ema(tickMsEMA, tickDt, 0.12);
+
             tickInFlight = false;
             scheduleNext();
         }
@@ -582,24 +919,16 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         if (!running) return;
         log("visibilitychange ->", isVisible() ? "visible" : "hidden");
 
-        // When becoming visible: allow immediate seg
+        // When tab becomes visible: allow segmentation sooner
         if (isVisible()) lastSegAt = 0;
-
-        // When going hidden: drop seg EMA quickly so degrader doesn't misread on return
-        if (!isVisible()) {
-            segMsEMA = 0;
-            effFpsEMA = 0;
-            badSince = 0;
-            goodSince = 0;
-        }
 
         scheduleNext();
     };
 
     // -------------------------
-    // Start/Stop internals
+    // Start/Stop
     // -------------------------
-    const _internalStart = async (input: MediaStream): Promise<MediaStream> => {
+    const internalStart = async (input: MediaStream): Promise<MediaStream> => {
         inputStream = input;
 
         log("startEffect()", {
@@ -608,9 +937,7 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
             baseMaxWidth,
             baseBlurPx,
             q: QUALITY_LADDER[qIndex]?.name,
-            activeMaxWidth,
-            activeSegFps,
-            activeBlurPx,
+            worker: enableWorker,
         });
 
         // Prepare video element
@@ -626,7 +953,7 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
             log("videoEl.play throw:", e);
         }
 
-        // Wait for dimensions
+        // Wait for video dimensions
         const t0 = Date.now();
         while (Date.now() - t0 < 1500) {
             const vw = videoEl.videoWidth || 0;
@@ -637,20 +964,24 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
 
         const vw0 = videoEl.videoWidth || 640;
         const vh0 = videoEl.videoHeight || 360;
-        const { w: vw, h: vh } = pickScaled(vw0, vh0, activeMaxWidth);
+
+        // Output canvas size is “baseMaxWidth scaled” and stays constant.
+        const outScale = vw0 > baseMaxWidth ? baseMaxWidth / vw0 : 1;
+        const outW = Math.max(2, Math.round(vw0 * outScale));
+        const outH = Math.max(2, Math.round(vh0 * outScale));
 
         canvas = document.createElement("canvas");
-        canvas.width = vw;
-        canvas.height = vh;
-        ctx = canvas.getContext("2d", { alpha: true });
-        if (!ctx) throw new Error("Canvas 2D context not available");
+        canvas.width = outW;
+        canvas.height = outH;
 
+        // If not using worker, we draw on main thread
+        ctx = enableWorker ? null : canvas.getContext("2d", { alpha: true });
+        if (!enableWorker && !ctx) throw new Error("Canvas 2D context not available");
+
+        // Output stream
         outStream = canvas.captureStream(targetFps);
 
-        // Notify listeners (useful for restarts)
-        emitStream(outStream);
-
-        // Background image
+        // Background image for image mode
         if (mode === "image" && opts.imageUrl) {
             try {
                 bgImage = await loadImage(opts.imageUrl);
@@ -662,7 +993,22 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
             bgImage = null;
         }
 
-        // MediaPipe init only if seg enabled
+        // Init worker if possible (must happen AFTER canvas is created)
+        worker = null;
+        workerReady = false;
+        workerUse = false;
+        if (enableWorker) {
+            await initWorkerIfPossible(outW, outH);
+            // If worker active and we have bgImage, send it
+            if (workerUse && worker && workerReady && bgImage) {
+                try {
+                    const bmp: ImageBitmap = await (window as any).createImageBitmap(bgImage);
+                    worker.postMessage({ type: "bg", bmp }, [bmp as any]);
+                } catch { }
+            }
+        }
+
+        // MediaPipe init (optional) ONLY if seg enabled in current quality (and mode not none)
         seg = null;
         segReady = false;
         segBusy = false;
@@ -673,8 +1019,21 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
             seg = await tryCreateSelfieSegmentation();
             if (seg) {
                 try {
-                    seg.onResults((res: any) => {
-                        if (res?.segmentationMask) lastMask = res.segmentationMask as any;
+                    seg.onResults(async (res: any) => {
+                        if (!res?.segmentationMask) return;
+                        lastMask = res.segmentationMask as any;
+
+                        // If worker is active, push mask as ImageBitmap (to offload draw)
+                        if (workerUse && worker && workerReady && typeof (window as any).createImageBitmap === "function") {
+                            try {
+                                const mbmp: ImageBitmap = await (window as any).createImageBitmap(
+                                    res.segmentationMask as any
+                                );
+                                worker.postMessage({ type: "mask", bmp: mbmp }, [mbmp as any]);
+                            } catch {
+                                // ignore
+                            }
+                        }
                     });
                     segReady = true;
                     log("MediaPipe ready");
@@ -690,6 +1049,9 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
             log("Segmentation disabled by quality level");
         }
 
+        // Push initial worker config (quality)
+        applyQualityLevel(qIndex);
+
         running = true;
         tickInFlight = false;
 
@@ -699,17 +1061,28 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
             document.addEventListener("visibilitychange", onVisibility);
         } catch { }
 
-        // Draw once
+        // Kick: draw once immediately
         try {
-            tickDrawFallback();
+            if (workerUse && worker && workerReady && videoEl) {
+                // send a single frame to initialize output quickly
+                try {
+                    const bmp: ImageBitmap = await (window as any).createImageBitmap(videoEl);
+                    worker.postMessage({ type: "frame", bmp, hasMask: false }, [bmp as any]);
+                } catch { }
+            } else {
+                drawFallbackMain();
+            }
         } catch { }
 
         scheduleNext();
 
-        return outStream!;
+        // Output stream includes passthrough audio tracks
+        // (Canvas captureStream has only video)
+        const audios = (input.getAudioTracks?.() || []).slice();
+        return new MediaStream([...audios, ...(outStream.getVideoTracks?.() || [])]);
     };
 
-    const _internalStop = async (full: boolean) => {
+    const internalStop = async (full: boolean) => {
         running = false;
         clearScheduled();
 
@@ -717,6 +1090,7 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
             document.removeEventListener("visibilitychange", onVisibility);
         } catch { }
 
+        // Stop segmentation
         try {
             await seg?.close?.();
         } catch { }
@@ -726,50 +1100,41 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         lastMask = null;
         lastSegAt = 0;
 
+        // Stop worker
+        try {
+            worker?.postMessage({ type: "clear" });
+        } catch { }
+        try {
+            worker?.terminate();
+        } catch { }
+        worker = null;
+        workerReady = false;
+        workerUse = false;
+
+        // Stop output tracks
         stopTracks(outStream);
         outStream = null;
 
         bgImage = null;
+
         cleanupDom();
         resetMetrics();
 
         if (full) inputStream = null;
     };
 
-    // Bind forward declarations
-    (internalStart as any) = _internalStart;
-    (internalStop as any) = _internalStop;
-
-    // -------------------------
-    // Public API
-    // -------------------------
     const startEffect = async (input: MediaStream): Promise<MediaStream> => {
-        // reset quality to best-fit on each start (optional but safer)
-        {
-            let best = 0;
-            for (let i = 0; i < QUALITY_LADDER.length; i++) {
-                if (QUALITY_LADDER[i].maxWidth <= baseMaxWidth) best = i;
-            }
-            qIndex = best;
-            applyQualityLevel(qIndex);
-        }
-
-        if (running) await _internalStop(false);
-        return await _internalStart(input);
+        if (running) await internalStop(false);
+        return await internalStart(input);
     };
 
     const stopEffect = async () => {
-        await _internalStop(true);
+        await internalStop(true);
     };
 
     const dispose = async () => {
-        await _internalStop(true);
-        streamListeners.clear();
+        await internalStop(true);
     };
 
-    const onStream = (cb: (stream: MediaStream) => void) => {
-        streamListeners.add(cb);
-    };
-
-    return { startEffect, stopEffect, dispose, onStream };
+    return { startEffect, stopEffect, dispose };
 }
