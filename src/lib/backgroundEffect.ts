@@ -2,16 +2,22 @@
 // Canvas + (optional) MediaPipe SelfieSegmentation background effects.
 // Used by jitsiEngine replaceTrack pipeline (can be async safely).
 //
-// Variant: "Freeze-frame keepalive" on hidden tab
-// - When tab becomes hidden:
-//   1) capture the LAST GOOD composited canvas frame into ImageBitmap
-//   2) in hidden mode: DO NOT read videoEl, DO NOT run segmentation
-//   3) just redraw the frozen ImageBitmap every 500–1000ms (keepalive)
-// - When tab becomes visible again:
-//   1) "warm-up" a few quick draws from video WITHOUT segmentation
-//   2) then resume segmentation normally
+// Variant: Hidden-mode keepalive 1–2 FPS + NO segmentation (clean + low-risk)
 //
-// Goal: stop the blur/mask pipeline from freaking out on visibility switching.
+// ✅ When visible:
+//   - draw at your fps (RAF/VFC)
+//   - segmentation runs (throttled) when available
+//
+// ✅ When hidden:
+//   - DO NOT call seg.send()
+//   - DO NOT try to be realtime
+//   - draw only fallback (blur-whole-frame OR raw video)
+//   - tick at 1–2 FPS using setTimeout
+//
+// ✅ Also adds:
+//   - debug logs (opt-in, default on localhost)
+//   - segmentation throttling cap (default 10 fps)
+//   - safe cleanup + guards against double-scheduling
 
 export type BgMode = "none" | "blur" | "image";
 
@@ -22,10 +28,10 @@ type CreateOpts = {
     fps?: number; // default 30
     maxWidth?: number; // default 1280
 
-    // Optional knobs (safe defaults)
-    debug?: boolean; // default: true on localhost
-    hiddenFreezeMs?: number; // default 750 (500-1000ms zone)
-    warmupFrames?: number; // default 8
+    // optional knobs
+    hiddenFps?: number; // default 1.5
+    segFps?: number; // default 10
+    debug?: boolean; // default true on localhost
 };
 
 type Processor = {
@@ -55,9 +61,6 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
 }
 
 async function tryCreateSelfieSegmentation() {
-    // Optional dependency. If missing — return null, we will fallback.
-    // The simplest path: install the package:
-    //   npm i @mediapipe/selfie_segmentation
     try {
         const mod: any = await import("@mediapipe/selfie_segmentation");
         const SelfieSegmentation = mod?.SelfieSegmentation;
@@ -69,7 +72,7 @@ async function tryCreateSelfieSegmentation() {
         });
 
         seg.setOptions({
-            modelSelection: 1, // 0 = general, 1 = landscape (usually better)
+            modelSelection: 1,
         });
 
         return seg;
@@ -81,11 +84,10 @@ async function tryCreateSelfieSegmentation() {
 export function createBackgroundEffect(opts: CreateOpts): Processor {
     const mode: BgMode = opts.mode ?? "none";
     const fps = clamp(opts.fps ?? 30, 5, 60);
+    const hiddenFps = clamp(opts.hiddenFps ?? 1.5, 0.2, 5); // 1–2 fps sweet spot
     const blurPx = clamp(opts.blurPx ?? 10, 0, 40);
     const maxWidth = clamp(opts.maxWidth ?? 1280, 320, 3840);
-
-    const hiddenFreezeMs = clamp(opts.hiddenFreezeMs ?? 750, 200, 5000);
-    const warmupFramesInit = clamp(opts.warmupFrames ?? 8, 0, 30);
+    const segFps = clamp(opts.segFps ?? 10, 0, 30);
 
     const debugDefault = (() => {
         try {
@@ -96,6 +98,7 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         }
     })();
     const debug = opts.debug ?? debugDefault;
+
     const log = (...args: any[]) => {
         if (!debug) return;
         try {
@@ -117,7 +120,6 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
     let ctx: CanvasRenderingContext2D | null = null;
 
     let outStream: MediaStream | null = null;
-    let inputStream: MediaStream | null = null;
 
     let bgImage: HTMLImageElement | null = null;
 
@@ -127,14 +129,6 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
     let segReady = false;
     let segBusy = false;
     let lastSegAt = 0;
-
-    // Freeze-frame keepalive
-    let frozenBitmap: ImageBitmap | null = null;
-    let isFrozen = false;
-    let warmupFramesLeft = 0;
-
-    // Frame gating (draw only when new frame arrives, unless frozen)
-    let lastFrameToken: number | null = null;
 
     const stopTracks = (s: MediaStream | null) => {
         try {
@@ -181,7 +175,7 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         vfcId = null;
     };
 
-    const isVisibleNow = () => {
+    const isVisible = () => {
         try {
             return document.visibilityState === "visible";
         } catch {
@@ -192,40 +186,12 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
     const shouldUseVFC = () => {
         try {
             return (
-                isVisibleNow() &&
+                isVisible() &&
                 !!videoEl &&
                 typeof (videoEl as any).requestVideoFrameCallback === "function"
             );
         } catch {
             return false;
-        }
-    };
-
-    const getFrameToken = () => {
-        if (!videoEl) return null;
-        try {
-            const anyV: any = videoEl as any;
-            const dfc = Number(anyV.webkitDecodedFrameCount);
-            if (Number.isFinite(dfc) && dfc > 0) return dfc;
-
-            const ct = Number(videoEl.currentTime);
-            if (Number.isFinite(ct)) return ct;
-
-            return null;
-        } catch {
-            return null;
-        }
-    };
-
-    const drawFrozen = () => {
-        if (!running || !canvas || !ctx || !frozenBitmap) return;
-        const w = canvas.width;
-        const h = canvas.height;
-        try {
-            ctx.clearRect(0, 0, w, h);
-            ctx.drawImage(frozenBitmap, 0, 0, w, h);
-        } catch {
-            // ignore
         }
     };
 
@@ -235,16 +201,20 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         const w = canvas.width;
         const h = canvas.height;
 
-        ctx.clearRect(0, 0, w, h);
+        try {
+            ctx.clearRect(0, 0, w, h);
 
-        if (mode === "blur") {
-            ctx.filter = `blur(${blurPx}px)`;
+            if (mode === "blur") {
+                ctx.filter = `blur(${blurPx}px)`;
+                ctx.drawImage(videoEl, 0, 0, w, h);
+                ctx.filter = "none";
+                return;
+            }
+
             ctx.drawImage(videoEl, 0, 0, w, h);
-            ctx.filter = "none";
-            return;
+        } catch {
+            // ignore draw errors
         }
-
-        ctx.drawImage(videoEl, 0, 0, w, h);
     };
 
     const tickDrawWithMask = () => {
@@ -252,104 +222,54 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         const w = canvas.width;
         const h = canvas.height;
 
-        ctx.clearRect(0, 0, w, h);
+        try {
+            ctx.clearRect(0, 0, w, h);
 
-        // 1) foreground
-        ctx.save();
-        ctx.drawImage(videoEl, 0, 0, w, h);
-        ctx.globalCompositeOperation = "destination-in";
-        if (lastMask) ctx.drawImage(lastMask, 0, 0, w, h);
-        ctx.restore();
-
-        // 2) background
-        ctx.save();
-        ctx.globalCompositeOperation = "destination-over";
-
-        if (mode === "image" && bgImage) {
-            ctx.drawImage(bgImage, 0, 0, w, h);
-        } else if (mode === "blur") {
-            ctx.filter = `blur(${blurPx}px)`;
+            // 1) foreground
+            ctx.save();
             ctx.drawImage(videoEl, 0, 0, w, h);
-            ctx.filter = "none";
-        } else {
-            ctx.drawImage(videoEl, 0, 0, w, h);
+            ctx.globalCompositeOperation = "destination-in";
+            if (lastMask) ctx.drawImage(lastMask, 0, 0, w, h);
+            ctx.restore();
+
+            // 2) background
+            ctx.save();
+            ctx.globalCompositeOperation = "destination-over";
+
+            if (mode === "image" && bgImage) {
+                ctx.drawImage(bgImage, 0, 0, w, h);
+            } else if (mode === "blur") {
+                ctx.filter = `blur(${blurPx}px)`;
+                ctx.drawImage(videoEl, 0, 0, w, h);
+                ctx.filter = "none";
+            } else {
+                ctx.drawImage(videoEl, 0, 0, w, h);
+            }
+
+            ctx.restore();
+            ctx.globalCompositeOperation = "source-over";
+        } catch {
+            // ignore draw errors
         }
-
-        ctx.restore();
-        ctx.globalCompositeOperation = "source-over";
-    };
-
-    const captureFreezeFrame = async () => {
-        if (!canvas) return;
-        // capture from CANVAS (already composited) — best for "freeze final output"
-        try {
-            // Close previous bitmap to avoid leaks
-            try {
-                frozenBitmap?.close?.();
-            } catch { }
-            frozenBitmap = null;
-
-            // createImageBitmap(canvas) is async and fast
-            frozenBitmap = await createImageBitmap(canvas);
-            log("freeze captured", {
-                w: canvas.width,
-                h: canvas.height,
-                hasBitmap: !!frozenBitmap,
-            });
-        } catch (e) {
-            log("freeze capture failed", e);
-            frozenBitmap = null;
-        }
-    };
-
-    const enterFrozenMode = async () => {
-        if (isFrozen) return;
-        isFrozen = true;
-        warmupFramesLeft = 0;
-
-        // Ensure we have at least one composited frame on canvas before capturing
-        try {
-            if (segReady && lastMask) tickDrawWithMask();
-            else tickDrawFallback();
-        } catch { }
-
-        await captureFreezeFrame();
-
-        log("enter frozen (hidden) mode");
-    };
-
-    const exitFrozenMode = async () => {
-        if (!isFrozen) return;
-        isFrozen = false;
-
-        // warm-up: draw N frames from video WITHOUT segmentation, then resume
-        warmupFramesLeft = warmupFramesInit;
-
-        // try to wake video playback just in case
-        try {
-            await videoEl?.play?.().catch(() => { });
-        } catch { }
-
-        log("exit frozen (visible) mode; warmupFrames =", warmupFramesLeft);
     };
 
     const scheduleNext = () => {
         if (!running) return;
 
+        // IMPORTANT: prevent duplicates
         clearScheduled();
 
-        const visible = isVisibleNow();
-
-        // Frozen mode => fixed timer cadence (500–1000ms zone)
-        if (!visible || isFrozen) {
+        // Hidden => 1–2 fps timer keepalive
+        if (!isVisible()) {
+            const ms = Math.max(200, Math.round(1000 / hiddenFps));
             timerId = window.setTimeout(() => {
                 timerId = null;
                 void tickAndReschedule();
-            }, hiddenFreezeMs) as any;
+            }, ms) as any;
             return;
         }
 
-        // Visible => prefer VFC, fallback RAF, else timer
+        // Visible => prefer VFC, else RAF
         if (shouldUseVFC()) {
             try {
                 vfcId = (videoEl as any).requestVideoFrameCallback(() => {
@@ -378,52 +298,24 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
 
         tickInFlight = true;
         try {
-            const visible = isVisibleNow();
+            const visible = isVisible();
 
-            // Hidden or frozen => keepalive redraw ONLY (no video reads, no seg)
-            if (!visible || isFrozen) {
-                drawFrozen();
+            // ✅ Hidden mode: NO segmentation, fallback only
+            if (!visible) {
+                tickDrawFallback();
                 return;
             }
 
-            // Visible => only draw when a new frame arrived (big CPU win)
-            const token = getFrameToken();
-            const advanced = token != null && token !== lastFrameToken;
+            // ✅ Visible: draw (with mask if we have it)
+            if (segReady && lastMask) tickDrawWithMask();
+            else tickDrawFallback();
 
-            if (advanced) lastFrameToken = token;
-
-            if (!advanced && warmupFramesLeft <= 0) {
-                // nothing new; skip
-                return;
-            }
-
-            // Draw stage
-            try {
-                if (segReady && lastMask && warmupFramesLeft <= 0) tickDrawWithMask();
-                else tickDrawFallback();
-            } catch {
-                // ignore draw errors
-            }
-
-            // Warmup counter
-            if (warmupFramesLeft > 0) {
-                warmupFramesLeft -= 1;
-                // During warmup: do NOT run segmentation
-                return;
-            }
-
-            // Segmentation step (async) — throttle to fps
-            if (seg && segReady && !segBusy && videoEl && advanced) {
+            // ✅ Visible: segmentation (throttled) — optional
+            if (seg && segReady && !segBusy && videoEl && segFps > 0) {
                 const now = performance.now();
-                const interval = 1000 / Math.max(1, fps);
-
-                // You can also slow seg down separately; keep it simple here:
-                // run seg at most ~10 fps
-                const segInterval = Math.max(interval, 1000 / 10);
-
-                if (now - lastSegAt >= segInterval) {
+                const interval = 1000 / segFps;
+                if (now - lastSegAt >= interval) {
                     lastSegAt = now;
-
                     segBusy = true;
                     try {
                         await seg.send({ image: videoEl });
@@ -443,26 +335,19 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
     const onVisibility = () => {
         if (!running) return;
 
-        const visible = isVisibleNow();
-        log("visibilitychange =>", visible ? "visible" : "hidden");
+        // On flip, just reschedule (switches timer<->RAF/VFC)
+        log("visibilitychange ->", isVisible() ? "visible" : "hidden");
 
-        // Switch modes
-        if (!visible) {
-            void enterFrozenMode().finally(() => {
-                scheduleNext();
-            });
-            return;
+        // When returning visible, we want a "kick" so we don't stay on a stale frame
+        if (isVisible()) {
+            lastSegAt = 0; // allow seg immediately
         }
 
-        void exitFrozenMode().finally(() => {
-            scheduleNext();
-        });
+        scheduleNext();
     };
 
     const startEffect = async (input: MediaStream): Promise<MediaStream> => {
-        inputStream = input;
-
-        log("startEffect()", { mode, fps, blurPx, maxWidth });
+        log("startEffect()", { mode, fps, hiddenFps, segFps, blurPx, maxWidth });
 
         // Prepare video element
         videoEl = document.createElement("video");
@@ -471,14 +356,14 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         videoEl.autoplay = true;
         (videoEl as any).srcObject = input;
 
-        // Try to play (muted+autoplay should be okay)
+        // Try play (muted+autoplay should pass)
         try {
-            await videoEl.play().catch((e) => log("videoEl.play() blocked/fail:", e));
+            await videoEl.play().catch((e) => log("videoEl.play fail:", e));
         } catch (e) {
-            log("videoEl.play() throw:", e);
+            log("videoEl.play throw:", e);
         }
 
-        // Wait for metadata so we know dimensions
+        // Wait for metadata/dimensions
         const t0 = Date.now();
         while (Date.now() - t0 < 1500) {
             const vw = videoEl.videoWidth || 0;
@@ -490,7 +375,6 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         const vw0 = videoEl.videoWidth || 640;
         const vh0 = videoEl.videoHeight || 360;
 
-        // scale down if huge
         const scale = vw0 > maxWidth ? maxWidth / vw0 : 1;
         const vw = Math.max(2, Math.round(vw0 * scale));
         const vh = Math.max(2, Math.round(vh0 * scale));
@@ -499,23 +383,22 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         canvas.width = vw;
         canvas.height = vh;
         ctx = canvas.getContext("2d", { alpha: true });
-
         if (!ctx) throw new Error("Canvas 2D context not available");
 
         // Output stream
         outStream = canvas.captureStream(fps);
 
-        // Load background image if needed
+        // Background image
         if (mode === "image" && opts.imageUrl) {
             try {
                 bgImage = await loadImage(opts.imageUrl);
             } catch (e) {
-                log("bg image load failed:", e);
+                log("bgImage load fail:", e);
                 bgImage = null;
             }
         }
 
-        // Try init MediaPipe segmentation
+        // MediaPipe init (optional)
         seg = await tryCreateSelfieSegmentation();
         if (seg) {
             try {
@@ -523,32 +406,29 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
                     if (res?.segmentationMask) lastMask = res.segmentationMask as any;
                 });
                 segReady = true;
-                log("MediaPipe READY");
+                log("MediaPipe ready");
             } catch (e) {
-                log("MediaPipe init failed:", e);
+                log("MediaPipe onResults fail:", e);
                 seg = null;
                 segReady = false;
             }
         } else {
-            log("MediaPipe not available (fallback)");
+            log("MediaPipe not available (fallback only)");
         }
 
         running = true;
         tickInFlight = false;
         lastSegAt = 0;
-        lastFrameToken = null;
-        warmupFramesLeft = warmupFramesInit;
-
-        // If we start already hidden, freeze immediately (prevents "never started" feel)
-        if (!isVisibleNow()) {
-            await enterFrozenMode();
-        }
 
         try {
             document.addEventListener("visibilitychange", onVisibility);
         } catch { }
 
-        // Kick scheduler
+        // Draw once immediately so user sees effect instantly
+        try {
+            tickDrawFallback();
+        } catch { }
+
         scheduleNext();
 
         return outStream;
@@ -559,14 +439,12 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         log("stopEffect()");
 
         running = false;
-
         clearScheduled();
 
         try {
             document.removeEventListener("visibilitychange", onVisibility);
         } catch { }
 
-        // Stop segmentation
         try {
             await seg?.close?.();
         } catch { }
@@ -576,17 +454,11 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         lastMask = null;
         lastSegAt = 0;
 
-        // Release frozen bitmap
-        try {
-            frozenBitmap?.close?.();
-        } catch { }
-        frozenBitmap = null;
-        isFrozen = false;
-        warmupFramesLeft = 0;
-
         // Stop output tracks (canvas stream)
         stopTracks(outStream);
         outStream = null;
+
+        bgImage = null;
 
         cleanupDom();
     };
@@ -594,8 +466,6 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
     const dispose = async () => {
         log("dispose()");
         await stopEffect();
-        bgImage = null;
-        inputStream = null;
     };
 
     return { startEffect, stopEffect, dispose };
