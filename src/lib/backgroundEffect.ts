@@ -2,32 +2,21 @@
 // Canvas + (optional) MediaPipe SelfieSegmentation background effects.
 // Used by jitsiEngine replaceTrack pipeline (can be async safely).
 //
-// ✅ This version adds an adaptive "degrader" (auto quality scaler) based on real runtime metrics:
+// ✅ Adaptive degrader (auto quality scaler) based on runtime metrics.
 //
-// We continuously measure:
-// - tick time (draw + overhead)
-// - segmentation time (seg.send duration)
-// - effective FPS / frame jitter
+// Key behavior:
+// - Measures: tick time, seg.send time, effective FPS
+// - Degrades: segFps -> maxWidth (requires restart) -> blurPx -> seg off (fallback-only)
+// - Upgrades carefully when stable
+// - Hidden tab: keepalive low FPS + NO segmentation
+// - Debug logs (default true on localhost)
 //
-// If things get heavy for a sustained window -> degrade step by step:
-// 1) lower segmentation FPS (10 -> 6 -> 3 -> 0)
-// 2) lower maxWidth (1280 -> 960 -> 640 -> 480 -> 360)
-// 3) lower blurPx (10 -> 8 -> 6 -> 4 -> 2)
-// 4) disable segmentation mask usage (fallback-only) (optional baked into segFps=0)
+// IMPORTANT integration note:
+// - When we restart due to width change, we create a NEW outStream + track.
+// - If your caller (jitsiEngine) does NOT re-replaceTrack when stream changes, you won't see the new quality.
+// - To avoid reliance on replaceTrack, set enableDegrader=true but remove width ladder (not done here).
 //
-// If performance recovers for long enough -> upgrade back carefully.
-//
-// Also:
-// - Hidden tab mode: keepalive at 1–2 FPS, NO segmentation.
-// - Debug logs (opt-in, default true on localhost).
-//
-// Notes:
-// - We cannot "change canvas captureStream resolution" without rebuilding the canvas.
-//   So for width changes we rebuild the pipeline (stop+recreate canvas/video element).
-//   We do this rarely and with cooldowns to avoid flicker.
-// - If you want *zero* restarts, remove width degradation and only degrade segFps/blurPx.
-//
-// You can tune thresholds below.
+// This file is self-contained.
 
 export type BgMode = "none" | "blur" | "image";
 
@@ -38,20 +27,25 @@ type CreateOpts = {
     fps?: number; // default 30
     maxWidth?: number; // default 1280
 
-    // Optional knobs:
     debug?: boolean; // default true on localhost
     hiddenFps?: number; // default 1.5 (keepalive while hidden)
 
-    // Degrader tuning:
     enableDegrader?: boolean; // default true
     degradeWindowMs?: number; // default 2500
     upgradeWindowMs?: number; // default 8000
+
+    // Advanced:
+    restartOnWidthChange?: boolean; // default true (if false, width ladder changes won't apply until next start)
 };
 
 type Processor = {
     startEffect: (input: MediaStream) => Promise<MediaStream> | MediaStream;
     stopEffect: () => Promise<void> | void;
     dispose: () => Promise<void> | void;
+
+    // Optional: lets caller observe restarts / new stream creation if they want to auto replaceTrack
+    // (safe to ignore)
+    onStream?: (cb: (stream: MediaStream) => void) => void;
 };
 
 function sleep(ms: number) {
@@ -85,10 +79,7 @@ async function tryCreateSelfieSegmentation() {
                 `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`,
         });
 
-        seg.setOptions({
-            modelSelection: 1,
-        });
-
+        seg.setOptions({ modelSelection: 1 });
         return seg;
     } catch {
         return null;
@@ -113,21 +104,16 @@ const QUALITY_LADDER: QualityLevel[] = [
     { name: "Q4-min", maxWidth: 360, segFps: 0, blurPx: 2 }, // fallback-only
 ];
 
-// Thresholds (tune if needed)
 const THRESH = {
-    // If avg tick > 22ms at 30fps, you're struggling (especially if seg is on).
-    // If avg seg > 70ms, MediaPipe is heavy -> drop segFps or disable.
     tickMsBad: 22,
     segMsBad: 70,
-    // Effective fps check (visible only)
-    effFpsBad: 18, // if < 18fps, degrade
-    effFpsGood: 26, // if > 26fps stable, can upgrade
+    effFpsBad: 18,
+    effFpsGood: 26,
 };
 
-// Cooldowns to avoid thrashing
 const COOLDOWN = {
-    changeQualityMs: 2500, // don't change quality too frequently
-    restartMs: 6000, // don't rebuild canvas too frequently
+    changeQualityMs: 2500,
+    restartMs: 6000,
 };
 
 export function createBackgroundEffect(opts: CreateOpts): Processor {
@@ -141,6 +127,8 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
 
     const degradeWindowMs = clamp(opts.degradeWindowMs ?? 2500, 800, 20000);
     const upgradeWindowMs = clamp(opts.upgradeWindowMs ?? 8000, 2000, 30000);
+
+    const restartOnWidthChange = opts.restartOnWidthChange ?? true;
 
     const debugDefault = (() => {
         try {
@@ -161,14 +149,13 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
     };
 
     // -------------------------
-    // Runtime mutable state
+    // Runtime state
     // -------------------------
     let running = false;
 
     let rafId: number | null = null;
     let timerId: number | null = null;
     let vfcId: number | null = null;
-
     let tickInFlight = false;
 
     let videoEl: HTMLVideoElement | null = null;
@@ -187,38 +174,41 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
     let segBusy = false;
     let lastSegAt = 0;
 
-    // Degrader quality state
-    // pick initial level closest to baseMaxWidth/baseBlurPx (and if mode none, seg won't matter)
+    // Stream listeners
+    const streamListeners = new Set<(s: MediaStream) => void>();
+    const emitStream = (s: MediaStream) => {
+        streamListeners.forEach((cb) => {
+            try {
+                cb(s);
+            } catch { }
+        });
+    };
+
+    // Initial quality selection
     let qIndex = 0;
     {
-        // choose a level <= baseMaxWidth if possible
         let best = 0;
         for (let i = 0; i < QUALITY_LADDER.length; i++) {
             if (QUALITY_LADDER[i].maxWidth <= baseMaxWidth) best = i;
         }
         qIndex = best;
-        // override blur to user's preferred starting blur if bigger
-        QUALITY_LADDER[best] = {
-            ...QUALITY_LADDER[best],
-            blurPx: clamp(baseBlurPx, 0, 40),
-        };
+
+        // Don't mutate global ladder object across instances: copy blur override locally via active vars.
     }
 
     let activeMaxWidth = clamp(QUALITY_LADDER[qIndex].maxWidth, 320, 3840);
     let activeSegFps = clamp(QUALITY_LADDER[qIndex].segFps, 0, 30);
-    let activeBlurPx = clamp(QUALITY_LADDER[qIndex].blurPx, 0, 40);
+    let activeBlurPx = clamp(
+        // start with user's blur but keep within current level's idea
+        baseBlurPx,
+        0,
+        40
+    );
 
-    // metric buffers
-    type Stats = {
-        tickMsAvg: number;
-        segMsAvg: number;
-        effFpsAvg: number;
-    };
-
+    type Stats = { tickMsAvg: number; segMsAvg: number; effFpsAvg: number };
     let tickMsEMA = 0;
     let segMsEMA = 0;
     let effFpsEMA = 0;
-
     let lastFrameAt = 0;
 
     let badSince = 0;
@@ -325,7 +315,20 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         const q = QUALITY_LADDER[clamp(idx, 0, QUALITY_LADDER.length - 1)];
         activeMaxWidth = clamp(q.maxWidth, 320, 3840);
         activeSegFps = clamp(q.segFps, 0, 30);
+
+        // blur: follow ladder but never exceed user starting blur by too much? keep simple:
         activeBlurPx = clamp(q.blurPx, 0, 40);
+
+        // If user wanted bigger blur, keep it on best tiers only:
+        if (idx <= 1) activeBlurPx = clamp(baseBlurPx, 0, 40);
+    };
+
+    // Forward declarations
+    const internalStart = async (input: MediaStream): Promise<MediaStream> => {
+        return input; // overwritten below
+    };
+    const internalStop = async (_full: boolean) => {
+        // overwritten below
     };
 
     const maybeChangeQuality = async (dir: "down" | "up") => {
@@ -334,7 +337,9 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         if (now - lastQualityChangeAt < COOLDOWN.changeQualityMs) return;
 
         const nextIndex =
-            dir === "down" ? Math.min(qIndex + 1, QUALITY_LADDER.length - 1) : Math.max(qIndex - 1, 0);
+            dir === "down"
+                ? Math.min(qIndex + 1, QUALITY_LADDER.length - 1)
+                : Math.max(qIndex - 1, 0);
 
         if (nextIndex === qIndex) return;
 
@@ -352,39 +357,34 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
             stats: getStats(),
         });
 
-        // If maxWidth changed, we need a controlled restart to rebuild canvas size.
-        if (prev.maxWidth !== next.maxWidth) {
+        // Width change requires rebuild to actually apply
+        const widthChanged = prev.maxWidth !== next.maxWidth;
+
+        if (widthChanged && restartOnWidthChange) {
             if (now - lastRestartAt < COOLDOWN.restartMs) {
-                // Too soon to restart: still apply segFps/blur changes without rebuild.
-                // We'll rebuild later if we keep being bad.
                 log("restart skipped (cooldown)");
                 return;
             }
             lastRestartAt = now;
 
-            // Hard restart pipeline but keep same input stream (camera track)
-            // NOTE: This will stop the old outStream tracks, and create new ones.
-            // Your caller MUST replaceTrack with the new stream track (jitsiEngine should).
             if (inputStream) {
                 log("restarting pipeline to apply new maxWidth:", activeMaxWidth);
-                const oldRunning = running;
-                // Stop current rendering objects but keep inputStream reference.
-                await internalStop(false /*keepInput*/);
-
-                // Restart immediately if we were running
-                if (oldRunning && inputStream) {
-                    await internalStart(inputStream);
+                const wasRunning = running;
+                await internalStop(false);
+                if (wasRunning && inputStream) {
+                    const newStream = await internalStart(inputStream);
+                    // Notify listener (so jitsiEngine can re-replaceTrack if it wants)
+                    emitStream(newStream);
                 }
             }
+        } else if (widthChanged && !restartOnWidthChange) {
+            log("width changed but restartOnWidthChange=false; will apply next start()");
         }
     };
 
-    // Determines whether system is "bad" or "good"
     const evaluateDegrader = async () => {
         if (!enableDegrader) return;
         if (!running) return;
-
-        // Only consider visible-mode perf for degrade/upgrade.
         if (!isVisible()) return;
 
         const s = getStats();
@@ -398,27 +398,30 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         const good =
             (s.tickMsAvg > 0 && s.tickMsAvg < THRESH.tickMsBad * 0.75) &&
             (s.segMsAvg === 0 || s.segMsAvg < THRESH.segMsBad * 0.75) &&
-            (s.effFpsAvg > THRESH.effFpsGood);
+            s.effFpsAvg > THRESH.effFpsGood;
 
         if (bad) {
             if (!badSince) badSince = now;
             goodSince = 0;
             if (now - badSince >= degradeWindowMs) {
-                badSince = now; // reset window to prevent multiple steps instantly
+                badSince = now;
                 await maybeChangeQuality("down");
             }
-        } else if (good) {
+            return;
+        }
+
+        if (good) {
             if (!goodSince) goodSince = now;
             badSince = 0;
             if (now - goodSince >= upgradeWindowMs) {
                 goodSince = now;
                 await maybeChangeQuality("up");
             }
-        } else {
-            // neither clearly bad nor good
-            badSince = 0;
-            goodSince = 0;
+            return;
         }
+
+        badSince = 0;
+        goodSince = 0;
     };
 
     // -------------------------
@@ -426,7 +429,6 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
     // -------------------------
     const tickDrawFallback = () => {
         if (!running || !videoEl || !canvas || !ctx) return;
-
         const w = canvas.width;
         const h = canvas.height;
 
@@ -440,11 +442,8 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
                 return;
             }
 
-            // image mode without segmentation -> draw raw
             ctx.drawImage(videoEl, 0, 0, w, h);
-        } catch {
-            // ignore
-        }
+        } catch { }
     };
 
     const tickDrawWithMask = () => {
@@ -478,9 +477,7 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
 
             ctx.restore();
             ctx.globalCompositeOperation = "source-over";
-        } catch {
-            // ignore
-        }
+        } catch { }
     };
 
     // -------------------------
@@ -529,7 +526,7 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         tickInFlight = true;
         const tStart = performance.now();
         try {
-            // Effective FPS / jitter estimate (visible only)
+            // FPS estimate (visible only)
             if (isVisible()) {
                 const now = performance.now();
                 if (lastFrameAt) {
@@ -540,18 +537,18 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
                 lastFrameAt = now;
             }
 
-            // Hidden => do fallback only, no segmentation
+            // Hidden: fallback only, segmentation OFF hard
             if (!isVisible()) {
                 tickDrawFallback();
                 return;
             }
 
-            // Visible: draw
+            // Draw
             const canUseMask = segReady && !!lastMask && activeSegFps > 0;
             if (canUseMask) tickDrawWithMask();
             else tickDrawFallback();
 
-            // Visible: segmentation (optional) - throttle by activeSegFps
+            // Segmentation step (optional)
             if (seg && segReady && !segBusy && videoEl && activeSegFps > 0) {
                 const now = performance.now();
                 const interval = 1000 / Math.max(1, activeSegFps);
@@ -572,7 +569,6 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
                 }
             }
 
-            // Evaluate degrader occasionally
             await evaluateDegrader();
         } finally {
             const tickDt = performance.now() - tStart;
@@ -585,15 +581,25 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
     const onVisibility = () => {
         if (!running) return;
         log("visibilitychange ->", isVisible() ? "visible" : "hidden");
-        // When becoming visible, allow immediate segmentation
+
+        // When becoming visible: allow immediate seg
         if (isVisible()) lastSegAt = 0;
+
+        // When going hidden: drop seg EMA quickly so degrader doesn't misread on return
+        if (!isVisible()) {
+            segMsEMA = 0;
+            effFpsEMA = 0;
+            badSince = 0;
+            goodSince = 0;
+        }
+
         scheduleNext();
     };
 
     // -------------------------
-    // Start/Stop internals (support restarts)
+    // Start/Stop internals
     // -------------------------
-    const internalStart = async (input: MediaStream): Promise<MediaStream> => {
+    const _internalStart = async (input: MediaStream): Promise<MediaStream> => {
         inputStream = input;
 
         log("startEffect()", {
@@ -601,10 +607,10 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
             targetFps,
             baseMaxWidth,
             baseBlurPx,
+            q: QUALITY_LADDER[qIndex]?.name,
             activeMaxWidth,
             activeSegFps,
             activeBlurPx,
-            q: QUALITY_LADDER[qIndex]?.name,
         });
 
         // Prepare video element
@@ -631,7 +637,6 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
 
         const vw0 = videoEl.videoWidth || 640;
         const vh0 = videoEl.videoHeight || 360;
-
         const { w: vw, h: vh } = pickScaled(vw0, vh0, activeMaxWidth);
 
         canvas = document.createElement("canvas");
@@ -640,8 +645,10 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         ctx = canvas.getContext("2d", { alpha: true });
         if (!ctx) throw new Error("Canvas 2D context not available");
 
-        // Output stream (fixed at targetFps)
         outStream = canvas.captureStream(targetFps);
+
+        // Notify listeners (useful for restarts)
+        emitStream(outStream);
 
         // Background image
         if (mode === "image" && opts.imageUrl) {
@@ -655,7 +662,7 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
             bgImage = null;
         }
 
-        // MediaPipe init (optional) ONLY if seg is enabled in current quality
+        // MediaPipe init only if seg enabled
         seg = null;
         segReady = false;
         segBusy = false;
@@ -692,7 +699,7 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
             document.addEventListener("visibilitychange", onVisibility);
         } catch { }
 
-        // Kick: draw once immediately
+        // Draw once
         try {
             tickDrawFallback();
         } catch { }
@@ -702,8 +709,7 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         return outStream!;
     };
 
-    const internalStop = async (full: boolean) => {
-        // full=true => remove input refs too
+    const _internalStop = async (full: boolean) => {
         running = false;
         clearScheduled();
 
@@ -724,34 +730,46 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         outStream = null;
 
         bgImage = null;
-
         cleanupDom();
-
         resetMetrics();
 
-        if (full) {
-            inputStream = null;
-        }
+        if (full) inputStream = null;
     };
+
+    // Bind forward declarations
+    (internalStart as any) = _internalStart;
+    (internalStop as any) = _internalStop;
 
     // -------------------------
     // Public API
     // -------------------------
     const startEffect = async (input: MediaStream): Promise<MediaStream> => {
-        // If user starts multiple times, stop previous
-        if (running) {
-            await internalStop(false);
+        // reset quality to best-fit on each start (optional but safer)
+        {
+            let best = 0;
+            for (let i = 0; i < QUALITY_LADDER.length; i++) {
+                if (QUALITY_LADDER[i].maxWidth <= baseMaxWidth) best = i;
+            }
+            qIndex = best;
+            applyQualityLevel(qIndex);
         }
-        return await internalStart(input);
+
+        if (running) await _internalStop(false);
+        return await _internalStart(input);
     };
 
     const stopEffect = async () => {
-        await internalStop(true);
+        await _internalStop(true);
     };
 
     const dispose = async () => {
-        await internalStop(true);
+        await _internalStop(true);
+        streamListeners.clear();
     };
 
-    return { startEffect, stopEffect, dispose };
+    const onStream = (cb: (stream: MediaStream) => void) => {
+        streamListeners.add(cb);
+    };
+
+    return { startEffect, stopEffect, dispose, onStream };
 }
