@@ -9,6 +9,12 @@
 // - Delay subscription apply on leave (650ms) to avoid racing internal resubscribe
 // - Best-effort keyframe requests (PLI/FIR) after subs changes + reattach
 // - Cancel any pending delayed hard-reset scheduled before a leave
+//
+// ✅ JWT INTEGRATION (Supabase Edge Function -> Jitsi token):
+// - Optional `opts.jwt` passed into initAndJoin() (or setJwtOptions())
+// - Engine fetches token BEFORE JitsiConnection.connect()
+// - Token passed into JitsiConnection as 2nd param + options.token for compatibility
+// - Room name is NOT mutated (important for strict `room` claim binding)
 
 import { createVirtualBackgroundEffect as createVendoredVirtualBackgroundEffect } from "./jitsiEffects/virtualBackground";
 
@@ -42,6 +48,59 @@ export type JitsiEngineCallbacks = {
 
 export type BgMode = "none" | "blur" | "image";
 
+export type JitsiJwtOptions = {
+  /**
+   * Supabase session id from your `sessions` table.
+   * Edge Function will verify `user.id === sessions.host_id` and return moderator token when true.
+   */
+  sessionId: string;
+
+  /**
+   * Full token endpoint URL (recommended).
+   * Example:
+   * - https://<projectref>.supabase.co/functions/v1/jitsi-token
+   * - https://<projectref>.functions.supabase.co/jitsi-token
+   */
+  tokenUrl?: string;
+
+  /**
+   * If you don't pass `tokenUrl`, engine can build it as:
+   * `${functionsBaseUrl}/${functionName}`
+   *
+   * Example functionsBaseUrl:
+   * - https://<projectref>.supabase.co/functions/v1
+   */
+  functionsBaseUrl?: string;
+
+  /** default: "jitsi-token" */
+  functionName?: string;
+
+  /**
+   * Provide Supabase access token (JWT) for Authorization header.
+   * Prefer getAccessToken() (fresh token) over static accessToken.
+   */
+  getAccessToken?: () => Promise<string | null | undefined>;
+  accessToken?: string | null;
+
+  /**
+   * If true (default), initAndJoin will throw if token fetch fails.
+   * If false, it will attempt to connect without a token (only useful if Prosody allows empty token).
+   */
+  required?: boolean;
+
+  /** Optional timeout for token fetch (default 8000ms) */
+  timeoutMs?: number;
+
+  /** Optional extra headers for fetch */
+  extraHeaders?: Record<string, string>;
+
+  /**
+   * Customize request body (default: { session_id })
+   * Use this only if your Edge Function expects additional fields.
+   */
+  body?: (args: { sessionId: string; roomName: string; jitsiDomain: string }) => any;
+};
+
 export type JitsiEngineOptions = {
   /** Can be host ("meet2.mysession.club") or origin ("https://meet2.mysession.club") */
   jitsiDomain?: string;
@@ -55,6 +114,12 @@ export type JitsiEngineOptions = {
     volume?: number; // 0..1
     respectVisibility?: boolean; // default true
   };
+
+  /**
+   * Supabase Edge Function JWT flow for moderator rights.
+   * You can pass this in initAndJoin(), or call engine.setJwtOptions() beforehand.
+   */
+  jwt?: JitsiJwtOptions;
 };
 
 // ----------------------------------------------------------------------------
@@ -62,7 +127,7 @@ export type JitsiEngineOptions = {
 // Priority:
 // 1) Vite env:  VITE_JITSI_DOMAIN
 // 2) runtime:   window.__JITSI_DOMAIN / globalThis.__JITSI_DOMAIN
-// 3) fallback:  "meet-eu.mysession.club"
+// 3) fallback:  "jitsi.mysession.club"
 // ----------------------------------------------------------------------------
 function pickDefaultJitsiDomain(): string {
   const g: any = typeof globalThis !== "undefined" ? (globalThis as any) : (window as any);
@@ -77,6 +142,41 @@ function pickDefaultJitsiDomain(): string {
   }
 
   return (fromVite || fromGlobal || "jitsi.mysession.club").trim();
+}
+
+function pickDefaultSupabaseFunctionsBaseUrl(): string | null {
+  // Prefer explicit functions base url if present
+  // Examples:
+  // - VITE_SUPABASE_FUNCTIONS_URL="https://<projectref>.supabase.co/functions/v1"
+  // - VITE_SUPABASE_URL="https://<projectref>.supabase.co" -> will become ".../functions/v1"
+  let functionsUrl = "";
+  let supabaseUrl = "";
+
+  try {
+    functionsUrl = ((import.meta as any)?.env?.VITE_SUPABASE_FUNCTIONS_URL || "").toString().trim();
+  } catch {
+    // ignore
+  }
+
+  try {
+    supabaseUrl = ((import.meta as any)?.env?.VITE_SUPABASE_URL || "").toString().trim();
+  } catch {
+    // ignore
+  }
+
+  if (functionsUrl) {
+    // normalize (no trailing slash)
+    return functionsUrl.replace(/\/+$/, "");
+  }
+
+  if (supabaseUrl) {
+    const base = supabaseUrl.replace(/\/+$/, "");
+    // If it's the common supabase project URL, functions v1 is at /functions/v1
+    // (For .functions.supabase.co style you should pass tokenUrl explicitly)
+    return `${base}/functions/v1`;
+  }
+
+  return null;
 }
 
 const DEFAULT_JITSI_DOMAIN = pickDefaultJitsiDomain();
@@ -226,6 +326,10 @@ export class JitsiEngine {
   private lastJoinUserName: string | null = null;
   private lastSafeRejoinAt = 0;
 
+  // ✅ JWT options (persisted across safeRejoin)
+  private jwtOpts: JitsiJwtOptions | null = null;
+  private lastJitsiJwt: string | null = null;
+
   // guard against double mount / double join
   private joinInFlight = false;
   private joinToken = 0;
@@ -357,6 +461,116 @@ export class JitsiEngine {
     if (opts.libPath) this.jitsiLibPath = opts.libPath;
 
     if (opts.joinSound) this.configureJoinSound(opts.joinSound);
+    if (opts.jwt) this.setJwtOptions(opts.jwt);
+  }
+
+  // ========================================================================
+  // JWT config
+  // ========================================================================
+  public setJwtOptions(jwt: JitsiJwtOptions | null | undefined) {
+    if (!jwt) {
+      this.jwtOpts = null;
+      return;
+    }
+    this.jwtOpts = {
+      functionName: "jitsi-token",
+      required: true,
+      timeoutMs: 8000,
+      ...jwt,
+    };
+  }
+
+  private resolveTokenUrl(): string | null {
+    const jwt = this.jwtOpts;
+    if (!jwt) return null;
+
+    if (jwt.tokenUrl) return jwt.tokenUrl.replace(/\/+$/, "");
+
+    const fn = (jwt.functionName || "jitsi-token").trim() || "jitsi-token";
+    const base = (jwt.functionsBaseUrl || pickDefaultSupabaseFunctionsBaseUrl() || "").trim().replace(/\/+$/, "");
+    if (!base) return null;
+
+    return `${base}/${fn}`;
+  }
+
+  private async getSupabaseAccessToken(): Promise<string | null> {
+    const jwt = this.jwtOpts;
+    if (!jwt) return null;
+
+    if (jwt.getAccessToken) {
+      try {
+        const t = await jwt.getAccessToken();
+        return (t || "").toString().trim() || null;
+      } catch {
+        return null;
+      }
+    }
+
+    const t = (jwt.accessToken || "").toString().trim();
+    return t || null;
+  }
+
+  private async fetchJitsiJwt(roomName: string): Promise<string> {
+    const jwt = this.jwtOpts;
+    if (!jwt) return "";
+
+    const required = jwt.required !== false;
+
+    const url = this.resolveTokenUrl();
+    if (!url) {
+      if (required) throw new Error("JWT tokenUrl/functionsBaseUrl not configured");
+      return "";
+    }
+
+    const accessToken = await this.getSupabaseAccessToken();
+    if (!accessToken) {
+      if (required) throw new Error("Supabase access token is missing (jwt.getAccessToken/accessToken)");
+      return "";
+    }
+
+    const timeoutMs = typeof jwt.timeoutMs === "number" ? jwt.timeoutMs : 8000;
+
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const to = setTimeout(() => {
+      try {
+        controller?.abort();
+      } catch { }
+    }, timeoutMs);
+
+    try {
+      const sessionId = jwt.sessionId;
+      const body =
+        typeof jwt.body === "function"
+          ? jwt.body({ sessionId, roomName, jitsiDomain: this.jitsiDomainOrOrigin })
+          : { session_id: sessionId };
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+          ...(jwt.extraHeaders || {}),
+        },
+        body: JSON.stringify(body),
+        signal: controller?.signal,
+      });
+
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        throw new Error(`JWT fetch failed (${res.status}): ${txt || res.statusText || "unknown error"}`);
+      }
+
+      const data: any = await res.json().catch(() => null);
+      const token =
+        (data?.token || data?.jwt || data?.access_token || data?.data?.token || "").toString().trim();
+
+      if (!token) throw new Error("JWT fetch succeeded but response has no token field");
+
+      this.lastJitsiJwt = token;
+      return token;
+    } finally {
+      clearTimeout(to);
+    }
   }
 
   // ========================================================================
@@ -845,12 +1059,16 @@ export class JitsiEngine {
     if (opts?.jitsiDomain) this.setJitsiDomain(opts.jitsiDomain);
     if (opts?.configPath || opts?.libPath) this.setJitsiScriptPaths({ configPath: opts.configPath, libPath: opts.libPath });
     if (opts?.joinSound) this.configureJoinSound(opts.joinSound);
+    if (opts?.jwt) this.setJwtOptions(opts.jwt);
+
+    // IMPORTANT: keep roomName stable (do NOT lowercase/sanitize) for strict JWT room binding.
+    const finalRoomName = (roomName || "").trim() || `session-${Math.random().toString(36).slice(2, 10)}`;
 
     const endpoints = this.getJitsiEndpoints();
     await loadJitsiScripts(endpoints);
 
     // store args for safe rejoin
-    this.lastJoinRoomName = roomName;
+    this.lastJoinRoomName = finalRoomName;
     this.lastJoinUserName = userName;
 
     if (this.joinInFlight) return;
@@ -871,16 +1089,38 @@ export class JitsiEngine {
 
     this.JitsiMeetJS.init({ disableP2P: true, disableAudioLevels: true });
 
-    const serviceUrl = this.config.websocket || this.config.bosh || `wss://${endpoints.host}/xmpp-websocket`;
-    const options = { hosts: this.config.hosts, serviceUrl, clientNode: this.config.clientNode, p2p: { enabled: false } };
+    // ✅ Fetch Jitsi JWT BEFORE connection.connect()
+    let jitsiJwt: string | undefined = undefined;
+    try {
+      if (this.jwtOpts) {
+        const token = await this.fetchJitsiJwt(finalRoomName);
+        jitsiJwt = token || undefined;
+      }
+    } catch (e: any) {
+      this.joinInFlight = false;
+      const msg = String(e?.message || e || "JWT fetch failed");
+      this.callbacks.onError?.(msg);
+      throw e;
+    }
 
-    const connection = new this.JitsiMeetJS.JitsiConnection(null, undefined, options);
+    const serviceUrl = this.config.websocket || this.config.bosh || `wss://${endpoints.host}/xmpp-websocket`;
+
+    // token is also accepted as `options.token` in some builds; keep both for safety.
+    const options: any = {
+      hosts: this.config.hosts,
+      serviceUrl,
+      clientNode: this.config.clientNode,
+      p2p: { enabled: false },
+      token: jitsiJwt,
+    };
+
+    const connection = new this.JitsiMeetJS.JitsiConnection(null, jitsiJwt, options);
     this.connection = connection;
 
     connection.addEventListener(this.JitsiMeetJS.events.connection.CONNECTION_ESTABLISHED, () => {
       if (this.disposed) return;
       if (myToken !== this.joinToken) return;
-      this.setupConference(roomName, userName);
+      this.setupConference(finalRoomName, userName);
     });
 
     connection.addEventListener(this.JitsiMeetJS.events.connection.CONNECTION_FAILED, () => {
@@ -910,11 +1150,10 @@ export class JitsiEngine {
     }
     if (userName) conferenceOptions.statisticsId = userName.toLowerCase();
 
-    const baseRoomName = roomName?.trim()?.length ? roomName : "default-room";
-    let safeRoomName = baseRoomName.toLowerCase().replace(/[^a-z0-9-_]/g, "");
-    if (!safeRoomName) safeRoomName = "session-" + Math.random().toString(36).slice(2, 8);
+    // IMPORTANT: do not mutate roomName here (JWT room binding)
+    const finalRoomName = (roomName || "").trim() || `session-${Math.random().toString(36).slice(2, 10)}`;
 
-    const conf = this.connection.initJitsiConference(safeRoomName, conferenceOptions);
+    const conf = this.connection.initJitsiConference(finalRoomName, conferenceOptions);
     this.conference = conf;
 
     const events = this.JitsiMeetJS.events;
@@ -1294,6 +1533,9 @@ export class JitsiEngine {
     // join sound state
     this.joinSoundByPid.clear();
     this.lastJoinSoundAt = 0;
+
+    // jwt cache
+    this.lastJitsiJwt = null;
   }
 
   // ========================================================================
@@ -1473,6 +1715,8 @@ export class JitsiEngine {
       respectVisibility: this.joinSoundRespectVisibility,
     };
 
+    const savedJwt = this.jwtOpts ? { ...this.jwtOpts } : null;
+
     await this.dispose().catch(() => { });
     this.disposed = false;
 
@@ -1487,6 +1731,8 @@ export class JitsiEngine {
     this.jitsiLibPath = savedLibPath;
 
     this.configureJoinSound(savedJoinSound);
+
+    if (savedJwt) this.setJwtOptions(savedJwt);
 
     this.lastSubsKey = "";
     this.lastSubsAppliedAt = 0;

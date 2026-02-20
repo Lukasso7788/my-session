@@ -820,15 +820,27 @@ function ParticipantTile({
 
 // ----------------------- Layout helpers -----------------------
 function computeCols(count: number, containerWidth: number) {
+    const w = containerWidth || 1200;
+    const isDesktop = w >= 1024;
+
     if (count <= 1) return 1;
     if (count === 2) return 2;
     if (count === 4) return 2;
 
-    if (count === 3) return containerWidth >= 1200 ? 3 : 2;
-    if (count === 5) return containerWidth >= 900 ? 3 : 2;
-    if (count === 6) return containerWidth >= 780 ? 3 : 2;
+    // ✅ requirement:
+    // - for 3 participants on desktop widths (>=1024): ALWAYS 2 columns (2 + 1)
+    if (count === 3 && isDesktop) return 2;
 
-    return containerWidth >= 1400 ? 4 : 3;
+    // ✅ requirement:
+    // - for 5–9 participants on desktop widths (>=1024): ALWAYS 3 columns
+    if (isDesktop && count >= 5 && count <= 9) return 3;
+
+    // fallback (mobile/tablet/other cases)
+    if (count === 3) return 2;
+    if (count === 5) return w >= 900 ? 3 : 2;
+    if (count === 6) return w >= 780 ? 3 : 2;
+
+    return w >= 1400 ? 4 : 3;
 }
 
 function calcMaxGridWidthPx(params: {
@@ -914,11 +926,12 @@ function GridLayout({
     onMuteAudioById: (id: string) => void | Promise<void>;
     onMuteVideoById: (id: string) => void | Promise<void>;
 }) {
-    const paddingPx = containerWidth && containerWidth < 520 ? 8 : 12;
-    const gapPx = containerWidth && containerWidth < 520 ? 8 : 12;
+    // ✅ tighter spacing between tiles
+    const paddingPx = containerWidth && containerWidth < 520 ? 8 : 10;
+    const gapPx = containerWidth && containerWidth < 520 ? 6 : 10;
 
     const cols = useMemo(() => {
-        // ✅ 핵: когда правая панель открыта и участников 3 -> всегда 2 колонки
+        // keep special-casing for panel-open (works for non-desktop widths too)
         if (forceThreeAsTwoPlusOne && pageParticipants.length === 3) return 2;
         return computeCols(pageParticipants.length, containerWidth || 1200);
     }, [pageParticipants.length, containerWidth, forceThreeAsTwoPlusOne]);
@@ -1103,8 +1116,9 @@ function P2PLayout({
     onMuteAudioById: (id: string) => void | Promise<void>;
     onMuteVideoById: (id: string) => void | Promise<void>;
 }) {
-    const paddingPx = containerWidth && containerWidth < 520 ? 8 : 12;
-    const gapPx = containerWidth && containerWidth < 520 ? 8 : 12;
+    // ✅ tighter spacing
+    const paddingPx = containerWidth && containerWidth < 520 ? 8 : 10;
+    const gapPx = containerWidth && containerWidth < 520 ? 6 : 10;
 
     const count = pageParticipants.length;
 
@@ -1226,8 +1240,8 @@ function MobileFillLayout({
 }) {
     const count = pageParticipants.length || 1;
 
-    const paddingPx = containerWidth && containerWidth < 520 ? 8 : 12;
-    const gapPx = containerWidth && containerWidth < 520 ? 8 : 12;
+    const paddingPx = containerWidth && containerWidth < 520 ? 8 : 10;
+    const gapPx = containerWidth && containerWidth < 520 ? 6 : 10;
 
     const availW = Math.max(0, (containerWidth || 0) - paddingPx * 2);
     const availH = Math.max(0, (containerHeight || 0) - paddingPx * 2 - paddingBottomPx - (count - 1) * gapPx);
@@ -2112,7 +2126,7 @@ export function VideoRoom(props: VideoRoomProps) {
                                         containerWidth={effectiveW}
                                         containerHeight={effectiveH}
                                         onRegisterVideoElement={onRegisterVideoElement}
-                                        forceThreeAsTwoPlusOne={uiPanelOpen} // ✅ NEW
+                                        forceThreeAsTwoPlusOne={uiPanelOpen} // ✅ still works, but desktop rule is now global via computeCols
                                         localId={localId}
                                         localDisplayNameOverride={localNameOverride}
                                         onOpenEditName={openEditName}
