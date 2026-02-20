@@ -1,15 +1,32 @@
 // src/lib/backgroundEffect.ts
 // Canvas + (optional) MediaPipe SelfieSegmentation background effects.
 // Used by jitsiEngine replaceTrack pipeline (can be async safely).
+//
+// ✅ Key perf changes vs old version:
+// - Split loops: DRAW can run smooth (fps), SEG runs slower (cheap CPU win)
+// - Hidden-tab behavior: keep stream alive by drawing last composite frame at low FPS
+// - Aggressive downscale for segmentation (segMaxWidth) while keeping output canvas higher
+// - Never overlap seg.send() calls (hard gate)
+// - Works even if @mediapipe/selfie_segmentation is missing (fallback draw only)
 
 export type BgMode = "none" | "blur" | "image";
 
 type CreateOpts = {
     mode: BgMode;
     imageUrl?: string;
+
     blurPx?: number; // default 10
     fps?: number; // default 30
+
+    // Output canvas max width (what you actually stream to Jitsi)
     maxWidth?: number; // default 1280
+
+    // Optional extras (safe to ignore in callers)
+    segFps?: number; // default: auto (lowPower friendly)
+    segMaxWidth?: number; // default: auto (lower than maxWidth)
+    keepAliveFpsHidden?: number; // default 2
+    freezeOnHidden?: boolean; // default true
+    lowPower?: boolean; // hint from engine (mobile/weak)
 };
 
 type Processor = {
@@ -21,7 +38,6 @@ type Processor = {
 function sleep(ms: number) {
     return new Promise((r) => setTimeout(r, ms));
 }
-
 function clamp(n: number, a: number, b: number) {
     return Math.max(a, Math.min(b, n));
 }
@@ -40,9 +56,6 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
 
 async function tryCreateSelfieSegmentation() {
     // Optional dependency. If missing — return null, we will fallback.
-    // NOTE: For this to truly be "optional" at runtime, your bundler must be able to resolve this import.
-    // The simplest path: install the package:
-    //   npm i @mediapipe/selfie_segmentation
     try {
         const mod: any = await import("@mediapipe/selfie_segmentation");
         const SelfieSegmentation = mod?.SelfieSegmentation;
@@ -50,12 +63,11 @@ async function tryCreateSelfieSegmentation() {
 
         const seg = new SelfieSegmentation({
             locateFile: (file: string) =>
-                // CDN fallback is common; adjust if you host locally.
                 `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`,
         });
 
         seg.setOptions({
-            modelSelection: 1, // 0 = general, 1 = landscape (usually better)
+            modelSelection: 1, // 0 = general, 1 = landscape
         });
 
         return seg;
@@ -66,39 +78,78 @@ async function tryCreateSelfieSegmentation() {
 
 export function createBackgroundEffect(opts: CreateOpts): Processor {
     const mode: BgMode = opts.mode ?? "none";
-    const fps = clamp(opts.fps ?? 30, 5, 60);
+
+    // draw fps (how often we paint to output canvas)
+    const drawFps = clamp(opts.fps ?? 30, 5, 60);
+
+    // quality knobs
     const blurPx = clamp(opts.blurPx ?? 10, 0, 40);
     const maxWidth = clamp(opts.maxWidth ?? 1280, 320, 3840);
 
-    // IMPORTANT:
-    // We intentionally do NOT rely purely on requestAnimationFrame.
-    // When the tab is hidden, RAF can effectively stop. That can freeze the outgoing canvas stream.
-    // Instead we use a hybrid scheduler:
-    // - visible: prefer requestVideoFrameCallback (best), else RAF
-    // - hidden: use setTimeout (timers get throttled, but they still tick -> stream stays alive)
+    // hints
+    const lowPower = !!opts.lowPower;
+
+    // segmentation fps (how often we update mask)
+    // ✅ default: slower than drawFps
+    const defaultSegFps = lowPower ? 5 : 7;
+    const segFps = clamp(opts.segFps ?? Math.min(defaultSegFps, Math.max(3, Math.floor(drawFps / 4))), 1, 15);
+
+    // segmentation resolution (downscaled)
+    // ✅ default: much smaller than output
+    const defaultSegMaxW = lowPower ? 360 : 480;
+    const segMaxWidth = clamp(opts.segMaxWidth ?? Math.min(defaultSegMaxW, maxWidth), 160, 1280);
+
+    // hidden keep-alive
+    const keepAliveFpsHidden = clamp(opts.keepAliveFpsHidden ?? 2, 1, 15);
+    const freezeOnHidden = typeof opts.freezeOnHidden === "boolean" ? opts.freezeOnHidden : true;
+
+    // --------------------------------------------------------------------------
+    // State
+    // --------------------------------------------------------------------------
     let running = false;
 
-    let rafId: number | null = null;
-    let timerId: number | null = null;
-    let vfcId: number | null = null;
-
-    let tickInFlight = false;
-
+    // DOM/Canvas
     let videoEl: HTMLVideoElement | null = null;
-    let canvas: HTMLCanvasElement | null = null;
-    let ctx: CanvasRenderingContext2D | null = null;
 
+    // output (streamed) canvas
+    let outCanvas: HTMLCanvasElement | null = null;
+    let outCtx: CanvasRenderingContext2D | null = null;
+
+    // seg input canvas (small)
+    let segCanvas: HTMLCanvasElement | null = null;
+    let segCtx: CanvasRenderingContext2D | null = null;
+
+    // cached background image
+    let bgImage: HTMLImageElement | null = null;
+
+    // streams
     let outStream: MediaStream | null = null;
     let inputStream: MediaStream | null = null;
 
-    let bgImage: HTMLImageElement | null = null;
+    // loops
+    let drawRafId: number | null = null;
+    let drawTimerId: number | null = null;
+    let drawVfcId: number | null = null;
 
-    // MediaPipe
-    let seg: any | null = null;
-    let lastMask: CanvasImageSource | null = null;
-    let segReady = false;
+    let segTimerId: number | null = null;
     let segBusy = false;
-    let lastSegAt = 0;
+
+    // segmentation instance + mask
+    let seg: any | null = null;
+    let segReady = false;
+
+    // last mask (usually a canvas from MediaPipe)
+    let lastMask: CanvasImageSource | null = null;
+
+    // freeze frame cache (for hidden)
+    let frozenFrame: ImageBitmap | null = null;
+
+    // resize / dimensions
+    let outW = 640;
+    let outH = 360;
+
+    let segW = 320;
+    let segH = 180;
 
     const stopTracks = (s: MediaStream | null) => {
         try {
@@ -110,6 +161,32 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         } catch { }
     };
 
+    const clearDrawScheduled = () => {
+        try {
+            if (drawRafId != null) cancelAnimationFrame(drawRafId);
+        } catch { }
+        drawRafId = null;
+
+        try {
+            if (drawTimerId != null) clearTimeout(drawTimerId);
+        } catch { }
+        drawTimerId = null;
+
+        try {
+            if (drawVfcId != null && videoEl && typeof (videoEl as any).cancelVideoFrameCallback === "function") {
+                (videoEl as any).cancelVideoFrameCallback(drawVfcId);
+            }
+        } catch { }
+        drawVfcId = null;
+    };
+
+    const clearSegScheduled = () => {
+        try {
+            if (segTimerId != null) clearTimeout(segTimerId);
+        } catch { }
+        segTimerId = null;
+    };
+
     const cleanupDom = () => {
         try {
             if (videoEl) {
@@ -117,40 +194,51 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
                 (videoEl as any).srcObject = null;
             }
         } catch { }
+
         videoEl = null;
-        canvas = null;
-        ctx = null;
+
+        outCanvas = null;
+        outCtx = null;
+
+        segCanvas = null;
+        segCtx = null;
     };
 
-    const clearScheduled = () => {
+    const isVisible = () => {
         try {
-            if (rafId != null) cancelAnimationFrame(rafId);
-        } catch { }
-        rafId = null;
-
-        try {
-            if (timerId != null) clearTimeout(timerId);
-        } catch { }
-        timerId = null;
-
-        try {
-            if (vfcId != null && videoEl && typeof (videoEl as any).cancelVideoFrameCallback === "function") {
-                (videoEl as any).cancelVideoFrameCallback(vfcId);
-            }
-        } catch { }
-        vfcId = null;
+            return document.visibilityState === "visible";
+        } catch {
+            return true;
+        }
     };
 
-    const tickDrawFallback = () => {
-        if (!running || !videoEl || !canvas || !ctx) return;
+    const shouldUseVFC = () => {
+        try {
+            return isVisible() && !!videoEl && typeof (videoEl as any).requestVideoFrameCallback === "function";
+        } catch {
+            return false;
+        }
+    };
 
-        // Fallback: no segmentation available yet
-        // - blur: blur whole frame
-        // - image: without mask it cannot be composited meaningfully -> draw raw video frame
-        const w = canvas.width;
-        const h = canvas.height;
+    // --------------------------------------------------------------------------
+    // Drawing
+    // --------------------------------------------------------------------------
+    const drawFallbackNoMask = () => {
+        if (!running || !outCtx || !outCanvas) return;
+
+        const ctx = outCtx;
+        const w = outCanvas.width;
+        const h = outCanvas.height;
 
         ctx.clearRect(0, 0, w, h);
+
+        // If hidden and freeze enabled: draw frozen bitmap if we have it
+        if (!isVisible() && freezeOnHidden && frozenFrame) {
+            ctx.drawImage(frozenFrame, 0, 0, w, h);
+            return;
+        }
+
+        if (!videoEl) return;
 
         if (mode === "blur") {
             ctx.filter = `blur(${blurPx}px)`;
@@ -159,25 +247,35 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
             return;
         }
 
-        // mode === "image" or "none" but no segmentation -> just draw the raw frame
+        // image/none without mask -> raw frame
         ctx.drawImage(videoEl, 0, 0, w, h);
     };
 
-    const tickDrawWithMask = () => {
-        if (!running || !videoEl || !canvas || !ctx) return;
-        const w = canvas.width;
-        const h = canvas.height;
+    const drawWithMask = () => {
+        if (!running || !outCtx || !outCanvas) return;
+
+        const ctx = outCtx;
+        const w = outCanvas.width;
+        const h = outCanvas.height;
 
         ctx.clearRect(0, 0, w, h);
 
-        // 1) Draw person (foreground) using mask
+        // If hidden + freeze enabled: draw frozen bitmap if present
+        if (!isVisible() && freezeOnHidden && frozenFrame) {
+            ctx.drawImage(frozenFrame, 0, 0, w, h);
+            return;
+        }
+
+        if (!videoEl) return;
+
+        // 1) Foreground (person) using mask
         ctx.save();
         ctx.drawImage(videoEl, 0, 0, w, h);
         ctx.globalCompositeOperation = "destination-in";
         if (lastMask) ctx.drawImage(lastMask, 0, 0, w, h);
         ctx.restore();
 
-        // 2) Draw background behind person
+        // 2) Background behind person
         ctx.save();
         ctx.globalCompositeOperation = "destination-over";
 
@@ -188,7 +286,6 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
             ctx.drawImage(videoEl, 0, 0, w, h);
             ctx.filter = "none";
         } else {
-            // none -> just original background (but if mode none, we should not be here)
             ctx.drawImage(videoEl, 0, 0, w, h);
         }
 
@@ -196,108 +293,179 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         ctx.globalCompositeOperation = "source-over";
     };
 
-    const shouldUseVFC = () => {
-        // Prefer requestVideoFrameCallback when visible (better pacing than RAF).
-        // Some browsers may not support it.
+    const maybeUpdateFrozenFrame = async () => {
+        if (!freezeOnHidden) return;
+        if (!outCanvas) return;
+
+        // only capture when transitioning to hidden (or if we don't have one yet)
+        if (frozenFrame) return;
+
         try {
-            return (
-                document.visibilityState === "visible" &&
-                !!videoEl &&
-                typeof (videoEl as any).requestVideoFrameCallback === "function"
-            );
+            if (typeof createImageBitmap === "function") {
+                frozenFrame = await createImageBitmap(outCanvas);
+            }
         } catch {
-            return false;
+            // ignore
         }
     };
 
-    const scheduleNext = () => {
+    const clearFrozenFrame = () => {
+        try {
+            frozenFrame?.close?.();
+        } catch { }
+        frozenFrame = null;
+    };
+
+    // Draw tick (cheap)
+    const drawTick = () => {
         if (!running) return;
 
-        // Cancel any existing scheduled callback before scheduling a new one
-        // (prevents duplicates on visibility flips)
-        clearScheduled();
+        // If mode none, still pass through (raw)
+        const haveMask = !!(segReady && lastMask);
+        try {
+            if (haveMask) drawWithMask();
+            else drawFallbackNoMask();
+        } catch {
+            // ignore draw errors
+        }
+    };
 
-        // Hidden => timers (RAF can stop entirely)
-        if (document.visibilityState !== "visible") {
-            const ms = Math.max(33, Math.round(1000 / fps));
-            timerId = window.setTimeout(() => {
-                timerId = null;
-                void tickAndReschedule();
+    const scheduleNextDraw = () => {
+        if (!running) return;
+        clearDrawScheduled();
+
+        const visible = isVisible();
+        const fps = visible ? drawFps : keepAliveFpsHidden;
+        const ms = Math.max(33, Math.round(1000 / fps));
+
+        // Hidden => timer (RAF/VFC may stop)
+        if (!visible) {
+            drawTimerId = window.setTimeout(() => {
+                drawTimerId = null;
+                drawTick();
+                scheduleNextDraw();
             }, ms) as any;
             return;
         }
 
-        // Visible => prefer VFC, fallback RAF
+        // Visible => prefer VFC, fallback RAF, but keep fps cap via timer if needed
         if (shouldUseVFC()) {
             try {
-                vfcId = (videoEl as any).requestVideoFrameCallback(() => {
-                    vfcId = null;
-                    void tickAndReschedule();
+                drawVfcId = (videoEl as any).requestVideoFrameCallback(() => {
+                    drawVfcId = null;
+                    drawTick();
+                    scheduleNextDraw();
                 });
                 return;
             } catch {
-                // fall through to RAF
+                // fall through
             }
         }
 
-        rafId = requestAnimationFrame(() => {
-            rafId = null;
-            void tickAndReschedule();
-        });
-    };
-
-    const tickAndReschedule = async () => {
-        if (!running) return;
-
-        // Prevent overlapping ticks (especially important because seg.send is async)
-        if (tickInFlight) {
-            scheduleNext();
+        // RAF is fine; our drawFps is typically <= 30 so this can be “too fast”.
+        // We cap by using a timer gate if drawFps < 50.
+        if (drawFps < 50) {
+            drawTimerId = window.setTimeout(() => {
+                drawTimerId = null;
+                drawRafId = requestAnimationFrame(() => {
+                    drawRafId = null;
+                    drawTick();
+                    scheduleNextDraw();
+                });
+            }, ms) as any;
             return;
         }
 
-        tickInFlight = true;
+        drawRafId = requestAnimationFrame(() => {
+            drawRafId = null;
+            drawTick();
+            scheduleNextDraw();
+        });
+    };
+
+    // --------------------------------------------------------------------------
+    // Segmentation (expensive) — separate loop
+    // --------------------------------------------------------------------------
+    const scheduleNextSeg = () => {
+        if (!running) return;
+        clearSegScheduled();
+
+        // ✅ When hidden: we DO NOT keep segmenting (huge CPU win)
+        // Mask can “lag behind” but frozen frame keeps UX consistent.
+        if (!isVisible()) {
+            segTimerId = window.setTimeout(() => {
+                segTimerId = null;
+                // still reschedule to re-check visibility
+                scheduleNextSeg();
+            }, 700) as any;
+            return;
+        }
+
+        const intervalMs = Math.max(80, Math.round(1000 / segFps));
+
+        segTimerId = window.setTimeout(async () => {
+            segTimerId = null;
+            if (!running) return;
+            await segTick();
+            scheduleNextSeg();
+        }, intervalMs) as any;
+    };
+
+    const segTick = async () => {
+        if (!running) return;
+        if (!seg || !segReady) return;
+        if (!videoEl || !segCanvas || !segCtx) return;
+        if (segBusy) return;
+
+        // For MediaPipe, it helps to feed smaller images
         try {
-            // draw
+            const vw = videoEl.videoWidth || 0;
+            const vh = videoEl.videoHeight || 0;
+            if (vw <= 0 || vh <= 0) return;
+
+            // draw current frame into seg canvas (downscaled)
+            segCtx.clearRect(0, 0, segW, segH);
+            segCtx.drawImage(videoEl, 0, 0, segW, segH);
+
+            segBusy = true;
             try {
-                if (segReady && lastMask) tickDrawWithMask();
-                else tickDrawFallback();
+                // send the segCanvas (small) instead of the full videoEl
+                await seg.send({ image: segCanvas });
             } catch {
-                // ignore draw errors
+                // ignore
+            } finally {
+                segBusy = false;
             }
-
-            // segmentation step (async) — throttle to fps
-            if (seg && segReady && !segBusy && videoEl) {
-                const now = performance.now();
-                const interval = 1000 / fps;
-
-                if (now - lastSegAt >= interval) {
-                    lastSegAt = now;
-
-                    segBusy = true;
-                    try {
-                        // MediaPipe expects an HTMLVideoElement / HTMLImageElement / Canvas
-                        await seg.send({ image: videoEl });
-                    } catch {
-                        // ignore segmentation errors, keep fallback drawing
-                    } finally {
-                        segBusy = false;
-                    }
-                }
-            }
-        } finally {
-            tickInFlight = false;
-            scheduleNext();
+        } catch {
+            segBusy = false;
         }
     };
 
+    // --------------------------------------------------------------------------
+    // Visibility handling
+    // --------------------------------------------------------------------------
     const onVisibility = () => {
         if (!running) return;
 
-        // We reschedule immediately on visibility flips so we don't get stuck
-        // in a paused RAF when tab becomes hidden, or in a throttled timer when visible again.
-        scheduleNext();
+        if (!isVisible()) {
+            // entering hidden:
+            // - cache a frozen composite frame once
+            // - draw continues at low fps (keepAliveFpsHidden)
+            void maybeUpdateFrozenFrame();
+        } else {
+            // back visible:
+            // - discard freeze frame
+            clearFrozenFrame();
+        }
+
+        // reschedule both loops immediately to avoid being stuck in wrong mode
+        scheduleNextDraw();
+        scheduleNextSeg();
     };
 
+    // --------------------------------------------------------------------------
+    // Start / Stop
+    // --------------------------------------------------------------------------
     const startEffect = async (input: MediaStream): Promise<MediaStream> => {
         inputStream = input;
 
@@ -308,12 +476,11 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         videoEl.autoplay = true;
         (videoEl as any).srcObject = input;
 
-        // Wait for metadata so we know dimensions
         try {
             await videoEl.play().catch(() => { });
         } catch { }
 
-        // if metadata not ready, wait a bit
+        // wait for metadata
         const t0 = Date.now();
         while (Date.now() - t0 < 1200) {
             const vw = videoEl.videoWidth || 0;
@@ -325,22 +492,38 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         const vw0 = videoEl.videoWidth || 640;
         const vh0 = videoEl.videoHeight || 360;
 
-        // scale down if huge
-        const scale = vw0 > maxWidth ? maxWidth / vw0 : 1;
-        const vw = Math.round(vw0 * scale);
-        const vh = Math.round(vh0 * scale);
+        // output size (streamed)
+        const outScale = vw0 > maxWidth ? maxWidth / vw0 : 1;
+        outW = Math.round(vw0 * outScale);
+        outH = Math.round(vh0 * outScale);
 
-        canvas = document.createElement("canvas");
-        canvas.width = vw;
-        canvas.height = vh;
-        ctx = canvas.getContext("2d", { alpha: true });
+        outCanvas = document.createElement("canvas");
+        outCanvas.width = outW;
+        outCanvas.height = outH;
 
-        if (!ctx) throw new Error("Canvas 2D context not available");
+        outCtx = outCanvas.getContext("2d", { alpha: true });
+        if (!outCtx) throw new Error("Canvas 2D context not available");
 
-        // Output stream
-        outStream = canvas.captureStream(fps);
+        // segmentation size (smaller)
+        const segScale = vw0 > segMaxWidth ? segMaxWidth / vw0 : 1;
+        segW = Math.max(160, Math.round(vw0 * segScale));
+        segH = Math.max(120, Math.round(vh0 * segScale));
 
-        // Load background image if needed
+        segCanvas = document.createElement("canvas");
+        segCanvas.width = segW;
+        segCanvas.height = segH;
+        segCtx = segCanvas.getContext("2d", { alpha: false });
+        // if segCtx fails, we still run without segmentation
+        if (!segCtx) {
+            segCanvas = null;
+            segCtx = null;
+        }
+
+        // Output stream (this is what Jitsi will encode)
+        outStream = outCanvas.captureStream(drawFps);
+
+        // background image if needed
+        bgImage = null;
         if (mode === "image" && opts.imageUrl) {
             try {
                 bgImage = await loadImage(opts.imageUrl);
@@ -349,12 +532,12 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
             }
         }
 
-        // Try init MediaPipe segmentation
+        // init segmentation if possible
         seg = await tryCreateSelfieSegmentation();
         if (seg) {
             try {
                 seg.onResults((res: any) => {
-                    // res.segmentationMask is usually a canvas
+                    // MediaPipe returns a mask (usually canvas). We'll use it scaled to output size.
                     if (res?.segmentationMask) lastMask = res.segmentationMask as any;
                 });
                 segReady = true;
@@ -365,32 +548,38 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         }
 
         running = true;
-        tickInFlight = false;
-        lastSegAt = 0;
+        segBusy = false;
+        lastMask = null;
+        clearFrozenFrame();
 
-        // Listen to visibility so we can swap scheduler mode instantly.
         try {
             document.addEventListener("visibilitychange", onVisibility);
         } catch { }
 
-        // Kick scheduler
-        scheduleNext();
+        // If we start already hidden, cache a frozen frame after first draw
+        if (!isVisible()) {
+            // do one draw so outCanvas has pixels, then freeze
+            drawTick();
+            await maybeUpdateFrozenFrame();
+        }
 
-        return outStream;
+        scheduleNextDraw();
+        scheduleNextSeg();
+
+        return outStream!;
     };
 
     const stopEffect = async () => {
         running = false;
 
-        // Stop scheduler
-        clearScheduled();
+        clearDrawScheduled();
+        clearSegScheduled();
 
-        // Remove visibility listener
         try {
             document.removeEventListener("visibilitychange", onVisibility);
         } catch { }
 
-        // Stop segmentation
+        // stop segmentation
         try {
             await seg?.close?.();
         } catch { }
@@ -398,13 +587,12 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         segReady = false;
         segBusy = false;
         lastMask = null;
-        lastSegAt = 0;
 
-        // Don’t stop input tracks here (camera owned by Jitsi base track)
-        // Only stop output tracks (canvas stream)
+        // stop output tracks (canvas stream)
         stopTracks(outStream);
         outStream = null;
 
+        clearFrozenFrame();
         cleanupDom();
     };
 
