@@ -2,14 +2,14 @@
 // Canvas + (optional) MediaPipe SelfieSegmentation background effects.
 // Used by jitsiEngine replaceTrack pipeline (can be async safely).
 //
-// Variant: WebCodecs output (NO canvas.captureStream):
-// - produce MediaStreamTrack via MediaStreamTrackGenerator
-// - push VideoFrame вручную (полный контроль cadence)
-// - scheduler не “паузается” на hidden: используем таймеры
+// ✅ Variant: Insertable Streams (TransformStream)
+// originalTrack -> MediaStreamTrackProcessor -> TransformStream(process frames) -> MediaStreamTrackGenerator
 //
-// Notes:
-// - Если WebCodecs/TrackGenerator не поддерживаются (часто Safari) — есть аккуратный fallback на captureStream,
-//   иначе эффект вообще не будет работать. Если хочешь “жёстко без fallback” — скажи, вырежу.
+// Goals:
+// - avoid captureStream + RAF scheduler issues
+// - avoid recreating camera tracks
+// - keep realtime (drop frames under backpressure instead of building latency)
+// - optional MediaPipe segmentation when available (throttled)
 
 export type BgMode = "none" | "blur" | "image";
 
@@ -21,8 +21,8 @@ type CreateOpts = {
     maxWidth?: number; // default 1280
 
     // optional knobs (safe defaults)
-    maskFps?: number; // default min(fps, 12)
-    blurCacheFps?: number; // default min(fps, 12)
+    segFps?: number; // default min(fps, 12)
+    segMaxWidth?: number; // default 320 (smaller = cheaper)
 };
 
 type Processor = {
@@ -53,9 +53,7 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
 
 async function tryCreateSelfieSegmentation() {
     // Optional dependency. If missing — return null, we will fallback.
-    // NOTE: For this to truly be "optional" at runtime, your bundler must be able to resolve this import.
-    // The simplest path: install the package:
-    //   npm i @mediapipe/selfie_segmentation
+    // npm i @mediapipe/selfie_segmentation
     try {
         const mod: any = await import("@mediapipe/selfie_segmentation");
         const SelfieSegmentation = mod?.SelfieSegmentation;
@@ -67,7 +65,7 @@ async function tryCreateSelfieSegmentation() {
         });
 
         seg.setOptions({
-            modelSelection: 1,
+            modelSelection: 1, // 0 = general, 1 = landscape
         });
 
         return seg;
@@ -76,66 +74,57 @@ async function tryCreateSelfieSegmentation() {
     }
 }
 
+function supportsInsertableStreams() {
+    const w = window as any;
+    return !!(w.MediaStreamTrackProcessor && w.MediaStreamTrackGenerator && w.VideoFrame);
+}
+
 export function createBackgroundEffect(opts: CreateOpts): Processor {
     const mode: BgMode = opts.mode ?? "none";
     const fps = clamp(opts.fps ?? 30, 5, 60);
     const blurPx = clamp(opts.blurPx ?? 10, 0, 40);
     const maxWidth = clamp(opts.maxWidth ?? 1280, 320, 3840);
 
-    const maskFps = clamp(opts.maskFps ?? Math.min(fps, 12), 1, 30);
-    const blurCacheFps = clamp(opts.blurCacheFps ?? Math.min(fps, 12), 1, 30);
+    const segFps = clamp(opts.segFps ?? Math.min(fps, 12), 1, 30);
+    const segMaxWidth = clamp(opts.segMaxWidth ?? 320, 160, 1024);
 
     let running = false;
 
-    let rafId: number | null = null;
-    let timerId: number | null = null;
-    let vfcId: number | null = null;
+    // output
+    let outStream: MediaStream | null = null;
+    let genTrack: MediaStreamTrack | null = null;
 
-    let tickInFlight = false;
+    // insertable streams objects
+    let processor: any | null = null; // MediaStreamTrackProcessor
+    let generator: any | null = null; // MediaStreamTrackGenerator
+    let genWriter: any | null = null; // WritableStreamDefaultWriter<VideoFrame>
 
-    let videoEl: HTMLVideoElement | null = null;
+    let pipeAbort: AbortController | null = null;
+    let pipePromise: Promise<void> | null = null;
 
-    // render target (CPU/GPU drawing)
+    // drawing
     let canvas: HTMLCanvasElement | null = null;
     let ctx: CanvasRenderingContext2D | null = null;
 
-    // pre-blur cache
-    let blurCanvas: HTMLCanvasElement | null = null;
-    let blurCtx: CanvasRenderingContext2D | null = null;
-    let lastBlurAt = 0;
-    let lastBlurVideoTime = -1;
-
-    // Output
-    let outStream: MediaStream | null = null;
-
-    // WebCodecs generator path
-    let genTrack: MediaStreamTrack | null = null;
-    let genWriter: WritableStreamDefaultWriter<any> | null = null;
-
-    // Fallback path (only if generator not supported)
-    let fallbackCaptureStream: MediaStream | null = null;
-
-    let inputStream: MediaStream | null = null;
+    // background image
     let bgImage: HTMLImageElement | null = null;
 
-    // MediaPipe
+    // segmentation
     let seg: any | null = null;
-    let lastMask: CanvasImageSource | null = null;
     let segReady = false;
     let segBusy = false;
+    let lastMask: CanvasImageSource | null = null;
     let lastSegAt = 0;
 
-    const safeNowMs = () => {
+    let segCanvas: HTMLCanvasElement | null = null;
+    let segCtx: CanvasRenderingContext2D | null = null;
+
+    const nowMs = () => {
         try {
             return typeof performance !== "undefined" ? performance.now() : Date.now();
         } catch {
             return Date.now();
         }
-    };
-
-    const nowUs = () => {
-        // VideoFrame timestamp expects microseconds
-        return Math.max(0, Math.round(safeNowMs() * 1000));
     };
 
     const stopTracks = (s: MediaStream | null) => {
@@ -148,161 +137,62 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         } catch { }
     };
 
-    const cleanupDom = () => {
-        try {
-            if (videoEl) {
-                videoEl.pause?.();
-                (videoEl as any).srcObject = null;
-            }
-        } catch { }
-        videoEl = null;
-
+    const cleanup = () => {
         canvas = null;
         ctx = null;
 
-        blurCanvas = null;
-        blurCtx = null;
-        lastBlurAt = 0;
-        lastBlurVideoTime = -1;
+        segCanvas = null;
+        segCtx = null;
+
+        bgImage = null;
+
+        seg = null;
+        segReady = false;
+        segBusy = false;
+        lastMask = null;
+        lastSegAt = 0;
+
+        processor = null;
+        generator = null;
+        genWriter = null;
+
+        pipeAbort = null;
+        pipePromise = null;
+
+        genTrack = null;
+        outStream = null;
     };
 
-    const clearScheduled = () => {
-        try {
-            if (rafId != null) cancelAnimationFrame(rafId);
-        } catch { }
-        rafId = null;
+    const ensureCanvases = (srcW: number, srcH: number) => {
+        // scale down if huge
+        const scale = srcW > maxWidth ? maxWidth / srcW : 1;
+        const w = Math.max(2, Math.round(srcW * scale));
+        const h = Math.max(2, Math.round(srcH * scale));
 
-        try {
-            if (timerId != null) clearTimeout(timerId);
-        } catch { }
-        timerId = null;
-
-        try {
-            if (vfcId != null && videoEl && typeof (videoEl as any).cancelVideoFrameCallback === "function") {
-                (videoEl as any).cancelVideoFrameCallback(vfcId);
-            }
-        } catch { }
-        vfcId = null;
-    };
-
-    const shouldUseVFC = () => {
-        try {
-            return (
-                document.visibilityState === "visible" &&
-                !!videoEl &&
-                typeof (videoEl as any).requestVideoFrameCallback === "function"
-            );
-        } catch {
-            return false;
-        }
-    };
-
-    const scheduleNext = () => {
-        if (!running) return;
-
-        // avoid duplicates on flips
-        clearScheduled();
-
-        // Hidden => timers (RAF may stop entirely). We DO NOT pause on hidden.
-        if (document.visibilityState !== "visible") {
-            const ms = Math.max(33, Math.round(1000 / fps));
-            timerId = window.setTimeout(() => {
-                timerId = null;
-                void tickAndReschedule();
-            }, ms) as any;
-            return;
+        if (!canvas) canvas = document.createElement("canvas");
+        if (canvas.width !== w || canvas.height !== h) {
+            canvas.width = w;
+            canvas.height = h;
         }
 
-        // Visible => prefer VFC, fallback RAF
-        if (shouldUseVFC()) {
-            try {
-                vfcId = (videoEl as any).requestVideoFrameCallback(() => {
-                    vfcId = null;
-                    void tickAndReschedule();
-                });
-                return;
-            } catch {
-                // fallthrough
-            }
-        }
+        if (!ctx) ctx = canvas.getContext("2d", { alpha: true });
+        if (!ctx) throw new Error("Canvas 2D context not available");
 
-        rafId = requestAnimationFrame(() => {
-            rafId = null;
-            void tickAndReschedule();
-        });
+        // seg canvas (smaller for cheaper inference)
+        const segScale = srcW > segMaxWidth ? segMaxWidth / srcW : 1;
+        const sw = Math.max(2, Math.round(srcW * segScale));
+        const sh = Math.max(2, Math.round(srcH * segScale));
+
+        if (!segCanvas) segCanvas = document.createElement("canvas");
+        if (segCanvas.width !== sw || segCanvas.height !== sh) {
+            segCanvas.width = sw;
+            segCanvas.height = sh;
+        }
+        if (!segCtx) segCtx = segCanvas.getContext("2d", { alpha: false });
     };
 
-    const maybeUpdateBlurCache = () => {
-        if (!running) return;
-        if (mode !== "blur") return;
-        if (!videoEl || !blurCanvas || !blurCtx) return;
-
-        const now = safeNowMs();
-        const interval = 1000 / blurCacheFps;
-
-        const vt = Number(videoEl.currentTime || 0);
-        if (now - lastBlurAt < interval && vt === lastBlurVideoTime) return;
-
-        lastBlurAt = now;
-        lastBlurVideoTime = vt;
-
-        const w = blurCanvas.width;
-        const h = blurCanvas.height;
-
-        try {
-            blurCtx.clearRect(0, 0, w, h);
-            blurCtx.filter = `blur(${blurPx}px)`;
-            blurCtx.drawImage(videoEl, 0, 0, w, h);
-        } catch {
-            // ignore
-        } finally {
-            try {
-                blurCtx.filter = "none";
-            } catch { }
-        }
-    };
-
-    const drawRawVideo = () => {
-        if (!videoEl || !canvas || !ctx) return;
-        try {
-            ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-        } catch {
-            // ignore
-        }
-    };
-
-    const drawBlurredBackground = () => {
+    const drawFallback = (frame: any) => {
         if (!canvas || !ctx) return;
-
-        // keep cache warm
-        maybeUpdateBlurCache();
-
-        try {
-            if (blurCanvas) {
-                ctx.drawImage(blurCanvas, 0, 0, canvas.width, canvas.height);
-                return;
-            }
-        } catch {
-            // fallthrough
-        }
-
-        // absolute fallback: blur directly
-        if (videoEl) {
-            try {
-                ctx.filter = `blur(${blurPx}px)`;
-                ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-            } catch {
-                // ignore
-            } finally {
-                try {
-                    ctx.filter = "none";
-                } catch { }
-            }
-        }
-    };
-
-    const tickDrawFallback = () => {
-        if (!running || !videoEl || !canvas || !ctx) return;
 
         const w = canvas.width;
         const h = canvas.height;
@@ -312,16 +202,30 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         } catch { }
 
         if (mode === "blur") {
-            drawBlurredBackground();
+            try {
+                ctx.filter = `blur(${blurPx}px)`;
+                ctx.drawImage(frame, 0, 0, w, h);
+            } catch {
+                // ignore
+            } finally {
+                try {
+                    ctx.filter = "none";
+                } catch { }
+            }
             return;
         }
 
-        // image/none w/o mask -> raw
-        drawRawVideo();
+        // image/none without mask => raw
+        try {
+            ctx.drawImage(frame, 0, 0, w, h);
+        } catch {
+            // ignore
+        }
     };
 
-    const tickDrawWithMask = () => {
-        if (!running || !videoEl || !canvas || !ctx) return;
+    const drawWithMask = (frame: any) => {
+        if (!canvas || !ctx) return;
+
         const w = canvas.width;
         const h = canvas.height;
 
@@ -329,10 +233,10 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
             ctx.clearRect(0, 0, w, h);
         } catch { }
 
-        // 1) Foreground (person)
+        // 1) foreground (person)
         try {
             ctx.save();
-            drawRawVideo();
+            ctx.drawImage(frame, 0, 0, w, h);
             ctx.globalCompositeOperation = "destination-in";
             if (lastMask) ctx.drawImage(lastMask, 0, 0, w, h);
             ctx.restore();
@@ -342,7 +246,7 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
             } catch { }
         }
 
-        // 2) Background behind person
+        // 2) background behind person
         try {
             ctx.save();
             ctx.globalCompositeOperation = "destination-over";
@@ -350,9 +254,18 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
             if (mode === "image" && bgImage) {
                 ctx.drawImage(bgImage, 0, 0, w, h);
             } else if (mode === "blur") {
-                drawBlurredBackground();
+                try {
+                    ctx.filter = `blur(${blurPx}px)`;
+                    ctx.drawImage(frame, 0, 0, w, h);
+                } catch {
+                    // ignore
+                } finally {
+                    try {
+                        ctx.filter = "none";
+                    } catch { }
+                }
             } else {
-                drawRawVideo();
+                ctx.drawImage(frame, 0, 0, w, h);
             }
 
             ctx.restore();
@@ -364,141 +277,48 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         }
     };
 
-    const pushFrameToGenerator = async () => {
-        if (!canvas || !genWriter) return;
+    const maybeRunSegmentation = (frame: any) => {
+        if (!seg || !segReady || segBusy || !segCanvas || !segCtx) return;
 
-        const VF: any = (window as any).VideoFrame;
-        if (!VF) return;
+        const now = nowMs();
+        const interval = 1000 / segFps;
+        if (now - lastSegAt < interval) return;
 
-        // Backpressure: if stream queue is full, лучше дропнуть кадр, чем копить лаг.
-        const desired = (genWriter as any).desiredSize;
-        if (typeof desired === "number" && desired <= 0) return;
+        lastSegAt = now;
 
-        let frame: any | null = null;
+        // IMPORTANT: we cannot pass VideoFrame async if we plan to close it.
+        // So we copy the current frame into segCanvas synchronously, then seg reads segCanvas.
         try {
-            frame = new VF(canvas, { timestamp: nowUs() });
-            // write can be async; keep it awaited so we don't balloon the queue
-            await genWriter.write(frame);
+            segCtx.clearRect(0, 0, segCanvas.width, segCanvas.height);
+            segCtx.drawImage(frame, 0, 0, segCanvas.width, segCanvas.height);
         } catch {
-            // ignore
-        } finally {
-            try {
-                frame?.close?.();
-            } catch { }
-        }
-    };
-
-    const tickAndReschedule = async () => {
-        if (!running) return;
-
-        if (tickInFlight) {
-            scheduleNext();
             return;
         }
 
-        tickInFlight = true;
-        try {
-            // warm blur cache
-            if (mode === "blur") {
-                try {
-                    maybeUpdateBlurCache();
-                } catch { }
-            }
-
-            // draw
-            try {
-                if (segReady && lastMask) tickDrawWithMask();
-                else tickDrawFallback();
-            } catch {
-                // ignore
-            }
-
-            // push frame out (generator preferred; fallback captureStream does it automatically)
-            if (genWriter) {
-                await pushFrameToGenerator();
-            }
-
-            // segmentation step (async) — throttle to maskFps
-            if (seg && segReady && !segBusy && videoEl) {
-                const now = safeNowMs();
-                const interval = 1000 / maskFps;
-
-                if (now - lastSegAt >= interval) {
-                    lastSegAt = now;
-
-                    segBusy = true;
-                    try {
-                        await seg.send({ image: videoEl });
-                    } catch {
-                        // ignore
-                    } finally {
-                        segBusy = false;
-                    }
-                }
-            }
-        } finally {
-            tickInFlight = false;
-            scheduleNext();
-        }
+        segBusy = true;
+        Promise.resolve()
+            .then(() => seg.send({ image: segCanvas }))
+            .catch(() => { })
+            .finally(() => {
+                segBusy = false;
+            });
     };
 
-    const onVisibility = () => {
-        if (!running) return;
-        // We reschedule immediately on visibility flips.
-        scheduleNext();
-    };
+    const buildInsertablePipeline = async (input: MediaStream): Promise<MediaStream> => {
+        const w = window as any;
+        const MSP = w.MediaStreamTrackProcessor;
+        const MSG = w.MediaStreamTrackGenerator;
+        const VF = w.VideoFrame;
 
-    const startEffect = async (input: MediaStream): Promise<MediaStream> => {
-        inputStream = input;
+        const inTrack = input.getVideoTracks?.()?.[0];
+        if (!inTrack) throw new Error("No input video track for background effect");
 
-        // Prepare video element
-        videoEl = document.createElement("video");
-        videoEl.playsInline = true;
-        videoEl.muted = true;
-        videoEl.autoplay = true;
-        (videoEl as any).srcObject = input;
+        // create generator early
+        generator = new MSG({ kind: "video" });
+        genTrack = generator as MediaStreamTrack;
+        outStream = new MediaStream([genTrack]);
 
-        try {
-            await videoEl.play().catch(() => { });
-        } catch { }
-
-        // wait metadata so we know dimensions
-        const t0 = Date.now();
-        while (Date.now() - t0 < 1200) {
-            const vw = videoEl.videoWidth || 0;
-            const vh = videoEl.videoHeight || 0;
-            if (vw > 0 && vh > 0) break;
-            await sleep(50);
-        }
-
-        const vw0 = videoEl.videoWidth || 640;
-        const vh0 = videoEl.videoHeight || 360;
-
-        const scale = vw0 > maxWidth ? maxWidth / vw0 : 1;
-        const vw = Math.max(2, Math.round(vw0 * scale));
-        const vh = Math.max(2, Math.round(vh0 * scale));
-
-        canvas = document.createElement("canvas");
-        canvas.width = vw;
-        canvas.height = vh;
-        ctx = canvas.getContext("2d", { alpha: true });
-
-        if (!ctx) throw new Error("Canvas 2D context not available");
-
-        // Pre-blur cache setup (only blur mode)
-        if (mode === "blur") {
-            blurCanvas = document.createElement("canvas");
-            blurCanvas.width = vw;
-            blurCanvas.height = vh;
-            blurCtx = blurCanvas.getContext("2d", { alpha: false });
-            lastBlurAt = 0;
-            lastBlurVideoTime = -1;
-        } else {
-            blurCanvas = null;
-            blurCtx = null;
-        }
-
-        // Load background image if needed
+        // background image if needed
         if (mode === "image" && opts.imageUrl) {
             try {
                 bgImage = await loadImage(opts.imageUrl);
@@ -507,7 +327,7 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
             }
         }
 
-        // Try init MediaPipe segmentation
+        // segmentation init (optional)
         seg = await tryCreateSelfieSegmentation();
         if (seg) {
             try {
@@ -521,61 +341,295 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
             }
         }
 
-        // Output: WebCodecs generator if possible
-        const TG: any = (window as any).MediaStreamTrackGenerator;
-        const VF: any = (window as any).VideoFrame;
+        processor = new MSP({ track: inTrack });
 
-        if (TG && VF) {
+        // writable sink that writes to generator AND closes frames (to avoid leaks)
+        genWriter = generator.writable.getWriter();
+
+        const sink = new WritableStream<any>({
+            write: async (frame: any) => {
+                // generator needs a VideoFrame
+                try {
+                    await genWriter.write(frame);
+                } catch {
+                    // ignore
+                } finally {
+                    try {
+                        frame?.close?.();
+                    } catch { }
+                }
+            },
+            close: async () => {
+                try {
+                    await genWriter.close();
+                } catch { }
+            },
+            abort: async () => {
+                try {
+                    await genWriter.abort();
+                } catch { }
+            },
+        });
+
+        // transform stream: input VideoFrame -> processed VideoFrame
+        const transform = new TransformStream<any, any>({
+            transform: (frame: any, controller: any) => {
+                if (!running) {
+                    try {
+                        frame?.close?.();
+                    } catch { }
+                    return;
+                }
+
+                // realtime: if downstream is congested, drop this frame (avoid latency build-up)
+                try {
+                    const desired = controller?.desiredSize;
+                    if (typeof desired === "number" && desired <= 0) {
+                        try {
+                            frame?.close?.();
+                        } catch { }
+                        return;
+                    }
+                } catch { }
+
+                const srcW = Number(frame?.displayWidth ?? frame?.codedWidth ?? 0) || 640;
+                const srcH = Number(frame?.displayHeight ?? frame?.codedHeight ?? 0) || 360;
+
+                try {
+                    ensureCanvases(srcW, srcH);
+                } catch {
+                    try {
+                        frame?.close?.();
+                    } catch { }
+                    return;
+                }
+
+                // kick segmentation (throttled, async; uses segCanvas copy)
+                if (seg && segReady) {
+                    try {
+                        maybeRunSegmentation(frame);
+                    } catch { }
+                }
+
+                // draw
+                try {
+                    if (mode !== "none" && segReady && lastMask) drawWithMask(frame);
+                    else drawFallback(frame);
+                } catch {
+                    // ignore draw errors
+                }
+
+                // produce output frame
+                if (canvas && VF) {
+                    let outFrame: any = null;
+                    try {
+                        const ts = typeof frame?.timestamp === "number" ? frame.timestamp : undefined;
+                        const dur = typeof frame?.duration === "number" ? frame.duration : undefined;
+
+                        outFrame = new VF(canvas, {
+                            timestamp: ts,
+                            duration: dur,
+                        });
+
+                        controller.enqueue(outFrame);
+                    } catch {
+                        try {
+                            outFrame?.close?.();
+                        } catch { }
+                    }
+                }
+
+                // always close input frame
+                try {
+                    frame?.close?.();
+                } catch { }
+            },
+        });
+
+        pipeAbort = new AbortController();
+        pipePromise = processor.readable
+            .pipeThrough(transform)
+            .pipeTo(sink, { signal: pipeAbort.signal })
+            .then(() => { })
+            .catch(() => { });
+
+        return outStream!;
+    };
+
+    // Fallback (if insertable streams unsupported): return the original canvas.captureStream version
+    // (kept minimal; still works, but the whole point is to use insertable streams when possible)
+    const buildFallbackCanvas = async (input: MediaStream): Promise<MediaStream> => {
+        // Minimal fallback: draw frames with a hidden <video> + canvas + captureStream
+        // (uses timers on hidden tabs, no “pause on hidden”)
+        let localRunning = true;
+
+        const videoEl = document.createElement("video");
+        videoEl.playsInline = true;
+        videoEl.muted = true;
+        videoEl.autoplay = true;
+        (videoEl as any).srcObject = input;
+
+        try {
+            await videoEl.play().catch(() => { });
+        } catch { }
+
+        const t0 = Date.now();
+        while (Date.now() - t0 < 1200) {
+            const vw = videoEl.videoWidth || 0;
+            const vh = videoEl.videoHeight || 0;
+            if (vw > 0 && vh > 0) break;
+            await sleep(50);
+        }
+
+        const vw0 = videoEl.videoWidth || 640;
+        const vh0 = videoEl.videoHeight || 360;
+        const scale = vw0 > maxWidth ? maxWidth / vw0 : 1;
+        const vw = Math.max(2, Math.round(vw0 * scale));
+        const vh = Math.max(2, Math.round(vh0 * scale));
+
+        const c = document.createElement("canvas");
+        c.width = vw;
+        c.height = vh;
+        const cctx = c.getContext("2d", { alpha: true });
+        if (!cctx) throw new Error("Canvas 2D context not available");
+
+        // bg image
+        if (mode === "image" && opts.imageUrl) {
             try {
-                const gen: any = new TG({ kind: "video" });
-                genTrack = gen as MediaStreamTrack;
-                genWriter = gen.writable.getWriter();
-
-                outStream = new MediaStream([genTrack]);
+                bgImage = await loadImage(opts.imageUrl);
             } catch {
-                genTrack = null;
-                genWriter = null;
-                outStream = null;
+                bgImage = null;
             }
         }
 
-        // Fallback if generator is not available / failed
-        if (!outStream) {
-            // If you truly want ZERO captureStream usage ever, replace this with:
-            // throw new Error("WebCodecs MediaStreamTrackGenerator/VideoFrame not supported in this browser");
-            fallbackCaptureStream = canvas.captureStream(fps);
-            outStream = fallbackCaptureStream;
-        }
-
-        running = true;
-        tickInFlight = false;
-        lastSegAt = 0;
-
-        // warm blur cache immediately
-        if (mode === "blur") {
+        // seg
+        seg = await tryCreateSelfieSegmentation();
+        if (seg) {
             try {
-                maybeUpdateBlurCache();
-            } catch { }
+                seg.onResults((res: any) => {
+                    if (res?.segmentationMask) lastMask = res.segmentationMask as any;
+                });
+                segReady = true;
+            } catch {
+                seg = null;
+                segReady = false;
+            }
         }
 
-        try {
-            document.addEventListener("visibilitychange", onVisibility);
-        } catch { }
+        const stream = c.captureStream(fps);
 
-        scheduleNext();
-        return outStream;
+        let lastSeg = 0;
+        let segBusyLocal = false;
+
+        const drawTick = () => {
+            if (!localRunning) return;
+
+            try {
+                cctx.clearRect(0, 0, vw, vh);
+
+                const haveMask = mode !== "none" && segReady && lastMask;
+
+                if (haveMask) {
+                    // foreground
+                    cctx.save();
+                    cctx.drawImage(videoEl, 0, 0, vw, vh);
+                    cctx.globalCompositeOperation = "destination-in";
+                    cctx.drawImage(lastMask!, 0, 0, vw, vh);
+                    cctx.restore();
+
+                    // background
+                    cctx.save();
+                    cctx.globalCompositeOperation = "destination-over";
+
+                    if (mode === "image" && bgImage) {
+                        cctx.drawImage(bgImage, 0, 0, vw, vh);
+                    } else if (mode === "blur") {
+                        cctx.filter = `blur(${blurPx}px)`;
+                        cctx.drawImage(videoEl, 0, 0, vw, vh);
+                        cctx.filter = "none";
+                    } else {
+                        cctx.drawImage(videoEl, 0, 0, vw, vh);
+                    }
+
+                    cctx.restore();
+                    cctx.globalCompositeOperation = "source-over";
+                } else {
+                    if (mode === "blur") {
+                        cctx.filter = `blur(${blurPx}px)`;
+                        cctx.drawImage(videoEl, 0, 0, vw, vh);
+                        cctx.filter = "none";
+                    } else {
+                        cctx.drawImage(videoEl, 0, 0, vw, vh);
+                    }
+                }
+            } catch { }
+
+            // segmentation (throttle)
+            if (seg && segReady && !segBusyLocal) {
+                const now = nowMs();
+                const interval = 1000 / segFps;
+                if (now - lastSeg >= interval) {
+                    lastSeg = now;
+                    segBusyLocal = true;
+                    Promise.resolve()
+                        .then(() => seg.send({ image: videoEl }))
+                        .catch(() => { })
+                        .finally(() => {
+                            segBusyLocal = false;
+                        });
+                }
+            }
+
+            // No “pause on hidden”: timers always
+            window.setTimeout(drawTick, Math.max(33, Math.round(1000 / fps)));
+        };
+
+        drawTick();
+
+        // tie fallback to stopEffect via outer vars
+        outStream = stream;
+        genTrack = null;
+        processor = null;
+        generator = null;
+        genWriter = null;
+        pipeAbort = new AbortController(); // just a marker to stop fallback
+        pipePromise = (async () => {
+            while (localRunning && running) {
+                await sleep(250);
+            }
+        })();
+
+        // patch stopEffect cleanup for fallback
+        const prevStop = stopEffectImpl;
+        stopEffectImpl = async () => {
+            localRunning = false;
+            try {
+                videoEl.pause?.();
+                (videoEl as any).srcObject = null;
+            } catch { }
+            stopTracks(stream);
+            await prevStop();
+        };
+
+        return stream;
     };
 
-    const stopEffect = async () => {
+    // We override stopEffectImpl for fallback patching safely
+    let stopEffectImpl = async () => {
         running = false;
 
-        clearScheduled();
+        // stop pipeline
+        try {
+            pipeAbort?.abort();
+        } catch { }
+        pipeAbort = null;
 
         try {
-            document.removeEventListener("visibilitychange", onVisibility);
+            await pipePromise;
         } catch { }
+        pipePromise = null;
 
-        // Stop segmentation
+        // stop segmentation
         try {
             await seg?.close?.();
         } catch { }
@@ -585,38 +639,46 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         lastMask = null;
         lastSegAt = 0;
 
-        // Stop WebCodecs output
-        try {
-            if (genWriter) {
-                try {
-                    await genWriter.close();
-                } catch { }
-                try {
-                    genWriter.releaseLock();
-                } catch { }
-            }
-        } catch { }
-        genWriter = null;
-
+        // stop generator track only (do NOT stop input camera track)
         try {
             genTrack?.stop?.();
         } catch { }
-        genTrack = null;
 
-        // Stop fallback captureStream tracks (ONLY output, not input camera)
-        if (fallbackCaptureStream) {
-            stopTracks(fallbackCaptureStream);
-            fallbackCaptureStream = null;
+        // stop output stream tracks (if any remain)
+        stopTracks(outStream);
+
+        cleanup();
+    };
+
+    const startEffect = async (input: MediaStream): Promise<MediaStream> => {
+        // mode none => passthrough
+        if (mode === "none" || (mode === "blur" && blurPx <= 0)) {
+            outStream = input;
+            running = true;
+            return input;
         }
 
-        outStream = null;
-        cleanupDom();
+        running = true;
+
+        // Prefer insertable streams
+        if (supportsInsertableStreams()) {
+            try {
+                return await buildInsertablePipeline(input);
+            } catch {
+                // fall back
+            }
+        }
+
+        // Fallback path
+        return await buildFallbackCanvas(input);
+    };
+
+    const stopEffect = async () => {
+        await stopEffectImpl();
     };
 
     const dispose = async () => {
-        await stopEffect();
-        bgImage = null;
-        inputStream = null;
+        await stopEffectImpl();
     };
 
     return { startEffect, stopEffect, dispose };
