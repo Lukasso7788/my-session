@@ -2,15 +2,15 @@
 // WebCodecs (MediaStreamTrackProcessor/Generator) + Canvas + (optional) MediaPipe SelfieSegmentation
 // Used by jitsiEngine replaceTrack pipeline (can be async safely).
 //
-// ✅ Goal of this version:
-// - Remove dependency on <video> / DOM playback throttling
-// - Process frames directly from the input MediaStream video track
-// - Output a new MediaStream with the processed video track + passthrough audio tracks
+// ✅ Fixes in this revision (because previous "did nothing"):
+// - Creates processor/generator/outStream IMMEDIATELY in startEffect (not inside the async loop)
+// - Adds REAL debug logs (toggle via window.__BGFX_DEBUG__ = true)
+// - Adds "first frame" watchdog: if no frames arrive -> auto-fallback to DOM pipeline
+// - More defensive cleanup + explicit stop of generator track
 //
-// Notes:
-// - Uses WebCodecs when available. If not available, falls back to your previous <video>+canvas pipeline
-//   (so you don't lose functionality on older browsers).
-// - MediaPipe SelfieSegmentation is optional. If missing, fallback draws either blur-whole-frame or raw frame.
+// Debug:
+//   window.__BGFX_DEBUG__ = true
+//   window.__BGFX_DEBUG_SAMPLING__ = 60  // log every N frames (default 120)
 
 export type BgMode = "none" | "blur" | "image";
 
@@ -50,8 +50,7 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
 
 async function tryCreateSelfieSegmentation() {
     // Optional dependency. If missing — return null, we will fallback.
-    // The simplest path: install the package:
-    //   npm i @mediapipe/selfie_segmentation
+    // npm i @mediapipe/selfie_segmentation
     try {
         const mod: any = await import("@mediapipe/selfie_segmentation");
         const SelfieSegmentation = mod?.SelfieSegmentation;
@@ -61,10 +60,7 @@ async function tryCreateSelfieSegmentation() {
             locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`,
         });
 
-        seg.setOptions({
-            modelSelection: 1, // 0 = general, 1 = landscape (usually better)
-        });
-
+        seg.setOptions({ modelSelection: 1 });
         return seg;
     } catch {
         return null;
@@ -85,13 +81,18 @@ function hasWebCodecsPipeline() {
 }
 
 // -----------------------------------------------------------------------------
-// Fallback: your previous DOM <video> pipeline (kept to preserve compatibility)
+// Fallback: DOM <video> + canvas pipeline (kept for compatibility / fallback)
 // -----------------------------------------------------------------------------
 function createDomFallbackEffect(opts: CreateOpts): Processor {
     const mode: BgMode = opts.mode ?? "none";
     const fps = clamp(opts.fps ?? 30, 5, 60);
     const blurPx = clamp(opts.blurPx ?? 10, 0, 40);
     const maxWidth = clamp(opts.maxWidth ?? 1280, 320, 3840);
+
+    const DBG = !!(globalThis as any).__BGFX_DEBUG__;
+    const log = (...a: any[]) => {
+        if (DBG) console.log("[bgEffect][DOM]", ...a);
+    };
 
     let running = false;
 
@@ -183,14 +184,12 @@ function createDomFallbackEffect(opts: CreateOpts): Processor {
 
         ctx.clearRect(0, 0, w, h);
 
-        // 1) foreground
         ctx.save();
         ctx.drawImage(videoEl, 0, 0, w, h);
         ctx.globalCompositeOperation = "destination-in";
         if (lastMask) ctx.drawImage(lastMask, 0, 0, w, h);
         ctx.restore();
 
-        // 2) background
         ctx.save();
         ctx.globalCompositeOperation = "destination-over";
 
@@ -241,9 +240,7 @@ function createDomFallbackEffect(opts: CreateOpts): Processor {
                     void tickAndReschedule();
                 });
                 return;
-            } catch {
-                // fall through
-            }
+            } catch { }
         }
 
         rafId = requestAnimationFrame(() => {
@@ -277,7 +274,6 @@ function createDomFallbackEffect(opts: CreateOpts): Processor {
                     try {
                         await seg.send({ image: videoEl });
                     } catch {
-                        // ignore
                     } finally {
                         segBusy = false;
                     }
@@ -295,7 +291,8 @@ function createDomFallbackEffect(opts: CreateOpts): Processor {
     };
 
     const startEffect = async (input: MediaStream): Promise<MediaStream> => {
-        // Prepare video element
+        log("startEffect", { mode, fps, blurPx, maxWidth });
+
         videoEl = document.createElement("video");
         videoEl.playsInline = true;
         videoEl.muted = true;
@@ -325,7 +322,6 @@ function createDomFallbackEffect(opts: CreateOpts): Processor {
         canvas.width = vw;
         canvas.height = vh;
         ctx = canvas.getContext("2d", { alpha: true });
-
         if (!ctx) throw new Error("Canvas 2D context not available");
 
         outStream = canvas.captureStream(fps);
@@ -360,11 +356,11 @@ function createDomFallbackEffect(opts: CreateOpts): Processor {
         } catch { }
 
         scheduleNext();
-
         return outStream;
     };
 
     const stopEffect = async () => {
+        log("stopEffect");
         running = false;
         clearScheduled();
 
@@ -381,7 +377,6 @@ function createDomFallbackEffect(opts: CreateOpts): Processor {
         lastMask = null;
         lastSegAt = 0;
 
-        // Only stop output tracks (canvas stream)
         stopTracks(outStream);
         outStream = null;
 
@@ -397,7 +392,7 @@ function createDomFallbackEffect(opts: CreateOpts): Processor {
 }
 
 // -----------------------------------------------------------------------------
-// WebCodecs pipeline (variant #7): TrackProcessor/Generator
+// WebCodecs pipeline (fixed + instrumented)
 // -----------------------------------------------------------------------------
 export function createBackgroundEffect(opts: CreateOpts): Processor {
     // If WebCodecs pipeline isn't available, keep old behavior.
@@ -410,15 +405,20 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
     const blurPx = clamp(opts.blurPx ?? 10, 0, 40);
     const maxWidth = clamp(opts.maxWidth ?? 1280, 320, 3840);
 
-    // We intentionally keep segmentation slower than draw when possible.
-    // This reduces CPU hard, especially on mobile.
+    const DBG = !!(globalThis as any).__BGFX_DEBUG__;
+    const DBG_SAMPLING = clamp(Number((globalThis as any).__BGFX_DEBUG_SAMPLING__ ?? 120), 1, 10000);
+    const log = (...a: any[]) => {
+        if (DBG) console.log("[bgEffect][WC]", ...a);
+    };
+    const warn = (...a: any[]) => {
+        if (DBG) console.warn("[bgEffect][WC]", ...a);
+    };
+
+    // Reduce segmentation FPS heavily; compositing can run at targetFps, segmentation slower.
     const segFpsVisible = Math.min(10, targetFps);
     const segFpsHidden = Math.min(2, segFpsVisible);
 
     let running = false;
-    let inputStream: MediaStream | null = null;
-
-    let bgImage: HTMLImageElement | null = null;
 
     // MediaPipe
     let seg: any | null = null;
@@ -427,7 +427,9 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
     let lastMask: CanvasImageSource | null = null;
     let lastSegAt = 0;
 
-    // WebCodecs objects
+    let bgImage: HTMLImageElement | null = null;
+
+    // WebCodecs
     let processor: any | null = null;
     let generator: any | null = null;
     let reader: any | null = null;
@@ -438,56 +440,26 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
     let drawCanvas: HTMLCanvasElement | OffscreenCanvas | null = null;
     let drawCtx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null = null;
 
-    // A dedicated canvas for segmentation input (so we can feed MediaPipe a CanvasImageSource reliably)
-    // MediaPipe accepts HTMLCanvasElement / HTMLVideoElement / HTMLImageElement. OffscreenCanvas is not always accepted.
     let segCanvas: HTMLCanvasElement | null = null;
     let segCtx: CanvasRenderingContext2D | null = null;
 
+    // Streams/tracks
     let outStream: MediaStream | null = null;
+    let outVideoTrack: MediaStreamTrack | null = null;
+
+    // First-frame watchdog
+    let gotFirstFrame = false;
+    let firstFrameResolve: (() => void) | null = null;
+    const firstFramePromise = () =>
+        new Promise<void>((resolve) => {
+            gotFirstFrame = false;
+            firstFrameResolve = resolve;
+        });
 
     const safe = (fn: () => void) => {
         try {
             fn();
         } catch { }
-    };
-
-    const stopTracks = (s: MediaStream | null) => {
-        try {
-            s?.getTracks?.()?.forEach((t) => {
-                try {
-                    t.stop();
-                } catch { }
-            });
-        } catch { }
-    };
-
-    const create2dCanvas = (w: number, h: number) => {
-        // Prefer OffscreenCanvas if available for draw/composite.
-        // But keep an HTMLCanvasElement for MediaPipe input (compat).
-        let dc: any = null;
-        let dctx: any = null;
-
-        try {
-            const wAny: any = window as any;
-            if (typeof wAny.OffscreenCanvas === "function") {
-                dc = new wAny.OffscreenCanvas(w, h);
-                dctx = dc.getContext("2d", { alpha: true });
-            }
-        } catch {
-            dc = null;
-            dctx = null;
-        }
-
-        if (!dc || !dctx) {
-            const c = document.createElement("canvas");
-            c.width = w;
-            c.height = h;
-            const cctx = c.getContext("2d", { alpha: true });
-            if (!cctx) throw new Error("Canvas 2D context not available");
-            return { dc: c, dctx: cctx };
-        }
-
-        return { dc, dctx };
     };
 
     const ensureSegCanvas = (w: number, h: number) => {
@@ -503,6 +475,25 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         if (!segCtx) throw new Error("Segmentation canvas 2D context not available");
     };
 
+    const create2dCanvas = (w: number, h: number) => {
+        // Prefer OffscreenCanvas for draw/composite when possible
+        try {
+            const wAny: any = window as any;
+            if (typeof wAny.OffscreenCanvas === "function") {
+                const oc = new wAny.OffscreenCanvas(w, h);
+                const octx = oc.getContext("2d", { alpha: true });
+                if (octx) return { c: oc as OffscreenCanvas, ctx: octx as OffscreenCanvasRenderingContext2D };
+            }
+        } catch { }
+
+        const c = document.createElement("canvas");
+        c.width = w;
+        c.height = h;
+        const ctx = c.getContext("2d", { alpha: true });
+        if (!ctx) throw new Error("Canvas 2D context not available");
+        return { c, ctx };
+    };
+
     const pickScaledSize = (srcW: number, srcH: number) => {
         if (srcW <= 0 || srcH <= 0) return { w: 640, h: 360 };
         const scale = srcW > maxWidth ? maxWidth / srcW : 1;
@@ -513,8 +504,7 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
     };
 
     const drawFallback = (frame: any, w: number, h: number) => {
-        if (!drawCtx || !drawCanvas) return;
-
+        if (!drawCtx) return;
         (drawCtx as any).clearRect(0, 0, w, h);
 
         if (mode === "blur") {
@@ -523,23 +513,19 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
             (drawCtx as any).filter = "none";
             return;
         }
-
         (drawCtx as any).drawImage(frame, 0, 0, w, h);
     };
 
     const drawWithMask = (frame: any, w: number, h: number) => {
-        if (!drawCtx || !drawCanvas) return;
-
+        if (!drawCtx) return;
         (drawCtx as any).clearRect(0, 0, w, h);
 
-        // 1) foreground
         (drawCtx as any).save();
         (drawCtx as any).drawImage(frame, 0, 0, w, h);
         (drawCtx as any).globalCompositeOperation = "destination-in";
         if (lastMask) (drawCtx as any).drawImage(lastMask as any, 0, 0, w, h);
         (drawCtx as any).restore();
 
-        // 2) background
         (drawCtx as any).save();
         (drawCtx as any).globalCompositeOperation = "destination-over";
 
@@ -568,8 +554,6 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         if (now - lastSegAt < interval) return;
         lastSegAt = now;
 
-        // MediaPipe wants HTMLVideoElement / HTMLImageElement / HTMLCanvasElement
-        // We draw the current VideoFrame into segCanvas and send that canvas.
         ensureSegCanvas(w, h);
         if (!segCtx || !segCanvas) return;
 
@@ -585,28 +569,63 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         }
     };
 
-    const startWebCodecsLoop = async (videoTrack: MediaStreamTrack) => {
+    const cleanupWebCodecs = async () => {
+        running = false;
+
+        safe(() => abortCtl?.abort());
+        abortCtl = null;
+
+        try {
+            await seg?.close?.();
+        } catch { }
+        seg = null;
+        segReady = false;
+        segBusy = false;
+        lastMask = null;
+        lastSegAt = 0;
+
+        // stop generator track explicitly
+        try {
+            outVideoTrack?.stop?.();
+        } catch { }
+        outVideoTrack = null;
+
+        // reader/writer
+        try {
+            await reader?.cancel?.();
+        } catch { }
+        try {
+            await writer?.close?.();
+        } catch { }
+
+        safe(() => reader?.releaseLock?.());
+        safe(() => writer?.releaseLock?.());
+
+        reader = null;
+        writer = null;
+        processor = null;
+        generator = null;
+
+        drawCanvas = null;
+        drawCtx = null;
+        segCanvas = null;
+        segCtx = null;
+
+        outStream = null;
+        bgImage = null;
+
+        gotFirstFrame = false;
+        firstFrameResolve = null;
+    };
+
+    const pump = async (signal: AbortSignal) => {
         const wAny: any = window as any;
 
-        processor = new wAny.MediaStreamTrackProcessor({ track: videoTrack });
-        generator = new wAny.MediaStreamTrackGenerator({ kind: "video" });
+        let framesOut = 0;
 
-        reader = processor.readable.getReader();
-        writer = generator.writable.getWriter();
-
-        abortCtl = new AbortController();
-        const { signal } = abortCtl;
-
-        // We will build output stream once generator exists
-        const audios = (inputStream?.getAudioTracks?.() || []).slice();
-        outStream = new MediaStream([...audios, generator]);
-
-        // Frame pacing (optional): we *allow* natural pacing, but we can also downsample if needed.
-        // We'll do a lightweight gate so we don't output more than targetFps.
         const minFrameIntervalMs = 1000 / targetFps;
         let lastOutAt = 0;
 
-        // Dimensions init once we see first frame
         let outW = 0;
         let outH = 0;
 
@@ -614,20 +633,28 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
             let res: any;
             try {
                 res = await reader.read();
-            } catch {
+            } catch (e) {
+                warn("reader.read() failed", e);
                 break;
             }
-            if (!res || res.done) break;
+            if (!res || res.done) {
+                warn("reader done");
+                break;
+            }
 
             const frame: any = res.value;
             if (!frame) continue;
 
             try {
-                // Throttle output fps if source is higher
+                if (!gotFirstFrame) {
+                    gotFirstFrame = true;
+                    firstFrameResolve?.();
+                    firstFrameResolve = null;
+                    log("✅ first frame received");
+                }
+
                 const now = performance.now();
                 if (now - lastOutAt < minFrameIntervalMs) {
-                    // We still should run segmentation occasionally? It's optional.
-                    // But to keep CPU sane, just drop this frame.
                     try {
                         frame.close?.();
                     } catch { }
@@ -644,24 +671,10 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
                     outH = s.h;
 
                     const made = create2dCanvas(outW, outH);
-                    drawCanvas = made.dc;
-                    drawCtx = made.dctx;
+                    drawCanvas = made.c;
+                    drawCtx = made.ctx;
 
-                    // Setup segmentation once
-                    seg = await tryCreateSelfieSegmentation();
-                    if (seg) {
-                        try {
-                            seg.onResults((r: any) => {
-                                if (r?.segmentationMask) lastMask = r.segmentationMask as any;
-                            });
-                            segReady = true;
-                        } catch {
-                            seg = null;
-                            segReady = false;
-                        }
-                    }
-
-                    // Load background image if needed
+                    // Load image bg if needed
                     if (mode === "image" && opts.imageUrl) {
                         try {
                             bgImage = await loadImage(opts.imageUrl);
@@ -669,35 +682,51 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
                             bgImage = null;
                         }
                     }
+
+                    // Segmentation (optional)
+                    seg = await tryCreateSelfieSegmentation();
+                    if (seg) {
+                        try {
+                            seg.onResults((r: any) => {
+                                if (r?.segmentationMask) lastMask = r.segmentationMask as any;
+                            });
+                            segReady = true;
+                            log("MediaPipe segmentation enabled");
+                        } catch (e) {
+                            warn("MediaPipe onResults failed", e);
+                            seg = null;
+                            segReady = false;
+                        }
+                    } else {
+                        log("MediaPipe segmentation NOT available -> fallback compositing");
+                    }
+
+                    log("init size", { srcW, srcH, outW, outH, mode, targetFps });
                 }
 
-                // Composite/draw
+                // Composite
                 try {
                     if (segReady && lastMask) drawWithMask(frame, outW, outH);
                     else drawFallback(frame, outW, outH);
-                } catch {
-                    // if draw fails, do nothing; we still try to pass through something
+                } catch (e) {
+                    warn("draw failed", e);
                 }
 
-                // Run segmentation asynchronously (paced)
+                // Segmentation step (paced)
                 if (seg && segReady) {
-                    // fire-and-await here to keep correctness and avoid runaway
                     await maybeRunSegmentation(frame, outW, outH);
                 }
 
-                // Emit a new VideoFrame from our canvas
-                // - For OffscreenCanvas, VideoFrame accepts it in modern Chromium.
-                // - For HTMLCanvasElement, also works.
+                // Emit frame from canvas
                 let outFrame: any = null;
                 try {
                     const ts = typeof frame.timestamp === "number" ? frame.timestamp : Math.round(performance.now() * 1000);
                     outFrame = new wAny.VideoFrame(drawCanvas, { timestamp: ts });
-                } catch {
-                    // If VideoFrame(canvas) fails for some reason, skip output
+                } catch (e) {
+                    warn("VideoFrame(drawCanvas) failed", e);
                     outFrame = null;
                 }
 
-                // Backpressure
                 try {
                     if (writer?.ready) await writer.ready;
                 } catch { }
@@ -705,8 +734,10 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
                 if (outFrame) {
                     try {
                         await writer.write(outFrame);
-                    } catch {
-                        // ignore write failures
+                        framesOut++;
+                        if (DBG && framesOut % DBG_SAMPLING === 0) log("framesOut", framesOut);
+                    } catch (e) {
+                        warn("writer.write failed", e);
                     } finally {
                         try {
                             outFrame.close?.();
@@ -714,99 +745,72 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
                     }
                 }
             } finally {
-                // Always close input frame to avoid leaks
                 try {
                     frame.close?.();
                 } catch { }
             }
         }
-    };
 
-    const stopWebCodecs = async () => {
-        running = false;
-
-        safe(() => abortCtl?.abort());
-        abortCtl = null;
-
-        // Close segmentation
-        try {
-            await seg?.close?.();
-        } catch { }
-        seg = null;
-        segReady = false;
-        segBusy = false;
-        lastMask = null;
-        lastSegAt = 0;
-
-        // Close reader/writer
-        try {
-            await reader?.cancel?.();
-        } catch { }
-        try {
-            await writer?.close?.();
-        } catch { }
-
-        safe(() => reader?.releaseLock?.());
-        safe(() => writer?.releaseLock?.());
-
-        reader = null;
-        writer = null;
-
-        // Stop tracks we created (generator track). Audio passthrough is owned by input stream.
-        stopTracks(outStream);
-        outStream = null;
-
-        processor = null;
-        generator = null;
-
-        drawCanvas = null;
-        drawCtx = null;
-
-        segCanvas = null;
-        segCtx = null;
-
-        bgImage = null;
-        inputStream = null;
+        warn("pump exit");
     };
 
     const startEffect = async (input: MediaStream): Promise<MediaStream> => {
-        inputStream = input;
+        log("startEffect called", { mode, targetFps, blurPx, maxWidth, hasWebCodecs: true });
 
         const videoTrack = input.getVideoTracks?.()?.[0] || null;
         if (!videoTrack) {
-            // No video -> passthrough (audio only)
+            log("no video track -> passthrough");
             return new MediaStream(input.getTracks?.() || []);
         }
 
+        // Create WC objects IMMEDIATELY (so we return a valid stream instantly)
+        const wAny: any = window as any;
+
+        processor = new wAny.MediaStreamTrackProcessor({ track: videoTrack });
+        generator = new wAny.MediaStreamTrackGenerator({ kind: "video" });
+
+        reader = processor.readable.getReader();
+        writer = generator.writable.getWriter();
+
+        outVideoTrack = generator as any;
+
+        // Passthrough audio tracks (do NOT stop them on stopEffect)
+        const audios = (input.getAudioTracks?.() || []).slice();
+        outStream = new MediaStream([...audios, outVideoTrack]);
+
         running = true;
+        abortCtl = new AbortController();
 
-        // Kick the loop (do not await forever)
-        startWebCodecsLoop(videoTrack).catch(() => {
-            // If WebCodecs path fails mid-flight, fall back to DOM pipeline best-effort
-            // (but we must stop current objects first).
-            void stopWebCodecs();
-        });
+        // Start pump
+        const p = firstFramePromise();
+        pump(abortCtl.signal).catch((e) => warn("pump crashed", e));
 
-        // outStream is created synchronously after generator, but loop creates it.
-        // Wait a tiny bit for outStream to be ready.
-        const t0 = Date.now();
-        while (!outStream && Date.now() - t0 < 800) {
-            await sleep(10);
+        // Watchdog: if no frames arrive, fallback to DOM (very common when track is ended/muted/wrong)
+        try {
+            await Promise.race([p, sleep(1200)]);
+        } catch { }
+
+        if (!gotFirstFrame) {
+            warn("❌ no frames received in time -> fallback to DOM pipeline");
+            // Stop WC objects first
+            await cleanupWebCodecs();
+
+            const fb = createDomFallbackEffect(opts);
+            return await Promise.resolve(fb.startEffect(input));
         }
 
-        if (outStream) return outStream;
-
-        // Worst case: fallback to DOM effect
-        const fb = createDomFallbackEffect(opts);
-        return await Promise.resolve(fb.startEffect(input));
+        log("✅ WebCodecs pipeline active, returning outStream");
+        return outStream;
     };
 
     const stopEffect = async () => {
-        await stopWebCodecs();
+        log("stopEffect");
+        await cleanupWebCodecs();
     };
 
     const dispose = async () => {
-        await stopWebCodecs();
+        log("dispose");
+        await cleanupWebCodecs();
     };
 
     return { startEffect, stopEffect, dispose };
