@@ -2,22 +2,32 @@
 // Canvas + (optional) MediaPipe SelfieSegmentation background effects.
 // Used by jitsiEngine replaceTrack pipeline (can be async safely).
 //
-// Variant: Hidden-mode keepalive 1–2 FPS + NO segmentation (clean + low-risk)
+// ✅ This version adds an adaptive "degrader" (auto quality scaler) based on real runtime metrics:
 //
-// ✅ When visible:
-//   - draw at your fps (RAF/VFC)
-//   - segmentation runs (throttled) when available
+// We continuously measure:
+// - tick time (draw + overhead)
+// - segmentation time (seg.send duration)
+// - effective FPS / frame jitter
 //
-// ✅ When hidden:
-//   - DO NOT call seg.send()
-//   - DO NOT try to be realtime
-//   - draw only fallback (blur-whole-frame OR raw video)
-//   - tick at 1–2 FPS using setTimeout
+// If things get heavy for a sustained window -> degrade step by step:
+// 1) lower segmentation FPS (10 -> 6 -> 3 -> 0)
+// 2) lower maxWidth (1280 -> 960 -> 640 -> 480 -> 360)
+// 3) lower blurPx (10 -> 8 -> 6 -> 4 -> 2)
+// 4) disable segmentation mask usage (fallback-only) (optional baked into segFps=0)
 //
-// ✅ Also adds:
-//   - debug logs (opt-in, default on localhost)
-//   - segmentation throttling cap (default 10 fps)
-//   - safe cleanup + guards against double-scheduling
+// If performance recovers for long enough -> upgrade back carefully.
+//
+// Also:
+// - Hidden tab mode: keepalive at 1–2 FPS, NO segmentation.
+// - Debug logs (opt-in, default true on localhost).
+//
+// Notes:
+// - We cannot "change canvas captureStream resolution" without rebuilding the canvas.
+//   So for width changes we rebuild the pipeline (stop+recreate canvas/video element).
+//   We do this rarely and with cooldowns to avoid flicker.
+// - If you want *zero* restarts, remove width degradation and only degrade segFps/blurPx.
+//
+// You can tune thresholds below.
 
 export type BgMode = "none" | "blur" | "image";
 
@@ -28,10 +38,14 @@ type CreateOpts = {
     fps?: number; // default 30
     maxWidth?: number; // default 1280
 
-    // optional knobs
-    hiddenFps?: number; // default 1.5
-    segFps?: number; // default 10
+    // Optional knobs:
     debug?: boolean; // default true on localhost
+    hiddenFps?: number; // default 1.5 (keepalive while hidden)
+
+    // Degrader tuning:
+    enableDegrader?: boolean; // default true
+    degradeWindowMs?: number; // default 2500
+    upgradeWindowMs?: number; // default 8000
 };
 
 type Processor = {
@@ -81,13 +95,52 @@ async function tryCreateSelfieSegmentation() {
     }
 }
 
+// -------------------------
+// Degrader configuration
+// -------------------------
+type QualityLevel = {
+    name: string;
+    maxWidth: number;
+    segFps: number; // 0 disables segmentation
+    blurPx: number;
+};
+
+const QUALITY_LADDER: QualityLevel[] = [
+    { name: "Q0-ultra", maxWidth: 1280, segFps: 10, blurPx: 10 },
+    { name: "Q1-high", maxWidth: 960, segFps: 8, blurPx: 8 },
+    { name: "Q2-med", maxWidth: 640, segFps: 6, blurPx: 6 },
+    { name: "Q3-low", maxWidth: 480, segFps: 3, blurPx: 4 },
+    { name: "Q4-min", maxWidth: 360, segFps: 0, blurPx: 2 }, // fallback-only
+];
+
+// Thresholds (tune if needed)
+const THRESH = {
+    // If avg tick > 22ms at 30fps, you're struggling (especially if seg is on).
+    // If avg seg > 70ms, MediaPipe is heavy -> drop segFps or disable.
+    tickMsBad: 22,
+    segMsBad: 70,
+    // Effective fps check (visible only)
+    effFpsBad: 18, // if < 18fps, degrade
+    effFpsGood: 26, // if > 26fps stable, can upgrade
+};
+
+// Cooldowns to avoid thrashing
+const COOLDOWN = {
+    changeQualityMs: 2500, // don't change quality too frequently
+    restartMs: 6000, // don't rebuild canvas too frequently
+};
+
 export function createBackgroundEffect(opts: CreateOpts): Processor {
     const mode: BgMode = opts.mode ?? "none";
-    const fps = clamp(opts.fps ?? 30, 5, 60);
-    const hiddenFps = clamp(opts.hiddenFps ?? 1.5, 0.2, 5); // 1–2 fps sweet spot
-    const blurPx = clamp(opts.blurPx ?? 10, 0, 40);
-    const maxWidth = clamp(opts.maxWidth ?? 1280, 320, 3840);
-    const segFps = clamp(opts.segFps ?? 10, 0, 30);
+    const targetFps = clamp(opts.fps ?? 30, 5, 60);
+    const baseBlurPx = clamp(opts.blurPx ?? 10, 0, 40);
+    const baseMaxWidth = clamp(opts.maxWidth ?? 1280, 320, 3840);
+
+    const hiddenFps = clamp(opts.hiddenFps ?? 1.5, 0.2, 5);
+    const enableDegrader = opts.enableDegrader ?? true;
+
+    const degradeWindowMs = clamp(opts.degradeWindowMs ?? 2500, 800, 20000);
+    const upgradeWindowMs = clamp(opts.upgradeWindowMs ?? 8000, 2000, 30000);
 
     const debugDefault = (() => {
         try {
@@ -107,6 +160,9 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         } catch { }
     };
 
+    // -------------------------
+    // Runtime mutable state
+    // -------------------------
     let running = false;
 
     let rafId: number | null = null;
@@ -120,6 +176,7 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
     let ctx: CanvasRenderingContext2D | null = null;
 
     let outStream: MediaStream | null = null;
+    let inputStream: MediaStream | null = null;
 
     let bgImage: HTMLImageElement | null = null;
 
@@ -130,6 +187,49 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
     let segBusy = false;
     let lastSegAt = 0;
 
+    // Degrader quality state
+    // pick initial level closest to baseMaxWidth/baseBlurPx (and if mode none, seg won't matter)
+    let qIndex = 0;
+    {
+        // choose a level <= baseMaxWidth if possible
+        let best = 0;
+        for (let i = 0; i < QUALITY_LADDER.length; i++) {
+            if (QUALITY_LADDER[i].maxWidth <= baseMaxWidth) best = i;
+        }
+        qIndex = best;
+        // override blur to user's preferred starting blur if bigger
+        QUALITY_LADDER[best] = {
+            ...QUALITY_LADDER[best],
+            blurPx: clamp(baseBlurPx, 0, 40),
+        };
+    }
+
+    let activeMaxWidth = clamp(QUALITY_LADDER[qIndex].maxWidth, 320, 3840);
+    let activeSegFps = clamp(QUALITY_LADDER[qIndex].segFps, 0, 30);
+    let activeBlurPx = clamp(QUALITY_LADDER[qIndex].blurPx, 0, 40);
+
+    // metric buffers
+    type Stats = {
+        tickMsAvg: number;
+        segMsAvg: number;
+        effFpsAvg: number;
+    };
+
+    let tickMsEMA = 0;
+    let segMsEMA = 0;
+    let effFpsEMA = 0;
+
+    let lastFrameAt = 0;
+
+    let badSince = 0;
+    let goodSince = 0;
+
+    let lastQualityChangeAt = 0;
+    let lastRestartAt = 0;
+
+    // -------------------------
+    // Helpers
+    // -------------------------
     const stopTracks = (s: MediaStream | null) => {
         try {
             s?.getTracks?.()?.forEach((t) => {
@@ -195,6 +295,135 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         }
     };
 
+    const pickScaled = (vw0: number, vh0: number, maxW: number) => {
+        const scale = vw0 > maxW ? maxW / vw0 : 1;
+        return {
+            w: Math.max(2, Math.round(vw0 * scale)),
+            h: Math.max(2, Math.round(vh0 * scale)),
+        };
+    };
+
+    const resetMetrics = () => {
+        tickMsEMA = 0;
+        segMsEMA = 0;
+        effFpsEMA = 0;
+        lastFrameAt = 0;
+        badSince = 0;
+        goodSince = 0;
+    };
+
+    const ema = (prev: number, next: number, alpha: number) =>
+        prev === 0 ? next : prev * (1 - alpha) + next * alpha;
+
+    const getStats = (): Stats => ({
+        tickMsAvg: tickMsEMA,
+        segMsAvg: segMsEMA,
+        effFpsAvg: effFpsEMA,
+    });
+
+    const applyQualityLevel = (idx: number) => {
+        const q = QUALITY_LADDER[clamp(idx, 0, QUALITY_LADDER.length - 1)];
+        activeMaxWidth = clamp(q.maxWidth, 320, 3840);
+        activeSegFps = clamp(q.segFps, 0, 30);
+        activeBlurPx = clamp(q.blurPx, 0, 40);
+    };
+
+    const maybeChangeQuality = async (dir: "down" | "up") => {
+        if (!enableDegrader) return;
+        const now = performance.now();
+        if (now - lastQualityChangeAt < COOLDOWN.changeQualityMs) return;
+
+        const nextIndex =
+            dir === "down" ? Math.min(qIndex + 1, QUALITY_LADDER.length - 1) : Math.max(qIndex - 1, 0);
+
+        if (nextIndex === qIndex) return;
+
+        lastQualityChangeAt = now;
+
+        const prev = QUALITY_LADDER[qIndex];
+        qIndex = nextIndex;
+        applyQualityLevel(qIndex);
+        const next = QUALITY_LADDER[qIndex];
+
+        log("QUALITY", dir.toUpperCase(), `${prev.name} -> ${next.name}`, {
+            activeMaxWidth,
+            activeSegFps,
+            activeBlurPx,
+            stats: getStats(),
+        });
+
+        // If maxWidth changed, we need a controlled restart to rebuild canvas size.
+        if (prev.maxWidth !== next.maxWidth) {
+            if (now - lastRestartAt < COOLDOWN.restartMs) {
+                // Too soon to restart: still apply segFps/blur changes without rebuild.
+                // We'll rebuild later if we keep being bad.
+                log("restart skipped (cooldown)");
+                return;
+            }
+            lastRestartAt = now;
+
+            // Hard restart pipeline but keep same input stream (camera track)
+            // NOTE: This will stop the old outStream tracks, and create new ones.
+            // Your caller MUST replaceTrack with the new stream track (jitsiEngine should).
+            if (inputStream) {
+                log("restarting pipeline to apply new maxWidth:", activeMaxWidth);
+                const oldRunning = running;
+                // Stop current rendering objects but keep inputStream reference.
+                await internalStop(false /*keepInput*/);
+
+                // Restart immediately if we were running
+                if (oldRunning && inputStream) {
+                    await internalStart(inputStream);
+                }
+            }
+        }
+    };
+
+    // Determines whether system is "bad" or "good"
+    const evaluateDegrader = async () => {
+        if (!enableDegrader) return;
+        if (!running) return;
+
+        // Only consider visible-mode perf for degrade/upgrade.
+        if (!isVisible()) return;
+
+        const s = getStats();
+        const now = performance.now();
+
+        const bad =
+            (s.tickMsAvg > THRESH.tickMsBad && s.tickMsAvg !== 0) ||
+            (s.segMsAvg > THRESH.segMsBad && s.segMsAvg !== 0) ||
+            (s.effFpsAvg > 0 && s.effFpsAvg < THRESH.effFpsBad);
+
+        const good =
+            (s.tickMsAvg > 0 && s.tickMsAvg < THRESH.tickMsBad * 0.75) &&
+            (s.segMsAvg === 0 || s.segMsAvg < THRESH.segMsBad * 0.75) &&
+            (s.effFpsAvg > THRESH.effFpsGood);
+
+        if (bad) {
+            if (!badSince) badSince = now;
+            goodSince = 0;
+            if (now - badSince >= degradeWindowMs) {
+                badSince = now; // reset window to prevent multiple steps instantly
+                await maybeChangeQuality("down");
+            }
+        } else if (good) {
+            if (!goodSince) goodSince = now;
+            badSince = 0;
+            if (now - goodSince >= upgradeWindowMs) {
+                goodSince = now;
+                await maybeChangeQuality("up");
+            }
+        } else {
+            // neither clearly bad nor good
+            badSince = 0;
+            goodSince = 0;
+        }
+    };
+
+    // -------------------------
+    // Drawing
+    // -------------------------
     const tickDrawFallback = () => {
         if (!running || !videoEl || !canvas || !ctx) return;
 
@@ -205,15 +434,16 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
             ctx.clearRect(0, 0, w, h);
 
             if (mode === "blur") {
-                ctx.filter = `blur(${blurPx}px)`;
+                ctx.filter = `blur(${activeBlurPx}px)`;
                 ctx.drawImage(videoEl, 0, 0, w, h);
                 ctx.filter = "none";
                 return;
             }
 
+            // image mode without segmentation -> draw raw
             ctx.drawImage(videoEl, 0, 0, w, h);
         } catch {
-            // ignore draw errors
+            // ignore
         }
     };
 
@@ -239,7 +469,7 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
             if (mode === "image" && bgImage) {
                 ctx.drawImage(bgImage, 0, 0, w, h);
             } else if (mode === "blur") {
-                ctx.filter = `blur(${blurPx}px)`;
+                ctx.filter = `blur(${activeBlurPx}px)`;
                 ctx.drawImage(videoEl, 0, 0, w, h);
                 ctx.filter = "none";
             } else {
@@ -249,17 +479,18 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
             ctx.restore();
             ctx.globalCompositeOperation = "source-over";
         } catch {
-            // ignore draw errors
+            // ignore
         }
     };
 
+    // -------------------------
+    // Scheduler
+    // -------------------------
     const scheduleNext = () => {
         if (!running) return;
 
-        // IMPORTANT: prevent duplicates
         clearScheduled();
 
-        // Hidden => 1–2 fps timer keepalive
         if (!isVisible()) {
             const ms = Math.max(200, Math.round(1000 / hiddenFps));
             timerId = window.setTimeout(() => {
@@ -269,7 +500,6 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
             return;
         }
 
-        // Visible => prefer VFC, else RAF
         if (shouldUseVFC()) {
             try {
                 vfcId = (videoEl as any).requestVideoFrameCallback(() => {
@@ -297,36 +527,56 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         }
 
         tickInFlight = true;
+        const tStart = performance.now();
         try {
-            const visible = isVisible();
+            // Effective FPS / jitter estimate (visible only)
+            if (isVisible()) {
+                const now = performance.now();
+                if (lastFrameAt) {
+                    const dt = now - lastFrameAt;
+                    const instFps = dt > 0 ? 1000 / dt : 0;
+                    effFpsEMA = ema(effFpsEMA, instFps, 0.08);
+                }
+                lastFrameAt = now;
+            }
 
-            // ✅ Hidden mode: NO segmentation, fallback only
-            if (!visible) {
+            // Hidden => do fallback only, no segmentation
+            if (!isVisible()) {
                 tickDrawFallback();
                 return;
             }
 
-            // ✅ Visible: draw (with mask if we have it)
-            if (segReady && lastMask) tickDrawWithMask();
+            // Visible: draw
+            const canUseMask = segReady && !!lastMask && activeSegFps > 0;
+            if (canUseMask) tickDrawWithMask();
             else tickDrawFallback();
 
-            // ✅ Visible: segmentation (throttled) — optional
-            if (seg && segReady && !segBusy && videoEl && segFps > 0) {
+            // Visible: segmentation (optional) - throttle by activeSegFps
+            if (seg && segReady && !segBusy && videoEl && activeSegFps > 0) {
                 const now = performance.now();
-                const interval = 1000 / segFps;
+                const interval = 1000 / Math.max(1, activeSegFps);
+
                 if (now - lastSegAt >= interval) {
                     lastSegAt = now;
                     segBusy = true;
+                    const segStart = performance.now();
                     try {
                         await seg.send({ image: videoEl });
                     } catch {
                         // ignore
                     } finally {
+                        const segDt = performance.now() - segStart;
+                        segMsEMA = ema(segMsEMA, segDt, 0.12);
                         segBusy = false;
                     }
                 }
             }
+
+            // Evaluate degrader occasionally
+            await evaluateDegrader();
         } finally {
+            const tickDt = performance.now() - tStart;
+            tickMsEMA = ema(tickMsEMA, tickDt, 0.12);
             tickInFlight = false;
             scheduleNext();
         }
@@ -334,20 +584,28 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
 
     const onVisibility = () => {
         if (!running) return;
-
-        // On flip, just reschedule (switches timer<->RAF/VFC)
         log("visibilitychange ->", isVisible() ? "visible" : "hidden");
-
-        // When returning visible, we want a "kick" so we don't stay on a stale frame
-        if (isVisible()) {
-            lastSegAt = 0; // allow seg immediately
-        }
-
+        // When becoming visible, allow immediate segmentation
+        if (isVisible()) lastSegAt = 0;
         scheduleNext();
     };
 
-    const startEffect = async (input: MediaStream): Promise<MediaStream> => {
-        log("startEffect()", { mode, fps, hiddenFps, segFps, blurPx, maxWidth });
+    // -------------------------
+    // Start/Stop internals (support restarts)
+    // -------------------------
+    const internalStart = async (input: MediaStream): Promise<MediaStream> => {
+        inputStream = input;
+
+        log("startEffect()", {
+            mode,
+            targetFps,
+            baseMaxWidth,
+            baseBlurPx,
+            activeMaxWidth,
+            activeSegFps,
+            activeBlurPx,
+            q: QUALITY_LADDER[qIndex]?.name,
+        });
 
         // Prepare video element
         videoEl = document.createElement("video");
@@ -356,14 +614,13 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         videoEl.autoplay = true;
         (videoEl as any).srcObject = input;
 
-        // Try play (muted+autoplay should pass)
         try {
             await videoEl.play().catch((e) => log("videoEl.play fail:", e));
         } catch (e) {
             log("videoEl.play throw:", e);
         }
 
-        // Wait for metadata/dimensions
+        // Wait for dimensions
         const t0 = Date.now();
         while (Date.now() - t0 < 1500) {
             const vw = videoEl.videoWidth || 0;
@@ -375,9 +632,7 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         const vw0 = videoEl.videoWidth || 640;
         const vh0 = videoEl.videoHeight || 360;
 
-        const scale = vw0 > maxWidth ? maxWidth / vw0 : 1;
-        const vw = Math.max(2, Math.round(vw0 * scale));
-        const vh = Math.max(2, Math.round(vh0 * scale));
+        const { w: vw, h: vh } = pickScaled(vw0, vh0, activeMaxWidth);
 
         canvas = document.createElement("canvas");
         canvas.width = vw;
@@ -385,8 +640,8 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         ctx = canvas.getContext("2d", { alpha: true });
         if (!ctx) throw new Error("Canvas 2D context not available");
 
-        // Output stream
-        outStream = canvas.captureStream(fps);
+        // Output stream (fixed at targetFps)
+        outStream = canvas.captureStream(targetFps);
 
         // Background image
         if (mode === "image" && opts.imageUrl) {
@@ -396,48 +651,59 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
                 log("bgImage load fail:", e);
                 bgImage = null;
             }
+        } else {
+            bgImage = null;
         }
 
-        // MediaPipe init (optional)
-        seg = await tryCreateSelfieSegmentation();
-        if (seg) {
-            try {
-                seg.onResults((res: any) => {
-                    if (res?.segmentationMask) lastMask = res.segmentationMask as any;
-                });
-                segReady = true;
-                log("MediaPipe ready");
-            } catch (e) {
-                log("MediaPipe onResults fail:", e);
-                seg = null;
-                segReady = false;
+        // MediaPipe init (optional) ONLY if seg is enabled in current quality
+        seg = null;
+        segReady = false;
+        segBusy = false;
+        lastMask = null;
+        lastSegAt = 0;
+
+        if (activeSegFps > 0) {
+            seg = await tryCreateSelfieSegmentation();
+            if (seg) {
+                try {
+                    seg.onResults((res: any) => {
+                        if (res?.segmentationMask) lastMask = res.segmentationMask as any;
+                    });
+                    segReady = true;
+                    log("MediaPipe ready");
+                } catch (e) {
+                    log("MediaPipe onResults fail:", e);
+                    seg = null;
+                    segReady = false;
+                }
+            } else {
+                log("MediaPipe not available (fallback only)");
             }
         } else {
-            log("MediaPipe not available (fallback only)");
+            log("Segmentation disabled by quality level");
         }
 
         running = true;
         tickInFlight = false;
-        lastSegAt = 0;
+
+        resetMetrics();
 
         try {
             document.addEventListener("visibilitychange", onVisibility);
         } catch { }
 
-        // Draw once immediately so user sees effect instantly
+        // Kick: draw once immediately
         try {
             tickDrawFallback();
         } catch { }
 
         scheduleNext();
 
-        return outStream;
+        return outStream!;
     };
 
-    const stopEffect = async () => {
-        if (!running) return;
-        log("stopEffect()");
-
+    const internalStop = async (full: boolean) => {
+        // full=true => remove input refs too
         running = false;
         clearScheduled();
 
@@ -454,18 +720,37 @@ export function createBackgroundEffect(opts: CreateOpts): Processor {
         lastMask = null;
         lastSegAt = 0;
 
-        // Stop output tracks (canvas stream)
         stopTracks(outStream);
         outStream = null;
 
         bgImage = null;
 
         cleanupDom();
+
+        resetMetrics();
+
+        if (full) {
+            inputStream = null;
+        }
+    };
+
+    // -------------------------
+    // Public API
+    // -------------------------
+    const startEffect = async (input: MediaStream): Promise<MediaStream> => {
+        // If user starts multiple times, stop previous
+        if (running) {
+            await internalStop(false);
+        }
+        return await internalStart(input);
+    };
+
+    const stopEffect = async () => {
+        await internalStop(true);
     };
 
     const dispose = async () => {
-        log("dispose()");
-        await stopEffect();
+        await internalStop(true);
     };
 
     return { startEffect, stopEffect, dispose };
