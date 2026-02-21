@@ -1,16 +1,17 @@
 // src/pages/RoomPageLiveKit.tsx
 import "@livekit/components-styles";
-import { LiveKitRoom, GridLayout, ParticipantTile, ControlBar } from "@livekit/components-react";
+import {
+  LiveKitRoom,
+  GridLayout,
+  ParticipantTile,
+  ControlBar,
+} from "@livekit/components-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import ChatPanel from "../components/ChatPanel";
 import { IntentionsPanel } from "../components/IntentionsPanel";
 import { SessionStageBar } from "../components/SessionStageBar";
-
-// ✅ Можешь прямо импортнуть твой PreJoinModal отсюда же,
-// либо временно скопировать из RoomPage.tsx.
-import type { RoomMediaSettings } from "../components/RoomMediaSettingsModal";
 
 type RoomTheme = "dark" | "light";
 type RightPanelTab = "participants" | "chat" | "intentions" | null;
@@ -44,9 +45,6 @@ type SessionRow = {
 };
 
 // ---- helpers ----
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return !!v && typeof v === "object" && !Array.isArray(v);
-}
 function str(v: unknown): string {
   return typeof v === "string" ? v : "";
 }
@@ -62,8 +60,12 @@ function safeRoomName(raw: string) {
 function safeIdentity(raw: string) {
   return (raw || "guest").toLowerCase().replace(/[^a-z0-9-_]/g, "") || "guest";
 }
+function deviceLabel(d: MediaDeviceInfo, fallback: string) {
+  const l = (d.label || "").trim();
+  return l || fallback;
+}
 
-// ---- YOU: вставь сюда свой PreJoinModal из RoomPage.tsx ----
+// ---- PreJoin ----
 type MediaDevicesResult = {
   videoInputs: MediaDeviceInfo[];
   audioInputs: MediaDeviceInfo[];
@@ -82,9 +84,236 @@ type PreJoinSettings = {
   autoGainControl: boolean;
 };
 
-function PreJoinModal(_props: any) {
-  // ⛔️ заглушка: замени на твой реальный PreJoinModal (он у тебя уже готов)
-  return null;
+function PreJoinModal({
+  open,
+  theme,
+  devices,
+  value,
+  onChange,
+  onJoin,
+  onCancel,
+  onRefreshDevices,
+}: {
+  open: boolean;
+  theme: RoomTheme;
+  devices: MediaDevicesResult;
+  value: PreJoinSettings;
+  onChange: (next: PreJoinSettings) => void;
+  onJoin: () => void;
+  onCancel: () => void;
+  onRefreshDevices: () => void;
+}) {
+  if (!open) return null;
+
+  const isLight = theme === "light";
+
+  const overlay = "fixed inset-0 z-[999] flex items-center justify-center px-3";
+  const backdrop = "absolute inset-0 bg-black/55";
+  const card = [
+    "relative w-full max-w-[520px] rounded-3xl shadow-2xl overflow-hidden",
+    isLight ? "bg-white text-black" : "bg-[#020617] text-white",
+    "border",
+    isLight ? "border-black/10" : "border-white/10",
+  ].join(" ");
+
+  const inputWrap = isLight
+    ? "bg-black/5 border border-black/10"
+    : "bg-white/5 border border-white/10";
+
+  const inputCls = isLight
+    ? "text-black placeholder:text-black/40"
+    : "text-white placeholder:text-white/40";
+
+  const labelCls = isLight ? "text-black/70" : "text-white/70";
+
+  const btnPrimary = isLight
+    ? "bg-blue-600 hover:bg-blue-700 text-white"
+    : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]";
+
+  const btnGhost = isLight
+    ? "bg-black/5 hover:bg-black/10 text-black/70"
+    : "bg-white/5 hover:bg-white/10 text-white/80";
+
+  return (
+    <div className={overlay} data-theme={theme} style={{ colorScheme: theme }}>
+      <div className={backdrop} onClick={onCancel} />
+      <div className={card}>
+        <div
+          className={`px-6 py-5 border-b ${isLight ? "border-black/10" : "border-white/10"
+            }`}
+        >
+          <div className="flex items-center justify-between">
+            <div className="font-inter font-semibold text-[16px]">
+              Before you join (LiveKit)
+            </div>
+            <button
+              onClick={onCancel}
+              className={`w-9 h-9 rounded-2xl flex items-center justify-center ${btnGhost}`}
+              title="Close"
+            >
+              ✕
+            </button>
+          </div>
+          <div className={`mt-1 text-[12px] ${labelCls}`}>
+            Choose devices + name, then Join.
+          </div>
+        </div>
+
+        <div className="px-6 py-5 flex flex-col gap-4">
+          {/* name */}
+          <div className="flex flex-col gap-2">
+            <div className={`text-[12px] ${labelCls}`}>Display name</div>
+            <div className={`rounded-2xl px-4 py-3 ${inputWrap}`}>
+              <input
+                value={value.displayName}
+                onChange={(e) => onChange({ ...value, displayName: e.target.value })}
+                placeholder="Your name…"
+                className={`w-full bg-transparent outline-none text-[14px] ${inputCls}`}
+              />
+            </div>
+          </div>
+
+          {/* devices */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="flex flex-col gap-2">
+              <div className={`text-[12px] ${labelCls}`}>Microphone</div>
+              <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
+                <select
+                  value={value.audioInputId}
+                  onChange={(e) => onChange({ ...value, audioInputId: e.target.value })}
+                  className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
+                >
+                  <option value="">Default</option>
+                  {devices.audioInputs.map((d, i) => (
+                    <option key={d.deviceId} value={d.deviceId}>
+                      {deviceLabel(d, `Microphone ${i + 1}`)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <div className={`text-[12px] ${labelCls}`}>Camera</div>
+              <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
+                <select
+                  value={value.videoInputId}
+                  onChange={(e) => onChange({ ...value, videoInputId: e.target.value })}
+                  className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
+                >
+                  <option value="">Default</option>
+                  {devices.videoInputs.map((d, i) => (
+                    <option key={d.deviceId} value={d.deviceId}>
+                      {deviceLabel(d, `Camera ${i + 1}`)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="sm:col-span-2 flex flex-col gap-2">
+              <div className={`text-[12px] ${labelCls}`}>Speaker</div>
+              <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
+                <select
+                  value={value.audioOutputId}
+                  onChange={(e) => onChange({ ...value, audioOutputId: e.target.value })}
+                  className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
+                >
+                  <option value="default">Default</option>
+                  {devices.audioOutputs.map((d, i) => (
+                    <option key={d.deviceId} value={d.deviceId}>
+                      {deviceLabel(d, `Speaker ${i + 1}`)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* toggles */}
+          <div className={`rounded-2xl p-4 ${inputWrap}`}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="flex items-center gap-2 text-[13px]">
+                <input
+                  type="checkbox"
+                  checked={value.audioEnabled}
+                  onChange={(e) => onChange({ ...value, audioEnabled: e.target.checked })}
+                />
+                <span className={labelCls}>Audio enabled</span>
+              </label>
+
+              <label className="flex items-center gap-2 text-[13px]">
+                <input
+                  type="checkbox"
+                  checked={value.videoEnabled}
+                  onChange={(e) => onChange({ ...value, videoEnabled: e.target.checked })}
+                />
+                <span className={labelCls}>Video enabled</span>
+              </label>
+
+              <label className="flex items-center gap-2 text-[13px]">
+                <input
+                  type="checkbox"
+                  checked={value.echoCancellation}
+                  onChange={(e) => onChange({ ...value, echoCancellation: e.target.checked })}
+                />
+                <span className={labelCls}>Echo cancellation</span>
+              </label>
+
+              <label className="flex items-center gap-2 text-[13px]">
+                <input
+                  type="checkbox"
+                  checked={value.noiseSuppression}
+                  onChange={(e) => onChange({ ...value, noiseSuppression: e.target.checked })}
+                />
+                <span className={labelCls}>Noise suppression</span>
+              </label>
+
+              <label className="flex items-center gap-2 text-[13px] sm:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={value.autoGainControl}
+                  onChange={(e) => onChange({ ...value, autoGainControl: e.target.checked })}
+                />
+                <span className={labelCls}>Auto gain control</span>
+              </label>
+            </div>
+
+            <div className="mt-3 flex items-center justify-between">
+              <button
+                onClick={onRefreshDevices}
+                className={`h-10 px-4 rounded-2xl text-[13px] ${btnGhost}`}
+              >
+                Refresh devices
+              </button>
+
+              <div className={`text-[12px] ${labelCls}`}>
+                Tip: allow mic/cam to see device names
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div
+          className={`px-6 py-5 border-t flex items-center justify-end gap-3 ${isLight ? "border-black/10" : "border-white/10"
+            }`}
+        >
+          <button
+            onClick={onCancel}
+            className={`h-11 px-5 rounded-2xl text-[13px] font-semibold ${btnGhost}`}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onJoin}
+            className={`h-11 px-6 rounded-2xl text-[13px] font-semibold ${btnPrimary}`}
+          >
+            Join room
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function RoomPageLiveKit() {
@@ -112,11 +341,12 @@ export function RoomPageLiveKit() {
       body.setAttribute("data-theme", theme);
       (root.style as any).colorScheme = theme;
       (body.style as any).colorScheme = theme;
-    } catch {}
+    } catch { }
   }, [theme]);
 
   const isLight = theme === "light";
-  const pageBg = isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white";
+  const pageBg =
+    isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white";
   const panelBg = isLight
     ? "bg-white/85 border border-black/10"
     : "bg-[#0B1220]/55 border border-white/5";
@@ -153,7 +383,7 @@ export function RoomPageLiveKit() {
     prejoinRef.current = prejoin;
   }, [prejoin]);
 
-  // right panel (оставляем твой UX)
+  // right panel
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightTab, setRightTab] = useState<RightPanelTab>(null);
   const openRightTab = (tab: RightPanelTab) => {
@@ -183,7 +413,9 @@ export function RoomPageLiveKit() {
 
       const { data, error } = await supabase
         .from("sessions")
-        .select("*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)")
+        .select(
+          "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)"
+        )
         .eq("id", id)
         .single();
 
@@ -205,7 +437,11 @@ export function RoomPageLiveKit() {
         (u?.email ? u.email.split("@")[0] : "");
 
       if (!name && u?.id) {
-        const { data: p } = await supabase.from("profiles").select("full_name").eq("id", u.id).single();
+        const { data: p } = await supabase
+          .from("profiles")
+          .select("full_name")
+          .eq("id", u.id)
+          .single();
         name = str((p as any)?.full_name);
       }
 
@@ -215,15 +451,18 @@ export function RoomPageLiveKit() {
     })();
   }, []);
 
-  // enumerate devices (best-effort)
+  // enumerate devices
   const loadBrowserDevices = async () => {
     try {
       if (!navigator.mediaDevices?.enumerateDevices) return;
 
       try {
-        const s = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        const s = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: true,
+        });
         s.getTracks().forEach((t) => t.stop());
-      } catch {}
+      } catch { }
 
       const list = await navigator.mediaDevices.enumerateDevices();
       const videoInputs = list.filter((d) => d.kind === "videoinput");
@@ -251,27 +490,29 @@ export function RoomPageLiveKit() {
     if (joinRequested) return;
 
     setPrejoinOpen(true);
-    loadBrowserDevices().catch(() => {});
+    loadBrowserDevices().catch(() => { });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, session, displayName, userName, joinRequested]);
 
+  // LiveKit env
+  const lkServerUrl = (((import.meta as any)?.env?.VITE_LIVEKIT_URL as string) || "").trim();
+  const tokenEndpoint =
+    (((import.meta as any)?.env?.VITE_LIVEKIT_TOKEN_ENDPOINT as string) || "/api/livekit/token").trim();
+
   // token + connect
   const [lkToken, setLkToken] = useState<string>("");
-  const [lkServerUrl, setLkServerUrl] = useState<string>(() => {
-    return ((import.meta as any)?.env?.VITE_LIVEKIT_URL as string) || "";
-  });
+  const [tokenLoading, setTokenLoading] = useState(false);
+  const [tokenError, setTokenError] = useState<string>("");
 
-  const tokenEndpoint =
-    ((import.meta as any)?.env?.VITE_LIVEKIT_TOKEN_ENDPOINT as string) || "/api/livekit/token";
+  const requestToken = async () => {
+    if (!session) return;
+    setTokenError("");
+    setTokenLoading(true);
 
-  useEffect(() => {
-    (async () => {
-      if (!session) return;
-      if (!joinRequested) return;
-      if (lkToken) return;
-
+    try {
       const pj = prejoinRef.current;
-      const nameToUse = (pj.displayName || displayName || userName || "Guest").trim() || "Guest";
+      const nameToUse =
+        (pj.displayName || displayName || userName || "Guest").trim() || "Guest";
 
       const roomName = safeRoomName(`session-${session.id}`);
       const identity = safeIdentity(authUserId || nameToUse);
@@ -288,18 +529,48 @@ export function RoomPageLiveKit() {
 
       if (!res.ok) {
         const t = await res.text().catch(() => "");
-        console.error("token error:", res.status, t);
+        const msg = `Token endpoint error: ${res.status} ${t || ""}`.trim();
+        console.error(msg);
+        setTokenError(msg);
+        setTokenLoading(false);
         return;
       }
 
       const json = (await res.json()) as { token?: string };
-      setLkToken(json.token || "");
+      const tok = String(json.token || "");
+      if (!tok) {
+        setTokenError("Token endpoint returned empty token");
+        setTokenLoading(false);
+        return;
+      }
+
+      setLkToken(tok);
+      setTokenLoading(false);
+    } catch (e: any) {
+      console.error("requestToken exception:", e);
+      setTokenError(String(e?.message || e || "token_request_failed"));
+      setTokenLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    (async () => {
+      if (!session) return;
+      if (!joinRequested) return;
+      if (lkToken) return;
+      await requestToken();
     })();
-  }, [session, joinRequested, lkToken, tokenEndpoint, authUserId, displayName, userName]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, joinRequested]);
 
   if (loading) {
-    return <div className={`flex h-screen items-center justify-center ${pageBg}`}>Loading session...</div>;
+    return (
+      <div className={`flex h-screen items-center justify-center ${pageBg}`}>
+        Loading session...
+      </div>
+    );
   }
+
   if (!session) {
     return (
       <div className={`flex h-screen items-center justify-center ${pageBg}`}>
@@ -322,7 +593,9 @@ export function RoomPageLiveKit() {
         onCancel={() => navigate("/sessions", { replace: true })}
         onJoin={() => {
           const pj = prejoinRef.current;
-          const nm = (pj.displayName || displayName || userName || "Guest").trim() || "Guest";
+          const nm =
+            (pj.displayName || displayName || userName || "Guest").trim() ||
+            "Guest";
           setDisplayName(nm);
           setPrejoinOpen(false);
           setJoinRequested(true);
@@ -331,7 +604,7 @@ export function RoomPageLiveKit() {
 
       <div className={`h-[100dvh] overflow-hidden ${pageBg}`}>
         <div className="h-full w-full px-2 sm:px-4 pt-3 pb-[calc(84px+env(safe-area-inset-bottom))] flex flex-col gap-3 min-h-0">
-          {/* top bar (минимальная версия; можешь перенести 1:1 из RoomPage) */}
+          {/* top bar */}
           <div className={`rounded-2xl px-4 py-3 ${panelBg}`}>
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
@@ -341,7 +614,11 @@ export function RoomPageLiveKit() {
                 <div className={isLight ? "text-black/50 text-xs" : "text-white/50 text-xs"}>
                   LiveKit room: session-{session.id} (limit {maxParticipants})
                 </div>
+                <div className={isLight ? "text-black/40 text-[11px]" : "text-white/40 text-[11px]"}>
+                  LK_URL: {lkServerUrl || "(missing)"} • token: {tokenEndpoint}
+                </div>
               </div>
+
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
@@ -350,12 +627,14 @@ export function RoomPageLiveKit() {
                 >
                   {theme === "dark" ? "🌙" : "☀️"}
                 </button>
+
                 <button
                   onClick={() => openRightTab("chat")}
                   className={isLight ? "px-3 py-2 rounded-xl bg-black/5" : "px-3 py-2 rounded-xl bg-white/5"}
                 >
                   Chat
                 </button>
+
                 <button
                   onClick={() => openRightTab("intentions")}
                   className={isLight ? "px-3 py-2 rounded-xl bg-black/5" : "px-3 py-2 rounded-xl bg-white/5"}
@@ -365,30 +644,68 @@ export function RoomPageLiveKit() {
               </div>
             </div>
 
-            {/* если хочешь — воткни сюда SessionStageBar как в RoomPage */}
+            {/* stagebar placeholder (пока пустой, можно потом прокинуть реальные stages) */}
             <div className="mt-3">
               <SessionStageBar
                 stages={[]}
-                startTime={String(session.start_time || session.created_at || new Date().toISOString())}
-                onHoverStage={() => {}}
+                startTime={String(
+                  session.start_time || session.created_at || new Date().toISOString()
+                )}
+                onHoverStage={() => { }}
               />
             </div>
           </div>
 
-          <div className={"relative grid grid-rows-1 gap-3 flex-1 min-h-0 h-full " + (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),380px]" : "grid-cols-1")}>
+          <div
+            className={
+              "relative grid grid-rows-1 gap-3 flex-1 min-h-0 h-full " +
+              (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),380px]" : "grid-cols-1")
+            }
+          >
             {/* VIDEO */}
-            <div className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"}`}>
+            <div
+              className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight
+                  ? "bg-white/70 border border-black/10"
+                  : "bg-[#0B1220]/45 border border-white/5"
+                }`}
+            >
               {!joinRequested ? (
-                <div className="h-full w-full flex items-center justify-center opacity-70 text-sm">
-                  Waiting for join…
+                <div className="h-full w-full flex flex-col items-center justify-center opacity-80 text-sm gap-2">
+                  <div>Waiting for join…</div>
+                  <button
+                    onClick={() => setPrejoinOpen(true)}
+                    className={isLight ? "px-4 py-2 rounded-xl bg-black/5" : "px-4 py-2 rounded-xl bg-white/5"}
+                  >
+                    Open join dialog
+                  </button>
                 </div>
               ) : !lkServerUrl ? (
-                <div className="h-full w-full flex items-center justify-center text-sm text-red-500">
-                  Missing VITE_LIVEKIT_URL
+                <div className="h-full w-full flex flex-col items-center justify-center text-sm text-red-500 gap-2">
+                  <div>Missing VITE_LIVEKIT_URL</div>
+                  <div className="text-xs opacity-80">
+                    Set it in Vercel env + .env.local
+                  </div>
+                </div>
+              ) : tokenLoading ? (
+                <div className="h-full w-full flex items-center justify-center opacity-70 text-sm">
+                  Getting token…
+                </div>
+              ) : tokenError ? (
+                <div className="h-full w-full flex flex-col items-center justify-center text-sm gap-3 px-6">
+                  <div className="text-red-500 font-semibold">Token error</div>
+                  <div className="text-xs opacity-80 break-words text-center">
+                    {tokenError}
+                  </div>
+                  <button
+                    onClick={() => requestToken()}
+                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+                  >
+                    Retry
+                  </button>
                 </div>
               ) : !lkToken ? (
                 <div className="h-full w-full flex items-center justify-center opacity-70 text-sm">
-                  Getting token…
+                  Token is empty…
                 </div>
               ) : (
                 <LiveKitRoom
@@ -400,12 +717,13 @@ export function RoomPageLiveKit() {
                   data-theme={theme}
                   style={{ height: "100%", width: "100%" }}
                   onDisconnected={() => {
-                    // вернись или покажи “reconnect”
+                    // При дисконнекте: сброс токена + можно показать reconnect
+                    setLkToken("");
                   }}
                 >
                   <div className="h-full w-full flex flex-col min-h-0">
                     <div className="flex-1 min-h-0 p-2">
-                      <GridLayout className="h-full w-full" >
+                      <GridLayout className="h-full w-full">
                         <ParticipantTile />
                       </GridLayout>
                     </div>
@@ -420,14 +738,28 @@ export function RoomPageLiveKit() {
             {/* RIGHT PANEL */}
             {rightPanelOpen && (
               <div className="min-h-0 h-full overflow-hidden">
-                <div className={`rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col ${panelBg}`} data-theme={theme}>
-                  <div className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
+                <div
+                  className={`rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col ${panelBg}`}
+                  data-theme={theme}
+                >
+                  <div
+                    className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
+                      }`}
+                  >
                     <div className="font-inter font-semibold">
-                      {rightTab === "chat" ? "Chat" : rightTab === "intentions" ? "Intentions" : "Panel"}
+                      {rightTab === "chat"
+                        ? "Chat"
+                        : rightTab === "intentions"
+                          ? "Intentions"
+                          : "Panel"}
                     </div>
                     <button
                       onClick={() => openRightTab(null)}
-                      className={isLight ? "w-9 h-9 rounded-xl bg-black/5" : "w-9 h-9 rounded-xl bg-white/5"}
+                      className={
+                        isLight
+                          ? "w-9 h-9 rounded-xl bg-black/5"
+                          : "w-9 h-9 rounded-xl bg-white/5"
+                      }
                     >
                       ✕
                     </button>
@@ -436,7 +768,11 @@ export function RoomPageLiveKit() {
                   <div className="flex-1 min-h-0 overflow-hidden p-3">
                     {rightTab === "chat" && (
                       <div className="h-full min-h-0 overflow-hidden rounded-xl">
-                        <div data-theme={theme} style={{ colorScheme: theme }} className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}>
+                        <div
+                          data-theme={theme}
+                          style={{ colorScheme: theme }}
+                          className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
+                        >
                           <ChatPanelAny
                             sessionId={session.id}
                             theme={theme}
@@ -452,7 +788,11 @@ export function RoomPageLiveKit() {
 
                     {rightTab === "intentions" && (
                       <div className="h-full min-h-0 overflow-y-auto rounded-xl">
-                        <div data-theme={theme} style={{ colorScheme: theme }} className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}>
+                        <div
+                          data-theme={theme}
+                          style={{ colorScheme: theme }}
+                          className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
+                        >
                           <IntentionsPanel theme={theme} sessionId={session.id} timerText={"--:--"} />
                         </div>
                       </div>
@@ -464,11 +804,11 @@ export function RoomPageLiveKit() {
           </div>
         </div>
 
-        {/* leave button */}
+        {/* leave */}
         <div className="fixed bottom-3 right-3 z-50">
           <button
             onClick={() => navigate("/sessions", { replace: true })}
-            className={isLight ? "px-4 py-3 rounded-2xl bg-red-600 text-white font-semibold" : "px-4 py-3 rounded-2xl bg-red-600 text-white font-semibold"}
+            className="px-4 py-3 rounded-2xl bg-red-600 text-white font-semibold"
           >
             Leave
           </button>
