@@ -5,6 +5,7 @@ import { SessionsPage } from "./pages/SessionsPage";
 import LandingPage from "./pages/LandingPage";
 import RoomPage from "./pages/RoomPage";
 import RoomPageIFrame from "./pages/RoomPageIFrame";
+import RoomPageLiveKit from "./pages/RoomPageLiveKit";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import ProfilePage from "./pages/ProfilePage";
@@ -82,6 +83,7 @@ export default function App() {
         {/* Routes WITHOUT header */}
         <Route path="/room/:id" element={<RoomPage />} />
         <Route path="/room-iframe/:id" element={<RoomPageIFrame />} />
+        <Route path="/room-livekit/:id" element={<RoomPageLiveKit />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
 
