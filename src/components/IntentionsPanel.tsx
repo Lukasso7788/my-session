@@ -14,8 +14,6 @@ import {
   PinOff,
   ExternalLink,
   ListPlus,
-  ChevronDown,
-  ChevronUp,
   RefreshCw,
   Search,
 } from "lucide-react";
@@ -143,12 +141,7 @@ function IconButton({
     <button
       title={title}
       onClick={onClick}
-      className={
-        "w-9 h-9 rounded-xl flex items-center justify-center transition " +
-        base +
-        " " +
-        className
-      }
+      className={"w-9 h-9 rounded-xl flex items-center justify-center transition " + base + " " + className}
       type="button"
     >
       {children}
@@ -253,9 +246,9 @@ export function IntentionsPanel({
   const [overlayOpen, setOverlayOpen] = useState(false);
 
   // =========================
-  // ✅ Import from Plans state
+  // ✅ Import from Plans (modal) state
   // =========================
-  const [plansOpen, setPlansOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<string>("");
   const [planSearch, setPlanSearch] = useState("");
@@ -293,16 +286,11 @@ export function IntentionsPanel({
     ? "rounded-xl border border-black/10 px-3 py-2.5 bg-white/70 hover:bg-white transition"
     : "rounded-xl border border-white/5 px-3 py-2.5 bg-[#0B1220]/55 hover:bg-[#0B1220]/75 transition";
 
-  const subCardCls = isLight
-    ? "rounded-xl border border-black/10 bg-white/70"
-    : "rounded-xl border border-white/10 bg-[#0B1220]/55";
-
   const ghostBtn = isLight
     ? "border border-black/10 bg-black/0 hover:bg-black/5 text-black/75"
     : "border border-white/10 bg-white/0 hover:bg-white/5 text-white/80";
 
-  const primaryBtn =
-    "bg-emerald-500 hover:bg-emerald-600 text-[#02140B] font-semibold";
+  const primaryBtn = "bg-emerald-500 hover:bg-emerald-600 text-[#02140B] font-semibold";
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
@@ -369,11 +357,7 @@ export function IntentionsPanel({
       const slug = raw.toLowerCase();
 
       try {
-        const { data, error } = await supabase
-          .from("sessions")
-          .select("id")
-          .eq("custom_slug", slug)
-          .single();
+        const { data, error } = await supabase.from("sessions").select("id").eq("custom_slug", slug).single();
 
         if (!cancelled) {
           if (!error && data?.id) setSessionId(String(data.id));
@@ -472,12 +456,13 @@ export function IntentionsPanel({
   }, [myIntentions]);
 
   // =========================
-  // ✅ Plans load / sync
+  // ✅ Plans load / sync (storage)
   // =========================
   const loadPlansFromStorage = useCallback(() => {
     if (!user?.id) {
       setPlans([]);
       setSelectedPlanId("");
+      setPlansLastLoadedAt(new Date().toISOString());
       return;
     }
 
@@ -486,10 +471,12 @@ export function IntentionsPanel({
       const parsed = safeParsePlans(localStorage.getItem(key));
       setPlans(parsed);
 
-      if (parsed.length && !selectedPlanId) setSelectedPlanId(parsed[0].id);
-      if (parsed.length && selectedPlanId && !parsed.find((p) => p.id === selectedPlanId)) {
-        setSelectedPlanId(parsed[0].id);
-      }
+      setSelectedPlanId((prev) => {
+        if (parsed.length === 0) return "";
+        if (!prev) return parsed[0].id;
+        if (!parsed.find((p) => p.id === prev)) return parsed[0].id;
+        return prev;
+      });
 
       setPlansLastLoadedAt(new Date().toISOString());
     } catch {
@@ -497,8 +484,9 @@ export function IntentionsPanel({
       setSelectedPlanId("");
       setPlansLastLoadedAt(new Date().toISOString());
     }
-  }, [user?.id, selectedPlanId]);
+  }, [user?.id]);
 
+  // load once on auth
   useEffect(() => {
     if (!user?.id) return;
     loadPlansFromStorage();
@@ -641,14 +629,9 @@ export function IntentionsPanel({
 
     const next = !Boolean(intention.completed);
 
-    setIntentions((prev) =>
-      prev.map((i) => (i.id === intention.id ? { ...i, completed: next } : i))
-    );
+    setIntentions((prev) => prev.map((i) => (i.id === intention.id ? { ...i, completed: next } : i)));
 
-    const { error } = await supabase
-      .from("intentions")
-      .update({ completed: next })
-      .eq("id", intention.id);
+    const { error } = await supabase.from("intentions").update({ completed: next }).eq("id", intention.id);
 
     if (error) {
       setIntentions((prev) =>
@@ -689,9 +672,7 @@ export function IntentionsPanel({
 
     const { error } = await supabase.from("intentions").update({ text }).eq("id", editingId);
     if (error) {
-      setIntentions((prev) =>
-        prev.map((i) => (i.id === editingId ? { ...i, text: old } : i))
-      );
+      setIntentions((prev) => prev.map((i) => (i.id === editingId ? { ...i, text: old } : i)));
       return;
     }
 
@@ -779,6 +760,42 @@ export function IntentionsPanel({
   }, [closeOverlay]);
 
   // =========================
+  // ✅ Import modal helpers
+  // =========================
+  const getPortalDocument = useCallback((): Document => {
+    const o = overlayRef.current;
+    const doc = o?.win?.document;
+    return doc || document;
+  }, []);
+
+  const openImportModal = useCallback(() => {
+    setImportModalOpen(true);
+    loadPlansFromStorage();
+  }, [loadPlansFromStorage]);
+
+  const closeImportModal = useCallback(() => {
+    setImportModalOpen(false);
+  }, []);
+
+  // ESC to close import modal (works in normal and pip/window)
+  useEffect(() => {
+    if (!importModalOpen) return;
+
+    const doc = getPortalDocument();
+    const win: any = doc?.defaultView || window;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeImportModal();
+      }
+    };
+
+    win.addEventListener("keydown", onKeyDown);
+    return () => win.removeEventListener("keydown", onKeyDown);
+  }, [importModalOpen, closeImportModal, getPortalDocument]);
+
+  // =========================
   // UI states for session id
   // =========================
   if (!rawSessionId) {
@@ -804,8 +821,223 @@ export function IntentionsPanel({
   const headerTitle = isLight ? "text-black/85" : "text-white/85";
 
   // ✅ Timer typography
-  const timerTextCls =
-    `tabular-nums text-[12px] ${timerTextClassName || ""} font-inter font-normal`.trim();
+  const timerTextCls = `tabular-nums text-[12px] ${timerTextClassName || ""} font-inter font-normal`.trim();
+
+  // =========================
+  // ✅ Import modal UI
+  // =========================
+  const ImportModal = importModalOpen
+    ? (() => {
+      const modalDoc = getPortalDocument();
+
+      const backdropBg = isLight ? "bg-black/40" : "bg-black/55";
+      const modalBg = isLight ? "bg-white" : "bg-[#060B14]";
+      const modalBorder = isLight ? "border-black/10" : "border-white/10";
+      const modalTitle = isLight ? "text-black/85" : "text-white/85";
+      const modalSub = isLight ? "text-black/50" : "text-white/45";
+      const rowBg = isLight ? "bg-white/70 hover:bg-white" : "bg-[#0B1220]/55 hover:bg-[#0B1220]/75";
+      const rowBorder = isLight ? "border-black/10" : "border-white/10";
+
+      return createPortal(
+        <div
+          className={[
+            "fixed inset-0 z-[9999] flex items-center justify-center",
+            backdropBg,
+            "font-inter",
+          ].join(" ")}
+          onMouseDown={(e) => {
+            // click on backdrop closes
+            if (e.target === e.currentTarget) closeImportModal();
+          }}
+        >
+          <div
+            className={[
+              "w-[min(680px,calc(100vw-24px))] max-h-[min(78vh,720px)] rounded-2xl border shadow-xl overflow-hidden",
+              modalBg,
+              modalBorder,
+            ].join(" ")}
+            style={{ fontFamily: OVERLAY_FONT_FAMILY }}
+          >
+            {/* header */}
+            <div className={["px-4 py-3 border-b", modalBorder].join(" ")}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className={["text-[13px] font-semibold", modalTitle].join(" ")}>
+                    Import from my plans
+                  </div>
+                  <div className={["text-[11px] mt-0.5", modalSub].join(" ")}>
+                    Adds items into this session’s intentions.
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    className={"h-9 px-3 rounded-xl text-[12px] font-semibold transition inline-flex items-center gap-2 " + ghostBtn}
+                    onClick={() => loadPlansFromStorage()}
+                    title="Refresh plans"
+                  >
+                    <RefreshCw size={14} />
+                    Refresh
+                  </button>
+
+                  <button
+                    type="button"
+                    className={"w-9 h-9 rounded-xl border transition flex items-center justify-center " + ghostBtn}
+                    onClick={closeImportModal}
+                    title="Close"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* body */}
+            <div className="p-4 overflow-y-auto custom-scrollbar" style={{ maxHeight: "calc(78vh - 56px)" }}>
+              {plans.length === 0 ? (
+                <div className={"text-[12px] italic " + mutedText}>
+                  No plans found. Create a plan in Focus plan page.
+                  {plansLastLoadedAt ? ` (checked ${new Date(plansLastLoadedAt).toLocaleTimeString()})` : ""}
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-col gap-2">
+                    <div className={"text-[11px] font-semibold " + mutedText}>Plan</div>
+
+                    <select
+                      value={selectedPlanId}
+                      onChange={(e) => setSelectedPlanId(e.target.value)}
+                      className={
+                        isLight
+                          ? "w-full h-11 px-3 rounded-xl border border-black/10 bg-white text-[13px] font-semibold text-black/85 outline-none focus:ring-1 focus:ring-emerald-500"
+                          : "w-full h-11 px-3 rounded-xl border border-white/10 bg-[#0B1220]/70 text-[13px] font-semibold text-white/85 outline-none focus:ring-1 focus:ring-emerald-500"
+                      }
+                    >
+                      {plans.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.title} ({p.items?.length || 0})
+                        </option>
+                      ))}
+                    </select>
+
+                    <div className={"text-[11px] font-semibold " + mutedText + " mt-2"}>Search</div>
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={[
+                          "h-11 w-11 rounded-xl border flex items-center justify-center",
+                          isLight ? "border-black/10 bg-white" : "border-white/10 bg-[#0B1220]/70",
+                        ].join(" ")}
+                      >
+                        <Search size={16} className={isLight ? "text-black/40" : "text-white/45"} />
+                      </div>
+
+                      <input
+                        value={planSearch}
+                        onChange={(e) => setPlanSearch(e.target.value)}
+                        placeholder="Type to filter plan items..."
+                        className={"flex-1 " + inputCls}
+                      />
+                    </div>
+                  </div>
+
+                  <div className={"h-px my-4 " + divider} />
+
+                  {!selectedPlan ? (
+                    <div className={"text-[12px] italic " + mutedText}>Select a plan.</div>
+                  ) : planItemsVisible.length === 0 ? (
+                    <div className={"text-[12px] italic " + mutedText}>No items match your filter.</div>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      {planItemsVisible.slice(0, 30).map((it) => {
+                        const text = String(it.text || "").trim();
+                        const alreadyInSession = myTextSet.has(text.toLowerCase());
+                        const attached = Boolean(it.attached);
+
+                        return (
+                          <div
+                            key={it.id}
+                            className={["rounded-xl border px-3 py-2.5 transition", rowBg, rowBorder].join(" ")}
+                          >
+                            <div className="flex items-start gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div
+                                  className={[
+                                    "text-[13px] break-words leading-5",
+                                    it.done
+                                      ? isLight
+                                        ? "text-black/45 line-through"
+                                        : "text-white/50 line-through"
+                                      : isLight
+                                        ? "text-black/80"
+                                        : "text-white/80",
+                                  ].join(" ")}
+                                >
+                                  {text}
+                                </div>
+
+                                <div className={"mt-1 text-[11px] " + mutedText}>
+                                  {attached ? "Marked attached in plan" : "Plan item"}
+                                  {it.due_at ? ` · Due: ${new Date(it.due_at).toLocaleString()}` : ""}
+                                </div>
+                              </div>
+
+                              {alreadyInSession ? (
+                                <div className="shrink-0">
+                                  <div
+                                    className={[
+                                      "h-10 px-3 rounded-xl text-[12px] font-semibold inline-flex items-center gap-2",
+                                      isLight
+                                        ? "bg-black/5 text-black/60 border border-black/10"
+                                        : "bg-white/5 text-white/70 border border-white/10",
+                                    ].join(" ")}
+                                    title="Already in this session"
+                                  >
+                                    <Check size={16} />
+                                    Added
+                                  </div>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => importPlanItemToThisSession(it)}
+                                  disabled={importingItemId === it.id}
+                                  className={[
+                                    "shrink-0 h-10 px-3 rounded-xl text-[12px] font-semibold transition inline-flex items-center gap-2",
+                                    importingItemId === it.id ? "opacity-70" : "opacity-100",
+                                    primaryBtn,
+                                  ].join(" ")}
+                                  title="Import into this session"
+                                >
+                                  <ListPlus size={16} />
+                                  {importingItemId === it.id ? "Import..." : "Import"}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {planItemsVisible.length > 30 ? (
+                        <div className={"text-[11px] italic mt-1 " + mutedText}>
+                          Showing first 30 items (filter to find more).
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+
+                  <div className={"mt-4 text-[11px] " + mutedText}>
+                    Tip: full editing stays in Focus plan; here you only push items into the room.
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>,
+        modalDoc.body
+      );
+    })()
+    : null;
 
   const PanelUI = (
     <div className={"h-full flex flex-col min-h-0 font-inter " + panelBg}>
@@ -819,18 +1051,24 @@ export function IntentionsPanel({
 
           <div className="flex items-center gap-2 shrink-0 font-inter">
             {/* ✅ Timer pill */}
-            <div
-              className={"inline-flex items-center gap-2 px-3 py-2 rounded-xl " + timerPillCls}
-              title="Timer"
-            >
+            <div className={"inline-flex items-center gap-2 px-3 py-2 rounded-xl " + timerPillCls} title="Timer">
               <TimerSmartIcon theme={theme} className="w-4 h-4 opacity-80" />
-              <span
-                className={timerTextCls + " leading-none"}
-                style={{ fontFamily: OVERLAY_FONT_FAMILY }}
-              >
+              <span className={timerTextCls + " leading-none"} style={{ fontFamily: OVERLAY_FONT_FAMILY }}>
                 {timerText || "--:--"}
               </span>
             </div>
+
+            {/* ✅ Import icon (opens modal) */}
+            <IconButton
+              theme={theme}
+              title="Import from my plans"
+              onClick={(e) => {
+                e.preventDefault();
+                openImportModal();
+              }}
+            >
+              <ListPlus size={16} />
+            </IconButton>
 
             {!overlayOpen ? (
               <IconButton
@@ -863,11 +1101,7 @@ export function IntentionsPanel({
                 e.preventDefault();
                 const sid = (rawSessionId || sessionId || "").trim();
                 if (!sid) return;
-                window.open(
-                  `/focus-plan?sessionId=${encodeURIComponent(sid)}`,
-                  "_blank",
-                  "noopener,noreferrer"
-                );
+                window.open(`/focus-plan?sessionId=${encodeURIComponent(sid)}`, "_blank", "noopener,noreferrer");
               }}
             >
               <ExternalLink size={16} />
@@ -906,198 +1140,6 @@ export function IntentionsPanel({
             </button>
           </div>
 
-          {/* ✅ Import from Plans */}
-          <div className={subCardCls + " p-3 mb-4"}>
-            <button
-              type="button"
-              onClick={() => setPlansOpen((v) => !v)}
-              className={[
-                "w-full flex items-center justify-between gap-3 px-3 py-2 rounded-xl transition",
-                isLight ? "hover:bg-black/5" : "hover:bg-white/5",
-              ].join(" ")}
-            >
-              <div className="flex items-center gap-2">
-                <ListPlus size={16} className={isLight ? "text-black/60" : "text-white/70"} />
-                <div className={"text-[13px] font-semibold " + (isLight ? "text-black/80" : "text-white/85")}>
-                  Import from my plans
-                </div>
-                <div className={"text-[11px] " + mutedText}>
-                  (adds into this session)
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  className={"h-9 px-3 rounded-xl text-[12px] font-semibold transition " + ghostBtn}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    loadPlansFromStorage();
-                  }}
-                  title="Refresh plans"
-                >
-                  <span className="inline-flex items-center gap-2">
-                    <RefreshCw size={14} />
-                    Refresh
-                  </span>
-                </button>
-
-                {plansOpen ? (
-                  <ChevronUp size={16} className={isLight ? "text-black/50" : "text-white/60"} />
-                ) : (
-                  <ChevronDown size={16} className={isLight ? "text-black/50" : "text-white/60"} />
-                )}
-              </div>
-            </button>
-
-            {plansOpen ? (
-              <div className="mt-3">
-                {plans.length === 0 ? (
-                  <div className={"text-[12px] italic " + mutedText}>
-                    No plans found. Create a plan in Focus plan page.
-                    {plansLastLoadedAt ? ` (checked ${new Date(plansLastLoadedAt).toLocaleTimeString()})` : ""}
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex flex-col gap-2">
-                      <div className={"text-[11px] font-semibold " + mutedText}>Plan</div>
-                      <select
-                        value={selectedPlanId}
-                        onChange={(e) => setSelectedPlanId(e.target.value)}
-                        className={
-                          isLight
-                            ? "w-full h-11 px-3 rounded-xl border border-black/10 bg-white text-[13px] font-semibold text-black/85 outline-none focus:ring-1 focus:ring-emerald-500"
-                            : "w-full h-11 px-3 rounded-xl border border-white/10 bg-[#0B1220]/70 text-[13px] font-semibold text-white/85 outline-none focus:ring-1 focus:ring-emerald-500"
-                        }
-                      >
-                        {plans.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.title} ({p.items?.length || 0})
-                          </option>
-                        ))}
-                      </select>
-
-                      <div className={"text-[11px] font-semibold " + mutedText + " mt-2"}>Search</div>
-                      <div className="flex items-center gap-2">
-                        <div
-                          className={[
-                            "h-11 w-11 rounded-xl border flex items-center justify-center",
-                            isLight ? "border-black/10 bg-white" : "border-white/10 bg-[#0B1220]/70",
-                          ].join(" ")}
-                        >
-                          <Search size={16} className={isLight ? "text-black/40" : "text-white/45"} />
-                        </div>
-
-                        <input
-                          value={planSearch}
-                          onChange={(e) => setPlanSearch(e.target.value)}
-                          placeholder="Type to filter plan items..."
-                          className={"flex-1 " + inputCls}
-                        />
-                      </div>
-                    </div>
-
-                    <div className={"h-px my-3 " + divider} />
-
-                    {!selectedPlan ? (
-                      <div className={"text-[12px] italic " + mutedText}>Select a plan.</div>
-                    ) : planItemsVisible.length === 0 ? (
-                      <div className={"text-[12px] italic " + mutedText}>
-                        No items match your filter.
-                      </div>
-                    ) : (
-                      <div className="flex flex-col gap-2">
-                        {planItemsVisible.slice(0, 20).map((it) => {
-                          const text = String(it.text || "").trim();
-                          const alreadyInSession = myTextSet.has(text.toLowerCase());
-                          const attached = Boolean(it.attached);
-
-                          const rowBg = isLight ? "bg-white/70 hover:bg-white" : "bg-[#0B1220]/55 hover:bg-[#0B1220]/75";
-                          const rowBorder = isLight ? "border-black/10" : "border-white/10";
-
-                          return (
-                            <div
-                              key={it.id}
-                              className={[
-                                "rounded-xl border px-3 py-2.5 transition",
-                                rowBg,
-                                rowBorder,
-                              ].join(" ")}
-                            >
-                              <div className="flex items-start gap-3">
-                                <div className="flex-1 min-w-0">
-                                  <div
-                                    className={[
-                                      "text-[13px] break-words leading-5",
-                                      it.done
-                                        ? isLight
-                                          ? "text-black/45 line-through"
-                                          : "text-white/50 line-through"
-                                        : isLight
-                                          ? "text-black/80"
-                                          : "text-white/80",
-                                    ].join(" ")}
-                                  >
-                                    {text}
-                                  </div>
-
-                                  <div className={"mt-1 text-[11px] " + mutedText}>
-                                    {attached ? "Marked attached in plan" : "Plan item"}
-                                    {it.due_at ? ` · Due: ${new Date(it.due_at).toLocaleString()}` : ""}
-                                  </div>
-                                </div>
-
-                                {alreadyInSession ? (
-                                  <div className="shrink-0">
-                                    <div
-                                      className={[
-                                        "h-10 px-3 rounded-xl text-[12px] font-semibold inline-flex items-center gap-2",
-                                        isLight ? "bg-black/5 text-black/60 border border-black/10" : "bg-white/5 text-white/70 border border-white/10",
-                                      ].join(" ")}
-                                      title="Already in this session"
-                                    >
-                                      <Check size={16} />
-                                      Added
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() => importPlanItemToThisSession(it)}
-                                    disabled={importingItemId === it.id}
-                                    className={[
-                                      "shrink-0 h-10 px-3 rounded-xl text-[12px] font-semibold transition inline-flex items-center gap-2",
-                                      importingItemId === it.id ? "opacity-70" : "opacity-100",
-                                      primaryBtn,
-                                    ].join(" ")}
-                                    title="Import into this session"
-                                  >
-                                    <ListPlus size={16} />
-                                    {importingItemId === it.id ? "Import..." : "Import"}
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-
-                        {planItemsVisible.length > 20 ? (
-                          <div className={"text-[11px] italic mt-1 " + mutedText}>
-                            Showing first 20 items (filter to find more).
-                          </div>
-                        ) : null}
-                      </div>
-                    )}
-
-                    <div className={"mt-3 text-[11px] " + mutedText}>
-                      Tip: attach items here to quickly push them into the room. Full editing stays in Focus plan.
-                    </div>
-                  </>
-                )}
-              </div>
-            ) : null}
-          </div>
-
           {loading ? (
             <div className={"text-[12px] italic font-inter " + mutedText}>Loading...</div>
           ) : myIntentions.length === 0 ? (
@@ -1108,9 +1150,7 @@ export function IntentionsPanel({
                 const isEditing = editingId === i.id;
 
                 const circleCls = isLight ? "text-black/40" : "text-white/45";
-                const textDoneCls = isLight
-                  ? "text-black/45 line-through"
-                  : "text-white/50 line-through";
+                const textDoneCls = isLight ? "text-black/45 line-through" : "text-white/50 line-through";
                 const textActiveCls = isLight ? "text-black/80" : "text-white/80";
 
                 const editInputCls = isLight
@@ -1131,21 +1171,12 @@ export function IntentionsPanel({
                   <div key={i.id} onClick={() => toggleCompleted(i)} className={myCardCls + " font-inter"}>
                     <div className="flex items-center gap-2">
                       <div className="shrink-0">
-                        {i.completed ? (
-                          <CheckCircle size={18} className="text-emerald-500" />
-                        ) : (
-                          <Circle size={18} className={circleCls} />
-                        )}
+                        {i.completed ? <CheckCircle size={18} className="text-emerald-500" /> : <Circle size={18} className={circleCls} />}
                       </div>
 
                       <div className="flex-1 min-w-0">
                         {!isEditing ? (
-                          <div
-                            className={
-                              "text-[13px] break-words leading-5 font-inter " +
-                              (i.completed ? textDoneCls : textActiveCls)
-                            }
-                          >
+                          <div className={"text-[13px] break-words leading-5 font-inter " + (i.completed ? textDoneCls : textActiveCls)}>
                             {i.text}
                           </div>
                         ) : (
@@ -1248,33 +1279,20 @@ export function IntentionsPanel({
               return (
                 <div key={item.id} className={teamCardCls + " font-inter"}>
                   <div className="flex items-center gap-3">
-                    <img
-                      src={getAvatar(item.profiles)}
-                      className="w-9 h-9 rounded-full object-cover"
-                      alt=""
-                    />
+                    <img src={getAvatar(item.profiles)} className="w-9 h-9 rounded-full object-cover" alt="" />
 
                     <div className="flex-1 min-w-0">
                       <div className={"text-[13px] font-medium truncate font-inter " + nameCls}>
                         {isMine ? "You" : item.profiles?.full_name || "Participant"}
                       </div>
 
-                      <div
-                        className={
-                          "text-[13px] break-words leading-5 font-inter " +
-                          (item.completed ? bodyDone : bodyActive)
-                        }
-                      >
+                      <div className={"text-[13px] break-words leading-5 font-inter " + (item.completed ? bodyDone : bodyActive)}>
                         {item.text}
                       </div>
                     </div>
 
                     <div className="shrink-0">
-                      {item.completed ? (
-                        <CheckCircle size={16} className="text-emerald-500" />
-                      ) : (
-                        <Circle size={16} className={circleCls} />
-                      )}
+                      {item.completed ? <CheckCircle size={16} className="text-emerald-500" /> : <Circle size={16} className={circleCls} />}
                     </div>
                   </div>
                 </div>
@@ -1283,6 +1301,9 @@ export function IntentionsPanel({
           </div>
         )}
       </div>
+
+      {/* ✅ Modal */}
+      {ImportModal}
     </div>
   );
 
