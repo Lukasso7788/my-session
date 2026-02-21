@@ -64,6 +64,12 @@ function deviceLabel(d: MediaDeviceInfo, fallback: string) {
   const l = (d.label || "").trim();
   return l || fallback;
 }
+function normalizeTemplates(
+  t: SessionTemplate | SessionTemplate[] | null | undefined
+): SessionTemplate[] {
+  if (!t) return [];
+  return Array.isArray(t) ? t : [t];
+}
 
 // ---- PreJoin ----
 type MediaDevicesResult = {
@@ -107,7 +113,8 @@ function PreJoinModal({
 
   const isLight = theme === "light";
 
-  const overlay = "fixed inset-0 z-[999] flex items-center justify-center px-3";
+  const overlay =
+    "fixed inset-0 z-[999] flex items-center justify-center px-3";
   const backdrop = "absolute inset-0 bg-black/55";
   const card = [
     "relative w-full max-w-[520px] rounded-3xl shadow-2xl overflow-hidden",
@@ -166,7 +173,9 @@ function PreJoinModal({
             <div className={`rounded-2xl px-4 py-3 ${inputWrap}`}>
               <input
                 value={value.displayName}
-                onChange={(e) => onChange({ ...value, displayName: e.target.value })}
+                onChange={(e) =>
+                  onChange({ ...value, displayName: e.target.value })
+                }
                 placeholder="Your name…"
                 className={`w-full bg-transparent outline-none text-[14px] ${inputCls}`}
               />
@@ -180,7 +189,9 @@ function PreJoinModal({
               <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
                 <select
                   value={value.audioInputId}
-                  onChange={(e) => onChange({ ...value, audioInputId: e.target.value })}
+                  onChange={(e) =>
+                    onChange({ ...value, audioInputId: e.target.value })
+                  }
                   className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
                 >
                   <option value="">Default</option>
@@ -198,7 +209,9 @@ function PreJoinModal({
               <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
                 <select
                   value={value.videoInputId}
-                  onChange={(e) => onChange({ ...value, videoInputId: e.target.value })}
+                  onChange={(e) =>
+                    onChange({ ...value, videoInputId: e.target.value })
+                  }
                   className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
                 >
                   <option value="">Default</option>
@@ -216,7 +229,9 @@ function PreJoinModal({
               <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
                 <select
                   value={value.audioOutputId}
-                  onChange={(e) => onChange({ ...value, audioOutputId: e.target.value })}
+                  onChange={(e) =>
+                    onChange({ ...value, audioOutputId: e.target.value })
+                  }
                   className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
                 >
                   <option value="default">Default</option>
@@ -237,7 +252,9 @@ function PreJoinModal({
                 <input
                   type="checkbox"
                   checked={value.audioEnabled}
-                  onChange={(e) => onChange({ ...value, audioEnabled: e.target.checked })}
+                  onChange={(e) =>
+                    onChange({ ...value, audioEnabled: e.target.checked })
+                  }
                 />
                 <span className={labelCls}>Audio enabled</span>
               </label>
@@ -246,7 +263,9 @@ function PreJoinModal({
                 <input
                   type="checkbox"
                   checked={value.videoEnabled}
-                  onChange={(e) => onChange({ ...value, videoEnabled: e.target.checked })}
+                  onChange={(e) =>
+                    onChange({ ...value, videoEnabled: e.target.checked })
+                  }
                 />
                 <span className={labelCls}>Video enabled</span>
               </label>
@@ -255,7 +274,12 @@ function PreJoinModal({
                 <input
                   type="checkbox"
                   checked={value.echoCancellation}
-                  onChange={(e) => onChange({ ...value, echoCancellation: e.target.checked })}
+                  onChange={(e) =>
+                    onChange({
+                      ...value,
+                      echoCancellation: e.target.checked,
+                    })
+                  }
                 />
                 <span className={labelCls}>Echo cancellation</span>
               </label>
@@ -264,7 +288,12 @@ function PreJoinModal({
                 <input
                   type="checkbox"
                   checked={value.noiseSuppression}
-                  onChange={(e) => onChange({ ...value, noiseSuppression: e.target.checked })}
+                  onChange={(e) =>
+                    onChange({
+                      ...value,
+                      noiseSuppression: e.target.checked,
+                    })
+                  }
                 />
                 <span className={labelCls}>Noise suppression</span>
               </label>
@@ -273,7 +302,12 @@ function PreJoinModal({
                 <input
                   type="checkbox"
                   checked={value.autoGainControl}
-                  onChange={(e) => onChange({ ...value, autoGainControl: e.target.checked })}
+                  onChange={(e) =>
+                    onChange({
+                      ...value,
+                      autoGainControl: e.target.checked,
+                    })
+                  }
                 />
                 <span className={labelCls}>Auto gain control</span>
               </label>
@@ -352,6 +386,7 @@ export function RoomPageLiveKit() {
     : "bg-[#0B1220]/55 border border-white/5";
 
   const [session, setSession] = useState<SessionRow | null>(null);
+  const [templates, setTemplates] = useState<SessionTemplate[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [authUserId, setAuthUserId] = useState<string | null>(null);
@@ -405,7 +440,7 @@ export function RoomPageLiveKit() {
     return Math.max(2, Math.min(50, Math.round(v)));
   }, [session]);
 
-  // load session
+  // load session (✅ normalize session_templates to array to avoid .length undefined crashes)
   useEffect(() => {
     (async () => {
       if (!id) return;
@@ -419,7 +454,17 @@ export function RoomPageLiveKit() {
         .eq("id", id)
         .single();
 
-      if (data && !error) setSession(data as any);
+      if (data && !error) {
+        const norm = {
+          ...(data as any),
+          session_templates: normalizeTemplates(
+            (data as any)?.session_templates
+          ),
+        };
+        setSession(norm as any);
+        setTemplates(normalizeTemplates((data as any)?.session_templates));
+      }
+
       setLoading(false);
     })();
   }, [id]);
@@ -432,8 +477,8 @@ export function RoomPageLiveKit() {
       setAuthUserId(u?.id || null);
 
       let name =
-        str(u?.user_metadata?.full_name) ||
-        str(u?.user_metadata?.name) ||
+        str((u as any)?.user_metadata?.full_name) ||
+        str((u as any)?.user_metadata?.name) ||
         (u?.email ? u.email.split("@")[0] : "");
 
       if (!name && u?.id) {
@@ -456,6 +501,7 @@ export function RoomPageLiveKit() {
     try {
       if (!navigator.mediaDevices?.enumerateDevices) return;
 
+      // Ask permission once so device labels appear
       try {
         const s = await navigator.mediaDevices.getUserMedia({
           audio: true,
@@ -495,9 +541,14 @@ export function RoomPageLiveKit() {
   }, [loading, session, displayName, userName, joinRequested]);
 
   // LiveKit env
-  const lkServerUrl = (((import.meta as any)?.env?.VITE_LIVEKIT_URL as string) || "").trim();
-  const tokenEndpoint =
-    (((import.meta as any)?.env?.VITE_LIVEKIT_TOKEN_ENDPOINT as string) || "/api/livekit/token").trim();
+  const lkServerUrl = (
+    (((import.meta as any)?.env?.VITE_LIVEKIT_URL as string) || "") as string
+  ).trim();
+
+  const tokenEndpoint = (
+    (((import.meta as any)?.env?.VITE_LIVEKIT_TOKEN_ENDPOINT as string) ||
+      "/api/livekit/token") as string
+  ).trim();
 
   // token + connect
   const [lkToken, setLkToken] = useState<string>("");
@@ -611,18 +662,29 @@ export function RoomPageLiveKit() {
                 <div className="font-inter font-semibold text-[16px] sm:text-[18px] truncate">
                   {session.title || "Session"}
                 </div>
-                <div className={isLight ? "text-black/50 text-xs" : "text-white/50 text-xs"}>
+                <div
+                  className={isLight ? "text-black/50 text-xs" : "text-white/50 text-xs"}
+                >
                   LiveKit room: session-{session.id} (limit {maxParticipants})
                 </div>
-                <div className={isLight ? "text-black/40 text-[11px]" : "text-white/40 text-[11px]"}>
-                  LK_URL: {lkServerUrl || "(missing)"} • token: {tokenEndpoint}
+
+                {/* small debug line to help you catch env/token issues instantly */}
+                <div
+                  className={isLight ? "text-black/40 text-[11px]" : "text-white/40 text-[11px]"}
+                >
+                  LK_URL: {lkServerUrl || "(missing)"} • token: {tokenEndpoint} • templates:{" "}
+                  {templates.length}
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-                  className={isLight ? "px-3 py-2 rounded-xl bg-black/5" : "px-3 py-2 rounded-xl bg-white/5"}
+                  className={
+                    isLight
+                      ? "px-3 py-2 rounded-xl bg-black/5"
+                      : "px-3 py-2 rounded-xl bg-white/5"
+                  }
                   title="Toggle theme"
                 >
                   {theme === "dark" ? "🌙" : "☀️"}
@@ -630,21 +692,29 @@ export function RoomPageLiveKit() {
 
                 <button
                   onClick={() => openRightTab("chat")}
-                  className={isLight ? "px-3 py-2 rounded-xl bg-black/5" : "px-3 py-2 rounded-xl bg-white/5"}
+                  className={
+                    isLight
+                      ? "px-3 py-2 rounded-xl bg-black/5"
+                      : "px-3 py-2 rounded-xl bg-white/5"
+                  }
                 >
                   Chat
                 </button>
 
                 <button
                   onClick={() => openRightTab("intentions")}
-                  className={isLight ? "px-3 py-2 rounded-xl bg-black/5" : "px-3 py-2 rounded-xl bg-white/5"}
+                  className={
+                    isLight
+                      ? "px-3 py-2 rounded-xl bg-black/5"
+                      : "px-3 py-2 rounded-xl bg-white/5"
+                  }
                 >
                   Intentions
                 </button>
               </div>
             </div>
 
-            {/* stagebar placeholder (пока пустой, можно потом прокинуть реальные stages) */}
+            {/* stagebar placeholder (stages can be wired later) */}
             <div className="mt-3">
               <SessionStageBar
                 stages={[]}
@@ -659,7 +729,9 @@ export function RoomPageLiveKit() {
           <div
             className={
               "relative grid grid-rows-1 gap-3 flex-1 min-h-0 h-full " +
-              (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),380px]" : "grid-cols-1")
+              (rightPanelOpen
+                ? "lg:grid-cols-[minmax(0,1fr),380px]"
+                : "grid-cols-1")
             }
           >
             {/* VIDEO */}
@@ -674,7 +746,11 @@ export function RoomPageLiveKit() {
                   <div>Waiting for join…</div>
                   <button
                     onClick={() => setPrejoinOpen(true)}
-                    className={isLight ? "px-4 py-2 rounded-xl bg-black/5" : "px-4 py-2 rounded-xl bg-white/5"}
+                    className={
+                      isLight
+                        ? "px-4 py-2 rounded-xl bg-black/5"
+                        : "px-4 py-2 rounded-xl bg-white/5"
+                    }
                   >
                     Open join dialog
                   </button>
@@ -717,7 +793,7 @@ export function RoomPageLiveKit() {
                   data-theme={theme}
                   style={{ height: "100%", width: "100%" }}
                   onDisconnected={() => {
-                    // При дисконнекте: сброс токена + можно показать reconnect
+                    // reset token on disconnect (easy manual reconnect)
                     setLkToken("");
                   }}
                 >
@@ -771,7 +847,11 @@ export function RoomPageLiveKit() {
                         <div
                           data-theme={theme}
                           style={{ colorScheme: theme }}
-                          className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
+                          className={
+                            theme === "dark"
+                              ? "dark h-full min-h-0"
+                              : "h-full min-h-0"
+                          }
                         >
                           <ChatPanelAny
                             sessionId={session.id}
@@ -791,9 +871,17 @@ export function RoomPageLiveKit() {
                         <div
                           data-theme={theme}
                           style={{ colorScheme: theme }}
-                          className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
+                          className={
+                            theme === "dark"
+                              ? "dark h-full min-h-0"
+                              : "h-full min-h-0"
+                          }
                         >
-                          <IntentionsPanel theme={theme} sessionId={session.id} timerText={"--:--"} />
+                          <IntentionsPanel
+                            theme={theme}
+                            sessionId={session.id}
+                            timerText={"--:--"}
+                          />
                         </div>
                       </div>
                     )}
