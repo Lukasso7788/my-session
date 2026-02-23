@@ -1,12 +1,12 @@
 // src/pages/RoomPageLiveKit.tsx
 import "@livekit/components-styles";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   LiveKitRoom,
   GridLayout,
   ParticipantTile,
   ControlBar,
 } from "@livekit/components-react";
-import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import ChatPanel from "../components/ChatPanel";
@@ -167,7 +167,6 @@ function PreJoinModal({
         </div>
 
         <div className="px-6 py-5 flex flex-col gap-4">
-          {/* name */}
           <div className="flex flex-col gap-2">
             <div className={`text-[12px] ${labelCls}`}>Display name</div>
             <div className={`rounded-2xl px-4 py-3 ${inputWrap}`}>
@@ -182,7 +181,6 @@ function PreJoinModal({
             </div>
           </div>
 
-          {/* devices */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="flex flex-col gap-2">
               <div className={`text-[12px] ${labelCls}`}>Microphone</div>
@@ -245,7 +243,6 @@ function PreJoinModal({
             </div>
           </div>
 
-          {/* toggles */}
           <div className={`rounded-2xl p-4 ${inputWrap}`}>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className="flex items-center gap-2 text-[13px]">
@@ -275,10 +272,7 @@ function PreJoinModal({
                   type="checkbox"
                   checked={value.echoCancellation}
                   onChange={(e) =>
-                    onChange({
-                      ...value,
-                      echoCancellation: e.target.checked,
-                    })
+                    onChange({ ...value, echoCancellation: e.target.checked })
                   }
                 />
                 <span className={labelCls}>Echo cancellation</span>
@@ -289,10 +283,7 @@ function PreJoinModal({
                   type="checkbox"
                   checked={value.noiseSuppression}
                   onChange={(e) =>
-                    onChange({
-                      ...value,
-                      noiseSuppression: e.target.checked,
-                    })
+                    onChange({ ...value, noiseSuppression: e.target.checked })
                   }
                 />
                 <span className={labelCls}>Noise suppression</span>
@@ -303,10 +294,7 @@ function PreJoinModal({
                   type="checkbox"
                   checked={value.autoGainControl}
                   onChange={(e) =>
-                    onChange({
-                      ...value,
-                      autoGainControl: e.target.checked,
-                    })
+                    onChange({ ...value, autoGainControl: e.target.checked })
                   }
                 />
                 <span className={labelCls}>Auto gain control</span>
@@ -350,6 +338,51 @@ function PreJoinModal({
   );
 }
 
+// ---- ErrorBoundary to avoid full-page crash if LiveKit UI throws ----
+class LiveKitErrorBoundary extends React.Component<
+  { children: React.ReactNode; onReset: () => void; isLight: boolean },
+  { hasError: boolean; errorText: string }
+> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, errorText: "" };
+  }
+  static getDerivedStateFromError(err: any) {
+    return {
+      hasError: true,
+      errorText: String(err?.message || err || "LiveKit error"),
+    };
+  }
+  componentDidCatch(err: any) {
+    console.error("LiveKit UI crashed:", err);
+  }
+  render() {
+    if (!this.state.hasError) return this.props.children;
+
+    return (
+      <div className="h-full w-full flex flex-col items-center justify-center gap-3 px-6">
+        <div className="text-red-500 font-semibold">LiveKit UI crashed</div>
+        <div className="text-xs opacity-80 break-words text-center">
+          {this.state.errorText}
+        </div>
+        <button
+          onClick={() => {
+            this.setState({ hasError: false, errorText: "" });
+            this.props.onReset();
+          }}
+          className={
+            this.props.isLight
+              ? "px-4 py-2 rounded-xl bg-black/5 hover:bg-black/10"
+              : "px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10"
+          }
+        >
+          Reset + retry
+        </button>
+      </div>
+    );
+  }
+}
+
 export function RoomPageLiveKit() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -386,7 +419,7 @@ export function RoomPageLiveKit() {
     : "bg-[#0B1220]/55 border border-white/5";
 
   const [session, setSession] = useState<SessionRow | null>(null);
-  const [templates, setTemplates] = useState<SessionTemplate[]>([]);
+  const [templatesCount, setTemplatesCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   const [authUserId, setAuthUserId] = useState<string | null>(null);
@@ -440,7 +473,7 @@ export function RoomPageLiveKit() {
     return Math.max(2, Math.min(50, Math.round(v)));
   }, [session]);
 
-  // load session (✅ normalize session_templates to array to avoid .length undefined crashes)
+  // load session
   useEffect(() => {
     (async () => {
       if (!id) return;
@@ -455,14 +488,10 @@ export function RoomPageLiveKit() {
         .single();
 
       if (data && !error) {
-        const norm = {
-          ...(data as any),
-          session_templates: normalizeTemplates(
-            (data as any)?.session_templates
-          ),
-        };
+        const t = normalizeTemplates((data as any)?.session_templates);
+        const norm = { ...(data as any), session_templates: t };
         setSession(norm as any);
-        setTemplates(normalizeTemplates((data as any)?.session_templates));
+        setTemplatesCount(t.length);
       }
 
       setLoading(false);
@@ -501,7 +530,6 @@ export function RoomPageLiveKit() {
     try {
       if (!navigator.mediaDevices?.enumerateDevices) return;
 
-      // Ask permission once so device labels appear
       try {
         const s = await navigator.mediaDevices.getUserMedia({
           audio: true,
@@ -544,7 +572,6 @@ export function RoomPageLiveKit() {
   const lkServerUrl = (
     (((import.meta as any)?.env?.VITE_LIVEKIT_URL as string) || "") as string
   ).trim();
-
   const tokenEndpoint = (
     (((import.meta as any)?.env?.VITE_LIVEKIT_TOKEN_ENDPOINT as string) ||
       "/api/livekit/token") as string
@@ -554,6 +581,12 @@ export function RoomPageLiveKit() {
   const [lkToken, setLkToken] = useState<string>("");
   const [tokenLoading, setTokenLoading] = useState(false);
   const [tokenError, setTokenError] = useState<string>("");
+
+  const resetLiveKit = () => {
+    setLkToken("");
+    setTokenError("");
+    setTokenLoading(false);
+  };
 
   const requestToken = async () => {
     if (!session) return;
@@ -632,6 +665,22 @@ export function RoomPageLiveKit() {
 
   const ChatPanelAny = ChatPanel as any;
 
+  // Build LK options; also avoid LK "saved choices" by disabling persistence on ControlBar.
+  const lkOptions: any = {
+    publishDefaults: {
+      simulcast: true,
+    },
+    audioCaptureDefaults: {
+      deviceId: prejoin.audioInputId ? { exact: prejoin.audioInputId } : undefined,
+      echoCancellation: prejoin.echoCancellation,
+      noiseSuppression: prejoin.noiseSuppression,
+      autoGainControl: prejoin.autoGainControl,
+    },
+    videoCaptureDefaults: {
+      deviceId: prejoin.videoInputId ? { exact: prejoin.videoInputId } : undefined,
+    },
+  };
+
   return (
     <>
       <PreJoinModal
@@ -645,8 +694,7 @@ export function RoomPageLiveKit() {
         onJoin={() => {
           const pj = prejoinRef.current;
           const nm =
-            (pj.displayName || displayName || userName || "Guest").trim() ||
-            "Guest";
+            (pj.displayName || displayName || userName || "Guest").trim() || "Guest";
           setDisplayName(nm);
           setPrejoinOpen(false);
           setJoinRequested(true);
@@ -662,18 +710,13 @@ export function RoomPageLiveKit() {
                 <div className="font-inter font-semibold text-[16px] sm:text-[18px] truncate">
                   {session.title || "Session"}
                 </div>
-                <div
-                  className={isLight ? "text-black/50 text-xs" : "text-white/50 text-xs"}
-                >
+                <div className={isLight ? "text-black/50 text-xs" : "text-white/50 text-xs"}>
                   LiveKit room: session-{session.id} (limit {maxParticipants})
                 </div>
 
-                {/* small debug line to help you catch env/token issues instantly */}
-                <div
-                  className={isLight ? "text-black/40 text-[11px]" : "text-white/40 text-[11px]"}
-                >
+                <div className={isLight ? "text-black/40 text-[11px]" : "text-white/40 text-[11px]"}>
                   LK_URL: {lkServerUrl || "(missing)"} • token: {tokenEndpoint} • templates:{" "}
-                  {templates.length}
+                  {templatesCount}
                 </div>
               </div>
 
@@ -714,7 +757,6 @@ export function RoomPageLiveKit() {
               </div>
             </div>
 
-            {/* stagebar placeholder (stages can be wired later) */}
             <div className="mt-3">
               <SessionStageBar
                 stages={[]}
@@ -729,9 +771,7 @@ export function RoomPageLiveKit() {
           <div
             className={
               "relative grid grid-rows-1 gap-3 flex-1 min-h-0 h-full " +
-              (rightPanelOpen
-                ? "lg:grid-cols-[minmax(0,1fr),380px]"
-                : "grid-cols-1")
+              (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),380px]" : "grid-cols-1")
             }
           >
             {/* VIDEO */}
@@ -758,9 +798,7 @@ export function RoomPageLiveKit() {
               ) : !lkServerUrl ? (
                 <div className="h-full w-full flex flex-col items-center justify-center text-sm text-red-500 gap-2">
                   <div>Missing VITE_LIVEKIT_URL</div>
-                  <div className="text-xs opacity-80">
-                    Set it in Vercel env + .env.local
-                  </div>
+                  <div className="text-xs opacity-80">Set it in Vercel env + .env.local</div>
                 </div>
               ) : tokenLoading ? (
                 <div className="h-full w-full flex items-center justify-center opacity-70 text-sm">
@@ -769,45 +807,68 @@ export function RoomPageLiveKit() {
               ) : tokenError ? (
                 <div className="h-full w-full flex flex-col items-center justify-center text-sm gap-3 px-6">
                   <div className="text-red-500 font-semibold">Token error</div>
-                  <div className="text-xs opacity-80 break-words text-center">
-                    {tokenError}
+                  <div className="text-xs opacity-80 break-words text-center">{tokenError}</div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => requestToken()}
+                      className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+                    >
+                      Retry
+                    </button>
+                    <button
+                      onClick={() => {
+                        resetLiveKit();
+                        requestToken();
+                      }}
+                      className={
+                        isLight
+                          ? "px-4 py-2 rounded-xl bg-black/5 hover:bg-black/10"
+                          : "px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10"
+                      }
+                    >
+                      Reset
+                    </button>
                   </div>
-                  <button
-                    onClick={() => requestToken()}
-                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold"
-                  >
-                    Retry
-                  </button>
                 </div>
               ) : !lkToken ? (
                 <div className="h-full w-full flex items-center justify-center opacity-70 text-sm">
                   Token is empty…
                 </div>
               ) : (
-                <LiveKitRoom
-                  serverUrl={lkServerUrl}
-                  token={lkToken}
-                  connect={true}
-                  video={prejoin.videoEnabled}
-                  audio={prejoin.audioEnabled}
-                  data-theme={theme}
-                  style={{ height: "100%", width: "100%" }}
-                  onDisconnected={() => {
-                    // reset token on disconnect (easy manual reconnect)
-                    setLkToken("");
+                <LiveKitErrorBoundary
+                  isLight={isLight}
+                  onReset={() => {
+                    resetLiveKit();
+                    requestToken();
                   }}
                 >
-                  <div className="h-full w-full flex flex-col min-h-0">
-                    <div className="flex-1 min-h-0 p-2">
-                      <GridLayout className="h-full w-full">
-                        <ParticipantTile />
-                      </GridLayout>
+                  <LiveKitRoom
+                    key={`${session.id}:${lkToken.slice(0, 12)}`}
+                    serverUrl={lkServerUrl}
+                    token={lkToken}
+                    connect={true}
+                    video={prejoin.videoEnabled}
+                    audio={prejoin.audioEnabled}
+                    options={lkOptions}
+                    data-theme={theme}
+                    style={{ height: "100%", width: "100%" }}
+                    onDisconnected={() => {
+                      setLkToken("");
+                    }}
+                  >
+                    <div className="h-full w-full flex flex-col min-h-0">
+                      <div className="flex-1 min-h-0 p-2">
+                        <GridLayout className="h-full w-full">
+                          <ParticipantTile />
+                        </GridLayout>
+                      </div>
+                      <div className="p-2">
+                        {/* ✅ Critical fix: stop LK reading/writing lk-user-choices */}
+                        <ControlBar variation="minimal" saveUserChoices={false} />
+                      </div>
                     </div>
-                    <div className="p-2">
-                      <ControlBar variation="minimal" />
-                    </div>
-                  </div>
-                </LiveKitRoom>
+                  </LiveKitRoom>
+                </LiveKitErrorBoundary>
               )}
             </div>
 
@@ -847,11 +908,7 @@ export function RoomPageLiveKit() {
                         <div
                           data-theme={theme}
                           style={{ colorScheme: theme }}
-                          className={
-                            theme === "dark"
-                              ? "dark h-full min-h-0"
-                              : "h-full min-h-0"
-                          }
+                          className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
                         >
                           <ChatPanelAny
                             sessionId={session.id}
@@ -871,11 +928,7 @@ export function RoomPageLiveKit() {
                         <div
                           data-theme={theme}
                           style={{ colorScheme: theme }}
-                          className={
-                            theme === "dark"
-                              ? "dark h-full min-h-0"
-                              : "h-full min-h-0"
-                          }
+                          className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
                         >
                           <IntentionsPanel
                             theme={theme}
