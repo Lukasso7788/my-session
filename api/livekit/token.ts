@@ -6,6 +6,7 @@ type Body = {
   identity?: string;
   name?: string;
   isHost?: boolean;
+  sessionId?: string;
 };
 
 function asBool(v: unknown): boolean {
@@ -15,14 +16,29 @@ function asBool(v: unknown): boolean {
   return false;
 }
 
+function parseBody(req: VercelRequest): Body {
+  const raw = req.body as any;
+  if (!raw) return {};
+  if (typeof raw === "string") {
+    try {
+      return JSON.parse(raw) as Body;
+    } catch {
+      return {};
+    }
+  }
+  return raw as Body;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
+    res.setHeader("Cache-Control", "no-store, max-age=0");
+
     if (req.method !== "POST") {
       res.setHeader("Allow", "POST");
       return res.status(405).json({ error: "method_not_allowed" });
     }
 
-    const { roomName, identity, name, isHost } = (req.body || {}) as Body;
+    const { roomName, identity, name, isHost } = parseBody(req);
 
     if (!roomName || !identity) {
       return res.status(400).json({ error: "roomName_and_identity_required" });
@@ -32,17 +48,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const apiSecret = process.env.LIVEKIT_API_SECRET;
 
     if (!apiKey || !apiSecret) {
+      console.error("livekit token error: missing env", {
+        hasKey: !!apiKey,
+        hasSecret: !!apiSecret,
+      });
       return res.status(500).json({ error: "livekit_keys_missing" });
     }
+
+    const host = asBool(isHost);
 
     const at = new AccessToken(apiKey, apiSecret, {
       identity: String(identity),
       name: name ? String(name) : undefined,
     });
 
-    const host = asBool(isHost);
-
-    // базовые права всем
+    // NOTE:
+    // - No TTL override here (important).
+    // - In some SDK versions manual ttl can produce bad exp if passed in wrong shape.
     const grant: any = {
       room: String(roomName),
       roomJoin: true,
@@ -51,17 +73,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       canPublishData: true,
     };
 
-    // админские права только хосту
     if (host) {
-      grant.roomAdmin = true; // если TS ругнется на поле — скажи, подгоню под твою версию SDK
+      // Host-only admin rights
+      grant.roomAdmin = true;
     }
 
     at.addGrant(grant);
 
-    // ❌ НЕ трогаем ttl, потому что в твоей версии SDK это ломает exp (ставит "21600")
     const token = await at.toJwt();
 
-    return res.status(200).json({ token, isHost: host });
+    console.log("LK TOKEN GENERATED", {
+      marker: "lk-token-v3-no-ttl-host",
+      roomName: String(roomName),
+      identity: String(identity),
+      host,
+      apiKeyPrefix: String(apiKey).slice(0, 6),
+      tokenPreview: `${token.slice(0, 18)}...${token.slice(-10)}`,
+    });
+
+    return res.status(200).json({
+      token,
+      isHost: host,
+    });
   } catch (e) {
     console.error("livekit token error:", e);
     return res.status(500).json({ error: "token_generation_failed" });
