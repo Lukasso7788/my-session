@@ -1,3 +1,4 @@
+// src/pages/RoomPageLiveKit.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -19,6 +20,7 @@ import { SessionStageBar } from "../components/SessionStageBar";
 
 type RoomTheme = "dark" | "light";
 type RightPanelTab = "participants" | "chat" | "intentions" | null;
+type FxMode = "off" | "blur" | "bg";
 
 type HostProfile = {
   id: string;
@@ -49,6 +51,7 @@ type SessionRow = {
   host_id?: string | null;
 };
 
+// ---- helpers ----
 function str(v: unknown): string {
   return typeof v === "string" ? v : "";
 }
@@ -75,6 +78,7 @@ function normalizeTemplates(
   return Array.isArray(t) ? t : [t];
 }
 
+// ---- PreJoin ----
 type MediaDevicesResult = {
   videoInputs: MediaDeviceInfo[];
   audioInputs: MediaDeviceInfo[];
@@ -115,6 +119,7 @@ function PreJoinModal({
   if (!open) return null;
 
   const isLight = theme === "light";
+
   const overlay = "fixed inset-0 z-[999] flex items-center justify-center px-3";
   const backdrop = "absolute inset-0 bg-black/55";
   const card = [
@@ -173,7 +178,9 @@ function PreJoinModal({
             <div className={`rounded-2xl px-4 py-3 ${inputWrap}`}>
               <input
                 value={value.displayName}
-                onChange={(e) => onChange({ ...value, displayName: e.target.value })}
+                onChange={(e) =>
+                  onChange({ ...value, displayName: e.target.value })
+                }
                 placeholder="Your name…"
                 className={`w-full bg-transparent outline-none text-[14px] ${inputCls}`}
               />
@@ -186,7 +193,9 @@ function PreJoinModal({
               <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
                 <select
                   value={value.audioInputId}
-                  onChange={(e) => onChange({ ...value, audioInputId: e.target.value })}
+                  onChange={(e) =>
+                    onChange({ ...value, audioInputId: e.target.value })
+                  }
                   className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
                 >
                   <option value="">Default</option>
@@ -204,7 +213,9 @@ function PreJoinModal({
               <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
                 <select
                   value={value.videoInputId}
-                  onChange={(e) => onChange({ ...value, videoInputId: e.target.value })}
+                  onChange={(e) =>
+                    onChange({ ...value, videoInputId: e.target.value })
+                  }
                   className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
                 >
                   <option value="">Default</option>
@@ -222,7 +233,9 @@ function PreJoinModal({
               <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
                 <select
                   value={value.audioOutputId}
-                  onChange={(e) => onChange({ ...value, audioOutputId: e.target.value })}
+                  onChange={(e) =>
+                    onChange({ ...value, audioOutputId: e.target.value })
+                  }
                   className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
                 >
                   <option value="default">Default</option>
@@ -242,7 +255,9 @@ function PreJoinModal({
                 <input
                   type="checkbox"
                   checked={value.audioEnabled}
-                  onChange={(e) => onChange({ ...value, audioEnabled: e.target.checked })}
+                  onChange={(e) =>
+                    onChange({ ...value, audioEnabled: e.target.checked })
+                  }
                 />
                 <span className={labelCls}>Audio enabled</span>
               </label>
@@ -251,7 +266,9 @@ function PreJoinModal({
                 <input
                   type="checkbox"
                   checked={value.videoEnabled}
-                  onChange={(e) => onChange({ ...value, videoEnabled: e.target.checked })}
+                  onChange={(e) =>
+                    onChange({ ...value, videoEnabled: e.target.checked })
+                  }
                 />
                 <span className={labelCls}>Video enabled</span>
               </label>
@@ -327,6 +344,7 @@ function PreJoinModal({
   );
 }
 
+// ---- ErrorBoundary ----
 class LiveKitErrorBoundary extends React.Component<
   { children: React.ReactNode; onReset: () => void; isLight: boolean },
   { hasError: boolean; errorText: string }
@@ -371,6 +389,7 @@ class LiveKitErrorBoundary extends React.Component<
   }
 }
 
+// ---- default background (data url) ----
 const DEFAULT_BG_DATA_URL =
   "data:image/svg+xml;utf8," +
   encodeURIComponent(`
@@ -393,30 +412,39 @@ const DEFAULT_BG_DATA_URL =
 </svg>
 `);
 
-const BG_PRESETS: { id: string; name: string; url: string }[] = [
-  { id: "gradient", name: "Gradient", url: DEFAULT_BG_DATA_URL },
-  {
-    id: "mountains",
-    name: "Mountains",
-    url: "https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=1280&q=80",
-  },
-  {
-    id: "ocean",
-    name: "Ocean",
-    url: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1280&q=80",
-  },
-  {
-    id: "city",
-    name: "City",
-    url: "https://images.unsplash.com/photo-1467269204594-9661b134dd2b?auto=format&fit=crop&w=1280&q=80",
-  },
-  {
-    id: "forest",
-    name: "Forest",
-    url: "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=1280&q=80",
-  },
+function makeBgPresetDataUrl(a: string, b: string, c: string, d: string) {
+  return (
+    "data:image/svg+xml;utf8," +
+    encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="${a}"/>
+      <stop offset="0.5" stop-color="${b}"/>
+      <stop offset="1" stop-color="${c}"/>
+    </linearGradient>
+    <radialGradient id="r" cx="25%" cy="25%" r="80%">
+      <stop offset="0" stop-color="${d}" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1280" height="720" fill="url(#g)"/>
+  <rect width="1280" height="720" fill="url(#r)"/>
+  <circle cx="1030" cy="170" r="230" fill="#ffffff" opacity="0.04"/>
+  <circle cx="360" cy="520" r="310" fill="#ffffff" opacity="0.03"/>
+</svg>
+`)
+  );
+}
+
+const FX_BG_PRESETS = [
+  { id: "ocean", label: "Ocean", url: makeBgPresetDataUrl("#081226", "#123a76", "#031019", "#38bdf8") },
+  { id: "forest", label: "Forest", url: makeBgPresetDataUrl("#07160f", "#124b2c", "#040d08", "#22c55e") },
+  { id: "violet", label: "Violet", url: makeBgPresetDataUrl("#120a22", "#3b2378", "#090512", "#a78bfa") },
+  { id: "sunset", label: "Sunset", url: makeBgPresetDataUrl("#1c0d10", "#7c2d12", "#11070a", "#fb7185") },
 ];
 
+// ---- Host action types ----
 type HostTileActions = {
   canMuteMic: boolean;
   canMuteCam: boolean;
@@ -428,29 +456,202 @@ type HostTileActions = {
   busy?: boolean;
 };
 
-// ---------- video track rendering helpers (FIX) ----------
-function isLiveKitAttachableTrack(t: any): t is { attach: Function; detach?: Function } {
-  return !!t && typeof t.attach === "function";
-}
-function isMediaStreamTrackLike(t: any): t is MediaStreamTrack {
+// ---- Video FX Settings Modal ----
+function VideoFxSettingsModal({
+  open,
+  theme,
+  mode,
+  blurStrength,
+  onBlurStrengthChange,
+  bgImageUrl,
+  onSetBgImageUrl,
+  onApplyMode,
+  onClose,
+  fxError,
+  fxApplying,
+  fxStatusText,
+  onUploadBg,
+  onResetBg,
+}: {
+  open: boolean;
+  theme: RoomTheme;
+  mode: FxMode;
+  blurStrength: number;
+  onBlurStrengthChange: (v: number) => void;
+  bgImageUrl: string;
+  onSetBgImageUrl: (url: string) => void;
+  onApplyMode: (m: FxMode) => void;
+  onClose: () => void;
+  fxError: string;
+  fxApplying: boolean;
+  fxStatusText: string;
+  onUploadBg: (file: File) => void;
+  onResetBg: () => void;
+}) {
+  if (!open) return null;
+
+  const isLight = theme === "light";
+  const overlay = "fixed inset-0 z-[1001] flex items-center justify-center px-3";
+  const backdrop = "absolute inset-0 bg-black/60";
+  const card = [
+    "relative w-full max-w-[680px] rounded-3xl shadow-2xl overflow-hidden",
+    isLight ? "bg-white text-black border border-black/10" : "bg-[#020617] text-white border border-white/10",
+  ].join(" ");
+
+  const inputWrap = isLight ? "bg-black/5 border border-black/10" : "bg-white/5 border border-white/10";
+  const ghostBtn = isLight ? "bg-black/5 hover:bg-black/10 text-black/80" : "bg-white/5 hover:bg-white/10 text-white/85";
+  const activeBtn = isLight ? "bg-blue-600 text-white" : "bg-emerald-500 text-[#03110a]";
+  const subtleText = isLight ? "text-black/60" : "text-white/60";
+
   return (
-    !!t &&
-    typeof t === "object" &&
-    typeof t.kind === "string" &&
-    (t.kind === "video" || t.kind === "audio") &&
-    typeof t.id === "string" &&
-    typeof t.stop === "function"
+    <div className={overlay} data-theme={theme} style={{ colorScheme: theme }}>
+      <div className={backdrop} onClick={onClose} />
+      <div className={card}>
+        <div className={`px-6 py-5 border-b ${isLight ? "border-black/10" : "border-white/10"}`}>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="font-semibold text-[16px]">Video FX Settings</div>
+              <div className={`text-[12px] mt-1 ${subtleText}`}>
+                Apply background blur or virtual background to your camera.
+              </div>
+            </div>
+            <button onClick={onClose} className={`w-9 h-9 rounded-2xl ${ghostBtn}`}>
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <div className="px-6 py-5 flex flex-col gap-5">
+          <div className={`rounded-2xl p-4 ${inputWrap}`}>
+            <div className="text-[13px] font-semibold mb-3">Effect mode</div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => onApplyMode("off")}
+                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "off" ? activeBtn : ghostBtn}`}
+                disabled={fxApplying}
+              >
+                FX off
+              </button>
+              <button
+                onClick={() => onApplyMode("blur")}
+                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "blur" ? activeBtn : ghostBtn}`}
+                disabled={fxApplying}
+              >
+                Blur
+              </button>
+              <button
+                onClick={() => onApplyMode("bg")}
+                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "bg" ? activeBtn : ghostBtn}`}
+                disabled={fxApplying}
+              >
+                Background image
+              </button>
+            </div>
+
+            <div className={`mt-3 text-[12px] ${subtleText}`}>
+              {fxApplying ? "Applying effect…" : fxStatusText || "Ready"}
+            </div>
+            {fxError ? <div className="mt-2 text-[12px] text-red-500 break-words">{fxError}</div> : null}
+          </div>
+
+          <div className={`rounded-2xl p-4 ${inputWrap}`}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[13px] font-semibold">Blur strength</div>
+                <div className={`text-[12px] mt-1 ${subtleText}`}>
+                  Used when Blur mode is active.
+                </div>
+              </div>
+              <div className="text-[13px] font-semibold">{blurStrength}</div>
+            </div>
+
+            <input
+              type="range"
+              min={4}
+              max={30}
+              step={1}
+              value={blurStrength}
+              onChange={(e) => onBlurStrengthChange(Number(e.target.value))}
+              className="w-full mt-3"
+            />
+          </div>
+
+          <div className={`rounded-2xl p-4 ${inputWrap}`}>
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div>
+                <div className="text-[13px] font-semibold">Background presets</div>
+                <div className={`text-[12px] mt-1 ${subtleText}`}>
+                  Used when Background image mode is active.
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={onResetBg}
+                  className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn}`}
+                  disabled={fxApplying}
+                >
+                  Reset
+                </button>
+                <label className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn} cursor-pointer flex items-center`}>
+                  Upload
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (!f) return;
+                      onUploadBg(f);
+                      e.currentTarget.value = "";
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {FX_BG_PRESETS.map((p) => {
+                const selected = bgImageUrl === p.url;
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => onSetBgImageUrl(p.url)}
+                    className={
+                      "rounded-2xl overflow-hidden border text-left " +
+                      (selected
+                        ? isLight
+                          ? "border-blue-500 ring-2 ring-blue-300"
+                          : "border-emerald-400 ring-2 ring-emerald-300/25"
+                        : isLight
+                          ? "border-black/10"
+                          : "border-white/10")
+                    }
+                    title={p.label}
+                  >
+                    <div className="aspect-video w-full">
+                      <img src={p.url} alt={p.label} className="w-full h-full object-cover" />
+                    </div>
+                    <div className={`px-2 py-2 text-[12px] ${isLight ? "bg-white" : "bg-[#0b1220]"}`}>
+                      {p.label}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className={`px-6 py-4 border-t flex items-center justify-end gap-3 ${isLight ? "border-black/10" : "border-white/10"}`}>
+          <button onClick={onClose} className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${ghostBtn}`}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
-function extractMediaStreamTrackFromUnknown(obj: any): MediaStreamTrack | null {
-  if (!obj) return null;
-  if (isMediaStreamTrackLike(obj)) return obj;
-  if (isMediaStreamTrackLike(obj?.mediaStreamTrack)) return obj.mediaStreamTrack;
-  if (isMediaStreamTrackLike(obj?.track)) return obj.track;
-  if (isMediaStreamTrackLike(obj?._mediaStreamTrack)) return obj._mediaStreamTrack;
-  return null;
-}
 
+// ---- Video tile ----
 function VideoTile({
   label,
   videoTrack,
@@ -458,13 +659,15 @@ function VideoTile({
   theme,
   showBadge,
   hostActions,
+  localProcessedPreviewTrack,
 }: {
   label: string;
-  videoTrack?: any;
+  videoTrack?: Track;
   isLocal: boolean;
   theme: RoomTheme;
   showBadge?: string | null;
   hostActions?: HostTileActions;
+  localProcessedPreviewTrack?: MediaStreamTrack | null;
 }) {
   const ref = useRef<HTMLVideoElement | null>(null);
   const isLight = theme === "light";
@@ -473,71 +676,81 @@ function VideoTile({
     const el = ref.current;
     if (!el) return;
 
-    let cleanup: (() => void) | undefined;
+    let cleanupAttached = false;
 
+    // Always clear previous source first
     try {
-      // Cleanup previous srcObject if any
-      if (el.srcObject) {
-        el.srcObject = null;
+      if (videoTrack && typeof (videoTrack as any)?.detach === "function") {
+        (videoTrack as any).detach(el);
       }
     } catch { }
+    try {
+      el.pause();
+    } catch { }
+    try {
+      (el as any).srcObject = null;
+    } catch { }
+
+    // If local processed preview track exists, use raw MediaStreamTrack preview
+    if (isLocal && localProcessedPreviewTrack) {
+      try {
+        const ms = new MediaStream([localProcessedPreviewTrack]);
+        (el as any).srcObject = ms;
+        el.muted = true;
+        void el.play().catch(() => { });
+      } catch (e) {
+        console.error("attach local processed preview failed:", e);
+      }
+
+      return () => {
+        try {
+          el.pause();
+        } catch { }
+        try {
+          (el as any).srcObject = null;
+        } catch { }
+      };
+    }
 
     if (!videoTrack) return;
 
-    // Case A: Normal LiveKit track (attach/detach)
-    if (isLiveKitAttachableTrack(videoTrack)) {
-      try {
-        videoTrack.attach(el);
-        cleanup = () => {
-          try {
-            if (typeof videoTrack.detach === "function") {
-              videoTrack.detach(el);
-            }
-          } catch { }
-          try {
-            el.srcObject = null;
-          } catch { }
-        };
-      } catch (e) {
-        console.error("attach video failed:", e);
+    try {
+      if (typeof (videoTrack as any)?.attach === "function") {
+        (videoTrack as any).attach(el);
+        cleanupAttached = true;
+      } else {
+        console.warn("videoTrack.attach is not a function", videoTrack);
       }
-      return () => cleanup?.();
+    } catch (e) {
+      console.error("attach video failed:", e);
     }
 
-    // Case B: raw MediaStreamTrack (or wrapper around it)
-    const mst = extractMediaStreamTrackFromUnknown(videoTrack);
-    if (mst && mst.kind === "video") {
+    return () => {
       try {
-        const ms = new MediaStream([mst]);
-        el.srcObject = ms;
-        el.play().catch(() => { });
-        cleanup = () => {
-          try {
-            el.pause();
-          } catch { }
-          try {
-            el.srcObject = null;
-          } catch { }
-        };
-      } catch (e) {
-        console.error("render MediaStreamTrack failed:", e);
-      }
-      return () => cleanup?.();
-    }
-
-    console.warn("[VideoTile] Unsupported videoTrack object for rendering:", videoTrack);
-    return () => cleanup?.();
-  }, [videoTrack]);
+        if (cleanupAttached && typeof (videoTrack as any)?.detach === "function") {
+          (videoTrack as any).detach(el);
+        }
+      } catch { }
+      try {
+        el.pause();
+      } catch { }
+      try {
+        (el as any).srcObject = null;
+      } catch { }
+    };
+  }, [videoTrack, isLocal, localProcessedPreviewTrack]);
 
   return (
     <div
       className={
         "relative rounded-2xl overflow-hidden border " +
-        (isLight ? "border-black/10 bg-white/70" : "border-white/10 bg-black/20")
+        (isLight
+          ? "border-black/10 bg-white/70"
+          : "border-white/10 bg-black/20")
       }
     >
       <div className="w-full aspect-video">
-        {videoTrack ? (
+        {videoTrack || (isLocal && localProcessedPreviewTrack) ? (
           <video
             ref={ref}
             autoPlay
@@ -592,6 +805,7 @@ function VideoTile({
                   ? "bg-white/85 text-black border-black/10 disabled:opacity-50"
                   : "bg-black/60 text-white border-white/10 disabled:opacity-50")
               }
+              title="Mute / unmute remote microphone (host action)"
             >
               {hostActions.micMuted ? "Unmute mic" : "Mute mic"}
             </button>
@@ -607,6 +821,7 @@ function VideoTile({
                   ? "bg-white/85 text-black border-black/10 disabled:opacity-50"
                   : "bg-black/60 text-white border-white/10 disabled:opacity-50")
               }
+              title="Mute / unmute remote camera (host action)"
             >
               {hostActions.camMuted ? "Unmute cam" : "Mute cam"}
             </button>
@@ -616,6 +831,7 @@ function VideoTile({
             onClick={hostActions.onKick}
             disabled={hostActions.busy}
             className="px-2 py-1 rounded-lg text-[11px] bg-red-600/90 hover:bg-red-700 text-white disabled:opacity-50"
+            title="Remove participant from room"
           >
             Kick
           </button>
@@ -625,6 +841,7 @@ function VideoTile({
   );
 }
 
+// ---- Remote audio renderer ----
 function RemoteAudioRenderer({
   room,
   audioOutputId,
@@ -724,7 +941,9 @@ function AudioEl({
         ) {
           await anyEl.setSinkId(audioOutputId);
         }
-      } catch { }
+      } catch {
+        // ignore unsupported browsers
+      }
 
       try {
         await el.play();
@@ -743,11 +962,13 @@ function AudioEl({
   return <audio ref={ref} autoPlay playsInline />;
 }
 
+// ---- Video FX helpers ----
 function mergeModuleExports(mod: any): any {
-  return {
+  const merged = {
     ...(mod?.default && typeof mod.default === "object" ? mod.default : {}),
     ...(mod || {}),
   };
+  return merged;
 }
 
 async function resolveTrackProcessorsModule(): Promise<any> {
@@ -759,19 +980,32 @@ async function resolveTrackProcessorsModule(): Promise<any> {
   return mod;
 }
 
-type FxProcessorCache = {
-  blur?: Record<string, any>;
-  bg?: Record<string, any>;
-};
-const fxCache: FxProcessorCache = { blur: {}, bg: {} };
-
 async function createBlurProcessor(blurRadius: number): Promise<any> {
   const mod = await resolveTrackProcessorsModule();
 
-  if (mod?.BackgroundBlur?.create) return mod.BackgroundBlur.create({ blurRadius });
+  if (typeof mod?.supportsModernBackgroundProcessors === "function") {
+    const ok = !!mod.supportsModernBackgroundProcessors();
+    if (!ok) {
+      throw new Error("Modern background processors are not supported in this browser/device");
+    }
+  } else if (typeof mod?.supportsBackgroundProcessors === "function") {
+    const ok = await Promise.resolve(mod.supportsBackgroundProcessors());
+    if (!ok) {
+      throw new Error("Background processors are not supported in this browser/device");
+    }
+  }
+
+  // Variant A: BackgroundBlur.create(...)
+  if (mod?.BackgroundBlur?.create) {
+    return mod.BackgroundBlur.create({ blurRadius });
+  }
+
+  // Variant B: createBackgroundBlurProcessor(...)
   if (typeof mod?.createBackgroundBlurProcessor === "function") {
     return mod.createBackgroundBlurProcessor({ blurRadius });
   }
+
+  // Variant C: BackgroundBlur(options) or new BackgroundBlur(options)
   if (typeof mod?.BackgroundBlur === "function") {
     try {
       return mod.BackgroundBlur({ blurRadius });
@@ -781,18 +1015,42 @@ async function createBlurProcessor(blurRadius: number): Promise<any> {
       } catch { }
     }
   }
-  if (typeof mod?.backgroundBlur === "function") return mod.backgroundBlur({ blurRadius });
 
-  throw new Error("BackgroundBlur processor is unavailable");
+  if (typeof mod?.backgroundBlur === "function") {
+    return mod.backgroundBlur({ blurRadius });
+  }
+
+  throw new Error(
+    "BackgroundBlur processor is unavailable (unsupported export API in current @livekit/track-processors version)"
+  );
 }
 
 async function createVirtualBackgroundProcessor(imagePath: string): Promise<any> {
   const mod = await resolveTrackProcessorsModule();
 
-  if (mod?.VirtualBackground?.create) return mod.VirtualBackground.create({ imagePath });
+  if (typeof mod?.supportsModernBackgroundProcessors === "function") {
+    const ok = !!mod.supportsModernBackgroundProcessors();
+    if (!ok) {
+      throw new Error("Modern background processors are not supported in this browser/device");
+    }
+  } else if (typeof mod?.supportsBackgroundProcessors === "function") {
+    const ok = await Promise.resolve(mod.supportsBackgroundProcessors());
+    if (!ok) {
+      throw new Error("Background processors are not supported in this browser/device");
+    }
+  }
+
+  // Variant A: VirtualBackground.create(...)
+  if (mod?.VirtualBackground?.create) {
+    return mod.VirtualBackground.create({ imagePath });
+  }
+
+  // Variant B: createVirtualBackgroundProcessor(...)
   if (typeof mod?.createVirtualBackgroundProcessor === "function") {
     return mod.createVirtualBackgroundProcessor({ imagePath });
   }
+
+  // Variant C: VirtualBackground(options)
   if (typeof mod?.VirtualBackground === "function") {
     try {
       return mod.VirtualBackground({ imagePath });
@@ -806,6 +1064,7 @@ async function createVirtualBackgroundProcessor(imagePath: string): Promise<any>
       }
     }
   }
+
   if (typeof mod?.virtualBackground === "function") {
     try {
       return mod.virtualBackground({ imagePath });
@@ -814,7 +1073,9 @@ async function createVirtualBackgroundProcessor(imagePath: string): Promise<any>
     }
   }
 
-  throw new Error("VirtualBackground processor is unavailable");
+  throw new Error(
+    "VirtualBackground processor is unavailable (unsupported export API in current @livekit/track-processors version)"
+  );
 }
 
 async function setLocalVideoTrackProcessor(track: any, processor: any) {
@@ -822,10 +1083,12 @@ async function setLocalVideoTrackProcessor(track: any, processor: any) {
     throw new Error("LocalVideoTrack.setProcessor is unavailable in your livekit-client version");
   }
 
+  // Try the common signatures in order
   try {
     await track.setProcessor(processor, { showProcessedStreamLocally: true });
     return;
   } catch { }
+
   try {
     await track.setProcessor(processor, true);
     return;
@@ -852,296 +1115,120 @@ async function clearLocalVideoTrackProcessor(track: any) {
   }
 }
 
-// ---------- processed-track extraction (FIX) ----------
-function getProcessedRenderableCandidate(localTrack: any): any | null {
-  if (!localTrack) return null;
+// ---- processed preview extraction helpers ----
+function isMediaStreamTrackLike(v: any): v is MediaStreamTrack {
+  return !!v && typeof v === "object" && v.kind === "video" && typeof v.stop === "function";
+}
 
-  const candidates = [
-    localTrack?.processedTrack,
-    localTrack?.processor?.processedTrack,
-    typeof localTrack?.getProcessorTrack === "function"
-      ? (() => {
-        try {
-          return localTrack.getProcessorTrack();
-        } catch {
-          return null;
+function isMediaStreamLike(v: any): v is MediaStream {
+  return !!v && typeof v === "object" && typeof v.getVideoTracks === "function";
+}
+
+function findVideoTrackDeep(root: any, original?: MediaStreamTrack | null): MediaStreamTrack | null {
+  const visited = new Set<any>();
+
+  const preferredKeys = [
+    "processedTrack",
+    "outputTrack",
+    "track",
+    "mediaStreamTrack",
+    "processedMediaStreamTrack",
+    "videoTrack",
+    "processedStream",
+    "outputStream",
+    "stream",
+    "_processedTrack",
+    "_outputTrack",
+    "_track",
+  ];
+
+  const walk = (node: any, depth: number): MediaStreamTrack | null => {
+    if (!node || depth < 0) return null;
+    if (typeof node !== "object" && typeof node !== "function") return null;
+    if (visited.has(node)) return null;
+    visited.add(node);
+
+    if (isMediaStreamTrackLike(node)) {
+      if (!original || node !== original) return node;
+    }
+
+    if (isMediaStreamLike(node)) {
+      const t = node.getVideoTracks?.()[0];
+      if (t && (!original || t !== original)) return t;
+    }
+
+    // Prefer well-known keys first
+    for (const k of preferredKeys) {
+      try {
+        if (k in node) {
+          const hit = walk((node as any)[k], depth - 1);
+          if (hit) return hit;
         }
-      })()
-      : null,
-    localTrack?.processor?.track,
+      } catch { }
+    }
+
+    // Then generic walk (bounded)
+    try {
+      const keys = Object.keys(node).slice(0, 50);
+      for (const k of keys) {
+        const hit = walk((node as any)[k], depth - 1);
+        if (hit) return hit;
+      }
+    } catch { }
+
+    return null;
+  };
+
+  return walk(root, 4);
+}
+
+function getOriginalLocalMediaStreamTrack(localTrack: any): MediaStreamTrack | null {
+  const candidates = [
+    localTrack?.mediaStreamTrack,
+    localTrack?._mediaStreamTrack,
+    localTrack?.track,
+    localTrack?._track,
   ];
 
   for (const c of candidates) {
-    if (!c) continue;
-    if (isLiveKitAttachableTrack(c)) return c;
-    if (extractMediaStreamTrackFromUnknown(c)) return c;
+    if (isMediaStreamTrackLike(c)) return c;
   }
 
   return null;
 }
 
-type FxMode = "off" | "blur" | "bg";
-type FxSettings = {
-  mode: FxMode;
-  blurRadius: number;
-  bgUrl: string;
-};
+function extractProcessedPreviewTrack(localTrack: any): MediaStreamTrack | null {
+  if (!localTrack) return null;
+  const original = getOriginalLocalMediaStreamTrack(localTrack);
 
-function FxSettingsModal({
-  open,
-  theme,
-  camOn,
-  connected,
-  value,
-  presets,
-  fxError,
-  busy,
-  onClose,
-  onApply,
-  onChange,
-  onUploadBg,
-}: {
-  open: boolean;
-  theme: RoomTheme;
-  camOn: boolean;
-  connected: boolean;
-  value: FxSettings;
-  presets: { id: string; name: string; url: string }[];
-  fxError: string;
-  busy: boolean;
-  onClose: () => void;
-  onApply: () => void;
-  onChange: (next: FxSettings) => void;
-  onUploadBg: (file: File) => void;
-}) {
-  if (!open) return null;
+  // Try processor subtree first (most likely)
+  const processorCandidates = [
+    localTrack?.processor,
+    localTrack?._processor,
+    localTrack?.processorWrapper,
+    localTrack?._processorWrapper,
+  ];
 
-  const isLight = theme === "light";
-  const overlay = "fixed inset-0 z-[1000] flex items-center justify-center px-3";
-  const backdrop = "absolute inset-0 bg-black/55";
-  const card = [
-    "relative w-full max-w-[640px] rounded-3xl shadow-2xl overflow-hidden",
-    isLight ? "bg-white text-black" : "bg-[#020617] text-white",
-    "border",
-    isLight ? "border-black/10" : "border-white/10",
-  ].join(" ");
+  for (const p of processorCandidates) {
+    const found = findVideoTrackDeep(p, original);
+    if (found) return found;
+  }
 
-  const labelCls = isLight ? "text-black/70" : "text-white/70";
-  const boxCls = isLight
-    ? "bg-black/5 border border-black/10"
-    : "bg-white/5 border border-white/10";
+  // Fallback: inspect the whole track object
+  const foundFallback = findVideoTrackDeep(localTrack, original);
+  if (foundFallback) return foundFallback;
 
-  const btnPrimary = isLight
-    ? "bg-blue-600 hover:bg-blue-700 text-white"
-    : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]";
-
-  const btnGhost = isLight
-    ? "bg-black/5 hover:bg-black/10 text-black/70"
-    : "bg-white/5 hover:bg-white/10 text-white/80";
-
-  const disabledTip = !connected ? "Not connected yet" : !camOn ? "Turn camera on first" : "";
-
-  return (
-    <div className={overlay} data-theme={theme} style={{ colorScheme: theme }}>
-      <div className={backdrop} onClick={onClose} />
-      <div className={card}>
-        <div
-          className={`px-6 py-5 border-b ${isLight ? "border-black/10" : "border-white/10"
-            }`}
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="font-inter font-semibold text-[16px]">
-                Video settings (Blur / Background)
-              </div>
-              <div className={`text-[12px] mt-1 ${labelCls}`}>
-                Apply effects to your local camera stream.
-              </div>
-            </div>
-
-            <button
-              onClick={onClose}
-              className={`w-9 h-9 rounded-2xl flex items-center justify-center ${btnGhost}`}
-              title="Close"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-
-        <div className="px-6 py-5 flex flex-col gap-5">
-          <div className={`rounded-2xl p-4 ${boxCls}`}>
-            <div className="flex flex-wrap gap-2 items-center">
-              <button
-                onClick={() => onChange({ ...value, mode: "off" })}
-                className={
-                  "px-3 py-2 rounded-xl text-[13px] " +
-                  (value.mode === "off"
-                    ? isLight
-                      ? "bg-black/10"
-                      : "bg-white/10"
-                    : btnGhost)
-                }
-              >
-                FX off
-              </button>
-              <button
-                onClick={() => onChange({ ...value, mode: "blur" })}
-                className={
-                  "px-3 py-2 rounded-xl text-[13px] " +
-                  (value.mode === "blur"
-                    ? isLight
-                      ? "bg-black/10"
-                      : "bg-white/10"
-                    : btnGhost)
-                }
-              >
-                Blur
-              </button>
-              <button
-                onClick={() => onChange({ ...value, mode: "bg" })}
-                className={
-                  "px-3 py-2 rounded-xl text-[13px] " +
-                  (value.mode === "bg"
-                    ? isLight
-                      ? "bg-black/10"
-                      : "bg-white/10"
-                    : btnGhost)
-                }
-              >
-                Background
-              </button>
-
-              <div className={`text-[12px] ${labelCls} ml-auto`}>
-                {disabledTip ? `⚠ ${disabledTip}` : "✅ Ready"}
-              </div>
-            </div>
-
-            {value.mode === "blur" ? (
-              <div className="mt-4">
-                <div className={`text-[12px] ${labelCls}`}>Blur strength</div>
-                <input
-                  type="range"
-                  min={4}
-                  max={24}
-                  value={value.blurRadius}
-                  onChange={(e) =>
-                    onChange({ ...value, blurRadius: Number(e.target.value) })
-                  }
-                  className="w-full mt-2"
-                />
-                <div className={`text-[12px] mt-1 ${labelCls}`}>
-                  Radius: {value.blurRadius}
-                </div>
-              </div>
-            ) : null}
-
-            {value.mode === "bg" ? (
-              <div className="mt-4">
-                <div className={`text-[12px] ${labelCls}`}>Choose a background</div>
-
-                <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {presets.map((p) => {
-                    const active = value.bgUrl === p.url;
-                    return (
-                      <button
-                        key={p.id}
-                        onClick={() => onChange({ ...value, bgUrl: p.url })}
-                        className={
-                          "rounded-2xl overflow-hidden border text-left " +
-                          (active
-                            ? isLight
-                              ? "border-blue-600"
-                              : "border-emerald-400"
-                            : isLight
-                              ? "border-black/10"
-                              : "border-white/10")
-                        }
-                      >
-                        <div className="w-full aspect-video bg-black/10">
-                          <img
-                            src={p.url}
-                            alt={p.name}
-                            className="w-full h-full object-cover"
-                            loading="lazy"
-                          />
-                        </div>
-                        <div
-                          className={
-                            "px-3 py-2 text-[12px] " +
-                            (isLight ? "text-black/70" : "text-white/70")
-                          }
-                        >
-                          {p.name}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="mt-3 flex items-center gap-2">
-                  <label className={`px-3 py-2 rounded-xl text-[13px] cursor-pointer ${btnGhost}`}>
-                    Upload BG
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (!f) return;
-                        onUploadBg(f);
-                      }}
-                    />
-                  </label>
-                  <button
-                    onClick={() => onChange({ ...value, bgUrl: DEFAULT_BG_DATA_URL })}
-                    className={`px-3 py-2 rounded-xl text-[13px] ${btnGhost}`}
-                  >
-                    Reset BG
-                  </button>
-                </div>
-              </div>
-            ) : null}
-
-            {fxError ? (
-              <div className="mt-4 text-[12px] text-red-500 break-words">
-                FX error: {fxError}
-              </div>
-            ) : null}
-          </div>
-        </div>
-
-        <div
-          className={`px-6 py-5 border-t flex items-center justify-end gap-3 ${isLight ? "border-black/10" : "border-white/10"
-            }`}
-        >
-          <button
-            onClick={onClose}
-            className={`h-11 px-5 rounded-2xl text-[13px] font-semibold ${btnGhost}`}
-            disabled={busy}
-          >
-            Close
-          </button>
-          <button
-            onClick={onApply}
-            className={`h-11 px-6 rounded-2xl text-[13px] font-semibold ${btnPrimary} ${busy ? "opacity-60 cursor-not-allowed" : ""
-              }`}
-            disabled={busy || !connected || !camOn}
-            title={!connected || !camOn ? disabledTip : "Apply effects"}
-          >
-            {busy ? "Applying..." : "Apply"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+  return null;
 }
 
+// ---- MAIN ----
 type TileModel = {
   id: string;
   label: string;
   isLocal: boolean;
-  videoTrack?: any;
+  videoTrack?: Track;
+
+  // host moderation info
   participantIdentity?: string;
   micTrackSid?: string;
   camTrackSid?: string;
@@ -1218,12 +1305,14 @@ export function RoomPageLiveKit() {
     prejoinRef.current = prejoin;
   }, [prejoin]);
 
+  // host flag
   const isHost = useMemo(() => {
     if (!authUserId) return false;
     const hostId = (session as any)?.host_profile?.id || (session as any)?.host_id;
     return !!hostId && String(hostId) === String(authUserId);
   }, [authUserId, session]);
 
+  // right panel
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightTab, setRightTab] = useState<RightPanelTab>(null);
   const openRightTab = (tab: RightPanelTab) => {
@@ -1245,6 +1334,7 @@ export function RoomPageLiveKit() {
     return Math.max(2, Math.min(50, Math.round(v)));
   }, [session]);
 
+  // load session
   useEffect(() => {
     (async () => {
       if (!id) return;
@@ -1269,6 +1359,7 @@ export function RoomPageLiveKit() {
     })();
   }, [id]);
 
+  // auth user
   useEffect(() => {
     (async () => {
       try {
@@ -1302,6 +1393,7 @@ export function RoomPageLiveKit() {
     })();
   }, []);
 
+  // enumerate devices
   const loadBrowserDevices = async () => {
     try {
       if (!navigator.mediaDevices?.enumerateDevices) return;
@@ -1329,6 +1421,7 @@ export function RoomPageLiveKit() {
     }
   };
 
+  // show prejoin once ready
   useEffect(() => {
     if (loading) return;
     if (!session) return;
@@ -1339,6 +1432,7 @@ export function RoomPageLiveKit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, session, joinRequested]);
 
+  // LiveKit env
   const lkServerUrl = String((import.meta as any)?.env?.VITE_LIVEKIT_URL || "").trim();
   const tokenEndpoint = String(
     (import.meta as any)?.env?.VITE_LIVEKIT_TOKEN_ENDPOINT || "/api/livekit/token"
@@ -1347,6 +1441,7 @@ export function RoomPageLiveKit() {
     (import.meta as any)?.env?.VITE_LIVEKIT_ADMIN_ENDPOINT || "/api/livekit/admin"
   ).trim();
 
+  // token + connect
   const [lkToken, setLkToken] = useState<string>("");
   const [tokenLoading, setTokenLoading] = useState(false);
   const [tokenError, setTokenError] = useState<string>("");
@@ -1384,7 +1479,7 @@ export function RoomPageLiveKit() {
         return;
       }
 
-      const json = (await res.json()) as { token?: string };
+      const json = (await res.json()) as { token?: string; isHost?: boolean };
       const tok = String(json.token || "");
       if (!tok) {
         setTokenError("Token endpoint returned empty token");
@@ -1401,6 +1496,7 @@ export function RoomPageLiveKit() {
     }
   };
 
+  // IMPORTANT: wait for authReady before minting token
   useEffect(() => {
     (async () => {
       if (!session) return;
@@ -1412,6 +1508,7 @@ export function RoomPageLiveKit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, joinRequested, authReady, isHost]);
 
+  // ---- livekit-client room ----
   const roomRef = useRef<Room | null>(null);
   const [roomState, setRoomState] = useState<Room | null>(null);
   const [connected, setConnected] = useState(false);
@@ -1423,30 +1520,17 @@ export function RoomPageLiveKit() {
   const [tiles, setTiles] = useState<TileModel[]>([]);
   const [adminBusyKey, setAdminBusyKey] = useState<string>("");
 
-  const [fxModalOpen, setFxModalOpen] = useState(false);
-  const [fxBusy, setFxBusy] = useState(false);
+  // ---- background/blur state ----
+  const [videoFxMode, setVideoFxMode] = useState<FxMode>("off");
+  const [bgImageUrl, setBgImageUrl] = useState<string>(DEFAULT_BG_DATA_URL);
   const [fxError, setFxError] = useState<string>("");
+  const [fxApplying, setFxApplying] = useState(false);
+  const [fxStatusText, setFxStatusText] = useState<string>("");
+  const [fxSettingsOpen, setFxSettingsOpen] = useState(false);
+  const [blurStrength, setBlurStrength] = useState<number>(12);
 
-  const [fxSettings, setFxSettings] = useState<FxSettings>(() => {
-    try {
-      const raw = localStorage.getItem("lk_fx_settings");
-      if (raw) {
-        const j = JSON.parse(raw) as Partial<FxSettings>;
-        return {
-          mode: (j.mode as FxMode) || "off",
-          blurRadius: typeof j.blurRadius === "number" ? j.blurRadius : 12,
-          bgUrl: typeof j.bgUrl === "string" ? j.bgUrl : DEFAULT_BG_DATA_URL,
-        };
-      }
-    } catch { }
-    return { mode: "off", blurRadius: 12, bgUrl: DEFAULT_BG_DATA_URL };
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("lk_fx_settings", JSON.stringify(fxSettings));
-    } catch { }
-  }, [fxSettings]);
+  // This is the key fix: local preview uses processed track if setProcessor() doesn't auto-preview it.
+  const [localProcessedPreviewTrack, setLocalProcessedPreviewTrack] = useState<MediaStreamTrack | null>(null);
 
   const uploadedBgUrlRef = useRef<string | null>(null);
 
@@ -1455,40 +1539,27 @@ export function RoomPageLiveKit() {
     return safeRoomName(`session-${session.id}`);
   }, [session]);
 
-  const getLocalCameraTrack = (): LocalVideoTrack | null => {
-    const r = roomRef.current;
-    if (!r) return null;
-    const lp = r.localParticipant;
-    const camPub = Array.from(lp.videoTrackPublications.values()).find(
-      (p: LocalTrackPublication) => p.source === Track.Source.Camera
-    );
-    const tr = camPub?.track;
-    return (tr as any) || null;
-  };
-
   const rebuildTiles = () => {
     const room = roomRef.current;
     if (!room) return;
 
     const next: TileModel[] = [];
 
+    // local
     const lp = room.localParticipant;
     const localCamPub = Array.from(lp.videoTrackPublications.values()).find(
       (p) => p.source === Track.Source.Camera
     );
-    const localTrackRaw = (localCamPub?.track as any) || undefined;
-
-    // FIX: only use processed candidate if renderable, else fallback to raw track
-    const processedCandidate = getProcessedRenderableCandidate(localTrackRaw);
-    const localTrackForRender = processedCandidate || localTrackRaw;
+    const localTrack = (localCamPub?.track as any) || undefined;
 
     next.push({
       id: "local",
       label: (displayName || userName || "You").trim() || "You",
       isLocal: true,
-      videoTrack: localTrackForRender,
+      videoTrack: localTrack,
     });
 
+    // remote
     room.remoteParticipants.forEach((rp: RemoteParticipant) => {
       const allVideoPubs = Array.from(rp.videoTrackPublications.values()) as RemoteTrackPublication[];
       const allAudioPubs = Array.from(rp.audioTrackPublications.values()) as RemoteAudioTrackPublication[];
@@ -1532,6 +1603,8 @@ export function RoomPageLiveKit() {
       setMicOn(false);
       setCamOn(false);
       setTiles([]);
+      setLocalProcessedPreviewTrack(null);
+      setFxStatusText("");
     }
   };
 
@@ -1559,10 +1632,13 @@ export function RoomPageLiveKit() {
         setConnected(true);
         refresh();
       });
+
       r.on(RoomEvent.Disconnected, () => {
         setConnected(false);
         setTiles([]);
+        setLocalProcessedPreviewTrack(null);
       });
+
       r.on(RoomEvent.Reconnected, refresh);
       r.on(RoomEvent.ParticipantConnected, refresh);
       r.on(RoomEvent.ParticipantDisconnected, refresh);
@@ -1603,6 +1679,7 @@ export function RoomPageLiveKit() {
     }
   };
 
+  // connect after token ready
   useEffect(() => {
     if (!joinRequested) return;
     if (!lkToken) return;
@@ -1611,6 +1688,7 @@ export function RoomPageLiveKit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [joinRequested, lkToken, lkServerUrl]);
 
+  // cleanup on unmount
   useEffect(() => {
     return () => {
       disconnectRoom().catch(() => { });
@@ -1642,6 +1720,11 @@ export function RoomPageLiveKit() {
       const next = !camOn;
       await r.localParticipant.setCameraEnabled(next);
       setCamOn(next);
+
+      if (!next) {
+        setLocalProcessedPreviewTrack(null);
+      }
+
       rebuildTiles();
     } catch (e) {
       console.error("toggleCam error:", e);
@@ -1653,6 +1736,7 @@ export function RoomPageLiveKit() {
     navigate("/sessions", { replace: true });
   };
 
+  // ---- Host moderation calls (server-side) ----
   const callHostAdmin = async (body: Record<string, unknown>) => {
     const res = await fetch(adminEndpoint, {
       method: "POST",
@@ -1722,86 +1806,127 @@ export function RoomPageLiveKit() {
     }
   };
 
-  const applyFxNow = async (next: FxSettings) => {
+  // ---- Apply Blur / Virtual Background ----
+  const getLocalCameraTrack = (): LocalVideoTrack | null => {
+    const r = roomRef.current;
+    if (!r) return null;
+    const lp = r.localParticipant;
+    const camPub = Array.from(lp.videoTrackPublications.values()).find(
+      (p: LocalTrackPublication) => p.source === Track.Source.Camera
+    );
+    const tr = camPub?.track;
+    return (tr as any) || null;
+  };
+
+  const syncLocalProcessedPreviewTrack = async (track: any) => {
+    // Retry a few times because processor bootstraps async (MediaPipe graph start)
+    for (let i = 0; i < 10; i++) {
+      const found = extractProcessedPreviewTrack(track);
+      if (found) {
+        setLocalProcessedPreviewTrack(found);
+        setFxStatusText("Processed preview attached locally");
+        return true;
+      }
+      await new Promise((r) => setTimeout(r, 120));
+    }
+
+    // Not fatal — processor can still be applied to published stream.
+    setLocalProcessedPreviewTrack(null);
+    setFxStatusText("Effect applied, but local processed preview track not exposed by this SDK combo");
+    return false;
+  };
+
+  const applyVideoFx = async (mode: FxMode) => {
     setFxError("");
-    setFxBusy(true);
+    setFxApplying(true);
+    setFxStatusText("");
+    setVideoFxMode(mode);
+
+    const track = getLocalCameraTrack();
+    if (!track) {
+      setFxError("No local camera track to apply effects (turn camera on).");
+      setFxApplying(false);
+      return;
+    }
 
     try {
-      const track = getLocalCameraTrack();
-      if (!track) throw new Error("No local camera track (turn camera on).");
+      // Clear preview override first (we'll reattach if processor gives us processed track)
+      setLocalProcessedPreviewTrack(null);
 
       await clearLocalVideoTrackProcessor(track as any);
 
-      if (next.mode === "off") {
-        setFxSettings(next);
-        window.setTimeout(() => rebuildTiles(), 50);
+      if (mode === "off") {
+        setFxStatusText("Effects disabled");
+        setFxApplying(false);
         return;
       }
 
-      if (next.mode === "blur") {
-        const cacheKey = String(next.blurRadius);
-        let proc = fxCache.blur?.[cacheKey];
-        if (!proc) {
-          proc = await createBlurProcessor(next.blurRadius);
-          fxCache.blur = fxCache.blur || {};
-          fxCache.blur[cacheKey] = proc;
-        }
-
+      if (mode === "blur") {
+        const proc = await createBlurProcessor(blurStrength);
+        if (!proc) throw new Error("BackgroundBlur processor is unavailable.");
         await setLocalVideoTrackProcessor(track as any, proc);
-        setFxSettings(next);
 
-        window.setTimeout(() => rebuildTiles(), 120);
+        // Key fix: force local preview to use processed stream if SDK doesn't auto-preview
+        await syncLocalProcessedPreviewTrack(track as any);
+        setFxApplying(false);
         return;
       }
 
-      if (next.mode === "bg") {
-        const bgUrl = next.bgUrl || DEFAULT_BG_DATA_URL;
-
-        let proc = fxCache.bg?.[bgUrl];
-        if (!proc) {
-          proc = await createVirtualBackgroundProcessor(bgUrl);
-          fxCache.bg = fxCache.bg || {};
-          fxCache.bg[bgUrl] = proc;
-        }
-
+      if (mode === "bg") {
+        const proc = await createVirtualBackgroundProcessor(bgImageUrl);
+        if (!proc) throw new Error("VirtualBackground processor is unavailable.");
         await setLocalVideoTrackProcessor(track as any, proc);
-        setFxSettings({ ...next, bgUrl });
 
-        window.setTimeout(() => rebuildTiles(), 120);
+        await syncLocalProcessedPreviewTrack(track as any);
+        setFxApplying(false);
         return;
       }
     } catch (e: any) {
-      console.error("applyFxNow failed:", e);
+      console.error("applyVideoFx error:", e);
       setFxError(String(e?.message || e || "video_fx_failed"));
-    } finally {
-      setFxBusy(false);
+      setFxApplying(false);
     }
   };
 
+  // Re-apply BG when image changes
   useEffect(() => {
-    if (!connected) return;
-    if (!camOn) return;
-    if (fxSettings.mode === "off") return;
-
-    const t = window.setTimeout(() => {
-      applyFxNow(fxSettings).catch(() => { });
-    }, 350);
-
-    return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connected, camOn]);
-
-  useEffect(() => {
-    if (fxSettings.mode !== "bg") return;
+    if (videoFxMode !== "bg") return;
     if (!connected || !camOn) return;
 
     const t = window.setTimeout(() => {
-      applyFxNow(fxSettings).catch(() => { });
+      applyVideoFx("bg").catch(() => { });
+    }, 120);
+
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bgImageUrl]);
+
+  // Re-apply blur when strength changes
+  useEffect(() => {
+    if (videoFxMode !== "blur") return;
+    if (!connected || !camOn) return;
+
+    const t = window.setTimeout(() => {
+      applyVideoFx("blur").catch(() => { });
+    }, 120);
+
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blurStrength]);
+
+  // Re-apply current effect after camera on/reconnect
+  useEffect(() => {
+    if (!connected) return;
+    if (!camOn) return;
+    if (videoFxMode === "off") return;
+
+    const t = window.setTimeout(() => {
+      applyVideoFx(videoFxMode).catch(() => { });
     }, 250);
 
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fxSettings.bgUrl]);
+  }, [connected, camOn]);
 
   if (loading) {
     return (
@@ -1840,18 +1965,27 @@ export function RoomPageLiveKit() {
         }}
       />
 
-      <FxSettingsModal
-        open={fxModalOpen}
+      <VideoFxSettingsModal
+        open={fxSettingsOpen}
         theme={theme}
-        connected={connected}
-        camOn={camOn}
-        value={fxSettings}
-        presets={BG_PRESETS}
+        mode={videoFxMode}
+        blurStrength={blurStrength}
+        onBlurStrengthChange={setBlurStrength}
+        bgImageUrl={bgImageUrl}
+        onSetBgImageUrl={(url) => {
+          setBgImageUrl(url);
+          if (videoFxMode === "bg" && connected && camOn) {
+            // Fire immediately for better UX
+            void applyVideoFx("bg");
+          }
+        }}
+        onApplyMode={(m) => {
+          void applyVideoFx(m);
+        }}
+        onClose={() => setFxSettingsOpen(false)}
         fxError={fxError}
-        busy={fxBusy}
-        onClose={() => setFxModalOpen(false)}
-        onChange={(n) => setFxSettings(n)}
-        onApply={() => applyFxNow(fxSettings).then(() => setFxModalOpen(false))}
+        fxApplying={fxApplying}
+        fxStatusText={fxStatusText}
         onUploadBg={(file) => {
           if (uploadedBgUrlRef.current) {
             try {
@@ -1861,12 +1995,22 @@ export function RoomPageLiveKit() {
           }
           const url = URL.createObjectURL(file);
           uploadedBgUrlRef.current = url;
-          setFxSettings((prev) => ({ ...prev, mode: "bg", bgUrl: url }));
+          setBgImageUrl(url);
+          if (videoFxMode === "bg" && connected && camOn) {
+            void applyVideoFx("bg");
+          }
+        }}
+        onResetBg={() => {
+          setBgImageUrl(DEFAULT_BG_DATA_URL);
+          if (videoFxMode === "bg" && connected && camOn) {
+            void applyVideoFx("bg");
+          }
         }}
       />
 
       <div className={`h-[100dvh] overflow-hidden ${pageBg}`}>
         <div className="h-full w-full px-2 sm:px-4 pt-3 pb-[calc(84px+env(safe-area-inset-bottom))] flex flex-col gap-3 min-h-0">
+          {/* top bar */}
           <div className={`rounded-2xl px-4 py-3 ${panelBg}`}>
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
@@ -1885,6 +2029,13 @@ export function RoomPageLiveKit() {
                   {templatesCount}
                 </div>
 
+                {!!videoFxMode && videoFxMode !== "off" ? (
+                  <div className={isLight ? "text-black/40 text-[11px]" : "text-white/40 text-[11px]"}>
+                    FX mode: {videoFxMode} {videoFxMode === "blur" ? `(strength ${blurStrength})` : ""}
+                    {localProcessedPreviewTrack ? " • local processed preview: ON" : " • local processed preview: fallback"}
+                  </div>
+                ) : null}
+
                 {fxError ? (
                   <div className="mt-1 text-[11px] text-red-500 break-words">
                     Video FX error: {fxError}
@@ -1902,8 +2053,9 @@ export function RoomPageLiveKit() {
                 </button>
 
                 <button
-                  onClick={() => setFxModalOpen(true)}
+                  onClick={() => setFxSettingsOpen(true)}
                   className={isLight ? "px-3 py-2 rounded-xl bg-black/5" : "px-3 py-2 rounded-xl bg-white/5"}
+                  title="Video FX settings"
                 >
                   🎛️ Video
                 </button>
@@ -1927,7 +2079,9 @@ export function RoomPageLiveKit() {
             <div className="mt-3">
               <SessionStageBar
                 stages={[]}
-                startTime={String(session.start_time || session.created_at || new Date().toISOString())}
+                startTime={String(
+                  session.start_time || session.created_at || new Date().toISOString()
+                )}
                 onHoverStage={() => { }}
               />
             </div>
@@ -1939,8 +2093,11 @@ export function RoomPageLiveKit() {
               (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),380px]" : "grid-cols-1")
             }
           >
+            {/* VIDEO */}
             <div
-              className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
+              className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight
+                  ? "bg-white/70 border border-black/10"
+                  : "bg-[#0B1220]/45 border border-white/5"
                 }`}
             >
               {!joinRequested ? (
@@ -1998,7 +2155,10 @@ export function RoomPageLiveKit() {
                 </LiveKitErrorBoundary>
               ) : (
                 <>
-                  <RemoteAudioRenderer room={roomState} audioOutputId={prejoin.audioOutputId || "default"} />
+                  <RemoteAudioRenderer
+                    room={roomState}
+                    audioOutputId={prejoin.audioOutputId || "default"}
+                  />
 
                   <div className="h-full w-full p-2 flex flex-col min-h-0">
                     <div className="flex-1 min-h-0">
@@ -2010,13 +2170,8 @@ export function RoomPageLiveKit() {
                             videoTrack={t.videoTrack}
                             isLocal={t.isLocal}
                             theme={theme}
-                            showBadge={
-                              t.isLocal && isHost
-                                ? "HOST"
-                                : t.isLocal && fxSettings.mode !== "off"
-                                  ? "FX"
-                                  : null
-                            }
+                            showBadge={t.isLocal && isHost ? "HOST" : null}
+                            localProcessedPreviewTrack={t.isLocal ? localProcessedPreviewTrack : null}
                             hostActions={
                               !t.isLocal && isHost && t.participantIdentity
                                 ? {
@@ -2059,6 +2214,7 @@ export function RoomPageLiveKit() {
                       </div>
                     </div>
 
+                    {/* controls */}
                     <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                       <div className="flex flex-wrap items-center gap-2">
                         <button
@@ -2084,15 +2240,30 @@ export function RoomPageLiveKit() {
                         </button>
 
                         <button
-                          onClick={() => setFxModalOpen(true)}
+                          onClick={() => setFxSettingsOpen(true)}
                           className={
                             isLight
                               ? "px-3 py-2 rounded-xl bg-black/5 hover:bg-black/10 text-black/80"
                               : "px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/85"
                           }
+                          title="Open video FX settings"
                         >
                           🎛️ FX Settings
                         </button>
+
+                        {videoFxMode !== "off" ? (
+                          <button
+                            onClick={() => void applyVideoFx("off")}
+                            className={
+                              isLight
+                                ? "px-3 py-2 rounded-xl bg-black/5 hover:bg-black/10 text-black/80"
+                                : "px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/85"
+                            }
+                            title="Disable FX quickly"
+                          >
+                            FX off
+                          </button>
+                        ) : null}
 
                         <button
                           onClick={leave}
@@ -2119,6 +2290,7 @@ export function RoomPageLiveKit() {
               )}
             </div>
 
+            {/* RIGHT PANEL */}
             {rightPanelOpen && (
               <div className="min-h-0 h-full overflow-hidden">
                 <div
@@ -2130,7 +2302,11 @@ export function RoomPageLiveKit() {
                       }`}
                   >
                     <div className="font-inter font-semibold">
-                      {rightTab === "chat" ? "Chat" : rightTab === "intentions" ? "Intentions" : "Panel"}
+                      {rightTab === "chat"
+                        ? "Chat"
+                        : rightTab === "intentions"
+                          ? "Intentions"
+                          : "Panel"}
                     </div>
                     <button
                       onClick={() => openRightTab(null)}
@@ -2168,7 +2344,11 @@ export function RoomPageLiveKit() {
                           style={{ colorScheme: theme }}
                           className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
                         >
-                          <IntentionsPanel theme={theme} sessionId={session.id} timerText={"--:--"} />
+                          <IntentionsPanel
+                            theme={theme}
+                            sessionId={session.id}
+                            timerText={"--:--"}
+                          />
                         </div>
                       </div>
                     )}
@@ -2179,6 +2359,7 @@ export function RoomPageLiveKit() {
           </div>
         </div>
 
+        {/* leave floating */}
         <div className="fixed bottom-3 right-3 z-50">
           <button
             onClick={leave}
