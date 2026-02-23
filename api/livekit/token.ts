@@ -62,9 +62,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       name: name ? String(name) : undefined,
     });
 
-    // NOTE:
-    // - No TTL override here (important).
-    // - In some SDK versions manual ttl can produce bad exp if passed in wrong shape.
+    // TTL не трогаем (в твоем сетапе это уже ломало exp раньше)
     const grant: any = {
       room: String(roomName),
       roomJoin: true,
@@ -74,7 +72,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     };
 
     if (host) {
-      // Host-only admin rights
+      // Флаг хоста в LiveKit grants
       grant.roomAdmin = true;
     }
 
@@ -83,7 +81,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const token = await at.toJwt();
 
     console.log("LK TOKEN GENERATED", {
-      marker: "lk-token-v3-no-ttl-host",
+      marker: "lk-token-v4-host",
       roomName: String(roomName),
       identity: String(identity),
       host,
