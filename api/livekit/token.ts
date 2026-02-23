@@ -5,10 +5,7 @@ type Body = {
   roomName?: string;
   identity?: string;
   name?: string;
-
-  // from client
   isHost?: boolean;
-  sessionId?: string;
 };
 
 function asBool(v: unknown): boolean {
@@ -45,37 +42,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const host = asBool(isHost);
 
-    // базовые права всем участникам
-    const baseGrant: any = {
+    // базовые права всем
+    const grant: any = {
       room: String(roomName),
       roomJoin: true,
       canPublish: true,
       canSubscribe: true,
-      canPublishData: true, // полезно для чата/сигналов
+      canPublishData: true,
     };
 
     // админские права только хосту
-    // NOTE: в зависимости от версии SDK поле может называться roomAdmin.
-    // Если TS ругнётся — скажи, я адаптирую под твою версию.
-    const hostGrant: any = host
-      ? {
-          ...baseGrant,
-          roomAdmin: true,
+    if (host) {
+      grant.roomAdmin = true; // если TS ругнется на поле — скажи, подгоню под твою версию SDK
+    }
 
-          // опционально: хост может публиковать любые source (camera/screen/mic)
-          // если у тебя политика ограничений появится — это пригодится
-          // canPublishSources: ["camera", "microphone", "screen_share"],
-        }
-      : baseGrant;
+    at.addGrant(grant);
 
-    at.addGrant(hostGrant);
-
-    // желательно ограничить срок жизни токена
-    // (иначе токен может жить дефолтно долго)
-    // 6 часов — норм для сессии
-    at.ttl = 60 * 60 * 6;
-
+    // ❌ НЕ трогаем ttl, потому что в твоей версии SDK это ломает exp (ставит "21600")
     const token = await at.toJwt();
+
     return res.status(200).json({ token, isHost: host });
   } catch (e) {
     console.error("livekit token error:", e);
