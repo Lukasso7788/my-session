@@ -1,14 +1,8 @@
 // src/pages/RoomPageLiveKit.tsx
-import "@livekit/components-styles";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import {
-  GridLayout,
-  LiveKitRoom,
-  ParticipantTile,
-  useLocalParticipant,
-  useRoomContext,
-} from "@livekit/components-react";
 import { useNavigate, useParams } from "react-router-dom";
+import { Room, RoomEvent, Track, RemoteParticipant, LocalParticipant } from "livekit-client";
+
 import { supabase } from "../lib/supabase";
 import ChatPanel from "../components/ChatPanel";
 import { IntentionsPanel } from "../components/IntentionsPanel";
@@ -70,62 +64,6 @@ function normalizeTemplates(
 ): SessionTemplate[] {
   if (!t) return [];
   return Array.isArray(t) ? t : [t];
-}
-
-/**
- * LiveKit components may read localStorage key "lk-user-choices".
- * Some versions crash if it's missing or malformed.
- *
- * KEY FIX: we must ensure it exists *before* LK UI renders (not in useEffect).
- */
-function ensureLiveKitLocalStorageSafeSync() {
-  try {
-    const key = "lk-user-choices";
-    const raw = localStorage.getItem(key);
-
-    const safeValue = {
-      version: 1,
-      audioEnabled: true,
-      videoEnabled: true,
-      // IMPORTANT: keep as strings (never undefined)
-      audioDeviceId: "default",
-      videoDeviceId: "default",
-      audioOutputDeviceId: "default",
-      // optional fields some builds expect
-      username: "",
-      // some builds may store array-ish fields; keep them stable
-      preferredDevices: {
-        audio: "default",
-        video: "default",
-        speaker: "default",
-      },
-    };
-
-    if (!raw) {
-      localStorage.setItem(key, JSON.stringify(safeValue));
-      return;
-    }
-
-    try {
-      const parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== "object") throw new Error("bad");
-
-      // Repair missing fields that might be read with `.length`
-      const repaired: any = { ...safeValue, ...(parsed as any) };
-
-      if (typeof repaired.audioDeviceId !== "string") repaired.audioDeviceId = "default";
-      if (typeof repaired.videoDeviceId !== "string") repaired.videoDeviceId = "default";
-      if (typeof repaired.audioOutputDeviceId !== "string") repaired.audioOutputDeviceId = "default";
-      if (typeof repaired.audioEnabled !== "boolean") repaired.audioEnabled = true;
-      if (typeof repaired.videoEnabled !== "boolean") repaired.videoEnabled = true;
-
-      localStorage.setItem(key, JSON.stringify(repaired));
-    } catch {
-      localStorage.setItem(key, JSON.stringify(safeValue));
-    }
-  } catch {
-    // ignore (private mode etc.)
-  }
 }
 
 // ---- PreJoin ----
@@ -382,7 +320,7 @@ function PreJoinModal({
   );
 }
 
-// ---- ErrorBoundary to avoid full-page crash if LiveKit UI throws ----
+// ---- ErrorBoundary ----
 class LiveKitErrorBoundary extends React.Component<
   { children: React.ReactNode; onReset: () => void; isLight: boolean },
   { hasError: boolean; errorText: string }
@@ -424,71 +362,88 @@ class LiveKitErrorBoundary extends React.Component<
   }
 }
 
-// ---- Minimal custom controls (avoid LK ControlBar / persistent user choices) ----
-function LiveKitControls({
+// ---- Tiny video tile ----
+function VideoTile({
+  label,
+  videoTrack,
+  isLocal,
   theme,
-  onLeave,
 }: {
+  label: string;
+  videoTrack?: Track;
+  isLocal: boolean;
   theme: RoomTheme;
-  onLeave: () => void;
 }) {
+  const ref = useRef<HTMLVideoElement | null>(null);
   const isLight = theme === "light";
-  const room = useRoomContext();
-  const lp = useLocalParticipant();
 
-  // These are present in current LK components versions; fallback to safe booleans.
-  const micOn = Boolean((lp as any)?.isMicrophoneEnabled);
-  const camOn = Boolean((lp as any)?.isCameraEnabled);
-  const ssOn = Boolean((lp as any)?.isScreenShareEnabled);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
 
-  const btnBase = isLight
-    ? "px-3 py-2 rounded-xl bg-black/5 hover:bg-black/10 text-black/80"
-    : "px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/85";
-
-  const btnRed = "px-3 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold";
-
-  const toggleMic = async () => {
+    // detach anything old
     try {
-      await room.localParticipant.setMicrophoneEnabled(!micOn);
-    } catch (e) {
-      console.error("toggleMic error:", e);
-    }
-  };
+      // @ts-ignore
+      if (typeof (videoTrack as any)?.detach === "function") {
+        // @ts-ignore
+        (videoTrack as any).detach(el);
+      }
+    } catch { }
 
-  const toggleCam = async () => {
-    try {
-      await room.localParticipant.setCameraEnabled(!camOn);
-    } catch (e) {
-      console.error("toggleCam error:", e);
-    }
-  };
+    if (!videoTrack) return;
 
-  const toggleSS = async () => {
     try {
-      await room.localParticipant.setScreenShareEnabled(!ssOn);
+      // @ts-ignore
+      (videoTrack as any).attach(el);
     } catch (e) {
-      console.error("toggleScreenShare error:", e);
+      console.error("attach video failed:", e);
     }
-  };
+
+    return () => {
+      try {
+        // @ts-ignore
+        if (typeof (videoTrack as any)?.detach === "function") {
+          // @ts-ignore
+          (videoTrack as any).detach(el);
+        }
+      } catch { }
+    };
+  }, [videoTrack]);
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <button onClick={toggleMic} className={btnBase} title="Toggle microphone">
-        {micOn ? "🎤 Mic on" : "🔇 Mic off"}
-      </button>
-      <button onClick={toggleCam} className={btnBase} title="Toggle camera">
-        {camOn ? "📷 Cam on" : "🚫 Cam off"}
-      </button>
-      <button onClick={toggleSS} className={btnBase} title="Toggle screen share">
-        {ssOn ? "🖥️ Sharing" : "🖥️ Share"}
-      </button>
-      <button onClick={onLeave} className={btnRed} title="Leave">
-        Leave
-      </button>
+    <div
+      className={
+        "relative rounded-2xl overflow-hidden border " +
+        (isLight ? "border-black/10 bg-white/70" : "border-white/10 bg-black/20")
+      }
+    >
+      <video
+        ref={ref}
+        autoPlay
+        playsInline
+        muted={isLocal} // local must be muted to avoid echo
+        className="w-full h-full object-cover"
+      />
+      <div
+        className={
+          "absolute left-2 bottom-2 px-2 py-1 rounded-lg text-[11px] " +
+          (isLight ? "bg-white/80 text-black" : "bg-black/50 text-white")
+        }
+      >
+        {label}{isLocal ? " (you)" : ""}
+      </div>
     </div>
   );
 }
 
+type TileModel = {
+  id: string;
+  label: string;
+  isLocal: boolean;
+  videoTrack?: Track;
+};
+
+// ---- MAIN ----
 export function RoomPageLiveKit() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -500,12 +455,6 @@ export function RoomPageLiveKit() {
     } catch {
       return "dark";
     }
-  });
-
-  // KEY FIX: run sync ensure BEFORE any LK UI render
-  const [lkStorageReady] = useState<boolean>(() => {
-    ensureLiveKitLocalStorageSafeSync();
-    return true;
   });
 
   useEffect(() => {
@@ -557,7 +506,6 @@ export function RoomPageLiveKit() {
     noiseSuppression: true,
     autoGainControl: true,
   }));
-
   const prejoinRef = useRef(prejoin);
   useEffect(() => {
     prejoinRef.current = prejoin;
@@ -638,7 +586,6 @@ export function RoomPageLiveKit() {
     try {
       if (!navigator.mediaDevices?.enumerateDevices) return;
 
-      // best effort: this helps reveal labels
       try {
         const s = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
         s.getTracks().forEach((t) => t.stop());
@@ -684,13 +631,6 @@ export function RoomPageLiveKit() {
   const [lkToken, setLkToken] = useState<string>("");
   const [tokenLoading, setTokenLoading] = useState(false);
   const [tokenError, setTokenError] = useState<string>("");
-
-  const resetLiveKit = () => {
-    setLkToken("");
-    setTokenError("");
-    setTokenLoading(false);
-    ensureLiveKitLocalStorageSafeSync();
-  };
 
   const requestToken = async () => {
     if (!session) return;
@@ -746,6 +686,191 @@ export function RoomPageLiveKit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, joinRequested]);
 
+  // ---- livekit-client room ----
+  const roomRef = useRef<Room | null>(null);
+  const [connected, setConnected] = useState(false);
+  const [clientError, setClientError] = useState<string>("");
+
+  const [micOn, setMicOn] = useState(false);
+  const [camOn, setCamOn] = useState(false);
+
+  const [tiles, setTiles] = useState<TileModel[]>([]);
+
+  const rebuildTiles = () => {
+    const room = roomRef.current;
+    if (!room) return;
+
+    const next: TileModel[] = [];
+
+    // local
+    const lp = room.localParticipant;
+    const localCamPub = Array.from(lp.videoTrackPublications.values()).find(
+      (p) => p.source === Track.Source.Camera
+    );
+    const localTrack = (localCamPub?.track as any) || undefined;
+
+    next.push({
+      id: "local",
+      label: (displayName || userName || "You").trim() || "You",
+      isLocal: true,
+      videoTrack: localTrack,
+    });
+
+    // remotes
+    room.remoteParticipants.forEach((rp: RemoteParticipant) => {
+      const camPub = Array.from(rp.videoTrackPublications.values()).find(
+        (p) => p.source === Track.Source.Camera
+      );
+      const vt = (camPub?.track as any) || undefined;
+
+      const nm = (rp.name || rp.identity || "Guest").trim() || "Guest";
+      next.push({
+        id: rp.sid,
+        label: nm,
+        isLocal: false,
+        videoTrack: vt,
+      });
+    });
+
+    setTiles(next);
+  };
+
+  const disconnectRoom = async () => {
+    try {
+      const r = roomRef.current;
+      roomRef.current = null;
+      if (r) {
+        r.removeAllListeners();
+        await r.disconnect();
+      }
+    } catch (e) {
+      console.warn("disconnect error:", e);
+    } finally {
+      setConnected(false);
+      setMicOn(false);
+      setCamOn(false);
+      setTiles([]);
+    }
+  };
+
+  const connectRoom = async () => {
+    if (!lkServerUrl || !lkToken) return;
+
+    setClientError("");
+    await disconnectRoom();
+
+    try {
+      const pj = prejoinRef.current;
+
+      const r = new Room({
+        adaptiveStream: true,
+        dynacast: true,
+      });
+
+      roomRef.current = r;
+
+      r.on(RoomEvent.Connected, () => {
+        setConnected(true);
+        rebuildTiles();
+      });
+
+      r.on(RoomEvent.Disconnected, () => {
+        setConnected(false);
+        setTiles([]);
+      });
+
+      const refresh = () => rebuildTiles();
+
+      // when tracks/participants change, rebuild
+      r.on(RoomEvent.ParticipantConnected, refresh);
+      r.on(RoomEvent.ParticipantDisconnected, refresh);
+      r.on(RoomEvent.TrackSubscribed, refresh);
+      r.on(RoomEvent.TrackUnsubscribed, refresh);
+      r.on(RoomEvent.LocalTrackPublished, refresh);
+      r.on(RoomEvent.LocalTrackUnpublished, refresh);
+      r.on(RoomEvent.TrackPublished, refresh);
+      r.on(RoomEvent.TrackUnpublished, refresh);
+
+      await r.connect(lkServerUrl, lkToken, {
+        autoSubscribe: true,
+      });
+
+      // enable devices based on prejoin
+      if (pj.audioEnabled) {
+        await r.localParticipant.setMicrophoneEnabled(true, {
+          deviceId: pj.audioInputId || undefined,
+        } as any);
+        setMicOn(true);
+      } else {
+        await r.localParticipant.setMicrophoneEnabled(false);
+        setMicOn(false);
+      }
+
+      if (pj.videoEnabled) {
+        await r.localParticipant.setCameraEnabled(true, {
+          deviceId: pj.videoInputId || undefined,
+        } as any);
+        setCamOn(true);
+      } else {
+        await r.localParticipant.setCameraEnabled(false);
+        setCamOn(false);
+      }
+
+      rebuildTiles();
+    } catch (e: any) {
+      console.error("LiveKit connect failed:", e);
+      setClientError(String(e?.message || e || "connect_failed"));
+      await disconnectRoom();
+    }
+  };
+
+  // connect after token ready
+  useEffect(() => {
+    if (!joinRequested) return;
+    if (!lkToken) return;
+    if (!lkServerUrl) return;
+    connectRoom().catch(() => { });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [joinRequested, lkToken, lkServerUrl]);
+
+  // cleanup on unmount
+  useEffect(() => {
+    return () => {
+      disconnectRoom().catch(() => { });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const toggleMic = async () => {
+    const r = roomRef.current;
+    if (!r) return;
+    try {
+      const next = !micOn;
+      await r.localParticipant.setMicrophoneEnabled(next);
+      setMicOn(next);
+    } catch (e) {
+      console.error("toggleMic error:", e);
+    }
+  };
+
+  const toggleCam = async () => {
+    const r = roomRef.current;
+    if (!r) return;
+    try {
+      const next = !camOn;
+      await r.localParticipant.setCameraEnabled(next);
+      setCamOn(next);
+      rebuildTiles();
+    } catch (e) {
+      console.error("toggleCam error:", e);
+    }
+  };
+
+  const leave = async () => {
+    await disconnectRoom();
+    navigate("/sessions", { replace: true });
+  };
+
   if (loading) {
     return (
       <div className={`flex h-screen items-center justify-center ${pageBg}`}>
@@ -763,19 +888,6 @@ export function RoomPageLiveKit() {
   }
 
   const ChatPanelAny = ChatPanel as any;
-
-  const lkOptions: any = {
-    publishDefaults: { simulcast: true },
-    audioCaptureDefaults: {
-      deviceId: prejoin.audioInputId ? { exact: prejoin.audioInputId } : undefined,
-      echoCancellation: prejoin.echoCancellation,
-      noiseSuppression: prejoin.noiseSuppression,
-      autoGainControl: prejoin.autoGainControl,
-    },
-    videoCaptureDefaults: {
-      deviceId: prejoin.videoInputId ? { exact: prejoin.videoInputId } : undefined,
-    },
-  };
 
   return (
     <>
@@ -806,21 +918,17 @@ export function RoomPageLiveKit() {
                   {session.title || "Session"}
                 </div>
                 <div className={isLight ? "text-black/50 text-xs" : "text-white/50 text-xs"}>
-                  LiveKit room: session-{session.id} (limit {maxParticipants})
+                  LiveKit room: session-{session.id} (limit {maxParticipants}) • {connected ? "connected" : "not connected"}
                 </div>
-
                 <div className={isLight ? "text-black/40 text-[11px]" : "text-white/40 text-[11px]"}>
-                  LK_URL: {lkServerUrl || "(missing)"} • token: {tokenEndpoint} • templates:{" "}
-                  {templatesCount} • storage: {lkStorageReady ? "ok" : "…"}
+                  LK_URL: {lkServerUrl || "(missing)"} • token: {tokenEndpoint} • templates: {templatesCount}
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-                  className={
-                    isLight ? "px-3 py-2 rounded-xl bg-black/5" : "px-3 py-2 rounded-xl bg-white/5"
-                  }
+                  className={isLight ? "px-3 py-2 rounded-xl bg-black/5" : "px-3 py-2 rounded-xl bg-white/5"}
                   title="Toggle theme"
                 >
                   {theme === "dark" ? "🌙" : "☀️"}
@@ -828,18 +936,14 @@ export function RoomPageLiveKit() {
 
                 <button
                   onClick={() => openRightTab("chat")}
-                  className={
-                    isLight ? "px-3 py-2 rounded-xl bg-black/5" : "px-3 py-2 rounded-xl bg-white/5"
-                  }
+                  className={isLight ? "px-3 py-2 rounded-xl bg-black/5" : "px-3 py-2 rounded-xl bg-white/5"}
                 >
                   Chat
                 </button>
 
                 <button
                   onClick={() => openRightTab("intentions")}
-                  className={
-                    isLight ? "px-3 py-2 rounded-xl bg-black/5" : "px-3 py-2 rounded-xl bg-white/5"
-                  }
+                  className={isLight ? "px-3 py-2 rounded-xl bg-black/5" : "px-3 py-2 rounded-xl bg-white/5"}
                 >
                   Intentions
                 </button>
@@ -889,76 +993,95 @@ export function RoomPageLiveKit() {
                 <div className="h-full w-full flex flex-col items-center justify-center text-sm gap-3 px-6">
                   <div className="text-red-500 font-semibold">Token error</div>
                   <div className="text-xs opacity-80 break-words text-center">{tokenError}</div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => requestToken()}
-                      className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold"
-                    >
-                      Retry
-                    </button>
-                    <button
-                      onClick={() => {
-                        resetLiveKit();
-                        requestToken();
-                      }}
-                      className={
-                        isLight ? "px-4 py-2 rounded-xl bg-black/5 hover:bg-black/10" : "px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10"
-                      }
-                    >
-                      Reset
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => requestToken()}
+                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+                  >
+                    Retry
+                  </button>
                 </div>
-              ) : !lkToken ? (
-                <div className="h-full w-full flex items-center justify-center opacity-70 text-sm">
-                  Token is empty…
-                </div>
-              ) : (
+              ) : clientError ? (
                 <LiveKitErrorBoundary
                   isLight={isLight}
                   onReset={() => {
-                    resetLiveKit();
-                    requestToken();
+                    setClientError("");
+                    connectRoom().catch(() => { });
                   }}
                 >
-                  <LiveKitRoom
-                    key={`${session.id}:${lkToken.slice(0, 12)}`}
-                    serverUrl={lkServerUrl}
-                    token={lkToken}
-                    connect={true}
-                    video={prejoin.videoEnabled}
-                    audio={prejoin.audioEnabled}
-                    options={lkOptions}
-                    data-theme={theme}
-                    style={{ height: "100%", width: "100%" }}
-                    onDisconnected={() => setLkToken("")}
-                  >
-                    <div className="h-full w-full flex flex-col min-h-0">
-                      <div className="flex-1 min-h-0 p-2">
-                        <GridLayout className="h-full w-full">
-                          <ParticipantTile />
-                        </GridLayout>
-                      </div>
-
-                      <div className="p-2 flex items-center justify-between gap-3">
-                        <LiveKitControls
-                          theme={theme}
-                          onLeave={() => navigate("/sessions", { replace: true })}
-                        />
-
-                        <button
-                          onClick={() => openRightTab("chat")}
-                          className={
-                            isLight ? "px-3 py-2 rounded-xl bg-black/5 hover:bg-black/10" : "px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10"
-                          }
-                          title="Toggle chat panel"
-                        >
-                          💬
-                        </button>
+                  <div className="h-full w-full flex flex-col items-center justify-center gap-3 px-6">
+                    <div className="text-red-500 font-semibold">LiveKit connect failed</div>
+                    <div className="text-xs opacity-80 break-words text-center">{clientError}</div>
+                    <button
+                      onClick={() => connectRoom()}
+                      className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+                    >
+                      Retry connect
+                    </button>
+                  </div>
+                </LiveKitErrorBoundary>
+              ) : (
+                <>
+                  <div className="h-full w-full p-2 flex flex-col min-h-0">
+                    <div className="flex-1 min-h-0">
+                      <div className="h-full w-full grid gap-2 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 auto-rows-fr">
+                        {tiles.map((t) => (
+                          <VideoTile
+                            key={t.id}
+                            label={t.label}
+                            videoTrack={t.videoTrack}
+                            isLocal={t.isLocal}
+                            theme={theme}
+                          />
+                        ))}
                       </div>
                     </div>
-                  </LiveKitRoom>
-                </LiveKitErrorBoundary>
+
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={toggleMic}
+                          className={
+                            isLight
+                              ? "px-3 py-2 rounded-xl bg-black/5 hover:bg-black/10 text-black/80"
+                              : "px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/85"
+                          }
+                        >
+                          {micOn ? "🎤 Mic on" : "🔇 Mic off"}
+                        </button>
+
+                        <button
+                          onClick={toggleCam}
+                          className={
+                            isLight
+                              ? "px-3 py-2 rounded-xl bg-black/5 hover:bg-black/10 text-black/80"
+                              : "px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/85"
+                          }
+                        >
+                          {camOn ? "📷 Cam on" : "🚫 Cam off"}
+                        </button>
+
+                        <button
+                          onClick={leave}
+                          className="px-3 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold"
+                        >
+                          Leave
+                        </button>
+                      </div>
+
+                      <button
+                        onClick={() => openRightTab("chat")}
+                        className={
+                          isLight
+                            ? "px-3 py-2 rounded-xl bg-black/5 hover:bg-black/10"
+                            : "px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10"
+                        }
+                        title="Toggle chat panel"
+                      >
+                        💬
+                      </button>
+                    </div>
+                  </div>
+                </>
               )}
             </div>
 
@@ -1026,7 +1149,7 @@ export function RoomPageLiveKit() {
         {/* leave */}
         <div className="fixed bottom-3 right-3 z-50">
           <button
-            onClick={() => navigate("/sessions", { replace: true })}
+            onClick={leave}
             className="px-4 py-3 rounded-2xl bg-red-600 text-white font-semibold"
           >
             Leave
