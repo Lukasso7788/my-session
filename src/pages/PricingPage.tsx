@@ -2,6 +2,8 @@ import React from "react";
 import { PricingPlanCard } from "../components/PricingPlanCard";
 
 export default function PricingPage() {
+    const KOFI_URL = "https://ko-fi.com/mysession";
+
     return (
         <div className="mx-auto w-full max-w-[1100px] px-6 pb-20">
             <div className="mt-16 text-center">
@@ -41,7 +43,6 @@ export default function PricingPage() {
                     ctaVariant="secondary"
                     footnote="No credit card"
                     onCta={() => {
-                        // TODO: route to sessions or sign up
                         window.location.href = "/sessions";
                     }}
                 />
@@ -62,10 +63,24 @@ export default function PricingPage() {
                     ctaVariant="primary"
                     footnote="Cancel anytime"
                     onCta={() => {
-                        // TODO: open Stripe checkout
-                        alert("Stripe checkout: TODO");
+                        // Ko-fi supporter / membership page
+                        window.open(KOFI_URL, "_blank", "noopener,noreferrer");
                     }}
                 />
+            </div>
+
+            {/* Optional supporter note */}
+            <div className="mt-8 text-center text-sm text-black/60">
+                Prefer supporting via Ko-fi?{" "}
+                <a
+                    href={KOFI_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-black underline underline-offset-4 hover:opacity-80"
+                >
+                    Open MySession on Ko-fi
+                </a>
+                .
             </div>
 
             <div className="mt-10 rounded-[28px] border border-black/10 bg-white p-6">
@@ -80,7 +95,7 @@ export default function PricingPage() {
                     <div>
                         <div className="text-sm font-medium">Can I change plans later?</div>
                         <p className="mt-1 text-sm text-black/60">
-                            Yes — upgrade/downgrade anytime (Stripe flow soon).
+                            Yes — upgrade/downgrade anytime (Ko-fi supporter for now, Stripe flow soon).
                         </p>
                     </div>
                 </div>

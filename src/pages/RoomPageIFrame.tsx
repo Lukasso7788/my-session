@@ -638,6 +638,34 @@ export default function RoomPageIFrame() {
         } catch { }
     }, [theme]);
 
+    useEffect(() => {
+        const api = apiRef.current;
+        if (!api) return;
+
+        const desired = theme === "light" ? "light" : "dark";
+
+        const cmds = supportedCmdsRef.current;
+        const supports = (c: string) => !cmds || cmds.includes(c);
+
+        // попробуем несколько вариантов команд (в разных сборках Jitsi они могут отличаться)
+        try {
+            if (supports("setTheme")) {
+                api.executeCommand?.("setTheme", desired);
+                return;
+            }
+        } catch { }
+
+        try {
+            if (supports("setColorScheme")) {
+                api.executeCommand?.("setColorScheme", desired);
+                return;
+            }
+        } catch { }
+
+        // если команд нет — не делаем ничего (пока).
+        // fallback (жесткий): forceReloadJitsi() — но это уже отдельное решение.
+    }, [theme]);
+
     const isLgUp = useMediaQuery("(min-width: 1024px)");
 
     // stages
