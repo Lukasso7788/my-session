@@ -441,10 +441,26 @@ function makeBgPresetDataUrl(a: string, b: string, c: string, d: string) {
 }
 
 const FX_BG_PRESETS = [
-  { id: "ocean", label: "Ocean", url: makeBgPresetDataUrl("#081226", "#123a76", "#031019", "#38bdf8") },
-  { id: "forest", label: "Forest", url: makeBgPresetDataUrl("#07160f", "#124b2c", "#040d08", "#22c55e") },
-  { id: "violet", label: "Violet", url: makeBgPresetDataUrl("#120a22", "#3b2378", "#090512", "#a78bfa") },
-  { id: "sunset", label: "Sunset", url: makeBgPresetDataUrl("#1c0d10", "#7c2d12", "#11070a", "#fb7185") },
+  {
+    id: "ocean",
+    label: "Ocean",
+    url: makeBgPresetDataUrl("#081226", "#123a76", "#031019", "#38bdf8"),
+  },
+  {
+    id: "forest",
+    label: "Forest",
+    url: makeBgPresetDataUrl("#07160f", "#124b2c", "#040d08", "#22c55e"),
+  },
+  {
+    id: "violet",
+    label: "Violet",
+    url: makeBgPresetDataUrl("#120a22", "#3b2378", "#090512", "#a78bfa"),
+  },
+  {
+    id: "sunset",
+    label: "Sunset",
+    url: makeBgPresetDataUrl("#1c0d10", "#7c2d12", "#11070a", "#fb7185"),
+  },
 ];
 
 // ---- Host action types ----
@@ -498,11 +514,17 @@ function VideoFxSettingsModal({
   const backdrop = "absolute inset-0 bg-black/60";
   const card = [
     "relative w-full max-w-[680px] rounded-3xl shadow-2xl overflow-hidden",
-    isLight ? "bg-white text-black border border-black/10" : "bg-[#020617] text-white border border-white/10",
+    isLight
+      ? "bg-white text-black border border-black/10"
+      : "bg-[#020617] text-white border border-white/10",
   ].join(" ");
 
-  const inputWrap = isLight ? "bg-black/5 border border-black/10" : "bg-white/5 border border-white/10";
-  const ghostBtn = isLight ? "bg-black/5 hover:bg-black/10 text-black/80" : "bg-white/5 hover:bg-white/10 text-white/85";
+  const inputWrap = isLight
+    ? "bg-black/5 border border-black/10"
+    : "bg-white/5 border border-white/10";
+  const ghostBtn = isLight
+    ? "bg-black/5 hover:bg-black/10 text-black/80"
+    : "bg-white/5 hover:bg-white/10 text-white/85";
   const activeBtn = isLight ? "bg-blue-600 text-white" : "bg-emerald-500 text-[#03110a]";
   const subtleText = isLight ? "text-black/60" : "text-white/60";
 
@@ -530,21 +552,24 @@ function VideoFxSettingsModal({
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => onApplyMode("off")}
-                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "off" ? activeBtn : ghostBtn}`}
+                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "off" ? activeBtn : ghostBtn
+                  }`}
                 disabled={fxApplying}
               >
                 FX off
               </button>
               <button
                 onClick={() => onApplyMode("blur")}
-                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "blur" ? activeBtn : ghostBtn}`}
+                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "blur" ? activeBtn : ghostBtn
+                  }`}
                 disabled={fxApplying}
               >
                 Blur
               </button>
               <button
                 onClick={() => onApplyMode("bg")}
-                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "bg" ? activeBtn : ghostBtn}`}
+                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "bg" ? activeBtn : ghostBtn
+                  }`}
                 disabled={fxApplying}
               >
                 Background image
@@ -554,16 +579,16 @@ function VideoFxSettingsModal({
             <div className={`mt-3 text-[12px] ${subtleText}`}>
               {fxApplying ? "Applying effect…" : fxStatusText || "Ready"}
             </div>
-            {fxError ? <div className="mt-2 text-[12px] text-red-500 break-words">{fxError}</div> : null}
+            {fxError ? (
+              <div className="mt-2 text-[12px] text-red-500 break-words">{fxError}</div>
+            ) : null}
           </div>
 
           <div className={`rounded-2xl p-4 ${inputWrap}`}>
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-[13px] font-semibold">Blur strength</div>
-                <div className={`text-[12px] mt-1 ${subtleText}`}>
-                  Used when Blur mode is active.
-                </div>
+                <div className={`text-[12px] mt-1 ${subtleText}`}>Used when Blur mode is active.</div>
               </div>
               <div className="text-[13px] font-semibold">{blurStrength}</div>
             </div>
@@ -588,11 +613,7 @@ function VideoFxSettingsModal({
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  onClick={onResetBg}
-                  className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn}`}
-                  disabled={fxApplying}
-                >
+                <button onClick={onResetBg} className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn}`} disabled={fxApplying}>
                   Reset
                 </button>
                 <label className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn} cursor-pointer flex items-center`}>
@@ -635,9 +656,7 @@ function VideoFxSettingsModal({
                     <div className="aspect-video w-full">
                       <img src={p.url} alt={p.label} className="w-full h-full object-cover" />
                     </div>
-                    <div className={`px-2 py-2 text-[12px] ${isLight ? "bg-white" : "bg-[#0b1220]"}`}>
-                      {p.label}
-                    </div>
+                    <div className={`px-2 py-2 text-[12px] ${isLight ? "bg-white" : "bg-[#0b1220]"}`}>{p.label}</div>
                   </button>
                 );
               })}
@@ -845,9 +864,7 @@ function RemoteAudioRenderer({
   room: Room | null;
   audioOutputId: string;
 }) {
-  const [tracks, setTracks] = useState<
-    { id: string; track: RemoteAudioTrack; label: string }[]
-  >([]);
+  const [tracks, setTracks] = useState<{ id: string; track: RemoteAudioTrack; label: string }[]>([]);
 
   const rebuild = () => {
     if (!room) {
@@ -895,12 +912,7 @@ function RemoteAudioRenderer({
   return (
     <>
       {tracks.map((t) => (
-        <AudioEl
-          key={t.id}
-          track={t.track}
-          audioOutputId={audioOutputId}
-          debugLabel={t.label}
-        />
+        <AudioEl key={t.id} track={t.track} audioOutputId={audioOutputId} debugLabel={t.label} />
       ))}
     </>
   );
@@ -930,11 +942,7 @@ function AudioEl({
     (async () => {
       try {
         const anyEl = el as any;
-        if (
-          audioOutputId &&
-          audioOutputId !== "default" &&
-          typeof anyEl.setSinkId === "function"
-        ) {
+        if (audioOutputId && audioOutputId !== "default" && typeof anyEl.setSinkId === "function") {
           await anyEl.setSinkId(audioOutputId);
         }
       } catch {
@@ -983,7 +991,6 @@ async function resolveTrackProcessorsModule(): Promise<any> {
 }
 
 async function ensureBackgroundProcessorsSupported(mod: any) {
-  // supportsModernBackgroundProcessors(): boolean
   if (typeof mod?.supportsModernBackgroundProcessors === "function") {
     const ok = !!mod.supportsModernBackgroundProcessors();
     if (!ok) {
@@ -992,10 +999,8 @@ async function ensureBackgroundProcessorsSupported(mod: any) {
     return;
   }
 
-  // supportsBackgroundProcessors(): boolean | Promise<boolean>
   if (typeof mod?.supportsBackgroundProcessors === "function") {
-    const res = mod.supportsBackgroundProcessors();
-    const ok = typeof res?.then === "function" ? await res : !!res;
+    const ok = await Promise.resolve(mod.supportsBackgroundProcessors());
     if (!ok) {
       throw new Error("Background processors are not supported in this browser/device");
     }
@@ -1003,65 +1008,115 @@ async function ensureBackgroundProcessorsSupported(mod: any) {
 }
 
 /**
- * IMPORTANT FIX:
- * In @livekit/track-processors, typical signatures are:
- *   BackgroundBlur(blurRadius: number)
- *   VirtualBackground(imagePath: string)
- * Try NUMBER/STRING first, then fall back to object/create variants.
+ * CRITICAL: In some LiveKit stacks, the processor wrapper is created in DISABLED state.
+ * Your log shows `processingEnabled: false`.
+ * So we must explicitly enable it when possible.
  */
+async function enableProcessorIfPossible(proc: any) {
+  if (!proc) return;
+
+  // Most common on ProcessorWrapper
+  if (typeof proc.setEnabled === "function") {
+    await Promise.resolve(proc.setEnabled(true));
+    return;
+  }
+
+  // Some variants
+  if (typeof proc.enable === "function") {
+    await Promise.resolve(proc.enable());
+    return;
+  }
+  if (typeof proc.start === "function") {
+    await Promise.resolve(proc.start());
+    return;
+  }
+
+  // Some wrappers expose nested "processorWrapper"
+  if (proc?.processorWrapper && typeof proc.processorWrapper.setEnabled === "function") {
+    await Promise.resolve(proc.processorWrapper.setEnabled(true));
+    return;
+  }
+}
+
+async function disableProcessorIfPossible(proc: any) {
+  if (!proc) return;
+
+  if (typeof proc.setEnabled === "function") {
+    try {
+      await Promise.resolve(proc.setEnabled(false));
+    } catch { }
+    return;
+  }
+  if (typeof proc.disable === "function") {
+    try {
+      await Promise.resolve(proc.disable());
+    } catch { }
+    return;
+  }
+  if (typeof proc.stop === "function") {
+    try {
+      await Promise.resolve(proc.stop());
+    } catch { }
+    return;
+  }
+}
+
 async function createBlurProcessor(blurRadius: number): Promise<any> {
   const mod = await resolveTrackProcessorsModule();
   await ensureBackgroundProcessorsSupported(mod);
 
-  const attempts: Array<() => Promise<any> | any> = [];
-
-  // Most common: BackgroundBlur(number)
-  if (typeof mod?.BackgroundBlur === "function") {
-    attempts.push(() => mod.BackgroundBlur(blurRadius));
-    attempts.push(() => mod.BackgroundBlur({ blurRadius }));
-    attempts.push(() => mod.BackgroundBlur({ strength: blurRadius }));
-    attempts.push(() => new mod.BackgroundBlur(blurRadius));
-    attempts.push(() => new mod.BackgroundBlur({ blurRadius }));
-    attempts.push(() => new mod.BackgroundBlur({ strength: blurRadius }));
-  }
-
-  // Some builds: BackgroundBlur.create(...)
+  // v0.7+ exposes BackgroundBlur and VirtualBackground classes / factories
   if (mod?.BackgroundBlur?.create) {
-    attempts.push(() => mod.BackgroundBlur.create(blurRadius));
-    attempts.push(() => mod.BackgroundBlur.create({ blurRadius }));
-    attempts.push(() => mod.BackgroundBlur.create({ strength: blurRadius }));
-  }
-
-  // Legacy helper
-  if (typeof mod?.createBackgroundBlurProcessor === "function") {
-    attempts.push(() => mod.createBackgroundBlurProcessor(blurRadius));
-    attempts.push(() => mod.createBackgroundBlurProcessor({ blurRadius }));
-    attempts.push(() => mod.createBackgroundBlurProcessor({ strength: blurRadius }));
-  }
-
-  // Another possible export name
-  if (typeof mod?.backgroundBlur === "function") {
-    attempts.push(() => mod.backgroundBlur(blurRadius));
-    attempts.push(() => mod.backgroundBlur({ blurRadius }));
-    attempts.push(() => mod.backgroundBlur({ strength: blurRadius }));
-  }
-
-  const errors: any[] = [];
-  for (const run of attempts) {
     try {
-      const res = await run();
-      if (res) return res;
+      return await mod.BackgroundBlur.create({ blurRadius });
     } catch (e) {
-      errors.push(e);
+      try {
+        return await mod.BackgroundBlur.create({ strength: blurRadius });
+      } catch {
+        throw e;
+      }
     }
   }
 
-  const msg =
-    errors.length > 0
-      ? String(errors[errors.length - 1]?.message || errors[errors.length - 1] || "blur_failed")
-      : "BackgroundBlur processor is unavailable";
+  if (typeof mod?.createBackgroundBlurProcessor === "function") {
+    try {
+      return await mod.createBackgroundBlurProcessor({ blurRadius });
+    } catch (e) {
+      try {
+        return await mod.createBackgroundBlurProcessor({ strength: blurRadius });
+      } catch {
+        throw e;
+      }
+    }
+  }
 
-  throw new Error(`BackgroundBlur processor failed: ${msg}`);
+  if (typeof mod?.BackgroundBlur === "function") {
+    try {
+      return mod.BackgroundBlur({ blurRadius });
+    } catch {
+      try {
+        return new mod.BackgroundBlur({ blurRadius });
+      } catch {
+        try {
+          return mod.BackgroundBlur({ strength: blurRadius });
+        } catch {
+          try {
+            return new mod.BackgroundBlur({ strength: blurRadius });
+          } catch { }
+        }
+      }
+    }
+  }
+
+  if (typeof mod?.backgroundBlur === "function") {
+    try {
+      return mod.backgroundBlur({ blurRadius });
+    } catch {
+      return mod.backgroundBlur({ strength: blurRadius });
+    }
+  }
+
+  throw new Error("BackgroundBlur processor is unavailable (unsupported export API in current @livekit/track-processors version)");
 }
 
 function preloadImage(url: string): Promise<HTMLImageElement> {
@@ -1070,7 +1125,6 @@ function preloadImage(url: string): Promise<HTMLImageElement> {
     try {
       if (/^https?:/i.test(url)) img.crossOrigin = "anonymous";
     } catch { }
-
     img.onload = () => resolve(img);
     img.onerror = (e) => reject(e || new Error("image_load_failed"));
     img.src = url;
@@ -1085,51 +1139,42 @@ async function createVirtualBackgroundProcessor(imageUrl: string): Promise<any> 
   try {
     preloadedImg = await preloadImage(imageUrl);
   } catch (e) {
-    console.warn("[LK FX] preloadImage failed, will still try path/url-based virtual background:", e);
+    console.warn("[LK FX] preloadImage failed, will still try URL-based virtual background:", e);
   }
 
   const attempts: Array<() => Promise<any> | any> = [];
 
-  // Most common: VirtualBackground(imagePath: string)
-  if (typeof mod?.VirtualBackground === "function") {
-    attempts.push(() => mod.VirtualBackground(imageUrl));
-    attempts.push(() => mod.VirtualBackground({ imagePath: imageUrl }));
-    attempts.push(() => mod.VirtualBackground({ imageUrl }));
-    if (preloadedImg) attempts.push(() => mod.VirtualBackground({ image: preloadedImg }));
-    if (preloadedImg) attempts.push(() => mod.VirtualBackground({ backgroundImage: preloadedImg }));
-
-    attempts.push(() => new mod.VirtualBackground(imageUrl));
-    attempts.push(() => new mod.VirtualBackground({ imagePath: imageUrl }));
-    attempts.push(() => new mod.VirtualBackground({ imageUrl }));
-    if (preloadedImg) attempts.push(() => new mod.VirtualBackground({ image: preloadedImg }));
-    if (preloadedImg) attempts.push(() => new mod.VirtualBackground({ backgroundImage: preloadedImg }));
-  }
-
-  // Some builds: VirtualBackground.create(...)
   if (mod?.VirtualBackground?.create) {
-    attempts.push(() => mod.VirtualBackground.create(imageUrl));
-    attempts.push(() => mod.VirtualBackground.create({ imagePath: imageUrl }));
     attempts.push(() => mod.VirtualBackground.create({ imageUrl }));
-    if (preloadedImg) attempts.push(() => mod.VirtualBackground.create({ image: preloadedImg }));
+    attempts.push(() => mod.VirtualBackground.create({ imagePath: imageUrl }));
     if (preloadedImg) attempts.push(() => mod.VirtualBackground.create({ backgroundImage: preloadedImg }));
+    if (preloadedImg) attempts.push(() => mod.VirtualBackground.create({ image: preloadedImg }));
   }
 
-  // Legacy helper
   if (typeof mod?.createVirtualBackgroundProcessor === "function") {
-    attempts.push(() => mod.createVirtualBackgroundProcessor(imageUrl));
-    attempts.push(() => mod.createVirtualBackgroundProcessor({ imagePath: imageUrl }));
     attempts.push(() => mod.createVirtualBackgroundProcessor({ imageUrl }));
-    if (preloadedImg) attempts.push(() => mod.createVirtualBackgroundProcessor({ image: preloadedImg }));
+    attempts.push(() => mod.createVirtualBackgroundProcessor({ imagePath: imageUrl }));
     if (preloadedImg) attempts.push(() => mod.createVirtualBackgroundProcessor({ backgroundImage: preloadedImg }));
+    if (preloadedImg) attempts.push(() => mod.createVirtualBackgroundProcessor({ image: preloadedImg }));
   }
 
-  // Another possible export name
+  if (typeof mod?.VirtualBackground === "function") {
+    attempts.push(() => mod.VirtualBackground({ imageUrl }));
+    attempts.push(() => mod.VirtualBackground({ imagePath: imageUrl }));
+    if (preloadedImg) attempts.push(() => mod.VirtualBackground({ backgroundImage: preloadedImg }));
+    if (preloadedImg) attempts.push(() => mod.VirtualBackground({ image: preloadedImg }));
+
+    attempts.push(() => new mod.VirtualBackground({ imageUrl }));
+    attempts.push(() => new mod.VirtualBackground({ imagePath: imageUrl }));
+    if (preloadedImg) attempts.push(() => new mod.VirtualBackground({ backgroundImage: preloadedImg }));
+    if (preloadedImg) attempts.push(() => new mod.VirtualBackground({ image: preloadedImg }));
+  }
+
   if (typeof mod?.virtualBackground === "function") {
-    attempts.push(() => mod.virtualBackground(imageUrl));
-    attempts.push(() => mod.virtualBackground({ imagePath: imageUrl }));
     attempts.push(() => mod.virtualBackground({ imageUrl }));
-    if (preloadedImg) attempts.push(() => mod.virtualBackground({ image: preloadedImg }));
+    attempts.push(() => mod.virtualBackground({ imagePath: imageUrl }));
     if (preloadedImg) attempts.push(() => mod.virtualBackground({ backgroundImage: preloadedImg }));
+    if (preloadedImg) attempts.push(() => mod.virtualBackground({ image: preloadedImg }));
   }
 
   const errors: any[] = [];
@@ -1155,7 +1200,7 @@ async function setLocalVideoTrackProcessor(track: any, processor: any) {
     throw new Error("LocalVideoTrack.setProcessor is unavailable in your livekit-client version");
   }
 
-  // Try boolean signature first (common)
+  // Try boolean signature first (most common)
   try {
     const res = await track.setProcessor(processor, true);
     return res;
@@ -1171,33 +1216,31 @@ async function setLocalVideoTrackProcessor(track: any, processor: any) {
   return track.setProcessor(processor);
 }
 
-async function clearLocalVideoTrackProcessor(track: any, currentProcessor?: any) {
+async function clearLocalVideoTrackProcessor(track: any) {
   if (!track) return;
 
-  // Prefer track.stopProcessor()
+  // try disable current processor before removing
+  try {
+    const current = (track as any)?.processor || (track as any)?._processor;
+    await disableProcessorIfPossible(current);
+  } catch { }
+
+  // Some versions expose stopProcessor()
   if (typeof track.stopProcessor === "function") {
     try {
       await track.stopProcessor();
       await delay(120);
+      return;
     } catch { }
   }
 
-  // Some versions: setProcessor(null)
   if (typeof track.setProcessor === "function") {
     try {
       await track.setProcessor(null);
       await delay(120);
+      return;
     } catch { }
   }
-
-  // Best effort: destroy/dispose the processor object if it has API
-  try {
-    if (currentProcessor) {
-      if (typeof currentProcessor?.destroy === "function") currentProcessor.destroy();
-      if (typeof currentProcessor?.dispose === "function") currentProcessor.dispose();
-      if (typeof currentProcessor?.stop === "function") currentProcessor.stop();
-    }
-  } catch { }
 
   await delay(80);
 }
@@ -1266,17 +1309,10 @@ function findVideoTrackDeep(root: any, original?: MediaStreamTrack | null): Medi
 }
 
 function getOriginalLocalMediaStreamTrack(localTrack: any): MediaStreamTrack | null {
-  const candidates = [
-    localTrack?.mediaStreamTrack,
-    localTrack?._mediaStreamTrack,
-    localTrack?.track,
-    localTrack?._track,
-  ];
-
+  const candidates = [localTrack?.mediaStreamTrack, localTrack?._mediaStreamTrack, localTrack?.track, localTrack?._track];
   for (const c of candidates) {
     if (isMediaStreamTrackLike(c)) return c;
   }
-
   return null;
 }
 
@@ -1348,9 +1384,7 @@ export function RoomPageLiveKit() {
 
   const isLight = theme === "light";
   const pageBg = isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white";
-  const panelBg = isLight
-    ? "bg-white/85 border border-black/10"
-    : "bg-[#0B1220]/55 border border-white/5";
+  const panelBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#0B1220]/55 border border-white/5";
 
   const [session, setSession] = useState<SessionRow | null>(null);
   const [templatesCount, setTemplatesCount] = useState(0);
@@ -1424,9 +1458,7 @@ export function RoomPageLiveKit() {
 
       const { data, error } = await supabase
         .from("sessions")
-        .select(
-          "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)"
-        )
+        .select("*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)")
         .eq("id", id)
         .single();
 
@@ -1455,11 +1487,7 @@ export function RoomPageLiveKit() {
           (u?.email ? u.email.split("@")[0] : "");
 
         if (!name && u?.id) {
-          const { data: p } = await supabase
-            .from("profiles")
-            .select("full_name")
-            .eq("id", u.id)
-            .single();
+          const { data: p } = await supabase.from("profiles").select("full_name").eq("id", u.id).single();
           name = str((p as any)?.full_name);
         }
 
@@ -1516,12 +1544,8 @@ export function RoomPageLiveKit() {
 
   // LiveKit env
   const lkServerUrl = String((import.meta as any)?.env?.VITE_LIVEKIT_URL || "").trim();
-  const tokenEndpoint = String(
-    (import.meta as any)?.env?.VITE_LIVEKIT_TOKEN_ENDPOINT || "/api/livekit/token"
-  ).trim();
-  const adminEndpoint = String(
-    (import.meta as any)?.env?.VITE_LIVEKIT_ADMIN_ENDPOINT || "/api/livekit/admin"
-  ).trim();
+  const tokenEndpoint = String((import.meta as any)?.env?.VITE_LIVEKIT_TOKEN_ENDPOINT || "/api/livekit/token").trim();
+  const adminEndpoint = String((import.meta as any)?.env?.VITE_LIVEKIT_ADMIN_ENDPOINT || "/api/livekit/admin").trim();
 
   // token + connect
   const [lkToken, setLkToken] = useState<string>("");
@@ -1619,9 +1643,6 @@ export function RoomPageLiveKit() {
   // Dedup: remember last applied *effective* config
   const lastAppliedRef = useRef<{ mode: FxMode; blur: number; bg: string } | null>(null);
 
-  // Hold current processor instance (important for cleanup & avoiding weird GC behaviors)
-  const currentProcessorRef = useRef<any>(null);
-
   // Processed preview fallback (if SDK does not preview processed stream)
   const [localProcessedPreviewTrack, setLocalProcessedPreviewTrack] = useState<MediaStreamTrack | null>(null);
 
@@ -1640,9 +1661,7 @@ export function RoomPageLiveKit() {
 
     // local
     const lp = room.localParticipant;
-    const localCamPub = Array.from(lp.videoTrackPublications.values()).find(
-      (p) => p.source === Track.Source.Camera
-    );
+    const localCamPub = Array.from(lp.videoTrackPublications.values()).find((p) => p.source === Track.Source.Camera);
     const localTrack = (localCamPub?.track as any) || undefined;
 
     next.push({
@@ -1703,7 +1722,6 @@ export function RoomPageLiveKit() {
       fxQueuedRef.current = null;
       fxRunningRef.current = false;
       lastAppliedRef.current = null;
-      currentProcessorRef.current = null;
     }
   };
 
@@ -1824,7 +1842,6 @@ export function RoomPageLiveKit() {
         setLocalProcessedPreviewTrack(null);
         fxQueuedRef.current = null;
         lastAppliedRef.current = null;
-        currentProcessorRef.current = null;
       }
 
       rebuildTiles();
@@ -1964,14 +1981,9 @@ export function RoomPageLiveKit() {
           continue;
         }
 
-        // Dedup by effective config
         const effective = { mode: nextMode, blur: blurStrength, bg: bgImageUrl };
         const last = lastAppliedRef.current;
-        const sameAsLast =
-          last &&
-          last.mode === effective.mode &&
-          last.blur === effective.blur &&
-          last.bg === effective.bg;
+        const sameAsLast = last && last.mode === effective.mode && last.blur === effective.blur && last.bg === effective.bg;
 
         if (sameAsLast) {
           setFxStatusText("Already applied (dedup)");
@@ -1982,11 +1994,9 @@ export function RoomPageLiveKit() {
         try {
           setLocalProcessedPreviewTrack(null);
 
-          // Clear old processor first (and cleanup)
-          await clearLocalVideoTrackProcessor(track as any, currentProcessorRef.current);
-          currentProcessorRef.current = null;
-
-          await delay(90);
+          // Clear old processor first
+          await clearLocalVideoTrackProcessor(track as any);
+          await delay(120);
 
           if (callId !== fxCallIdRef.current) {
             setFxApplying(false);
@@ -2005,16 +2015,37 @@ export function RoomPageLiveKit() {
             if (!proc) throw new Error("BackgroundBlur processor is unavailable.");
 
             const setRes = await setLocalVideoTrackProcessor(track as any, proc);
-            currentProcessorRef.current = proc;
+
+            // 🔥 CRITICAL FIX: enable processor pipeline if possible
+            await enableProcessorIfPossible(proc);
+
+            // Also try enabling whatever track stores as current processor
+            try {
+              const cur = (track as any)?.processor || (track as any)?._processor;
+              await enableProcessorIfPossible(cur);
+            } catch { }
 
             try {
               console.log("[LK FX] setProcessor blur result:", setRes);
               console.log("[LK FX] track.processor?", (track as any)?.processor || (track as any)?._processor);
             } catch { }
 
-            await syncLocalProcessedPreviewTrack(track as any, [proc, setRes]);
+            await syncLocalProcessedPreviewTrack(track as any, [proc, setRes, (track as any)?.processor]);
             lastAppliedRef.current = { mode: "blur", blur: blurStrength, bg: bgImageUrl };
-            setFxStatusText((prev) => prev || `Blur applied (strength ${blurStrength})`);
+
+            // report enabled state if present
+            try {
+              const cur = (track as any)?.processor || (track as any)?._processor || proc;
+              const enabled = (cur as any)?.processingEnabled;
+              if (typeof enabled === "boolean") {
+                setFxStatusText(`Blur applied (strength ${blurStrength}) • processingEnabled=${enabled}`);
+              } else {
+                setFxStatusText((prev) => prev || `Blur applied (strength ${blurStrength})`);
+              }
+            } catch {
+              setFxStatusText((prev) => prev || `Blur applied (strength ${blurStrength})`);
+            }
+
             setFxApplying(false);
             continue;
           }
@@ -2024,16 +2055,34 @@ export function RoomPageLiveKit() {
             if (!proc) throw new Error("VirtualBackground processor is unavailable.");
 
             const setRes = await setLocalVideoTrackProcessor(track as any, proc);
-            currentProcessorRef.current = proc;
+
+            // 🔥 CRITICAL FIX: enable processor pipeline if possible
+            await enableProcessorIfPossible(proc);
+            try {
+              const cur = (track as any)?.processor || (track as any)?._processor;
+              await enableProcessorIfPossible(cur);
+            } catch { }
 
             try {
               console.log("[LK FX] setProcessor bg result:", setRes);
               console.log("[LK FX] track.processor?", (track as any)?.processor || (track as any)?._processor);
             } catch { }
 
-            await syncLocalProcessedPreviewTrack(track as any, [proc, setRes]);
+            await syncLocalProcessedPreviewTrack(track as any, [proc, setRes, (track as any)?.processor]);
             lastAppliedRef.current = { mode: "bg", blur: blurStrength, bg: bgImageUrl };
-            setFxStatusText((prev) => prev || "Virtual background applied");
+
+            try {
+              const cur = (track as any)?.processor || (track as any)?._processor || proc;
+              const enabled = (cur as any)?.processingEnabled;
+              if (typeof enabled === "boolean") {
+                setFxStatusText(`Virtual background applied • processingEnabled=${enabled}`);
+              } else {
+                setFxStatusText((prev) => prev || "Virtual background applied");
+              }
+            } catch {
+              setFxStatusText((prev) => prev || "Virtual background applied");
+            }
+
             setFxApplying(false);
             continue;
           }
@@ -2083,11 +2132,7 @@ export function RoomPageLiveKit() {
   }, [connected, camOn]);
 
   if (loading) {
-    return (
-      <div className={`flex h-screen items-center justify-center ${pageBg}`}>
-        Loading session...
-      </div>
-    );
+    return <div className={`flex h-screen items-center justify-center ${pageBg}`}>Loading session...</div>;
   }
 
   if (!session) {
@@ -2181,10 +2226,14 @@ export function RoomPageLiveKit() {
                   </div>
                 ) : null}
 
-                {fxError ? (
-                  <div className="mt-1 text-[11px] text-red-500 break-words">
-                    Video FX error: {fxError}
+                {fxStatusText ? (
+                  <div className={isLight ? "text-black/40 text-[11px]" : "text-white/40 text-[11px]"}>
+                    {fxStatusText}
                   </div>
+                ) : null}
+
+                {fxError ? (
+                  <div className="mt-1 text-[11px] text-red-500 break-words">Video FX error: {fxError}</div>
                 ) : null}
               </div>
 
@@ -2224,9 +2273,7 @@ export function RoomPageLiveKit() {
             <div className="mt-3">
               <SessionStageBar
                 stages={[]}
-                startTime={String(
-                  session.start_time || session.created_at || new Date().toISOString()
-                )}
+                startTime={String(session.start_time || session.created_at || new Date().toISOString())}
                 onHoverStage={() => { }}
               />
             </div>
@@ -2240,9 +2287,7 @@ export function RoomPageLiveKit() {
           >
             {/* VIDEO */}
             <div
-              className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight
-                  ? "bg-white/70 border border-black/10"
-                  : "bg-[#0B1220]/45 border border-white/5"
+              className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
                 }`}
             >
               {!joinRequested ? (
@@ -2261,13 +2306,9 @@ export function RoomPageLiveKit() {
                   <div className="text-xs opacity-80">Set it in Vercel env + .env.local</div>
                 </div>
               ) : !authReady ? (
-                <div className="h-full w-full flex items-center justify-center opacity-70 text-sm">
-                  Preparing auth…
-                </div>
+                <div className="h-full w-full flex items-center justify-center opacity-70 text-sm">Preparing auth…</div>
               ) : tokenLoading ? (
-                <div className="h-full w-full flex items-center justify-center opacity-70 text-sm">
-                  Getting token…
-                </div>
+                <div className="h-full w-full flex items-center justify-center opacity-70 text-sm">Getting token…</div>
               ) : tokenError ? (
                 <div className="h-full w-full flex flex-col items-center justify-center text-sm gap-3 px-6">
                   <div className="text-red-500 font-semibold">Token error</div>
@@ -2300,10 +2341,7 @@ export function RoomPageLiveKit() {
                 </LiveKitErrorBoundary>
               ) : (
                 <>
-                  <RemoteAudioRenderer
-                    room={roomState}
-                    audioOutputId={prejoin.audioOutputId || "default"}
-                  />
+                  <RemoteAudioRenderer room={roomState} audioOutputId={prejoin.audioOutputId || "default"} />
 
                   <div className="h-full w-full p-2 flex flex-col min-h-0">
                     <div className="flex-1 min-h-0">
@@ -2348,9 +2386,7 @@ export function RoomPageLiveKit() {
                                           "cam"
                                         )
                                       : undefined,
-                                  onKick: t.participantIdentity
-                                    ? () => hostKickParticipant(t.participantIdentity!)
-                                    : undefined,
+                                  onKick: t.participantIdentity ? () => hostKickParticipant(t.participantIdentity!) : undefined,
                                 }
                                 : undefined
                             }
@@ -2410,21 +2446,14 @@ export function RoomPageLiveKit() {
                           </button>
                         ) : null}
 
-                        <button
-                          onClick={leave}
-                          className="px-3 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold"
-                        >
+                        <button onClick={leave} className="px-3 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold">
                           Leave
                         </button>
                       </div>
 
                       <button
                         onClick={() => openRightTab("chat")}
-                        className={
-                          isLight
-                            ? "px-3 py-2 rounded-xl bg-black/5 hover:bg-black/10"
-                            : "px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10"
-                        }
+                        className={isLight ? "px-3 py-2 rounded-xl bg-black/5 hover:bg-black/10" : "px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10"}
                         title="Toggle chat panel"
                       >
                         💬
@@ -2438,25 +2467,12 @@ export function RoomPageLiveKit() {
             {/* RIGHT PANEL */}
             {rightPanelOpen && (
               <div className="min-h-0 h-full overflow-hidden">
-                <div
-                  className={`rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col ${panelBg}`}
-                  data-theme={theme}
-                >
-                  <div
-                    className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
-                      }`}
-                  >
+                <div className={`rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col ${panelBg}`} data-theme={theme}>
+                  <div className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
                     <div className="font-inter font-semibold">
-                      {rightTab === "chat"
-                        ? "Chat"
-                        : rightTab === "intentions"
-                          ? "Intentions"
-                          : "Panel"}
+                      {rightTab === "chat" ? "Chat" : rightTab === "intentions" ? "Intentions" : "Panel"}
                     </div>
-                    <button
-                      onClick={() => openRightTab(null)}
-                      className={isLight ? "w-9 h-9 rounded-xl bg-black/5" : "w-9 h-9 rounded-xl bg-white/5"}
-                    >
+                    <button onClick={() => openRightTab(null)} className={isLight ? "w-9 h-9 rounded-xl bg-black/5" : "w-9 h-9 rounded-xl bg-white/5"}>
                       ✕
                     </button>
                   </div>
@@ -2464,11 +2480,7 @@ export function RoomPageLiveKit() {
                   <div className="flex-1 min-h-0 overflow-hidden p-3">
                     {rightTab === "chat" && (
                       <div className="h-full min-h-0 overflow-hidden rounded-xl">
-                        <div
-                          data-theme={theme}
-                          style={{ colorScheme: theme }}
-                          className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
-                        >
+                        <div data-theme={theme} style={{ colorScheme: theme }} className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}>
                           <ChatPanelAny
                             sessionId={session.id}
                             theme={theme}
@@ -2484,16 +2496,8 @@ export function RoomPageLiveKit() {
 
                     {rightTab === "intentions" && (
                       <div className="h-full min-h-0 overflow-y-auto rounded-xl">
-                        <div
-                          data-theme={theme}
-                          style={{ colorScheme: theme }}
-                          className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
-                        >
-                          <IntentionsPanel
-                            theme={theme}
-                            sessionId={session.id}
-                            timerText={"--:--"}
-                          />
+                        <div data-theme={theme} style={{ colorScheme: theme }} className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}>
+                          <IntentionsPanel theme={theme} sessionId={session.id} timerText={"--:--"} />
                         </div>
                       </div>
                     )}
@@ -2506,10 +2510,7 @@ export function RoomPageLiveKit() {
 
         {/* leave floating */}
         <div className="fixed bottom-3 right-3 z-50">
-          <button
-            onClick={leave}
-            className="px-4 py-3 rounded-2xl bg-red-600 text-white font-semibold"
-          >
+          <button onClick={leave} className="px-4 py-3 rounded-2xl bg-red-600 text-white font-semibold">
             Leave
           </button>
         </div>
