@@ -1192,13 +1192,8 @@ async function clearLocalVideoTrackProcessor(track: any) {
   }
 }
 
-// ---- processed preview extraction helpers ----
 function isMediaStreamTrackLike(v: any): v is MediaStreamTrack {
   return !!v && typeof v === "object" && v.kind === "video" && typeof v.stop === "function";
-}
-
-function isMediaStreamLike(v: any): v is MediaStream {
-  return !!v && typeof v === "object" && typeof v.getVideoTracks === "function";
 }
 
 function findVideoTrackDeep(root: any, original?: MediaStreamTrack | null): MediaStreamTrack | null {
@@ -1206,23 +1201,21 @@ function findVideoTrackDeep(root: any, original?: MediaStreamTrack | null): Medi
 
   const preferredKeys = [
     "processedTrack",
-    "processedStreamTrack",
-    "processedMediaStreamTrack",
     "outputTrack",
-    "mediaStreamTrack",
-    "videoTrack",
     "track",
-    "processedVideoTrack",
+    "mediaStreamTrack",
+    "processedMediaStreamTrack",
+    "videoTrack",
     "processedStream",
     "outputStream",
     "stream",
-    "wrappedProcessor",
-    "processor",
-    "wrapper",
     "_processedTrack",
     "_outputTrack",
     "_track",
   ];
+
+  const isStreamLike = (v: any): v is MediaStream =>
+    !!v && typeof v === "object" && typeof v.getVideoTracks === "function";
 
   const walk = (node: any, depth: number): MediaStreamTrack | null => {
     if (!node || depth < 0) return null;
@@ -1234,7 +1227,7 @@ function findVideoTrackDeep(root: any, original?: MediaStreamTrack | null): Medi
       if (!original || node !== original) return node;
     }
 
-    if (isMediaStreamLike(node)) {
+    if (isStreamLike(node)) {
       const t = node.getVideoTracks?.()[0];
       if (t && (!original || t !== original)) return t;
     }
@@ -1249,7 +1242,7 @@ function findVideoTrackDeep(root: any, original?: MediaStreamTrack | null): Medi
     }
 
     try {
-      const keys = Object.keys(node).slice(0, 80);
+      const keys = Object.keys(node).slice(0, 60);
       for (const k of keys) {
         const hit = walk((node as any)[k], depth - 1);
         if (hit) return hit;
@@ -1259,6 +1252,7 @@ function findVideoTrackDeep(root: any, original?: MediaStreamTrack | null): Medi
     return null;
   };
 
+  // глубже (как я и советовал): 6
   return walk(root, 6);
 }
 
@@ -1282,128 +1276,26 @@ function extractProcessedPreviewTrack(localTrack: any, extraRoots: any[] = []): 
   const original = getOriginalLocalMediaStreamTrack(localTrack);
 
   const processorCandidates = [
-    ...extraRoots,
     localTrack?.processor,
     localTrack?._processor,
     localTrack?.processorWrapper,
     localTrack?._processorWrapper,
   ];
 
+  // 1) Сначала extraRoots (ты их специально передаёшь)
+  for (const r of extraRoots) {
+    const found = findVideoTrackDeep(r, original);
+    if (found) return found;
+  }
+
+  // 2) Потом processor subtree
   for (const p of processorCandidates) {
     const found = findVideoTrackDeep(p, original);
     if (found) return found;
   }
 
-  const foundFallback = findVideoTrackDeep(localTrack, original);
-  if (foundFallback) return foundFallback;
-
-  return null;
-}
-
-// ---- processed preview extraction helpers ----
-function isMediaStreamTrackLike(v: any): v is MediaStreamTrack {
-  return !!v && typeof v === "object" && v.kind === "video" && typeof v.stop === "function";
-}
-
-function isMediaStreamLike(v: any): v is MediaStream {
-  return !!v && typeof v === "object" && typeof v.getVideoTracks === "function";
-}
-
-function findVideoTrackDeep(root: any, original?: MediaStreamTrack | null): MediaStreamTrack | null {
-  const visited = new Set<any>();
-
-  const preferredKeys = [
-    "processedTrack",
-    "outputTrack",
-    "track",
-    "mediaStreamTrack",
-    "processedMediaStreamTrack",
-    "videoTrack",
-    "processedStream",
-    "outputStream",
-    "stream",
-    "_processedTrack",
-    "_outputTrack",
-    "_track",
-  ];
-
-  const walk = (node: any, depth: number): MediaStreamTrack | null => {
-    if (!node || depth < 0) return null;
-    if (typeof node !== "object" && typeof node !== "function") return null;
-    if (visited.has(node)) return null;
-    visited.add(node);
-
-    if (isMediaStreamTrackLike(node)) {
-      if (!original || node !== original) return node;
-    }
-
-    if (isMediaStreamLike(node)) {
-      const t = node.getVideoTracks?.()[0];
-      if (t && (!original || t !== original)) return t;
-    }
-
-    // Prefer well-known keys first
-    for (const k of preferredKeys) {
-      try {
-        if (k in node) {
-          const hit = walk((node as any)[k], depth - 1);
-          if (hit) return hit;
-        }
-      } catch { }
-    }
-
-    // Then generic walk (bounded)
-    try {
-      const keys = Object.keys(node).slice(0, 50);
-      for (const k of keys) {
-        const hit = walk((node as any)[k], depth - 1);
-        if (hit) return hit;
-      }
-    } catch { }
-
-    return null;
-  };
-
-  return walk(root, 4);
-}
-
-function getOriginalLocalMediaStreamTrack(localTrack: any): MediaStreamTrack | null {
-  const candidates = [
-    localTrack?.mediaStreamTrack,
-    localTrack?._mediaStreamTrack,
-    localTrack?.track,
-    localTrack?._track,
-  ];
-
-  for (const c of candidates) {
-    if (isMediaStreamTrackLike(c)) return c;
-  }
-
-  return null;
-}
-
-function extractProcessedPreviewTrack(localTrack: any): MediaStreamTrack | null {
-  if (!localTrack) return null;
-  const original = getOriginalLocalMediaStreamTrack(localTrack);
-
-  // Try processor subtree first (most likely)
-  const processorCandidates = [
-    localTrack?.processor,
-    localTrack?._processor,
-    localTrack?.processorWrapper,
-    localTrack?._processorWrapper,
-  ];
-
-  for (const p of processorCandidates) {
-    const found = findVideoTrackDeep(p, original);
-    if (found) return found;
-  }
-
-  // Fallback: inspect the whole track object
-  const foundFallback = findVideoTrackDeep(localTrack, original);
-  if (foundFallback) return foundFallback;
-
-  return null;
+  // 3) Потом весь объект трека
+  return findVideoTrackDeep(localTrack, original);
 }
 
 // ---- MAIN ----
