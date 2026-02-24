@@ -8,7 +8,6 @@ import {
   RemoteParticipant,
   LocalVideoTrack,
   RemoteAudioTrack,
-  RemoteAudioTrackPublication,
   LocalTrackPublication,
   RemoteTrackPublication,
 } from "livekit-client";
@@ -79,6 +78,17 @@ function normalizeTemplates(
 }
 function delay(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
+}
+function getSessionHostUserId(session: SessionRow | null): string {
+  if (!session) return "";
+  return str((session as any)?.host_profile?.id || (session as any)?.host_id);
+}
+function getSessionHostLiveKitIdentity(session: SessionRow | null): string {
+  const hostId = getSessionHostUserId(session);
+  return hostId ? safeIdentity(hostId) : "";
+}
+function isRemoteAudioTrackInstance(track: unknown): track is RemoteAudioTrack {
+  return !!track && typeof track === "object" && (track as any).kind === Track.Kind.Audio;
 }
 
 // ---- PreJoin ----
@@ -441,10 +451,26 @@ function makeBgPresetDataUrl(a: string, b: string, c: string, d: string) {
 }
 
 const FX_BG_PRESETS = [
-  { id: "ocean", label: "Ocean", url: makeBgPresetDataUrl("#081226", "#123a76", "#031019", "#38bdf8") },
-  { id: "forest", label: "Forest", url: makeBgPresetDataUrl("#07160f", "#124b2c", "#040d08", "#22c55e") },
-  { id: "violet", label: "Violet", url: makeBgPresetDataUrl("#120a22", "#3b2378", "#090512", "#a78bfa") },
-  { id: "sunset", label: "Sunset", url: makeBgPresetDataUrl("#1c0d10", "#7c2d12", "#11070a", "#fb7185") },
+  {
+    id: "ocean",
+    label: "Ocean",
+    url: makeBgPresetDataUrl("#081226", "#123a76", "#031019", "#38bdf8"),
+  },
+  {
+    id: "forest",
+    label: "Forest",
+    url: makeBgPresetDataUrl("#07160f", "#124b2c", "#040d08", "#22c55e"),
+  },
+  {
+    id: "violet",
+    label: "Violet",
+    url: makeBgPresetDataUrl("#120a22", "#3b2378", "#090512", "#a78bfa"),
+  },
+  {
+    id: "sunset",
+    label: "Sunset",
+    url: makeBgPresetDataUrl("#1c0d10", "#7c2d12", "#11070a", "#fb7185"),
+  },
 ];
 
 // ---- Host action types ----
@@ -498,11 +524,17 @@ function VideoFxSettingsModal({
   const backdrop = "absolute inset-0 bg-black/60";
   const card = [
     "relative w-full max-w-[680px] rounded-3xl shadow-2xl overflow-hidden",
-    isLight ? "bg-white text-black border border-black/10" : "bg-[#020617] text-white border border-white/10",
+    isLight
+      ? "bg-white text-black border border-black/10"
+      : "bg-[#020617] text-white border border-white/10",
   ].join(" ");
 
-  const inputWrap = isLight ? "bg-black/5 border border-black/10" : "bg-white/5 border border-white/10";
-  const ghostBtn = isLight ? "bg-black/5 hover:bg-black/10 text-black/80" : "bg-white/5 hover:bg-white/10 text-white/85";
+  const inputWrap = isLight
+    ? "bg-black/5 border border-black/10"
+    : "bg-white/5 border border-white/10";
+  const ghostBtn = isLight
+    ? "bg-black/5 hover:bg-black/10 text-black/80"
+    : "bg-white/5 hover:bg-white/10 text-white/85";
   const activeBtn = isLight ? "bg-blue-600 text-white" : "bg-emerald-500 text-[#03110a]";
   const subtleText = isLight ? "text-black/60" : "text-white/60";
 
@@ -510,7 +542,10 @@ function VideoFxSettingsModal({
     <div className={overlay} data-theme={theme} style={{ colorScheme: theme }}>
       <div className={backdrop} onClick={onClose} />
       <div className={card}>
-        <div className={`px-6 py-5 border-b ${isLight ? "border-black/10" : "border-white/10"}`}>
+        <div
+          className={`px-6 py-5 border-b ${isLight ? "border-black/10" : "border-white/10"
+            }`}
+        >
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="font-semibold text-[16px]">Video FX Settings</div>
@@ -530,21 +565,24 @@ function VideoFxSettingsModal({
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => onApplyMode("off")}
-                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "off" ? activeBtn : ghostBtn}`}
+                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "off" ? activeBtn : ghostBtn
+                  }`}
                 disabled={fxApplying}
               >
                 FX off
               </button>
               <button
                 onClick={() => onApplyMode("blur")}
-                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "blur" ? activeBtn : ghostBtn}`}
+                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "blur" ? activeBtn : ghostBtn
+                  }`}
                 disabled={fxApplying}
               >
                 Blur
               </button>
               <button
                 onClick={() => onApplyMode("bg")}
-                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "bg" ? activeBtn : ghostBtn}`}
+                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "bg" ? activeBtn : ghostBtn
+                  }`}
                 disabled={fxApplying}
               >
                 Background image
@@ -554,7 +592,9 @@ function VideoFxSettingsModal({
             <div className={`mt-3 text-[12px] ${subtleText}`}>
               {fxApplying ? "Applying effect…" : fxStatusText || "Ready"}
             </div>
-            {fxError ? <div className="mt-2 text-[12px] text-red-500 break-words">{fxError}</div> : null}
+            {fxError ? (
+              <div className="mt-2 text-[12px] text-red-500 break-words">{fxError}</div>
+            ) : null}
           </div>
 
           <div className={`rounded-2xl p-4 ${inputWrap}`}>
@@ -595,7 +635,9 @@ function VideoFxSettingsModal({
                 >
                   Reset
                 </button>
-                <label className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn} cursor-pointer flex items-center`}>
+                <label
+                  className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn} cursor-pointer flex items-center`}
+                >
                   Upload
                   <input
                     type="file"
@@ -645,7 +687,10 @@ function VideoFxSettingsModal({
           </div>
         </div>
 
-        <div className={`px-6 py-4 border-t flex items-center justify-end gap-3 ${isLight ? "border-black/10" : "border-white/10"}`}>
+        <div
+          className={`px-6 py-4 border-t flex items-center justify-end gap-3 ${isLight ? "border-black/10" : "border-white/10"
+            }`}
+        >
           <button onClick={onClose} className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${ghostBtn}`}>
             Close
           </button>
@@ -845,9 +890,7 @@ function RemoteAudioRenderer({
   room: Room | null;
   audioOutputId: string;
 }) {
-  const [tracks, setTracks] = useState<
-    { id: string; track: RemoteAudioTrack; label: string }[]
-  >([]);
+  const [tracks, setTracks] = useState<{ id: string; track: RemoteAudioTrack; label: string }[]>([]);
 
   const rebuild = () => {
     if (!room) {
@@ -858,10 +901,10 @@ function RemoteAudioRenderer({
     const next: { id: string; track: RemoteAudioTrack; label: string }[] = [];
 
     room.remoteParticipants.forEach((p: RemoteParticipant) => {
-      p.audioTrackPublications.forEach((pub: RemoteAudioTrackPublication) => {
-        if (pub.source !== Track.Source.Microphone) return;
+      p.audioTrackPublications.forEach((pub: RemoteTrackPublication) => {
+        if ((pub as any).source !== Track.Source.Microphone) return;
         const t = pub.track;
-        if (!t) return;
+        if (!isRemoteAudioTrackInstance(t)) return;
         const label = (p.name || p.identity || "Guest").trim() || "Guest";
         next.push({ id: `${p.sid}:${pub.trackSid}`, track: t, label });
       });
@@ -895,12 +938,7 @@ function RemoteAudioRenderer({
   return (
     <>
       {tracks.map((t) => (
-        <AudioEl
-          key={t.id}
-          track={t.track}
-          audioOutputId={audioOutputId}
-          debugLabel={t.label}
-        />
+        <AudioEl key={t.id} track={t.track} audioOutputId={audioOutputId} debugLabel={t.label} />
       ))}
     </>
   );
@@ -930,11 +968,7 @@ function AudioEl({
     (async () => {
       try {
         const anyEl = el as any;
-        if (
-          audioOutputId &&
-          audioOutputId !== "default" &&
-          typeof anyEl.setSinkId === "function"
-        ) {
+        if (audioOutputId && audioOutputId !== "default" && typeof anyEl.setSinkId === "function") {
           await anyEl.setSinkId(audioOutputId);
         }
       } catch {
@@ -951,6 +985,12 @@ function AudioEl({
     return () => {
       try {
         track.detach(el);
+      } catch { }
+      try {
+        el.pause();
+      } catch { }
+      try {
+        (el as any).srcObject = null;
       } catch { }
     };
   }, [track, audioOutputId, debugLabel]);
@@ -1294,6 +1334,8 @@ type TileModel = {
   camTrackSid?: string;
   micMuted?: boolean;
   camMuted?: boolean;
+
+  isHostTile?: boolean;
 };
 
 export function RoomPageLiveKit() {
@@ -1368,9 +1410,11 @@ export function RoomPageLiveKit() {
   // host flag
   const isHost = useMemo(() => {
     if (!authUserId) return false;
-    const hostId = (session as any)?.host_profile?.id || (session as any)?.host_id;
+    const hostId = getSessionHostUserId(session);
     return !!hostId && String(hostId) === String(authUserId);
   }, [authUserId, session]);
+
+  const hostIdentityFromSession = useMemo(() => getSessionHostLiveKitIdentity(session), [session]);
 
   // right panel
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
@@ -1433,11 +1477,7 @@ export function RoomPageLiveKit() {
           (u?.email ? u.email.split("@")[0] : "");
 
         if (!name && u?.id) {
-          const { data: p } = await supabase
-            .from("profiles")
-            .select("full_name")
-            .eq("id", u.id)
-            .single();
+          const { data: p } = await supabase.from("profiles").select("full_name").eq("id", u.id).single();
           name = str((p as any)?.full_name);
         }
 
@@ -1612,43 +1652,70 @@ export function RoomPageLiveKit() {
     if (!room) return;
 
     const next: TileModel[] = [];
+    const hostIdentity = hostIdentityFromSession;
 
     // local
     const lp = room.localParticipant;
     const localCamPub = Array.from(lp.videoTrackPublications.values()).find(
       (p) => p.source === Track.Source.Camera
     );
+    const localMicPub = Array.from(lp.audioTrackPublications.values()).find(
+      (p) => p.source === Track.Source.Microphone
+    );
     const localTrack = (localCamPub?.track as any) || undefined;
+
+    const localIdentity = str((lp as any)?.identity);
+    const localIsHostTile = !!hostIdentity && localIdentity === hostIdentity;
 
     next.push({
       id: "local",
       label: (displayName || userName || "You").trim() || "You",
       isLocal: true,
       videoTrack: localTrack,
+      participantIdentity: localIdentity || undefined,
+      micTrackSid: (localMicPub as any)?.trackSid,
+      camTrackSid: (localCamPub as any)?.trackSid,
+      micMuted: !micOn,
+      camMuted: !camOn,
+      isHostTile: localIsHostTile || isHost,
     });
 
     // remote
     room.remoteParticipants.forEach((rp: RemoteParticipant) => {
       const allVideoPubs = Array.from(rp.videoTrackPublications.values()) as RemoteTrackPublication[];
-      const allAudioPubs = Array.from(rp.audioTrackPublications.values()) as RemoteAudioTrackPublication[];
+      const allAudioPubs = Array.from(rp.audioTrackPublications.values()) as RemoteTrackPublication[];
 
       const camPub = allVideoPubs.find((p: any) => p.source === Track.Source.Camera);
       const micPub = allAudioPubs.find((p: any) => p.source === Track.Source.Microphone);
 
       const vt = (camPub?.track as any) || undefined;
       const nm = (rp.name || rp.identity || "Guest").trim() || "Guest";
+      const rpIdentity = str(rp.identity);
 
       next.push({
         id: rp.sid,
         label: nm,
         isLocal: false,
         videoTrack: vt,
-        participantIdentity: rp.identity,
+        participantIdentity: rpIdentity,
         micTrackSid: micPub?.trackSid,
         camTrackSid: camPub?.trackSid,
         micMuted: !!(micPub as any)?.isMuted,
         camMuted: !!(camPub as any)?.isMuted,
+        isHostTile: !!hostIdentity && rpIdentity === hostIdentity,
       });
+    });
+
+    // Host first for everyone, then local, then others
+    next.sort((a, b) => {
+      const rank = (t: TileModel) => (t.isHostTile ? 0 : t.isLocal ? 1 : 2);
+      const ra = rank(a);
+      const rb = rank(b);
+      if (ra !== rb) return ra - rb;
+
+      if (a.isLocal !== b.isLocal) return a.isLocal ? -1 : 1;
+
+      return a.label.localeCompare(b.label, undefined, { sensitivity: "base" });
     });
 
     setTiles(next);
@@ -1781,6 +1848,7 @@ export function RoomPageLiveKit() {
       const next = !micOn;
       await r.localParticipant.setMicrophoneEnabled(next);
       setMicOn(next);
+      window.setTimeout(() => rebuildTiles(), 60);
     } catch (e) {
       console.error("toggleMic error:", e);
     }
@@ -2055,11 +2123,7 @@ export function RoomPageLiveKit() {
   }, [connected, camOn]);
 
   if (loading) {
-    return (
-      <div className={`flex h-screen items-center justify-center ${pageBg}`}>
-        Loading session...
-      </div>
-    );
+    return <div className={`flex h-screen items-center justify-center ${pageBg}`}>Loading session...</div>;
   }
 
   if (!session) {
@@ -2071,6 +2135,7 @@ export function RoomPageLiveKit() {
   }
 
   const ChatPanelAny = ChatPanel as any;
+  const participantsCount = tiles.length;
 
   return (
     <>
@@ -2137,9 +2202,8 @@ export function RoomPageLiveKit() {
                 </div>
 
                 <div className={isLight ? "text-black/50 text-xs" : "text-white/50 text-xs"}>
-                  LiveKit room: session-{session.id} (limit {maxParticipants}) •{" "}
-                  {connected ? "connected" : "not connected"}
-                  {isHost ? " • HOST" : ""}
+                  LiveKit room: session-{session.id} (limit {maxParticipants}) • {connected ? "connected" : "not connected"}
+                  {isHost ? " • HOST" : ""} • participants: {participantsCount}
                 </div>
 
                 <div className={isLight ? "text-black/40 text-[11px]" : "text-white/40 text-[11px]"}>
@@ -2180,6 +2244,13 @@ export function RoomPageLiveKit() {
                 </button>
 
                 <button
+                  onClick={() => openRightTab("participants")}
+                  className={isLight ? "px-3 py-2 rounded-xl bg-black/5" : "px-3 py-2 rounded-xl bg-white/5"}
+                >
+                  People
+                </button>
+
+                <button
                   onClick={() => openRightTab("chat")}
                   className={isLight ? "px-3 py-2 rounded-xl bg-black/5" : "px-3 py-2 rounded-xl bg-white/5"}
                 >
@@ -2198,9 +2269,7 @@ export function RoomPageLiveKit() {
             <div className="mt-3">
               <SessionStageBar
                 stages={[]}
-                startTime={String(
-                  session.start_time || session.created_at || new Date().toISOString()
-                )}
+                startTime={String(session.start_time || session.created_at || new Date().toISOString())}
                 onHoverStage={() => { }}
               />
             </div>
@@ -2214,9 +2283,7 @@ export function RoomPageLiveKit() {
           >
             {/* VIDEO */}
             <div
-              className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight
-                  ? "bg-white/70 border border-black/10"
-                  : "bg-[#0B1220]/45 border border-white/5"
+              className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
                 }`}
             >
               {!joinRequested ? (
@@ -2274,10 +2341,7 @@ export function RoomPageLiveKit() {
                 </LiveKitErrorBoundary>
               ) : (
                 <>
-                  <RemoteAudioRenderer
-                    room={roomState}
-                    audioOutputId={prejoin.audioOutputId || "default"}
-                  />
+                  <RemoteAudioRenderer room={roomState} audioOutputId={prejoin.audioOutputId || "default"} />
 
                   <div className="h-full w-full p-2 flex flex-col min-h-0">
                     <div className="flex-1 min-h-0">
@@ -2289,7 +2353,7 @@ export function RoomPageLiveKit() {
                             videoTrack={t.videoTrack}
                             isLocal={t.isLocal}
                             theme={theme}
-                            showBadge={t.isLocal && isHost ? "HOST" : null}
+                            showBadge={t.isHostTile ? "HOST" : null}
                             localProcessedPreviewTrack={t.isLocal ? localProcessedPreviewTrack : null}
                             hostActions={
                               !t.isLocal && isHost && t.participantIdentity
@@ -2392,17 +2456,30 @@ export function RoomPageLiveKit() {
                         </button>
                       </div>
 
-                      <button
-                        onClick={() => openRightTab("chat")}
-                        className={
-                          isLight
-                            ? "px-3 py-2 rounded-xl bg-black/5 hover:bg-black/10"
-                            : "px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10"
-                        }
-                        title="Toggle chat panel"
-                      >
-                        💬
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => openRightTab("participants")}
+                          className={
+                            isLight
+                              ? "px-3 py-2 rounded-xl bg-black/5 hover:bg-black/10"
+                              : "px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10"
+                          }
+                          title="Toggle participants panel"
+                        >
+                          👥
+                        </button>
+                        <button
+                          onClick={() => openRightTab("chat")}
+                          className={
+                            isLight
+                              ? "px-3 py-2 rounded-xl bg-black/5 hover:bg-black/10"
+                              : "px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10"
+                          }
+                          title="Toggle chat panel"
+                        >
+                          💬
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </>
@@ -2425,7 +2502,9 @@ export function RoomPageLiveKit() {
                         ? "Chat"
                         : rightTab === "intentions"
                           ? "Intentions"
-                          : "Panel"}
+                          : rightTab === "participants"
+                            ? "Participants"
+                            : "Panel"}
                     </div>
                     <button
                       onClick={() => openRightTab(null)}
@@ -2436,6 +2515,48 @@ export function RoomPageLiveKit() {
                   </div>
 
                   <div className="flex-1 min-h-0 overflow-hidden p-3">
+                    {rightTab === "participants" && (
+                      <div className="h-full min-h-0 overflow-y-auto rounded-xl">
+                        <div className="flex flex-col gap-2">
+                          {tiles.map((p) => {
+                            const micMuted = p.isLocal ? !micOn : !!p.micMuted;
+                            const camMuted = p.isLocal ? !camOn : !!p.camMuted;
+
+                            return (
+                              <div
+                                key={`participant-${p.id}`}
+                                className={
+                                  "rounded-xl px-3 py-2 border flex items-center justify-between gap-3 " +
+                                  (isLight ? "border-black/10 bg-white" : "border-white/10 bg-white/5")
+                                }
+                              >
+                                <div className="min-w-0">
+                                  <div className="text-sm font-medium truncate">
+                                    {p.label}
+                                    {p.isLocal ? " (you)" : ""}
+                                  </div>
+                                  <div className={isLight ? "text-[11px] text-black/50" : "text-[11px] text-white/50"}>
+                                    {p.isHostTile ? "HOST" : "participant"}
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-2 text-sm">
+                                  <span title={micMuted ? "Mic off" : "Mic on"}>{micMuted ? "🔇" : "🎤"}</span>
+                                  <span title={camMuted ? "Cam off" : "Cam on"}>{camMuted ? "🚫" : "📷"}</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                          {tiles.length === 0 && (
+                            <div className={isLight ? "text-sm text-black/60" : "text-sm text-white/60"}>
+                              No participants yet.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     {rightTab === "chat" && (
                       <div className="h-full min-h-0 overflow-hidden rounded-xl">
                         <div
@@ -2463,11 +2584,7 @@ export function RoomPageLiveKit() {
                           style={{ colorScheme: theme }}
                           className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
                         >
-                          <IntentionsPanel
-                            theme={theme}
-                            sessionId={session.id}
-                            timerText={"--:--"}
-                          />
+                          <IntentionsPanel theme={theme} sessionId={session.id} timerText={"--:--"} />
                         </div>
                       </div>
                     )}
@@ -2480,10 +2597,7 @@ export function RoomPageLiveKit() {
 
         {/* leave floating */}
         <div className="fixed bottom-3 right-3 z-50">
-          <button
-            onClick={leave}
-            className="px-4 py-3 rounded-2xl bg-red-600 text-white font-semibold"
-          >
+          <button onClick={leave} className="px-4 py-3 rounded-2xl bg-red-600 text-white font-semibold">
             Leave
           </button>
         </div>
