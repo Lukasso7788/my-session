@@ -82,6 +82,30 @@ function delay(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// keep parity with RoomPage mobile/desktop single-panel rendering
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mql = window.matchMedia(query);
+    const onChange = () => setMatches(!!mql.matches);
+    onChange();
+
+    try {
+      mql.addEventListener("change", onChange);
+      return () => mql.removeEventListener("change", onChange);
+    } catch {
+      // @ts-ignore
+      mql.addListener(onChange);
+      // @ts-ignore
+      return () => mql.removeListener(onChange);
+    }
+  }, [query]);
+
+  return matches;
+}
+
 // ---- PreJoin ----
 type MediaDevicesResult = {
   videoInputs: MediaDeviceInfo[];
@@ -718,7 +742,6 @@ function VideoTile({
 
     let cleanupAttached = false;
 
-    // clear previous
     try {
       if (videoTrack && typeof (videoTrack as any)?.detach === "function") {
         (videoTrack as any).detach(el);
@@ -992,8 +1015,7 @@ async function ensureBackgroundProcessorsSupported(mod: any) {
   if (typeof mod?.supportsModernBackgroundProcessors === "function") {
     const ok = !!mod.supportsModernBackgroundProcessors();
     if (!ok) {
-      // still may work on legacy, so don't hard-fail here; check supportsBackgroundProcessors too
-      // (some envs have modern=false but legacy=true)
+      // fallback checked below
     }
   }
   if (typeof mod?.supportsBackgroundProcessors === "function") {
@@ -1006,12 +1028,10 @@ async function makeBlurPipeline(blurRadius: number) {
   const mod = await resolveTrackProcessorsModule();
   await ensureBackgroundProcessorsSupported(mod);
 
-  // v0.7.0 documented signature: BackgroundBlur(blurRadius)
   if (typeof mod?.BackgroundBlur === "function") {
     return mod.BackgroundBlur(blurRadius);
   }
 
-  // fallback: some builds may have default export object
   if (typeof mod?.default?.BackgroundBlur === "function") {
     return mod.default.BackgroundBlur(blurRadius);
   }
@@ -1023,7 +1043,6 @@ async function makeVirtualBgPipeline(imagePath: string) {
   const mod = await resolveTrackProcessorsModule();
   await ensureBackgroundProcessorsSupported(mod);
 
-  // v0.7.0 documented signature: VirtualBackground(imagePath)
   if (typeof mod?.VirtualBackground === "function") {
     return mod.VirtualBackground(imagePath);
   }
@@ -1078,10 +1097,24 @@ export function RoomPageLiveKit() {
   }, [theme]);
 
   const isLight = theme === "light";
+  const isLgUp = useMediaQuery("(min-width: 1024px)");
+
   const pageBg = isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white";
+  const topBarBg = isLight
+    ? "bg-white/85 border border-black/10"
+    : "bg-[#111827]/40 border border-white/5";
+  const chipBg = isLight
+    ? "bg-black/5 border border-black/10"
+    : "bg-[#0B1220]/70 border border-white/5";
   const panelBg = isLight
     ? "bg-white/85 border border-black/10"
     : "bg-[#0B1220]/55 border border-white/5";
+  const bottomBarBg = isLight
+    ? "bg-white/85 border border-black/10"
+    : "bg-[#07101E]/85 border border-white/10";
+  const ctlBtnBase = isLight
+    ? "bg-black/5 hover:bg-black/10"
+    : "bg-[#111827] hover:bg-[#1f2937]";
 
   const [session, setSession] = useState<SessionRow | null>(null);
   const [templatesCount, setTemplatesCount] = useState(0);
@@ -1140,6 +1173,22 @@ export function RoomPageLiveKit() {
       return tab;
     });
   };
+
+  // force relayout when panel changes
+  useEffect(() => {
+    const fire = () => {
+      try {
+        window.dispatchEvent(new Event("resize"));
+      } catch { }
+    };
+    requestAnimationFrame(fire);
+    const t1 = window.setTimeout(fire, 60);
+    const t2 = window.setTimeout(fire, 220);
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+    };
+  }, [rightPanelOpen, rightTab]);
 
   const maxParticipants = useMemo(() => {
     const raw = num((session as any)?.max_participants);
@@ -1330,8 +1379,6 @@ export function RoomPageLiveKit() {
   const [blurStrength, setBlurStrength] = useState<number>(12);
 
   const uploadedBgUrlRef = useRef<string | null>(null);
-
-  // keep last pipeline so we can update it (blurStrength) without republish if we want
   const currentFxPipelineRef = useRef<any>(null);
 
   const roomNameForApi = useMemo(() => {
@@ -1355,6 +1402,8 @@ export function RoomPageLiveKit() {
       label: (displayName || userName || "You").trim() || "You",
       isLocal: true,
       videoTrack: localTrack,
+      micMuted: !micOn,
+      camMuted: !camOn,
     });
 
     // remote
@@ -1508,6 +1557,7 @@ export function RoomPageLiveKit() {
       const next = !micOn;
       await r.localParticipant.setMicrophoneEnabled(next);
       setMicOn(next);
+      setTimeout(() => rebuildTiles(), 30);
     } catch (e) {
       console.error("toggleMic error:", e);
     }
@@ -1609,7 +1659,7 @@ export function RoomPageLiveKit() {
     }
   };
 
-  // ---- FX APPLY: REPUBLISH CAMERA TRACK (fixes your "processingEnabled:false" dead pipeline) ----
+  // ---- FX APPLY ----
   const getLocalCameraPublication = () => {
     const r = roomRef.current;
     if (!r) return null;
@@ -1649,7 +1699,6 @@ export function RoomPageLiveKit() {
     const oldPub = getLocalCameraPublication();
     const oldTrack = oldPub?.track as any;
 
-    // unpublish old camera track first (prevents weird mixing)
     if (oldTrack) {
       try {
         await lp.unpublishTrack(oldTrack, true);
@@ -1662,7 +1711,6 @@ export function RoomPageLiveKit() {
       } catch { }
     }
 
-    // publish new one
     await lp.publishTrack(newTrack, { source: Track.Source.Camera } as any);
   };
 
@@ -1679,7 +1727,6 @@ export function RoomPageLiveKit() {
         throw new Error("Turn camera on first (Cam on), then apply FX.");
       }
 
-      // OFF: just stop processor on current published camera track
       if (mode === "off") {
         const tr = getLocalCameraTrack();
         await stopAnyProcessorOnTrack(tr);
@@ -1693,10 +1740,8 @@ export function RoomPageLiveKit() {
       const pj = prejoinRef.current;
       const deviceId = pj.videoInputId || undefined;
 
-      // Create NEW local track -> set processor -> republish (this matches track-processors docs & avoids "processingEnabled:false")
       const newTrack = await createLocalVideoTrack({
         deviceId,
-        // you can tweak these later; keep safe defaults now
         resolution: { width: 1280, height: 720 },
       } as any);
 
@@ -1714,11 +1759,9 @@ export function RoomPageLiveKit() {
 
       currentFxPipelineRef.current = pipeline;
 
-      // showProcessedStreamLocally helps the local <video> show processed output in many builds
       try {
         await (newTrack as any).setProcessor(pipeline, { showProcessedStreamLocally: true });
       } catch {
-        // fallback signature
         await (newTrack as any).setProcessor(pipeline, true);
       }
 
@@ -1729,7 +1772,6 @@ export function RoomPageLiveKit() {
         mode === "blur" ? `Blur applied (strength ${blurStrength})` : "Virtual background applied"
       );
 
-      // after republish, tiles update
       await delay(120);
       rebuildTiles();
     } catch (e: any) {
@@ -1740,7 +1782,6 @@ export function RoomPageLiveKit() {
     }
   };
 
-  // Live update (best-effort) without republish: updateTransformerOptions if available, otherwise re-apply
   useEffect(() => {
     if (!connected || !camOn) return;
     if (videoFxMode !== "blur") return;
@@ -1787,6 +1828,24 @@ export function RoomPageLiveKit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bgImageUrl]);
 
+  const participantsCount = tiles.length;
+  const [participantsSearch, setParticipantsSearch] = useState("");
+
+  const filteredParticipants = useMemo(() => {
+    const q = participantsSearch.trim().toLowerCase();
+    if (!q) return tiles;
+    return tiles.filter((t) => (t.label || "").toLowerCase().includes(q));
+  }, [tiles, participantsSearch]);
+
+  const switchTrack =
+    "w-[84px] max-[480px]:w-[78px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
+  const switchTrackCls = isLight
+    ? "bg-black/5 border-black/10 hover:bg-black/10"
+    : "bg-white/5 border-white/10 hover:bg-white/10";
+  const switchThumb =
+    "absolute top-[2px] w-[26px] h-[26px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center";
+  const thumbTranslate = isLight ? "translateX(0px)" : "translateX(52px)";
+
   if (loading) {
     return <div className={`flex h-screen items-center justify-center ${pageBg}`}>Loading session...</div>;
   }
@@ -1800,6 +1859,405 @@ export function RoomPageLiveKit() {
   }
 
   const ChatPanelAny = ChatPanel as any;
+
+  const RightPanelBody = (
+    <div
+      className={`rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col ${panelBg}`}
+      data-theme={theme}
+    >
+      {rightTab === "participants" && (
+        <div className="h-full min-h-0 flex flex-col">
+          <div
+            className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
+              }`}
+          >
+            <div className="flex items-center gap-2">
+              <span className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>
+                Participants
+              </span>
+              <span className={`${isLight ? "text-black/50" : "text-white/55"} text-sm`}>
+                ({participantsCount})
+              </span>
+            </div>
+            <button
+              onClick={() => openRightTab(null)}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
+                ? "bg-black/5 hover:bg-black/10 text-black/60"
+                : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                }`}
+              title="Close"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="p-4">
+            <div
+              className={`rounded-xl px-3 py-2 ${isLight
+                ? "bg-black/5 border border-black/10"
+                : "bg-[#0B1220]/70 border border-white/10"
+                }`}
+            >
+              <input
+                value={participantsSearch}
+                onChange={(e) => setParticipantsSearch(e.target.value)}
+                placeholder="Search participants..."
+                className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${isLight
+                  ? "text-black/80 placeholder:text-black/40"
+                  : "text-white/85 placeholder:text-white/35"
+                  }`}
+              />
+            </div>
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-3">
+            <div className="flex flex-col gap-2">
+              {filteredParticipants.map((p) => {
+                const name = p.isLocal ? "You" : p.label || "Guest";
+                const initials =
+                  name
+                    .split(" ")
+                    .filter(Boolean)
+                    .slice(0, 2)
+                    .map((x) => x[0]?.toUpperCase())
+                    .join("") || "U";
+
+                return (
+                  <div
+                    key={p.id}
+                    className={`flex items-center justify-between px-3 py-2 rounded-xl transition ${isLight ? "hover:bg-black/5" : "hover:bg-white/5"
+                      }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${p.isLocal
+                          ? isLight
+                            ? "bg-blue-500/15 text-blue-700"
+                            : "bg-emerald-500/80 text-[#02140B]"
+                          : isLight
+                            ? "bg-black/5 text-black/75"
+                            : "bg-white/10 text-white/85"
+                          }`}
+                      >
+                        {initials}
+                      </div>
+                      <div className="min-w-0">
+                        <div className={`text-[13px] font-medium truncate ${isLight ? "text-black/85" : "text-white/90"}`}>
+                          {name}
+                        </div>
+                        <div className={`text-[11px] truncate ${isLight ? "text-black/45" : "text-white/45"}`}>
+                          {p.isLocal ? "You" : "Participant"}
+                          {p.isLocal && isHost ? " • Host" : ""}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={
+                          "w-8 h-8 rounded-lg flex items-center justify-center text-[12px] " +
+                          (p.micMuted
+                            ? isLight
+                              ? "bg-red-500/10"
+                              : "bg-red-500/20"
+                            : isLight
+                              ? "bg-black/5"
+                              : "bg-white/5")
+                        }
+                        title={p.micMuted ? "Muted" : "Unmuted"}
+                      >
+                        {p.micMuted ? "🔇" : "🎤"}
+                      </div>
+
+                      <div
+                        className={
+                          "w-8 h-8 rounded-lg flex items-center justify-center text-[12px] " +
+                          (p.camMuted || !p.videoTrack
+                            ? isLight
+                              ? "bg-red-500/10"
+                              : "bg-red-500/20"
+                            : isLight
+                              ? "bg-black/5"
+                              : "bg-white/5")
+                        }
+                        title={p.camMuted || !p.videoTrack ? "Video off" : "Video on"}
+                      >
+                        {p.camMuted || !p.videoTrack ? "🚫" : "📷"}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {!filteredParticipants.length && (
+                <div className={`px-3 py-6 text-center text-sm ${isLight ? "text-black/50" : "text-white/50"}`}>
+                  No participants found
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className={`p-3 border-t ${isLight ? "border-black/10" : "border-white/5"}`}>
+            <button
+              onClick={() => navigator.clipboard?.writeText(window.location.href).catch(() => { })}
+              className={`w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 ${isLight
+                ? "bg-blue-600 hover:bg-blue-700 text-white"
+                : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
+                }`}
+              title="Copy session link"
+            >
+              <span>🔗</span>
+              <span>Copy Invite Link</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {rightTab === "chat" && (
+        <div className="h-full min-h-0 flex flex-col">
+          <div
+            className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
+              }`}
+          >
+            <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>
+              Chat
+            </div>
+            <button
+              onClick={() => openRightTab(null)}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
+                ? "bg-black/5 hover:bg-black/10 text-black/60"
+                : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                }`}
+              title="Close"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="flex-1 min-h-0 p-3 overflow-hidden">
+            <div
+              className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight
+                ? "bg-white/70 border border-black/10"
+                : "bg-[#020617]/40 border border-white/10"
+                }`}
+            >
+              <div className="h-full min-h-0 flex flex-col overflow-hidden [&>*]:h-full [&>*]:min-h-0">
+                <div
+                  data-theme={theme}
+                  style={{ colorScheme: theme }}
+                  className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
+                >
+                  <ChatPanelAny
+                    sessionId={session.id}
+                    theme={theme}
+                    showHeader={false}
+                    embedded={true}
+                    hideHeader={true}
+                    authUserId={authUserId}
+                    displayName={displayName || userName}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {rightTab === "intentions" && (
+        <div className="h-full min-h-0 flex flex-col">
+          <div
+            className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
+              }`}
+          >
+            <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>
+              Intentions
+            </div>
+            <button
+              onClick={() => openRightTab(null)}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
+                ? "bg-black/5 hover:bg-black/10 text-black/60"
+                : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                }`}
+              title="Close"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-hidden p-3">
+            <div
+              className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight
+                ? "bg-white/70 border border-black/10"
+                : "bg-[#020617]/40 border border-white/10"
+                }`}
+            >
+              <div className="h-full min-h-0 overflow-y-auto [&>*]:min-h-0">
+                <div
+                  data-theme={theme}
+                  style={{ colorScheme: theme }}
+                  className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
+                >
+                  <IntentionsPanel theme={theme} sessionId={session.id} timerText={"--:--"} />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  const TopBar = (
+    <div className={`flex w-full rounded-2xl overflow-hidden ${topBarBg}`}>
+      <div className="flex-1 px-4 sm:px-6 py-3 sm:py-4">
+        <div className="flex flex-col gap-2 max-[480px]:gap-2">
+          {/* row 1 */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <p
+                  className={`min-w-0 font-inter font-semibold text-[16px] sm:text-[18px] truncate ${isLight ? "text-black/85" : "text-[#F3F4F6]/90"
+                    }`}
+                >
+                  {String(session?.title || "Session")}
+                </p>
+
+                <span
+                  className={[
+                    "shrink-0 px-2 py-[3px] rounded-lg border text-[12px] font-inter",
+                    chipBg,
+                    isLight ? "text-black/65" : "text-white/80",
+                  ].join(" ")}
+                  title="Participants now / limit"
+                >
+                  {participantsCount}/{maxParticipants}
+                </span>
+
+                <span
+                  className={[
+                    "hidden sm:inline-flex shrink-0 px-2 py-[3px] rounded-lg border text-[12px] font-inter",
+                    chipBg,
+                    isLight ? "text-black/60" : "text-white/70",
+                  ].join(" ")}
+                  title="Connection state"
+                >
+                  {connected ? "Connected" : "Not connected"}
+                </span>
+
+                {isHost && (
+                  <span
+                    className={[
+                      "hidden sm:inline-flex shrink-0 px-2 py-[3px] rounded-lg border text-[12px] font-semibold",
+                      isLight
+                        ? "bg-amber-100 border-amber-200 text-amber-800"
+                        : "bg-amber-400/10 border-amber-300/20 text-amber-200",
+                    ].join(" ")}
+                  >
+                    HOST
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* desktop+ controls */}
+            <div className="hidden min-[481px]:flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => setFxSettingsOpen(true)}
+                className={`px-3 py-1.5 rounded-xl border text-[13px] ${chipBg} ${isLight ? "text-black/75" : "text-white/85"
+                  }`}
+                title="Video FX settings"
+              >
+                🎛️ Video
+              </button>
+
+              <button
+                onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+                className={`${switchTrack} ${switchTrackCls}`}
+                title="Toggle theme"
+                aria-label="Toggle theme"
+              >
+                <div className={switchThumb} style={{ transform: thumbTranslate }}>
+                  <span className="text-[12px]">{isLight ? "☀️" : "🌙"}</span>
+                </div>
+              </button>
+
+              {session.host_profile && (
+                <div
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-[13px] ${isLight
+                    ? "border-black/10 bg-black/5 text-black/75"
+                    : "border-white/10 bg-[#0B1220]/60 text-[#F3F4F6]/85"
+                    }`}
+                  title={`Host: ${String(session.host_profile.full_name || "Host")}`}
+                >
+                  <span>👤</span>
+                  <span className="font-inter">
+                    <span className="font-light">Host:</span>{" "}
+                    <span className="font-bold">{String(session.host_profile.full_name || "Host")}</span>
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* row 2 mobile */}
+          <div className="min-[481px]:hidden flex items-center justify-start gap-2">
+            <button
+              onClick={() => setFxSettingsOpen(true)}
+              className={`px-3 py-1.5 rounded-xl border text-[13px] ${chipBg} ${isLight ? "text-black/75" : "text-white/85"
+                }`}
+              title="Video FX settings"
+            >
+              🎛️
+            </button>
+
+            <button
+              onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+              className={`${switchTrack} ${switchTrackCls}`}
+              title="Toggle theme"
+              aria-label="Toggle theme"
+            >
+              <div className={switchThumb} style={{ transform: thumbTranslate }}>
+                <span className="text-[12px]">{isLight ? "☀️" : "🌙"}</span>
+              </div>
+            </button>
+
+            {session.host_profile && (
+              <div
+                className={`px-3 py-1.5 rounded-xl border text-[12px] ${isLight
+                  ? "border-black/10 bg-black/5 text-black/70"
+                  : "border-white/10 bg-[#0B1220]/60 text-white/85"
+                  }`}
+                title={`Host: ${String(session.host_profile.full_name || "Host")}`}
+              >
+                👤 {String(session.host_profile.full_name || "Host")}
+              </div>
+            )}
+          </div>
+
+          {/* row 3 stage bar */}
+          <div className="mt-1 w-full overflow-hidden">
+            <SessionStageBar
+              stages={[]}
+              startTime={String(session.start_time || session.created_at || new Date().toISOString())}
+              onHoverStage={() => { }}
+            />
+          </div>
+
+          {/* subtle meta */}
+          <div className={`${isLight ? "text-black/40" : "text-white/40"} text-[11px] truncate`}>
+            room: session-{session.id} • templates: {templatesCount}
+            {!!videoFxMode && videoFxMode !== "off"
+              ? ` • FX: ${videoFxMode}${videoFxMode === "blur" ? `(${blurStrength})` : ""}${fxApplying ? " applying..." : ""
+              }`
+              : ""}
+          </div>
+          {fxError ? (
+            <div className="text-[11px] text-red-500 break-words">Video FX error: {fxError}</div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <>
@@ -1848,84 +2306,13 @@ export function RoomPageLiveKit() {
       />
 
       <div className={`h-[100dvh] overflow-hidden ${pageBg}`}>
-        <div className="h-full w-full px-2 sm:px-4 pt-3 pb-[calc(84px+env(safe-area-inset-bottom))] flex flex-col gap-3 min-h-0">
-          {/* top bar */}
-          <div className={`rounded-2xl px-4 py-3 ${panelBg}`}>
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="font-inter font-semibold text-[16px] sm:text-[18px] truncate">
-                  {session.title || "Session"}
-                </div>
-
-                <div className={isLight ? "text-black/50 text-xs" : "text-white/50 text-xs"}>
-                  LiveKit room: session-{session.id} (limit {maxParticipants}) •{" "}
-                  {connected ? "connected" : "not connected"}
-                  {isHost ? " • HOST" : ""}
-                </div>
-
-                <div className={isLight ? "text-black/40 text-[11px]" : "text-white/40 text-[11px]"}>
-                  LK_URL: {lkServerUrl || "(missing)"} • token: {tokenEndpoint} • admin: {adminEndpoint} • templates:{" "}
-                  {templatesCount}
-                </div>
-
-                {!!videoFxMode && videoFxMode !== "off" ? (
-                  <div className={isLight ? "text-black/40 text-[11px]" : "text-white/40 text-[11px]"}>
-                    FX mode: {videoFxMode} {videoFxMode === "blur" ? `(strength ${blurStrength})` : ""}
-                    {fxApplying ? " • applying..." : ""}
-                  </div>
-                ) : null}
-
-                {fxError ? (
-                  <div className="mt-1 text-[11px] text-red-500 break-words">Video FX error: {fxError}</div>
-                ) : null}
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-                  className={isLight ? "px-3 py-2 rounded-xl bg-black/5" : "px-3 py-2 rounded-xl bg-white/5"}
-                  title="Toggle theme"
-                >
-                  {theme === "dark" ? "🌙" : "☀️"}
-                </button>
-
-                <button
-                  onClick={() => setFxSettingsOpen(true)}
-                  className={isLight ? "px-3 py-2 rounded-xl bg-black/5" : "px-3 py-2 rounded-xl bg-white/5"}
-                  title="Video FX settings"
-                >
-                  🎛️ Video
-                </button>
-
-                <button
-                  onClick={() => openRightTab("chat")}
-                  className={isLight ? "px-3 py-2 rounded-xl bg-black/5" : "px-3 py-2 rounded-xl bg-white/5"}
-                >
-                  Chat
-                </button>
-
-                <button
-                  onClick={() => openRightTab("intentions")}
-                  className={isLight ? "px-3 py-2 rounded-xl bg-black/5" : "px-3 py-2 rounded-xl bg-white/5"}
-                >
-                  Intentions
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-3">
-              <SessionStageBar
-                stages={[]}
-                startTime={String(session.start_time || session.created_at || new Date().toISOString())}
-                onHoverStage={() => { }}
-              />
-            </div>
-          </div>
+        <div className="h-full w-full px-2 sm:px-4 pt-3 pb-[calc(84px+env(safe-area-inset-bottom))] sm:pb-[calc(94px+env(safe-area-inset-bottom))] flex flex-col gap-3 sm:gap-4 min-h-0">
+          {TopBar}
 
           <div
             className={
-              "relative grid grid-rows-1 gap-3 flex-1 min-h-0 h-full " +
-              (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),380px]" : "grid-cols-1")
+              "relative grid grid-rows-1 gap-3 sm:gap-4 flex-1 min-h-0 h-full " +
+              (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),380px] xl:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
             }
           >
             {/* VIDEO */}
@@ -2038,147 +2425,117 @@ export function RoomPageLiveKit() {
                         ))}
                       </div>
                     </div>
-
-                    {/* controls */}
-                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          onClick={toggleMic}
-                          className={
-                            isLight
-                              ? "px-3 py-2 rounded-xl bg-black/5 hover:bg-black/10 text-black/80"
-                              : "px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/85"
-                          }
-                        >
-                          {micOn ? "🎤 Mic on" : "🔇 Mic off"}
-                        </button>
-
-                        <button
-                          onClick={toggleCam}
-                          className={
-                            isLight
-                              ? "px-3 py-2 rounded-xl bg-black/5 hover:bg-black/10 text-black/80"
-                              : "px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/85"
-                          }
-                        >
-                          {camOn ? "📷 Cam on" : "🚫 Cam off"}
-                        </button>
-
-                        <button
-                          onClick={() => setFxSettingsOpen(true)}
-                          className={
-                            isLight
-                              ? "px-3 py-2 rounded-xl bg-black/5 hover:bg-black/10 text-black/80"
-                              : "px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/85"
-                          }
-                          title="Open video FX settings"
-                        >
-                          🎛️ FX Settings
-                        </button>
-
-                        {videoFxMode !== "off" ? (
-                          <button
-                            onClick={() => void applyVideoFx("off")}
-                            className={
-                              isLight
-                                ? "px-3 py-2 rounded-xl bg-black/5 hover:bg-black/10 text-black/80"
-                                : "px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/85"
-                            }
-                            title="Disable FX quickly"
-                          >
-                            FX off
-                          </button>
-                        ) : null}
-
-                        <button
-                          onClick={leave}
-                          className="px-3 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold"
-                        >
-                          Leave
-                        </button>
-                      </div>
-
-                      <button
-                        onClick={() => openRightTab("chat")}
-                        className={
-                          isLight ? "px-3 py-2 rounded-xl bg-black/5 hover:bg-black/10" : "px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10"
-                        }
-                        title="Toggle chat panel"
-                      >
-                        💬
-                      </button>
-                    </div>
                   </div>
                 </>
               )}
             </div>
 
-            {/* RIGHT PANEL */}
-            {rightPanelOpen && (
-              <div className="min-h-0 h-full overflow-hidden">
-                <div
-                  className={`rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col ${panelBg}`}
-                  data-theme={theme}
-                >
-                  <div
-                    className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
-                      }`}
-                  >
-                    <div className="font-inter font-semibold">
-                      {rightTab === "chat" ? "Chat" : rightTab === "intentions" ? "Intentions" : "Panel"}
-                    </div>
-                    <button
-                      onClick={() => openRightTab(null)}
-                      className={isLight ? "w-9 h-9 rounded-xl bg-black/5" : "w-9 h-9 rounded-xl bg-white/5"}
-                    >
-                      ✕
-                    </button>
-                  </div>
+            {/* RIGHT PANEL desktop */}
+            {rightPanelOpen && isLgUp && (
+              <div className="min-h-0 h-full overflow-hidden">{RightPanelBody}</div>
+            )}
 
-                  <div className="flex-1 min-h-0 overflow-hidden p-3">
-                    {rightTab === "chat" && (
-                      <div className="h-full min-h-0 overflow-hidden rounded-xl">
-                        <div
-                          data-theme={theme}
-                          style={{ colorScheme: theme }}
-                          className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
-                        >
-                          <ChatPanelAny
-                            sessionId={session.id}
-                            theme={theme}
-                            showHeader={false}
-                            embedded={true}
-                            hideHeader={true}
-                            authUserId={authUserId}
-                            displayName={displayName || userName}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {rightTab === "intentions" && (
-                      <div className="h-full min-h-0 overflow-y-auto rounded-xl">
-                        <div
-                          data-theme={theme}
-                          style={{ colorScheme: theme }}
-                          className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
-                        >
-                          <IntentionsPanel theme={theme} sessionId={session.id} timerText={"--:--"} />
-                        </div>
-                      </div>
-                    )}
-                  </div>
+            {/* RIGHT PANEL mobile overlay */}
+            {rightPanelOpen && !isLgUp && (
+              <div className="absolute inset-0 z-40 min-h-0">
+                <div className="absolute inset-0 bg-black/40" onClick={() => openRightTab(null)} />
+                <div className="absolute inset-x-0 top-0 bottom-0 p-1 sm:p-2 min-h-0">
+                  {RightPanelBody}
                 </div>
               </div>
             )}
           </div>
         </div>
 
-        {/* leave floating */}
-        <div className="fixed bottom-3 right-3 z-50">
-          <button onClick={leave} className="px-4 py-3 rounded-2xl bg-red-600 text-white font-semibold">
-            Leave
-          </button>
+        {/* bottom controls (aligned with RoomPage style) */}
+        <div className="fixed inset-x-0 bottom-0 z-50">
+          <div className="w-full px-2 sm:px-4 pb-[calc(8px+env(safe-area-inset-bottom))]">
+            <div
+              className={`h-[64px] sm:h-[74px] rounded-2xl shadow-2xl backdrop-blur grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4 ${bottomBarBg}`}
+            >
+              {/* left */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => openRightTab("participants")}
+                  className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                  title="Participants"
+                >
+                  <span className={isLight ? "text-black/70" : "text-white/85"}>👥</span>
+                </button>
+
+                <button
+                  onClick={() => openRightTab("chat")}
+                  className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                  title="Chat"
+                >
+                  <span className={isLight ? "text-black/70" : "text-white/85"}>💬</span>
+                </button>
+
+                <button
+                  onClick={() => openRightTab("intentions")}
+                  className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                  title="Intentions"
+                >
+                  <span className={isLight ? "text-black/70" : "text-white/85"}>📝</span>
+                </button>
+              </div>
+
+              {/* center */}
+              <div className="flex items-center justify-center gap-2 sm:gap-3">
+                <button
+                  onClick={toggleMic}
+                  className={`h-10 sm:h-11 px-3 sm:px-4 rounded-2xl font-semibold transition ${micOn
+                    ? isLight
+                      ? "bg-black/5 hover:bg-black/10 text-black/80"
+                      : "bg-[#111827] hover:bg-[#1f2937] text-white/85"
+                    : "bg-red-600 hover:bg-red-700 text-white"
+                    }`}
+                  title={micOn ? "Mute microphone" : "Unmute microphone"}
+                >
+                  <span className="hidden sm:inline">{micOn ? "🎤 Mic on" : "🔇 Mic off"}</span>
+                  <span className="sm:hidden">{micOn ? "🎤" : "🔇"}</span>
+                </button>
+
+                <button
+                  onClick={toggleCam}
+                  className={`h-10 sm:h-11 px-3 sm:px-4 rounded-2xl font-semibold transition ${camOn
+                    ? isLight
+                      ? "bg-black/5 hover:bg-black/10 text-black/80"
+                      : "bg-[#111827] hover:bg-[#1f2937] text-white/85"
+                    : "bg-red-600 hover:bg-red-700 text-white"
+                    }`}
+                  title={camOn ? "Turn camera off" : "Turn camera on"}
+                >
+                  <span className="hidden sm:inline">{camOn ? "📷 Cam on" : "🚫 Cam off"}</span>
+                  <span className="sm:hidden">{camOn ? "📷" : "🚫"}</span>
+                </button>
+
+                <button
+                  onClick={() => setFxSettingsOpen(true)}
+                  className={`h-10 sm:h-11 px-3 sm:px-4 rounded-2xl font-semibold transition ${isLight
+                    ? "bg-black/5 hover:bg-black/10 text-black/80"
+                    : "bg-[#111827] hover:bg-[#1f2937] text-white/85"
+                    }`}
+                  title="Video FX settings"
+                >
+                  <span className="hidden sm:inline">🎛️ FX</span>
+                  <span className="sm:hidden">🎛️</span>
+                </button>
+              </div>
+
+              {/* right */}
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  onClick={leave}
+                  className="h-10 sm:h-11 px-3 sm:px-4 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-semibold"
+                  title="Leave room"
+                >
+                  <span className="hidden sm:inline">Leave</span>
+                  <span className="sm:hidden">⎋</span>
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </>
