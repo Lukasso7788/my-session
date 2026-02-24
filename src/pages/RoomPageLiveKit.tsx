@@ -8,6 +8,7 @@ import {
   RemoteParticipant,
   LocalVideoTrack,
   RemoteAudioTrack,
+  RemoteAudioTrackPublication,
   LocalTrackPublication,
   RemoteTrackPublication,
 } from "livekit-client";
@@ -78,17 +79,6 @@ function normalizeTemplates(
 }
 function delay(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
-}
-function getSessionHostUserId(session: SessionRow | null): string {
-  if (!session) return "";
-  return str((session as any)?.host_profile?.id || (session as any)?.host_id);
-}
-function getSessionHostLiveKitIdentity(session: SessionRow | null): string {
-  const hostId = getSessionHostUserId(session);
-  return hostId ? safeIdentity(hostId) : "";
-}
-function isRemoteAudioTrackInstance(track: unknown): track is RemoteAudioTrack {
-  return !!track && typeof track === "object" && (track as any).kind === Track.Kind.Audio;
 }
 
 // ---- PreJoin ----
@@ -451,26 +441,10 @@ function makeBgPresetDataUrl(a: string, b: string, c: string, d: string) {
 }
 
 const FX_BG_PRESETS = [
-  {
-    id: "ocean",
-    label: "Ocean",
-    url: makeBgPresetDataUrl("#081226", "#123a76", "#031019", "#38bdf8"),
-  },
-  {
-    id: "forest",
-    label: "Forest",
-    url: makeBgPresetDataUrl("#07160f", "#124b2c", "#040d08", "#22c55e"),
-  },
-  {
-    id: "violet",
-    label: "Violet",
-    url: makeBgPresetDataUrl("#120a22", "#3b2378", "#090512", "#a78bfa"),
-  },
-  {
-    id: "sunset",
-    label: "Sunset",
-    url: makeBgPresetDataUrl("#1c0d10", "#7c2d12", "#11070a", "#fb7185"),
-  },
+  { id: "ocean", label: "Ocean", url: makeBgPresetDataUrl("#081226", "#123a76", "#031019", "#38bdf8") },
+  { id: "forest", label: "Forest", url: makeBgPresetDataUrl("#07160f", "#124b2c", "#040d08", "#22c55e") },
+  { id: "violet", label: "Violet", url: makeBgPresetDataUrl("#120a22", "#3b2378", "#090512", "#a78bfa") },
+  { id: "sunset", label: "Sunset", url: makeBgPresetDataUrl("#1c0d10", "#7c2d12", "#11070a", "#fb7185") },
 ];
 
 // ---- Host action types ----
@@ -524,17 +498,11 @@ function VideoFxSettingsModal({
   const backdrop = "absolute inset-0 bg-black/60";
   const card = [
     "relative w-full max-w-[680px] rounded-3xl shadow-2xl overflow-hidden",
-    isLight
-      ? "bg-white text-black border border-black/10"
-      : "bg-[#020617] text-white border border-white/10",
+    isLight ? "bg-white text-black border border-black/10" : "bg-[#020617] text-white border border-white/10",
   ].join(" ");
 
-  const inputWrap = isLight
-    ? "bg-black/5 border border-black/10"
-    : "bg-white/5 border border-white/10";
-  const ghostBtn = isLight
-    ? "bg-black/5 hover:bg-black/10 text-black/80"
-    : "bg-white/5 hover:bg-white/10 text-white/85";
+  const inputWrap = isLight ? "bg-black/5 border border-black/10" : "bg-white/5 border border-white/10";
+  const ghostBtn = isLight ? "bg-black/5 hover:bg-black/10 text-black/80" : "bg-white/5 hover:bg-white/10 text-white/85";
   const activeBtn = isLight ? "bg-blue-600 text-white" : "bg-emerald-500 text-[#03110a]";
   const subtleText = isLight ? "text-black/60" : "text-white/60";
 
@@ -542,10 +510,7 @@ function VideoFxSettingsModal({
     <div className={overlay} data-theme={theme} style={{ colorScheme: theme }}>
       <div className={backdrop} onClick={onClose} />
       <div className={card}>
-        <div
-          className={`px-6 py-5 border-b ${isLight ? "border-black/10" : "border-white/10"
-            }`}
-        >
+        <div className={`px-6 py-5 border-b ${isLight ? "border-black/10" : "border-white/10"}`}>
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="font-semibold text-[16px]">Video FX Settings</div>
@@ -565,24 +530,21 @@ function VideoFxSettingsModal({
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => onApplyMode("off")}
-                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "off" ? activeBtn : ghostBtn
-                  }`}
+                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "off" ? activeBtn : ghostBtn}`}
                 disabled={fxApplying}
               >
                 FX off
               </button>
               <button
                 onClick={() => onApplyMode("blur")}
-                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "blur" ? activeBtn : ghostBtn
-                  }`}
+                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "blur" ? activeBtn : ghostBtn}`}
                 disabled={fxApplying}
               >
                 Blur
               </button>
               <button
                 onClick={() => onApplyMode("bg")}
-                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "bg" ? activeBtn : ghostBtn
-                  }`}
+                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "bg" ? activeBtn : ghostBtn}`}
                 disabled={fxApplying}
               >
                 Background image
@@ -592,9 +554,7 @@ function VideoFxSettingsModal({
             <div className={`mt-3 text-[12px] ${subtleText}`}>
               {fxApplying ? "Applying effect…" : fxStatusText || "Ready"}
             </div>
-            {fxError ? (
-              <div className="mt-2 text-[12px] text-red-500 break-words">{fxError}</div>
-            ) : null}
+            {fxError ? <div className="mt-2 text-[12px] text-red-500 break-words">{fxError}</div> : null}
           </div>
 
           <div className={`rounded-2xl p-4 ${inputWrap}`}>
@@ -635,9 +595,7 @@ function VideoFxSettingsModal({
                 >
                   Reset
                 </button>
-                <label
-                  className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn} cursor-pointer flex items-center`}
-                >
+                <label className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn} cursor-pointer flex items-center`}>
                   Upload
                   <input
                     type="file"
@@ -687,10 +645,7 @@ function VideoFxSettingsModal({
           </div>
         </div>
 
-        <div
-          className={`px-6 py-4 border-t flex items-center justify-end gap-3 ${isLight ? "border-black/10" : "border-white/10"
-            }`}
-        >
+        <div className={`px-6 py-4 border-t flex items-center justify-end gap-3 ${isLight ? "border-black/10" : "border-white/10"}`}>
           <button onClick={onClose} className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${ghostBtn}`}>
             Close
           </button>
@@ -890,7 +845,9 @@ function RemoteAudioRenderer({
   room: Room | null;
   audioOutputId: string;
 }) {
-  const [tracks, setTracks] = useState<{ id: string; track: RemoteAudioTrack; label: string }[]>([]);
+  const [tracks, setTracks] = useState<
+    { id: string; track: RemoteAudioTrack; label: string }[]
+  >([]);
 
   const rebuild = () => {
     if (!room) {
@@ -901,10 +858,10 @@ function RemoteAudioRenderer({
     const next: { id: string; track: RemoteAudioTrack; label: string }[] = [];
 
     room.remoteParticipants.forEach((p: RemoteParticipant) => {
-      p.audioTrackPublications.forEach((pub: RemoteTrackPublication) => {
-        if ((pub as any).source !== Track.Source.Microphone) return;
+      p.audioTrackPublications.forEach((pub: RemoteAudioTrackPublication) => {
+        if (pub.source !== Track.Source.Microphone) return;
         const t = pub.track;
-        if (!isRemoteAudioTrackInstance(t)) return;
+        if (!t) return;
         const label = (p.name || p.identity || "Guest").trim() || "Guest";
         next.push({ id: `${p.sid}:${pub.trackSid}`, track: t, label });
       });
@@ -938,7 +895,12 @@ function RemoteAudioRenderer({
   return (
     <>
       {tracks.map((t) => (
-        <AudioEl key={t.id} track={t.track} audioOutputId={audioOutputId} debugLabel={t.label} />
+        <AudioEl
+          key={t.id}
+          track={t.track}
+          audioOutputId={audioOutputId}
+          debugLabel={t.label}
+        />
       ))}
     </>
   );
@@ -968,7 +930,11 @@ function AudioEl({
     (async () => {
       try {
         const anyEl = el as any;
-        if (audioOutputId && audioOutputId !== "default" && typeof anyEl.setSinkId === "function") {
+        if (
+          audioOutputId &&
+          audioOutputId !== "default" &&
+          typeof anyEl.setSinkId === "function"
+        ) {
           await anyEl.setSinkId(audioOutputId);
         }
       } catch {
@@ -985,12 +951,6 @@ function AudioEl({
     return () => {
       try {
         track.detach(el);
-      } catch { }
-      try {
-        el.pause();
-      } catch { }
-      try {
-        (el as any).srcObject = null;
       } catch { }
     };
   }, [track, audioOutputId, debugLabel]);
@@ -1023,6 +983,7 @@ async function resolveTrackProcessorsModule(): Promise<any> {
 }
 
 async function ensureBackgroundProcessorsSupported(mod: any) {
+  // supportsModernBackgroundProcessors(): boolean
   if (typeof mod?.supportsModernBackgroundProcessors === "function") {
     const ok = !!mod.supportsModernBackgroundProcessors();
     if (!ok) {
@@ -1031,71 +992,76 @@ async function ensureBackgroundProcessorsSupported(mod: any) {
     return;
   }
 
+  // supportsBackgroundProcessors(): boolean | Promise<boolean>
   if (typeof mod?.supportsBackgroundProcessors === "function") {
-    const ok = await Promise.resolve(mod.supportsBackgroundProcessors());
+    const res = mod.supportsBackgroundProcessors();
+    const ok = typeof res?.then === "function" ? await res : !!res;
     if (!ok) {
       throw new Error("Background processors are not supported in this browser/device");
     }
   }
 }
 
+/**
+ * IMPORTANT FIX:
+ * In @livekit/track-processors, typical signatures are:
+ *   BackgroundBlur(blurRadius: number)
+ *   VirtualBackground(imagePath: string)
+ * Try NUMBER/STRING first, then fall back to object/create variants.
+ */
 async function createBlurProcessor(blurRadius: number): Promise<any> {
   const mod = await resolveTrackProcessorsModule();
   await ensureBackgroundProcessorsSupported(mod);
 
-  if (mod?.BackgroundBlur?.create) {
-    try {
-      return await mod.BackgroundBlur.create({ blurRadius });
-    } catch (e) {
-      try {
-        return await mod.BackgroundBlur.create({ strength: blurRadius });
-      } catch {
-        throw e;
-      }
-    }
-  }
+  const attempts: Array<() => Promise<any> | any> = [];
 
-  if (typeof mod?.createBackgroundBlurProcessor === "function") {
-    try {
-      return await mod.createBackgroundBlurProcessor({ blurRadius });
-    } catch (e) {
-      try {
-        return await mod.createBackgroundBlurProcessor({ strength: blurRadius });
-      } catch {
-        throw e;
-      }
-    }
-  }
-
+  // Most common: BackgroundBlur(number)
   if (typeof mod?.BackgroundBlur === "function") {
-    try {
-      return mod.BackgroundBlur({ blurRadius });
-    } catch {
-      try {
-        return new mod.BackgroundBlur({ blurRadius });
-      } catch {
-        try {
-          return mod.BackgroundBlur({ strength: blurRadius });
-        } catch {
-          try {
-            return new mod.BackgroundBlur({ strength: blurRadius });
-          } catch { }
-        }
-      }
-    }
+    attempts.push(() => mod.BackgroundBlur(blurRadius));
+    attempts.push(() => mod.BackgroundBlur({ blurRadius }));
+    attempts.push(() => mod.BackgroundBlur({ strength: blurRadius }));
+    attempts.push(() => new mod.BackgroundBlur(blurRadius));
+    attempts.push(() => new mod.BackgroundBlur({ blurRadius }));
+    attempts.push(() => new mod.BackgroundBlur({ strength: blurRadius }));
   }
 
+  // Some builds: BackgroundBlur.create(...)
+  if (mod?.BackgroundBlur?.create) {
+    attempts.push(() => mod.BackgroundBlur.create(blurRadius));
+    attempts.push(() => mod.BackgroundBlur.create({ blurRadius }));
+    attempts.push(() => mod.BackgroundBlur.create({ strength: blurRadius }));
+  }
+
+  // Legacy helper
+  if (typeof mod?.createBackgroundBlurProcessor === "function") {
+    attempts.push(() => mod.createBackgroundBlurProcessor(blurRadius));
+    attempts.push(() => mod.createBackgroundBlurProcessor({ blurRadius }));
+    attempts.push(() => mod.createBackgroundBlurProcessor({ strength: blurRadius }));
+  }
+
+  // Another possible export name
   if (typeof mod?.backgroundBlur === "function") {
+    attempts.push(() => mod.backgroundBlur(blurRadius));
+    attempts.push(() => mod.backgroundBlur({ blurRadius }));
+    attempts.push(() => mod.backgroundBlur({ strength: blurRadius }));
+  }
+
+  const errors: any[] = [];
+  for (const run of attempts) {
     try {
-      return mod.backgroundBlur({ blurRadius });
-    } catch {
-      return mod.backgroundBlur({ strength: blurRadius });
+      const res = await run();
+      if (res) return res;
+    } catch (e) {
+      errors.push(e);
     }
   }
 
-  throw new Error(
-    "BackgroundBlur processor is unavailable (unsupported export API in current @livekit/track-processors version)"
-  );
+  const msg =
+    errors.length > 0
+      ? String(errors[errors.length - 1]?.message || errors[errors.length - 1] || "blur_failed")
+      : "BackgroundBlur processor is unavailable";
+
+  throw new Error(`BackgroundBlur processor failed: ${msg}`);
 }
 
 function preloadImage(url: string): Promise<HTMLImageElement> {
@@ -1119,46 +1085,54 @@ async function createVirtualBackgroundProcessor(imageUrl: string): Promise<any> 
   try {
     preloadedImg = await preloadImage(imageUrl);
   } catch (e) {
-    console.warn("[LK FX] preloadImage failed, will still try URL-based virtual background:", e);
+    console.warn("[LK FX] preloadImage failed, will still try path/url-based virtual background:", e);
   }
 
   const attempts: Array<() => Promise<any> | any> = [];
 
-  if (mod?.VirtualBackground?.create) {
-    attempts.push(() => mod.VirtualBackground.create({ imageUrl }));
-    attempts.push(() => mod.VirtualBackground.create({ imagePath: imageUrl }));
-    if (preloadedImg) attempts.push(() => mod.VirtualBackground.create({ backgroundImage: preloadedImg }));
-    if (preloadedImg) attempts.push(() => mod.VirtualBackground.create({ image: preloadedImg }));
-  }
-
-  if (typeof mod?.createVirtualBackgroundProcessor === "function") {
-    attempts.push(() => mod.createVirtualBackgroundProcessor({ imageUrl }));
-    attempts.push(() => mod.createVirtualBackgroundProcessor({ imagePath: imageUrl }));
-    if (preloadedImg) attempts.push(() => mod.createVirtualBackgroundProcessor({ backgroundImage: preloadedImg }));
-    if (preloadedImg) attempts.push(() => mod.createVirtualBackgroundProcessor({ image: preloadedImg }));
-  }
-
+  // Most common: VirtualBackground(imagePath: string)
   if (typeof mod?.VirtualBackground === "function") {
-    attempts.push(() => mod.VirtualBackground({ imageUrl }));
+    attempts.push(() => mod.VirtualBackground(imageUrl));
     attempts.push(() => mod.VirtualBackground({ imagePath: imageUrl }));
-    if (preloadedImg) attempts.push(() => mod.VirtualBackground({ backgroundImage: preloadedImg }));
+    attempts.push(() => mod.VirtualBackground({ imageUrl }));
     if (preloadedImg) attempts.push(() => mod.VirtualBackground({ image: preloadedImg }));
+    if (preloadedImg) attempts.push(() => mod.VirtualBackground({ backgroundImage: preloadedImg }));
 
-    attempts.push(() => new mod.VirtualBackground({ imageUrl }));
+    attempts.push(() => new mod.VirtualBackground(imageUrl));
     attempts.push(() => new mod.VirtualBackground({ imagePath: imageUrl }));
-    if (preloadedImg) attempts.push(() => new mod.VirtualBackground({ backgroundImage: preloadedImg }));
+    attempts.push(() => new mod.VirtualBackground({ imageUrl }));
     if (preloadedImg) attempts.push(() => new mod.VirtualBackground({ image: preloadedImg }));
+    if (preloadedImg) attempts.push(() => new mod.VirtualBackground({ backgroundImage: preloadedImg }));
   }
 
+  // Some builds: VirtualBackground.create(...)
+  if (mod?.VirtualBackground?.create) {
+    attempts.push(() => mod.VirtualBackground.create(imageUrl));
+    attempts.push(() => mod.VirtualBackground.create({ imagePath: imageUrl }));
+    attempts.push(() => mod.VirtualBackground.create({ imageUrl }));
+    if (preloadedImg) attempts.push(() => mod.VirtualBackground.create({ image: preloadedImg }));
+    if (preloadedImg) attempts.push(() => mod.VirtualBackground.create({ backgroundImage: preloadedImg }));
+  }
+
+  // Legacy helper
+  if (typeof mod?.createVirtualBackgroundProcessor === "function") {
+    attempts.push(() => mod.createVirtualBackgroundProcessor(imageUrl));
+    attempts.push(() => mod.createVirtualBackgroundProcessor({ imagePath: imageUrl }));
+    attempts.push(() => mod.createVirtualBackgroundProcessor({ imageUrl }));
+    if (preloadedImg) attempts.push(() => mod.createVirtualBackgroundProcessor({ image: preloadedImg }));
+    if (preloadedImg) attempts.push(() => mod.createVirtualBackgroundProcessor({ backgroundImage: preloadedImg }));
+  }
+
+  // Another possible export name
   if (typeof mod?.virtualBackground === "function") {
-    attempts.push(() => mod.virtualBackground({ imageUrl }));
+    attempts.push(() => mod.virtualBackground(imageUrl));
     attempts.push(() => mod.virtualBackground({ imagePath: imageUrl }));
-    if (preloadedImg) attempts.push(() => mod.virtualBackground({ backgroundImage: preloadedImg }));
+    attempts.push(() => mod.virtualBackground({ imageUrl }));
     if (preloadedImg) attempts.push(() => mod.virtualBackground({ image: preloadedImg }));
+    if (preloadedImg) attempts.push(() => mod.virtualBackground({ backgroundImage: preloadedImg }));
   }
 
   const errors: any[] = [];
-
   for (const run of attempts) {
     try {
       const res = await run();
@@ -1181,7 +1155,7 @@ async function setLocalVideoTrackProcessor(track: any, processor: any) {
     throw new Error("LocalVideoTrack.setProcessor is unavailable in your livekit-client version");
   }
 
-  // Try boolean signature first (most common)
+  // Try boolean signature first (common)
   try {
     const res = await track.setProcessor(processor, true);
     return res;
@@ -1197,25 +1171,33 @@ async function setLocalVideoTrackProcessor(track: any, processor: any) {
   return track.setProcessor(processor);
 }
 
-async function clearLocalVideoTrackProcessor(track: any) {
+async function clearLocalVideoTrackProcessor(track: any, currentProcessor?: any) {
   if (!track) return;
 
-  // Some versions expose stopProcessor()
+  // Prefer track.stopProcessor()
   if (typeof track.stopProcessor === "function") {
     try {
       await track.stopProcessor();
       await delay(120);
-      return;
     } catch { }
   }
 
+  // Some versions: setProcessor(null)
   if (typeof track.setProcessor === "function") {
     try {
       await track.setProcessor(null);
       await delay(120);
-      return;
     } catch { }
   }
+
+  // Best effort: destroy/dispose the processor object if it has API
+  try {
+    if (currentProcessor) {
+      if (typeof currentProcessor?.destroy === "function") currentProcessor.destroy();
+      if (typeof currentProcessor?.dispose === "function") currentProcessor.dispose();
+      if (typeof currentProcessor?.stop === "function") currentProcessor.stop();
+    }
+  } catch { }
 
   await delay(80);
 }
@@ -1334,8 +1316,6 @@ type TileModel = {
   camTrackSid?: string;
   micMuted?: boolean;
   camMuted?: boolean;
-
-  isHostTile?: boolean;
 };
 
 export function RoomPageLiveKit() {
@@ -1410,11 +1390,9 @@ export function RoomPageLiveKit() {
   // host flag
   const isHost = useMemo(() => {
     if (!authUserId) return false;
-    const hostId = getSessionHostUserId(session);
+    const hostId = (session as any)?.host_profile?.id || (session as any)?.host_id;
     return !!hostId && String(hostId) === String(authUserId);
   }, [authUserId, session]);
-
-  const hostIdentityFromSession = useMemo(() => getSessionHostLiveKitIdentity(session), [session]);
 
   // right panel
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
@@ -1477,7 +1455,11 @@ export function RoomPageLiveKit() {
           (u?.email ? u.email.split("@")[0] : "");
 
         if (!name && u?.id) {
-          const { data: p } = await supabase.from("profiles").select("full_name").eq("id", u.id).single();
+          const { data: p } = await supabase
+            .from("profiles")
+            .select("full_name")
+            .eq("id", u.id)
+            .single();
           name = str((p as any)?.full_name);
         }
 
@@ -1637,6 +1619,9 @@ export function RoomPageLiveKit() {
   // Dedup: remember last applied *effective* config
   const lastAppliedRef = useRef<{ mode: FxMode; blur: number; bg: string } | null>(null);
 
+  // Hold current processor instance (important for cleanup & avoiding weird GC behaviors)
+  const currentProcessorRef = useRef<any>(null);
+
   // Processed preview fallback (if SDK does not preview processed stream)
   const [localProcessedPreviewTrack, setLocalProcessedPreviewTrack] = useState<MediaStreamTrack | null>(null);
 
@@ -1652,70 +1637,43 @@ export function RoomPageLiveKit() {
     if (!room) return;
 
     const next: TileModel[] = [];
-    const hostIdentity = hostIdentityFromSession;
 
     // local
     const lp = room.localParticipant;
     const localCamPub = Array.from(lp.videoTrackPublications.values()).find(
       (p) => p.source === Track.Source.Camera
     );
-    const localMicPub = Array.from(lp.audioTrackPublications.values()).find(
-      (p) => p.source === Track.Source.Microphone
-    );
     const localTrack = (localCamPub?.track as any) || undefined;
-
-    const localIdentity = str((lp as any)?.identity);
-    const localIsHostTile = !!hostIdentity && localIdentity === hostIdentity;
 
     next.push({
       id: "local",
       label: (displayName || userName || "You").trim() || "You",
       isLocal: true,
       videoTrack: localTrack,
-      participantIdentity: localIdentity || undefined,
-      micTrackSid: (localMicPub as any)?.trackSid,
-      camTrackSid: (localCamPub as any)?.trackSid,
-      micMuted: !micOn,
-      camMuted: !camOn,
-      isHostTile: localIsHostTile || isHost,
     });
 
     // remote
     room.remoteParticipants.forEach((rp: RemoteParticipant) => {
       const allVideoPubs = Array.from(rp.videoTrackPublications.values()) as RemoteTrackPublication[];
-      const allAudioPubs = Array.from(rp.audioTrackPublications.values()) as RemoteTrackPublication[];
+      const allAudioPubs = Array.from(rp.audioTrackPublications.values()) as RemoteAudioTrackPublication[];
 
       const camPub = allVideoPubs.find((p: any) => p.source === Track.Source.Camera);
       const micPub = allAudioPubs.find((p: any) => p.source === Track.Source.Microphone);
 
       const vt = (camPub?.track as any) || undefined;
       const nm = (rp.name || rp.identity || "Guest").trim() || "Guest";
-      const rpIdentity = str(rp.identity);
 
       next.push({
         id: rp.sid,
         label: nm,
         isLocal: false,
         videoTrack: vt,
-        participantIdentity: rpIdentity,
+        participantIdentity: rp.identity,
         micTrackSid: micPub?.trackSid,
         camTrackSid: camPub?.trackSid,
         micMuted: !!(micPub as any)?.isMuted,
         camMuted: !!(camPub as any)?.isMuted,
-        isHostTile: !!hostIdentity && rpIdentity === hostIdentity,
       });
-    });
-
-    // Host first for everyone, then local, then others
-    next.sort((a, b) => {
-      const rank = (t: TileModel) => (t.isHostTile ? 0 : t.isLocal ? 1 : 2);
-      const ra = rank(a);
-      const rb = rank(b);
-      if (ra !== rb) return ra - rb;
-
-      if (a.isLocal !== b.isLocal) return a.isLocal ? -1 : 1;
-
-      return a.label.localeCompare(b.label, undefined, { sensitivity: "base" });
     });
 
     setTiles(next);
@@ -1745,6 +1703,7 @@ export function RoomPageLiveKit() {
       fxQueuedRef.current = null;
       fxRunningRef.current = false;
       lastAppliedRef.current = null;
+      currentProcessorRef.current = null;
     }
   };
 
@@ -1848,7 +1807,6 @@ export function RoomPageLiveKit() {
       const next = !micOn;
       await r.localParticipant.setMicrophoneEnabled(next);
       setMicOn(next);
-      window.setTimeout(() => rebuildTiles(), 60);
     } catch (e) {
       console.error("toggleMic error:", e);
     }
@@ -1866,6 +1824,7 @@ export function RoomPageLiveKit() {
         setLocalProcessedPreviewTrack(null);
         fxQueuedRef.current = null;
         lastAppliedRef.current = null;
+        currentProcessorRef.current = null;
       }
 
       rebuildTiles();
@@ -1978,7 +1937,6 @@ export function RoomPageLiveKit() {
   };
 
   const scheduleApply = (mode: FxMode) => {
-    // push latest
     fxQueuedRef.current = mode;
     void runApplyLoop();
   };
@@ -2024,10 +1982,10 @@ export function RoomPageLiveKit() {
         try {
           setLocalProcessedPreviewTrack(null);
 
-          // Clear old processor first
-          await clearLocalVideoTrackProcessor(track as any);
+          // Clear old processor first (and cleanup)
+          await clearLocalVideoTrackProcessor(track as any, currentProcessorRef.current);
+          currentProcessorRef.current = null;
 
-          // allow teardown to settle
           await delay(90);
 
           if (callId !== fxCallIdRef.current) {
@@ -2047,6 +2005,7 @@ export function RoomPageLiveKit() {
             if (!proc) throw new Error("BackgroundBlur processor is unavailable.");
 
             const setRes = await setLocalVideoTrackProcessor(track as any, proc);
+            currentProcessorRef.current = proc;
 
             try {
               console.log("[LK FX] setProcessor blur result:", setRes);
@@ -2065,6 +2024,7 @@ export function RoomPageLiveKit() {
             if (!proc) throw new Error("VirtualBackground processor is unavailable.");
 
             const setRes = await setLocalVideoTrackProcessor(track as any, proc);
+            currentProcessorRef.current = proc;
 
             try {
               console.log("[LK FX] setProcessor bg result:", setRes);
@@ -2123,7 +2083,11 @@ export function RoomPageLiveKit() {
   }, [connected, camOn]);
 
   if (loading) {
-    return <div className={`flex h-screen items-center justify-center ${pageBg}`}>Loading session...</div>;
+    return (
+      <div className={`flex h-screen items-center justify-center ${pageBg}`}>
+        Loading session...
+      </div>
+    );
   }
 
   if (!session) {
@@ -2135,7 +2099,6 @@ export function RoomPageLiveKit() {
   }
 
   const ChatPanelAny = ChatPanel as any;
-  const participantsCount = tiles.length;
 
   return (
     <>
@@ -2165,7 +2128,6 @@ export function RoomPageLiveKit() {
         bgImageUrl={bgImageUrl}
         onSetBgImageUrl={(url) => {
           setBgImageUrl(url);
-          // NO direct apply here — avoids double apply thrash
         }}
         onApplyMode={(m) => {
           scheduleApply(m);
@@ -2184,7 +2146,6 @@ export function RoomPageLiveKit() {
           const url = URL.createObjectURL(file);
           uploadedBgUrlRef.current = url;
           setBgImageUrl(url);
-          // NO direct apply here — useEffect(bgImageUrl) will schedule apply if mode=bg
         }}
         onResetBg={() => {
           setBgImageUrl(DEFAULT_BG_DATA_URL);
@@ -2202,8 +2163,9 @@ export function RoomPageLiveKit() {
                 </div>
 
                 <div className={isLight ? "text-black/50 text-xs" : "text-white/50 text-xs"}>
-                  LiveKit room: session-{session.id} (limit {maxParticipants}) • {connected ? "connected" : "not connected"}
-                  {isHost ? " • HOST" : ""} • participants: {participantsCount}
+                  LiveKit room: session-{session.id} (limit {maxParticipants}) •{" "}
+                  {connected ? "connected" : "not connected"}
+                  {isHost ? " • HOST" : ""}
                 </div>
 
                 <div className={isLight ? "text-black/40 text-[11px]" : "text-white/40 text-[11px]"}>
@@ -2244,13 +2206,6 @@ export function RoomPageLiveKit() {
                 </button>
 
                 <button
-                  onClick={() => openRightTab("participants")}
-                  className={isLight ? "px-3 py-2 rounded-xl bg-black/5" : "px-3 py-2 rounded-xl bg-white/5"}
-                >
-                  People
-                </button>
-
-                <button
                   onClick={() => openRightTab("chat")}
                   className={isLight ? "px-3 py-2 rounded-xl bg-black/5" : "px-3 py-2 rounded-xl bg-white/5"}
                 >
@@ -2269,7 +2224,9 @@ export function RoomPageLiveKit() {
             <div className="mt-3">
               <SessionStageBar
                 stages={[]}
-                startTime={String(session.start_time || session.created_at || new Date().toISOString())}
+                startTime={String(
+                  session.start_time || session.created_at || new Date().toISOString()
+                )}
                 onHoverStage={() => { }}
               />
             </div>
@@ -2283,7 +2240,9 @@ export function RoomPageLiveKit() {
           >
             {/* VIDEO */}
             <div
-              className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
+              className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight
+                  ? "bg-white/70 border border-black/10"
+                  : "bg-[#0B1220]/45 border border-white/5"
                 }`}
             >
               {!joinRequested ? (
@@ -2341,7 +2300,10 @@ export function RoomPageLiveKit() {
                 </LiveKitErrorBoundary>
               ) : (
                 <>
-                  <RemoteAudioRenderer room={roomState} audioOutputId={prejoin.audioOutputId || "default"} />
+                  <RemoteAudioRenderer
+                    room={roomState}
+                    audioOutputId={prejoin.audioOutputId || "default"}
+                  />
 
                   <div className="h-full w-full p-2 flex flex-col min-h-0">
                     <div className="flex-1 min-h-0">
@@ -2353,7 +2315,7 @@ export function RoomPageLiveKit() {
                             videoTrack={t.videoTrack}
                             isLocal={t.isLocal}
                             theme={theme}
-                            showBadge={t.isHostTile ? "HOST" : null}
+                            showBadge={t.isLocal && isHost ? "HOST" : null}
                             localProcessedPreviewTrack={t.isLocal ? localProcessedPreviewTrack : null}
                             hostActions={
                               !t.isLocal && isHost && t.participantIdentity
@@ -2456,30 +2418,17 @@ export function RoomPageLiveKit() {
                         </button>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => openRightTab("participants")}
-                          className={
-                            isLight
-                              ? "px-3 py-2 rounded-xl bg-black/5 hover:bg-black/10"
-                              : "px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10"
-                          }
-                          title="Toggle participants panel"
-                        >
-                          👥
-                        </button>
-                        <button
-                          onClick={() => openRightTab("chat")}
-                          className={
-                            isLight
-                              ? "px-3 py-2 rounded-xl bg-black/5 hover:bg-black/10"
-                              : "px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10"
-                          }
-                          title="Toggle chat panel"
-                        >
-                          💬
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => openRightTab("chat")}
+                        className={
+                          isLight
+                            ? "px-3 py-2 rounded-xl bg-black/5 hover:bg-black/10"
+                            : "px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10"
+                        }
+                        title="Toggle chat panel"
+                      >
+                        💬
+                      </button>
                     </div>
                   </div>
                 </>
@@ -2502,9 +2451,7 @@ export function RoomPageLiveKit() {
                         ? "Chat"
                         : rightTab === "intentions"
                           ? "Intentions"
-                          : rightTab === "participants"
-                            ? "Participants"
-                            : "Panel"}
+                          : "Panel"}
                     </div>
                     <button
                       onClick={() => openRightTab(null)}
@@ -2515,48 +2462,6 @@ export function RoomPageLiveKit() {
                   </div>
 
                   <div className="flex-1 min-h-0 overflow-hidden p-3">
-                    {rightTab === "participants" && (
-                      <div className="h-full min-h-0 overflow-y-auto rounded-xl">
-                        <div className="flex flex-col gap-2">
-                          {tiles.map((p) => {
-                            const micMuted = p.isLocal ? !micOn : !!p.micMuted;
-                            const camMuted = p.isLocal ? !camOn : !!p.camMuted;
-
-                            return (
-                              <div
-                                key={`participant-${p.id}`}
-                                className={
-                                  "rounded-xl px-3 py-2 border flex items-center justify-between gap-3 " +
-                                  (isLight ? "border-black/10 bg-white" : "border-white/10 bg-white/5")
-                                }
-                              >
-                                <div className="min-w-0">
-                                  <div className="text-sm font-medium truncate">
-                                    {p.label}
-                                    {p.isLocal ? " (you)" : ""}
-                                  </div>
-                                  <div className={isLight ? "text-[11px] text-black/50" : "text-[11px] text-white/50"}>
-                                    {p.isHostTile ? "HOST" : "participant"}
-                                  </div>
-                                </div>
-
-                                <div className="flex items-center gap-2 text-sm">
-                                  <span title={micMuted ? "Mic off" : "Mic on"}>{micMuted ? "🔇" : "🎤"}</span>
-                                  <span title={camMuted ? "Cam off" : "Cam on"}>{camMuted ? "🚫" : "📷"}</span>
-                                </div>
-                              </div>
-                            );
-                          })}
-
-                          {tiles.length === 0 && (
-                            <div className={isLight ? "text-sm text-black/60" : "text-sm text-white/60"}>
-                              No participants yet.
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
                     {rightTab === "chat" && (
                       <div className="h-full min-h-0 overflow-hidden rounded-xl">
                         <div
@@ -2584,7 +2489,11 @@ export function RoomPageLiveKit() {
                           style={{ colorScheme: theme }}
                           className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
                         >
-                          <IntentionsPanel theme={theme} sessionId={session.id} timerText={"--:--"} />
+                          <IntentionsPanel
+                            theme={theme}
+                            sessionId={session.id}
+                            timerText={"--:--"}
+                          />
                         </div>
                       </div>
                     )}
@@ -2597,7 +2506,10 @@ export function RoomPageLiveKit() {
 
         {/* leave floating */}
         <div className="fixed bottom-3 right-3 z-50">
-          <button onClick={leave} className="px-4 py-3 rounded-2xl bg-red-600 text-white font-semibold">
+          <button
+            onClick={leave}
+            className="px-4 py-3 rounded-2xl bg-red-600 text-white font-semibold"
+          >
             Leave
           </button>
         </div>
