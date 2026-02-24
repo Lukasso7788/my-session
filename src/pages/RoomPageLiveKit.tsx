@@ -77,6 +77,9 @@ function normalizeTemplates(
   if (!t) return [];
   return Array.isArray(t) ? t : [t];
 }
+function delay(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 // ---- PreJoin ----
 type MediaDevicesResult = {
@@ -627,6 +630,7 @@ function VideoFxSettingsModal({
                           : "border-white/10")
                     }
                     title={p.label}
+                    disabled={fxApplying}
                   >
                     <div className="aspect-video w-full">
                       <img src={p.url} alt={p.label} className="w-full h-full object-cover" />
@@ -744,20 +748,12 @@ function VideoTile({
     <div
       className={
         "relative rounded-2xl overflow-hidden border " +
-        (isLight
-          ? "border-black/10 bg-white/70"
-          : "border-white/10 bg-black/20")
+        (isLight ? "border-black/10 bg-white/70" : "border-white/10 bg-black/20")
       }
     >
       <div className="w-full aspect-video">
         {videoTrack || (isLocal && localProcessedPreviewTrack) ? (
-          <video
-            ref={ref}
-            autoPlay
-            playsInline
-            muted={isLocal}
-            className="w-full h-full object-cover"
-          />
+          <video ref={ref} autoPlay playsInline muted={isLocal} className="w-full h-full object-cover" />
         ) : (
           <div
             className={
@@ -1003,20 +999,14 @@ async function ensureBackgroundProcessorsSupported(mod: any) {
   }
 }
 
-function delay(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
 async function createBlurProcessor(blurRadius: number): Promise<any> {
   const mod = await resolveTrackProcessorsModule();
   await ensureBackgroundProcessorsSupported(mod);
 
-  // Variant A: BackgroundBlur.create(...)
   if (mod?.BackgroundBlur?.create) {
     try {
       return await mod.BackgroundBlur.create({ blurRadius });
     } catch (e) {
-      // Some versions may use different option names
       try {
         return await mod.BackgroundBlur.create({ strength: blurRadius });
       } catch {
@@ -1025,7 +1015,6 @@ async function createBlurProcessor(blurRadius: number): Promise<any> {
     }
   }
 
-  // Variant B: createBackgroundBlurProcessor(...)
   if (typeof mod?.createBackgroundBlurProcessor === "function") {
     try {
       return await mod.createBackgroundBlurProcessor({ blurRadius });
@@ -1038,7 +1027,6 @@ async function createBlurProcessor(blurRadius: number): Promise<any> {
     }
   }
 
-  // Variant C: BackgroundBlur(options) / new BackgroundBlur(options)
   if (typeof mod?.BackgroundBlur === "function") {
     try {
       return mod.BackgroundBlur({ blurRadius });
@@ -1074,7 +1062,6 @@ function preloadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     try {
-      // blob:/data: usually don't need crossOrigin, but harmless for http(s)
       if (/^https?:/i.test(url)) img.crossOrigin = "anonymous";
     } catch { }
 
@@ -1092,13 +1079,11 @@ async function createVirtualBackgroundProcessor(imageUrl: string): Promise<any> 
   try {
     preloadedImg = await preloadImage(imageUrl);
   } catch (e) {
-    // keep going; some implementations can load internally by URL
     console.warn("[LK FX] preloadImage failed, will still try URL-based virtual background:", e);
   }
 
   const attempts: Array<() => Promise<any> | any> = [];
 
-  // Variant A: VirtualBackground.create(...)
   if (mod?.VirtualBackground?.create) {
     attempts.push(() => mod.VirtualBackground.create({ imageUrl }));
     attempts.push(() => mod.VirtualBackground.create({ imagePath: imageUrl }));
@@ -1106,7 +1091,6 @@ async function createVirtualBackgroundProcessor(imageUrl: string): Promise<any> 
     if (preloadedImg) attempts.push(() => mod.VirtualBackground.create({ image: preloadedImg }));
   }
 
-  // Variant B: createVirtualBackgroundProcessor(...)
   if (typeof mod?.createVirtualBackgroundProcessor === "function") {
     attempts.push(() => mod.createVirtualBackgroundProcessor({ imageUrl }));
     attempts.push(() => mod.createVirtualBackgroundProcessor({ imagePath: imageUrl }));
@@ -1114,7 +1098,6 @@ async function createVirtualBackgroundProcessor(imageUrl: string): Promise<any> 
     if (preloadedImg) attempts.push(() => mod.createVirtualBackgroundProcessor({ image: preloadedImg }));
   }
 
-  // Variant C: function/constructor style
   if (typeof mod?.VirtualBackground === "function") {
     attempts.push(() => mod.VirtualBackground({ imageUrl }));
     attempts.push(() => mod.VirtualBackground({ imagePath: imageUrl }));
@@ -1158,28 +1141,30 @@ async function setLocalVideoTrackProcessor(track: any, processor: any) {
     throw new Error("LocalVideoTrack.setProcessor is unavailable in your livekit-client version");
   }
 
-  // IMPORTANT:
-  // In some livekit-client versions the 2nd arg is boolean showProcessedStreamLocally.
-  // If we pass an object first, it may "succeed" but ignore local processed preview.
+  // Try boolean signature first (most common)
   try {
     const res = await track.setProcessor(processor, true);
     return res;
   } catch { }
 
+  // Try options object signature
   try {
     const res = await track.setProcessor(processor, { showProcessedStreamLocally: true });
     return res;
   } catch { }
 
+  // Last resort
   return track.setProcessor(processor);
 }
 
 async function clearLocalVideoTrackProcessor(track: any) {
   if (!track) return;
 
+  // Some versions expose stopProcessor()
   if (typeof track.stopProcessor === "function") {
     try {
       await track.stopProcessor();
+      await delay(120);
       return;
     } catch { }
   }
@@ -1187,9 +1172,12 @@ async function clearLocalVideoTrackProcessor(track: any) {
   if (typeof track.setProcessor === "function") {
     try {
       await track.setProcessor(null);
+      await delay(120);
       return;
     } catch { }
   }
+
+  await delay(80);
 }
 
 function isMediaStreamTrackLike(v: any): v is MediaStreamTrack {
@@ -1242,7 +1230,7 @@ function findVideoTrackDeep(root: any, original?: MediaStreamTrack | null): Medi
     }
 
     try {
-      const keys = Object.keys(node).slice(0, 60);
+      const keys = Object.keys(node).slice(0, 80);
       for (const k of keys) {
         const hit = walk((node as any)[k], depth - 1);
         if (hit) return hit;
@@ -1252,8 +1240,7 @@ function findVideoTrackDeep(root: any, original?: MediaStreamTrack | null): Medi
     return null;
   };
 
-  // глубже (как я и советовал): 6
-  return walk(root, 6);
+  return walk(root, 7);
 }
 
 function getOriginalLocalMediaStreamTrack(localTrack: any): MediaStreamTrack | null {
@@ -1282,19 +1269,16 @@ function extractProcessedPreviewTrack(localTrack: any, extraRoots: any[] = []): 
     localTrack?._processorWrapper,
   ];
 
-  // 1) Сначала extraRoots (ты их специально передаёшь)
   for (const r of extraRoots) {
     const found = findVideoTrackDeep(r, original);
     if (found) return found;
   }
 
-  // 2) Потом processor subtree
   for (const p of processorCandidates) {
     const found = findVideoTrackDeep(p, original);
     if (found) return found;
   }
 
-  // 3) Потом весь объект трека
   return findVideoTrackDeep(localTrack, original);
 }
 
@@ -1305,7 +1289,6 @@ type TileModel = {
   isLocal: boolean;
   videoTrack?: Track;
 
-  // host moderation info
   participantIdentity?: string;
   micTrackSid?: string;
   camTrackSid?: string;
@@ -1606,11 +1589,15 @@ export function RoomPageLiveKit() {
   const [fxSettingsOpen, setFxSettingsOpen] = useState(false);
   const [blurStrength, setBlurStrength] = useState<number>(12);
 
-  const fxApplyQueueRef = useRef<FxMode | null>(null);
-  const fxApplyRunningRef = useRef(false);
-  const fxApplyCallIdRef = useRef(0);
+  // Apply runner queue (single-flight)
+  const fxQueuedRef = useRef<FxMode | null>(null);
+  const fxRunningRef = useRef(false);
+  const fxCallIdRef = useRef(0);
 
-  // This is the key fix: local preview uses processed track if setProcessor() doesn't auto-preview it.
+  // Dedup: remember last applied *effective* config
+  const lastAppliedRef = useRef<{ mode: FxMode; blur: number; bg: string } | null>(null);
+
+  // Processed preview fallback (if SDK does not preview processed stream)
   const [localProcessedPreviewTrack, setLocalProcessedPreviewTrack] = useState<MediaStreamTrack | null>(null);
 
   const uploadedBgUrlRef = useRef<string | null>(null);
@@ -1686,6 +1673,11 @@ export function RoomPageLiveKit() {
       setTiles([]);
       setLocalProcessedPreviewTrack(null);
       setFxStatusText("");
+      setFxError("");
+      setFxApplying(false);
+      fxQueuedRef.current = null;
+      fxRunningRef.current = false;
+      lastAppliedRef.current = null;
     }
   };
 
@@ -1804,7 +1796,8 @@ export function RoomPageLiveKit() {
 
       if (!next) {
         setLocalProcessedPreviewTrack(null);
-        fxApplyQueueRef.current = null;
+        fxQueuedRef.current = null;
+        lastAppliedRef.current = null;
       }
 
       rebuildTiles();
@@ -1901,8 +1894,7 @@ export function RoomPageLiveKit() {
   };
 
   const syncLocalProcessedPreviewTrack = async (track: any, extraRoots: any[] = []) => {
-    // Retry because processor bootstraps async (MediaPipe graph start)
-    for (let i = 0; i < 14; i++) {
+    for (let i = 0; i < 16; i++) {
       const found = extractProcessedPreviewTrack(track, extraRoots);
       if (found) {
         setLocalProcessedPreviewTrack(found);
@@ -1912,24 +1904,27 @@ export function RoomPageLiveKit() {
       await delay(120);
     }
 
-    // Not fatal — published stream may still be processed.
     setLocalProcessedPreviewTrack(null);
-    setFxStatusText("Effect applied (published stream), local processed preview fallback");
+    setFxStatusText("Effect applied (published stream). Local preview fallback");
     return false;
   };
 
-  const applyVideoFx = async (mode: FxMode) => {
-    // Queue latest request (prevents race conditions and processor thrash)
-    fxApplyQueueRef.current = mode;
-    if (fxApplyRunningRef.current) return;
+  const scheduleApply = (mode: FxMode) => {
+    // push latest
+    fxQueuedRef.current = mode;
+    void runApplyLoop();
+  };
 
-    fxApplyRunningRef.current = true;
+  const runApplyLoop = async () => {
+    if (fxRunningRef.current) return;
+    fxRunningRef.current = true;
 
     try {
-      while (fxApplyQueueRef.current) {
-        const nextMode = fxApplyQueueRef.current;
-        fxApplyQueueRef.current = null;
-        const callId = ++fxApplyCallIdRef.current;
+      while (fxQueuedRef.current) {
+        const nextMode = fxQueuedRef.current;
+        fxQueuedRef.current = null;
+
+        const callId = ++fxCallIdRef.current;
 
         setFxError("");
         setFxApplying(true);
@@ -1943,23 +1938,37 @@ export function RoomPageLiveKit() {
           continue;
         }
 
+        // Dedup by effective config
+        const effective = { mode: nextMode, blur: blurStrength, bg: bgImageUrl };
+        const last = lastAppliedRef.current;
+        const sameAsLast =
+          last &&
+          last.mode === effective.mode &&
+          last.blur === effective.blur &&
+          last.bg === effective.bg;
+
+        if (sameAsLast) {
+          setFxStatusText("Already applied (dedup)");
+          setFxApplying(false);
+          continue;
+        }
+
         try {
-          // reset preview override first
           setLocalProcessedPreviewTrack(null);
 
-          // clear old processor first
+          // Clear old processor first
           await clearLocalVideoTrackProcessor(track as any);
 
-          // tiny delay helps avoid rapid graph restart/teardown races
-          await delay(60);
+          // allow teardown to settle
+          await delay(90);
 
-          if (callId !== fxApplyCallIdRef.current) {
-            // stale call, skip
+          if (callId !== fxCallIdRef.current) {
             setFxApplying(false);
             continue;
           }
 
           if (nextMode === "off") {
+            lastAppliedRef.current = { mode: "off", blur: blurStrength, bg: bgImageUrl };
             setFxStatusText("Effects disabled");
             setFxApplying(false);
             continue;
@@ -1971,7 +1980,13 @@ export function RoomPageLiveKit() {
 
             const setRes = await setLocalVideoTrackProcessor(track as any, proc);
 
+            try {
+              console.log("[LK FX] setProcessor blur result:", setRes);
+              console.log("[LK FX] track.processor?", (track as any)?.processor || (track as any)?._processor);
+            } catch { }
+
             await syncLocalProcessedPreviewTrack(track as any, [proc, setRes]);
+            lastAppliedRef.current = { mode: "blur", blur: blurStrength, bg: bgImageUrl };
             setFxStatusText((prev) => prev || `Blur applied (strength ${blurStrength})`);
             setFxApplying(false);
             continue;
@@ -1983,7 +1998,13 @@ export function RoomPageLiveKit() {
 
             const setRes = await setLocalVideoTrackProcessor(track as any, proc);
 
+            try {
+              console.log("[LK FX] setProcessor bg result:", setRes);
+              console.log("[LK FX] track.processor?", (track as any)?.processor || (track as any)?._processor);
+            } catch { }
+
             await syncLocalProcessedPreviewTrack(track as any, [proc, setRes]);
+            lastAppliedRef.current = { mode: "bg", blur: blurStrength, bg: bgImageUrl };
             setFxStatusText((prev) => prev || "Virtual background applied");
             setFxApplying(false);
             continue;
@@ -1995,46 +2016,40 @@ export function RoomPageLiveKit() {
         }
       }
     } finally {
-      fxApplyRunningRef.current = false;
+      fxRunningRef.current = false;
     }
   };
 
-  // Re-apply BG when image changes
+  // Re-apply BG when image changes (dedup inside runner)
   useEffect(() => {
     if (videoFxMode !== "bg") return;
     if (!connected || !camOn) return;
+    if (fxApplying) return;
 
-    const t = window.setTimeout(() => {
-      applyVideoFx("bg").catch(() => { });
-    }, 220);
-
+    const t = window.setTimeout(() => scheduleApply("bg"), 260);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bgImageUrl]);
 
-  // Re-apply blur when strength changes
+  // Re-apply blur when strength changes (dedup inside runner)
   useEffect(() => {
     if (videoFxMode !== "blur") return;
     if (!connected || !camOn) return;
+    if (fxApplying) return;
 
-    const t = window.setTimeout(() => {
-      applyVideoFx("blur").catch(() => { });
-    }, 220);
-
+    const t = window.setTimeout(() => scheduleApply("blur"), 260);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [blurStrength]);
 
-  // Re-apply current effect after camera on/reconnect
+  // Re-apply current effect after camera on/reconnect (once)
   useEffect(() => {
     if (!connected) return;
     if (!camOn) return;
     if (videoFxMode === "off") return;
+    if (fxApplying) return;
 
-    const t = window.setTimeout(() => {
-      applyVideoFx(videoFxMode).catch(() => { });
-    }, 350);
-
+    const t = window.setTimeout(() => scheduleApply(videoFxMode), 420);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected, camOn]);
@@ -2085,9 +2100,10 @@ export function RoomPageLiveKit() {
         bgImageUrl={bgImageUrl}
         onSetBgImageUrl={(url) => {
           setBgImageUrl(url);
+          // NO direct apply here — avoids double apply thrash
         }}
         onApplyMode={(m) => {
-          void applyVideoFx(m);
+          scheduleApply(m);
         }}
         onClose={() => setFxSettingsOpen(false)}
         fxError={fxError}
@@ -2103,9 +2119,7 @@ export function RoomPageLiveKit() {
           const url = URL.createObjectURL(file);
           uploadedBgUrlRef.current = url;
           setBgImageUrl(url);
-          if (videoFxMode === "bg" && connected && camOn) {
-            void applyVideoFx("bg");
-          }
+          // NO direct apply here — useEffect(bgImageUrl) will schedule apply if mode=bg
         }}
         onResetBg={() => {
           setBgImageUrl(DEFAULT_BG_DATA_URL);
@@ -2137,6 +2151,7 @@ export function RoomPageLiveKit() {
                   <div className={isLight ? "text-black/40 text-[11px]" : "text-white/40 text-[11px]"}>
                     FX mode: {videoFxMode} {videoFxMode === "blur" ? `(strength ${blurStrength})` : ""}
                     {localProcessedPreviewTrack ? " • local processed preview: ON" : " • local processed preview: fallback"}
+                    {fxApplying ? " • applying..." : ""}
                   </div>
                 ) : null}
 
@@ -2357,7 +2372,7 @@ export function RoomPageLiveKit() {
 
                         {videoFxMode !== "off" ? (
                           <button
-                            onClick={() => void applyVideoFx("off")}
+                            onClick={() => scheduleApply("off")}
                             className={
                               isLight
                                 ? "px-3 py-2 rounded-xl bg-black/5 hover:bg-black/10 text-black/80"
