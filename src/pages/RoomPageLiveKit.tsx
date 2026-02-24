@@ -11,6 +11,7 @@ import {
   RemoteAudioTrackPublication,
   LocalTrackPublication,
   RemoteTrackPublication,
+  createLocalVideoTrack,
 } from "livekit-client";
 
 import { supabase } from "../lib/supabase";
@@ -525,14 +526,19 @@ function VideoFxSettingsModal({
   const ghostBtn = isLight
     ? "bg-black/5 hover:bg-black/10 text-black/80"
     : "bg-white/5 hover:bg-white/10 text-white/85";
-  const activeBtn = isLight ? "bg-blue-600 text-white" : "bg-emerald-500 text-[#03110a]";
+  const activeBtn = isLight
+    ? "bg-blue-600 text-white"
+    : "bg-emerald-500 text-[#03110a]";
   const subtleText = isLight ? "text-black/60" : "text-white/60";
 
   return (
     <div className={overlay} data-theme={theme} style={{ colorScheme: theme }}>
       <div className={backdrop} onClick={onClose} />
       <div className={card}>
-        <div className={`px-6 py-5 border-b ${isLight ? "border-black/10" : "border-white/10"}`}>
+        <div
+          className={`px-6 py-5 border-b ${isLight ? "border-black/10" : "border-white/10"
+            }`}
+        >
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="font-semibold text-[16px]">Video FX Settings</div>
@@ -588,7 +594,9 @@ function VideoFxSettingsModal({
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-[13px] font-semibold">Blur strength</div>
-                <div className={`text-[12px] mt-1 ${subtleText}`}>Used when Blur mode is active.</div>
+                <div className={`text-[12px] mt-1 ${subtleText}`}>
+                  Used when Blur mode is active.
+                </div>
               </div>
               <div className="text-[13px] font-semibold">{blurStrength}</div>
             </div>
@@ -613,10 +621,16 @@ function VideoFxSettingsModal({
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <button onClick={onResetBg} className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn}`} disabled={fxApplying}>
+                <button
+                  onClick={onResetBg}
+                  className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn}`}
+                  disabled={fxApplying}
+                >
                   Reset
                 </button>
-                <label className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn} cursor-pointer flex items-center`}>
+                <label
+                  className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn} cursor-pointer flex items-center`}
+                >
                   Upload
                   <input
                     type="file"
@@ -656,7 +670,9 @@ function VideoFxSettingsModal({
                     <div className="aspect-video w-full">
                       <img src={p.url} alt={p.label} className="w-full h-full object-cover" />
                     </div>
-                    <div className={`px-2 py-2 text-[12px] ${isLight ? "bg-white" : "bg-[#0b1220]"}`}>{p.label}</div>
+                    <div className={`px-2 py-2 text-[12px] ${isLight ? "bg-white" : "bg-[#0b1220]"}`}>
+                      {p.label}
+                    </div>
                   </button>
                 );
               })}
@@ -664,7 +680,10 @@ function VideoFxSettingsModal({
           </div>
         </div>
 
-        <div className={`px-6 py-4 border-t flex items-center justify-end gap-3 ${isLight ? "border-black/10" : "border-white/10"}`}>
+        <div
+          className={`px-6 py-4 border-t flex items-center justify-end gap-3 ${isLight ? "border-black/10" : "border-white/10"
+            }`}
+        >
           <button onClick={onClose} className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${ghostBtn}`}>
             Close
           </button>
@@ -682,7 +701,6 @@ function VideoTile({
   theme,
   showBadge,
   hostActions,
-  localProcessedPreviewTrack,
 }: {
   label: string;
   videoTrack?: Track;
@@ -690,7 +708,6 @@ function VideoTile({
   theme: RoomTheme;
   showBadge?: string | null;
   hostActions?: HostTileActions;
-  localProcessedPreviewTrack?: MediaStreamTrack | null;
 }) {
   const ref = useRef<HTMLVideoElement | null>(null);
   const isLight = theme === "light";
@@ -701,7 +718,7 @@ function VideoTile({
 
     let cleanupAttached = false;
 
-    // Always clear previous source first
+    // clear previous
     try {
       if (videoTrack && typeof (videoTrack as any)?.detach === "function") {
         (videoTrack as any).detach(el);
@@ -713,27 +730,6 @@ function VideoTile({
     try {
       (el as any).srcObject = null;
     } catch { }
-
-    // If local processed preview track exists, use raw MediaStreamTrack preview
-    if (isLocal && localProcessedPreviewTrack) {
-      try {
-        const ms = new MediaStream([localProcessedPreviewTrack]);
-        (el as any).srcObject = ms;
-        el.muted = true;
-        void el.play().catch(() => { });
-      } catch (e) {
-        console.error("attach local processed preview failed:", e);
-      }
-
-      return () => {
-        try {
-          el.pause();
-        } catch { }
-        try {
-          (el as any).srcObject = null;
-        } catch { }
-      };
-    }
 
     if (!videoTrack) return;
 
@@ -761,7 +757,7 @@ function VideoTile({
         (el as any).srcObject = null;
       } catch { }
     };
-  }, [videoTrack, isLocal, localProcessedPreviewTrack]);
+  }, [videoTrack]);
 
   return (
     <div
@@ -771,7 +767,7 @@ function VideoTile({
       }
     >
       <div className="w-full aspect-video">
-        {videoTrack || (isLocal && localProcessedPreviewTrack) ? (
+        {videoTrack ? (
           <video ref={ref} autoPlay playsInline muted={isLocal} className="w-full h-full object-cover" />
         ) : (
           <div
@@ -864,7 +860,9 @@ function RemoteAudioRenderer({
   room: Room | null;
   audioOutputId: string;
 }) {
-  const [tracks, setTracks] = useState<{ id: string; track: RemoteAudioTrack; label: string }[]>([]);
+  const [tracks, setTracks] = useState<
+    { id: string; track: RemoteAudioTrack; label: string }[]
+  >([]);
 
   const rebuild = () => {
     if (!room) {
@@ -966,7 +964,7 @@ function AudioEl({
   return <audio ref={ref} autoPlay playsInline />;
 }
 
-// ---- Video FX helpers ----
+// ---- Track processors (v0.7.0 style) ----
 function mergeModuleExports(mod: any): any {
   const merged = {
     ...(mod?.default && typeof mod.default === "object" ? mod.default : {}),
@@ -994,350 +992,47 @@ async function ensureBackgroundProcessorsSupported(mod: any) {
   if (typeof mod?.supportsModernBackgroundProcessors === "function") {
     const ok = !!mod.supportsModernBackgroundProcessors();
     if (!ok) {
-      throw new Error("Modern background processors are not supported in this browser/device");
+      // still may work on legacy, so don't hard-fail here; check supportsBackgroundProcessors too
+      // (some envs have modern=false but legacy=true)
     }
-    return;
   }
-
   if (typeof mod?.supportsBackgroundProcessors === "function") {
     const ok = await Promise.resolve(mod.supportsBackgroundProcessors());
-    if (!ok) {
-      throw new Error("Background processors are not supported in this browser/device");
-    }
+    if (!ok) throw new Error("Background processors are not supported in this browser/device");
   }
 }
 
-/**
- * CRITICAL: In some LiveKit stacks, the processor wrapper is created in DISABLED state.
- * Your log shows `processingEnabled: false`.
- * So we must explicitly enable it when possible.
- */
-async function enableProcessorIfPossible(proc: any) {
-  if (!proc) return;
-
-  // Most common on ProcessorWrapper
-  if (typeof proc.setEnabled === "function") {
-    await Promise.resolve(proc.setEnabled(true));
-    return;
-  }
-
-  // Some variants
-  if (typeof proc.enable === "function") {
-    await Promise.resolve(proc.enable());
-    return;
-  }
-  if (typeof proc.start === "function") {
-    await Promise.resolve(proc.start());
-    return;
-  }
-
-  // Some wrappers expose nested "processorWrapper"
-  if (proc?.processorWrapper && typeof proc.processorWrapper.setEnabled === "function") {
-    await Promise.resolve(proc.processorWrapper.setEnabled(true));
-    return;
-  }
-}
-
-async function disableProcessorIfPossible(proc: any) {
-  if (!proc) return;
-
-  if (typeof proc.setEnabled === "function") {
-    try {
-      await Promise.resolve(proc.setEnabled(false));
-    } catch { }
-    return;
-  }
-  if (typeof proc.disable === "function") {
-    try {
-      await Promise.resolve(proc.disable());
-    } catch { }
-    return;
-  }
-  if (typeof proc.stop === "function") {
-    try {
-      await Promise.resolve(proc.stop());
-    } catch { }
-    return;
-  }
-}
-
-async function createBlurProcessor(blurRadius: number): Promise<any> {
+async function makeBlurPipeline(blurRadius: number) {
   const mod = await resolveTrackProcessorsModule();
   await ensureBackgroundProcessorsSupported(mod);
 
-  // v0.7+ exposes BackgroundBlur and VirtualBackground classes / factories
-  if (mod?.BackgroundBlur?.create) {
-    try {
-      return await mod.BackgroundBlur.create({ blurRadius });
-    } catch (e) {
-      try {
-        return await mod.BackgroundBlur.create({ strength: blurRadius });
-      } catch {
-        throw e;
-      }
-    }
-  }
-
-  if (typeof mod?.createBackgroundBlurProcessor === "function") {
-    try {
-      return await mod.createBackgroundBlurProcessor({ blurRadius });
-    } catch (e) {
-      try {
-        return await mod.createBackgroundBlurProcessor({ strength: blurRadius });
-      } catch {
-        throw e;
-      }
-    }
-  }
-
+  // v0.7.0 documented signature: BackgroundBlur(blurRadius)
   if (typeof mod?.BackgroundBlur === "function") {
-    try {
-      return mod.BackgroundBlur({ blurRadius });
-    } catch {
-      try {
-        return new mod.BackgroundBlur({ blurRadius });
-      } catch {
-        try {
-          return mod.BackgroundBlur({ strength: blurRadius });
-        } catch {
-          try {
-            return new mod.BackgroundBlur({ strength: blurRadius });
-          } catch { }
-        }
-      }
-    }
+    return mod.BackgroundBlur(blurRadius);
   }
 
-  if (typeof mod?.backgroundBlur === "function") {
-    try {
-      return mod.backgroundBlur({ blurRadius });
-    } catch {
-      return mod.backgroundBlur({ strength: blurRadius });
-    }
+  // fallback: some builds may have default export object
+  if (typeof mod?.default?.BackgroundBlur === "function") {
+    return mod.default.BackgroundBlur(blurRadius);
   }
 
-  throw new Error("BackgroundBlur processor is unavailable (unsupported export API in current @livekit/track-processors version)");
+  throw new Error("BackgroundBlur() is unavailable in @livekit/track-processors");
 }
 
-function preloadImage(url: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    try {
-      if (/^https?:/i.test(url)) img.crossOrigin = "anonymous";
-    } catch { }
-    img.onload = () => resolve(img);
-    img.onerror = (e) => reject(e || new Error("image_load_failed"));
-    img.src = url;
-  });
-}
-
-async function createVirtualBackgroundProcessor(imageUrl: string): Promise<any> {
+async function makeVirtualBgPipeline(imagePath: string) {
   const mod = await resolveTrackProcessorsModule();
   await ensureBackgroundProcessorsSupported(mod);
 
-  let preloadedImg: HTMLImageElement | null = null;
-  try {
-    preloadedImg = await preloadImage(imageUrl);
-  } catch (e) {
-    console.warn("[LK FX] preloadImage failed, will still try URL-based virtual background:", e);
-  }
-
-  const attempts: Array<() => Promise<any> | any> = [];
-
-  if (mod?.VirtualBackground?.create) {
-    attempts.push(() => mod.VirtualBackground.create({ imageUrl }));
-    attempts.push(() => mod.VirtualBackground.create({ imagePath: imageUrl }));
-    if (preloadedImg) attempts.push(() => mod.VirtualBackground.create({ backgroundImage: preloadedImg }));
-    if (preloadedImg) attempts.push(() => mod.VirtualBackground.create({ image: preloadedImg }));
-  }
-
-  if (typeof mod?.createVirtualBackgroundProcessor === "function") {
-    attempts.push(() => mod.createVirtualBackgroundProcessor({ imageUrl }));
-    attempts.push(() => mod.createVirtualBackgroundProcessor({ imagePath: imageUrl }));
-    if (preloadedImg) attempts.push(() => mod.createVirtualBackgroundProcessor({ backgroundImage: preloadedImg }));
-    if (preloadedImg) attempts.push(() => mod.createVirtualBackgroundProcessor({ image: preloadedImg }));
-  }
-
+  // v0.7.0 documented signature: VirtualBackground(imagePath)
   if (typeof mod?.VirtualBackground === "function") {
-    attempts.push(() => mod.VirtualBackground({ imageUrl }));
-    attempts.push(() => mod.VirtualBackground({ imagePath: imageUrl }));
-    if (preloadedImg) attempts.push(() => mod.VirtualBackground({ backgroundImage: preloadedImg }));
-    if (preloadedImg) attempts.push(() => mod.VirtualBackground({ image: preloadedImg }));
-
-    attempts.push(() => new mod.VirtualBackground({ imageUrl }));
-    attempts.push(() => new mod.VirtualBackground({ imagePath: imageUrl }));
-    if (preloadedImg) attempts.push(() => new mod.VirtualBackground({ backgroundImage: preloadedImg }));
-    if (preloadedImg) attempts.push(() => new mod.VirtualBackground({ image: preloadedImg }));
+    return mod.VirtualBackground(imagePath);
   }
 
-  if (typeof mod?.virtualBackground === "function") {
-    attempts.push(() => mod.virtualBackground({ imageUrl }));
-    attempts.push(() => mod.virtualBackground({ imagePath: imageUrl }));
-    if (preloadedImg) attempts.push(() => mod.virtualBackground({ backgroundImage: preloadedImg }));
-    if (preloadedImg) attempts.push(() => mod.virtualBackground({ image: preloadedImg }));
+  if (typeof mod?.default?.VirtualBackground === "function") {
+    return mod.default.VirtualBackground(imagePath);
   }
 
-  const errors: any[] = [];
-  for (const run of attempts) {
-    try {
-      const res = await run();
-      if (res) return res;
-    } catch (e) {
-      errors.push(e);
-    }
-  }
-
-  const msg =
-    errors.length > 0
-      ? String(errors[errors.length - 1]?.message || errors[errors.length - 1] || "virtual_bg_failed")
-      : "VirtualBackground processor is unavailable";
-
-  throw new Error(`VirtualBackground processor failed: ${msg}`);
-}
-
-async function setLocalVideoTrackProcessor(track: any, processor: any) {
-  if (!track || typeof track.setProcessor !== "function") {
-    throw new Error("LocalVideoTrack.setProcessor is unavailable in your livekit-client version");
-  }
-
-  // Try boolean signature first (most common)
-  try {
-    const res = await track.setProcessor(processor, true);
-    return res;
-  } catch { }
-
-  // Try options object signature
-  try {
-    const res = await track.setProcessor(processor, { showProcessedStreamLocally: true });
-    return res;
-  } catch { }
-
-  // Last resort
-  return track.setProcessor(processor);
-}
-
-async function clearLocalVideoTrackProcessor(track: any) {
-  if (!track) return;
-
-  // try disable current processor before removing
-  try {
-    const current = (track as any)?.processor || (track as any)?._processor;
-    await disableProcessorIfPossible(current);
-  } catch { }
-
-  // Some versions expose stopProcessor()
-  if (typeof track.stopProcessor === "function") {
-    try {
-      await track.stopProcessor();
-      await delay(120);
-      return;
-    } catch { }
-  }
-
-  if (typeof track.setProcessor === "function") {
-    try {
-      await track.setProcessor(null);
-      await delay(120);
-      return;
-    } catch { }
-  }
-
-  await delay(80);
-}
-
-function isMediaStreamTrackLike(v: any): v is MediaStreamTrack {
-  return !!v && typeof v === "object" && v.kind === "video" && typeof v.stop === "function";
-}
-
-function findVideoTrackDeep(root: any, original?: MediaStreamTrack | null): MediaStreamTrack | null {
-  const visited = new Set<any>();
-
-  const preferredKeys = [
-    "processedTrack",
-    "outputTrack",
-    "track",
-    "mediaStreamTrack",
-    "processedMediaStreamTrack",
-    "videoTrack",
-    "processedStream",
-    "outputStream",
-    "stream",
-    "_processedTrack",
-    "_outputTrack",
-    "_track",
-  ];
-
-  const isStreamLike = (v: any): v is MediaStream =>
-    !!v && typeof v === "object" && typeof v.getVideoTracks === "function";
-
-  const walk = (node: any, depth: number): MediaStreamTrack | null => {
-    if (!node || depth < 0) return null;
-    if (typeof node !== "object" && typeof node !== "function") return null;
-    if (visited.has(node)) return null;
-    visited.add(node);
-
-    if (isMediaStreamTrackLike(node)) {
-      if (!original || node !== original) return node;
-    }
-
-    if (isStreamLike(node)) {
-      const t = node.getVideoTracks?.()[0];
-      if (t && (!original || t !== original)) return t;
-    }
-
-    for (const k of preferredKeys) {
-      try {
-        if (k in node) {
-          const hit = walk((node as any)[k], depth - 1);
-          if (hit) return hit;
-        }
-      } catch { }
-    }
-
-    try {
-      const keys = Object.keys(node).slice(0, 80);
-      for (const k of keys) {
-        const hit = walk((node as any)[k], depth - 1);
-        if (hit) return hit;
-      }
-    } catch { }
-
-    return null;
-  };
-
-  return walk(root, 7);
-}
-
-function getOriginalLocalMediaStreamTrack(localTrack: any): MediaStreamTrack | null {
-  const candidates = [localTrack?.mediaStreamTrack, localTrack?._mediaStreamTrack, localTrack?.track, localTrack?._track];
-  for (const c of candidates) {
-    if (isMediaStreamTrackLike(c)) return c;
-  }
-  return null;
-}
-
-function extractProcessedPreviewTrack(localTrack: any, extraRoots: any[] = []): MediaStreamTrack | null {
-  if (!localTrack) return null;
-  const original = getOriginalLocalMediaStreamTrack(localTrack);
-
-  const processorCandidates = [
-    localTrack?.processor,
-    localTrack?._processor,
-    localTrack?.processorWrapper,
-    localTrack?._processorWrapper,
-  ];
-
-  for (const r of extraRoots) {
-    const found = findVideoTrackDeep(r, original);
-    if (found) return found;
-  }
-
-  for (const p of processorCandidates) {
-    const found = findVideoTrackDeep(p, original);
-    if (found) return found;
-  }
-
-  return findVideoTrackDeep(localTrack, original);
+  throw new Error("VirtualBackground() is unavailable in @livekit/track-processors");
 }
 
 // ---- MAIN ----
@@ -1384,7 +1079,9 @@ export function RoomPageLiveKit() {
 
   const isLight = theme === "light";
   const pageBg = isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white";
-  const panelBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#0B1220]/55 border border-white/5";
+  const panelBg = isLight
+    ? "bg-white/85 border border-black/10"
+    : "bg-[#0B1220]/55 border border-white/5";
 
   const [session, setSession] = useState<SessionRow | null>(null);
   const [templatesCount, setTemplatesCount] = useState(0);
@@ -1493,10 +1190,7 @@ export function RoomPageLiveKit() {
 
         setUserName(name);
         setDisplayName((prev) => prev || name || "Guest");
-        setPrejoin((prev) => ({
-          ...prev,
-          displayName: prev.displayName || name || "Guest",
-        }));
+        setPrejoin((prev) => ({ ...prev, displayName: prev.displayName || name || "Guest" }));
       } finally {
         setAuthReady(true);
       }
@@ -1635,18 +1329,10 @@ export function RoomPageLiveKit() {
   const [fxSettingsOpen, setFxSettingsOpen] = useState(false);
   const [blurStrength, setBlurStrength] = useState<number>(12);
 
-  // Apply runner queue (single-flight)
-  const fxQueuedRef = useRef<FxMode | null>(null);
-  const fxRunningRef = useRef(false);
-  const fxCallIdRef = useRef(0);
-
-  // Dedup: remember last applied *effective* config
-  const lastAppliedRef = useRef<{ mode: FxMode; blur: number; bg: string } | null>(null);
-
-  // Processed preview fallback (if SDK does not preview processed stream)
-  const [localProcessedPreviewTrack, setLocalProcessedPreviewTrack] = useState<MediaStreamTrack | null>(null);
-
   const uploadedBgUrlRef = useRef<string | null>(null);
+
+  // keep last pipeline so we can update it (blurStrength) without republish if we want
+  const currentFxPipelineRef = useRef<any>(null);
 
   const roomNameForApi = useMemo(() => {
     if (!session) return "";
@@ -1715,13 +1401,10 @@ export function RoomPageLiveKit() {
       setMicOn(false);
       setCamOn(false);
       setTiles([]);
-      setLocalProcessedPreviewTrack(null);
       setFxStatusText("");
       setFxError("");
       setFxApplying(false);
-      fxQueuedRef.current = null;
-      fxRunningRef.current = false;
-      lastAppliedRef.current = null;
+      currentFxPipelineRef.current = null;
     }
   };
 
@@ -1753,7 +1436,7 @@ export function RoomPageLiveKit() {
       r.on(RoomEvent.Disconnected, () => {
         setConnected(false);
         setTiles([]);
-        setLocalProcessedPreviewTrack(null);
+        currentFxPipelineRef.current = null;
       });
 
       r.on(RoomEvent.Reconnected, refresh);
@@ -1839,9 +1522,10 @@ export function RoomPageLiveKit() {
       setCamOn(next);
 
       if (!next) {
-        setLocalProcessedPreviewTrack(null);
-        fxQueuedRef.current = null;
-        lastAppliedRef.current = null;
+        currentFxPipelineRef.current = null;
+        setVideoFxMode("off");
+        setFxStatusText("");
+        setFxError("");
       }
 
       rebuildTiles();
@@ -1925,211 +1609,183 @@ export function RoomPageLiveKit() {
     }
   };
 
-  // ---- Apply Blur / Virtual Background ----
-  const getLocalCameraTrack = (): LocalVideoTrack | null => {
+  // ---- FX APPLY: REPUBLISH CAMERA TRACK (fixes your "processingEnabled:false" dead pipeline) ----
+  const getLocalCameraPublication = () => {
     const r = roomRef.current;
     if (!r) return null;
     const lp = r.localParticipant;
-    const camPub = Array.from(lp.videoTrackPublications.values()).find(
-      (p: LocalTrackPublication) => p.source === Track.Source.Camera
-    );
-    const tr = camPub?.track;
-    return (tr as any) || null;
+    const pub = Array.from(lp.videoTrackPublications.values()).find((p: LocalTrackPublication) => p.source === Track.Source.Camera);
+    return pub || null;
   };
 
-  const syncLocalProcessedPreviewTrack = async (track: any, extraRoots: any[] = []) => {
-    for (let i = 0; i < 16; i++) {
-      const found = extractProcessedPreviewTrack(track, extraRoots);
-      if (found) {
-        setLocalProcessedPreviewTrack(found);
-        setFxStatusText("Processed preview attached locally");
-        return true;
+  const getLocalCameraTrack = (): LocalVideoTrack | null => {
+    const pub = getLocalCameraPublication();
+    return (pub?.track as any) || null;
+  };
+
+  const stopAnyProcessorOnTrack = async (tr: any) => {
+    if (!tr) return;
+    try {
+      if (typeof tr.stopProcessor === "function") {
+        await tr.stopProcessor();
+        await delay(80);
+        return;
       }
-      await delay(120);
+    } catch { }
+    try {
+      if (typeof tr.setProcessor === "function") {
+        await tr.setProcessor(null as any);
+        await delay(80);
+      }
+    } catch { }
+  };
+
+  const replacePublishedCameraTrack = async (newTrack: LocalVideoTrack) => {
+    const r = roomRef.current;
+    if (!r) throw new Error("Room is not ready");
+
+    const lp = r.localParticipant;
+
+    const oldPub = getLocalCameraPublication();
+    const oldTrack = oldPub?.track as any;
+
+    // unpublish old camera track first (prevents weird mixing)
+    if (oldTrack) {
+      try {
+        await lp.unpublishTrack(oldTrack, true);
+      } catch { }
+      try {
+        await stopAnyProcessorOnTrack(oldTrack);
+      } catch { }
+      try {
+        oldTrack.stop?.();
+      } catch { }
     }
 
-    setLocalProcessedPreviewTrack(null);
-    setFxStatusText("Effect applied (published stream). Local preview fallback");
-    return false;
+    // publish new one
+    await lp.publishTrack(newTrack, { source: Track.Source.Camera } as any);
   };
 
-  const scheduleApply = (mode: FxMode) => {
-    fxQueuedRef.current = mode;
-    void runApplyLoop();
-  };
+  const applyVideoFx = async (mode: FxMode) => {
+    const r = roomRef.current;
+    if (!r) return;
 
-  const runApplyLoop = async () => {
-    if (fxRunningRef.current) return;
-    fxRunningRef.current = true;
+    setFxError("");
+    setFxApplying(true);
+    setFxStatusText("");
 
     try {
-      while (fxQueuedRef.current) {
-        const nextMode = fxQueuedRef.current;
-        fxQueuedRef.current = null;
-
-        const callId = ++fxCallIdRef.current;
-
-        setFxError("");
-        setFxApplying(true);
-        setFxStatusText("");
-        setVideoFxMode(nextMode);
-
-        const track = getLocalCameraTrack();
-        if (!track) {
-          setFxError("No local camera track to apply effects (turn camera on).");
-          setFxApplying(false);
-          continue;
-        }
-
-        const effective = { mode: nextMode, blur: blurStrength, bg: bgImageUrl };
-        const last = lastAppliedRef.current;
-        const sameAsLast = last && last.mode === effective.mode && last.blur === effective.blur && last.bg === effective.bg;
-
-        if (sameAsLast) {
-          setFxStatusText("Already applied (dedup)");
-          setFxApplying(false);
-          continue;
-        }
-
-        try {
-          setLocalProcessedPreviewTrack(null);
-
-          // Clear old processor first
-          await clearLocalVideoTrackProcessor(track as any);
-          await delay(120);
-
-          if (callId !== fxCallIdRef.current) {
-            setFxApplying(false);
-            continue;
-          }
-
-          if (nextMode === "off") {
-            lastAppliedRef.current = { mode: "off", blur: blurStrength, bg: bgImageUrl };
-            setFxStatusText("Effects disabled");
-            setFxApplying(false);
-            continue;
-          }
-
-          if (nextMode === "blur") {
-            const proc = await createBlurProcessor(blurStrength);
-            if (!proc) throw new Error("BackgroundBlur processor is unavailable.");
-
-            const setRes = await setLocalVideoTrackProcessor(track as any, proc);
-
-            // 🔥 CRITICAL FIX: enable processor pipeline if possible
-            await enableProcessorIfPossible(proc);
-
-            // Also try enabling whatever track stores as current processor
-            try {
-              const cur = (track as any)?.processor || (track as any)?._processor;
-              await enableProcessorIfPossible(cur);
-            } catch { }
-
-            try {
-              console.log("[LK FX] setProcessor blur result:", setRes);
-              console.log("[LK FX] track.processor?", (track as any)?.processor || (track as any)?._processor);
-            } catch { }
-
-            await syncLocalProcessedPreviewTrack(track as any, [proc, setRes, (track as any)?.processor]);
-            lastAppliedRef.current = { mode: "blur", blur: blurStrength, bg: bgImageUrl };
-
-            // report enabled state if present
-            try {
-              const cur = (track as any)?.processor || (track as any)?._processor || proc;
-              const enabled = (cur as any)?.processingEnabled;
-              if (typeof enabled === "boolean") {
-                setFxStatusText(`Blur applied (strength ${blurStrength}) • processingEnabled=${enabled}`);
-              } else {
-                setFxStatusText((prev) => prev || `Blur applied (strength ${blurStrength})`);
-              }
-            } catch {
-              setFxStatusText((prev) => prev || `Blur applied (strength ${blurStrength})`);
-            }
-
-            setFxApplying(false);
-            continue;
-          }
-
-          if (nextMode === "bg") {
-            const proc = await createVirtualBackgroundProcessor(bgImageUrl);
-            if (!proc) throw new Error("VirtualBackground processor is unavailable.");
-
-            const setRes = await setLocalVideoTrackProcessor(track as any, proc);
-
-            // 🔥 CRITICAL FIX: enable processor pipeline if possible
-            await enableProcessorIfPossible(proc);
-            try {
-              const cur = (track as any)?.processor || (track as any)?._processor;
-              await enableProcessorIfPossible(cur);
-            } catch { }
-
-            try {
-              console.log("[LK FX] setProcessor bg result:", setRes);
-              console.log("[LK FX] track.processor?", (track as any)?.processor || (track as any)?._processor);
-            } catch { }
-
-            await syncLocalProcessedPreviewTrack(track as any, [proc, setRes, (track as any)?.processor]);
-            lastAppliedRef.current = { mode: "bg", blur: blurStrength, bg: bgImageUrl };
-
-            try {
-              const cur = (track as any)?.processor || (track as any)?._processor || proc;
-              const enabled = (cur as any)?.processingEnabled;
-              if (typeof enabled === "boolean") {
-                setFxStatusText(`Virtual background applied • processingEnabled=${enabled}`);
-              } else {
-                setFxStatusText((prev) => prev || "Virtual background applied");
-              }
-            } catch {
-              setFxStatusText((prev) => prev || "Virtual background applied");
-            }
-
-            setFxApplying(false);
-            continue;
-          }
-        } catch (e: any) {
-          console.error("applyVideoFx error:", e);
-          setFxError(String(e?.message || e || "video_fx_failed"));
-          setFxApplying(false);
-        }
+      if (!camOn) {
+        throw new Error("Turn camera on first (Cam on), then apply FX.");
       }
+
+      // OFF: just stop processor on current published camera track
+      if (mode === "off") {
+        const tr = getLocalCameraTrack();
+        await stopAnyProcessorOnTrack(tr);
+        currentFxPipelineRef.current = null;
+        setVideoFxMode("off");
+        setFxStatusText("FX disabled");
+        rebuildTiles();
+        return;
+      }
+
+      const pj = prejoinRef.current;
+      const deviceId = pj.videoInputId || undefined;
+
+      // Create NEW local track -> set processor -> republish (this matches track-processors docs & avoids "processingEnabled:false")
+      const newTrack = await createLocalVideoTrack({
+        deviceId,
+        // you can tweak these later; keep safe defaults now
+        resolution: { width: 1280, height: 720 },
+      } as any);
+
+      let pipeline: any = null;
+
+      if (mode === "blur") {
+        pipeline = await makeBlurPipeline(blurStrength);
+      } else if (mode === "bg") {
+        pipeline = await makeVirtualBgPipeline(bgImageUrl);
+      } else {
+        pipeline = null;
+      }
+
+      if (!pipeline) throw new Error("FX pipeline creation failed");
+
+      currentFxPipelineRef.current = pipeline;
+
+      // showProcessedStreamLocally helps the local <video> show processed output in many builds
+      try {
+        await (newTrack as any).setProcessor(pipeline, { showProcessedStreamLocally: true });
+      } catch {
+        // fallback signature
+        await (newTrack as any).setProcessor(pipeline, true);
+      }
+
+      await replacePublishedCameraTrack(newTrack);
+
+      setVideoFxMode(mode);
+      setFxStatusText(
+        mode === "blur" ? `Blur applied (strength ${blurStrength})` : "Virtual background applied"
+      );
+
+      // after republish, tiles update
+      await delay(120);
+      rebuildTiles();
+    } catch (e: any) {
+      console.error("applyVideoFx failed:", e);
+      setFxError(String(e?.message || e || "video_fx_failed"));
     } finally {
-      fxRunningRef.current = false;
+      setFxApplying(false);
     }
   };
 
-  // Re-apply BG when image changes (dedup inside runner)
+  // Live update (best-effort) without republish: updateTransformerOptions if available, otherwise re-apply
   useEffect(() => {
-    if (videoFxMode !== "bg") return;
     if (!connected || !camOn) return;
-    if (fxApplying) return;
-
-    const t = window.setTimeout(() => scheduleApply("bg"), 260);
-    return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bgImageUrl]);
-
-  // Re-apply blur when strength changes (dedup inside runner)
-  useEffect(() => {
     if (videoFxMode !== "blur") return;
-    if (!connected || !camOn) return;
     if (fxApplying) return;
 
-    const t = window.setTimeout(() => scheduleApply("blur"), 260);
+    const pipeline = currentFxPipelineRef.current;
+    const t = window.setTimeout(async () => {
+      try {
+        if (pipeline && typeof pipeline.updateTransformerOptions === "function") {
+          await pipeline.updateTransformerOptions({ blurRadius: blurStrength });
+          setFxStatusText(`Blur updated (strength ${blurStrength})`);
+        } else {
+          await applyVideoFx("blur");
+        }
+      } catch {
+        await applyVideoFx("blur");
+      }
+    }, 260);
+
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [blurStrength]);
 
-  // Re-apply current effect after camera on/reconnect (once)
   useEffect(() => {
-    if (!connected) return;
-    if (!camOn) return;
-    if (videoFxMode === "off") return;
+    if (!connected || !camOn) return;
+    if (videoFxMode !== "bg") return;
     if (fxApplying) return;
 
-    const t = window.setTimeout(() => scheduleApply(videoFxMode), 420);
+    const pipeline = currentFxPipelineRef.current;
+    const t = window.setTimeout(async () => {
+      try {
+        if (pipeline && typeof pipeline.updateTransformerOptions === "function") {
+          await pipeline.updateTransformerOptions({ imagePath: bgImageUrl });
+          setFxStatusText("Background updated");
+        } else {
+          await applyVideoFx("bg");
+        }
+      } catch {
+        await applyVideoFx("bg");
+      }
+    }, 260);
+
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connected, camOn]);
+  }, [bgImageUrl]);
 
   if (loading) {
     return <div className={`flex h-screen items-center justify-center ${pageBg}`}>Loading session...</div>;
@@ -2171,12 +1827,8 @@ export function RoomPageLiveKit() {
         blurStrength={blurStrength}
         onBlurStrengthChange={setBlurStrength}
         bgImageUrl={bgImageUrl}
-        onSetBgImageUrl={(url) => {
-          setBgImageUrl(url);
-        }}
-        onApplyMode={(m) => {
-          scheduleApply(m);
-        }}
+        onSetBgImageUrl={(url) => setBgImageUrl(url)}
+        onApplyMode={(m) => void applyVideoFx(m)}
         onClose={() => setFxSettingsOpen(false)}
         fxError={fxError}
         fxApplying={fxApplying}
@@ -2192,9 +1844,7 @@ export function RoomPageLiveKit() {
           uploadedBgUrlRef.current = url;
           setBgImageUrl(url);
         }}
-        onResetBg={() => {
-          setBgImageUrl(DEFAULT_BG_DATA_URL);
-        }}
+        onResetBg={() => setBgImageUrl(DEFAULT_BG_DATA_URL)}
       />
 
       <div className={`h-[100dvh] overflow-hidden ${pageBg}`}>
@@ -2221,14 +1871,7 @@ export function RoomPageLiveKit() {
                 {!!videoFxMode && videoFxMode !== "off" ? (
                   <div className={isLight ? "text-black/40 text-[11px]" : "text-white/40 text-[11px]"}>
                     FX mode: {videoFxMode} {videoFxMode === "blur" ? `(strength ${blurStrength})` : ""}
-                    {localProcessedPreviewTrack ? " • local processed preview: ON" : " • local processed preview: fallback"}
                     {fxApplying ? " • applying..." : ""}
-                  </div>
-                ) : null}
-
-                {fxStatusText ? (
-                  <div className={isLight ? "text-black/40 text-[11px]" : "text-white/40 text-[11px]"}>
-                    {fxStatusText}
                   </div>
                 ) : null}
 
@@ -2354,7 +1997,6 @@ export function RoomPageLiveKit() {
                             isLocal={t.isLocal}
                             theme={theme}
                             showBadge={t.isLocal && isHost ? "HOST" : null}
-                            localProcessedPreviewTrack={t.isLocal ? localProcessedPreviewTrack : null}
                             hostActions={
                               !t.isLocal && isHost && t.participantIdentity
                                 ? {
@@ -2386,7 +2028,9 @@ export function RoomPageLiveKit() {
                                           "cam"
                                         )
                                       : undefined,
-                                  onKick: t.participantIdentity ? () => hostKickParticipant(t.participantIdentity!) : undefined,
+                                  onKick: t.participantIdentity
+                                    ? () => hostKickParticipant(t.participantIdentity!)
+                                    : undefined,
                                 }
                                 : undefined
                             }
@@ -2434,7 +2078,7 @@ export function RoomPageLiveKit() {
 
                         {videoFxMode !== "off" ? (
                           <button
-                            onClick={() => scheduleApply("off")}
+                            onClick={() => void applyVideoFx("off")}
                             className={
                               isLight
                                 ? "px-3 py-2 rounded-xl bg-black/5 hover:bg-black/10 text-black/80"
@@ -2446,14 +2090,19 @@ export function RoomPageLiveKit() {
                           </button>
                         ) : null}
 
-                        <button onClick={leave} className="px-3 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold">
+                        <button
+                          onClick={leave}
+                          className="px-3 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold"
+                        >
                           Leave
                         </button>
                       </div>
 
                       <button
                         onClick={() => openRightTab("chat")}
-                        className={isLight ? "px-3 py-2 rounded-xl bg-black/5 hover:bg-black/10" : "px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10"}
+                        className={
+                          isLight ? "px-3 py-2 rounded-xl bg-black/5 hover:bg-black/10" : "px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10"
+                        }
                         title="Toggle chat panel"
                       >
                         💬
@@ -2467,12 +2116,21 @@ export function RoomPageLiveKit() {
             {/* RIGHT PANEL */}
             {rightPanelOpen && (
               <div className="min-h-0 h-full overflow-hidden">
-                <div className={`rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col ${panelBg}`} data-theme={theme}>
-                  <div className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
+                <div
+                  className={`rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col ${panelBg}`}
+                  data-theme={theme}
+                >
+                  <div
+                    className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
+                      }`}
+                  >
                     <div className="font-inter font-semibold">
                       {rightTab === "chat" ? "Chat" : rightTab === "intentions" ? "Intentions" : "Panel"}
                     </div>
-                    <button onClick={() => openRightTab(null)} className={isLight ? "w-9 h-9 rounded-xl bg-black/5" : "w-9 h-9 rounded-xl bg-white/5"}>
+                    <button
+                      onClick={() => openRightTab(null)}
+                      className={isLight ? "w-9 h-9 rounded-xl bg-black/5" : "w-9 h-9 rounded-xl bg-white/5"}
+                    >
                       ✕
                     </button>
                   </div>
@@ -2480,7 +2138,11 @@ export function RoomPageLiveKit() {
                   <div className="flex-1 min-h-0 overflow-hidden p-3">
                     {rightTab === "chat" && (
                       <div className="h-full min-h-0 overflow-hidden rounded-xl">
-                        <div data-theme={theme} style={{ colorScheme: theme }} className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}>
+                        <div
+                          data-theme={theme}
+                          style={{ colorScheme: theme }}
+                          className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
+                        >
                           <ChatPanelAny
                             sessionId={session.id}
                             theme={theme}
@@ -2496,7 +2158,11 @@ export function RoomPageLiveKit() {
 
                     {rightTab === "intentions" && (
                       <div className="h-full min-h-0 overflow-y-auto rounded-xl">
-                        <div data-theme={theme} style={{ colorScheme: theme }} className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}>
+                        <div
+                          data-theme={theme}
+                          style={{ colorScheme: theme }}
+                          className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
+                        >
                           <IntentionsPanel theme={theme} sessionId={session.id} timerText={"--:--"} />
                         </div>
                       </div>
