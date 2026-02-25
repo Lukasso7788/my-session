@@ -19,6 +19,10 @@ import ChatPanel from "../components/ChatPanel";
 import { IntentionsPanel } from "../components/IntentionsPanel";
 import { SessionStageBar } from "../components/SessionStageBar";
 import { UserProfileModal } from "../components/UserProfileModal";
+import { PreJoinModal } from "./livekit/PreJoinModalLiveKit";
+import { RoomSettingsModalLiveKit } from "./livekit/RoomSettingsModalLiveKit";
+import { VideoTile } from "./livekit/VideoTileLiveKit";
+import { RemoteAudioRenderer } from "./livekit/RemoteAudioRendererLiveKit";
 
 type RoomTheme = "dark" | "light";
 type RightPanelTab = "participants" | "chat" | "intentions" | null;
@@ -421,229 +425,6 @@ function useMediaQuery(query: string) {
   return matches;
 }
 
-// ---- PreJoin ----
-function PreJoinModal({
-  open,
-  theme,
-  devices,
-  value,
-  onChange,
-  onJoin,
-  onCancel,
-  onRefreshDevices,
-}: {
-  open: boolean;
-  theme: RoomTheme;
-  devices: MediaDevicesResult;
-  value: PreJoinSettings;
-  onChange: (next: PreJoinSettings) => void;
-  onJoin: () => void;
-  onCancel: () => void;
-  onRefreshDevices: () => void;
-}) {
-  if (!open) return null;
-
-  const isLight = theme === "light";
-
-  const overlay = "fixed inset-0 z-[999] flex items-center justify-center px-3";
-  const backdrop = "absolute inset-0 bg-black/55";
-  const card = [
-    "relative w-full max-w-[520px] rounded-3xl shadow-2xl overflow-hidden",
-    isLight ? "bg-white text-black" : "bg-[#020617] text-white",
-    "border",
-    isLight ? "border-black/10" : "border-white/10",
-  ].join(" ");
-
-  const inputWrap = isLight
-    ? "bg-black/5 border border-black/10"
-    : "bg-white/5 border border-white/10";
-
-  const inputCls = isLight
-    ? "text-black placeholder:text-black/40"
-    : "text-white placeholder:text-white/40";
-
-  const labelCls = isLight ? "text-black/70" : "text-white/70";
-
-  const btnPrimary = isLight
-    ? "bg-blue-600 hover:bg-blue-700 text-white"
-    : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]";
-
-  const btnGhost = isLight
-    ? "bg-black/5 hover:bg-black/10 text-black/70"
-    : "bg-white/5 hover:bg-white/10 text-white/80";
-
-  return (
-    <div className={overlay} data-theme={theme} style={{ colorScheme: theme }}>
-      <div className={backdrop} onClick={onCancel} />
-      <div className={card}>
-        <div
-          className={`px-6 py-5 border-b ${isLight ? "border-black/10" : "border-white/10"}`}
-        >
-          <div className="flex items-center justify-between">
-            <div className="font-inter font-semibold text-[16px]">Before you join</div>
-            <button
-              onClick={onCancel}
-              className={`w-9 h-9 rounded-2xl flex items-center justify-center ${btnGhost}`}
-              title="Close"
-            >
-              ✕
-            </button>
-          </div>
-          <div className={`mt-1 text-[12px] ${labelCls}`}>Pick devices + name. Then join.</div>
-        </div>
-
-        <div className="px-6 py-5 flex flex-col gap-4">
-          <div className="flex flex-col gap-2">
-            <div className={`text-[12px] ${labelCls}`}>Display name</div>
-            <div className={`rounded-2xl px-4 py-3 ${inputWrap}`}>
-              <input
-                value={value.displayName}
-                onChange={(e) => onChange({ ...value, displayName: e.target.value })}
-                placeholder="Your name…"
-                className={`w-full bg-transparent outline-none text-[14px] ${inputCls}`}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="flex flex-col gap-2">
-              <div className={`text-[12px] ${labelCls}`}>Microphone</div>
-              <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
-                <select
-                  value={value.audioInputId}
-                  onChange={(e) => onChange({ ...value, audioInputId: e.target.value })}
-                  className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
-                >
-                  <option value="">Default</option>
-                  {devices.audioInputs.map((d, i) => (
-                    <option key={d.deviceId} value={d.deviceId}>
-                      {deviceLabel(d, `Microphone ${i + 1}`)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <div className={`text-[12px] ${labelCls}`}>Camera</div>
-              <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
-                <select
-                  value={value.videoInputId}
-                  onChange={(e) => onChange({ ...value, videoInputId: e.target.value })}
-                  className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
-                >
-                  <option value="">Default</option>
-                  {devices.videoInputs.map((d, i) => (
-                    <option key={d.deviceId} value={d.deviceId}>
-                      {deviceLabel(d, `Camera ${i + 1}`)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="sm:col-span-2 flex flex-col gap-2">
-              <div className={`text-[12px] ${labelCls}`}>Speaker</div>
-              <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
-                <select
-                  value={value.audioOutputId}
-                  onChange={(e) => onChange({ ...value, audioOutputId: e.target.value })}
-                  className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
-                >
-                  <option value="default">Default</option>
-                  {devices.audioOutputs.map((d, i) => (
-                    <option key={d.deviceId} value={d.deviceId}>
-                      {deviceLabel(d, `Speaker ${i + 1}`)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <div className={`rounded-2xl p-4 ${inputWrap}`}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <label className="flex items-center gap-2 text-[13px]">
-                <input
-                  type="checkbox"
-                  checked={value.audioEnabled}
-                  onChange={(e) => onChange({ ...value, audioEnabled: e.target.checked })}
-                />
-                <span className={labelCls}>Audio enabled</span>
-              </label>
-
-              <label className="flex items-center gap-2 text-[13px]">
-                <input
-                  type="checkbox"
-                  checked={value.videoEnabled}
-                  onChange={(e) => onChange({ ...value, videoEnabled: e.target.checked })}
-                />
-                <span className={labelCls}>Video enabled</span>
-              </label>
-
-              <label className="flex items-center gap-2 text-[13px]">
-                <input
-                  type="checkbox"
-                  checked={value.echoCancellation}
-                  onChange={(e) => onChange({ ...value, echoCancellation: e.target.checked })}
-                />
-                <span className={labelCls}>Echo cancellation</span>
-              </label>
-
-              <label className="flex items-center gap-2 text-[13px]">
-                <input
-                  type="checkbox"
-                  checked={value.noiseSuppression}
-                  onChange={(e) => onChange({ ...value, noiseSuppression: e.target.checked })}
-                />
-                <span className={labelCls}>Noise suppression</span>
-              </label>
-
-              <label className="flex items-center gap-2 text-[13px] sm:col-span-2">
-                <input
-                  type="checkbox"
-                  checked={value.autoGainControl}
-                  onChange={(e) => onChange({ ...value, autoGainControl: e.target.checked })}
-                />
-                <span className={labelCls}>Auto gain control</span>
-              </label>
-            </div>
-
-            <div className="mt-3 flex items-center justify-between">
-              <button
-                onClick={onRefreshDevices}
-                className={`h-10 px-4 rounded-2xl text-[13px] ${btnGhost}`}
-              >
-                Refresh devices
-              </button>
-
-              <div className={`text-[12px] ${labelCls}`}>Tip: allow mic/camera to see device names</div>
-            </div>
-          </div>
-        </div>
-
-        <div
-          className={`px-6 py-5 border-t flex items-center justify-end gap-3 ${isLight ? "border-black/10" : "border-white/10"
-            }`}
-        >
-          <button
-            onClick={onCancel}
-            className={`h-11 px-5 rounded-2xl text-[13px] font-semibold ${btnGhost}`}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onJoin}
-            className={`h-11 px-6 rounded-2xl text-[13px] font-semibold ${btnPrimary}`}
-          >
-            Join room
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ---- ErrorBoundary ----
 class LiveKitErrorBoundary extends React.Component<
   { children: React.ReactNode; onReset: () => void; isLight: boolean },
@@ -758,484 +539,6 @@ const FX_BG_PRESETS = [
   },
 ];
 
-// ---- Settings Modal (FX only, renamed to parity "Settings") ----
-function RoomSettingsModalLiveKit({
-  open,
-  theme,
-  mode,
-  blurStrength,
-  onBlurStrengthChange,
-  bgImageUrl,
-  onSetBgImageUrl,
-  onApplyMode,
-  onClose,
-  fxError,
-  fxApplying,
-  fxStatusText,
-  onUploadBg,
-  onResetBg,
-}: {
-  open: boolean;
-  theme: RoomTheme;
-  mode: FxMode;
-  blurStrength: number;
-  onBlurStrengthChange: (v: number) => void;
-  bgImageUrl: string;
-  onSetBgImageUrl: (url: string) => void;
-  onApplyMode: (m: FxMode) => void;
-  onClose: () => void;
-  fxError: string;
-  fxApplying: boolean;
-  fxStatusText: string;
-  onUploadBg: (file: File) => void;
-  onResetBg: () => void;
-}) {
-  if (!open) return null;
-
-  const isLight = theme === "light";
-  const overlay = "fixed inset-0 z-[1001] flex items-center justify-center px-3";
-  const backdrop = "absolute inset-0 bg-black/60";
-  const card = [
-    "relative w-full max-w-[680px] rounded-3xl shadow-2xl overflow-hidden",
-    isLight
-      ? "bg-white text-black border border-black/10"
-      : "bg-[#020617] text-white border border-white/10",
-  ].join(" ");
-
-  const inputWrap = isLight
-    ? "bg-black/5 border border-black/10"
-    : "bg-white/5 border border-white/10";
-  const ghostBtn = isLight
-    ? "bg-black/5 hover:bg-black/10 text-black/80"
-    : "bg-white/5 hover:bg-white/10 text-white/85";
-  const activeBtn = isLight ? "bg-blue-600 text-white" : "bg-emerald-500 text-[#03110a]";
-  const subtleText = isLight ? "text-black/60" : "text-white/60";
-
-  return (
-    <div className={overlay} data-theme={theme} style={{ colorScheme: theme }}>
-      <div className={backdrop} onClick={onClose} />
-      <div className={card}>
-        <div
-          className={`px-6 py-5 border-b ${isLight ? "border-black/10" : "border-white/10"}`}
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="font-semibold text-[16px]">Settings</div>
-              <div className={`text-[12px] mt-1 ${subtleText}`}>
-                Background blur / virtual background for your LiveKit camera.
-              </div>
-            </div>
-            <button onClick={onClose} className={`w-9 h-9 rounded-2xl ${ghostBtn}`}>
-              ✕
-            </button>
-          </div>
-        </div>
-
-        <div className="px-6 py-5 flex flex-col gap-5">
-          <div className={`rounded-2xl p-4 ${inputWrap}`}>
-            <div className="text-[13px] font-semibold mb-3">Effect mode</div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => onApplyMode("off")}
-                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "off" ? activeBtn : ghostBtn
-                  }`}
-                disabled={fxApplying}
-              >
-                FX off
-              </button>
-              <button
-                onClick={() => onApplyMode("blur")}
-                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "blur" ? activeBtn : ghostBtn
-                  }`}
-                disabled={fxApplying}
-              >
-                Blur
-              </button>
-              <button
-                onClick={() => onApplyMode("bg")}
-                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "bg" ? activeBtn : ghostBtn
-                  }`}
-                disabled={fxApplying}
-              >
-                Background image
-              </button>
-            </div>
-
-            <div className={`mt-3 text-[12px] ${subtleText}`}>
-              {fxApplying ? "Applying effect…" : fxStatusText || "Ready"}
-            </div>
-            {fxError ? <div className="mt-2 text-[12px] text-red-500 break-words">{fxError}</div> : null}
-          </div>
-
-          <div className={`rounded-2xl p-4 ${inputWrap}`}>
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-[13px] font-semibold">Blur strength</div>
-                <div className={`text-[12px] mt-1 ${subtleText}`}>Used when Blur mode is active.</div>
-              </div>
-              <div className="text-[13px] font-semibold">{blurStrength}</div>
-            </div>
-
-            <input
-              type="range"
-              min={4}
-              max={30}
-              step={1}
-              value={blurStrength}
-              onChange={(e) => onBlurStrengthChange(Number(e.target.value))}
-              className="w-full mt-3"
-            />
-          </div>
-
-          <div className={`rounded-2xl p-4 ${inputWrap}`}>
-            <div className="flex items-center justify-between gap-3 mb-3">
-              <div>
-                <div className="text-[13px] font-semibold">Background presets</div>
-                <div className={`text-[12px] mt-1 ${subtleText}`}>
-                  Used when Background image mode is active.
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={onResetBg}
-                  className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn}`}
-                  disabled={fxApplying}
-                >
-                  Reset
-                </button>
-                <label
-                  className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn} cursor-pointer flex items-center`}
-                >
-                  Upload
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (!f) return;
-                      onUploadBg(f);
-                      e.currentTarget.value = "";
-                    }}
-                  />
-                </label>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {FX_BG_PRESETS.map((p) => {
-                const selected = bgImageUrl === p.url;
-                return (
-                  <button
-                    key={p.id}
-                    onClick={() => onSetBgImageUrl(p.url)}
-                    className={
-                      "rounded-2xl overflow-hidden border text-left " +
-                      (selected
-                        ? isLight
-                          ? "border-blue-500 ring-2 ring-blue-300"
-                          : "border-emerald-400 ring-2 ring-emerald-300/25"
-                        : isLight
-                          ? "border-black/10"
-                          : "border-white/10")
-                    }
-                    title={p.label}
-                    disabled={fxApplying}
-                  >
-                    <div className="aspect-video w-full">
-                      <img src={p.url} alt={p.label} className="w-full h-full object-cover" />
-                    </div>
-                    <div className={`px-2 py-2 text-[12px] ${isLight ? "bg-white" : "bg-[#0b1220]"}`}>
-                      {p.label}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        <div
-          className={`px-6 py-4 border-t flex items-center justify-end gap-3 ${isLight ? "border-black/10" : "border-white/10"
-            }`}
-        >
-          <button onClick={onClose} className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${ghostBtn}`}>
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ---- Video tile ----
-function VideoTile({
-  label,
-  videoTrack,
-  isLocal,
-  theme,
-  showBadge,
-  hostActions,
-}: {
-  label: string;
-  videoTrack?: Track;
-  isLocal: boolean;
-  theme: RoomTheme;
-  showBadge?: string | null;
-  hostActions?: HostTileActions;
-}) {
-  const ref = useRef<HTMLVideoElement | null>(null);
-  const isLight = theme === "light";
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-
-    let cleanupAttached = false;
-
-    try {
-      if (videoTrack && typeof (videoTrack as any)?.detach === "function") {
-        (videoTrack as any).detach(el);
-      }
-    } catch { }
-    try {
-      el.pause();
-    } catch { }
-    try {
-      (el as any).srcObject = null;
-    } catch { }
-
-    if (!videoTrack) return;
-
-    try {
-      if (typeof (videoTrack as any)?.attach === "function") {
-        (videoTrack as any).attach(el);
-        cleanupAttached = true;
-      } else {
-        console.warn("videoTrack.attach is not a function", videoTrack);
-      }
-    } catch (e) {
-      console.error("attach video failed:", e);
-    }
-
-    return () => {
-      try {
-        if (cleanupAttached && typeof (videoTrack as any)?.detach === "function") {
-          (videoTrack as any).detach(el);
-        }
-      } catch { }
-      try {
-        el.pause();
-      } catch { }
-      try {
-        (el as any).srcObject = null;
-      } catch { }
-    };
-  }, [videoTrack]);
-
-  return (
-    <div
-      className={
-        "relative rounded-2xl overflow-hidden border " +
-        (isLight ? "border-black/10 bg-white/70" : "border-white/10 bg-black/20")
-      }
-    >
-      <div className="w-full aspect-video">
-        {videoTrack ? (
-          <video ref={ref} autoPlay playsInline muted={isLocal} className="w-full h-full object-cover" />
-        ) : (
-          <div
-            className={
-              "w-full h-full flex items-center justify-center text-sm " +
-              (isLight ? "text-black/60 bg-black/5" : "text-white/60 bg-white/5")
-            }
-          >
-            Camera off
-          </div>
-        )}
-      </div>
-
-      <div
-        className={
-          "absolute left-2 bottom-2 px-2 py-1 rounded-lg text-[11px] " +
-          (isLight ? "bg-white/80 text-black" : "bg-black/50 text-white")
-        }
-      >
-        {label}
-        {isLocal ? " (you)" : ""}
-      </div>
-
-      {showBadge ? (
-        <div
-          className={
-            "absolute right-2 top-2 px-2 py-1 rounded-lg text-[11px] font-semibold " +
-            (isLight
-              ? "bg-amber-200/80 text-amber-900"
-              : "bg-amber-400/20 text-amber-200 border border-amber-300/20")
-          }
-        >
-          {showBadge}
-        </div>
-      ) : null}
-
-      {!isLocal && hostActions && (hostActions.canMuteMic || hostActions.canMuteCam) ? (
-        <div className="absolute right-2 bottom-2 flex flex-wrap justify-end gap-1 max-w-[90%]">
-          {hostActions.canMuteMic ? (
-            <button
-              onClick={hostActions.onToggleMuteMic}
-              disabled={hostActions.busy}
-              className={
-                "px-2 py-1 rounded-lg text-[11px] border " +
-                (isLight
-                  ? "bg-white/85 text-black border-black/10 disabled:opacity-50"
-                  : "bg-black/60 text-white border-white/10 disabled:opacity-50")
-              }
-              title="Mute / unmute remote microphone (host action)"
-            >
-              {hostActions.micMuted ? "Unmute mic" : "Mute mic"}
-            </button>
-          ) : null}
-
-          {hostActions.canMuteCam ? (
-            <button
-              onClick={hostActions.onToggleMuteCam}
-              disabled={hostActions.busy}
-              className={
-                "px-2 py-1 rounded-lg text-[11px] border " +
-                (isLight
-                  ? "bg-white/85 text-black border-black/10 disabled:opacity-50"
-                  : "bg-black/60 text-white border-white/10 disabled:opacity-50")
-              }
-              title="Mute / unmute remote camera (host action)"
-            >
-              {hostActions.camMuted ? "Unmute cam" : "Mute cam"}
-            </button>
-          ) : null}
-
-          <button
-            onClick={hostActions.onKick}
-            disabled={hostActions.busy}
-            className="px-2 py-1 rounded-lg text-[11px] bg-red-600/90 hover:bg-red-700 text-white disabled:opacity-50"
-            title="Remove participant from room"
-          >
-            Kick
-          </button>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-// ---- Remote audio renderer ----
-function RemoteAudioRenderer({
-  room,
-  audioOutputId,
-}: {
-  room: Room | null;
-  audioOutputId: string;
-}) {
-  const [tracks, setTracks] = useState<{ id: string; track: RemoteAudioTrack; label: string }[]>([]);
-
-  const rebuild = () => {
-    if (!room) {
-      setTracks([]);
-      return;
-    }
-
-    const next: { id: string; track: RemoteAudioTrack; label: string }[] = [];
-
-    room.remoteParticipants.forEach((p: RemoteParticipant) => {
-      p.audioTrackPublications.forEach((pub: RemoteAudioTrackPublication) => {
-        if (pub.source !== Track.Source.Microphone) return;
-        const t = pub.track;
-        if (!t) return;
-        const label = (p.name || p.identity || "Guest").trim() || "Guest";
-        next.push({ id: `${p.sid}:${pub.trackSid}`, track: t, label });
-      });
-    });
-
-    setTracks(next);
-  };
-
-  useEffect(() => {
-    rebuild();
-    if (!room) return;
-
-    const onAny = () => rebuild();
-
-    room.on(RoomEvent.ParticipantConnected, onAny);
-    room.on(RoomEvent.ParticipantDisconnected, onAny);
-    room.on(RoomEvent.TrackSubscribed, onAny);
-    room.on(RoomEvent.TrackUnsubscribed, onAny);
-    room.on(RoomEvent.Reconnected, onAny);
-
-    return () => {
-      room.off(RoomEvent.ParticipantConnected, onAny);
-      room.off(RoomEvent.ParticipantDisconnected, onAny);
-      room.off(RoomEvent.TrackSubscribed, onAny);
-      room.off(RoomEvent.TrackUnsubscribed, onAny);
-      room.off(RoomEvent.Reconnected, onAny);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [room]);
-
-  return (
-    <>
-      {tracks.map((t) => (
-        <AudioEl key={t.id} track={t.track} audioOutputId={audioOutputId} debugLabel={t.label} />
-      ))}
-    </>
-  );
-}
-
-function AudioEl({
-  track,
-  audioOutputId,
-  debugLabel,
-}: {
-  track: RemoteAudioTrack;
-  audioOutputId: string;
-  debugLabel: string;
-}) {
-  const ref = useRef<HTMLAudioElement | null>(null);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-
-    try {
-      track.attach(el);
-    } catch (e) {
-      console.error("attach audio failed:", e);
-    }
-
-    (async () => {
-      try {
-        const anyEl = el as any;
-        if (audioOutputId && audioOutputId !== "default" && typeof anyEl.setSinkId === "function") {
-          await anyEl.setSinkId(audioOutputId);
-        }
-      } catch {
-        // ignore unsupported browsers
-      }
-
-      try {
-        await el.play();
-      } catch (e) {
-        console.warn("audio play blocked for", debugLabel, e);
-      }
-    })();
-
-    return () => {
-      try {
-        track.detach(el);
-      } catch { }
-    };
-  }, [track, audioOutputId, debugLabel]);
-
-  return <audio ref={ref} autoPlay playsInline />;
-}
 
 // ---- Track processors ----
 function mergeModuleExports(mod: any): any {
@@ -1975,6 +1278,32 @@ export function RoomPageLiveKit() {
 
   const [tiles, setTiles] = useState<TileModel[]>([]);
   const [adminBusyKey, setAdminBusyKey] = useState<string>("");
+  const [openTileAdminMenuId, setOpenTileAdminMenuId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setOpenTileAdminMenuId((prev) => (prev && tiles.some((t) => t.id === prev) ? prev : null));
+  }, [tiles]);
+
+  useEffect(() => {
+    if (!openTileAdminMenuId) return;
+
+    const onDown = (e: MouseEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el?.closest?.("[data-lk-admin-menu-anchor='true']")) return;
+      setOpenTileAdminMenuId(null);
+    };
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpenTileAdminMenuId(null);
+    };
+
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [openTileAdminMenuId]);
 
   const participantsCount = useMemo(() => {
     const r = roomRef.current;
@@ -2083,6 +1412,7 @@ export function RoomPageLiveKit() {
       setFxError("");
       setFxApplying(false);
       currentFxPipelineRef.current = null;
+      setOpenTileAdminMenuId(null);
     }
   };
 
@@ -2115,6 +1445,7 @@ export function RoomPageLiveKit() {
         setConnected(false);
         setTiles([]);
         currentFxPipelineRef.current = null;
+        setOpenTileAdminMenuId(null);
       });
 
       r.on(RoomEvent.Reconnected, refresh);
@@ -2583,6 +1914,44 @@ export function RoomPageLiveKit() {
         ? "Connecting to LiveKit…"
         : "";
 
+  const getTileHostActions = (t: TileModel): HostTileActions | undefined => {
+    if (!isHost || t.isLocal || !t.participantIdentity) return undefined;
+
+    return {
+      canMuteMic: !!t.micTrackSid,
+      canMuteCam: !!t.camTrackSid,
+      micMuted: !!t.micMuted,
+      camMuted: !!t.camMuted,
+      busy:
+        adminBusyKey === `${t.participantIdentity}:${t.micTrackSid}` ||
+        adminBusyKey === `${t.participantIdentity}:${t.camTrackSid}` ||
+        adminBusyKey === `${t.participantIdentity}:kick`,
+      onToggleMuteMic:
+        t.micTrackSid && t.participantIdentity
+          ? () =>
+            hostToggleRemoteTrackMute(
+              t.participantIdentity!,
+              t.micTrackSid!,
+              t.micMuted,
+              "mic"
+            )
+          : undefined,
+      onToggleMuteCam:
+        t.camTrackSid && t.participantIdentity
+          ? () =>
+            hostToggleRemoteTrackMute(
+              t.participantIdentity!,
+              t.camTrackSid!,
+              t.camMuted,
+              "cam"
+            )
+          : undefined,
+      onKick: t.participantIdentity
+        ? () => hostKickParticipant(t.participantIdentity!)
+        : undefined,
+    };
+  };
+
   const videoContent = (
     <div className="w-full h-full min-h-0 relative">
       {roomReadyText ? (
@@ -2598,53 +1967,127 @@ export function RoomPageLiveKit() {
 
       <div className={`h-full min-h-0 overflow-auto p-2 sm:p-3 grid ${gridColsClass} gap-2 sm:gap-3`}>
         {tiles.map((t) => {
-          const hostActions: HostTileActions | undefined =
-            isHost && !t.isLocal && t.participantIdentity
-              ? {
-                canMuteMic: !!t.micTrackSid,
-                canMuteCam: !!t.camTrackSid,
-                micMuted: !!t.micMuted,
-                camMuted: !!t.camMuted,
-                busy:
-                  adminBusyKey === `${t.participantIdentity}:${t.micTrackSid}` ||
-                  adminBusyKey === `${t.participantIdentity}:${t.camTrackSid}` ||
-                  adminBusyKey === `${t.participantIdentity}:kick`,
-                onToggleMuteMic:
-                  t.micTrackSid && t.participantIdentity
-                    ? () =>
-                      hostToggleRemoteTrackMute(
-                        t.participantIdentity!,
-                        t.micTrackSid!,
-                        t.micMuted,
-                        "mic"
-                      )
-                    : undefined,
-                onToggleMuteCam:
-                  t.camTrackSid && t.participantIdentity
-                    ? () =>
-                      hostToggleRemoteTrackMute(
-                        t.participantIdentity!,
-                        t.camTrackSid!,
-                        t.camMuted,
-                        "cam"
-                      )
-                    : undefined,
-                onKick: t.participantIdentity
-                  ? () => hostKickParticipant(t.participantIdentity!)
-                  : undefined,
-              }
-              : undefined;
+          const hostActions = getTileHostActions(t);
+          const isMenuOpen = openTileAdminMenuId === t.id;
+          const hasMuteMic = !!hostActions?.canMuteMic && !!hostActions?.onToggleMuteMic;
+          const hasMuteCam = !!hostActions?.canMuteCam && !!hostActions?.onToggleMuteCam;
+          const hasKick = !!hostActions?.onKick;
+          const hasAnyAdminAction = !!hostActions && (hasMuteMic || hasMuteCam || hasKick);
 
           return (
-            <VideoTile
+            <div
               key={t.id}
-              label={t.label}
-              videoTrack={t.videoTrack}
-              isLocal={t.isLocal}
-              theme={theme}
-              showBadge={t.isLocal && isHost ? "Host" : null}
-              hostActions={hostActions}
-            />
+              className="relative group"
+              onMouseLeave={() => {
+                setOpenTileAdminMenuId((prev) => (prev === t.id ? null : prev));
+              }}
+            >
+              <VideoTile
+                label={t.label}
+                videoTrack={t.videoTrack}
+                isLocal={t.isLocal}
+                theme={theme}
+                showBadge={t.isLocal && isHost ? "Host" : null}
+                hostActions={undefined}
+              />
+
+              {hasAnyAdminAction && (
+                <div
+                  className="absolute top-2 right-2 z-20"
+                  data-lk-admin-menu-anchor="true"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="relative">
+                    <button
+                      type="button"
+                      title="Participant actions"
+                      aria-label="Participant actions"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpenTileAdminMenuId((prev) => (prev === t.id ? null : t.id));
+                      }}
+                      className={[
+                        "w-9 h-9 rounded-xl flex items-center justify-center transition shadow-sm",
+                        isLight
+                          ? "bg-white/90 border border-black/10 text-black/75 hover:bg-white"
+                          : "bg-black/55 border border-white/10 text-white/90 hover:bg-black/70",
+                        isMenuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                      ].join(" ")}
+                    >
+                      <span className="text-lg leading-none -mt-[2px]">⋯</span>
+                    </button>
+
+                    {isMenuOpen && (
+                      <div
+                        className={`absolute right-0 top-[calc(100%+8px)] w-[190px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
+                          }`}
+                      >
+                        {hasMuteMic && (
+                          <button
+                            type="button"
+                            disabled={!!hostActions?.busy}
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if (!hostActions?.onToggleMuteMic || hostActions.busy) return;
+                              await hostActions.onToggleMuteMic();
+                              setOpenTileAdminMenuId(null);
+                            }}
+                            className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight
+                              ? "text-black/80 hover:bg-black/5"
+                              : "text-white/90 hover:bg-white/5"
+                              }`}
+                          >
+                            {hostActions?.micMuted ? "Unmute Mic" : "Mute Mic"}
+                          </button>
+                        )}
+
+                        {hasMuteCam && (
+                          <button
+                            type="button"
+                            disabled={!!hostActions?.busy}
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if (!hostActions?.onToggleMuteCam || hostActions.busy) return;
+                              await hostActions.onToggleMuteCam();
+                              setOpenTileAdminMenuId(null);
+                            }}
+                            className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight
+                              ? "text-black/80 hover:bg-black/5"
+                              : "text-white/90 hover:bg-white/5"
+                              }`}
+                          >
+                            {hostActions?.camMuted ? "Unmute Camera" : "Mute Camera"}
+                          </button>
+                        )}
+
+                        {hasKick && (hasMuteMic || hasMuteCam) && (
+                          <div className={isLight ? "h-px bg-black/10" : "h-px bg-white/10"} />
+                        )}
+
+                        {hasKick && (
+                          <button
+                            type="button"
+                            disabled={!!hostActions?.busy}
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if (!hostActions?.onKick || hostActions.busy) return;
+                              await hostActions.onKick();
+                              setOpenTileAdminMenuId(null);
+                            }}
+                            className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight
+                              ? "text-red-700 hover:bg-red-50"
+                              : "text-red-300 hover:bg-red-500/10"
+                              }`}
+                          >
+                            Kick participant
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           );
         })}
 
@@ -2713,8 +2156,8 @@ export function RoomPageLiveKit() {
             <button
               onClick={() => openRightTab(null)}
               className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                  ? "bg-black/5 hover:bg-black/10 text-black/60"
-                  : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                ? "bg-black/5 hover:bg-black/10 text-black/60"
+                : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
                 }`}
               title="Close"
             >
@@ -2732,8 +2175,8 @@ export function RoomPageLiveKit() {
                 onChange={(e) => setParticipantsSearch(e.target.value)}
                 placeholder="Search participants..."
                 className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${isLight
-                    ? "text-black/80 placeholder:text-black/40"
-                    : "text-white/85 placeholder:text-white/35"
+                  ? "text-black/80 placeholder:text-black/40"
+                  : "text-white/85 placeholder:text-white/35"
                   }`}
               />
             </div>
@@ -2760,12 +2203,12 @@ export function RoomPageLiveKit() {
                     <div className="flex items-center gap-3 min-w-0">
                       <div
                         className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${p.isLocal
-                            ? isLight
-                              ? "bg-blue-500/15 text-blue-700"
-                              : "bg-emerald-500/80 text-[#02140B]"
-                            : isLight
-                              ? "bg-black/5 text-black/75"
-                              : "bg-white/10 text-white/85"
+                          ? isLight
+                            ? "bg-blue-500/15 text-blue-700"
+                            : "bg-emerald-500/80 text-[#02140B]"
+                          : isLight
+                            ? "bg-black/5 text-black/75"
+                            : "bg-white/10 text-white/85"
                           }`}
                       >
                         {initials}
@@ -2838,8 +2281,8 @@ export function RoomPageLiveKit() {
             <button
               onClick={() => { }}
               className={`w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 ${isLight
-                  ? "bg-blue-600 hover:bg-blue-700 text-white"
-                  : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
+                ? "bg-blue-600 hover:bg-blue-700 text-white"
+                : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
                 }`}
             >
               <span className="text-lg">+</span>
@@ -2859,8 +2302,8 @@ export function RoomPageLiveKit() {
             <button
               onClick={() => openRightTab(null)}
               className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                  ? "bg-black/5 hover:bg-black/10 text-black/60"
-                  : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                ? "bg-black/5 hover:bg-black/10 text-black/60"
+                : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
                 }`}
               title="Close"
             >
@@ -2911,8 +2354,8 @@ export function RoomPageLiveKit() {
             <button
               onClick={() => openRightTab(null)}
               className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                  ? "bg-black/5 hover:bg-black/10 text-black/60"
-                  : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                ? "bg-black/5 hover:bg-black/10 text-black/60"
+                : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
                 }`}
               title="Close"
             >
@@ -3007,8 +2450,8 @@ export function RoomPageLiveKit() {
                 <button
                   onClick={() => setSelectedUser(session.host_profile || null)}
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition text-[13px] ${isLight
-                      ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                      : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                    ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                    : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                     }`}
                   title="Host profile"
                 >
@@ -3048,8 +2491,8 @@ export function RoomPageLiveKit() {
               <button
                 onClick={() => setSelectedUser(session.host_profile || null)}
                 className={`w-10 h-10 rounded-2xl flex items-center justify-center border transition ${isLight
-                    ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70"
-                    : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-white/85"
+                  ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70"
+                  : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-white/85"
                   }`}
                 title={`Host: ${String(session.host_profile.full_name || "Host")}`}
                 aria-label="Host profile"

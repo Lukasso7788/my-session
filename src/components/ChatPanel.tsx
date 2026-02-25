@@ -33,6 +33,14 @@ const REACTIONS_TABLE = "session_chat_message_reactions";
 // базовый набор эмодзи (можешь расширить)
 const REACTION_EMOJIS = ["🔥", "😂", "👏", "❤️", "👍", "👎"] as const;
 
+// эмодзи для composer (input поля)
+const COMPOSER_EMOJIS = [
+    "😀", "😄", "😁", "😂", "🤣", "😊", "😉", "😍",
+    "🤔", "😎", "😭", "😅", "😤", "🤝", "🙏", "💪",
+    "🔥", "❤️", "👍", "👎", "👏", "✅", "🎯", "🚀",
+    "💡", "🧠", "📌", "⏳", "✨", "⚡", "👀", "💬",
+] as const;
+
 function avatarFromProfile(profile?: Profile | null) {
     return (
         profile?.avatar_url ||
@@ -563,6 +571,8 @@ export function ChatPanel({
     const [unseenNew, setUnseenNew] = useState<number>(0);
 
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
+    const composerEmojiRef = useRef<HTMLDivElement | null>(null);
+    const [composerEmojiOpen, setComposerEmojiOpen] = useState(false);
 
     // bootstrap timestamp (avoid noisy reloads)
     const bootTsRef = useRef<number>(0);
@@ -659,6 +669,18 @@ export function ChatPanel({
     const composerInputCls = isLight
         ? "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none bg-white border border-black/10 text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
         : "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none bg-[#0B1220]/70 border border-white/10 text-white/85 placeholder:text-white/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500";
+
+    const composerEmojiBtnCls = isLight
+        ? "w-11 h-11 rounded-xl flex items-center justify-center transition border bg-white border-black/10 text-black/60 hover:bg-black/5 hover:text-black/80"
+        : "w-11 h-11 rounded-xl flex items-center justify-center transition border bg-[#0B1220]/70 border-white/10 text-white/70 hover:bg-white/5 hover:text-white/90";
+
+    const composerEmojiPopoverCls = isLight
+        ? "absolute bottom-full right-0 mb-2 z-50 w-[280px] rounded-2xl border border-black/10 bg-white shadow-2xl p-3"
+        : "absolute bottom-full right-0 mb-2 z-50 w-[280px] rounded-2xl border border-white/10 bg-[#020617] shadow-2xl p-3";
+
+    const composerEmojiTileCls = isLight
+        ? "h-9 w-9 rounded-lg flex items-center justify-center text-lg hover:bg-black/5 transition"
+        : "h-9 w-9 rounded-lg flex items-center justify-center text-lg hover:bg-white/5 transition";
 
     // ---------- auth user + my profile
     useEffect(() => {
@@ -813,6 +835,31 @@ export function ChatPanel({
         return () => document.removeEventListener("keydown", onKey);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [reactionDetails.open]);
+
+    // закрытие composer emoji picker по клику вне / Esc
+    useEffect(() => {
+        if (!composerEmojiOpen) return;
+
+        const onDown = (e: MouseEvent) => {
+            const t = e.target as Node | null;
+            if (!t || !composerEmojiRef.current) return;
+            if (!composerEmojiRef.current.contains(t)) {
+                setComposerEmojiOpen(false);
+            }
+        };
+
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") setComposerEmojiOpen(false);
+        };
+
+        document.addEventListener("mousedown", onDown);
+        document.addEventListener("keydown", onKey);
+
+        return () => {
+            document.removeEventListener("mousedown", onDown);
+            document.removeEventListener("keydown", onKey);
+        };
+    }, [composerEmojiOpen]);
 
     // ---------- load messages (initial + fallback)
     const loadMessages = async (opts?: { silent?: boolean }): Promise<Msg[] | null> => {
@@ -1314,6 +1361,41 @@ export function ChatPanel({
         el.style.height = `${next}px`;
     }, [text, replyTo]);
 
+    const insertEmojiToComposer = (emoji: string) => {
+        const ta = composerRef.current;
+
+        // если textarea не смонтирована — просто добавим в конец
+        if (!ta) {
+            setText((prev) => prev + emoji);
+            setComposerEmojiOpen(false);
+            return;
+        }
+
+        const start = ta.selectionStart ?? text.length;
+        const end = ta.selectionEnd ?? text.length;
+
+        setText((prev) => {
+            const s = Math.max(0, Math.min(start, prev.length));
+            const e = Math.max(s, Math.min(end, prev.length));
+            return prev.slice(0, s) + emoji + prev.slice(e);
+        });
+
+        setComposerEmojiOpen(false);
+
+        // возвращаем фокус и курсор после вставленного эмодзи
+        requestAnimationFrame(() => {
+            const el = composerRef.current;
+            if (!el) return;
+            el.focus();
+            const pos = start + emoji.length;
+            try {
+                el.setSelectionRange(pos, pos);
+            } catch {
+                // noop
+            }
+        });
+    };
+
     const send = async () => {
         const raw = text.trim();
         if (!raw || !userId || !sessionId) return;
@@ -1347,6 +1429,7 @@ export function ChatPanel({
             return next;
         });
         setText("");
+        setComposerEmojiOpen(false);
         setReplyTo(null);
 
         const { error } = await supabase.from(MSG_TABLE).insert({
@@ -1817,7 +1900,7 @@ export function ChatPanel({
                     </div>
                 )}
 
-                {/* ROW: input + send button */}
+                {/* ROW: input + emoji + send button */}
                 <div className="flex items-end gap-2">
                     <textarea
                         ref={composerRef}
@@ -1837,6 +1920,48 @@ export function ChatPanel({
                             }
                         }}
                     />
+
+                    {/* Emoji picker button */}
+                    <div className="relative" ref={composerEmojiRef}>
+                        <button
+                            type="button"
+                            title="Add emoji"
+                            className={composerEmojiBtnCls}
+                            onMouseDown={(e) => {
+                                // не даем textarea терять selection/cursor до вставки эмодзи
+                                e.preventDefault();
+                            }}
+                            onClick={() => setComposerEmojiOpen((v) => !v)}
+                        >
+                            <Smile size={18} />
+                        </button>
+
+                        {composerEmojiOpen && (
+                            <div className={composerEmojiPopoverCls}>
+                                <div className={"text-[11px] mb-2 " + (isLight ? "text-black/45" : "text-white/45")}>
+                                    Pick an emoji
+                                </div>
+
+                                <div className="grid grid-cols-8 gap-1">
+                                    {COMPOSER_EMOJIS.map((emoji) => (
+                                        <button
+                                            key={emoji}
+                                            type="button"
+                                            className={composerEmojiTileCls}
+                                            title={emoji}
+                                            onMouseDown={(e) => {
+                                                // сохраняем курсор в textarea
+                                                e.preventDefault();
+                                            }}
+                                            onClick={() => insertEmojiToComposer(emoji)}
+                                        >
+                                            {emoji}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
 
                     <button
                         onClick={send}
