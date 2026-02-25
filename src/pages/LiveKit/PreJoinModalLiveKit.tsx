@@ -1,6 +1,9 @@
-import React from "react";
+// src/pages/LiveKit/PreJoinModalLiveKit.tsx
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import type { LocalVideoTrack } from "livekit-client";
 
 type RoomTheme = "dark" | "light";
+type FxMode = "off" | "blur" | "bg";
 
 type MediaDevicesResult = {
   videoInputs: MediaDeviceInfo[];
@@ -22,6 +25,8 @@ type PreJoinSettings = {
   autoGainControl: boolean;
 };
 
+type BgPreset = { id: string; label: string; url: string };
+
 function deviceLabel(d: MediaDeviceInfo, fallback: string) {
   const l = (d.label || "").trim();
   return l || fallback;
@@ -36,6 +41,26 @@ export function PreJoinModal({
   onJoin,
   onCancel,
   onRefreshDevices,
+
+  // NEW: preview + FX
+  previewVideoTrack,
+  previewVersion,
+
+  videoFxMode,
+  blurStrength,
+  bgImageUrl,
+
+  fxApplying,
+  fxError,
+  fxStatusText,
+
+  fxBgPresets,
+
+  onApplyVideoFx,
+  onBlurStrengthChange,
+  onSetBgImageUrl,
+  onUploadBg,
+  onResetBg,
 }: {
   open: boolean;
   theme: RoomTheme;
@@ -45,6 +70,25 @@ export function PreJoinModal({
   onJoin: () => void;
   onCancel: () => void;
   onRefreshDevices: () => void;
+
+  previewVideoTrack?: LocalVideoTrack | null;
+  previewVersion?: number;
+
+  videoFxMode: FxMode;
+  blurStrength: number;
+  bgImageUrl: string;
+
+  fxApplying: boolean;
+  fxError: string;
+  fxStatusText: string;
+
+  fxBgPresets: BgPreset[];
+
+  onApplyVideoFx: (mode: FxMode) => Promise<void> | void;
+  onBlurStrengthChange: (next: number) => void;
+  onSetBgImageUrl: (url: string) => void;
+  onUploadBg: (file: File) => void;
+  onResetBg: () => void;
 }) {
   if (!open) return null;
 
@@ -53,7 +97,7 @@ export function PreJoinModal({
   const overlay = "fixed inset-0 z-[999] flex items-center justify-center px-3";
   const backdrop = "absolute inset-0 bg-black/55";
   const card = [
-    "relative w-full max-w-[520px] rounded-3xl shadow-2xl overflow-hidden",
+    "relative w-full max-w-[980px] rounded-3xl shadow-2xl overflow-hidden",
     isLight ? "bg-white text-black" : "bg-[#020617] text-white",
     "border",
     isLight ? "border-black/10" : "border-white/10",
@@ -77,15 +121,111 @@ export function PreJoinModal({
     ? "bg-black/5 hover:bg-black/10 text-black/70"
     : "bg-white/5 hover:bg-white/10 text-white/80";
 
+  const btnDanger = isLight
+    ? "bg-red-600 hover:bg-red-700 text-white"
+    : "bg-red-600 hover:bg-red-700 text-white";
+
+  const fxBtnBase =
+    "h-10 px-4 rounded-2xl text-[13px] font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed";
+
+  const fxBtnSelected = isLight
+    ? "bg-black/80 text-white hover:bg-black"
+    : "bg-white text-black hover:bg-white";
+
+  const fxBtnIdle = btnGhost;
+
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  // attach livekit track to <video> (re-run on previewVersion)
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+
+    // cleanup previous
+    try {
+      (el as any).srcObject = null;
+    } catch { }
+
+    if (!value.videoEnabled || !previewVideoTrack) return;
+
+    try {
+      el.muted = true;
+      el.playsInline = true;
+      el.autoplay = true;
+
+      // LocalVideoTrack.attach can accept an element
+      previewVideoTrack.attach(el);
+    } catch (e) {
+      console.warn("preview attach failed", e);
+    }
+
+    return () => {
+      try {
+        previewVideoTrack.detach(el);
+      } catch { }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, value.videoEnabled, previewVideoTrack, previewVersion]);
+
+  // Debounced auto-reapply while in prejoin (blur slider / bg change)
+  const [blurDraft, setBlurDraft] = useState<number>(blurStrength);
+  useEffect(() => setBlurDraft(blurStrength), [blurStrength]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!value.videoEnabled) return;
+    if (videoFxMode !== "blur") return;
+    if (fxApplying) return;
+
+    const t = window.setTimeout(() => {
+      // parent already has blurStrength, but we sync through onBlurStrengthChange
+      onApplyVideoFx("blur");
+    }, 280);
+
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blurStrength, open, value.videoEnabled, videoFxMode]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!value.videoEnabled) return;
+    if (videoFxMode !== "bg") return;
+    if (fxApplying) return;
+
+    const t = window.setTimeout(() => {
+      onApplyVideoFx("bg");
+    }, 220);
+
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bgImageUrl, open, value.videoEnabled, videoFxMode]);
+
+  const previewHint = useMemo(() => {
+    if (!value.videoEnabled) return "Video is disabled";
+    if (!previewVideoTrack) return "Preparing camera preview…";
+    return "Preview";
+  }, [value.videoEnabled, previewVideoTrack]);
+
+  const fxBlockedReason = !value.videoEnabled
+    ? "Turn video on to use FX"
+    : "";
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   return (
     <div className={overlay} data-theme={theme} style={{ colorScheme: theme }}>
       <div className={backdrop} onClick={onCancel} />
-      <div className={card}>
-        <div
-          className={`px-6 py-5 border-b ${isLight ? "border-black/10" : "border-white/10"}`}
-        >
-          <div className="flex items-center justify-between">
-            <div className="font-inter font-semibold text-[16px]">Before you join</div>
+      <div className={card} onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className={`px-6 py-5 border-b ${isLight ? "border-black/10" : "border-white/10"}`}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="font-inter font-semibold text-[16px]">Before you join</div>
+              <div className={`mt-1 text-[12px] ${labelCls}`}>
+                Preview + devices + background effects — then join.
+              </div>
+            </div>
+
             <button
               onClick={onCancel}
               className={`w-9 h-9 rounded-2xl flex items-center justify-center ${btnGhost}`}
@@ -94,155 +234,369 @@ export function PreJoinModal({
               ✕
             </button>
           </div>
-          <div className={`mt-1 text-[12px] ${labelCls}`}>Pick devices + name. Then join.</div>
         </div>
 
-        <div className="px-6 py-5 flex flex-col gap-4">
-          <div className="flex flex-col gap-2">
-            <div className={`text-[12px] ${labelCls}`}>Display name</div>
-            <div className={`rounded-2xl px-4 py-3 ${inputWrap}`}>
-              <input
-                value={value.displayName}
-                onChange={(e) => onChange({ ...value, displayName: e.target.value })}
-                placeholder="Your name…"
-                className={`w-full bg-transparent outline-none text-[14px] ${inputCls}`}
-              />
-            </div>
-          </div>
+        {/* Body */}
+        <div className="px-6 py-5">
+          <div className="grid grid-cols-1 lg:grid-cols-[380px,1fr] gap-5">
+            {/* LEFT: Preview + FX */}
+            <div className="flex flex-col gap-4">
+              {/* Preview card */}
+              <div className={`rounded-3xl overflow-hidden border ${isLight ? "border-black/10 bg-black/5" : "border-white/10 bg-white/5"}`}>
+                <div className="px-4 py-3 flex items-center justify-between">
+                  <div className={`text-[12px] font-semibold ${labelCls}`}>{previewHint}</div>
+                  <div className={`text-[11px] ${labelCls}`}>
+                    {value.videoEnabled ? (videoFxMode === "blur" ? "Blur" : videoFxMode === "bg" ? "Background" : "Clean") : "Off"}
+                  </div>
+                </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="flex flex-col gap-2">
-              <div className={`text-[12px] ${labelCls}`}>Microphone</div>
-              <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
-                <select
-                  value={value.audioInputId}
-                  onChange={(e) => onChange({ ...value, audioInputId: e.target.value })}
-                  className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
-                >
-                  <option value="">Default</option>
-                  {devices.audioInputs.map((d, i) => (
-                    <option key={d.deviceId} value={d.deviceId}>
-                      {deviceLabel(d, `Microphone ${i + 1}`)}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative aspect-video">
+                  {value.videoEnabled ? (
+                    <>
+                      <video
+                        ref={videoRef}
+                        className="absolute inset-0 w-full h-full object-cover"
+                        muted
+                        playsInline
+                        autoPlay
+                      />
+                      {!previewVideoTrack && (
+                        <div className={`absolute inset-0 flex items-center justify-center text-[12px] ${labelCls}`}>
+                          Allow camera permissions to see preview
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className={`absolute inset-0 flex items-center justify-center text-[12px] ${labelCls}`}>
+                      Video disabled
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* FX panel */}
+              <div className={`rounded-3xl p-4 ${inputWrap}`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className={`text-[12px] font-semibold ${labelCls}`}>Background effects</div>
+                  {fxApplying ? (
+                    <div className={`text-[11px] ${labelCls}`}>Applying…</div>
+                  ) : fxStatusText ? (
+                    <div className={`text-[11px] ${labelCls}`}>{fxStatusText}</div>
+                  ) : (
+                    <div className={`text-[11px] ${labelCls}`}></div>
+                  )}
+                </div>
+
+                <div className="mt-3 flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={!!fxBlockedReason || fxApplying}
+                    onClick={() => onApplyVideoFx("off")}
+                    className={`${fxBtnBase} ${videoFxMode === "off" ? fxBtnSelected : fxBtnIdle}`}
+                    title={fxBlockedReason || "Disable FX"}
+                  >
+                    Off
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={!!fxBlockedReason || fxApplying}
+                    onClick={() => onApplyVideoFx("blur")}
+                    className={`${fxBtnBase} ${videoFxMode === "blur" ? fxBtnSelected : fxBtnIdle}`}
+                    title={fxBlockedReason || "Apply blur"}
+                  >
+                    Blur
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={!!fxBlockedReason || fxApplying}
+                    onClick={() => onApplyVideoFx("bg")}
+                    className={`${fxBtnBase} ${videoFxMode === "bg" ? fxBtnSelected : fxBtnIdle}`}
+                    title={fxBlockedReason || "Apply background"}
+                  >
+                    Background
+                  </button>
+                </div>
+
+                {!!fxBlockedReason && (
+                  <div className={`mt-2 text-[11px] ${labelCls}`}>{fxBlockedReason}</div>
+                )}
+
+                {fxError ? (
+                  <div className={`mt-3 text-[12px] ${isLight ? "text-red-700" : "text-red-300"}`}>
+                    {fxError}
+                  </div>
+                ) : null}
+
+                {/* Blur controls */}
+                {videoFxMode === "blur" && (
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between">
+                      <div className={`text-[12px] ${labelCls}`}>Blur strength</div>
+                      <div className={`text-[12px] ${labelCls}`}>{blurDraft}</div>
+                    </div>
+
+                    <input
+                      type="range"
+                      min={2}
+                      max={22}
+                      step={1}
+                      value={blurDraft}
+                      onChange={(e) => {
+                        const v = Number(e.target.value) || 0;
+                        setBlurDraft(v);
+                        onBlurStrengthChange(v);
+                      }}
+                      className="mt-2 w-full"
+                      disabled={!value.videoEnabled}
+                    />
+                    <div className={`mt-2 text-[11px] ${labelCls}`}>
+                      Tip: Blur is CPU-heavy. If it stutters, lower strength.
+                    </div>
+                  </div>
+                )}
+
+                {/* Background controls */}
+                {videoFxMode === "bg" && (
+                  <div className="mt-4">
+                    <div className={`text-[12px] ${labelCls}`}>Presets</div>
+
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      {fxBgPresets?.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          disabled={!value.videoEnabled || fxApplying}
+                          onClick={() => onSetBgImageUrl(p.url)}
+                          className={`rounded-2xl overflow-hidden border text-left transition ${isLight ? "border-black/10 hover:border-black/20" : "border-white/10 hover:border-white/20"
+                            }`}
+                          title={p.label}
+                        >
+                          <div
+                            className="h-[56px] w-full"
+                            style={{
+                              backgroundImage: `url(${p.url})`,
+                              backgroundSize: "cover",
+                              backgroundPosition: "center",
+                            }}
+                          />
+                          <div className={`px-3 py-2 text-[12px] ${labelCls}`}>{p.label}</div>
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (!f) return;
+                          onUploadBg(f);
+                          // allow re-select same file
+                          try {
+                            e.currentTarget.value = "";
+                          } catch { }
+                        }}
+                      />
+
+                      <button
+                        type="button"
+                        disabled={!value.videoEnabled || fxApplying}
+                        onClick={() => fileInputRef.current?.click()}
+                        className={`h-10 px-4 rounded-2xl text-[13px] font-semibold ${btnGhost}`}
+                      >
+                        Upload image
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={!value.videoEnabled || fxApplying}
+                        onClick={onResetBg}
+                        className={`h-10 px-4 rounded-2xl text-[13px] font-semibold ${btnGhost}`}
+                      >
+                        Reset
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={!value.videoEnabled || fxApplying}
+                        onClick={() => onApplyVideoFx("bg")}
+                        className={`h-10 px-4 rounded-2xl text-[13px] font-semibold ${btnGhost}`}
+                        title="Re-apply background now"
+                      >
+                        Re-apply
+                      </button>
+                    </div>
+
+                    <div className={`mt-2 text-[11px] ${labelCls}`}>
+                      Use presets for best performance. Large images can be heavier.
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="flex flex-col gap-2">
-              <div className={`text-[12px] ${labelCls}`}>Camera</div>
-              <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
-                <select
-                  value={value.videoInputId}
-                  onChange={(e) => onChange({ ...value, videoInputId: e.target.value })}
-                  className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
-                >
-                  <option value="">Default</option>
-                  {devices.videoInputs.map((d, i) => (
-                    <option key={d.deviceId} value={d.deviceId}>
-                      {deviceLabel(d, `Camera ${i + 1}`)}
-                    </option>
-                  ))}
-                </select>
+            {/* RIGHT: Devices + toggles */}
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2">
+                <div className={`text-[12px] ${labelCls}`}>Display name</div>
+                <div className={`rounded-2xl px-4 py-3 ${inputWrap}`}>
+                  <input
+                    value={value.displayName}
+                    onChange={(e) => onChange({ ...value, displayName: e.target.value })}
+                    placeholder="Your name…"
+                    className={`w-full bg-transparent outline-none text-[14px] ${inputCls}`}
+                  />
+                </div>
               </div>
-            </div>
 
-            <div className="sm:col-span-2 flex flex-col gap-2">
-              <div className={`text-[12px] ${labelCls}`}>Speaker</div>
-              <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
-                <select
-                  value={value.audioOutputId}
-                  onChange={(e) => onChange({ ...value, audioOutputId: e.target.value })}
-                  className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
-                >
-                  <option value="default">Default</option>
-                  {devices.audioOutputs.map((d, i) => (
-                    <option key={d.deviceId} value={d.deviceId}>
-                      {deviceLabel(d, `Speaker ${i + 1}`)}
-                    </option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="flex flex-col gap-2">
+                  <div className={`text-[12px] ${labelCls}`}>Microphone</div>
+                  <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
+                    <select
+                      value={value.audioInputId}
+                      onChange={(e) => onChange({ ...value, audioInputId: e.target.value })}
+                      className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
+                    >
+                      <option value="">Default</option>
+                      {devices.audioInputs.map((d, i) => (
+                        <option key={d.deviceId} value={d.deviceId}>
+                          {deviceLabel(d, `Microphone ${i + 1}`)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <div className={`text-[12px] ${labelCls}`}>Camera</div>
+                  <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
+                    <select
+                      value={value.videoInputId}
+                      onChange={(e) => onChange({ ...value, videoInputId: e.target.value })}
+                      className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
+                    >
+                      <option value="">Default</option>
+                      {devices.videoInputs.map((d, i) => (
+                        <option key={d.deviceId} value={d.deviceId}>
+                          {deviceLabel(d, `Camera ${i + 1}`)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="sm:col-span-2 flex flex-col gap-2">
+                  <div className={`text-[12px] ${labelCls}`}>Speaker</div>
+                  <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
+                    <select
+                      value={value.audioOutputId}
+                      onChange={(e) => onChange({ ...value, audioOutputId: e.target.value })}
+                      className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
+                    >
+                      <option value="default">Default</option>
+                      {devices.audioOutputs.map((d, i) => (
+                        <option key={d.deviceId} value={d.deviceId}>
+                          {deviceLabel(d, `Speaker ${i + 1}`)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
 
-          <div className={`rounded-2xl p-4 ${inputWrap}`}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <label className="flex items-center gap-2 text-[13px]">
-                <input
-                  type="checkbox"
-                  checked={value.audioEnabled}
-                  onChange={(e) => onChange({ ...value, audioEnabled: e.target.checked })}
-                />
-                <span className={labelCls}>Audio enabled</span>
-              </label>
+              <div className={`rounded-2xl p-4 ${inputWrap}`}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="flex items-center gap-2 text-[13px]">
+                    <input
+                      type="checkbox"
+                      checked={value.audioEnabled}
+                      onChange={(e) => onChange({ ...value, audioEnabled: e.target.checked })}
+                    />
+                    <span className={labelCls}>Audio enabled</span>
+                  </label>
 
-              <label className="flex items-center gap-2 text-[13px]">
-                <input
-                  type="checkbox"
-                  checked={value.videoEnabled}
-                  onChange={(e) => onChange({ ...value, videoEnabled: e.target.checked })}
-                />
-                <span className={labelCls}>Video enabled</span>
-              </label>
+                  <label className="flex items-center gap-2 text-[13px]">
+                    <input
+                      type="checkbox"
+                      checked={value.videoEnabled}
+                      onChange={(e) => onChange({ ...value, videoEnabled: e.target.checked })}
+                    />
+                    <span className={labelCls}>Video enabled</span>
+                  </label>
 
-              <label className="flex items-center gap-2 text-[13px]">
-                <input
-                  type="checkbox"
-                  checked={value.echoCancellation}
-                  onChange={(e) => onChange({ ...value, echoCancellation: e.target.checked })}
-                />
-                <span className={labelCls}>Echo cancellation</span>
-              </label>
+                  <label className="flex items-center gap-2 text-[13px]">
+                    <input
+                      type="checkbox"
+                      checked={value.echoCancellation}
+                      onChange={(e) => onChange({ ...value, echoCancellation: e.target.checked })}
+                    />
+                    <span className={labelCls}>Echo cancellation</span>
+                  </label>
 
-              <label className="flex items-center gap-2 text-[13px]">
-                <input
-                  type="checkbox"
-                  checked={value.noiseSuppression}
-                  onChange={(e) => onChange({ ...value, noiseSuppression: e.target.checked })}
-                />
-                <span className={labelCls}>Noise suppression</span>
-              </label>
+                  <label className="flex items-center gap-2 text-[13px]">
+                    <input
+                      type="checkbox"
+                      checked={value.noiseSuppression}
+                      onChange={(e) => onChange({ ...value, noiseSuppression: e.target.checked })}
+                    />
+                    <span className={labelCls}>Noise suppression</span>
+                  </label>
 
-              <label className="flex items-center gap-2 text-[13px] sm:col-span-2">
-                <input
-                  type="checkbox"
-                  checked={value.autoGainControl}
-                  onChange={(e) => onChange({ ...value, autoGainControl: e.target.checked })}
-                />
-                <span className={labelCls}>Auto gain control</span>
-              </label>
-            </div>
+                  <label className="flex items-center gap-2 text-[13px] sm:col-span-2">
+                    <input
+                      type="checkbox"
+                      checked={value.autoGainControl}
+                      onChange={(e) => onChange({ ...value, autoGainControl: e.target.checked })}
+                    />
+                    <span className={labelCls}>Auto gain control</span>
+                  </label>
+                </div>
 
-            <div className="mt-3 flex items-center justify-between">
-              <button
-                onClick={onRefreshDevices}
-                className={`h-10 px-4 rounded-2xl text-[13px] ${btnGhost}`}
-              >
-                Refresh devices
-              </button>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <button
+                    onClick={onRefreshDevices}
+                    className={`h-10 px-4 rounded-2xl text-[13px] font-semibold ${btnGhost}`}
+                  >
+                    Refresh devices
+                  </button>
 
-              <div className={`text-[12px] ${labelCls}`}>
-                Tip: allow mic/camera to see device names
+                  <div className={`text-[12px] ${labelCls}`}>
+                    Tip: allow mic/camera to see device names
+                  </div>
+                </div>
+              </div>
+
+              <div className={`rounded-2xl p-4 ${isLight ? "bg-blue-50 border border-blue-100" : "bg-white/5 border border-white/10"}`}>
+                <div className={`text-[12px] font-semibold ${isLight ? "text-blue-900/80" : "text-white/80"}`}>
+                  Quick sanity check
+                </div>
+                <div className={`mt-1 text-[12px] ${isLight ? "text-blue-900/70" : "text-white/65"}`}>
+                  If preview is blank — click anywhere and allow camera permissions in the browser.
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        <div
-          className={`px-6 py-5 border-t flex items-center justify-end gap-3 ${
-            isLight ? "border-black/10" : "border-white/10"
-          }`}
-        >
+        {/* Footer */}
+        <div className={`px-6 py-5 border-t flex items-center justify-end gap-3 ${isLight ? "border-black/10" : "border-white/10"}`}>
           <button
             onClick={onCancel}
             className={`h-11 px-5 rounded-2xl text-[13px] font-semibold ${btnGhost}`}
           >
             Cancel
           </button>
+
           <button
             onClick={onJoin}
-            className={`h-11 px-6 rounded-2xl text-[13px] font-semibold ${btnPrimary}`}
+            disabled={fxApplying}
+            className={`h-11 px-6 rounded-2xl text-[13px] font-semibold ${btnPrimary} disabled:opacity-70`}
           >
             Join room
           </button>
