@@ -36,8 +36,13 @@
 // - Prefer Supabase profiles.avatar_url (public bucket)
 // - Fallback to Google auth avatar (user_metadata.picture / avatar_url)
 // - Inject into Jitsi as userInfo.avatarUrl + executeCommand("avatarUrl", ...)
+//
+// ✅ This iteration (iframe warnings cleanup):
+// - Remove premature AudioContext unlock attempt (must be only after user gesture)
+// - Best-effort iframe allow attribute cleanup (remove unsupported "speaker-selection")
+// - Prime browser audio only on actual user actions (controls / clicks)
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 
@@ -353,6 +358,61 @@ const TOOLBAR_MOUNT_BUTTONS = ["settings"];
 const TOOLBAR_VISIBLE_BUTTONS: string[] = ["settings"];
 const JITSI_CUSTOM_CSS_PATH = "/jitsi-custom.css";
 
+// Best-effort iframe allow policy without unsupported speaker-selection token.
+// (Some Chromium builds log: "Unrecognized feature: 'speaker-selection'")
+const JITSI_IFRAME_ALLOW = [
+    "camera",
+    "microphone",
+    "display-capture",
+    "fullscreen",
+    "autoplay",
+    "clipboard-read",
+    "clipboard-write",
+].join("; ");
+
+function normalizeIframeAllowValue(raw: string) {
+    const tokens = String(raw || "")
+        .split(";")
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .filter((t) => !/^speaker-selection\b/i.test(t));
+
+    const required = JITSI_IFRAME_ALLOW.split(";").map((s) => s.trim()).filter(Boolean);
+
+    const seen = new Set<string>();
+    const out: string[] = [];
+
+    for (const t of [...tokens, ...required]) {
+        const key = t.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(t);
+    }
+
+    return out.join("; ");
+}
+
+function patchJitsiIframeAttributes(parentNode?: HTMLElement | null) {
+    if (!parentNode) return;
+
+    try {
+        const iframes = Array.from(parentNode.querySelectorAll("iframe"));
+        for (const iframe of iframes) {
+            const currentAllow = iframe.getAttribute("allow") || "";
+            const nextAllow = normalizeIframeAllowValue(currentAllow);
+            if (nextAllow && nextAllow !== currentAllow) {
+                iframe.setAttribute("allow", nextAllow);
+            } else if (!currentAllow) {
+                iframe.setAttribute("allow", JITSI_IFRAME_ALLOW);
+            }
+
+            iframe.setAttribute("allowfullscreen", "true");
+            iframe.setAttribute("webkitallowfullscreen", "true");
+            iframe.setAttribute("referrerpolicy", iframe.getAttribute("referrerpolicy") || "strict-origin-when-cross-origin");
+        }
+    } catch { }
+}
+
 // ====== AUDIO ======
 const STAGE_SOUND_MAP: Record<string, string> = {
     intentions: "/sounds/intentions.mp3",
@@ -459,6 +519,10 @@ async function createJitsiApiWithFallback(args: {
                 parentNode: args.parentNode,
                 width: "100%",
                 height: "100%",
+                // Best-effort override for iframe allow attr (if supported by current external_api.js build)
+                allow: JITSI_IFRAME_ALLOW,
+                onload: () => patchJitsiIframeAttributes(args.parentNode),
+
                 userInfo: {
                     displayName: args.userName,
                     ...(avatarUrl ? { avatarUrl } : {}),
@@ -528,6 +592,11 @@ async function createJitsiApiWithFallback(args: {
                     DEFAULT_REMOTE_DISPLAY_NAME: "Guest",
                 },
             });
+
+            // Extra post-create patching (some builds ignore `allow` in options and set iframe later)
+            patchJitsiIframeAttributes(args.parentNode);
+            window.setTimeout(() => patchJitsiIframeAttributes(args.parentNode), 50);
+            window.setTimeout(() => patchJitsiIframeAttributes(args.parentNode), 300);
 
             try {
                 if (args.subject) api.executeCommand?.("subject", String(args.subject));
@@ -1335,17 +1404,36 @@ export default function RoomPageIFrame() {
     const firstTickDoneRef = useRef<boolean>(false);
     const welcomeLoopRef = useRef<HTMLAudioElement | null>(null);
     const audioUnlockedRef = useRef<boolean>(false);
+    const audioPrimerCtxRef = useRef<AudioContext | null>(null);
+    const audioUnlockBusyRef = useRef<boolean>(false);
 
     const tryUnlockAudio = async () => {
+        if (audioUnlockedRef.current) return true;
+        if (audioUnlockBusyRef.current) return false;
+
+        audioUnlockBusyRef.current = true;
         try {
             const AnyWindow = window as any;
             const AudioCtx = window.AudioContext || AnyWindow.webkitAudioContext;
-            if (AudioCtx) {
-                const ctx = new AudioCtx();
-                try {
-                    await ctx.resume?.();
-                } catch { }
+            if (!AudioCtx) {
+                audioUnlockedRef.current = true;
+                return true;
+            }
 
+            let ctx = audioPrimerCtxRef.current;
+            if (!ctx || (ctx as any)?.state === "closed") {
+                ctx = new AudioCtx();
+                audioPrimerCtxRef.current = ctx;
+            }
+
+            try {
+                if ((ctx as any)?.state === "suspended") {
+                    await ctx.resume?.();
+                }
+            } catch { }
+
+            // Tiny silent pulse to satisfy autoplay policies after *actual* user gesture
+            try {
                 const osc = ctx.createOscillator();
                 const gain = ctx.createGain();
                 gain.gain.value = 0.0001;
@@ -1356,31 +1444,33 @@ export default function RoomPageIFrame() {
                 osc.start();
                 osc.stop(ctx.currentTime + 0.02);
 
-                window.setTimeout(() => {
-                    try {
-                        ctx.close?.();
-                    } catch { }
-                }, 80);
-            }
-        } catch { }
+                try {
+                    osc.disconnect();
+                    gain.disconnect();
+                } catch { }
+            } catch { }
+
+            audioUnlockedRef.current = true;
+            return true;
+        } catch {
+            return false;
+        } finally {
+            audioUnlockBusyRef.current = false;
+        }
     };
 
-    useLayoutEffect(() => {
-        void tryUnlockAudio();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
+    // IMPORTANT: no eager unlock here (caused "AudioContext was not allowed to start" warning).
+    // We only unlock on real user gestures below.
     useEffect(() => {
         const unlock = () => {
             if (audioUnlockedRef.current) return;
-
-            audioUnlockedRef.current = true;
-            void tryUnlockAudio();
-
-            window.removeEventListener("pointerdown", unlock, true);
-            window.removeEventListener("keydown", unlock, true);
-            window.removeEventListener("touchstart", unlock, true);
-            window.removeEventListener("click", unlock, true);
+            void tryUnlockAudio().then((ok) => {
+                if (!ok) return;
+                window.removeEventListener("pointerdown", unlock, true);
+                window.removeEventListener("keydown", unlock, true);
+                window.removeEventListener("touchstart", unlock, true);
+                window.removeEventListener("click", unlock, true);
+            });
         };
 
         window.addEventListener("pointerdown", unlock, true);
@@ -1394,7 +1484,15 @@ export default function RoomPageIFrame() {
             window.removeEventListener("touchstart", unlock, true);
             window.removeEventListener("click", unlock, true);
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            try {
+                audioPrimerCtxRef.current?.close?.();
+            } catch { }
+            audioPrimerCtxRef.current = null;
+        };
     }, []);
 
     const playOneShot = (url: string, volume = 0.9) => {
@@ -1843,6 +1941,8 @@ export default function RoomPageIFrame() {
     const openJitsiSettings = () => {
         const api = apiRef.current;
         if (!api) return;
+        // user gesture helper (best-effort)
+        void tryUnlockAudio();
         try {
             if (supportsCmd("toggleSettings")) api.executeCommand?.("toggleSettings");
             else api.executeCommand?.("toggleSettings");
@@ -2021,6 +2121,7 @@ export default function RoomPageIFrame() {
         if (!userName) return;
 
         let cancelled = false;
+        let iframeAttrObserver: MutationObserver | null = null;
 
         (async () => {
             try {
@@ -2038,6 +2139,14 @@ export default function RoomPageIFrame() {
 
                 const parent = iframeContainerRef.current!;
                 const domains = domainsForSession(session);
+
+                // Watch iframe insertion and patch attrs best-effort
+                try {
+                    iframeAttrObserver = new MutationObserver(() => {
+                        patchJitsiIframeAttributes(parent);
+                    });
+                    iframeAttrObserver.observe(parent, { childList: true, subtree: true, attributes: true, attributeFilter: ["allow"] });
+                } catch { }
 
                 const { api } = await createJitsiApiWithFallback({
                     domains,
@@ -2064,6 +2173,8 @@ export default function RoomPageIFrame() {
                 } catch {
                     supportedCmdsRef.current = null;
                 }
+
+                patchJitsiIframeAttributes(parent);
 
                 // ✅ Best-effort: apply avatar early (prejoin)
                 if (userAvatarUrl) {
@@ -2201,6 +2312,9 @@ export default function RoomPageIFrame() {
         return () => {
             cancelled = true;
             try {
+                iframeAttrObserver?.disconnect();
+            } catch { }
+            try {
                 apiRef.current?.dispose?.();
             } catch { }
             apiRef.current = null;
@@ -2225,9 +2339,18 @@ export default function RoomPageIFrame() {
         } catch { }
     };
 
-    const handleToggleAudio = () => exec("toggleAudio");
-    const handleToggleVideo = () => exec("toggleVideo");
-    const handleToggleScreenShare = () => exec("toggleShareScreen");
+    const handleToggleAudio = () => {
+        void tryUnlockAudio();
+        exec("toggleAudio");
+    };
+    const handleToggleVideo = () => {
+        void tryUnlockAudio();
+        exec("toggleVideo");
+    };
+    const handleToggleScreenShare = () => {
+        void tryUnlockAudio();
+        exec("toggleShareScreen");
+    };
     const handleToggleTile = () => exec("toggleTileView");
 
     const handleLeave = async () => {
@@ -2596,10 +2719,10 @@ export default function RoomPageIFrame() {
                     isScreenSharing={isScreenSharing}
                     unreadChat={unreadChat}
                     onOpenTab={(tab) => openRightTab(tab)}
-                    onToggleAudio={() => exec("toggleAudio")}
-                    onToggleVideo={() => exec("toggleVideo")}
-                    onToggleScreenShare={() => exec("toggleShareScreen")}
-                    onToggleTile={() => exec("toggleTileView")}
+                    onToggleAudio={handleToggleAudio}
+                    onToggleVideo={handleToggleVideo}
+                    onToggleScreenShare={handleToggleScreenShare}
+                    onToggleTile={handleToggleTile}
                     onReloadRoom={forceReloadJitsi}
                     onSendReaction={sendReaction}
                     onLeave={handleLeave}
