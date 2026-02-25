@@ -42,7 +42,7 @@ export function PreJoinModal({
   onCancel,
   onRefreshDevices,
 
-  // NEW: preview + FX
+  // preview + FX
   previewVideoTrack,
   previewVersion,
 
@@ -94,14 +94,36 @@ export function PreJoinModal({
 
   const isLight = theme === "light";
 
-  const overlay = "fixed inset-0 z-[999] flex items-center justify-center px-3";
+  // ✅ mobile-safe modal layout:
+  // - overlay uses safe-area padding
+  // - card is max-height constrained and becomes a flex column
+  // - BODY scrolls (header/footer stay fixed)
+  const overlay =
+    "fixed inset-0 z-[999] flex items-stretch sm:items-center justify-center " +
+    "px-0 sm:px-3 py-0 sm:py-6 " +
+    "pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]";
+
   const backdrop = "absolute inset-0 bg-black/55";
+
   const card = [
-    "relative w-full max-w-[980px] rounded-3xl shadow-2xl overflow-hidden",
+    "relative w-full sm:max-w-[980px] rounded-none sm:rounded-3xl shadow-2xl overflow-hidden",
+    "max-h-[100dvh] sm:max-h-[92dvh]",
+    "flex flex-col",
     isLight ? "bg-white text-black" : "bg-[#020617] text-white",
     "border",
     isLight ? "border-black/10" : "border-white/10",
   ].join(" ");
+
+  const headerCls = `px-5 sm:px-6 py-4 sm:py-5 border-b ${isLight ? "border-black/10" : "border-white/10"
+    }`;
+
+  const bodyCls =
+    "flex-1 min-h-0 overflow-y-auto overscroll-contain " +
+    "px-5 sm:px-6 py-4 sm:py-5 " +
+    "custom-scrollbar";
+
+  const footerCls = `px-5 sm:px-6 py-4 sm:py-5 border-t flex items-center justify-end gap-3 ${isLight ? "border-black/10" : "border-white/10"
+    }`;
 
   const inputWrap = isLight
     ? "bg-black/5 border border-black/10"
@@ -121,10 +143,6 @@ export function PreJoinModal({
     ? "bg-black/5 hover:bg-black/10 text-black/70"
     : "bg-white/5 hover:bg-white/10 text-white/80";
 
-  const btnDanger = isLight
-    ? "bg-red-600 hover:bg-red-700 text-white"
-    : "bg-red-600 hover:bg-red-700 text-white";
-
   const fxBtnBase =
     "h-10 px-4 rounded-2xl text-[13px] font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed";
 
@@ -141,7 +159,6 @@ export function PreJoinModal({
     const el = videoRef.current;
     if (!el) return;
 
-    // cleanup previous
     try {
       (el as any).srcObject = null;
     } catch { }
@@ -152,8 +169,6 @@ export function PreJoinModal({
       el.muted = true;
       el.playsInline = true;
       el.autoplay = true;
-
-      // LocalVideoTrack.attach can accept an element
       previewVideoTrack.attach(el);
     } catch (e) {
       console.warn("preview attach failed", e);
@@ -178,7 +193,6 @@ export function PreJoinModal({
     if (fxApplying) return;
 
     const t = window.setTimeout(() => {
-      // parent already has blurStrength, but we sync through onBlurStrengthChange
       onApplyVideoFx("blur");
     }, 280);
 
@@ -206,18 +220,48 @@ export function PreJoinModal({
     return "Preview";
   }, [value.videoEnabled, previewVideoTrack]);
 
-  const fxBlockedReason = !value.videoEnabled
-    ? "Turn video on to use FX"
-    : "";
+  const fxBlockedReason = !value.videoEnabled ? "Turn video on to use FX" : "";
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // ✅ mobile: stop background scroll + allow ESC close on desktop
+  useEffect(() => {
+    if (!open) return;
+
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    document.addEventListener("keydown", onKey);
+
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, onCancel]);
+
+  // ✅ mobile: keep the active control visible when keyboard opens
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const onFocusAny = (e: React.FocusEvent) => {
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    // Delay so layout settles (esp. iOS)
+    window.setTimeout(() => {
+      try {
+        target.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+      } catch { }
+    }, 50);
+  };
 
   return (
     <div className={overlay} data-theme={theme} style={{ colorScheme: theme }}>
       <div className={backdrop} onClick={onCancel} />
-      <div className={card} onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className={`px-6 py-5 border-b ${isLight ? "border-black/10" : "border-white/10"}`}>
+
+      <div ref={cardRef} className={card} onClick={(e) => e.stopPropagation()} onFocusCapture={onFocusAny}>
+        {/* Header (sticky-ish via layout; footer/body scroll handles rest) */}
+        <div className={headerCls}>
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="font-inter font-semibold text-[16px]">Before you join</div>
@@ -236,21 +280,31 @@ export function PreJoinModal({
           </div>
         </div>
 
-        {/* Body */}
-        <div className="px-6 py-5">
+        {/* Body (SCROLL) */}
+        <div className={bodyCls}>
           <div className="grid grid-cols-1 lg:grid-cols-[380px,1fr] gap-5">
             {/* LEFT: Preview + FX */}
             <div className="flex flex-col gap-4">
               {/* Preview card */}
-              <div className={`rounded-3xl overflow-hidden border ${isLight ? "border-black/10 bg-black/5" : "border-white/10 bg-white/5"}`}>
+              <div
+                className={`rounded-3xl overflow-hidden border ${isLight ? "border-black/10 bg-black/5" : "border-white/10 bg-white/5"
+                  }`}
+              >
                 <div className="px-4 py-3 flex items-center justify-between">
                   <div className={`text-[12px] font-semibold ${labelCls}`}>{previewHint}</div>
                   <div className={`text-[11px] ${labelCls}`}>
-                    {value.videoEnabled ? (videoFxMode === "blur" ? "Blur" : videoFxMode === "bg" ? "Background" : "Clean") : "Off"}
+                    {value.videoEnabled
+                      ? videoFxMode === "blur"
+                        ? "Blur"
+                        : videoFxMode === "bg"
+                          ? "Background"
+                          : "Clean"
+                      : "Off"}
                   </div>
                 </div>
 
-                <div className="relative aspect-video">
+                {/* ✅ keep aspect-video on desktop; slightly taller on mobile */}
+                <div className="relative aspect-video sm:aspect-video">
                   {value.videoEnabled ? (
                     <>
                       <video
@@ -287,7 +341,8 @@ export function PreJoinModal({
                   )}
                 </div>
 
-                <div className="mt-3 flex items-center gap-2">
+                {/* ✅ mobile: wrap buttons */}
+                <div className="mt-3 flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     disabled={!!fxBlockedReason || fxApplying}
@@ -319,14 +374,10 @@ export function PreJoinModal({
                   </button>
                 </div>
 
-                {!!fxBlockedReason && (
-                  <div className={`mt-2 text-[11px] ${labelCls}`}>{fxBlockedReason}</div>
-                )}
+                {!!fxBlockedReason && <div className={`mt-2 text-[11px] ${labelCls}`}>{fxBlockedReason}</div>}
 
                 {fxError ? (
-                  <div className={`mt-3 text-[12px] ${isLight ? "text-red-700" : "text-red-300"}`}>
-                    {fxError}
-                  </div>
+                  <div className={`mt-3 text-[12px] ${isLight ? "text-red-700" : "text-red-300"}`}>{fxError}</div>
                 ) : null}
 
                 {/* Blur controls */}
@@ -362,7 +413,8 @@ export function PreJoinModal({
                   <div className="mt-4">
                     <div className={`text-[12px] ${labelCls}`}>Presets</div>
 
-                    <div className="mt-2 grid grid-cols-2 gap-2">
+                    {/* ✅ mobile: 1 col; desktop: 2 cols */}
+                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {fxBgPresets?.map((p) => (
                         <button
                           key={p.id}
@@ -374,7 +426,7 @@ export function PreJoinModal({
                           title={p.label}
                         >
                           <div
-                            className="h-[56px] w-full"
+                            className="h-[72px] sm:h-[56px] w-full"
                             style={{
                               backgroundImage: `url(${p.url})`,
                               backgroundSize: "cover",
@@ -396,7 +448,6 @@ export function PreJoinModal({
                           const f = e.target.files?.[0];
                           if (!f) return;
                           onUploadBg(f);
-                          // allow re-select same file
                           try {
                             e.currentTarget.value = "";
                           } catch { }
@@ -558,7 +609,7 @@ export function PreJoinModal({
                   </label>
                 </div>
 
-                <div className="mt-3 flex items-center justify-between gap-3">
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                   <button
                     onClick={onRefreshDevices}
                     className={`h-10 px-4 rounded-2xl text-[13px] font-semibold ${btnGhost}`}
@@ -572,24 +623,24 @@ export function PreJoinModal({
                 </div>
               </div>
 
-              <div className={`rounded-2xl p-4 ${isLight ? "bg-blue-50 border border-blue-100" : "bg-white/5 border border-white/10"}`}>
+              <div
+                className={`rounded-2xl p-4 ${isLight ? "bg-blue-50 border border-blue-100" : "bg-white/5 border border-white/10"
+                  }`}
+              >
                 <div className={`text-[12px] font-semibold ${isLight ? "text-blue-900/80" : "text-white/80"}`}>
                   Quick sanity check
                 </div>
                 <div className={`mt-1 text-[12px] ${isLight ? "text-blue-900/70" : "text-white/65"}`}>
-                  If preview is blank — click anywhere and allow camera permissions in the browser.
+                  If preview is blank — allow camera permissions in the browser.
                 </div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Footer */}
-        <div className={`px-6 py-5 border-t flex items-center justify-end gap-3 ${isLight ? "border-black/10" : "border-white/10"}`}>
-          <button
-            onClick={onCancel}
-            className={`h-11 px-5 rounded-2xl text-[13px] font-semibold ${btnGhost}`}
-          >
+        {/* Footer (sticky by layout; body scrolls) */}
+        <div className={footerCls}>
+          <button onClick={onCancel} className={`h-11 px-5 rounded-2xl text-[13px] font-semibold ${btnGhost}`}>
             Cancel
           </button>
 
