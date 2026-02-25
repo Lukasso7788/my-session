@@ -19,10 +19,10 @@ import ChatPanel from "../components/ChatPanel";
 import { IntentionsPanel } from "../components/IntentionsPanel";
 import { SessionStageBar } from "../components/SessionStageBar";
 import { UserProfileModal } from "../components/UserProfileModal";
-import { PreJoinModal } from "./livekit/PreJoinModalLiveKit";
-import { RoomSettingsModalLiveKit } from "./livekit/RoomSettingsModalLiveKit";
-import { VideoTile } from "./livekit/VideoTileLiveKit";
-import { RemoteAudioRenderer } from "./livekit/RemoteAudioRendererLiveKit";
+import { PreJoinModal } from "./Livekit/PreJoinModalLiveKit";
+import { RoomSettingsModalLiveKit } from "./Livekit/RoomSettingsModalLiveKit";
+import { VideoTile } from "./Livekit/VideoTileLiveKit";
+import { RemoteAudioRenderer } from "./Livekit/RemoteAudioRendererLiveKit";
 
 type RoomTheme = "dark" | "light";
 type RightPanelTab = "participants" | "chat" | "intentions" | null;
