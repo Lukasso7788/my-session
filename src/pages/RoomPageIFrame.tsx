@@ -41,6 +41,10 @@
 // - Remove premature AudioContext unlock attempt (must be only after user gesture)
 // - Best-effort iframe allow attribute cleanup (remove unsupported "speaker-selection")
 // - Prime browser audio only on actual user actions (controls / clicks)
+//
+// ✅ NEW (this change):
+// - Add per-user toggle for "Stage sounds" (our local mp3 sounds), independent from Jitsi mic mute.
+// - Persists in localStorage and immediately stops welcome loop when disabled.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -424,6 +428,9 @@ const STAGE_SOUND_MAP: Record<string, string> = {
 };
 const BREAK_END_SOUND = "/sounds/break_end.mp3";
 const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
+
+// ✅ NEW: stage sounds preference key
+const STAGE_SOUNDS_PREF_KEY = "mysession_stage_sounds";
 
 // ====== participants limit ======
 const DEFAULT_MAX_PARTICIPANTS = 16;
@@ -1407,6 +1414,23 @@ export default function RoomPageIFrame() {
     const audioPrimerCtxRef = useRef<AudioContext | null>(null);
     const audioUnlockBusyRef = useRef<boolean>(false);
 
+    // ✅ NEW: stage sounds toggle (our mp3 sounds, not Jitsi)
+    const [stageSoundsEnabled, setStageSoundsEnabled] = useState<boolean>(() => {
+        try {
+            const v = localStorage.getItem(STAGE_SOUNDS_PREF_KEY);
+            return v === null ? true : v === "true";
+        } catch {
+            return true;
+        }
+    });
+    const stageSoundsEnabledRef = useRef<boolean>(stageSoundsEnabled);
+    useEffect(() => {
+        stageSoundsEnabledRef.current = stageSoundsEnabled;
+        try {
+            localStorage.setItem(STAGE_SOUNDS_PREF_KEY, String(stageSoundsEnabled));
+        } catch { }
+    }, [stageSoundsEnabled]);
+
     const tryUnlockAudio = async () => {
         if (audioUnlockedRef.current) return true;
         if (audioUnlockBusyRef.current) return false;
@@ -1497,6 +1521,7 @@ export default function RoomPageIFrame() {
 
     const playOneShot = (url: string, volume = 0.9) => {
         if (!url) return;
+        if (!stageSoundsEnabledRef.current) return; // ✅ NEW: mute stage sounds
         const a = new Audio(url);
         a.volume = volume;
         a.play().catch(() => { });
@@ -1504,6 +1529,7 @@ export default function RoomPageIFrame() {
 
     const startWelcomeLoop = () => {
         stopWelcomeLoop();
+        if (!stageSoundsEnabledRef.current) return; // ✅ NEW: mute stage sounds
         const a = new Audio(WELCOME_LOOP_SOUND);
         a.loop = true;
         a.volume = 0.6;
@@ -1519,6 +1545,24 @@ export default function RoomPageIFrame() {
                 welcomeLoopRef.current = null;
             }
         } catch { }
+    };
+
+    // ✅ NEW: when user disables stage sounds, stop loop immediately
+    useEffect(() => {
+        if (!stageSoundsEnabled) {
+            stopWelcomeLoop();
+        }
+    }, [stageSoundsEnabled]);
+
+    const handleToggleStageSounds = () => {
+        const next = !stageSoundsEnabledRef.current;
+        setStageSoundsEnabled(next);
+
+        if (next) {
+            void tryUnlockAudio();
+        } else {
+            stopWelcomeLoop();
+        }
     };
 
     useEffect(() => {
@@ -2727,6 +2771,26 @@ export default function RoomPageIFrame() {
                     onSendReaction={sendReaction}
                     onLeave={handleLeave}
                 />
+            )}
+
+            {/* ✅ NEW: simple in-room toggle button for Stage sounds (local mp3), independent of Jitsi mic */}
+            {!isPrejoinUi && !isSilentRoom && (
+                <div className="fixed right-3 sm:right-4 bottom-[calc(92px+env(safe-area-inset-bottom))] z-[55]">
+                    <button
+                        type="button"
+                        onClick={handleToggleStageSounds}
+                        className={[
+                            "px-3 py-2 rounded-2xl shadow-xl text-[12px] font-semibold border backdrop-blur",
+                            isLight
+                                ? "bg-white/90 border-black/10 text-black/80 hover:bg-white"
+                                : "bg-[#020617]/70 border-white/10 text-white/85 hover:bg-[#020617]/85",
+                        ].join(" ")}
+                        title="Toggle stage sounds"
+                    >
+                        <span className="mr-2">{stageSoundsEnabled ? "🔊" : "🔇"}</span>
+                        <span>Stage sounds</span>
+                    </button>
+                </div>
             )}
 
             {selectedUser && <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />}
