@@ -32,7 +32,7 @@ const MSG_TABLE = "session_chat_messages";
 const REACTIONS_TABLE = "session_chat_message_reactions";
 
 // базовый набор эмодзи (можешь расширить)
-const REACTION_EMOJIS = ["🔥", "😂", "👏", "❤️", "👍", "👎"] as const;
+const REACTION_EMOJIS = ["🔥", "😂", "👏", "❤️", "👍", "👎", "👌", "👋", "🙌"] as const;
 
 function avatarFromProfile(profile?: Profile | null) {
     return (
