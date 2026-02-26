@@ -33,14 +33,6 @@ const REACTIONS_TABLE = "session_chat_message_reactions";
 // базовый набор эмодзи (можешь расширить)
 const REACTION_EMOJIS = ["🔥", "😂", "👏", "❤️", "👍", "👎"] as const;
 
-// эмодзи для composer (input поля)
-const COMPOSER_EMOJIS = [
-    "😀", "😄", "😁", "😂", "🤣", "😊", "😉", "😍",
-    "🤔", "😎", "😭", "😅", "😤", "🤝", "🙏", "💪",
-    "🔥", "❤️", "👍", "👎", "👏", "✅", "🎯", "🚀",
-    "💡", "🧠", "📌", "⏳", "✨", "⚡", "👀", "💬",
-] as const;
-
 function avatarFromProfile(profile?: Profile | null) {
     return (
         profile?.avatar_url ||
@@ -156,6 +148,88 @@ type ReactionDetailsState = {
     userIds: string[];
     error?: string | null;
 };
+
+/** -----------------------
+ *  Full Emoji Picker (Emoji Mart) — lazy-loaded
+ *  Requires deps:
+ *    npm i emoji-mart @emoji-mart/data @emoji-mart/react
+ *  ----------------------*/
+function EmojiPickerPopover({
+    theme,
+    onPick,
+    onClose,
+}: {
+    theme: RoomTheme;
+    onPick: (emoji: string) => void;
+    onClose: () => void;
+}) {
+    const [PickerComp, setPickerComp] = useState<any>(null);
+    const [emojiData, setEmojiData] = useState<any>(null);
+    const [err, setErr] = useState<string>("");
+
+    useEffect(() => {
+        let alive = true;
+
+        (async () => {
+            try {
+                setErr("");
+
+                const [{ default: Picker }, dataMod] = await Promise.all([
+                    import("@emoji-mart/react"),
+                    import("@emoji-mart/data"),
+                ]);
+
+                if (!alive) return;
+
+                setPickerComp(() => Picker);
+                setEmojiData(dataMod?.default || dataMod);
+            } catch (e: any) {
+                if (!alive) return;
+                setErr(String(e?.message || e || "Failed to load emoji picker"));
+            }
+        })();
+
+        return () => {
+            alive = false;
+        };
+    }, []);
+
+    const Picker = PickerComp;
+    const pickerTheme = theme === "light" ? "light" : "dark";
+
+    if (err) {
+        return (
+            <div className={theme === "light" ? "p-3 text-sm text-red-700" : "p-3 text-sm text-red-300"}>
+                {err}
+            </div>
+        );
+    }
+
+    if (!Picker || !emojiData) {
+        return (
+            <div className={theme === "light" ? "p-4 text-sm text-black/60" : "p-4 text-sm text-white/60"}>
+                Loading emoji picker…
+            </div>
+        );
+    }
+
+    return (
+        <Picker
+            data={emojiData}
+            theme={pickerTheme}
+            set="native"
+            previewPosition="none"
+            searchPosition="sticky"
+            navPosition="bottom"
+            skinTonePosition="preview"
+            onEmojiSelect={(e: any) => {
+                const native = e?.native || e?.emoji || "";
+                if (native) onPick(String(native));
+                onClose();
+            }}
+        />
+    );
+}
 
 function MessageCard({
     msg,
@@ -674,13 +748,10 @@ export function ChatPanel({
         ? "w-11 h-11 rounded-xl flex items-center justify-center transition border bg-white border-black/10 text-black/60 hover:bg-black/5 hover:text-black/80"
         : "w-11 h-11 rounded-xl flex items-center justify-center transition border bg-[#0B1220]/70 border-white/10 text-white/70 hover:bg-white/5 hover:text-white/90";
 
+    // ✅ new: popover container (no padding, bigger width)
     const composerEmojiPopoverCls = isLight
-        ? "absolute bottom-full right-0 mb-2 z-50 w-[280px] rounded-2xl border border-black/10 bg-white shadow-2xl p-3"
-        : "absolute bottom-full right-0 mb-2 z-50 w-[280px] rounded-2xl border border-white/10 bg-[#020617] shadow-2xl p-3";
-
-    const composerEmojiTileCls = isLight
-        ? "h-9 w-9 rounded-lg flex items-center justify-center text-lg hover:bg-black/5 transition"
-        : "h-9 w-9 rounded-lg flex items-center justify-center text-lg hover:bg-white/5 transition";
+        ? "absolute bottom-full right-0 mb-2 z-50 w-[320px] sm:w-[360px] rounded-2xl border border-black/10 bg-white shadow-2xl overflow-hidden"
+        : "absolute bottom-full right-0 mb-2 z-50 w-[320px] sm:w-[360px] rounded-2xl border border-white/10 bg-[#020617] shadow-2xl overflow-hidden";
 
     // ---------- auth user + my profile
     useEffect(() => {
@@ -1938,27 +2009,11 @@ export function ChatPanel({
 
                         {composerEmojiOpen && (
                             <div className={composerEmojiPopoverCls}>
-                                <div className={"text-[11px] mb-2 " + (isLight ? "text-black/45" : "text-white/45")}>
-                                    Pick an emoji
-                                </div>
-
-                                <div className="grid grid-cols-8 gap-1">
-                                    {COMPOSER_EMOJIS.map((emoji) => (
-                                        <button
-                                            key={emoji}
-                                            type="button"
-                                            className={composerEmojiTileCls}
-                                            title={emoji}
-                                            onMouseDown={(e) => {
-                                                // сохраняем курсор в textarea
-                                                e.preventDefault();
-                                            }}
-                                            onClick={() => insertEmojiToComposer(emoji)}
-                                        >
-                                            {emoji}
-                                        </button>
-                                    ))}
-                                </div>
+                                <EmojiPickerPopover
+                                    theme={theme}
+                                    onPick={(emoji) => insertEmojiToComposer(emoji)}
+                                    onClose={() => setComposerEmojiOpen(false)}
+                                />
                             </div>
                         )}
                     </div>
