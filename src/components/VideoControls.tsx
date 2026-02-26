@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState } from "react";
 
 export type RoomTheme = "dark" | "light";
 
-export type ReactionType = "fire" | "laugh" | "clap" | "heart" | "thumbsUp" | "thumbsDown" | "OK" | "bye";
+export type ReactionType = "fire" | "laugh" | "clap" | "heart" | "thumbsUp" | "thumbsDown" | "OK" | "bye" | "celebration";
 
 export const REACTION_EMOJI: Record<ReactionType, string> = {
   fire: "🔥",
@@ -14,6 +14,7 @@ export const REACTION_EMOJI: Record<ReactionType, string> = {
   thumbsDown: "👎",
   OK: "👌",
   bye: "👋",
+  celebration: "🎉",
 };
 
 export function Icon({
