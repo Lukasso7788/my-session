@@ -1,22 +1,19 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { RoomServiceClient } from "livekit-server-sdk";
+import { createClient } from "@supabase/supabase-js";
 
 type AdminAction = "mute_track" | "unmute_track" | "remove_participant";
 
 type Body = {
   action?: AdminAction;
   roomName?: string;
+  sessionId?: string; // желательно передавать, но можем вывести из roomName=session-<uuid>
   participantIdentity?: string;
   trackSid?: string;
-  isHost?: boolean; // ВАЖНО: сейчас это доверяем фронту (быстрое MVP). Потом лучше верифицировать на сервере.
-};
 
-function asBool(v: unknown): boolean {
-  if (typeof v === "boolean") return v;
-  if (typeof v === "string") return v === "true" || v === "1";
-  if (typeof v === "number") return v === 1;
-  return false;
-}
+  // DEPRECATED (не используем для авторизации)
+  isHost?: boolean;
+};
 
 function parseBody(req: VercelRequest): Body {
   const raw = req.body as any;
@@ -35,29 +32,96 @@ function normalizeLiveKitHost(raw: string): string {
   let host = (raw || "").trim();
   if (!host) return "";
 
-  // ws(s) -> http(s) for RoomServiceClient
   if (host.startsWith("wss://")) host = "https://" + host.slice("wss://".length);
   if (host.startsWith("ws://")) host = "http://" + host.slice("ws://".length);
 
-  // remove trailing slash
   host = host.replace(/\/+$/, "");
   return host;
 }
 
 function getLiveKitHttpHost(): string {
-  // Prefer explicit server env first
   const candidates = [
     process.env.LIVEKIT_HTTP_URL,
     process.env.LIVEKIT_URL,
-    process.env.VITE_LIVEKIT_URL, // fallback if only this is set in Vercel
+    process.env.VITE_LIVEKIT_URL,
   ];
 
   for (const c of candidates) {
     const norm = normalizeLiveKitHost(String(c || ""));
     if (norm) return norm;
   }
-
   return "";
+}
+
+function getBearerToken(req: VercelRequest): string {
+  const h = String(req.headers.authorization || "");
+  if (h.toLowerCase().startsWith("bearer ")) return h.slice(7).trim();
+  return "";
+}
+
+function looksLikeUuid(v: string) {
+  const s = String(v || "").trim().toLowerCase();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(s);
+}
+
+function deriveSessionId(roomName?: string): string {
+  const rn = String(roomName || "").trim().toLowerCase();
+  if (rn.startsWith("session-")) {
+    const rest = rn.slice("session-".length);
+    if (looksLikeUuid(rest)) return rest;
+  }
+  return "";
+}
+
+async function getActorRole(params: {
+  supabaseUrl: string;
+  serviceKey: string;
+  accessToken: string;
+  sessionId: string;
+}): Promise<{ userId: string; isHost: boolean; isModerator: boolean }> {
+  const { supabaseUrl, serviceKey, accessToken, sessionId } = params;
+
+  const sb = createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const { data: uData, error: uErr } = await sb.auth.getUser(accessToken);
+  if (uErr || !uData?.user) {
+    throw new Error("unauthorized");
+  }
+
+  const userId = String(uData.user.id || "").toLowerCase();
+  if (!looksLikeUuid(userId)) throw new Error("unauthorized");
+
+  const { data: sData, error: sErr } = await sb
+    .from("sessions")
+    .select("id, host_id")
+    .eq("id", sessionId)
+    .single();
+
+  if (sErr || !sData?.id) {
+    throw new Error("session_not_found");
+  }
+
+  const hostId = String((sData as any).host_id || "").toLowerCase();
+  const isHost = !!hostId && hostId === userId;
+
+  let isModerator = false;
+  if (!isHost) {
+    const { data: rData, error: rErr } = await sb
+      .from("session_role_assignments")
+      .select("id")
+      .eq("session_id", sessionId)
+      .eq("user_id", userId)
+      .eq("role", "moderator")
+      .limit(1);
+
+    if (!rErr && Array.isArray(rData) && rData.length > 0) {
+      isModerator = true;
+    }
+  }
+
+  return { userId, isHost, isModerator };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -69,11 +133,48 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(405).json({ error: "method_not_allowed" });
     }
 
-    const { action, roomName, participantIdentity, trackSid, isHost } = parseBody(req);
+    const body = parseBody(req);
+    const { action, roomName, participantIdentity, trackSid } = body;
 
-    if (!asBool(isHost)) {
-      // Быстрый guard. Ниже можно усилить проверкой через Supabase на host_id.
-      return res.status(403).json({ error: "host_required" });
+    if (!action || !roomName) {
+      return res.status(400).json({ error: "action_and_roomName_required" });
+    }
+
+    const sessionId = String(body.sessionId || deriveSessionId(roomName)).toLowerCase();
+    if (!looksLikeUuid(sessionId)) {
+      return res.status(400).json({ error: "sessionId_required", hint: "Pass sessionId or use roomName=session-<uuid>" });
+    }
+
+    const accessToken = getBearerToken(req);
+    if (!accessToken) {
+      return res.status(401).json({ error: "auth_required", hint: "Send Authorization: Bearer <supabase_access_token>" });
+    }
+
+    const supabaseUrl = String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "").trim();
+    const serviceKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+
+    if (!supabaseUrl || !serviceKey) {
+      return res.status(500).json({ error: "supabase_service_env_missing", hint: "Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY" });
+    }
+
+    const actor = await getActorRole({ supabaseUrl, serviceKey, accessToken, sessionId });
+    const allowed = actor.isHost || actor.isModerator;
+
+    if (!allowed) {
+      return res.status(403).json({ error: "forbidden", reason: "host_or_moderator_required" });
+    }
+
+    // защитка: модератор НЕ может кикнуть/мьютить хоста
+    const targetId = String(participantIdentity || "").toLowerCase();
+    if (!actor.isHost && looksLikeUuid(targetId)) {
+      // узнаём host_id один раз через роль-резолвер уже нельзя (мы не возвращали host_id),
+      // но можно быстро запросить ещё раз.
+      const sb = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+      const { data: sData } = await sb.from("sessions").select("host_id").eq("id", sessionId).single();
+      const hostId = String((sData as any)?.host_id || "").toLowerCase();
+      if (hostId && targetId === hostId) {
+        return res.status(403).json({ error: "forbidden", reason: "moderator_cannot_target_host" });
+      }
     }
 
     const apiKey = process.env.LIVEKIT_API_KEY;
@@ -91,10 +192,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    if (!action || !roomName) {
-      return res.status(400).json({ error: "action_and_roomName_required" });
-    }
-
     const svc = new RoomServiceClient(livekitHost, apiKey, apiSecret);
 
     if (action === "remove_participant") {
@@ -109,6 +206,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         action,
         roomName,
         participantIdentity,
+        actor: { userId: actor.userId, isHost: actor.isHost, isModerator: actor.isModerator },
       });
     }
 
@@ -133,15 +231,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         participantIdentity,
         trackSid,
         muted,
+        actor: { userId: actor.userId, isHost: actor.isHost, isModerator: actor.isModerator },
       });
     }
 
     return res.status(400).json({ error: "unsupported_action" });
   } catch (e: any) {
+    const msg = String(e?.message || e || "unknown_error");
     console.error("livekit admin error:", e);
+
+    if (msg === "unauthorized") {
+      return res.status(401).json({ error: "unauthorized" });
+    }
+
     return res.status(500).json({
       error: "livekit_admin_failed",
-      message: String(e?.message || e || "unknown_error"),
+      message: msg,
     });
   }
 }
