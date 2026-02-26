@@ -45,6 +45,10 @@
 // ✅ NEW (this change):
 // - Add per-user toggle for "Stage sounds" (our local mp3 sounds), independent from Jitsi mic mute.
 // - Persists in localStorage and immediately stops welcome loop when disabled.
+//
+// ✅ NEW (this change #2):
+// - Reactions: make floating reaction bigger, emoji above name, add fade-in + float-up animation.
+// - Ensure sender also sees own reaction instantly (local echo), while keeping broadcast self=false (no duplicates).
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -121,7 +125,8 @@ declare global {
 // ===============================
 // helpers: uuid / slug
 // ===============================
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function sanitizeSlug(input: string) {
     const raw = String(input || "").trim().toLowerCase();
@@ -228,7 +233,8 @@ function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: numbe
     if (!anyPhases) return [];
 
     const toSeconds = (raw: any): number => {
-        const explicitSeconds = Number(raw?.seconds) || Number(raw?.duration_seconds) || Number(raw?.durationSeconds);
+        const explicitSeconds =
+            Number(raw?.seconds) || Number(raw?.duration_seconds) || Number(raw?.durationSeconds);
         if (explicitSeconds > 0) return explicitSeconds;
 
         const explicitMinutes =
@@ -259,7 +265,8 @@ function normalizeInfinitePhases(anyPhases: any): { name: string; seconds: numbe
         return Object.entries(anyPhases)
             .map(([k, v]: any) => {
                 const name = String(k || "");
-                const seconds = typeof v === "number" ? (v <= 180 ? Number(v) * 60 : Number(v)) : toSeconds(v);
+                const seconds =
+                    typeof v === "number" ? (v <= 180 ? Number(v) * 60 : Number(v)) : toSeconds(v);
                 return { name, seconds };
             })
             .filter((x) => x.seconds > 0);
@@ -412,7 +419,10 @@ function patchJitsiIframeAttributes(parentNode?: HTMLElement | null) {
 
             iframe.setAttribute("allowfullscreen", "true");
             iframe.setAttribute("webkitallowfullscreen", "true");
-            iframe.setAttribute("referrerpolicy", iframe.getAttribute("referrerpolicy") || "strict-origin-when-cross-origin");
+            iframe.setAttribute(
+                "referrerpolicy",
+                iframe.getAttribute("referrerpolicy") || "strict-origin-when-cross-origin"
+            );
         }
     } catch { }
 }
@@ -677,7 +687,7 @@ export default function RoomPageIFrame() {
     const [authStatus, setAuthStatus] = useState<"checking" | "authed" | "redirecting">("checking");
     const [userName, setUserName] = useState<string>("");
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-    const [userAvatarUrl, setUserAvatarUrl] = useState<string>(""); // ✅ NEW
+    const [userAvatarUrl, setUserAvatarUrl] = useState<string>("");
     const accessTokenRef = useRef<string>("");
 
     // theme
@@ -723,7 +733,6 @@ export default function RoomPageIFrame() {
         const cmds = supportedCmdsRef.current;
         const supports = (c: string) => !cmds || cmds.includes(c);
 
-        // попробуем несколько вариантов команд (в разных сборках Jitsi они могут отличаться)
         try {
             if (supports("setTheme")) {
                 api.executeCommand?.("setTheme", desired);
@@ -737,9 +746,6 @@ export default function RoomPageIFrame() {
                 return;
             }
         } catch { }
-
-        // если команд нет — не делаем ничего (пока).
-        // fallback (жесткий): forceReloadJitsi() — но это уже отдельное решение.
     }, [theme]);
 
     const isLgUp = useMediaQuery("(min-width: 1024px)");
@@ -983,6 +989,24 @@ export default function RoomPageIFrame() {
     const reactionIdRef = useRef<number>(0);
     const reactionsChannelRef = useRef<any>(null);
 
+    // ✅ NEW: one place to add a floating reaction (reused by remote + local echo)
+    const pushFloatingReaction = (type: ReactionType, fromUserId: string, fromName: string) => {
+        if (!type || !REACTION_EMOJI[type]) return;
+
+        const id = reactionIdRef.current + 1;
+        reactionIdRef.current = id;
+
+        setFloatingReactions((prev) => {
+            const next = [...prev, { id, type, fromUserId, fromName }];
+            // keep list bounded
+            return next.length > 12 ? next.slice(-12) : next;
+        });
+
+        window.setTimeout(() => {
+            setFloatingReactions((prev) => prev.filter((r) => r.id !== id));
+        }, 1600);
+    };
+
     useEffect(() => {
         if (authStatus !== "authed") return;
         if (!sessionId) return;
@@ -990,6 +1014,7 @@ export default function RoomPageIFrame() {
 
         const ch = supabase
             .channel(`reactions:${sessionId}`, {
+                // keep self=false to avoid duplicating local echo
                 config: { broadcast: { self: false }, presence: { key: currentUserId } },
             })
             .on("broadcast", { event: "reaction" }, (payload: any) => {
@@ -999,13 +1024,7 @@ export default function RoomPageIFrame() {
                 const fromName = String(p?.fromName || "User");
 
                 if (!t || !REACTION_EMOJI[t]) return;
-                const id = reactionIdRef.current + 1;
-                reactionIdRef.current = id;
-
-                setFloatingReactions((prev) => [...prev, { id, type: t, fromUserId, fromName }]);
-                window.setTimeout(() => {
-                    setFloatingReactions((prev) => prev.filter((r) => r.id !== id));
-                }, 1500);
+                pushFloatingReaction(t, fromUserId, fromName);
             })
             .subscribe();
 
@@ -1015,11 +1034,16 @@ export default function RoomPageIFrame() {
             reactionsChannelRef.current = null;
             safeRemoveRealtimeChannel(ch);
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [authStatus, sessionId, currentUserId]);
 
     const sendReaction = (type: ReactionType) => {
         try {
             if (!sessionId || !currentUserId) return;
+
+            // ✅ NEW: local echo so sender sees it instantly
+            pushFloatingReaction(type, currentUserId, userName || "You");
+
             const ch = reactionsChannelRef.current;
             if (!ch) return;
 
@@ -1074,11 +1098,7 @@ export default function RoomPageIFrame() {
                 // 1) ✅ profiles first (name + avatar)
                 if (u?.id) {
                     try {
-                        const { data: p } = await supabase
-                            .from("profiles")
-                            .select("full_name, avatar_url")
-                            .eq("id", u.id)
-                            .single();
+                        const { data: p } = await supabase.from("profiles").select("full_name, avatar_url").eq("id", u.id).single();
 
                         name = String(p?.full_name || "").trim();
                         profileAvatar = await resolveAvatarUrlFromProfilesField(String(p?.avatar_url || "").trim());
@@ -1198,7 +1218,8 @@ export default function RoomPageIFrame() {
 
             setLoading(true);
 
-            const selectStr = "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)";
+            const selectStr =
+                "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)";
 
             try {
                 const isUuid = UUID_RE.test(idOrSlug);
@@ -1259,13 +1280,10 @@ export default function RoomPageIFrame() {
                                         : inferTypeFromText(labelLower);
 
                                 const secondsExplicit =
-                                    Number(b?.seconds) ||
-                                    Number(b?.duration_seconds) ||
-                                    Number(b?.durationSeconds) ||
-                                    Number(b?.duration_sec) ||
-                                    0;
+                                    Number(b?.seconds) || Number(b?.duration_seconds) || Number(b?.durationSeconds) || Number(b?.duration_sec) || 0;
 
-                                const minsLike = Number(b?.minutes) || Number(b?.mins) || Number(b?.duration_minutes) || Number(b?.durationMinutes) || 0;
+                                const minsLike =
+                                    Number(b?.minutes) || Number(b?.mins) || Number(b?.duration_minutes) || Number(b?.durationMinutes) || 0;
 
                                 const n = typeof b === "number" ? b : Number(b?.duration ?? b?.value ?? 0);
 
@@ -1414,7 +1432,7 @@ export default function RoomPageIFrame() {
     const audioPrimerCtxRef = useRef<AudioContext | null>(null);
     const audioUnlockBusyRef = useRef<boolean>(false);
 
-    // ✅ NEW: stage sounds toggle (our mp3 sounds, not Jitsi)
+    // ✅ stage sounds toggle (our mp3 sounds, not Jitsi)
     const [stageSoundsEnabled, setStageSoundsEnabled] = useState<boolean>(() => {
         try {
             const v = localStorage.getItem(STAGE_SOUNDS_PREF_KEY);
@@ -1483,8 +1501,6 @@ export default function RoomPageIFrame() {
         }
     };
 
-    // IMPORTANT: no eager unlock here (caused "AudioContext was not allowed to start" warning).
-    // We only unlock on real user gestures below.
     useEffect(() => {
         const unlock = () => {
             if (audioUnlockedRef.current) return;
@@ -1521,7 +1537,7 @@ export default function RoomPageIFrame() {
 
     const playOneShot = (url: string, volume = 0.9) => {
         if (!url) return;
-        if (!stageSoundsEnabledRef.current) return; // ✅ NEW: mute stage sounds
+        if (!stageSoundsEnabledRef.current) return;
         const a = new Audio(url);
         a.volume = volume;
         a.play().catch(() => { });
@@ -1529,7 +1545,7 @@ export default function RoomPageIFrame() {
 
     const startWelcomeLoop = () => {
         stopWelcomeLoop();
-        if (!stageSoundsEnabledRef.current) return; // ✅ NEW: mute stage sounds
+        if (!stageSoundsEnabledRef.current) return;
         const a = new Audio(WELCOME_LOOP_SOUND);
         a.loop = true;
         a.volume = 0.6;
@@ -1547,22 +1563,16 @@ export default function RoomPageIFrame() {
         } catch { }
     };
 
-    // ✅ NEW: when user disables stage sounds, stop loop immediately
     useEffect(() => {
-        if (!stageSoundsEnabled) {
-            stopWelcomeLoop();
-        }
+        if (!stageSoundsEnabled) stopWelcomeLoop();
     }, [stageSoundsEnabled]);
 
     const handleToggleStageSounds = () => {
         const next = !stageSoundsEnabledRef.current;
         setStageSoundsEnabled(next);
 
-        if (next) {
-            void tryUnlockAudio();
-        } else {
-            stopWelcomeLoop();
-        }
+        if (next) void tryUnlockAudio();
+        else stopWelcomeLoop();
     };
 
     useEffect(() => {
@@ -1596,7 +1606,8 @@ export default function RoomPageIFrame() {
         });
 
         const sumStageSeconds = stageSeconds.reduce((acc, v) => acc + v, 0);
-        const loopSeconds = (Number(stagebarCycleSeconds) || 0) > 0 ? Number(stagebarCycleSeconds) : Math.max(1, sumStageSeconds);
+        const loopSeconds =
+            (Number(stagebarCycleSeconds) || 0) > 0 ? Number(stagebarCycleSeconds) : Math.max(1, sumStageSeconds);
 
         const timer = window.setInterval(() => {
             const now = Date.now();
@@ -1617,7 +1628,9 @@ export default function RoomPageIFrame() {
                 if (diffSec < next) {
                     active = i;
                     const rem = next - diffSec;
-                    setRemainingTime(`${Math.max(0, Math.floor(rem / 60))}:${String(Math.max(0, Math.floor(rem % 60))).padStart(2, "0")}`);
+                    setRemainingTime(
+                        `${Math.max(0, Math.floor(rem / 60))}:${String(Math.max(0, Math.floor(rem % 60))).padStart(2, "0")}`
+                    );
                     found = true;
                     break;
                 }
@@ -1747,7 +1760,9 @@ export default function RoomPageIFrame() {
             if (!supabaseUrl || !anonKey || !token) return;
 
             const nowIso = new Date().toISOString();
-            const url = `${supabaseUrl}/rest/v1/session_attendance?session_id=eq.${encodeURIComponent(sessionId)}&user_id=eq.${encodeURIComponent(currentUserId)}`;
+            const url = `${supabaseUrl}/rest/v1/session_attendance?session_id=eq.${encodeURIComponent(
+                sessionId
+            )}&user_id=eq.${encodeURIComponent(currentUserId)}`;
 
             void fetch(url, {
                 method: "PATCH",
@@ -1893,9 +1908,13 @@ export default function RoomPageIFrame() {
 
         const ch = supabase
             .channel(`attendance-live:${sessionId}`)
-            .on("postgres_changes", { event: "*", schema: "public", table: "session_attendance", filter: `session_id=eq.${sessionId}` }, () => {
-                void fetchOnlineUsers(false);
-            })
+            .on(
+                "postgres_changes",
+                { event: "*", schema: "public", table: "session_attendance", filter: `session_id=eq.${sessionId}` },
+                () => {
+                    void fetchOnlineUsers(false);
+                }
+            )
             .subscribe();
 
         return () => {
@@ -1946,8 +1965,7 @@ export default function RoomPageIFrame() {
         }
 
         try {
-            if (supports("setVideoQuality")) api.executeCommand?.("setVideoQuality", target);
-            else api.executeCommand?.("setVideoQuality", target);
+            api.executeCommand?.("setVideoQuality", target);
             return;
         } catch { }
 
@@ -1985,11 +2003,9 @@ export default function RoomPageIFrame() {
     const openJitsiSettings = () => {
         const api = apiRef.current;
         if (!api) return;
-        // user gesture helper (best-effort)
         void tryUnlockAudio();
         try {
-            if (supportsCmd("toggleSettings")) api.executeCommand?.("toggleSettings");
-            else api.executeCommand?.("toggleSettings");
+            api.executeCommand?.("toggleSettings");
         } catch { }
     };
 
@@ -2189,7 +2205,12 @@ export default function RoomPageIFrame() {
                     iframeAttrObserver = new MutationObserver(() => {
                         patchJitsiIframeAttributes(parent);
                     });
-                    iframeAttrObserver.observe(parent, { childList: true, subtree: true, attributes: true, attributeFilter: ["allow"] });
+                    iframeAttrObserver.observe(parent, {
+                        childList: true,
+                        subtree: true,
+                        attributes: true,
+                        attributeFilter: ["allow"],
+                    });
                 } catch { }
 
                 const { api } = await createJitsiApiWithFallback({
@@ -2197,7 +2218,7 @@ export default function RoomPageIFrame() {
                     roomName,
                     parentNode: parent,
                     userName,
-                    userAvatarUrl: userAvatarUrl || "", // ✅ NEW
+                    userAvatarUrl: userAvatarUrl || "",
                     subject: sessionTitle,
                     cssPathOnJitsiDomain: JITSI_CUSTOM_CSS_PATH,
                 });
@@ -2239,11 +2260,8 @@ export default function RoomPageIFrame() {
                     } catch { }
                 }, 700);
 
-                const onJoined = (e: any) => {
+                const onJoined = () => {
                     localJoinedRef.current = true;
-
-                    const pid = String(e?.id || e?.participantId || e?.roomName || "");
-                    if (pid) localParticipantIdRef.current = pid;
 
                     setInPrejoin(false);
                     setApiReady(true);
@@ -2258,23 +2276,10 @@ export default function RoomPageIFrame() {
                         window.setTimeout(() => applyJitsiAvatarBestEffort(api, userAvatarUrl), 650);
                     }
 
-                    window.setTimeout(() => {
-                        try {
-                            api.executeCommand?.("displayName", userName);
-                        } catch { }
-                    }, 250);
-
-                    window.setTimeout(() => {
-                        try {
-                            api.executeCommand?.("displayName", userName);
-                        } catch { }
-                    }, 900);
-
                     void attendanceJoin();
                     startAttendanceHeartbeat();
 
                     void refreshParticipantsList(api);
-
                     void maybeKickOrRejectIfOverLimit(api, undefined);
 
                     forceTileViewOnAfterJoin(api);
@@ -2431,11 +2436,7 @@ export default function RoomPageIFrame() {
 
     const RightPanelBody = (
         <div
-            className={[
-                "rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col",
-                panelBg,
-                theme === "dark" ? "dark" : "",
-            ].join(" ")}
+            className={["rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col", panelBg, theme === "dark" ? "dark" : ""].join(" ")}
             data-theme={theme}
             style={{ colorScheme: theme }}
         >
@@ -2480,8 +2481,7 @@ export default function RoomPageIFrame() {
                                         .map((x) => x[0]?.toUpperCase())
                                         .join("") || "U";
 
-                                // Optional: show local avatar in list only (safe + simple)
-                                const localAva = p.isLocal ? (userAvatarUrl || "") : "";
+                                const localAva = p.isLocal ? userAvatarUrl || "" : "";
 
                                 return (
                                     <div
@@ -2524,7 +2524,11 @@ export default function RoomPageIFrame() {
                                                 }
                                                 title={p.audioMuted ? "Muted" : "Unmuted"}
                                             >
-                                                <Icon name={p.audioMuted ? "mic-off" : "mic-on"} theme={theme} className={`w-4 h-4 ${p.audioMuted ? "opacity-90" : "opacity-80"}`} />
+                                                <Icon
+                                                    name={p.audioMuted ? "mic-off" : "mic-on"}
+                                                    theme={theme}
+                                                    className={`w-4 h-4 ${p.audioMuted ? "opacity-90" : "opacity-80"}`}
+                                                />
                                             </div>
 
                                             <div
@@ -2534,7 +2538,11 @@ export default function RoomPageIFrame() {
                                                 }
                                                 title={p.videoMuted ? "Video off" : "Video on"}
                                             >
-                                                <Icon name={p.videoMuted ? "camera-off" : "camera-on"} theme={theme} className={`w-4 h-4 ${p.videoMuted ? "opacity-90" : "opacity-80"}`} />
+                                                <Icon
+                                                    name={p.videoMuted ? "camera-off" : "camera-on"}
+                                                    theme={theme}
+                                                    className={`w-4 h-4 ${p.videoMuted ? "opacity-90" : "opacity-80"}`}
+                                                />
                                             </div>
                                         </div>
                                     </div>
@@ -2645,6 +2653,22 @@ export default function RoomPageIFrame() {
 
     return (
         <div className={`h-[100dvh] overflow-hidden ${pageBg}`}>
+            {/* ✅ NEW: reaction animation keyframes */}
+            <style>{`
+        @keyframes msReactionFloatUp {
+          0%   { opacity: 0; transform: translate3d(0, 14px, 0) scale(0.92); }
+          14%  { opacity: 1; transform: translate3d(0, 0px, 0) scale(1); }
+          100% { opacity: 0; transform: translate3d(0, -46px, 0) scale(1); }
+        }
+        .ms-reaction-float {
+          animation: msReactionFloatUp 1.55s ease-out forwards;
+          will-change: transform, opacity;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .ms-reaction-float { animation: none; }
+        }
+      `}</style>
+
             <div
                 className={
                     "h-full w-full flex flex-col min-h-0 " +
@@ -2684,7 +2708,9 @@ export default function RoomPageIFrame() {
                         className={
                             "relative overflow-hidden min-h-0 h-full " +
                             (isPrejoinUi
-                                ? (isLight ? "bg-white" : "bg-[#050F1A]")
+                                ? isLight
+                                    ? "bg-white"
+                                    : "bg-[#050F1A]"
                                 : `rounded-2xl ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"}`
                             )
                         }
@@ -2694,30 +2720,22 @@ export default function RoomPageIFrame() {
                         </div>
 
                         {isPrejoinUi && (
-                            <>
-                                <div className="pointer-events-none absolute inset-x-0 top-0 z-20">
-                                    <div
-                                        className={`pointer-events-none px-4 pt-[max(10px,env(safe-area-inset-top))] pb-3 ${isLight ? "bg-white/85" : "bg-[#050F1A]/85"} backdrop-blur`}
-                                    >
-                                        <div className="flex items-center justify-between gap-3">
-                                            <div className="flex items-center gap-3 min-w-0">
-                                                <div
-                                                    className={[
-                                                        "font-inter font-extrabold tracking-tight",
-                                                        isLight ? "text-black/85" : "text-white/90",
-                                                    ].join(" ")}
-                                                >
-                                                    MySession
-                                                </div>
-
-                                                <div className={`text-sm font-semibold truncate ${isLight ? "text-black/80" : "text-white/85"}`}>
-                                                    {sessionTitle}
-                                                </div>
+                            <div className="pointer-events-none absolute inset-x-0 top-0 z-20">
+                                <div
+                                    className={`pointer-events-none px-4 pt-[max(10px,env(safe-area-inset-top))] pb-3 ${isLight ? "bg-white/85" : "bg-[#050F1A]/85"
+                                        } backdrop-blur`}
+                                >
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <div className={["font-inter font-extrabold tracking-tight", isLight ? "text-black/85" : "text-white/90"].join(" ")}>
+                                                MySession
                                             </div>
+
+                                            <div className={`text-sm font-semibold truncate ${isLight ? "text-black/80" : "text-white/85"}`}>{sessionTitle}</div>
                                         </div>
                                     </div>
                                 </div>
-                            </>
+                            </div>
                         )}
 
                         {(lastErr || capacityError) && (
@@ -2726,16 +2744,23 @@ export default function RoomPageIFrame() {
                             </div>
                         )}
 
+                        {/* ✅ UPDATED: bigger emoji, name under, float-up + fade */}
                         {floatingReactions.length > 0 && (
-                            <div className="pointer-events-none absolute inset-x-0 bottom-6 flex items-center justify-center">
-                                <div
-                                    className={`px-3 py-2 rounded-2xl text-sm shadow-xl ${isLight ? "bg-white/90 border border-black/10 text-black/80" : "bg-[#020617]/80 border border-white/10 text-white/85"
-                                        }`}
-                                >
-                                    {floatingReactions.slice(-2).map((r) => (
-                                        <div key={r.id} className="flex items-center gap-2">
-                                            <span className="text-lg leading-none">{REACTION_EMOJI[r.type]}</span>
-                                            <span className="text-[12px] opacity-80 truncate max-w-[260px]">{r.fromName}</span>
+                            <div className="pointer-events-none absolute inset-x-0 bottom-6 z-30 flex items-end justify-center">
+                                <div className="relative flex flex-col items-center gap-2">
+                                    {floatingReactions.slice(-3).map((r, idx) => (
+                                        <div
+                                            key={r.id}
+                                            className={[
+                                                "ms-reaction-float select-none",
+                                                "px-4 py-3 rounded-3xl shadow-2xl border backdrop-blur",
+                                                "flex flex-col items-center justify-center",
+                                                isLight ? "bg-white/90 border-black/10 text-black/80" : "bg-[#020617]/70 border-white/10 text-white/90",
+                                            ].join(" ")}
+                                            style={{ animationDelay: `${idx * 0.05}s` }}
+                                        >
+                                            <div className="text-[44px] leading-none">{REACTION_EMOJI[r.type]}</div>
+                                            <div className="mt-1 text-[12px] leading-tight opacity-80 max-w-[260px] truncate">{r.fromName}</div>
                                         </div>
                                     ))}
                                 </div>
@@ -2773,7 +2798,7 @@ export default function RoomPageIFrame() {
                 />
             )}
 
-            {/* ✅ NEW: simple in-room toggle button for Stage sounds (local mp3), independent of Jitsi mic */}
+            {/* Stage sounds toggle */}
             {!isPrejoinUi && !isSilentRoom && (
                 <div className="fixed right-3 sm:right-4 bottom-[calc(92px+env(safe-area-inset-bottom))] z-[55]">
                     <button
@@ -2781,9 +2806,7 @@ export default function RoomPageIFrame() {
                         onClick={handleToggleStageSounds}
                         className={[
                             "px-3 py-2 rounded-2xl shadow-xl text-[12px] font-semibold border backdrop-blur",
-                            isLight
-                                ? "bg-white/90 border-black/10 text-black/80 hover:bg-white"
-                                : "bg-[#020617]/70 border-white/10 text-white/85 hover:bg-[#020617]/85",
+                            isLight ? "bg-white/90 border-black/10 text-black/80 hover:bg-white" : "bg-[#020617]/70 border-white/10 text-white/85 hover:bg-[#020617]/85",
                         ].join(" ")}
                         title="Toggle stage sounds"
                     >
