@@ -1793,9 +1793,9 @@ export function RoomPageLiveKit() {
   const callHostAdmin = async (body: Record<string, unknown>) => {
     const res = await fetch(adminEndpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: await buildAuthHeaders(),
       // IMPORTANT: backend must verify; isHost here is only a UI hint.
-      body: JSON.stringify({ ...body, isHost }),
+      body: JSON.stringify({ ...body, sessionId: session?.id, isHost }),
     });
 
     if (!res.ok) {
@@ -2131,7 +2131,7 @@ export function RoomPageLiveKit() {
 
   const getTileHostActions = (t: TileModel): HostTileActions | undefined => {
     // пока только host (модераторов включим, когда ты дашь /api/admin)
-    if (!isHost || t.isLocal || !t.participantIdentity) return undefined;
+    if (!isSelfModerator || t.isLocal || !t.participantIdentity) return undefined;
 
     return {
       canMuteMic: !!t.micTrackSid,

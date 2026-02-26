@@ -7,7 +7,7 @@ type AdminAction = "mute_track" | "unmute_track" | "remove_participant";
 type Body = {
   action?: AdminAction;
   roomName?: string;
-  sessionId?: string; // желательно передавать, но можем вывести из roomName=session-<uuid>
+  sessionId?: string;
   participantIdentity?: string;
   trackSid?: string;
 
@@ -78,7 +78,7 @@ async function getActorRole(params: {
   serviceKey: string;
   accessToken: string;
   sessionId: string;
-}): Promise<{ userId: string; isHost: boolean; isModerator: boolean }> {
+}): Promise<{ userId: string; hostId: string; isHost: boolean; isModerator: boolean }> {
   const { supabaseUrl, serviceKey, accessToken, sessionId } = params;
 
   const sb = createClient(supabaseUrl, serviceKey, {
@@ -86,9 +86,7 @@ async function getActorRole(params: {
   });
 
   const { data: uData, error: uErr } = await sb.auth.getUser(accessToken);
-  if (uErr || !uData?.user) {
-    throw new Error("unauthorized");
-  }
+  if (uErr || !uData?.user) throw new Error("unauthorized");
 
   const userId = String(uData.user.id || "").toLowerCase();
   if (!looksLikeUuid(userId)) throw new Error("unauthorized");
@@ -99,9 +97,7 @@ async function getActorRole(params: {
     .eq("id", sessionId)
     .single();
 
-  if (sErr || !sData?.id) {
-    throw new Error("session_not_found");
-  }
+  if (sErr || !sData?.id) throw new Error("session_not_found");
 
   const hostId = String((sData as any).host_id || "").toLowerCase();
   const isHost = !!hostId && hostId === userId;
@@ -116,25 +112,36 @@ async function getActorRole(params: {
       .eq("role", "moderator")
       .limit(1);
 
-    if (!rErr && Array.isArray(rData) && rData.length > 0) {
-      isModerator = true;
-    }
+    if (!rErr && Array.isArray(rData) && rData.length > 0) isModerator = true;
   }
 
-  return { userId, isHost, isModerator };
+  return { userId, hostId, isHost, isModerator };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     res.setHeader("Cache-Control", "no-store, max-age=0");
 
+    const origin = String(req.headers.origin || "*");
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Methods", "POST,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+    if (req.method === "OPTIONS") {
+      return res.status(204).end();
+    }
+
     if (req.method !== "POST") {
-      res.setHeader("Allow", "POST");
+      res.setHeader("Allow", "POST, OPTIONS");
       return res.status(405).json({ error: "method_not_allowed" });
     }
 
     const body = parseBody(req);
-    const { action, roomName, participantIdentity, trackSid } = body;
+    const action = String(body.action || "") as AdminAction;
+    const roomName = String(body.roomName || "").trim();
+    const participantIdentity = String(body.participantIdentity || "").trim();
+    const trackSid = String(body.trackSid || "").trim();
 
     if (!action || !roomName) {
       return res.status(400).json({ error: "action_and_roomName_required" });
@@ -142,43 +149,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const sessionId = String(body.sessionId || deriveSessionId(roomName)).toLowerCase();
     if (!looksLikeUuid(sessionId)) {
-      return res.status(400).json({ error: "sessionId_required", hint: "Pass sessionId or use roomName=session-<uuid>" });
+      return res.status(400).json({
+        error: "sessionId_required",
+        hint: "Pass sessionId or use roomName=session-<uuid>",
+      });
     }
 
     const accessToken = getBearerToken(req);
     if (!accessToken) {
-      return res.status(401).json({ error: "auth_required", hint: "Send Authorization: Bearer <supabase_access_token>" });
+      return res.status(401).json({
+        error: "auth_required",
+        hint: "Send Authorization: Bearer <supabase_access_token>",
+      });
     }
 
     const supabaseUrl = String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "").trim();
     const serviceKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
 
     if (!supabaseUrl || !serviceKey) {
-      return res.status(500).json({ error: "supabase_service_env_missing", hint: "Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY" });
+      return res.status(500).json({
+        error: "supabase_service_env_missing",
+        hint: "Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY",
+      });
     }
 
     const actor = await getActorRole({ supabaseUrl, serviceKey, accessToken, sessionId });
-    const allowed = actor.isHost || actor.isModerator;
-
-    if (!allowed) {
+    if (!actor.isHost && !actor.isModerator) {
       return res.status(403).json({ error: "forbidden", reason: "host_or_moderator_required" });
     }
 
-    // защитка: модератор НЕ может кикнуть/мьютить хоста
-    const targetId = String(participantIdentity || "").toLowerCase();
-    if (!actor.isHost && looksLikeUuid(targetId)) {
-      // узнаём host_id один раз через роль-резолвер уже нельзя (мы не возвращали host_id),
-      // но можно быстро запросить ещё раз.
-      const sb = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
-      const { data: sData } = await sb.from("sessions").select("host_id").eq("id", sessionId).single();
-      const hostId = String((sData as any)?.host_id || "").toLowerCase();
-      if (hostId && targetId === hostId) {
-        return res.status(403).json({ error: "forbidden", reason: "moderator_cannot_target_host" });
-      }
+    const targetId = participantIdentity.toLowerCase();
+    if (!actor.isHost && looksLikeUuid(targetId) && actor.hostId && targetId === actor.hostId) {
+      return res.status(403).json({ error: "forbidden", reason: "moderator_cannot_target_host" });
     }
 
-    const apiKey = process.env.LIVEKIT_API_KEY;
-    const apiSecret = process.env.LIVEKIT_API_SECRET;
+    const apiKey = String(process.env.LIVEKIT_API_KEY || "").trim();
+    const apiSecret = String(process.env.LIVEKIT_API_SECRET || "").trim();
     const livekitHost = getLiveKitHttpHost();
 
     if (!apiKey || !apiSecret) {
@@ -199,7 +205,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ error: "participantIdentity_required" });
       }
 
-      await svc.removeParticipant(String(roomName), String(participantIdentity));
+      await svc.removeParticipant(roomName, participantIdentity);
 
       return res.status(200).json({
         ok: true,
@@ -217,12 +223,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const muted = action === "mute_track";
 
-      await svc.mutePublishedTrack(
-        String(roomName),
-        String(participantIdentity),
-        String(trackSid),
-        muted
-      );
+      await svc.mutePublishedTrack(roomName, participantIdentity, trackSid, muted);
 
       return res.status(200).json({
         ok: true,
@@ -240,13 +241,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const msg = String(e?.message || e || "unknown_error");
     console.error("livekit admin error:", e);
 
-    if (msg === "unauthorized") {
-      return res.status(401).json({ error: "unauthorized" });
-    }
+    if (msg === "unauthorized") return res.status(401).json({ error: "unauthorized" });
+    if (msg === "session_not_found") return res.status(404).json({ error: "session_not_found" });
 
-    return res.status(500).json({
-      error: "livekit_admin_failed",
-      message: msg,
-    });
+    return res.status(500).json({ error: "livekit_admin_failed", message: msg });
   }
 }
