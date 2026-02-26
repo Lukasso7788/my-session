@@ -3,7 +3,16 @@ import React, { useEffect, useRef, useState } from "react";
 
 export type RoomTheme = "dark" | "light";
 
-export type ReactionType = "fire" | "laugh" | "clap" | "heart" | "thumbsUp" | "thumbsDown" | "OK" | "bye" | "celebration";
+export type ReactionType =
+  | "fire"
+  | "laugh"
+  | "clap"
+  | "heart"
+  | "thumbsUp"
+  | "thumbsDown"
+  | "ok"
+  | "wave"
+  | "celebration";
 
 export const REACTION_EMOJI: Record<ReactionType, string> = {
   fire: "🔥",
@@ -12,8 +21,8 @@ export const REACTION_EMOJI: Record<ReactionType, string> = {
   heart: "❤️",
   thumbsUp: "👍",
   thumbsDown: "👎",
-  OK: "👌",
-  bye: "👋",
+  ok: "👌",
+  wave: "👋",
   celebration: "🎉",
 };
 
@@ -205,7 +214,7 @@ export default function VideoControls(props: {
     return () => document.removeEventListener("mousedown", onDown);
   }, [showMoreMenu]);
 
-  // click outside reactions
+  // click outside reactions (✅ close ONLY when click outside)
   useEffect(() => {
     if (!showReactionsMenu) return;
 
@@ -219,7 +228,7 @@ export default function VideoControls(props: {
     return () => document.removeEventListener("mousedown", onDown);
   }, [showReactionsMenu]);
 
-  // Escape closes menus
+  // Escape closes menus (оставляем как есть)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -283,10 +292,7 @@ export default function VideoControls(props: {
                       <span className="flex items-center gap-2">
                         <span>Chat</span>
                         {unreadChat > 0 && (
-                          <span
-                            className={`px-2 py-[2px] rounded-full text-[11px] font-semibold ${isLight ? "bg-red-600 text-white" : "bg-red-600 text-white"
-                              }`}
-                          >
+                          <span className={`px-2 py-[2px] rounded-full text-[11px] font-semibold bg-red-600 text-white`}>
                             {unreadChat > 99 ? "99+" : unreadChat}
                           </span>
                         )}
@@ -430,8 +436,8 @@ export default function VideoControls(props: {
                     <button
                       key={t}
                       onClick={() => {
+                        // ✅ SEND but DO NOT CLOSE menu (so you can spam 3 in a row)
                         onSendReaction(t);
-                        safeCloseMenus();
                       }}
                       className="hover:scale-[1.06] transition"
                       title={t}

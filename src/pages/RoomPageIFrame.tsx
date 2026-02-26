@@ -989,7 +989,9 @@ export default function RoomPageIFrame() {
     const reactionIdRef = useRef<number>(0);
     const reactionsChannelRef = useRef<any>(null);
 
-    // ✅ NEW: one place to add a floating reaction (reused by remote + local echo)
+    const REACTION_TTL_MS = 2750;
+
+    // ✅ one place to add a floating reaction (reused by remote + local echo)
     const pushFloatingReaction = (type: ReactionType, fromUserId: string, fromName: string) => {
         if (!type || !REACTION_EMOJI[type]) return;
 
@@ -1004,7 +1006,7 @@ export default function RoomPageIFrame() {
 
         window.setTimeout(() => {
             setFloatingReactions((prev) => prev.filter((r) => r.id !== id));
-        }, 1600);
+        }, REACTION_TTL_MS);
     };
 
     useEffect(() => {
@@ -1041,7 +1043,7 @@ export default function RoomPageIFrame() {
         try {
             if (!sessionId || !currentUserId) return;
 
-            // ✅ NEW: local echo so sender sees it instantly
+            // local echo so sender sees it instantly
             pushFloatingReaction(type, currentUserId, userName || "You");
 
             const ch = reactionsChannelRef.current;
@@ -1095,7 +1097,7 @@ export default function RoomPageIFrame() {
                 let name = "";
                 let profileAvatar = "";
 
-                // 1) ✅ profiles first (name + avatar)
+                // profiles first (name + avatar)
                 if (u?.id) {
                     try {
                         const { data: p } = await supabase.from("profiles").select("full_name, avatar_url").eq("id", u.id).single();
@@ -1105,14 +1107,14 @@ export default function RoomPageIFrame() {
                     } catch { }
                 }
 
-                // 2) fallback: user_metadata for name
+                // fallback: user_metadata for name
                 if (!name) {
                     name =
                         String((u as any)?.user_metadata?.full_name || "").trim() ||
                         String((u as any)?.user_metadata?.name || "").trim();
                 }
 
-                // 3) fallback: email
+                // fallback: email
                 if (!name) {
                     name = u?.email ? String(u.email.split("@")[0] || "").trim() : "";
                 }
@@ -1432,7 +1434,7 @@ export default function RoomPageIFrame() {
     const audioPrimerCtxRef = useRef<AudioContext | null>(null);
     const audioUnlockBusyRef = useRef<boolean>(false);
 
-    // ✅ stage sounds toggle (our mp3 sounds, not Jitsi)
+    // stage sounds toggle (our mp3 sounds, not Jitsi)
     const [stageSoundsEnabled, setStageSoundsEnabled] = useState<boolean>(() => {
         try {
             const v = localStorage.getItem(STAGE_SOUNDS_PREF_KEY);
@@ -1474,7 +1476,7 @@ export default function RoomPageIFrame() {
                 }
             } catch { }
 
-            // Tiny silent pulse to satisfy autoplay policies after *actual* user gesture
+            // Tiny silent pulse to satisfy autoplay policies after actual user gesture
             try {
                 const osc = ctx.createOscillator();
                 const gain = ctx.createGain();
@@ -2241,7 +2243,7 @@ export default function RoomPageIFrame() {
 
                 patchJitsiIframeAttributes(parent);
 
-                // ✅ Best-effort: apply avatar early (prejoin)
+                // apply avatar early (prejoin)
                 if (userAvatarUrl) {
                     window.setTimeout(() => {
                         if (cancelled) return;
@@ -2270,7 +2272,7 @@ export default function RoomPageIFrame() {
                         api.executeCommand?.("displayName", userName);
                     } catch { }
 
-                    // ✅ Best-effort re-apply avatar after join (some builds only accept it after join)
+                    // re-apply avatar after join
                     if (userAvatarUrl) {
                         window.setTimeout(() => applyJitsiAvatarBestEffort(api, userAvatarUrl), 120);
                         window.setTimeout(() => applyJitsiAvatarBestEffort(api, userAvatarUrl), 650);
@@ -2653,15 +2655,15 @@ export default function RoomPageIFrame() {
 
     return (
         <div className={`h-[100dvh] overflow-hidden ${pageBg}`}>
-            {/* ✅ NEW: reaction animation keyframes */}
             <style>{`
         @keyframes msReactionFloatUp {
           0%   { opacity: 0; transform: translate3d(0, 14px, 0) scale(0.92); }
-          14%  { opacity: 1; transform: translate3d(0, 0px, 0) scale(1); }
-          100% { opacity: 0; transform: translate3d(0, -46px, 0) scale(1); }
+          12%  { opacity: 1; transform: translate3d(0, 0px, 0) scale(1); }
+          78%  { opacity: 1; transform: translate3d(0, -30px, 0) scale(1); }
+          100% { opacity: 0; transform: translate3d(0, -60px, 0) scale(1); }
         }
         .ms-reaction-float {
-          animation: msReactionFloatUp 1.55s ease-out forwards;
+          animation: msReactionFloatUp 2.15s ease-out forwards;
           will-change: transform, opacity;
         }
         @media (prefers-reduced-motion: reduce) {
@@ -2744,7 +2746,6 @@ export default function RoomPageIFrame() {
                             </div>
                         )}
 
-                        {/* ✅ UPDATED: bigger emoji, name under, float-up + fade */}
                         {floatingReactions.length > 0 && (
                             <div className="pointer-events-none absolute inset-x-0 bottom-6 z-30 flex items-end justify-center">
                                 <div className="relative flex flex-col items-center gap-2">
@@ -2798,7 +2799,6 @@ export default function RoomPageIFrame() {
                 />
             )}
 
-            {/* Stage sounds toggle */}
             {!isPrejoinUi && !isSilentRoom && (
                 <div className="fixed right-3 sm:right-4 bottom-[calc(92px+env(safe-area-inset-bottom))] z-[55]">
                     <button
