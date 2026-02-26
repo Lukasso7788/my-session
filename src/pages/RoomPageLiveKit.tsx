@@ -1419,6 +1419,20 @@ export function RoomPageLiveKit() {
   const [tokenLoading, setTokenLoading] = useState(false);
   const [tokenError, setTokenError] = useState<string>("");
 
+  const buildAuthHeaders = async (): Promise<Record<string, string>> => {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+
+    try {
+      const { data } = await supabase.auth.getSession();
+      const accessToken = data.session?.access_token || "";
+      if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+    } catch {
+      // no-op
+    }
+
+    return headers;
+  };
+
   const requestToken = async () => {
     if (!session) return;
     setTokenError("");
@@ -1433,7 +1447,7 @@ export function RoomPageLiveKit() {
 
       const res = await fetch(tokenEndpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await buildAuthHeaders(),
         body: JSON.stringify({
           roomName,
           identity,
