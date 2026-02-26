@@ -1,6 +1,7 @@
 // src/components/ChatPanel.tsx
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { supabase } from "../lib/supabase";
 import { CornerUpLeft, X, Smile, SendHorizontal, Pencil, Trash2, Check } from "lucide-react";
 
@@ -158,10 +159,12 @@ function EmojiPickerPopover({
     theme,
     onPick,
     onClose,
+    maxHeight,
 }: {
     theme: RoomTheme;
     onPick: (emoji: string) => void;
     onClose: () => void;
+    maxHeight: number;
 }) {
     const [PickerComp, setPickerComp] = useState<any>(null);
     const [emojiData, setEmojiData] = useState<any>(null);
@@ -173,7 +176,6 @@ function EmojiPickerPopover({
         (async () => {
             try {
                 setErr("");
-
                 const [{ default: Picker }, dataMod] = await Promise.all([
                     import("@emoji-mart/react"),
                     import("@emoji-mart/data"),
@@ -214,20 +216,22 @@ function EmojiPickerPopover({
     }
 
     return (
-        <Picker
-            data={emojiData}
-            theme={pickerTheme}
-            set="native"
-            previewPosition="none"
-            searchPosition="sticky"
-            navPosition="bottom"
-            skinTonePosition="preview"
-            onEmojiSelect={(e: any) => {
-                const native = e?.native || e?.emoji || "";
-                if (native) onPick(String(native));
-                onClose();
-            }}
-        />
+        <div style={{ maxHeight }} className="overflow-hidden">
+            <Picker
+                data={emojiData}
+                theme={pickerTheme}
+                set="native"
+                previewPosition="none"
+                searchPosition="sticky"
+                navPosition="bottom"
+                skinTonePosition="preview"
+                onEmojiSelect={(e: any) => {
+                    const native = e?.native || e?.emoji || "";
+                    if (native) onPick(String(native));
+                    onClose();
+                }}
+            />
+        </div>
     );
 }
 
@@ -645,8 +649,19 @@ export function ChatPanel({
     const [unseenNew, setUnseenNew] = useState<number>(0);
 
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
-    const composerEmojiRef = useRef<HTMLDivElement | null>(null);
+
+    // emoji portal refs / state
+    const composerEmojiWrapRef = useRef<HTMLDivElement | null>(null);
+    const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
+    const emojiPortalRef = useRef<HTMLDivElement | null>(null);
     const [composerEmojiOpen, setComposerEmojiOpen] = useState(false);
+
+    const [emojiPos, setEmojiPos] = useState<{
+        left: number;
+        top: number;
+        width: number;
+        maxHeight: number;
+    } | null>(null);
 
     // bootstrap timestamp (avoid noisy reloads)
     const bootTsRef = useRef<number>(0);
@@ -748,10 +763,9 @@ export function ChatPanel({
         ? "w-11 h-11 rounded-xl flex items-center justify-center transition border bg-white border-black/10 text-black/60 hover:bg-black/5 hover:text-black/80"
         : "w-11 h-11 rounded-xl flex items-center justify-center transition border bg-[#0B1220]/70 border-white/10 text-white/70 hover:bg-white/5 hover:text-white/90";
 
-    // ✅ new: popover container (no padding, bigger width)
-    const composerEmojiPopoverCls = isLight
-        ? "absolute bottom-full right-0 mb-2 z-50 w-[320px] sm:w-[360px] rounded-2xl border border-black/10 bg-white shadow-2xl overflow-hidden"
-        : "absolute bottom-full right-0 mb-2 z-50 w-[320px] sm:w-[360px] rounded-2xl border border-white/10 bg-[#020617] shadow-2xl overflow-hidden";
+    const portalBoxCls = isLight
+        ? "rounded-2xl border border-black/10 bg-white shadow-2xl overflow-hidden"
+        : "rounded-2xl border border-white/10 bg-[#020617] shadow-2xl overflow-hidden";
 
     // ---------- auth user + my profile
     useEffect(() => {
@@ -906,31 +920,6 @@ export function ChatPanel({
         return () => document.removeEventListener("keydown", onKey);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [reactionDetails.open]);
-
-    // закрытие composer emoji picker по клику вне / Esc
-    useEffect(() => {
-        if (!composerEmojiOpen) return;
-
-        const onDown = (e: MouseEvent) => {
-            const t = e.target as Node | null;
-            if (!t || !composerEmojiRef.current) return;
-            if (!composerEmojiRef.current.contains(t)) {
-                setComposerEmojiOpen(false);
-            }
-        };
-
-        const onKey = (e: KeyboardEvent) => {
-            if (e.key === "Escape") setComposerEmojiOpen(false);
-        };
-
-        document.addEventListener("mousedown", onDown);
-        document.addEventListener("keydown", onKey);
-
-        return () => {
-            document.removeEventListener("mousedown", onDown);
-            document.removeEventListener("keydown", onKey);
-        };
-    }, [composerEmojiOpen]);
 
     // ---------- load messages (initial + fallback)
     const loadMessages = async (opts?: { silent?: boolean }): Promise<Msg[] | null> => {
@@ -1104,7 +1093,6 @@ export function ChatPanel({
         if (!sessionId) return;
         if (!userId) return;
 
-        // if we already have reactions but myReactions is empty (because uid was null) -> rebuild once
         const hasAnyReactions = Object.keys(reactions).length > 0;
         const hasAnyMy = Object.keys(myReactions).length > 0;
         if (hasAnyReactions && !hasAnyMy) {
@@ -1118,7 +1106,6 @@ export function ChatPanel({
     useEffect(() => {
         if (!sessionId) return;
 
-        // stop previous polling
         if (pollingRef.current) {
             window.clearInterval(pollingRef.current);
             pollingRef.current = null;
@@ -1197,7 +1184,6 @@ export function ChatPanel({
                     return next;
                 });
 
-                // cleanup reactions for deleted message (UI sanity)
                 setReactions((prev) => {
                     if (!prev[deletedId]) return prev;
                     const next = { ...prev };
@@ -1211,7 +1197,6 @@ export function ChatPanel({
                     return next;
                 });
 
-                // close modal if it was open for deleted message
                 setReactionDetails((prev) => {
                     if (!prev.open) return prev;
                     if (prev.messageId !== deletedId) return prev;
@@ -1223,7 +1208,6 @@ export function ChatPanel({
         channel.subscribe((status) => {
             console.log("chat channel status:", status);
 
-            // fallback polling only when channel errors/timeouts
             const shouldPoll = status === "CHANNEL_ERROR" || status === "TIMED_OUT";
 
             if (shouldPoll) {
@@ -1240,7 +1224,6 @@ export function ChatPanel({
                     window.clearInterval(pollingRef.current);
                     pollingRef.current = null;
                 }
-                // ✅ do NOT spam reload; only if empty (or after long gap)
                 if (messagesRef.current.length === 0) {
                     void bootstrap({ silent: true, force: true });
                 }
@@ -1325,7 +1308,6 @@ export function ChatPanel({
         };
 
         const shouldSkipFromPending = (ev: string, r: ReactionRow) => {
-            // only dedupe our own user ops; otherwise don't skip
             if (!userId || r.user_id !== userId) return false;
 
             const key = reactionKey(ev, r.message_id, r.emoji, r.user_id);
@@ -1337,7 +1319,6 @@ export function ChatPanel({
                 return true;
             }
 
-            // stale, let it pass
             pendingReactionOpsRef.current.delete(key);
             return false;
         };
@@ -1361,12 +1342,10 @@ export function ChatPanel({
                         if (shouldSkipFromPending("INSERT", n)) return;
                         applyInsert(n);
 
-                        // if modal open for this message+emoji — refresh list (light)
                         setReactionDetails((prev) => {
                             if (!prev.open) return prev;
                             if (prev.messageId !== n.message_id) return prev;
                             if (prev.emoji !== n.emoji) return prev;
-                            // append if missing
                             if (prev.userIds.includes(n.user_id)) return prev;
                             return { ...prev, userIds: [...prev.userIds, n.user_id] };
                         });
@@ -1377,7 +1356,6 @@ export function ChatPanel({
                         if (shouldSkipFromPending("DELETE", o)) return;
                         applyDelete(o);
 
-                        // if modal open for this message+emoji — remove user
                         setReactionDetails((prev) => {
                             if (!prev.open) return prev;
                             if (prev.messageId !== o.message_id) return prev;
@@ -1388,8 +1366,6 @@ export function ChatPanel({
                     }
 
                     if (ev === "UPDATE" && o && n) {
-                        // handle emoji/user change (rare)
-                        // decrement old
                         if (!(userId && o.user_id === userId && shouldSkipFromPending("UPDATE", o))) {
                             applyDelete(o);
                             applyInsert(n);
@@ -1397,7 +1373,6 @@ export function ChatPanel({
                         return;
                     }
 
-                    // fallback: if payload shape is weird, do one rare resync
                     void loadReactions({ silent: true, messageIds: getRecentMessageIdsForReactions() });
                 }
             )
@@ -1422,7 +1397,7 @@ export function ChatPanel({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [messages.length]);
 
-    // auto-resize composer textarea (чтобы не занимал дохера места)
+    // auto-resize composer textarea
     useEffect(() => {
         const el = composerRef.current;
         if (!el) return;
@@ -1435,7 +1410,6 @@ export function ChatPanel({
     const insertEmojiToComposer = (emoji: string) => {
         const ta = composerRef.current;
 
-        // если textarea не смонтирована — просто добавим в конец
         if (!ta) {
             setText((prev) => prev + emoji);
             setComposerEmojiOpen(false);
@@ -1453,7 +1427,6 @@ export function ChatPanel({
 
         setComposerEmojiOpen(false);
 
-        // возвращаем фокус и курсор после вставленного эмодзи
         requestAnimationFrame(() => {
             const el = composerRef.current;
             if (!el) return;
@@ -1461,17 +1434,104 @@ export function ChatPanel({
             const pos = start + emoji.length;
             try {
                 el.setSelectionRange(pos, pos);
-            } catch {
-                // noop
-            }
+            } catch { }
         });
     };
+
+    // ---- Emoji Portal positioning (fix clipping by chat panel overflow)
+    const computeEmojiPosition = () => {
+        const btn = emojiButtonRef.current;
+        if (!btn) return null;
+
+        const rect = btn.getBoundingClientRect();
+
+        const vv = (window as any).visualViewport as VisualViewport | undefined;
+        const vw = Math.floor(vv?.width || window.innerWidth);
+        const vh = Math.floor(vv?.height || window.innerHeight);
+        const offsetLeft = Math.floor(vv?.offsetLeft || 0);
+        const offsetTop = Math.floor(vv?.offsetTop || 0);
+
+        const margin = 10;
+
+        const desiredWidth = vw < 420 ? 280 : vw < 560 ? 300 : 360;
+        const width = Math.max(240, Math.min(desiredWidth, vw - margin * 2));
+
+        const desiredHeight = 420;
+
+        // align right with button
+        let left = rect.right - width + offsetLeft;
+        left = Math.max(margin + offsetLeft, Math.min(left, offsetLeft + vw - width - margin));
+
+        // prefer open upwards
+        const spaceAbove = rect.top - margin;
+        const spaceBelow = vh - rect.bottom - margin;
+
+        const preferAbove = spaceAbove >= 260 || spaceAbove >= spaceBelow;
+
+        let maxHeight = Math.max(240, Math.min(desiredHeight, (preferAbove ? spaceAbove : spaceBelow) - 8));
+        maxHeight = Math.max(240, Math.min(maxHeight, vh - margin * 2));
+
+        let top = preferAbove
+            ? rect.top - maxHeight - 8 + offsetTop
+            : rect.bottom + 8 + offsetTop;
+
+        // clamp inside viewport
+        top = Math.max(margin + offsetTop, Math.min(top, offsetTop + vh - maxHeight - margin));
+
+        return { left, top, width, maxHeight };
+    };
+
+    useEffect(() => {
+        if (!composerEmojiOpen) {
+            setEmojiPos(null);
+            return;
+        }
+
+        const pos = computeEmojiPosition();
+        setEmojiPos(pos);
+
+        const onResize = () => {
+            const p = computeEmojiPosition();
+            setEmojiPos(p);
+        };
+
+        // scroll anywhere (capture) — remeasure
+        const onScroll = () => onResize();
+
+        window.addEventListener("resize", onResize);
+        window.addEventListener("scroll", onScroll, true);
+
+        // close on outside click / Esc (must account portal)
+        const onDown = (e: MouseEvent) => {
+            const t = e.target as Node | null;
+            if (!t) return;
+
+            if (composerEmojiWrapRef.current?.contains(t)) return;
+            if (emojiPortalRef.current?.contains(t)) return;
+
+            setComposerEmojiOpen(false);
+        };
+
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") setComposerEmojiOpen(false);
+        };
+
+        document.addEventListener("mousedown", onDown);
+        document.addEventListener("keydown", onKey);
+
+        return () => {
+            window.removeEventListener("resize", onResize);
+            window.removeEventListener("scroll", onScroll, true);
+            document.removeEventListener("mousedown", onDown);
+            document.removeEventListener("keydown", onKey);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [composerEmojiOpen]);
 
     const send = async () => {
         const raw = text.trim();
         if (!raw || !userId || !sessionId) return;
 
-        // ✅ quote only "main" (no nested quotes)
         const replyQuote = replyTo ? quotePreviewForReply(replyTo.body, 240) : "";
         const replyHeader = replyTo
             ? `↪ ${replyTo.profile?.full_name || "Participant"}: ${replyQuote || "[message]"}`
@@ -1479,7 +1539,6 @@ export function ChatPanel({
 
         const composed = replyHeader ? `${replyHeader}\n\n${raw}` : raw;
 
-        // optimistic
         const optimistic: Msg = {
             id: `optimistic-${Date.now()}`,
             session_id: sessionId,
@@ -1585,7 +1644,6 @@ export function ChatPanel({
 
         const already = !!myReactions?.[messageId]?.[emoji];
 
-        // optimistic UI update
         setReactions((prev) => {
             const next = { ...prev };
             const msgMap = { ...(next[messageId] || {}) };
@@ -1627,11 +1685,9 @@ export function ChatPanel({
             return next;
         });
 
-        // mark expected realtime event to dedupe
         const expectedEv = already ? "DELETE" : "INSERT";
         pendingReactionOpsRef.current.set(reactionKey(expectedEv, messageId, emoji, userId), Date.now());
 
-        // DB action
         if (already) {
             const { error } = await supabase
                 .from(REACTIONS_TABLE)
@@ -1643,7 +1699,6 @@ export function ChatPanel({
 
             if (error) {
                 console.warn("removeReaction error:", error);
-                // resync (rare)
                 void loadReactions({ silent: true, messageIds: getRecentMessageIdsForReactions() });
             }
             return;
@@ -1665,7 +1720,6 @@ export function ChatPanel({
                 msg.toLowerCase().includes("unique");
 
             if (isDup) {
-                // if it's duplicate, toggle off
                 pendingReactionOpsRef.current.set(reactionKey("DELETE", messageId, emoji, userId), Date.now());
 
                 await supabase
@@ -1709,6 +1763,44 @@ export function ChatPanel({
 
     const myReactedInModal =
         canToggleInModal && !!myReactions?.[reactionDetails.messageId]?.[reactionDetails.emoji];
+
+    const emojiPortal = composerEmojiOpen && emojiPos && typeof document !== "undefined"
+        ? createPortal(
+            <div
+                className="fixed inset-0 z-[99999]"
+                style={{ pointerEvents: "none" }}
+            >
+                {/* click-outside catcher */}
+                <div
+                    className="absolute inset-0"
+                    style={{ pointerEvents: "auto", background: "transparent" }}
+                    onMouseDown={() => setComposerEmojiOpen(false)}
+                />
+                <div
+                    ref={emojiPortalRef}
+                    className={"absolute " + portalBoxCls}
+                    style={{
+                        pointerEvents: "auto",
+                        left: emojiPos.left,
+                        top: emojiPos.top,
+                        width: emojiPos.width,
+                    }}
+                    onMouseDown={(e) => {
+                        // не закрываем при клике по самому пикеру
+                        e.stopPropagation();
+                    }}
+                >
+                    <EmojiPickerPopover
+                        theme={theme}
+                        maxHeight={emojiPos.maxHeight}
+                        onPick={(emoji) => insertEmojiToComposer(emoji)}
+                        onClose={() => setComposerEmojiOpen(false)}
+                    />
+                </div>
+            </div>,
+            document.body
+        )
+        : null;
 
     return (
         <div className="h-full flex flex-col bg-transparent min-h-0 relative">
@@ -1768,7 +1860,6 @@ export function ChatPanel({
                                             (myReactedInModal ? modalBtn : modalPrimaryBtn + " border-emerald-500/40")
                                         }
                                         onClick={async () => {
-                                            // toggle + refresh list (robust)
                                             await toggleReaction(reactionDetails.messageId, reactionDetails.emoji);
                                             void loadReactionDetails(reactionDetails.messageId, reactionDetails.emoji);
                                         }}
@@ -1993,8 +2084,9 @@ export function ChatPanel({
                     />
 
                     {/* Emoji picker button */}
-                    <div className="relative" ref={composerEmojiRef}>
+                    <div className="relative" ref={composerEmojiWrapRef}>
                         <button
+                            ref={emojiButtonRef}
                             type="button"
                             title="Add emoji"
                             className={composerEmojiBtnCls}
@@ -2002,20 +2094,12 @@ export function ChatPanel({
                                 // не даем textarea терять selection/cursor до вставки эмодзи
                                 e.preventDefault();
                             }}
-                            onClick={() => setComposerEmojiOpen((v) => !v)}
+                            onClick={() => {
+                                setComposerEmojiOpen((v) => !v);
+                            }}
                         >
                             <Smile size={18} />
                         </button>
-
-                        {composerEmojiOpen && (
-                            <div className={composerEmojiPopoverCls}>
-                                <EmojiPickerPopover
-                                    theme={theme}
-                                    onPick={(emoji) => insertEmojiToComposer(emoji)}
-                                    onClose={() => setComposerEmojiOpen(false)}
-                                />
-                            </div>
-                        )}
                     </div>
 
                     <button
@@ -2039,6 +2123,9 @@ export function ChatPanel({
                     Enter — send • Shift+Enter — new line
                 </div>
             </div>
+
+            {/* ✅ Portal emoji picker (prevents clipping by chat panel overflow) */}
+            {emojiPortal}
         </div>
     );
 }
