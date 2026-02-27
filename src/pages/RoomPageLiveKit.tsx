@@ -27,13 +27,7 @@ type RoomTheme = "dark" | "light";
 type RightPanelTab = "participants" | "chat" | "intentions" | null;
 type FxMode = "off" | "blur" | "bg";
 
-type ReactionType =
-  | "fire"
-  | "laugh"
-  | "clap"
-  | "heart"
-  | "thumbsUp"
-  | "thumbsDown";
+type ReactionType = "fire" | "laugh" | "clap" | "heart" | "thumbsUp" | "thumbsDown";
 
 type HostProfile = {
   id: string;
@@ -149,9 +143,7 @@ function safeIdentity(raw: string) {
   return (raw || "guest").toLowerCase().replace(/[^a-z0-9-_]/g, "") || "guest";
 }
 
-function normalizeTemplates(
-  t: SessionTemplate | SessionTemplate[] | null | undefined
-): SessionTemplate[] {
+function normalizeTemplates(t: SessionTemplate | SessionTemplate[] | null | undefined): SessionTemplate[] {
   if (!t) return [];
   return Array.isArray(t) ? t : [t];
 }
@@ -203,13 +195,7 @@ function inferStageTypeFromLabel(raw: string): Stage["type"] {
 
   if (!k) return "focus";
   if (k.includes("welcome") || k.includes("intro")) return "intro";
-  if (
-    k.includes("outro") ||
-    k.includes("farewell") ||
-    k.includes("celebrat") ||
-    k.includes("finish") ||
-    k.includes("end")
-  ) {
+  if (k.includes("outro") || k.includes("farewell") || k.includes("celebrat") || k.includes("finish") || k.includes("end")) {
     return "outro";
   }
   if (k.includes("checkin") || k.includes("intention") || k.includes("checkinspoken")) return "intentions";
@@ -228,17 +214,10 @@ function normalizeInfinitePhases(anyPhases: unknown): { name: string; seconds: n
 
   const toSeconds = (raw: unknown): number => {
     if (isRecord(raw)) {
-      const explicitSeconds =
-        num((raw as any).seconds) ||
-        num((raw as any).duration_seconds) ||
-        num((raw as any).durationSeconds);
+      const explicitSeconds = num((raw as any).seconds) || num((raw as any).duration_seconds) || num((raw as any).durationSeconds);
       if (explicitSeconds > 0) return explicitSeconds;
 
-      const explicitMinutes =
-        num((raw as any).minutes) ||
-        num((raw as any).mins) ||
-        num((raw as any).duration_minutes) ||
-        num((raw as any).durationMinutes);
+      const explicitMinutes = num((raw as any).minutes) || num((raw as any).mins) || num((raw as any).duration_minutes) || num((raw as any).durationMinutes);
       if (explicitMinutes > 0) return explicitMinutes * 60;
 
       const n = num((raw as any).duration ?? (raw as any).value ?? raw);
@@ -281,14 +260,7 @@ function phaseToStageType(phaseName: string): Stage["type"] {
   const k = normalizeKey(phaseName);
 
   if (k.includes("welcome") || k.includes("intro")) return "intro";
-  if (
-    k.includes("outro") ||
-    k.includes("farewell") ||
-    k.includes("celebrat") ||
-    k.includes("finish") ||
-    k.includes("end")
-  )
-    return "outro";
+  if (k.includes("outro") || k.includes("farewell") || k.includes("celebrat") || k.includes("finish") || k.includes("end")) return "outro";
   if (k.includes("checkin") || k.includes("intention")) return "intentions";
   if (k.includes("break") || k.includes("rest") || k.includes("pause")) return "break";
   if (k.includes("focus") || k.includes("work") || k.includes("deepwork") || k.includes("pomodoro")) return "focus";
@@ -323,6 +295,131 @@ function uniqStrings(xs: string[]) {
     out.push(k);
   }
   return out;
+}
+
+// ---- dev tiles (solo grid testing) ----
+function getQueryInt(name: string, def = 0) {
+  try {
+    const u = new URL(window.location.href);
+    const raw = u.searchParams.get(name);
+    if (raw === null) return def;
+    const n = Number(raw);
+    return Number.isFinite(n) ? Math.floor(n) : def;
+  } catch {
+    return def;
+  }
+}
+
+function getDevTilesCount() {
+  const n = getQueryInt("devTiles", 0);
+  return Math.max(0, Math.min(50, n));
+}
+
+// ---- multi-tab identity (max 2 tabs) ----
+const MULTI_TAB_MAX = 2;
+const MULTI_TAB_TTL_MS = 28_000;
+const MULTI_TAB_HEARTBEAT_MS = 9_000;
+
+function getTabInstanceId(): string {
+  try {
+    const key = "lk_tab_instance_id";
+    let v = sessionStorage.getItem(key);
+    if (!v) {
+      v = (crypto as any)?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      v = String(v).toLowerCase().replace(/[^a-z0-9-_]/g, "");
+      sessionStorage.setItem(key, v);
+    }
+    return v;
+  } catch {
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}`.toLowerCase().replace(/[^a-z0-9-_]/g, "");
+  }
+}
+
+function extractBaseUserIdFromIdentity(identity?: string | null): string {
+  const s = String(identity || "").trim().toLowerCase();
+  if (!s) return "";
+  const m = s.match(/^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:[-_].+)?$/);
+  return m ? m[1] : s;
+}
+
+function tabRegistryKey(roomName: string, baseUserId: string) {
+  const r = safeRoomName(roomName);
+  const u = String(baseUserId || "").toLowerCase().trim();
+  return `mysession_lk_tabs:${r}:${u}`;
+}
+
+function readTabRegistry(key: string): { tabs: Record<string, number> } {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return { tabs: {} };
+    const j = JSON.parse(raw);
+    if (!j || typeof j !== "object") return { tabs: {} };
+    const tabs = (j as any).tabs;
+    if (!tabs || typeof tabs !== "object") return { tabs: {} };
+    const out: Record<string, number> = {};
+    for (const [k, v] of Object.entries(tabs)) {
+      const ts = Number(v);
+      if (Number.isFinite(ts) && ts > 0) out[String(k)] = ts;
+    }
+    return { tabs: out };
+  } catch {
+    return { tabs: {} };
+  }
+}
+
+function writeTabRegistry(key: string, data: { tabs: Record<string, number> }) {
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch {
+    // no-op
+  }
+}
+
+function cleanTabs(tabs: Record<string, number>, now = Date.now()) {
+  const out: Record<string, number> = {};
+  for (const [tid, ts] of Object.entries(tabs || {})) {
+    const t = Number(ts);
+    if (!Number.isFinite(t) || t <= 0) continue;
+    if (now - t > MULTI_TAB_TTL_MS) continue;
+    out[tid] = t;
+  }
+  return out;
+}
+
+function tryAcquireTabSlot(roomName: string, baseUserId: string, tabId: string) {
+  const key = tabRegistryKey(roomName, baseUserId);
+  const now = Date.now();
+  const data = readTabRegistry(key);
+  const cleaned = cleanTabs(data.tabs, now);
+  cleaned[tabId] = now;
+
+  const uniqueTabs = Object.keys(cleaned);
+  if (uniqueTabs.length > MULTI_TAB_MAX) {
+    // do NOT write the exceeded state
+    return { ok: false as const, key, active: uniqueTabs.length };
+  }
+
+  writeTabRegistry(key, { tabs: cleaned });
+  return { ok: true as const, key, active: uniqueTabs.length };
+}
+
+function touchTabSlot(key: string, tabId: string) {
+  const now = Date.now();
+  const data = readTabRegistry(key);
+  const cleaned = cleanTabs(data.tabs, now);
+  cleaned[tabId] = now;
+  writeTabRegistry(key, { tabs: cleaned });
+}
+
+function releaseTabSlot(key: string, tabId: string) {
+  try {
+    const data = readTabRegistry(key);
+    const cleaned = cleanTabs(data.tabs, Date.now());
+    if (cleaned[tabId]) delete cleaned[tabId];
+    writeTabRegistry(key, { tabs: cleaned });
+  } catch {
+    // no-op
+  }
 }
 
 // ---- default background (data url) ----
@@ -380,6 +477,22 @@ const FX_BG_PRESETS = [
   { id: "sunset", label: "Sunset", url: makeBgPresetDataUrl("#1c0d10", "#7c2d12", "#11070a", "#fb7185") },
 ];
 
+async function preloadImage(url: string) {
+  const u = String(url || "").trim();
+  if (!u) return;
+  if (u.startsWith("data:image/")) return;
+  await new Promise<void>((resolve) => {
+    try {
+      const img = new Image();
+      img.onload = () => resolve();
+      img.onerror = () => resolve();
+      img.src = u;
+    } catch {
+      resolve();
+    }
+  });
+}
+
 // ---- Track processors ----
 function mergeModuleExports(mod: any): any {
   return {
@@ -420,20 +533,36 @@ async function makeBlurPipeline(blurRadius: number) {
   const mod = await resolveTrackProcessorsModule();
   await ensureBackgroundProcessorsSupported(mod);
 
-  if (typeof mod?.BackgroundBlur === "function") return mod.BackgroundBlur(blurRadius);
-  if (typeof mod?.default?.BackgroundBlur === "function") return mod.default.BackgroundBlur(blurRadius);
+  const fn = (typeof mod?.BackgroundBlur === "function" ? mod.BackgroundBlur : null) || (typeof mod?.default?.BackgroundBlur === "function" ? mod.default.BackgroundBlur : null);
+  if (!fn) throw new Error("BackgroundBlur() is unavailable in @livekit/track-processors");
 
-  throw new Error("BackgroundBlur() is unavailable in @livekit/track-processors");
+  // best-effort: try richer signatures/options to improve stability (fallback to simple)
+  try {
+    return fn(blurRadius, { quality: "balanced", edgeSmoothing: true, smoothEdges: true } as any);
+  } catch { }
+  try {
+    return fn({ blurRadius, quality: "balanced", edgeSmoothing: true, smoothEdges: true } as any);
+  } catch { }
+  return fn(blurRadius);
 }
 
 async function makeVirtualBgPipeline(imagePath: string) {
   const mod = await resolveTrackProcessorsModule();
   await ensureBackgroundProcessorsSupported(mod);
 
-  if (typeof mod?.VirtualBackground === "function") return mod.VirtualBackground(imagePath);
-  if (typeof mod?.default?.VirtualBackground === "function") return mod.default.VirtualBackground(imagePath);
+  const fn =
+    (typeof mod?.VirtualBackground === "function" ? mod.VirtualBackground : null) ||
+    (typeof mod?.default?.VirtualBackground === "function" ? mod.default.VirtualBackground : null);
+  if (!fn) throw new Error("VirtualBackground() is unavailable in @livekit/track-processors");
 
-  throw new Error("VirtualBackground() is unavailable in @livekit/track-processors");
+  // best-effort: try richer signatures/options to improve stability (fallback to simple)
+  try {
+    return fn(imagePath, { quality: "balanced", edgeSmoothing: true, smoothEdges: true } as any);
+  } catch { }
+  try {
+    return fn({ imagePath, quality: "balanced", edgeSmoothing: true, smoothEdges: true } as any);
+  } catch { }
+  return fn(imagePath);
 }
 
 function Icon({
@@ -482,13 +611,7 @@ function Icon({
   );
 }
 
-function ParticipantsSmartIcon({
-  theme,
-  className = "w-4 h-4",
-}: {
-  theme: RoomTheme;
-  className?: string;
-}) {
+function ParticipantsSmartIcon({ theme, className = "w-4 h-4" }: { theme: RoomTheme; className?: string }) {
   return <Icon name="participants" theme={theme} className={className} alt="" />;
 }
 
@@ -525,10 +648,7 @@ function useMediaQuery(query: string) {
 }
 
 // ---- ErrorBoundary ----
-class LiveKitErrorBoundary extends React.Component<
-  { children: React.ReactNode; onReset: () => void; isLight: boolean },
-  { hasError: boolean; errorText: string }
-> {
+class LiveKitErrorBoundary extends React.Component<{ children: React.ReactNode; onReset: () => void; isLight: boolean }, { hasError: boolean; errorText: string }> {
   constructor(props: any) {
     super(props);
     this.state = { hasError: false, errorText: "" };
@@ -554,11 +674,7 @@ class LiveKitErrorBoundary extends React.Component<
             this.setState({ hasError: false, errorText: "" });
             this.props.onReset();
           }}
-          className={
-            this.props.isLight
-              ? "px-4 py-2 rounded-xl bg-black/5 hover:bg-black/10"
-              : "px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10"
-          }
+          className={this.props.isLight ? "px-4 py-2 rounded-xl bg-black/5 hover:bg-black/10" : "px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10"}
         >
           Reset + retry
         </button>
@@ -571,6 +687,8 @@ class LiveKitErrorBoundary extends React.Component<
 export function RoomPageLiveKit() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+
+  const tabIdRef = useRef<string>(getTabInstanceId());
 
   const [theme, setTheme] = useState<RoomTheme>(() => {
     try {
@@ -608,19 +726,11 @@ export function RoomPageLiveKit() {
   const isLgUp = useMediaQuery("(min-width: 1024px)");
 
   const pageBg = isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white";
-  const topBarBg = isLight
-    ? "bg-white/85 border border-black/10"
-    : "bg-[#111827]/40 border border-white/5";
-  const chipBg = isLight
-    ? "bg-black/5 border border-black/10"
-    : "bg-[#0B1220]/70 border border-white/5";
+  const topBarBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#111827]/40 border border-white/5";
+  const chipBg = isLight ? "bg-black/5 border border-black/10" : "bg-[#0B1220]/70 border border-white/5";
   const strongText = isLight ? "text-black/85" : "text-[#F3F4F6]/90";
-  const panelBg = isLight
-    ? "bg-white/85 border border-black/10"
-    : "bg-[#0B1220]/55 border border-white/5";
-  const bottomBarBg = isLight
-    ? "bg-white/85 border border-black/10"
-    : "bg-[#07101E]/85 border border-white/10";
+  const panelBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#0B1220]/55 border border-white/5";
+  const bottomBarBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#07101E]/85 border border-white/10";
   const ctlBtnBase = isLight ? "bg-black/5 hover:bg-black/10" : "bg-[#111827] hover:bg-[#1f2937]";
 
   const [session, setSession] = useState<SessionRow | null>(null);
@@ -661,12 +771,12 @@ export function RoomPageLiveKit() {
 
   const [selectedAudioOutputId, setSelectedAudioOutputId] = useState<string>("default");
 
-  // ---- pre-join prepared preview track (NEW)
+  // ---- pre-join prepared preview track
   const prejoinPreparedVideoTrackRef = useRef<LocalVideoTrack | null>(null);
   const prejoinFxPipelineRef = useRef<any>(null);
   const [prejoinPreviewVersion, setPrejoinPreviewVersion] = useState(0);
 
-  // ---- roles (moderators) (NEW)
+  // ---- roles (moderators)
   const [moderatorUserIds, setModeratorUserIds] = useState<string[]>([]);
   const [rolesLoading, setRolesLoading] = useState(false);
   const [rolesError, setRolesError] = useState<string>("");
@@ -703,7 +813,7 @@ export function RoomPageLiveKit() {
     };
   }, [rightPanelOpen, rightTab]);
 
-  // session stages / timer / sounds (copied parity from RoomPage)
+  // session stages / timer / sounds
   const [stages, setStages] = useState<Stage[]>([]);
   const [, setHoveredStage] = useState<Stage | null>(null);
   const [currentStage, setCurrentStage] = useState(0);
@@ -791,8 +901,7 @@ export function RoomPageLiveKit() {
     if (kind === "infinite_room") return true;
     if (kind.includes("infinite")) return true;
 
-    if (isRecord((parsed as any).timer) && ((parsed as any).timer.phases || (parsed as any).timer.segments))
-      return true;
+    if (isRecord((parsed as any).timer) && ((parsed as any).timer.phases || (parsed as any).timer.segments)) return true;
     if ((parsed as any).phases || (parsed as any).segments) return true;
 
     return false;
@@ -833,7 +942,7 @@ export function RoomPageLiveKit() {
     })();
   }, [id]);
 
-  // build stages from Supabase schedule (copied parity from RoomPage)
+  // build stages from Supabase schedule
   useEffect(() => {
     if (!session) return;
 
@@ -857,12 +966,7 @@ export function RoomPageLiveKit() {
     }
 
     if (isRecord(parsed)) {
-      const maybeBlocks =
-        (parsed as any).blocks ||
-        (parsed as any).script ||
-        (parsed as any).agenda ||
-        (parsed as any).items ||
-        (parsed as any).stages;
+      const maybeBlocks = (parsed as any).blocks || (parsed as any).script || (parsed as any).agenda || (parsed as any).items || (parsed as any).stages;
       if (Array.isArray(maybeBlocks)) parsed = maybeBlocks;
     }
 
@@ -873,12 +977,7 @@ export function RoomPageLiveKit() {
           if (!blk) return null;
 
           const rawName =
-            str((blk as any).name) ||
-            str((blk as any).title) ||
-            str((blk as any).label) ||
-            str((blk as any).text) ||
-            str((blk as any).key) ||
-            "Stage";
+            str((blk as any).name) || str((blk as any).title) || str((blk as any).label) || str((blk as any).text) || str((blk as any).key) || "Stage";
 
           const rawType = str((blk as any).type) || str((blk as any).category);
 
@@ -893,8 +992,7 @@ export function RoomPageLiveKit() {
             num((blk as any).duration) ||
             0;
 
-          const seconds =
-            num((blk as any).seconds) || num((blk as any).durationSeconds) || num((blk as any).duration_seconds) || 0;
+          const seconds = num((blk as any).seconds) || num((blk as any).durationSeconds) || num((blk as any).duration_seconds) || 0;
 
           const durationSeconds = seconds > 0 ? seconds : minutes > 0 ? minutes * 60 : 0;
           const displayMinutes = minutes > 0 ? minutes : seconds > 0 ? Math.max(1, Math.round(seconds / 60)) : 0;
@@ -1088,10 +1186,7 @@ export function RoomPageLiveKit() {
         const u = data.user;
         setAuthUserId(u?.id || null);
 
-        let name =
-          str((u as any)?.user_metadata?.full_name) ||
-          str((u as any)?.user_metadata?.name) ||
-          (u?.email ? u.email.split("@")[0] : "");
+        let name = str((u as any)?.user_metadata?.full_name) || str((u as any)?.user_metadata?.name) || (u?.email ? u.email.split("@")[0] : "");
 
         if (!name && u?.id) {
           const { data: p } = await supabase.from("profiles").select("full_name").eq("id", u.id).single();
@@ -1149,7 +1244,7 @@ export function RoomPageLiveKit() {
   // in-room pipeline ref (not pre-join)
   const currentFxPipelineRef = useRef<any>(null);
 
-  // ---- pre-join helpers (NEW)
+  // ---- pre-join helpers
   const cleanupPrejoinPreparedVideoTrack = async () => {
     const t = prejoinPreparedVideoTrackRef.current as any;
     prejoinPreparedVideoTrackRef.current = null;
@@ -1225,6 +1320,8 @@ export function RoomPageLiveKit() {
         setPrejoinPreviewVersion((v) => v + 1);
         return;
       }
+
+      if (mode === "bg") await preloadImage(bgImageUrl);
 
       const pipeline = mode === "blur" ? await makeBlurPipeline(blurStrength) : await makeVirtualBgPipeline(bgImageUrl);
 
@@ -1319,20 +1416,15 @@ export function RoomPageLiveKit() {
 
   const isModeratorIdentity = (identity?: string | null) => {
     if (!identity) return false;
-    const idn = String(identity).toLowerCase();
-    return moderatorUserIds.includes(idn);
+    const base = extractBaseUserIdFromIdentity(identity);
+    return moderatorUserIds.includes(base);
   };
 
   const loadModerators = async (sessionId: string) => {
     setRolesError("");
     setRolesLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("session_role_assignments")
-        .select("user_id, role")
-        .eq("session_id", sessionId)
-        .eq("role", "moderator");
-
+      const { data, error } = await supabase.from("session_role_assignments").select("user_id, role").eq("session_id", sessionId).eq("role", "moderator");
       if (error) throw error;
 
       const ids = uniqStrings((data || []).map((r: any) => String(r?.user_id || "")));
@@ -1390,13 +1482,7 @@ export function RoomPageLiveKit() {
     setRolesError("");
     setRoleBusyKey(`mod:${uid}:revoke`);
     try {
-      const { error } = await supabase
-        .from("session_role_assignments")
-        .delete()
-        .eq("session_id", session.id)
-        .eq("user_id", uid)
-        .eq("role", "moderator");
-
+      const { error } = await supabase.from("session_role_assignments").delete().eq("session_id", session.id).eq("user_id", uid).eq("role", "moderator");
       if (error) throw error;
 
       setModeratorUserIds((prev) => prev.filter((x) => x !== uid));
@@ -1433,6 +1519,73 @@ export function RoomPageLiveKit() {
     return headers;
   };
 
+  const roomNameForToken = useMemo(() => {
+    if (!session) return "";
+    return safeRoomName(`session-${session.id}`);
+  }, [session]);
+
+  const multiTabKeyRef = useRef<string>("");
+  const multiTabBaseUserRef = useRef<string>("");
+  const multiTabHeartbeatRef = useRef<number | null>(null);
+  const multiTabAcquiredRef = useRef<boolean>(false);
+
+  const stopTabHeartbeat = () => {
+    if (multiTabHeartbeatRef.current) {
+      window.clearInterval(multiTabHeartbeatRef.current);
+      multiTabHeartbeatRef.current = null;
+    }
+  };
+
+  const releaseTabSlotOnce = () => {
+    if (!multiTabAcquiredRef.current) return;
+    const key = multiTabKeyRef.current;
+    if (!key) return;
+    const tabId = tabIdRef.current;
+    stopTabHeartbeat();
+    releaseTabSlot(key, tabId);
+    multiTabAcquiredRef.current = false;
+  };
+
+  const ensureTabSlotForJoin = (baseUserId: string) => {
+    if (!roomNameForToken) return true;
+    const tabId = tabIdRef.current;
+    const res = tryAcquireTabSlot(roomNameForToken, baseUserId, tabId);
+    if (!res.ok) return false;
+
+    multiTabKeyRef.current = res.key;
+    multiTabBaseUserRef.current = baseUserId;
+    multiTabAcquiredRef.current = true;
+
+    stopTabHeartbeat();
+    multiTabHeartbeatRef.current = window.setInterval(() => {
+      try {
+        if (!multiTabKeyRef.current) return;
+        touchTabSlot(multiTabKeyRef.current, tabIdRef.current);
+      } catch { }
+    }, MULTI_TAB_HEARTBEAT_MS);
+
+    return true;
+  };
+
+  useEffect(() => {
+    const onBeforeUnload = () => {
+      try {
+        releaseTabSlotOnce();
+      } catch { }
+    };
+    const onPageHide = () => {
+      try {
+        releaseTabSlotOnce();
+      } catch { }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      window.removeEventListener("pagehide", onPageHide);
+    };
+  }, []);
+
   const requestToken = async () => {
     if (!session) return;
     setTokenError("");
@@ -1442,8 +1595,19 @@ export function RoomPageLiveKit() {
       const pj = prejoinRef.current;
       const nameToUse = (pj.displayName || displayName || userName || "Guest").trim() || "Guest";
 
-      const roomName = safeRoomName(`session-${session.id}`);
-      const identity = safeIdentity(authUserId || nameToUse);
+      const roomName = roomNameForToken;
+      const baseUserId = authUserId || safeIdentity(nameToUse);
+      const tabId = tabIdRef.current;
+
+      // enforce max 2 tabs per user per room
+      if (!ensureTabSlotForJoin(String(baseUserId).toLowerCase())) {
+        const msg = `Too many tabs open for this room (max ${MULTI_TAB_MAX}). Close another tab and retry.`;
+        setTokenError(msg);
+        setTokenLoading(false);
+        return;
+      }
+
+      const identity = safeIdentity(`${baseUserId}-${tabId}`);
 
       const res = await fetch(tokenEndpoint, {
         method: "POST",
@@ -1454,8 +1618,11 @@ export function RoomPageLiveKit() {
           name: nameToUse,
           isHost,
           sessionId: session.id,
-          // hint only (backend must verify anyway)
+          // hints only
           isModerator: !isHost && !!authUserId ? moderatorUserIds.includes(String(authUserId).toLowerCase()) : false,
+          baseIdentity: String(baseUserId || ""),
+          tabId,
+          userId: authUserId || "",
         }),
       });
 
@@ -1583,13 +1750,29 @@ export function RoomPageLiveKit() {
         label: nm,
         isLocal: false,
         videoTrack: vt,
-        participantIdentity: rp.identity,
+        participantIdentity: rp.identity, // keep full identity (includes tab suffix)
         micTrackSid: micPub?.trackSid,
         camTrackSid: camPub?.trackSid,
         micMuted: !!(micPub as any)?.isMuted,
         camMuted: !!(camPub as any)?.isMuted || !vt,
       });
     });
+
+    // dev fake tiles (solo grid testing)
+    const devN = getDevTilesCount();
+    if (devN > 0) {
+      for (let i = 0; i < devN; i++) {
+        next.push({
+          id: `dev-${i}`,
+          label: `Dev Tile ${i + 1}`,
+          isLocal: false,
+          videoTrack: undefined,
+          participantIdentity: `dev-${i}`,
+          micMuted: true,
+          camMuted: true,
+        });
+      }
+    }
 
     setTiles(next);
 
@@ -1624,6 +1807,9 @@ export function RoomPageLiveKit() {
       setFxApplying(false);
       currentFxPipelineRef.current = null;
       setOpenTileAdminMenuId(null);
+
+      // release multi-tab slot
+      releaseTabSlotOnce();
     }
   };
 
@@ -1657,6 +1843,9 @@ export function RoomPageLiveKit() {
         setTiles([]);
         currentFxPipelineRef.current = null;
         setOpenTileAdminMenuId(null);
+
+        // release multi-tab slot when disconnected
+        releaseTabSlotOnce();
       });
 
       r.on(RoomEvent.Reconnected, refresh);
@@ -1806,12 +1995,7 @@ export function RoomPageLiveKit() {
     return res.json().catch(() => ({}));
   };
 
-  const hostToggleRemoteTrackMute = async (
-    participantIdentity: string,
-    trackSid: string,
-    currentlyMuted: boolean | undefined,
-    kind: "mic" | "cam"
-  ) => {
+  const hostToggleRemoteTrackMute = async (participantIdentity: string, trackSid: string, currentlyMuted: boolean | undefined, kind: "mic" | "cam") => {
     const roomName = roomNameForApi;
     if (!roomName) return;
 
@@ -1822,7 +2006,7 @@ export function RoomPageLiveKit() {
       await callHostAdmin({
         action: currentlyMuted ? "unmute_track" : "mute_track",
         roomName,
-        participantIdentity,
+        participantIdentity, // full identity (uuid-tab)
         trackSid,
       });
 
@@ -1846,7 +2030,7 @@ export function RoomPageLiveKit() {
       await callHostAdmin({
         action: "remove_participant",
         roomName,
-        participantIdentity,
+        participantIdentity, // full identity (uuid-tab)
       });
       window.setTimeout(() => rebuildTiles(), 150);
     } catch (e: any) {
@@ -1922,8 +2106,9 @@ export function RoomPageLiveKit() {
     try {
       if (!camOn) throw new Error("Turn camera on first (Cam on), then apply FX.");
 
+      const tr = getLocalCameraTrack();
+
       if (mode === "off") {
-        const tr = getLocalCameraTrack();
         await stopAnyProcessorOnTrack(tr);
         currentFxPipelineRef.current = null;
         setVideoFxMode("off");
@@ -1932,6 +2117,29 @@ export function RoomPageLiveKit() {
         return;
       }
 
+      if (mode === "bg") await preloadImage(bgImageUrl);
+
+      // prefer applying processor on the currently published track (no republish -> less flicker)
+      if (tr && typeof (tr as any).setProcessor === "function") {
+        await stopAnyProcessorOnTrack(tr);
+
+        const pipeline = mode === "blur" ? await makeBlurPipeline(blurStrength) : await makeVirtualBgPipeline(bgImageUrl);
+        currentFxPipelineRef.current = pipeline;
+
+        try {
+          await (tr as any).setProcessor(pipeline, { showProcessedStreamLocally: true });
+        } catch {
+          await (tr as any).setProcessor(pipeline, true);
+        }
+
+        setVideoFxMode(mode);
+        setFxStatusText(mode === "blur" ? `Blur applied (strength ${blurStrength})` : "Virtual background applied");
+        await delay(120);
+        rebuildTiles();
+        return;
+      }
+
+      // fallback: recreate track + publish (legacy)
       const pj = prejoinRef.current;
       const deviceId = pj.videoInputId || undefined;
 
@@ -1941,7 +2149,6 @@ export function RoomPageLiveKit() {
       } as any);
 
       let pipeline: any = null;
-
       if (mode === "blur") pipeline = await makeBlurPipeline(blurStrength);
       else if (mode === "bg") pipeline = await makeVirtualBgPipeline(bgImageUrl);
 
@@ -2002,6 +2209,7 @@ export function RoomPageLiveKit() {
     const t = window.setTimeout(async () => {
       try {
         if (pipeline && typeof pipeline.updateTransformerOptions === "function") {
+          await preloadImage(bgImageUrl);
           await pipeline.updateTransformerOptions({ imagePath: bgImageUrl });
           setFxStatusText("Background updated");
         } else {
@@ -2130,7 +2338,6 @@ export function RoomPageLiveKit() {
   const roomReadyText = !joinRequested ? "Waiting to join…" : tokenLoading ? "Preparing token…" : !connected ? "Connecting to LiveKit…" : "";
 
   const getTileHostActions = (t: TileModel): HostTileActions | undefined => {
-    // пока только host (модераторов включим, когда ты дашь /api/admin)
     if (!isSelfModerator || t.isLocal || !t.participantIdentity) return undefined;
 
     return {
@@ -2142,14 +2349,8 @@ export function RoomPageLiveKit() {
         adminBusyKey === `${t.participantIdentity}:${t.micTrackSid}` ||
         adminBusyKey === `${t.participantIdentity}:${t.camTrackSid}` ||
         adminBusyKey === `${t.participantIdentity}:kick`,
-      onToggleMuteMic:
-        t.micTrackSid && t.participantIdentity
-          ? () => hostToggleRemoteTrackMute(t.participantIdentity!, t.micTrackSid!, t.micMuted, "mic")
-          : undefined,
-      onToggleMuteCam:
-        t.camTrackSid && t.participantIdentity
-          ? () => hostToggleRemoteTrackMute(t.participantIdentity!, t.camTrackSid!, t.camMuted, "cam")
-          : undefined,
+      onToggleMuteMic: t.micTrackSid && t.participantIdentity ? () => hostToggleRemoteTrackMute(t.participantIdentity!, t.micTrackSid!, t.micMuted, "mic") : undefined,
+      onToggleMuteCam: t.camTrackSid && t.participantIdentity ? () => hostToggleRemoteTrackMute(t.participantIdentity!, t.camTrackSid!, t.camMuted, "cam") : undefined,
       onKick: t.participantIdentity ? () => hostKickParticipant(t.participantIdentity!) : undefined,
     };
   };
@@ -2161,8 +2362,9 @@ export function RoomPageLiveKit() {
       return null;
     }
 
-    const pid = t.participantIdentity ? String(t.participantIdentity).toLowerCase() : "";
-    if (pid && looksLikeUuid(pid) && isModeratorIdentity(pid)) return "Moderator";
+    const pidFull = t.participantIdentity ? String(t.participantIdentity).toLowerCase() : "";
+    const base = extractBaseUserIdFromIdentity(pidFull);
+    if (base && looksLikeUuid(base) && isModeratorIdentity(base)) return "Moderator";
     return null;
   };
 
@@ -2182,13 +2384,14 @@ export function RoomPageLiveKit() {
           const hasMuteCam = !!hostActions?.canMuteCam && !!hostActions?.onToggleMuteCam;
           const hasKick = !!hostActions?.onKick;
 
-          const pid = t.participantIdentity ? String(t.participantIdentity).toLowerCase() : "";
-          const canRoleManageTarget = isHost && !!pid && looksLikeUuid(pid) && !t.isLocal;
-          const isTargetModerator = !!pid && isModeratorIdentity(pid);
-          const roleBusy = roleBusyKey === `mod:${pid}:grant` || roleBusyKey === `mod:${pid}:revoke`;
+          const pidFull = t.participantIdentity ? String(t.participantIdentity).toLowerCase() : "";
+          const pidBase = extractBaseUserIdFromIdentity(pidFull);
 
-          const hasAnyAdminAction =
-            (!!hostActions && (hasMuteMic || hasMuteCam || hasKick)) || canRoleManageTarget;
+          const canRoleManageTarget = isHost && !!pidBase && looksLikeUuid(pidBase) && !t.isLocal;
+          const isTargetModerator = !!pidBase && isModeratorIdentity(pidBase);
+          const roleBusy = roleBusyKey === `mod:${pidBase}:grant` || roleBusyKey === `mod:${pidBase}:revoke`;
+
+          const hasAnyAdminAction = (!!hostActions && (hasMuteMic || hasMuteCam || hasKick)) || canRoleManageTarget;
 
           return (
             <div
@@ -2198,21 +2401,10 @@ export function RoomPageLiveKit() {
                 setOpenTileAdminMenuId((prev) => (prev === t.id ? null : prev));
               }}
             >
-              <VideoTile
-                label={t.label}
-                videoTrack={t.videoTrack}
-                isLocal={t.isLocal}
-                theme={theme}
-                showBadge={getBadgeForTile(t)}
-                hostActions={undefined}
-              />
+              <VideoTile label={t.label} videoTrack={t.videoTrack} isLocal={t.isLocal} theme={theme} showBadge={getBadgeForTile(t)} hostActions={undefined} />
 
               {hasAnyAdminAction && (
-                <div
-                  className="absolute top-2 right-2 z-20"
-                  data-lk-admin-menu-anchor="true"
-                  onClick={(e) => e.stopPropagation()}
-                >
+                <div className="absolute top-2 right-2 z-20" data-lk-admin-menu-anchor="true" onClick={(e) => e.stopPropagation()}>
                   <div className="relative">
                     <button
                       type="button"
@@ -2224,9 +2416,7 @@ export function RoomPageLiveKit() {
                       }}
                       className={[
                         "w-9 h-9 rounded-xl flex items-center justify-center transition shadow-sm",
-                        isLight
-                          ? "bg-white/90 border border-black/10 text-black/75 hover:bg-white"
-                          : "bg-black/55 border border-white/10 text-white/90 hover:bg-black/70",
+                        isLight ? "bg-white/90 border border-black/10 text-black/75 hover:bg-white" : "bg-black/55 border border-white/10 text-white/90 hover:bg-black/70",
                         isMenuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100",
                       ].join(" ")}
                     >
@@ -2241,9 +2431,7 @@ export function RoomPageLiveKit() {
                         {/* Role actions */}
                         {canRoleManageTarget && (
                           <>
-                            <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>
-                              Roles
-                            </div>
+                            <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>Roles</div>
 
                             {!isTargetModerator ? (
                               <button
@@ -2251,8 +2439,8 @@ export function RoomPageLiveKit() {
                                 disabled={roleBusy || rolesLoading}
                                 onClick={async (e) => {
                                   e.stopPropagation();
-                                  if (!pid) return;
-                                  await grantModerator(pid);
+                                  if (!pidBase) return;
+                                  await grantModerator(pidBase);
                                   setOpenTileAdminMenuId(null);
                                 }}
                                 className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
@@ -2266,8 +2454,8 @@ export function RoomPageLiveKit() {
                                 disabled={roleBusy || rolesLoading}
                                 onClick={async (e) => {
                                   e.stopPropagation();
-                                  if (!pid) return;
-                                  await revokeModerator(pid);
+                                  if (!pidBase) return;
+                                  await revokeModerator(pidBase);
                                   setOpenTileAdminMenuId(null);
                                 }}
                                 className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
@@ -2316,9 +2504,7 @@ export function RoomPageLiveKit() {
                           </button>
                         )}
 
-                        {hasKick && (hasMuteMic || hasMuteCam) && (
-                          <div className={isLight ? "h-px bg-black/10" : "h-px bg-white/10"} />
-                        )}
+                        {hasKick && (hasMuteMic || hasMuteCam) && <div className={isLight ? "h-px bg-black/10" : "h-px bg-white/10"} />}
 
                         {hasKick && (
                           <button
@@ -2359,11 +2545,7 @@ export function RoomPageLiveKit() {
         <div className="pointer-events-none absolute inset-0 z-20 flex items-end justify-center pb-20 sm:pb-24">
           <div className="flex items-center gap-2">
             {localReactions.map((r) => (
-              <div
-                key={r.id}
-                className="text-2xl sm:text-3xl animate-bounce select-none"
-                style={{ animationDuration: "700ms" }}
-              >
+              <div key={r.id} className="text-2xl sm:text-3xl animate-bounce select-none" style={{ animationDuration: "700ms" }}>
                 {reactionEmoji[r.type]}
               </div>
             ))}
@@ -2388,10 +2570,7 @@ export function RoomPageLiveKit() {
   const ChatPanelAny = ChatPanel as any;
 
   const RightPanelBody = (
-    <div
-      className={`rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col ${panelBg} ${theme === "dark" ? "dark" : ""}`}
-      data-theme={theme}
-    >
+    <div className={`rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col ${panelBg} ${theme === "dark" ? "dark" : ""}`} data-theme={theme}>
       {rightTab === "participants" && (
         <div className="h-full min-h-0 flex flex-col">
           <div className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
@@ -2419,9 +2598,7 @@ export function RoomPageLiveKit() {
                   }`}
               />
             </div>
-            {rolesError ? (
-              <div className={`mt-2 text-[12px] ${isLight ? "text-red-600" : "text-red-300"}`}>{rolesError}</div>
-            ) : null}
+            {rolesError ? <div className={`mt-2 text-[12px] ${isLight ? "text-red-600" : "text-red-300"}`}>{rolesError}</div> : null}
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-3">
@@ -2436,33 +2613,24 @@ export function RoomPageLiveKit() {
                     .map((x) => x[0]?.toUpperCase())
                     .join("") || "U";
 
-                const pid = p.participantIdentity ? String(p.participantIdentity).toLowerCase() : "";
-                const isMod = !p.isLocal && looksLikeUuid(pid) ? isModeratorIdentity(pid) : p.isLocal ? isSelfModerator && !isHost : false;
+                const pidFull = p.participantIdentity ? String(p.participantIdentity).toLowerCase() : "";
+                const pidBase = extractBaseUserIdFromIdentity(pidFull);
 
-                const roleText = p.isLocal
-                  ? isHost
-                    ? "Host"
-                    : isMod
-                      ? "Moderator"
-                      : "You"
-                  : isMod
-                    ? "Moderator"
-                    : "Participant";
+                const isMod = !p.isLocal && looksLikeUuid(pidBase) ? isModeratorIdentity(pidBase) : p.isLocal ? isSelfModerator && !isHost : false;
+
+                const roleText = p.isLocal ? (isHost ? "Host" : isMod ? "Moderator" : "You") : isMod ? "Moderator" : "Participant";
 
                 return (
-                  <div
-                    key={p.id}
-                    className={`flex items-center justify-between px-3 py-2 rounded-xl transition ${isLight ? "hover:bg-black/5" : "hover:bg-white/5"}`}
-                  >
+                  <div key={p.id} className={`flex items-center justify-between px-3 py-2 rounded-xl transition ${isLight ? "hover:bg-black/5" : "hover:bg-white/5"}`}>
                     <div className="flex items-center gap-3 min-w-0">
                       <div
                         className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${p.isLocal
-                          ? isLight
-                            ? "bg-blue-500/15 text-blue-700"
-                            : "bg-emerald-500/80 text-[#02140B]"
-                          : isLight
-                            ? "bg-black/5 text-black/75"
-                            : "bg-white/10 text-white/85"
+                            ? isLight
+                              ? "bg-blue-500/15 text-blue-700"
+                              : "bg-emerald-500/80 text-[#02140B]"
+                            : isLight
+                              ? "bg-black/5 text-black/75"
+                              : "bg-white/10 text-white/85"
                           }`}
                       >
                         {initials}
@@ -2496,11 +2664,7 @@ export function RoomPageLiveKit() {
                         }
                         title={p.camMuted ? "Video off" : "Video on"}
                       >
-                        <Icon
-                          name={p.camMuted ? "camera-off" : "camera-on"}
-                          theme={theme}
-                          className={`w-4 h-4 ${p.camMuted ? "opacity-90" : "opacity-80"}`}
-                        />
+                        <Icon name={p.camMuted ? "camera-off" : "camera-on"} theme={theme} className={`w-4 h-4 ${p.camMuted ? "opacity-90" : "opacity-80"}`} />
                       </div>
                     </div>
                   </div>
@@ -2595,9 +2759,7 @@ export function RoomPageLiveKit() {
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="flex items-center gap-2 min-w-0">
-                <p className={`min-w-0 font-inter font-semibold text-[16px] sm:text-[18px] truncate ${strongText}`}>
-                  {String(session?.title || "Session")}
-                </p>
+                <p className={`min-w-0 font-inter font-semibold text-[16px] sm:text-[18px] truncate ${strongText}`}>{String(session?.title || "Session")}</p>
 
                 <span
                   className={[
@@ -2653,9 +2815,7 @@ export function RoomPageLiveKit() {
               {session.host_profile && (
                 <button
                   onClick={() => setSelectedUser(session.host_profile || null)}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition text-[13px] ${isLight
-                    ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                    : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition text-[13px] ${isLight ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75" : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                     }`}
                   title="Host profile"
                 >
@@ -2686,9 +2846,7 @@ export function RoomPageLiveKit() {
             {session.host_profile && (
               <button
                 onClick={() => setSelectedUser(session.host_profile || null)}
-                className={`w-10 h-10 rounded-2xl flex items-center justify-center border transition ${isLight
-                  ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70"
-                  : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-white/85"
+                className={`w-10 h-10 rounded-2xl flex items-center justify-center border transition ${isLight ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70" : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-white/85"
                   }`}
                 title={`Host: ${String(session.host_profile.full_name || "Host")}`}
                 aria-label="Host profile"
@@ -2721,11 +2879,19 @@ export function RoomPageLiveKit() {
         }}
         onCancel={() => {
           cleanupPrejoinPreparedVideoTrack().catch(() => { });
+          releaseTabSlotOnce();
           navigate("/sessions", { replace: true });
         }}
         onJoin={() => {
           const pj = prejoinRef.current;
           const nm = (pj.displayName || displayName || userName || "Guest").trim() || "Guest";
+
+          // enforce max 2 tabs before starting join
+          const baseUserId = authUserId || safeIdentity(nm);
+          if (!ensureTabSlotForJoin(String(baseUserId).toLowerCase())) {
+            alert(`Too many tabs open for this room (max ${MULTI_TAB_MAX}). Close another tab and retry.`);
+            return;
+          }
 
           setDisplayName(nm);
           setSelectedAudioOutputId(pj.audioOutputId || "default");
@@ -2733,7 +2899,7 @@ export function RoomPageLiveKit() {
           setPrejoinOpen(false);
           setJoinRequested(true);
         }}
-        // NEW: preview + fx controls
+        // preview + fx controls
         previewVideoTrack={prejoinPreparedVideoTrackRef.current}
         previewVersion={prejoinPreviewVersion}
         videoFxMode={videoFxMode}
@@ -2775,17 +2941,8 @@ export function RoomPageLiveKit() {
         <div className="h-full w-full px-2 sm:px-4 pt-3 pb-[calc(84px+env(safe-area-inset-bottom))] sm:pb-[calc(94px+env(safe-area-inset-bottom))] flex flex-col gap-3 sm:gap-4 min-h-0">
           {TopBar}
 
-          <div
-            className={
-              "relative grid grid-rows-1 gap-3 sm:gap-4 flex-1 min-h-0 h-full " +
-              (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),380px] xl:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
-            }
-          >
-            <div
-              ref={videoWrapRef}
-              className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
-                }`}
-            >
+          <div className={"relative grid grid-rows-1 gap-3 sm:gap-4 flex-1 min-h-0 h-full " + (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),380px] xl:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")}>
+            <div ref={videoWrapRef} className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"}`}>
               <LiveKitErrorBoundary
                 isLight={isLight}
                 onReset={() => {
@@ -2800,9 +2957,7 @@ export function RoomPageLiveKit() {
               </LiveKitErrorBoundary>
 
               {lastErr && (
-                <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow z-30 max-w-[80%] break-words">
-                  {lastErr}
-                </div>
+                <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow z-30 max-w-[80%] break-words">{lastErr}</div>
               )}
             </div>
 
@@ -2938,7 +3093,10 @@ export function RoomPageLiveKit() {
                   </button>
 
                   {showReactionsMenu && (
-                    <div className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}>
+                    <div
+                      className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
+                        }`}
+                    >
                       {(["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown"] as ReactionType[]).map((t) => (
                         <button
                           key={t}
