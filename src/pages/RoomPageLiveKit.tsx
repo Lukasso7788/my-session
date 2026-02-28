@@ -30,6 +30,8 @@ import { RoomSettingsModalLiveKit } from "./LiveKit/RoomSettingsModalLiveKit";
 import { VideoTile } from "./LiveKit/VideoTileLiveKit";
 import { RemoteAudioRenderer } from "./LiveKit/RemoteAudioRendererLiveKit";
 
+type BgProc = ReturnType<typeof BackgroundProcessor>;
+
 type RoomTheme = "dark" | "light";
 type RightPanelTab = "participants" | "chat" | "intentions" | null;
 type FxMode = "off" | "blur" | "bg";
@@ -1172,10 +1174,10 @@ export function RoomPageLiveKit() {
   const uploadedBgUrlRef = useRef<string | null>(null);
 
   // ✅ NEW: stable processors (do NOT recreate pipelines on every toggle)
-  const prejoinFxProcessorRef = useRef<BackgroundProcessor | null>(null);
+  const prejoinFxProcessorRef = useRef<BgProc | null>(null);
   const prejoinFxAttachedTrackIdRef = useRef<string>("");
 
-  const inRoomFxProcessorRef = useRef<BackgroundProcessor | null>(null);
+  const inRoomFxProcessorRef = useRef<BgProc | null>(null);
   const inRoomFxAttachedTrackIdRef = useRef<string>("");
 
   const fxSwitchDebounceRef = useRef<number | null>(null);
@@ -1203,13 +1205,13 @@ export function RoomPageLiveKit() {
 
   const ensureProcessorAttached = async (
     track: LocalVideoTrack,
-    processorRef: React.MutableRefObject<BackgroundProcessor | null>,
+    processorRef: React.MutableRefObject<BgProc | null>,
     attachedIdRef: React.MutableRefObject<string>,
     showProcessedStreamLocally: boolean
   ) => {
     const tid = getTrackStableId(track as any);
     if (!processorRef.current) {
-      processorRef.current = new BackgroundProcessor({ mode: "disabled" } as any);
+      processorRef.current = BackgroundProcessor({ mode: "disabled" } as any);
     }
     if (tid && attachedIdRef.current === tid) return;
 
@@ -1223,7 +1225,7 @@ export function RoomPageLiveKit() {
     attachedIdRef.current = tid;
   };
 
-  const switchProcessorMode = async (processor: BackgroundProcessor, mode: FxMode, blur: number, bgUrl: string) => {
+  const switchProcessorMode = async (processor: BgProc, mode: FxMode, blur: number, bgUrl: string) => {
     const p: any = processor as any;
     if (typeof p.switchTo !== "function") {
       // ultra-fallback: if no switchTo, just recreate processor (rare in 0.7.x, but safe)
