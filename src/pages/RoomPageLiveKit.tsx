@@ -1885,6 +1885,16 @@ export function RoomPageLiveKit() {
           await r.localParticipant.publishTrack(prepared, { source: Track.Source.Camera } as any);
           setCamOn(true);
 
+          // ✅ IMPORTANT:
+          // If the prejoin track already has a BackgroundProcessor attached,
+          // reuse THE SAME processor instance in-room to avoid re-attaching (flicker/reset).
+          if (prejoinFxProcessorRef.current) {
+            inRoomFxProcessorRef.current = prejoinFxProcessorRef.current;
+          }
+          // Mark that processor is already attached to this exact track
+          inRoomFxAttachedTrackIdRef.current = getTrackStableId(prepared as any);
+
+          // clear prejoin refs
           prejoinPreparedVideoTrackRef.current = null;
           prejoinFxAttachedTrackIdRef.current = "";
         } else {
