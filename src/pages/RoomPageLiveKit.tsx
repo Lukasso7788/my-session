@@ -2268,10 +2268,7 @@ export function RoomPageLiveKit() {
     return "gap-2 sm:gap-3";
   }, [tileCount]);
 
-  const gridContentClass = useMemo(() => {
-    if (tileCount <= 4) return "place-content-center";
-    return "place-content-start";
-  }, [tileCount]);
+  const gridContentClass = "place-content-start";
 
   const roomReadyText = !joinRequested ? "Waiting to join…" : tokenLoading ? "Preparing token…" : !connected ? "Connecting to LiveKit…" : "";
 
@@ -2322,7 +2319,7 @@ export function RoomPageLiveKit() {
     const hasAnyAdminAction = (!!hostActions && (hasMuteMic || hasMuteCam || hasKick)) || canRoleManageTarget;
 
     const thirdCenteredClass =
-      tileCount === 3 && idx === 2 ? "sm:col-span-2 sm:justify-self-center sm:w-[calc(50%-0.5rem)]" : "";
+      tileCount === 3 && idx === 2 ? "sm:col-span-2 sm:justify-self-center sm:max-w-[560px] sm:w-full" : "";
 
     return (
       <div
@@ -2475,24 +2472,33 @@ export function RoomPageLiveKit() {
           <div className="w-full max-w-[860px]">{tilesForRender.map((t, idx) => renderTile(t, idx))}</div>
         </div>
       ) : (
-        <div
-          className={[
-            "h-full min-h-0 overflow-auto p-2 sm:p-3 grid auto-rows-min items-start",
-            gridColsClass,
-            gridGapClass,
-            gridContentClass,
-          ].join(" ")}
-        >
-          {tilesForRender.map((t, idx) => renderTile(t, idx))}
+        <div className="h-full min-h-0 overflow-auto p-2 sm:p-3">
+          <div
+            className={[
+              // важно: min-h-full делает внутреннюю область минимум высотой контейнера,
+              // и мы центрируем внутри неё — без “минусового скролла”
+              "min-h-full w-full grid auto-rows-min",
+              gridColsClass,
+              gridGapClass,
 
-          {!tilesForRender.length && connected && (
-            <div
-              className={`col-span-full h-full min-h-[240px] rounded-2xl border flex items-center justify-center ${isLight ? "border-black/10 bg-black/5 text-black/60" : "border-white/10 bg-white/5 text-white/60"
-                }`}
-            >
-              No participants yet
-            </div>
-          )}
+              // центрируем весь блок тайлов по вертикали/горизонтали
+              "place-content-center",
+
+              // но items пусть стартуют нормально (чтобы не было странных stretch)
+              "items-start",
+            ].join(" ")}
+          >
+            {tilesForRender.map((t, idx) => renderTile(t, idx))}
+
+            {!tilesForRender.length && connected && (
+              <div
+                className={`col-span-full h-full min-h-[240px] rounded-2xl border flex items-center justify-center ${isLight ? "border-black/10 bg-black/5 text-black/60" : "border-white/10 bg-white/5 text-white/60"
+                  }`}
+              >
+                No participants yet
+              </div>
+            )}
+          </div>
         </div>
       )}
 
