@@ -105,23 +105,14 @@ type TileModel = {
   id: string;
   label: string;
   isLocal: boolean;
-
-  // camera
   videoTrack?: Track;
-
-  // screen-share (NEW)
-  screenTrack?: Track;
 
   participantIdentity?: string; // exact LK identity (may include tab suffix)
   participantUserId?: string; // extracted base UUID (if present)
-
   micTrackSid?: string;
   camTrackSid?: string;
-  screenTrackSid?: string; // NEW
-
   micMuted?: boolean;
   camMuted?: boolean;
-  screenMuted?: boolean; // NEW
 };
 
 type SessionRole = "moderator";
@@ -583,10 +574,11 @@ function useMediaQuery(query: string) {
   return matches;
 }
 
-// ---- Jitsi-style sizing + grid math (ported) ----
-function useElementSize<T extends HTMLElement>() {
+// ---- Sizing ONLY (no layout re-mount / no global resize spam) ----
+function useElementSizeStable<T extends HTMLElement>(thresholdPx = 2) {
   const [node, setNode] = useState<T | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
+  const rafRef = useRef<number | null>(null);
 
   const ref = (el: T | null) => setNode(el);
 
@@ -595,25 +587,45 @@ function useElementSize<T extends HTMLElement>() {
 
     const update = () => {
       const r = node.getBoundingClientRect();
-      setSize({ width: Math.round(r.width), height: Math.round(r.height) });
+      const w = Math.round(r.width);
+      const h = Math.round(r.height);
+
+      setSize((prev) => {
+        if (Math.abs(prev.width - w) < thresholdPx && Math.abs(prev.height - h) < thresholdPx) return prev;
+        return { width: w, height: h };
+      });
     };
 
-    update();
+    const schedule = () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(update);
+    };
+
+    schedule();
 
     const RO: any = (window as any).ResizeObserver;
     if (RO) {
-      const ro = new RO(() => update());
+      const ro = new RO(() => schedule());
       ro.observe(node);
-      return () => ro.disconnect();
+      return () => {
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+        ro.disconnect();
+      };
     }
 
-    window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
-  }, [node]);
+    window.addEventListener("resize", schedule);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+      window.removeEventListener("resize", schedule);
+    };
+  }, [node, thresholdPx]);
 
   return { ref, width: size.width, height: size.height };
 }
 
+// Keep your “good sizing” math
 function computeCols(count: number, containerWidth: number) {
   const w = containerWidth || 1200;
   const isDesktop = w >= 1024;
@@ -622,10 +634,10 @@ function computeCols(count: number, containerWidth: number) {
   if (count === 2) return 2;
   if (count === 4) return 2;
 
-  // 3 -> ALWAYS 2 cols on desktop (2+1)
+  // 3 -> 2 cols on desktop (2+1)
   if (count === 3 && isDesktop) return 2;
 
-  // 5–9 -> ALWAYS 3 cols on desktop
+  // 5–9 -> 3 cols on desktop
   if (isDesktop && count >= 5 && count <= 9) return 3;
 
   // fallback
@@ -750,7 +762,6 @@ export function RoomPageLiveKit() {
 
   const isLight = theme === "light";
   const isLgUp = useMediaQuery("(min-width: 1024px)");
-  const isMobileQuery = useMediaQuery("(max-width: 767px)");
 
   const pageBg = isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white";
   const topBarBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#111827]/40 border border-white/5";
@@ -823,21 +834,6 @@ export function RoomPageLiveKit() {
       return tab;
     });
   };
-
-  useEffect(() => {
-    const fire = () => {
-      try {
-        window.dispatchEvent(new Event("resize"));
-      } catch { }
-    };
-    requestAnimationFrame(fire);
-    const t1 = window.setTimeout(fire, 60);
-    const t2 = window.setTimeout(fire, 220);
-    return () => {
-      window.clearTimeout(t1);
-      window.clearTimeout(t2);
-    };
-  }, [rightPanelOpen, rightTab]);
 
   // session stages / timer / sounds
   const [stages, setStages] = useState<Stage[]>([]);
@@ -1265,7 +1261,6 @@ export function RoomPageLiveKit() {
   const inRoomFxAttachedTrackIdRef = useRef<string>("");
 
   const fxSwitchDebounceRef = useRef<number | null>(null);
-  const fxLastAppliedRef = useRef<{ mode: FxMode; blur: number; bg: string }>({ mode: "off", blur: 12, bg: DEFAULT_BG_DATA_URL });
 
   const ensureFxSupportedOrThrow = () => {
     if (!supportsBackgroundProcessors()) {
@@ -1464,8 +1459,14 @@ export function RoomPageLiveKit() {
     setRolesError("");
     setRolesLoading(true);
     try {
-      const { data, error } = await supabase.from("session_role_assignments").select("user_id, role").eq("session_id", sessionId).eq("role", "moderator");
+      const { data, error } = await supabase
+        .from("session_role_assignments")
+        .select("user_id, role")
+        .eq("session_id", sessionId)
+        .eq("role", "moderator");
+
       if (error) throw error;
+
       const ids = uniqStrings((data || []).map((r: any) => String(r?.user_id || "")));
       setModeratorUserIds(ids);
     } catch (e: any) {
@@ -1514,7 +1515,12 @@ export function RoomPageLiveKit() {
     setRolesError("");
     setRoleBusyKey(`mod:${uid}:revoke`);
     try {
-      const { error } = await supabase.from("session_role_assignments").delete().eq("session_id", session.id).eq("user_id", uid).eq("role", "moderator");
+      const { error } = await supabase
+        .from("session_role_assignments")
+        .delete()
+        .eq("session_id", session.id)
+        .eq("user_id", uid)
+        .eq("role", "moderator");
       if (error) throw error;
       setModeratorUserIds((prev) => prev.filter((x) => x !== uid));
     } catch (e: any) {
@@ -1783,20 +1789,19 @@ export function RoomPageLiveKit() {
     return safeRoomName(`session-${session.id}`);
   }, [session]);
 
+  // IMPORTANT: rebuildTiles stays simple and stable (no screenshare tiles, no re-mount tricks)
   const rebuildTiles = () => {
     const room = roomRef.current;
     if (!room) return;
 
     const next: TileModel[] = [];
+
     const lp = room.localParticipant;
 
-    const localCamPub = Array.from(lp.videoTrackPublications.values()).find((p) => (p as any).source === Track.Source.Camera) as any;
+    const localCamPub = Array.from(lp.videoTrackPublications.values()).find((p) => p.source === Track.Source.Camera) as any;
     const localTrack = (localCamPub?.track as any) || undefined;
 
-    const localScreenPub = Array.from(lp.videoTrackPublications.values()).find((p) => (p as any).source === Track.Source.ScreenShare) as any;
-    const localScreenTrack = (localScreenPub?.track as any) || undefined;
-
-    const localMicPub = Array.from(lp.audioTrackPublications.values()).find((p) => (p as any).source === Track.Source.Microphone) as any;
+    const localMicPub = Array.from(lp.audioTrackPublications.values()).find((p) => p.source === Track.Source.Microphone) as any;
 
     const localIdentity = String(lp.identity || livekitIdentityRef.current || "");
     const localUserId =
@@ -1806,18 +1811,11 @@ export function RoomPageLiveKit() {
       id: "local",
       label: (displayName || userName || "You").trim() || "You",
       isLocal: true,
-
       videoTrack: localTrack,
-      screenTrack: localScreenTrack,
-
       participantIdentity: localIdentity || undefined,
       participantUserId: localUserId || undefined,
-
       micMuted: !!localMicPub?.isMuted || !micOn,
       camMuted: !localCamPub?.track || !!(localCamPub as any)?.isMuted || !camOn,
-
-      screenTrackSid: (localScreenPub as any)?.trackSid,
-      screenMuted: !!(localScreenPub as any)?.isMuted || !localScreenTrack,
     });
 
     room.remoteParticipants.forEach((rp: RemoteParticipant) => {
@@ -1825,11 +1823,9 @@ export function RoomPageLiveKit() {
       const allAudioPubs = Array.from(rp.audioTrackPublications.values()) as RemoteAudioTrackPublication[];
 
       const camPub = allVideoPubs.find((p: any) => p.source === Track.Source.Camera) as any;
-      const screenPub = allVideoPubs.find((p: any) => p.source === Track.Source.ScreenShare) as any;
       const micPub = allAudioPubs.find((p: any) => p.source === Track.Source.Microphone) as any;
 
       const vt = (camPub?.track as any) || undefined;
-      const st = (screenPub?.track as any) || undefined;
       const nm = (rp.name || rp.identity || "Guest").trim() || "Guest";
 
       const exactIdentity = String(rp.identity || "");
@@ -1839,28 +1835,21 @@ export function RoomPageLiveKit() {
         id: rp.sid,
         label: nm,
         isLocal: false,
-
         videoTrack: vt,
-        screenTrack: st,
-
         participantIdentity: exactIdentity || undefined,
         participantUserId: baseUserId || undefined,
-
         micTrackSid: micPub?.trackSid,
         camTrackSid: camPub?.trackSid,
-        screenTrackSid: screenPub?.trackSid,
-
         micMuted: !!(micPub as any)?.isMuted,
         camMuted: !!(camPub as any)?.isMuted || !vt,
-        screenMuted: !!(screenPub as any)?.isMuted || !st,
       });
     });
 
     setTiles(next);
 
     try {
-      const lpScreenPub2 = Array.from(lp.videoTrackPublications.values()).find((p: any) => p.source === Track.Source.ScreenShare) as any;
-      setScreenShareOn(!!lpScreenPub2?.track && !lpScreenPub2?.isMuted);
+      const lpScreenPub = Array.from(lp.videoTrackPublications.values()).find((p: any) => p.source === Track.Source.ScreenShare) as any;
+      setScreenShareOn(!!lpScreenPub?.track && !lpScreenPub?.isMuted);
     } catch {
       setScreenShareOn(false);
     }
@@ -1988,7 +1977,7 @@ export function RoomPageLiveKit() {
       if (pj.videoEnabled && videoFxMode !== "off") {
         scheduleFxApply(() => {
           applyVideoFx(videoFxMode).catch(() => { });
-        }, 60);
+        }, 80);
       }
     } catch (e: any) {
       console.error("LiveKit connect failed:", e);
@@ -2036,7 +2025,7 @@ export function RoomPageLiveKit() {
       const next = !micOn;
       await r.localParticipant.setMicrophoneEnabled(next);
       setMicOn(next);
-      setTimeout(() => rebuildTiles(), 30);
+      window.setTimeout(() => rebuildTiles(), 40);
     } catch (e) {
       console.error("toggleMic error:", e);
     }
@@ -2077,7 +2066,7 @@ export function RoomPageLiveKit() {
       if (next) {
         scheduleFxApply(() => {
           if (videoFxMode !== "off") applyVideoFx(videoFxMode).catch(() => { });
-        }, 120);
+        }, 140);
       } else {
         try {
           if (inRoomFxProcessorRef.current) {
@@ -2102,7 +2091,7 @@ export function RoomPageLiveKit() {
       const next = !screenShareOn;
       await (r.localParticipant as any).setScreenShareEnabled(next);
       setScreenShareOn(next);
-      setTimeout(() => rebuildTiles(), 80);
+      window.setTimeout(() => rebuildTiles(), 80);
     } catch (e) {
       console.error("toggleScreenShare error:", e);
     }
@@ -2192,16 +2181,16 @@ export function RoomPageLiveKit() {
 
       ensureFxSupportedOrThrow();
 
+      // NOTE: keep this as TRUE, but DO NOT cause layout loops.
       await ensureProcessorAttached(tr, inRoomFxProcessorRef, inRoomFxAttachedTrackIdRef, true);
       await switchProcessorMode(inRoomFxProcessorRef.current!, mode, blurStrength, bgImageUrl);
 
       setVideoFxMode(mode);
       setFxStatusText(mode === "off" ? "FX disabled" : mode === "blur" ? `Blur applied (strength ${blurStrength})` : "Virtual background applied");
 
-      fxLastAppliedRef.current = { mode, blur: blurStrength, bg: bgImageUrl };
-
-      await delay(60);
-      rebuildTiles();
+      // IMPORTANT: no rebuildTiles() here. It was a big source of re-render thrash during FX.
+      // Tiles will refresh on LK events anyway; local tile shows processed track automatically.
+      await delay(50);
     } catch (e: any) {
       console.error("applyVideoFx failed:", e);
       setFxError(String(e?.message || e || "video_fx_failed"));
@@ -2217,7 +2206,7 @@ export function RoomPageLiveKit() {
 
     scheduleFxApply(() => {
       applyVideoFx("blur").catch(() => { });
-    }, 220);
+    }, 260);
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [blurStrength]);
@@ -2229,7 +2218,7 @@ export function RoomPageLiveKit() {
 
     scheduleFxApply(() => {
       applyVideoFx("bg").catch(() => { });
-    }, 220);
+    }, 260);
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bgImageUrl]);
@@ -2322,42 +2311,54 @@ export function RoomPageLiveKit() {
     return tilesForRender.filter((t) => (t.label || "").toLowerCase().includes(q));
   }, [tilesForRender, participantsSearch]);
 
-  const switchTrackCls =
-    "w-[84px] max-[480px]:w-[78px] h-[32px] rounded-full border relative transition flex items-center px-[3px] " +
-    (isLight ? "bg-black/5 border-black/10 hover:bg-black/10" : "bg-white/5 border-white/10 hover:bg-white/10");
+  const tileCount = tilesForRender.length;
 
-  const switchThumb = "absolute top-[2px] w-[26px] h-[26px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center";
-  const thumbTranslate = isLight ? "translateX(0px)" : "translateX(52px)";
+  // sizing measurement (stable)
+  const { ref: layoutRef, width: layoutW, height: layoutH } = useElementSizeStable<HTMLDivElement>(2);
 
-  // video wrap resize observer
-  const videoWrapRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const el = videoWrapRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
+  // ---- grid sizing derived from measurement + count
+  const paddingPx = useMemo(() => (layoutW && layoutW < 520 ? 8 : 10), [layoutW]);
+  const gapPx = useMemo(() => (layoutW && layoutW < 520 ? 6 : 10), [layoutW]);
 
-    let raf = 0;
-    const ro = new ResizeObserver(() => {
-      window.cancelAnimationFrame(raf);
-      raf = window.requestAnimationFrame(() => {
-        try {
-          window.dispatchEvent(new Event("resize"));
-        } catch { }
-      });
+  const gridCols = useMemo(() => computeCols(tileCount, layoutW || 1200), [tileCount, layoutW]);
+
+  const gridRows = useMemo(() => {
+    const c = gridCols || 1;
+    return Math.max(1, Math.ceil(tileCount / c));
+  }, [tileCount, gridCols]);
+
+  const maxGridWidth = useMemo(() => {
+    if (tileCount <= 1) return null;
+    return calcMaxGridWidthPx({
+      containerWidth: layoutW || (typeof window !== "undefined" ? window.innerWidth : 1200),
+      containerHeight: layoutH || (typeof window !== "undefined" ? window.innerHeight : 800),
+      cols: gridCols || 1,
+      rows: gridRows || 1,
+      gapPx,
+      paddingPx,
+      aspectHOverW: 9 / 16,
     });
+  }, [tileCount, layoutW, layoutH, gridCols, gridRows, gapPx, paddingPx]);
 
-    ro.observe(el);
+  const remainder = useMemo(() => {
+    const c = gridCols || 1;
+    return c > 0 ? tileCount % c : 0;
+  }, [tileCount, gridCols]);
 
-    return () => {
-      window.cancelAnimationFrame(raf);
-      ro.disconnect();
-    };
-  }, []);
+  const fullCount = useMemo(() => {
+    if (!remainder) return tileCount;
+    return tileCount - remainder;
+  }, [tileCount, remainder]);
 
-  // Jitsi-style size tracking for video area
-  const { ref: layoutRef, width: layoutW, height: layoutH } = useElementSize<HTMLDivElement>();
+  const fullRowsTiles = useMemo(() => tilesForRender.slice(0, fullCount), [tilesForRender, fullCount]);
+  const lastRowTiles = useMemo(() => tilesForRender.slice(fullCount), [tilesForRender, fullCount]);
+
+  const oneColWidth = useMemo(() => {
+    const c = gridCols || 1;
+    return `calc((100% - ${(c - 1) * gapPx}px) / ${c})`;
+  }, [gridCols, gapPx]);
 
   const lastErr = tokenError || clientError;
-  const tileCount = tilesForRender.length;
 
   const roomReadyText = !joinRequested ? "Waiting to join…" : tokenLoading ? "Preparing token…" : !connected ? "Connecting to LiveKit…" : "";
 
@@ -2535,184 +2536,12 @@ export function RoomPageLiveKit() {
     );
   };
 
-  // ---- LiveKit layout using Jitsi grid logic + LK screenshare (ported) ----
-  const LiveKitVideoLayout = () => {
-    const all = tilesForRender;
-
-    // pick first active screen sharer (local or remote)
-    const screenSharer = all.find((t) => !!t.screenTrack && !t.screenMuted) || null;
-    const others = screenSharer ? all.filter((t) => t.id !== screenSharer.id) : all;
-
-    const count = others.length || 0;
-
-    const paddingPx = layoutW && layoutW < 520 ? 8 : 10;
-    const gapPx = layoutW && layoutW < 520 ? 6 : 10;
-
-    const effectiveW = layoutW || (typeof window !== "undefined" ? window.innerWidth : 1200);
-    const effectiveH = layoutH || (typeof window !== "undefined" ? window.innerHeight : 800);
-
-    const isCompact = effectiveW < 900;
-
-    // Screenshare layout
-    if (screenSharer) {
-      const screenLabel = screenSharer.isLocal ? `${screenSharer.label || "You"} (screen)` : `${screenSharer.label || "Guest"} (screen)`;
-
-      if (isMobileQuery || isCompact) {
-        // mobile/compact: screen on top, others below
-        return (
-          <div className="w-full h-full min-h-0 overflow-y-auto p-2" style={{ paddingBottom: 12 }}>
-            <div className={`w-full relative overflow-hidden rounded-2xl ${isLight ? "bg-white ring-1 ring-black/10" : "bg-[#0B1220] ring-1 ring-white/10"}`} style={{ aspectRatio: "16 / 9" }}>
-              <div className="absolute inset-0">
-                <VideoTile label={screenLabel} videoTrack={screenSharer.screenTrack} isLocal={screenSharer.isLocal} theme={theme} showBadge={getBadgeForTile(screenSharer)} hostActions={undefined} />
-              </div>
-            </div>
-
-            <div className="mt-2 flex flex-col gap-2">
-              {others.map((t, idx) => (
-                <div key={t.id}>{renderTile(t, idx)}</div>
-              ))}
-            </div>
-          </div>
-        );
-      }
-
-      // desktop: big screen + right column
-      return (
-        <div className="relative w-full h-full min-h-0 flex flex-row gap-3 p-3 overflow-hidden">
-          <div className={`relative flex-1 overflow-hidden rounded-2xl ${isLight ? "bg-white ring-1 ring-black/10" : "bg-[#0B1220] ring-1 ring-white/10"} min-h-0`}>
-            <VideoTile label={screenLabel} videoTrack={screenSharer.screenTrack} isLocal={screenSharer.isLocal} theme={theme} showBadge={getBadgeForTile(screenSharer)} hostActions={undefined} />
-          </div>
-
-          <div className="flex flex-col gap-3 w-56 min-h-0 overflow-y-auto">
-            {others.map((t, idx) => (
-              <div key={t.id} className="w-full">
-                {renderTile(t, idx)}
-              </div>
-            ))}
-          </div>
-        </div>
-      );
-    }
-
-    // No tiles
-    if (!count) {
-      return connected ? (
-        <div className="h-full min-h-0 flex items-center justify-center p-3">
-          <div className={`w-full max-w-[860px] min-h-[240px] rounded-2xl border flex items-center justify-center ${isLight ? "border-black/10 bg-black/5 text-black/60" : "border-white/10 bg-white/5 text-white/60"}`}>
-            No participants yet
-          </div>
-        </div>
-      ) : null;
-    }
-
-    // Single tile
-    if (count === 1) {
-      return (
-        <div className="h-full min-h-0 flex items-center justify-center p-2 sm:p-3">
-          <div className="w-full max-w-[860px]">{others.map((t, idx) => renderTile(t, idx))}</div>
-        </div>
-      );
-    }
-
-    // Two tiles (P2P)
-    if (count === 2) {
-      const cols = 2;
-      const rows = 1;
-
-      const maxGridWidth = calcMaxGridWidthPx({
-        containerWidth: effectiveW,
-        containerHeight: effectiveH,
-        cols,
-        rows,
-        gapPx,
-        paddingPx,
-        aspectHOverW: 9 / 16,
-      });
-
-      return (
-        <div className="w-full h-full min-h-0 overflow-hidden flex justify-center items-center" style={{ padding: paddingPx }}>
-          <div
-            className="w-full grid"
-            style={{
-              gap: gapPx,
-              maxWidth: maxGridWidth ? `${maxGridWidth}px` : undefined,
-              gridTemplateColumns: "1fr 1fr",
-              alignContent: "center",
-            }}
-          >
-            {others.map((t, idx) => (
-              <div key={t.id}>{renderTile(t, idx)}</div>
-            ))}
-          </div>
-        </div>
-      );
-    }
-
-    // Grid (>=3) — Jitsi-style
-    const cols = computeCols(count, effectiveW);
-    const rows = Math.ceil(count / cols);
-
-    const maxGridWidth = calcMaxGridWidthPx({
-      containerWidth: effectiveW,
-      containerHeight: effectiveH,
-      cols,
-      rows,
-      gapPx,
-      paddingPx,
-      aspectHOverW: 9 / 16,
-    });
-
-    const shouldCenterY = (() => {
-      const availW = Math.max(0, effectiveW - paddingPx * 2);
-      const availH = Math.max(0, effectiveH - paddingPx * 2);
-      if (availW <= 0 || availH <= 0) return false;
-
-      const byWidth = (availW - (cols - 1) * gapPx) / cols;
-      const byHeight = (availH - (rows - 1) * gapPx) / (rows * (9 / 16));
-
-      const tileW = Math.max(0, Math.min(byWidth, byHeight));
-      const tileH = tileW * (9 / 16);
-      const gridH = rows * tileH + (rows - 1) * gapPx;
-
-      return gridH > 0 && gridH <= availH - 4;
-    })();
-
-    const remainder = cols > 0 ? count % cols : 0;
-    const fullCount = remainder === 0 ? count : count - remainder;
-
-    const fullRows = others.slice(0, fullCount);
-    const lastRow = others.slice(fullCount);
-
-    const oneColWidth = `calc((100% - ${(cols - 1) * gapPx}px) / ${cols})`;
-
-    return (
-      <div className={"w-full h-full min-h-0 overflow-y-auto flex justify-center " + (shouldCenterY ? "items-center" : "items-start")} style={{ padding: paddingPx }}>
-        <div
-          className="w-full grid"
-          style={{
-            gap: gapPx,
-            maxWidth: maxGridWidth ? `${maxGridWidth}px` : undefined,
-            gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-            alignContent: shouldCenterY ? "center" : "start",
-          }}
-        >
-          {fullRows.map((t, idx) => (
-            <div key={t.id}>{renderTile(t, idx)}</div>
-          ))}
-
-          {lastRow.length > 0 && (
-            <div className="col-span-full w-full flex justify-center" style={{ gap: gapPx, alignItems: shouldCenterY ? "center" : "flex-start" }}>
-              {lastRow.map((t, idx) => (
-                <div key={t.id} className="shrink-0" style={{ width: oneColWidth }}>
-                  {renderTile(t, fullCount + idx)}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
+  // reactions overlay
+  const [showReactionsMenu2, setShowReactionsMenu2] = useState(false);
+  useEffect(() => {
+    if (showReactionsMenu2) setShowReactionsMenu(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showReactionsMenu2]);
 
   const videoContent = (
     <div ref={layoutRef} className="w-full h-full min-h-0 relative">
@@ -2722,7 +2551,53 @@ export function RoomPageLiveKit() {
         </div>
       ) : null}
 
-      <LiveKitVideoLayout />
+      {tileCount === 1 ? (
+        <div className="h-full min-h-0 flex items-center justify-center p-2 sm:p-3">
+          <div className="w-full max-w-[860px]">{tilesForRender.map((t, idx) => renderTile(t, idx))}</div>
+        </div>
+      ) : (
+        <div className="h-full min-h-0 overflow-auto" style={{ padding: paddingPx }}>
+          <div className="w-full flex justify-center">
+            <div
+              className="w-full"
+              style={{
+                maxWidth: maxGridWidth ? `${maxGridWidth}px` : undefined,
+              }}
+            >
+              <div
+                className="w-full grid items-start"
+                style={{
+                  gap: gapPx,
+                  gridTemplateColumns: `repeat(${gridCols || 1}, minmax(0, 1fr))`,
+                }}
+              >
+                {fullRowsTiles.map((t, idx) => (
+                  <div key={t.id}>{renderTile(t, idx)}</div>
+                ))}
+
+                {lastRowTiles.length > 0 && (
+                  <div className="col-span-full w-full flex justify-center" style={{ gap: gapPx }}>
+                    {lastRowTiles.map((t, idx) => (
+                      <div key={t.id} className="shrink-0" style={{ width: oneColWidth }}>
+                        {renderTile(t, fullCount + idx)}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {!tilesForRender.length && connected && (
+                  <div
+                    className={`col-span-full min-h-[240px] rounded-2xl border flex items-center justify-center ${isLight ? "border-black/10 bg-black/5 text-black/60" : "border-white/10 bg-white/5 text-white/60"
+                      }`}
+                  >
+                    No participants yet
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {localReactions.length > 0 && (
         <div className="pointer-events-none absolute inset-0 z-20 flex items-end justify-center pb-20 sm:pb-24">
@@ -3093,8 +2968,8 @@ export function RoomPageLiveKit() {
             }
           >
             <div
-              ref={videoWrapRef}
-              className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"}`}
+              className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
+                }`}
             >
               <LiveKitErrorBoundary
                 isLight={isLight}
@@ -3110,7 +2985,9 @@ export function RoomPageLiveKit() {
               </LiveKitErrorBoundary>
 
               {lastErr && (
-                <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow z-30 max-w-[80%] break-words">{lastErr}</div>
+                <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow z-30 max-w-[80%] break-words">
+                  {lastErr}
+                </div>
               )}
             </div>
 
