@@ -37,6 +37,7 @@ export function CreateSessionModalProvider({ children }: { children: ReactNode }
         >
             {children}
 
+            {/* ГЛОБАЛЬНАЯ модалка — рендерится один раз */}
             <CreateSessionModal
                 isOpen={isOpen}
                 onClose={close}
