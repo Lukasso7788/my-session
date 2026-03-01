@@ -68,10 +68,10 @@ type SessionRow = {
 
 type Stage = {
   name: string;
-  duration: number;
+  duration: number; // minutes (display / legacy)
   color: string;
   type: "intro" | "intentions" | "focus" | "break" | "outro" | string;
-  durationSeconds?: number;
+  durationSeconds?: number; // preferred when present
 };
 
 type MediaDevicesResult = {
@@ -111,8 +111,8 @@ type TileModel = {
   isLocal: boolean;
   videoTrack?: Track;
 
-  participantIdentity?: string;
-  participantUserId?: string;
+  participantIdentity?: string; // exact LK identity (may include tab suffix)
+  participantUserId?: string; // extracted base UUID (if present)
   micTrackSid?: string;
   camTrackSid?: string;
   micMuted?: boolean;
@@ -310,13 +310,14 @@ function getQueryInt(name: string, def = 0) {
   }
 }
 
-// ---- tab presence ----
+// ---- tab presence (allow up to N tabs per user per room) ----
 const LK_TAB_PREFIX = "mysession_lk_tabs";
 const LK_TAB_TTL_MS = 18_000;
 const LK_TAB_HEARTBEAT_MS = 5_000;
 const LK_MAX_TABS_DEFAULT = 2;
 
 type TabPresence = { v: number; tabs: { id: string; ts: number }[] };
+
 function nowMs() {
   return Date.now();
 }
@@ -331,17 +332,21 @@ function getOrCreateTabId(storageKey = "mysession_lk_tab_id") {
     const existing = sessionStorage.getItem(storageKey);
     if (existing && existing.length >= 6) return existing;
   } catch { }
+
   let id = "";
   try {
     const c: any = crypto as any;
     if (c?.randomUUID) id = String(c.randomUUID()).replace(/[^a-z0-9]/gi, "").slice(0, 12).toLowerCase();
   } catch { }
   if (!id) id = randId(12);
+
   try {
     sessionStorage.setItem(storageKey, id);
   } catch { }
+
   return id;
 }
+
 function readPresence(key: string): TabPresence {
   try {
     const raw = localStorage.getItem(key);
@@ -411,7 +416,7 @@ function makeTabPresenceKey(sessionId: string, baseUserId: string) {
   return `${LK_TAB_PREFIX}:${String(sessionId || "").trim()}:${String(baseUserId || "").trim().toLowerCase()}`;
 }
 
-// ---- default bg ----
+// ---- default background (data url) ----
 const DEFAULT_BG_DATA_URL =
   "data:image/svg+xml;utf8," +
   encodeURIComponent(`
@@ -466,10 +471,87 @@ const FX_BG_PRESETS = [
   { id: "sunset", label: "Sunset", url: makeBgPresetDataUrl("#1c0d10", "#7c2d12", "#11070a", "#fb7185") },
 ];
 
-// ---- capture defaults ----
-const LK_CAPTURE_WIDTH = 960;
-const LK_CAPTURE_HEIGHT = 540;
-const LK_CAPTURE_FPS = 24;
+function Icon({
+  name,
+  theme,
+  className = "w-5 h-5",
+  alt = "",
+}: {
+  name:
+  | "mic-on"
+  | "mic-off"
+  | "camera-on"
+  | "camera-off"
+  | "screen-share"
+  | "reaction"
+  | "leave"
+  | "participants"
+  | "chat"
+  | "intentions"
+  | "settings"
+  | "theme-sun"
+  | "theme-moon"
+  | "timer";
+  theme: RoomTheme;
+  className?: string;
+  alt?: string;
+}) {
+  const themedSrc = `/icons/${name}-${theme}.svg`;
+  const fallbackSrc = `/icons/${name}.svg`;
+  const [src, setSrc] = useState(themedSrc);
+
+  useEffect(() => {
+    setSrc(themedSrc);
+  }, [themedSrc]);
+
+  return (
+    <img
+      src={src}
+      onError={() => {
+        if (src !== fallbackSrc) setSrc(fallbackSrc);
+      }}
+      className={className}
+      alt={alt}
+      draggable={false}
+    />
+  );
+}
+
+function ParticipantsSmartIcon({ theme, className = "w-4 h-4" }: { theme: RoomTheme; className?: string }) {
+  return <Icon name="participants" theme={theme} className={className} alt="" />;
+}
+
+const reactionEmoji: Record<ReactionType, string> = {
+  fire: "🔥",
+  laugh: "😂",
+  clap: "👏",
+  heart: "❤️",
+  thumbsUp: "👍",
+  thumbsDown: "👎",
+};
+
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mql = window.matchMedia(query);
+    const onChange = () => setMatches(!!mql.matches);
+    onChange();
+
+    try {
+      mql.addEventListener("change", onChange);
+      return () => mql.removeEventListener("change", onChange);
+    } catch {
+      // @ts-ignore
+      mql.addListener(onChange);
+      // @ts-ignore
+      return () => mql.removeListener(onChange);
+    }
+  }, [query]);
+
+  return matches;
+}
 
 // ---- ErrorBoundary ----
 class LiveKitErrorBoundary extends React.Component<
@@ -501,7 +583,11 @@ class LiveKitErrorBoundary extends React.Component<
             this.setState({ hasError: false, errorText: "" });
             this.props.onReset();
           }}
-          className={this.props.isLight ? "px-4 py-2 rounded-xl bg-black/5 hover:bg-black/10" : "px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10"}
+          className={
+            this.props.isLight
+              ? "px-4 py-2 rounded-xl bg-black/5 hover:bg-black/10"
+              : "px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10"
+          }
         >
           Reset + retry
         </button>
@@ -510,115 +596,10 @@ class LiveKitErrorBoundary extends React.Component<
   }
 }
 
-// ---- sizing hook (your stable one) ----
-function useMediaQuery(query: string) {
-  const [matches, setMatches] = useState(false);
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return;
-    const mql = window.matchMedia(query);
-    const onChange = () => setMatches(!!mql.matches);
-    onChange();
-    try {
-      mql.addEventListener("change", onChange);
-      return () => mql.removeEventListener("change", onChange);
-    } catch {
-      // @ts-ignore
-      mql.addListener(onChange);
-      // @ts-ignore
-      return () => mql.removeListener(onChange);
-    }
-  }, [query]);
-  return matches;
-}
-
-function useElementSizeStable<T extends HTMLElement>(thresholdPx = 2) {
-  const [node, setNode] = useState<T | null>(null);
-  const [size, setSize] = useState({ width: 0, height: 0 });
-  const rafRef = useRef<number | null>(null);
-
-  const ref = (el: T | null) => setNode(el);
-
-  useEffect(() => {
-    if (!node) return;
-
-    const update = () => {
-      const r = node.getBoundingClientRect();
-      const w = Math.round(r.width);
-      const h = Math.round(r.height);
-
-      setSize((prev) => {
-        if (Math.abs(prev.width - w) < thresholdPx && Math.abs(prev.height - h) < thresholdPx) return prev;
-        return { width: w, height: h };
-      });
-    };
-
-    const schedule = () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      rafRef.current = requestAnimationFrame(update);
-    };
-
-    schedule();
-
-    const RO: any = (window as any).ResizeObserver;
-    if (RO) {
-      const ro = new RO(() => schedule());
-      ro.observe(node);
-      return () => {
-        if (rafRef.current) cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-        ro.disconnect();
-      };
-    }
-
-    window.addEventListener("resize", schedule);
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-      window.removeEventListener("resize", schedule);
-    };
-  }, [node, thresholdPx]);
-
-  return { ref, width: size.width, height: size.height };
-}
-
-function computeCols(count: number, containerWidth: number) {
-  const w = containerWidth || 1200;
-  const isDesktop = w >= 1024;
-
-  if (count <= 1) return 1;
-  if (count === 2) return 2;
-  if (count === 4) return 2;
-  if (count === 3 && isDesktop) return 2;
-  if (isDesktop && count >= 5 && count <= 9) return 3;
-  if (count === 3) return 2;
-  if (count === 5) return w >= 900 ? 3 : 2;
-  if (count === 6) return w >= 780 ? 3 : 2;
-  return w >= 1400 ? 4 : 3;
-}
-
-function calcMaxGridWidthPx(params: {
-  containerWidth: number;
-  containerHeight: number;
-  cols: number;
-  rows: number;
-  gapPx: number;
-  paddingPx: number;
-  aspectHOverW: number;
-}) {
-  const { containerWidth, containerHeight, cols, rows, gapPx, paddingPx, aspectHOverW } = params;
-  if (!containerWidth || !containerHeight) return null;
-
-  const availW = Math.max(0, containerWidth - paddingPx * 2);
-  const availH = Math.max(0, containerHeight - paddingPx * 2);
-
-  const byWidth = (availW - (cols - 1) * gapPx) / cols;
-  const byHeight = (availH - (rows - 1) * gapPx) / (rows * aspectHOverW);
-
-  const tileW = Math.max(0, Math.min(byWidth, byHeight));
-  const gridW = cols * tileW + (cols - 1) * gapPx;
-
-  return Math.min(availW, gridW);
-}
+// ---- capture defaults ----
+const LK_CAPTURE_WIDTH = 960;
+const LK_CAPTURE_HEIGHT = 540;
+const LK_CAPTURE_FPS = 24;
 
 // ---- MAIN ----
 export function RoomPageLiveKit() {
@@ -685,7 +666,11 @@ export function RoomPageLiveKit() {
   const [prejoinOpen, setPrejoinOpen] = useState(false);
   const [joinRequested, setJoinRequested] = useState(false);
 
-  const [devices, setDevices] = useState<MediaDevicesResult>({ videoInputs: [], audioInputs: [], audioOutputs: [] });
+  const [devices, setDevices] = useState<MediaDevicesResult>({
+    videoInputs: [],
+    audioInputs: [],
+    audioOutputs: [],
+  });
 
   const [prejoin, setPrejoin] = useState<PreJoinSettings>(() => ({
     displayName: "",
@@ -705,11 +690,11 @@ export function RoomPageLiveKit() {
 
   const [selectedAudioOutputId, setSelectedAudioOutputId] = useState<string>("default");
 
-  // prejoin prepared track + preview version
+  // ---- pre-join prepared preview track
   const prejoinPreparedVideoTrackRef = useRef<LocalVideoTrack | null>(null);
   const [prejoinPreviewVersion, setPrejoinPreviewVersion] = useState(0);
 
-  // roles
+  // ---- roles (moderators)
   const [moderatorUserIds, setModeratorUserIds] = useState<string[]>([]);
   const [rolesLoading, setRolesLoading] = useState(false);
   const [rolesError, setRolesError] = useState<string>("");
@@ -731,16 +716,60 @@ export function RoomPageLiveKit() {
     });
   };
 
-  // stages
+  // keep original UI behavior: resize poke after opening panels
+  useEffect(() => {
+    const fire = () => {
+      try {
+        window.dispatchEvent(new Event("resize"));
+      } catch { }
+    };
+    requestAnimationFrame(fire);
+    const t1 = window.setTimeout(fire, 60);
+    const t2 = window.setTimeout(fire, 220);
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+    };
+  }, [rightPanelOpen, rightTab]);
+
+  // session stages / timer / sounds
   const [stages, setStages] = useState<Stage[]>([]);
   const [, setHoveredStage] = useState<Stage | null>(null);
+  const [currentStage, setCurrentStage] = useState(0);
+  const [remainingTime, setRemainingTime] = useState<string>("");
 
   const [stagebarStartTime, setStagebarStartTime] = useState<string>("");
   const [stagebarCycleSeconds, setStagebarCycleSeconds] = useState<number | undefined>(undefined);
 
-  // audio unlock loop bits (оставляю как у тебя, но без лишней простыни)
+  const prevStageRef = useRef<number>(-1);
+  const firstTickDoneRef = useRef<boolean>(false);
   const welcomeLoopRef = useRef<HTMLAudioElement | null>(null);
   const audioUnlockedRef = useRef<boolean>(false);
+
+  const STAGE_SOUND_MAP: Record<string, string> = {
+    intentions: "/sounds/intentions.mp3",
+    focus: "/sounds/focus.mp3",
+    break: "/sounds/break_start.mp3",
+    outro: "/sounds/outro.mp3",
+  };
+  const BREAK_END_SOUND = "/sounds/break_end.mp3";
+  const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
+
+  const playOneShot = (url: string, volume = 0.9) => {
+    if (!url) return;
+    const a = new Audio(url);
+    a.volume = volume;
+    a.play().catch(() => { });
+  };
+
+  const startWelcomeLoop = () => {
+    stopWelcomeLoop();
+    const a = new Audio(WELCOME_LOOP_SOUND);
+    a.loop = true;
+    a.volume = 0.6;
+    welcomeLoopRef.current = a;
+    a.play().catch(() => { });
+  };
 
   const stopWelcomeLoop = () => {
     try {
@@ -783,23 +812,29 @@ export function RoomPageLiveKit() {
   const isInfiniteRoom = useMemo(() => {
     const raw = session?.schedule;
     if (parse50505(raw)) return true;
+
     const parsed = safeParseJson(raw);
     if (!isRecord(parsed)) return false;
+
     const kind = str((parsed as any).kind).toLowerCase();
     if (kind === "infinite_room") return true;
     if (kind.includes("infinite")) return true;
+
     if (isRecord((parsed as any).timer) && ((parsed as any).timer.phases || (parsed as any).timer.segments)) return true;
     if ((parsed as any).phases || (parsed as any).segments) return true;
+
     return false;
   }, [session]);
 
   const isSilentRoom = useMemo(() => {
     const fmt = str(session?.format).toLowerCase();
     const title = str(session?.title).toLowerCase();
+
     const tpl0 = getTemplateFirst(session?.session_templates ?? null);
     const tplName = str(tpl0?.name || tpl0?.title).toLowerCase();
     const tplKey = str(tpl0?.key || tpl0?.slug || tpl0?.type).toLowerCase();
     const tplFmt = str(tpl0?.format).toLowerCase();
+
     const hay = `${fmt} ${title} ${tplName} ${tplKey} ${tplFmt}`.toLowerCase();
     return hay.includes("silent");
   }, [session]);
@@ -826,7 +861,7 @@ export function RoomPageLiveKit() {
     })();
   }, [id]);
 
-  // build stages
+  // build stages from schedule
   useEffect(() => {
     if (!session) return;
 
@@ -835,6 +870,7 @@ export function RoomPageLiveKit() {
     setStagebarStartTime("");
 
     const fallbackStart = String(session?.start_time || session?.created_at || new Date().toISOString());
+
     let parsed: unknown = safeParseJson(session.schedule);
 
     if (!parsed) {
@@ -861,7 +897,12 @@ export function RoomPageLiveKit() {
           if (!blk) return null;
 
           const rawName =
-            str((blk as any).name) || str((blk as any).title) || str((blk as any).label) || str((blk as any).text) || str((blk as any).key) || "Stage";
+            str((blk as any).name) ||
+            str((blk as any).title) ||
+            str((blk as any).label) ||
+            str((blk as any).text) ||
+            str((blk as any).key) ||
+            "Stage";
 
           const rawType = str((blk as any).type) || str((blk as any).category);
           const inferredType: Stage["type"] = rawType ? inferStageTypeFromLabel(rawType) : inferStageTypeFromLabel(rawName);
@@ -890,10 +931,8 @@ export function RoomPageLiveKit() {
       setStages(formatted);
       setStagebarStartTime(String(session.start_time || fallbackStart));
       setStagebarCycleSeconds(undefined);
-      return;
     }
 
-    // infinite object schedule
     const isInfiniteScheduleObject =
       isRecord(parsed) &&
       (str((parsed as any).kind).toLowerCase().includes("infinite") ||
@@ -903,6 +942,7 @@ export function RoomPageLiveKit() {
 
     if (isInfiniteScheduleObject && isRecord(parsed)) {
       const timer = isRecord((parsed as any).timer) ? ((parsed as any).timer as any) : null;
+
       const phasesRaw = (timer?.phases ?? timer?.segments ?? (parsed as any).phases ?? (parsed as any).segments) ?? null;
       const phases = normalizeInfinitePhases(phasesRaw);
 
@@ -927,10 +967,12 @@ export function RoomPageLiveKit() {
 
         const seconds = Number(p.seconds) || 0;
         const minutes = Math.max(1, Math.round(seconds / 60));
+
         return { name: displayName, duration: minutes, color: STAGE_COLORS[type] || "#F63135", type, durationSeconds: seconds };
       });
 
       setStages(formatted);
+
       const anchor = String(str((parsed as any).anchor_ts) || str((parsed as any).anchorTs) || str(session?.start_time) || fallbackStart);
       setStagebarStartTime(anchor);
 
@@ -942,11 +984,105 @@ export function RoomPageLiveKit() {
       if (cycleSeconds < sumSeconds) cycleSeconds = sumSeconds;
 
       setStagebarCycleSeconds(Math.max(1, cycleSeconds));
+    }
+
+    if (!parsed) setStagebarStartTime(fallbackStart);
+  }, [session]);
+
+  // stage timer + sounds (UI depends on remainingTime)
+  useEffect(() => {
+    if (isSilentRoom) {
+      setRemainingTime("");
+      setCurrentStage(0);
+      firstTickDoneRef.current = false;
+      prevStageRef.current = -1;
+      stopWelcomeLoop();
       return;
     }
 
-    setStagebarStartTime(fallbackStart);
-  }, [session]);
+    if (!stagebarStartTime || !stages.length) return;
+
+    const startMs = new Date(stagebarStartTime).getTime();
+    if (Number.isNaN(startMs)) return;
+
+    const stageSeconds = stages.map((s) => {
+      const sec = Number(s.durationSeconds || 0);
+      if (sec > 0) return sec;
+      const mins = Number(s.duration || 0);
+      return mins > 0 ? mins * 60 : 0;
+    });
+
+    const sumStageSeconds = stageSeconds.reduce((acc, v) => acc + v, 0);
+    const loopSeconds = (Number(stagebarCycleSeconds) || 0) > 0 ? Number(stagebarCycleSeconds) : Math.max(1, sumStageSeconds);
+
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      const diffSecRaw = (now - startMs) / 1000;
+      const diffSec = loopSeconds > 0 && isInfiniteRoom ? ((diffSecRaw % loopSeconds) + loopSeconds) % loopSeconds : diffSecRaw;
+
+      let total = 0;
+      let active = 0;
+      let found = false;
+
+      for (let i = 0; i < stages.length; i++) {
+        const dur = stageSeconds[i] || 0;
+        const next = total + dur;
+
+        if (dur <= 0) continue;
+
+        if (diffSec < next) {
+          active = i;
+          const rem = next - diffSec;
+          setRemainingTime(`${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`);
+          found = true;
+          break;
+        }
+
+        total = next;
+        active = i;
+      }
+
+      if (!found && !isInfiniteRoom) setRemainingTime("0:00");
+
+      setCurrentStage(active);
+
+      const stage = stages[active];
+
+      if (!firstTickDoneRef.current) {
+        if (stage?.type === "intro") startWelcomeLoop();
+        else stopWelcomeLoop();
+
+        prevStageRef.current = active;
+        firstTickDoneRef.current = true;
+        return;
+      }
+
+      if (prevStageRef.current !== active) {
+        const prev = stages[prevStageRef.current];
+        const prevType = prev?.type;
+        const newType = stage?.type;
+
+        if (prevType === "break" && newType !== "break") playOneShot(BREAK_END_SOUND);
+
+        if (newType === "intro") {
+          startWelcomeLoop();
+        } else {
+          stopWelcomeLoop();
+          if (newType) {
+            const t = inferStageTypeFromLabel(String(newType));
+            const sound = STAGE_SOUND_MAP[t];
+            if (sound) playOneShot(sound);
+          }
+        }
+
+        prevStageRef.current = active;
+      }
+
+      if (stage?.type !== "intro" && welcomeLoopRef.current) stopWelcomeLoop();
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [stagebarStartTime, stages, isSilentRoom, isInfiniteRoom, stagebarCycleSeconds]);
 
   // auth user
   useEffect(() => {
@@ -975,6 +1111,7 @@ export function RoomPageLiveKit() {
     })();
   }, []);
 
+  // enumerate devices
   const loadBrowserDevices = async () => {
     try {
       if (!navigator.mediaDevices?.enumerateDevices) return;
@@ -1002,7 +1139,7 @@ export function RoomPageLiveKit() {
     }
   };
 
-  // ---- FX state (shared)
+  // ---- FX state (shared: prejoin + in-room settings) [SECOND VERSION LOGIC]
   const [videoFxMode, setVideoFxMode] = useState<FxMode>("off");
   const [bgImageUrl, setBgImageUrl] = useState<string>(DEFAULT_BG_DATA_URL);
   const [fxError, setFxError] = useState<string>("");
@@ -1012,6 +1149,8 @@ export function RoomPageLiveKit() {
   const [blurStrength, setBlurStrength] = useState<number>(12);
 
   const uploadedBgUrlRef = useRef<string | null>(null);
+
+  // IMPORTANT: serialize FX applies (no overlap)
   const fxOpIdRef = useRef<number>(0);
 
   const ensureFxSupportedOrThrow = () => {
@@ -1050,7 +1189,7 @@ export function RoomPageLiveKit() {
     await (track as any).setProcessor(proc, true);
   };
 
-  // ---- prejoin helpers
+  // ---- pre-join helpers
   const cleanupPrejoinPreparedVideoTrack = async () => {
     const t = prejoinPreparedVideoTrackRef.current as any;
     prejoinPreparedVideoTrackRef.current = null;
@@ -1112,7 +1251,7 @@ export function RoomPageLiveKit() {
     }
   };
 
-  // show prejoin
+  // show prejoin once ready + init devices + init preview track
   useEffect(() => {
     if (loading) return;
     if (!session) return;
@@ -1132,6 +1271,7 @@ export function RoomPageLiveKit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, session, joinRequested]);
 
+  // if user switches camera in pre-join -> rebuild preview track, then reapply current FX if any
   useEffect(() => {
     if (!prejoinOpen) return;
 
@@ -1151,6 +1291,7 @@ export function RoomPageLiveKit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prejoin.videoInputId, prejoinOpen]);
 
+  // if video enabled toggles in pre-join
   useEffect(() => {
     if (!prejoinOpen) return;
 
@@ -1163,13 +1304,14 @@ export function RoomPageLiveKit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prejoin.videoEnabled, prejoinOpen]);
 
-  // host flag + moderators
+  // host flag
   const isHost = useMemo(() => {
     if (!authUserId) return false;
     const hostId = (session as any)?.host_profile?.id || (session as any)?.host_id;
     return !!hostId && String(hostId) === String(authUserId);
   }, [authUserId, session]);
 
+  // moderators (host is always "admin" in UI)
   const isSelfModerator = useMemo(() => {
     if (!authUserId) return false;
     if (isHost) return true;
@@ -1258,13 +1400,16 @@ export function RoomPageLiveKit() {
   const tokenEndpoint = String((import.meta as any)?.env?.VITE_LIVEKIT_TOKEN_ENDPOINT || "/api/livekit/token").trim();
   const adminEndpoint = String((import.meta as any)?.env?.VITE_LIVEKIT_ADMIN_ENDPOINT || "/api/livekit/admin").trim();
 
+  // token + connect
   const [lkToken, setLkToken] = useState<string>("");
   const [tokenLoading, setTokenLoading] = useState(false);
   const [tokenError, setTokenError] = useState<string>("");
 
+  // identity refs (support multi-tab without replacing prior)
   const baseUserIdRef = useRef<string>("");
   const livekitIdentityRef = useRef<string>("");
 
+  // tab presence gate refs
   const tabPresenceKeyRef = useRef<string>("");
   const tabPresenceAcquiredRef = useRef<boolean>(false);
   const tabPresenceHeartbeatRef = useRef<number | null>(null);
@@ -1331,8 +1476,15 @@ export function RoomPageLiveKit() {
   };
 
   const tryAcquireTabGate = (sessionId: string, baseUserId: string) => {
-    const maxTabs = Math.max(1, Math.min(6, Number((import.meta as any)?.env?.VITE_LIVEKIT_MAX_TABS || LK_MAX_TABS_DEFAULT) || LK_MAX_TABS_DEFAULT));
+    const maxTabs = Math.max(
+      1,
+      Math.min(
+        6,
+        Number((import.meta as any)?.env?.VITE_LIVEKIT_MAX_TABS || LK_MAX_TABS_DEFAULT) || LK_MAX_TABS_DEFAULT
+      )
+    );
     const key = makeTabPresenceKey(sessionId, baseUserId);
+
     tabPresenceKeyRef.current = key;
 
     try {
@@ -1351,6 +1503,7 @@ export function RoomPageLiveKit() {
     }
 
     const res = acquireTabSlot(key, tabId, maxTabs);
+
     if (!res.ok) {
       tabPresenceAcquiredRef.current = false;
       try {
@@ -1467,6 +1620,27 @@ export function RoomPageLiveKit() {
     setOpenTileAdminMenuId((prev) => (prev && tiles.some((t) => t.id === prev) ? prev : null));
   }, [tiles]);
 
+  useEffect(() => {
+    if (!openTileAdminMenuId) return;
+
+    const onDown = (e: MouseEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el?.closest?.("[data-lk-admin-menu-anchor='true']")) return;
+      setOpenTileAdminMenuId(null);
+    };
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpenTileAdminMenuId(null);
+    };
+
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [openTileAdminMenuId]);
+
   const participantsCount = useMemo(() => {
     const r = roomRef.current;
     if (!r) return 0;
@@ -1543,7 +1717,7 @@ export function RoomPageLiveKit() {
     }
   };
 
-  // ✅ FIX: disconnectRoom больше НЕ трогает prejoinPreparedVideoTrackRef (иначе FX слетает перед publish)
+  // ✅ FIX: disconnectRoom НЕ трогает prejoinPreparedVideoTrackRef (иначе FX слетает перед publish)
   const disconnectRoom = async () => {
     try {
       const r = roomRef.current;
@@ -1609,6 +1783,7 @@ export function RoomPageLiveKit() {
         setConnected(true);
         refresh();
       });
+
       r.on(RoomEvent.Disconnected, () => {
         setConnected(false);
         setTiles([]);
@@ -1644,12 +1819,11 @@ export function RoomPageLiveKit() {
         const prepared = prejoinPreparedVideoTrackRef.current;
 
         if (prepared) {
-          // publish prepared track AS-IS (processor stays attached)
           await r.localParticipant.publishTrack(prepared, { source: Track.Source.Camera } as any);
           setCamOn(true);
           usedPrepared = true;
 
-          // after publish, release ref to avoid double-stop in prejoin cleanup
+          // release ref: track now owned by room/localParticipant
           prejoinPreparedVideoTrackRef.current = null;
         } else {
           await r.localParticipant.setCameraEnabled(
@@ -1672,7 +1846,7 @@ export function RoomPageLiveKit() {
       setPrejoinOpen(false);
       setPrejoinPreviewVersion((v) => v + 1);
 
-      // ✅ если prepared трек НЕ использовался — применим выбранный FX уже на in-room track
+      // ✅ if not using prepared track, re-apply selected FX after connect
       if (!usedPrepared && pj.videoEnabled && videoFxMode !== "off") {
         await delay(80);
         const tr = getLocalCameraTrack();
@@ -1756,7 +1930,6 @@ export function RoomPageLiveKit() {
         setFxStatusText("");
         setFxError("");
       } else {
-        // если камера включили и FX режим был выбран — переапплай
         if (videoFxMode !== "off") {
           await delay(80);
           const tr = getLocalCameraTrack();
@@ -1788,7 +1961,7 @@ export function RoomPageLiveKit() {
     navigate("/sessions", { replace: true });
   };
 
-  // ---- host admin calls (оставляю как было)
+  // ---- Host moderation calls ----
   const callHostAdmin = async (body: Record<string, unknown>) => {
     const res = await fetch(adminEndpoint, {
       method: "POST",
@@ -1804,7 +1977,12 @@ export function RoomPageLiveKit() {
     return res.json().catch(() => ({}));
   };
 
-  const hostToggleRemoteTrackMute = async (participantIdentity: string, trackSid: string, currentlyMuted: boolean | undefined, kind: "mic" | "cam") => {
+  const hostToggleRemoteTrackMute = async (
+    participantIdentity: string,
+    trackSid: string,
+    currentlyMuted: boolean | undefined,
+    kind: "mic" | "cam"
+  ) => {
     const roomName = roomNameForApi;
     if (!roomName) return;
 
@@ -1850,7 +2028,7 @@ export function RoomPageLiveKit() {
     }
   };
 
-  // ---- FX APPLY (in-room)
+  // ---- FX APPLY (STOP -> SET)
   const applyVideoFx = async (mode: FxMode) => {
     const r = roomRef.current;
     if (!r) return;
@@ -1868,7 +2046,13 @@ export function RoomPageLiveKit() {
       await safeApplyProcessor(tr, mode, blurStrength, bgImageUrl);
 
       setVideoFxMode(mode);
-      setFxStatusText(mode === "off" ? "FX disabled" : mode === "blur" ? `Blur applied (strength ${blurStrength})` : "Virtual background applied");
+      setFxStatusText(
+        mode === "off"
+          ? "FX disabled"
+          : mode === "blur"
+            ? `Blur applied (strength ${blurStrength})`
+            : "Virtual background applied"
+      );
 
       await delay(40);
     } catch (e: any) {
@@ -1905,11 +2089,72 @@ export function RoomPageLiveKit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bgImageUrl]);
 
-  // ---- UI data
+  // ---- UI: reactions + menus (FROM UI VERSION)
+  const [showReactionsMenu, setShowReactionsMenu] = useState(false);
+  const reactionsMenuRef = useRef<HTMLDivElement | null>(null);
+  const [localReactions, setLocalReactions] = useState<{ id: number; type: ReactionType }[]>([]);
+  const localReactionIdRef = useRef<number>(0);
+
+  const handleSendReaction = (type: ReactionType) => {
+    const rid = localReactionIdRef.current + 1;
+    localReactionIdRef.current = rid;
+    setLocalReactions((prev) => [...prev, { id: rid, type }]);
+    setTimeout(() => {
+      setLocalReactions((prev) => prev.filter((r) => r.id !== rid));
+    }, 1500);
+  };
+
+  useEffect(() => {
+    if (!showReactionsMenu) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node | null;
+      if (!reactionsMenuRef.current || !target) return;
+      if (!reactionsMenuRef.current.contains(target)) setShowReactionsMenu(false);
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showReactionsMenu]);
+
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!showMoreMenu) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node | null;
+      if (!moreMenuRef.current || !t) return;
+      if (!moreMenuRef.current.contains(t)) setShowMoreMenu(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [showMoreMenu]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mql = window.matchMedia("(min-width: 768px)");
+    const onChange = () => {
+      if (mql.matches) setShowMoreMenu(false);
+    };
+    onChange();
+    try {
+      mql.addEventListener("change", onChange);
+      return () => mql.removeEventListener("change", onChange);
+    } catch {
+      // @ts-ignore
+      mql.addListener(onChange);
+      // @ts-ignore
+      return () => mql.removeListener(onChange);
+    }
+  }, []);
+
+  const [participantsSearch, setParticipantsSearch] = useState("");
+
   const tilesForRender = useMemo(() => {
     if (!devClones) return tiles;
+
     const local = tiles.find((t) => t.isLocal) || tiles[0];
     if (!local) return tiles;
+
     const clones: TileModel[] = [];
     for (let i = 0; i < devClones; i++) {
       clones.push({
@@ -1921,65 +2166,67 @@ export function RoomPageLiveKit() {
         participantUserId: local.participantUserId,
       });
     }
+
     return [local, ...clones, ...tiles.filter((t) => t !== local)];
   }, [tiles, devClones]);
 
-  const [participantsSearch, setParticipantsSearch] = useState("");
   const filteredParticipants = useMemo(() => {
     const q = participantsSearch.trim().toLowerCase();
     if (!q) return tilesForRender;
     return tilesForRender.filter((t) => (t.label || "").toLowerCase().includes(q));
   }, [tilesForRender, participantsSearch]);
 
-  const tileCount = tilesForRender.length;
-  const { ref: layoutRef, width: layoutW, height: layoutH } = useElementSizeStable<HTMLDivElement>(2);
+  // video wrap resize observer (UI expects it)
+  const videoWrapRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = videoWrapRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
 
-  const paddingPx = useMemo(() => (layoutW && layoutW < 520 ? 8 : 10), [layoutW]);
-  const gapPx = useMemo(() => (layoutW && layoutW < 520 ? 6 : 10), [layoutW]);
-
-  const gridCols = useMemo(() => computeCols(tileCount, layoutW || 1200), [tileCount, layoutW]);
-  const gridRows = useMemo(() => Math.max(1, Math.ceil(tileCount / (gridCols || 1))), [tileCount, gridCols]);
-
-  const maxGridWidth = useMemo(() => {
-    if (tileCount <= 1) return null;
-    return calcMaxGridWidthPx({
-      containerWidth: layoutW || (typeof window !== "undefined" ? window.innerWidth : 1200),
-      containerHeight: layoutH || (typeof window !== "undefined" ? window.innerHeight : 800),
-      cols: gridCols || 1,
-      rows: gridRows || 1,
-      gapPx,
-      paddingPx,
-      aspectHOverW: 9 / 16,
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      window.cancelAnimationFrame(raf);
+      raf = window.requestAnimationFrame(() => {
+        try {
+          window.dispatchEvent(new Event("resize"));
+        } catch { }
+      });
     });
-  }, [tileCount, layoutW, layoutH, gridCols, gridRows, gapPx, paddingPx]);
 
-  const remainder = useMemo(() => {
-    const c = gridCols || 1;
-    return c > 0 ? tileCount % c : 0;
-  }, [tileCount, gridCols]);
+    ro.observe(el);
 
-  const fullCount = useMemo(() => (!remainder ? tileCount : tileCount - remainder), [tileCount, remainder]);
-  const fullRowsTiles = useMemo(() => tilesForRender.slice(0, fullCount), [tilesForRender, fullCount]);
-  const lastRowTiles = useMemo(() => tilesForRender.slice(fullCount), [tilesForRender, fullCount]);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, []);
 
-  const oneColWidth = useMemo(() => {
-    const c = gridCols || 1;
-    return `calc((100% - ${(c - 1) * gapPx}px) / ${c})`;
-  }, [gridCols, gapPx]);
+  // ---- grid helpers (UI version)
+  const tileCount = tilesForRender.length;
 
-  const getBadgeForTile = (t: TileModel): string | null => {
-    if (t.isLocal) {
-      if (isHost) return "Host";
-      if (isSelfModerator) return "Moderator";
-      return null;
-    }
-    const pid = (t.participantUserId || extractBaseUserIdFromIdentity(String(t.participantIdentity || ""))).toLowerCase();
-    if (pid && looksLikeUuid(pid) && moderatorUserIds.includes(pid)) return "Moderator";
-    return null;
-  };
+  const gridColsClass = useMemo(() => {
+    if (tileCount <= 1) return "grid-cols-1";
+    if (tileCount === 2) return "grid-cols-1 sm:grid-cols-2";
+    if (tileCount === 3) return "grid-cols-1 sm:grid-cols-2";
+    if (tileCount === 4) return "grid-cols-1 sm:grid-cols-2";
+    return "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3";
+  }, [tileCount]);
+
+  const gridGapClass = useMemo(() => {
+    if (tileCount >= 5) return "gap-1.5 sm:gap-2";
+    return "gap-2 sm:gap-3";
+  }, [tileCount]);
+
+  const gridContentClass = useMemo(() => {
+    if (tileCount <= 4) return "place-content-center";
+    return "place-content-start";
+  }, [tileCount]);
+
+  const roomReadyText = !joinRequested ? "Waiting to join…" : tokenLoading ? "Preparing token…" : !connected ? "Connecting to LiveKit…" : "";
+  const lastErr = tokenError || clientError;
 
   const getTileHostActions = (t: TileModel): HostTileActions | undefined => {
     if (!isSelfModerator || t.isLocal || !t.participantIdentity) return undefined;
+
     return {
       canMuteMic: !!t.micTrackSid,
       canMuteCam: !!t.camTrackSid,
@@ -1997,144 +2244,222 @@ export function RoomPageLiveKit() {
     };
   };
 
-  const renderTile = (t: TileModel) => {
+  const getBadgeForTile = (t: TileModel): string | null => {
+    if (t.isLocal) {
+      if (isHost) return "Host";
+      if (isSelfModerator) return "Moderator";
+      return null;
+    }
+
+    const pid = (t.participantUserId || extractBaseUserIdFromIdentity(String(t.participantIdentity || ""))).toLowerCase();
+    if (pid && looksLikeUuid(pid) && moderatorUserIds.includes(pid)) return "Moderator";
+    return null;
+  };
+
+  const renderTile = (t: TileModel, idx: number) => {
     const hostActions = getTileHostActions(t);
+    const isMenuOpen = openTileAdminMenuId === t.id;
+    const hasMuteMic = !!hostActions?.canMuteMic && !!hostActions?.onToggleMuteMic;
+    const hasMuteCam = !!hostActions?.canMuteCam && !!hostActions?.onToggleMuteCam;
+    const hasKick = !!hostActions?.onKick;
+
+    const pidBase = String(t.participantUserId || extractBaseUserIdFromIdentity(String(t.participantIdentity || ""))).toLowerCase();
+    const canRoleManageTarget = isHost && !!pidBase && looksLikeUuid(pidBase) && !t.isLocal;
+    const isTargetModerator = !!pidBase && moderatorUserIds.includes(pidBase);
+    const roleBusy = roleBusyKey === `mod:${pidBase}:grant` || roleBusyKey === `mod:${pidBase}:revoke`;
+
+    const hasAnyAdminAction = (!!hostActions && (hasMuteMic || hasMuteCam || hasKick)) || canRoleManageTarget;
+
+    const thirdCenteredClass = tileCount === 3 && idx === 2 ? "sm:col-span-2 sm:justify-self-center sm:w-[calc(50%-0.5rem)]" : "";
+
     return (
-      <div key={t.id} className="relative">
+      <div
+        key={t.id}
+        className={["relative group", thirdCenteredClass].join(" ")}
+        onMouseLeave={() => {
+          setOpenTileAdminMenuId((prev) => (prev === t.id ? null : prev));
+        }}
+      >
         <VideoTile
           label={t.label}
           videoTrack={t.videoTrack}
           isLocal={t.isLocal}
           theme={theme}
           showBadge={getBadgeForTile(t)}
-          hostActions={undefined /* оставляем меню отдельно; если хочешь кнопки на тайле — поставь hostActions */}
+          hostActions={undefined}
         />
 
-        {/* простое меню оставляю как у тебя: */}
-        {!!hostActions && !t.isLocal && (
-          <div className="absolute top-2 right-2 z-20" onClick={(e) => e.stopPropagation()}>
-            <button
-              type="button"
-              className={[
-                "w-9 h-9 rounded-xl flex items-center justify-center transition shadow-sm",
-                isLight ? "bg-white/90 border border-black/10 text-black/75 hover:bg-white" : "bg-black/55 border border-white/10 text-white/90 hover:bg-black/70",
-              ].join(" ")}
-              title="Settings"
-              onClick={() => setOpenTileAdminMenuId((prev) => (prev === t.id ? null : t.id))}
-            >
-              <span className="text-lg leading-none -mt-[2px]">⋯</span>
-            </button>
+        {hasAnyAdminAction && (
+          <div className="absolute top-2 right-2 z-20" data-lk-admin-menu-anchor="true" onClick={(e) => e.stopPropagation()}>
+            <div className="relative">
+              <button
+                type="button"
+                title="Participant actions"
+                aria-label="Participant actions"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpenTileAdminMenuId((prev) => (prev === t.id ? null : t.id));
+                }}
+                className={[
+                  "w-9 h-9 rounded-xl flex items-center justify-center transition shadow-sm",
+                  isLight
+                    ? "bg-white/90 border border-black/10 text-black/75 hover:bg-white"
+                    : "bg-black/55 border border-white/10 text-white/90 hover:bg-black/70",
+                  isMenuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                ].join(" ")}
+              >
+                <span className="text-lg leading-none -mt-[2px]">⋯</span>
+              </button>
 
-            {openTileAdminMenuId === t.id && (
-              <div className={`absolute right-0 top-[calc(100%+8px)] w-[210px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}>
-                <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>Actions</div>
+              {isMenuOpen && (
+                <div
+                  className={`absolute right-0 top-[calc(100%+8px)] w-[210px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
+                    }`}
+                >
+                  {canRoleManageTarget && (
+                    <>
+                      <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>Roles</div>
 
-                {!!hostActions.onToggleMuteMic && (
-                  <button
-                    type="button"
-                    disabled={hostActions.busy}
-                    onClick={async () => {
-                      await hostActions.onToggleMuteMic?.();
-                      setOpenTileAdminMenuId(null);
-                    }}
-                    className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
-                  >
-                    {hostActions.micMuted ? "Unmute mic" : "Mute mic"}
-                  </button>
-                )}
+                      {!isTargetModerator ? (
+                        <button
+                          type="button"
+                          disabled={roleBusy || rolesLoading}
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            if (!pidBase) return;
+                            await grantModerator(pidBase);
+                            setOpenTileAdminMenuId(null);
+                          }}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                            }`}
+                        >
+                          Make moderator
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={roleBusy || rolesLoading}
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            if (!pidBase) return;
+                            await revokeModerator(pidBase);
+                            setOpenTileAdminMenuId(null);
+                          }}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                            }`}
+                        >
+                          Remove moderator
+                        </button>
+                      )}
 
-                {!!hostActions.onToggleMuteCam && (
-                  <button
-                    type="button"
-                    disabled={hostActions.busy}
-                    onClick={async () => {
-                      await hostActions.onToggleMuteCam?.();
-                      setOpenTileAdminMenuId(null);
-                    }}
-                    className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
-                  >
-                    {hostActions.camMuted ? "Unmute cam" : "Mute cam"}
-                  </button>
-                )}
+                      <div className={isLight ? "h-px bg-black/10" : "h-px bg-white/10"} />
+                    </>
+                  )}
 
-                {!!hostActions.onKick && (
-                  <>
-                    <div className={isLight ? "h-px bg-black/10" : "h-px bg-white/10"} />
+                  {hasMuteMic && (
                     <button
                       type="button"
-                      disabled={hostActions.busy}
-                      onClick={async () => {
-                        await hostActions.onKick?.();
+                      disabled={!!hostActions?.busy}
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (!hostActions?.onToggleMuteMic || hostActions.busy) return;
+                        await hostActions.onToggleMuteMic();
                         setOpenTileAdminMenuId(null);
                       }}
-                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-red-700 hover:bg-red-50" : "text-red-300 hover:bg-red-500/10"}`}
+                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                        }`}
+                    >
+                      {hostActions?.micMuted ? "Unmute Mic" : "Mute Mic"}
+                    </button>
+                  )}
+
+                  {hasMuteCam && (
+                    <button
+                      type="button"
+                      disabled={!!hostActions?.busy}
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (!hostActions?.onToggleMuteCam || hostActions.busy) return;
+                        await hostActions.onToggleMuteCam();
+                        setOpenTileAdminMenuId(null);
+                      }}
+                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                        }`}
+                    >
+                      {hostActions?.camMuted ? "Unmute Camera" : "Mute Camera"}
+                    </button>
+                  )}
+
+                  {hasKick && (hasMuteMic || hasMuteCam) && <div className={isLight ? "h-px bg-black/10" : "h-px bg-white/10"} />}
+
+                  {hasKick && (
+                    <button
+                      type="button"
+                      disabled={!!hostActions?.busy}
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (!hostActions?.onKick || hostActions.busy) return;
+                        await hostActions.onKick();
+                        setOpenTileAdminMenuId(null);
+                      }}
+                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-red-700 hover:bg-red-50" : "text-red-300 hover:bg-red-500/10"
+                        }`}
                     >
                       Kick participant
                     </button>
-                  </>
-                )}
-              </div>
-            )}
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
     );
   };
 
-  const roomReadyText = !joinRequested ? "Waiting to join…" : tokenLoading ? "Preparing token…" : !connected ? "Connecting to LiveKit…" : "";
-  const lastErr = tokenError || clientError;
-
   const videoContent = (
-    <div ref={layoutRef} className="w-full h-full min-h-0 relative">
+    <div className="w-full h-full min-h-0 relative">
       {roomReadyText ? (
         <div className={`absolute inset-0 flex items-center justify-center z-10 ${isLight ? "text-black/60" : "text-white/70"}`}>
           <div className={`px-4 py-2 rounded-xl ${isLight ? "bg-white/70" : "bg-black/30"}`}>{roomReadyText}</div>
         </div>
       ) : null}
 
-      {tileCount <= 1 ? (
+      {tileCount === 1 ? (
         <div className="h-full min-h-0 flex items-center justify-center p-2 sm:p-3">
-          <div className="w-full max-w-[860px]">{tilesForRender.map((t) => renderTile(t))}</div>
+          <div className="w-full max-w-[860px]">{tilesForRender.map((t, idx) => renderTile(t, idx))}</div>
         </div>
       ) : (
-        <div className="h-full min-h-0 overflow-hidden" style={{ padding: paddingPx }}>
-          <div className="w-full flex justify-center">
-            <div className="w-full" style={{ maxWidth: maxGridWidth ? `${maxGridWidth}px` : undefined }}>
-              <div
-                className="w-full grid items-start"
-                style={{
-                  gap: gapPx,
-                  gridTemplateColumns: `repeat(${gridCols || 1}, minmax(0, 1fr))`,
-                }}
-              >
-                {fullRowsTiles.map((t) => (
-                  <div key={t.id}>{renderTile(t)}</div>
-                ))}
+        <div
+          className={[
+            "h-full min-h-0 overflow-auto p-2 sm:p-3 grid auto-rows-min items-start",
+            gridColsClass,
+            gridGapClass,
+            gridContentClass,
+          ].join(" ")}
+        >
+          {tilesForRender.map((t, idx) => renderTile(t, idx))}
 
-                {lastRowTiles.length > 0 && (
-                  <div className="col-span-full w-full flex justify-center" style={{ gap: gapPx }}>
-                    {lastRowTiles.map((t) => (
-                      <div key={t.id} className="shrink-0" style={{ width: oneColWidth }}>
-                        {renderTile(t)}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {!tilesForRender.length && connected && (
-                  <div className={`col-span-full min-h-[240px] rounded-2xl border flex items-center justify-center ${isLight ? "border-black/10 bg-black/5 text-black/60" : "border-white/10 bg-white/5 text-white/60"}`}>
-                    No participants yet
-                  </div>
-                )}
-              </div>
+          {!tilesForRender.length && connected && (
+            <div
+              className={`col-span-full h-full min-h-[240px] rounded-2xl border flex items-center justify-center ${isLight ? "border-black/10 bg-black/5 text-black/60" : "border-white/10 bg-white/5 text-white/60"
+                }`}
+            >
+              No participants yet
             </div>
-          </div>
+          )}
         </div>
       )}
 
-      {lastErr && (
-        <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow z-30 max-w-[80%] break-words">
-          {lastErr}
+      {localReactions.length > 0 && (
+        <div className="pointer-events-none absolute inset-0 z-20 flex items-end justify-center pb-20 sm:pb-24">
+          <div className="flex items-center gap-2">
+            {localReactions.map((r) => (
+              <div key={r.id} className="text-4xl sm:text-5xl animate-bounce select-none drop-shadow-2xl" style={{ animationDuration: "700ms" }}>
+                {reactionEmoji[r.type]}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -2154,107 +2479,276 @@ export function RoomPageLiveKit() {
 
   const ChatPanelAny = ChatPanel as any;
 
-  const TopBar = (
-    <div className={`flex w-full rounded-2xl overflow-hidden ${topBarBg}`}>
-      <div className="flex-1 px-4 sm:px-6 py-3 sm:py-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 min-w-0">
-              <p className={`min-w-0 font-inter font-semibold text-[16px] sm:text-[18px] truncate ${strongText}`}>
-                {String(session?.title || "Session")}
-              </p>
-              <span className={["shrink-0 px-2 py-[3px] rounded-lg border text-[12px] font-inter", chipBg, isLight ? "text-black/65" : "text-white/80"].join(" ")}>
-                {participantsCount}/{maxParticipants}
-              </span>
-              <span className={["hidden sm:inline-flex shrink-0 px-2 py-[3px] rounded-lg border text-[11px] font-inter", chipBg, isLight ? "text-black/65" : "text-white/75"].join(" ")}>
-                LiveKit
-              </span>
+  const RightPanelBody = (
+    <div
+      className={`rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col ${panelBg} ${theme === "dark" ? "dark" : ""}`}
+      data-theme={theme}
+    >
+      {rightTab === "participants" && (
+        <div className="h-full min-h-0 flex flex-col">
+          <div className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
+            <div className="flex items-center gap-2">
+              <span className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Participants</span>
+              <span className={`${isLight ? "text-black/50" : "text-white/55"} text-sm`}>({participantsCount})</span>
+            </div>
+            <button
+              onClick={() => openRightTab(null)}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                }`}
+              title="Close"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="p-4">
+            <div className={`rounded-xl px-3 py-2 ${isLight ? "bg-black/5 border border-black/10" : "bg-[#0B1220]/70 border border-white/10"}`}>
+              <input
+                value={participantsSearch}
+                onChange={(e) => setParticipantsSearch(e.target.value)}
+                placeholder="Search participants..."
+                className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${isLight ? "text-black/80 placeholder:text-black/40" : "text-white/85 placeholder:text-white/35"
+                  }`}
+              />
+            </div>
+            {rolesError ? <div className={`mt-2 text-[12px] ${isLight ? "text-red-600" : "text-red-300"}`}>{rolesError}</div> : null}
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-3">
+            <div className="flex flex-col gap-2">
+              {filteredParticipants.map((p) => {
+                const name = p.isLocal ? "You" : p.label || "Guest";
+                const initials =
+                  name
+                    .split(" ")
+                    .filter(Boolean)
+                    .slice(0, 2)
+                    .map((x) => x[0]?.toUpperCase())
+                    .join("") || "U";
+
+                const pidBase = String(p.participantUserId || extractBaseUserIdFromIdentity(String(p.participantIdentity || ""))).toLowerCase();
+                const isMod = !p.isLocal && looksLikeUuid(pidBase) ? moderatorUserIds.includes(pidBase) : p.isLocal ? isSelfModerator && !isHost : false;
+
+                const roleText = p.isLocal ? (isHost ? "Host" : isMod ? "Moderator" : "You") : isMod ? "Moderator" : "Participant";
+
+                return (
+                  <div key={p.id} className={`flex items-center justify-between px-3 py-2 rounded-xl transition ${isLight ? "hover:bg-black/5" : "hover:bg-white/5"}`}>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${p.isLocal
+                            ? isLight
+                              ? "bg-blue-500/15 text-blue-700"
+                              : "bg-emerald-500/80 text-[#02140B]"
+                            : isLight
+                              ? "bg-black/5 text-black/75"
+                              : "bg-white/10 text-white/85"
+                          }`}
+                      >
+                        {initials}
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className={`text-[13px] font-medium truncate ${isLight ? "text-black/85" : "text-white/90"}`}>{name}</div>
+
+                        <div className={`text-[11px] truncate ${isLight ? "text-black/45" : "text-white/45"}`}>
+                          {roleText}
+                          {(!p.isLocal && isMod) || (p.isLocal && isMod && !isHost) ? " • Moderator" : ""}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={
+                          "w-8 h-8 rounded-lg flex items-center justify-center " +
+                          (p.micMuted ? (isLight ? "bg-red-500/10" : "bg-red-500/20") : isLight ? "bg-black/5" : "bg-white/5")
+                        }
+                        title={p.micMuted ? "Muted" : "Unmuted"}
+                      >
+                        <Icon name={p.micMuted ? "mic-off" : "mic-on"} theme={theme} className={`w-4 h-4 ${p.micMuted ? "opacity-90" : "opacity-80"}`} />
+                      </div>
+
+                      <div
+                        className={
+                          "w-8 h-8 rounded-lg flex items-center justify-center " +
+                          (p.camMuted ? (isLight ? "bg-red-500/10" : "bg-red-500/20") : isLight ? "bg-black/5" : "bg-white/5")
+                        }
+                        title={p.camMuted ? "Video off" : "Video on"}
+                      >
+                        <Icon name={p.camMuted ? "camera-off" : "camera-on"} theme={theme} className={`w-4 h-4 ${p.camMuted ? "opacity-90" : "opacity-80"}`} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))} className={`px-3 py-2 rounded-xl ${chipBg}`} title="Toggle theme">
-              Theme
+          <div className={`p-3 border-t ${isLight ? "border-black/10" : "border-white/5"}`}>
+            <button
+              onClick={() => { }}
+              className={`w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 ${isLight ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
+                }`}
+            >
+              <span className="text-lg">+</span>
+              <span>Invite People</span>
             </button>
+          </div>
+        </div>
+      )}
 
-            {session.host_profile && (
-              <button
-                onClick={() => setSelectedUser(session.host_profile || null)}
-                className={`flex items-center gap-2 px-3 py-2 rounded-xl border transition text-[13px] ${isLight ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75" : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
-                  }`}
-                title="Host profile"
-              >
-                <span className="font-inter">
-                  <span className="font-light">Host:</span> <span className="font-bold">{String(session.host_profile.full_name || "Host")}</span>
-                </span>
-              </button>
+      {rightTab === "chat" && (
+        <div className="h-full min-h-0 flex flex-col">
+          <div className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
+            <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Chat</div>
+            <button
+              onClick={() => openRightTab(null)}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                }`}
+              title="Close"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="flex-1 min-h-0 p-3 overflow-hidden">
+            <div className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}>
+              <div className="h-full min-h-0 flex flex-col overflow-hidden [&>*]:h-full [&>*]:min-h-0">
+                {session?.id ? (
+                  <div data-theme={theme} style={{ colorScheme: theme }} className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}>
+                    <ChatPanelAny
+                      sessionId={session.id}
+                      theme={theme}
+                      showHeader={false}
+                      title="Chat"
+                      onClose={() => openRightTab(null)}
+                      embedded={true}
+                      hideHeader={true}
+                      authUserId={authUserId}
+                      displayName={displayName || userName}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {rightTab === "intentions" && (
+        <div className="h-full min-h-0 flex flex-col">
+          <div className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
+            <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Intentions</div>
+            <button
+              onClick={() => openRightTab(null)}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                }`}
+              title="Close"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-hidden p-3">
+            <div className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}>
+              <div className="h-full min-h-0 overflow-y-auto [&>*]:min-h-0">
+                <div data-theme={theme} style={{ colorScheme: theme }} className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}>
+                  <IntentionsPanel key={`intentions-${session.id}-${theme}`} theme={theme} sessionId={session.id} timerText={remainingTime || "--:--"} />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  const TopBar = (() => {
+    const switchTrackClsLocal =
+      "w-[84px] max-[480px]:w-[78px] h-[32px] rounded-full border relative transition flex items-center px-[3px] " +
+      (isLight ? "bg-black/5 border-black/10 hover:bg-black/10" : "bg-white/5 border-white/10 hover:bg-white/10");
+    const switchThumbLocal =
+      "absolute top-[2px] w-[26px] h-[26px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center";
+    const thumbTranslateLocal = isLight ? "translateX(0px)" : "translateX(52px)";
+
+    return (
+      <div className={`flex w-full rounded-2xl overflow-hidden ${topBarBg}`}>
+        <div className="flex-1 px-4 sm:px-6 py-3 sm:py-4">
+          <div className="flex flex-col gap-2 max-[480px]:gap-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <p className={`min-w-0 font-inter font-semibold text-[16px] sm:text-[18px] truncate ${strongText}`}>
+                    {String(session?.title || "Session")}
+                  </p>
+
+                  <span
+                    className={["shrink-0 px-2 py-[3px] rounded-lg border text-[12px] font-inter", chipBg, isLight ? "text-black/65" : "text-white/80"].join(" ")}
+                    title="Participants now / limit"
+                  >
+                    {participantsCount}/{maxParticipants}
+                  </span>
+
+                  <span
+                    className={["hidden sm:inline-flex shrink-0 px-2 py-[3px] rounded-lg border text-[11px] font-inter", chipBg, isLight ? "text-black/65" : "text-white/75"].join(" ")}
+                    title="Engine"
+                  >
+                    LiveKit
+                  </span>
+
+                  {!isHost && isSelfModerator && (
+                    <span
+                      className={["hidden sm:inline-flex shrink-0 px-2 py-[3px] rounded-lg border text-[11px] font-inter", chipBg, isLight ? "text-black/65" : "text-white/75"].join(" ")}
+                      title="Your role"
+                    >
+                      Moderator
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="hidden min-[481px]:flex items-center gap-2 shrink-0">
+                {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
+                  <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}>
+                    <Icon name="timer" theme={theme} className="w-4 h-4 opacity-80" alt="Timer" />
+                    <span className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"}`}>{remainingTime || "--:--"}</span>
+                  </div>
+                )}
+
+                <button onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))} className={switchTrackClsLocal} title="Toggle theme" aria-label="Toggle theme">
+                  <div className={switchThumbLocal} style={{ transform: thumbTranslateLocal }}>
+                    <Icon name={isLight ? "theme-sun" : "theme-moon"} theme={theme} className="w-4 h-4" />
+                  </div>
+                </button>
+
+                {session.host_profile && (
+                  <button
+                    onClick={() => setSelectedUser(session.host_profile || null)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition text-[13px] ${isLight
+                        ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                        : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                      }`}
+                    title="Host profile"
+                  >
+                    <ParticipantsSmartIcon theme={theme} className="w-4 h-4 opacity-90" />
+                    <span className="font-inter">
+                      <span className="font-light">Host:</span> <span className="font-bold">{String(session.host_profile.full_name || "Host")}</span>
+                    </span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
+              <div className="mt-1 max-[480px]:mt-1 w-full overflow-hidden">
+                <SessionStageBar stages={stages} startTime={stagebarStartTime} cycleSeconds={stagebarCycleSeconds} onHoverStage={setHoveredStage} />
+              </div>
             )}
           </div>
         </div>
-
-        {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
-          <div className="mt-2 w-full overflow-hidden">
-            <SessionStageBar stages={stages} startTime={stagebarStartTime} cycleSeconds={stagebarCycleSeconds} onHoverStage={setHoveredStage} />
-          </div>
-        )}
       </div>
-    </div>
-  );
-
-  const RightPanelBody = (
-    <div className={`rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col ${panelBg}`} data-theme={theme}>
-      <div className={`p-3 border-b ${isLight ? "border-black/10" : "border-white/10"} flex items-center gap-2`}>
-        <button
-          className={`px-3 py-2 rounded-xl text-[13px] ${rightTab === "participants" ? chipBg : ctlBtnBase}`}
-          onClick={() => openRightTab("participants")}
-        >
-          Participants
-        </button>
-        <button className={`px-3 py-2 rounded-xl text-[13px] ${rightTab === "chat" ? chipBg : ctlBtnBase}`} onClick={() => openRightTab("chat")}>
-          Chat
-        </button>
-        <button
-          className={`px-3 py-2 rounded-xl text-[13px] ${rightTab === "intentions" ? chipBg : ctlBtnBase}`}
-          onClick={() => openRightTab("intentions")}
-        >
-          Intentions
-        </button>
-      </div>
-
-      <div className="flex-1 min-h-0 overflow-auto p-3">
-        {rightTab === "participants" ? (
-          <div className="flex flex-col gap-3">
-            <input
-              value={participantsSearch}
-              onChange={(e) => setParticipantsSearch(e.target.value)}
-              placeholder="Search participants…"
-              className={`w-full px-3 py-2 rounded-xl outline-none text-[13px] ${isLight ? "bg-black/5 border border-black/10 text-black" : "bg-white/5 border border-white/10 text-white"}`}
-            />
-            <div className="flex flex-col gap-2">
-              {filteredParticipants.map((t) => (
-                <div
-                  key={`p-${t.id}`}
-                  className={`rounded-xl px-3 py-2 text-[13px] flex items-center justify-between ${isLight ? "bg-black/5 border border-black/10" : "bg-white/5 border border-white/10"}`}
-                >
-                  <div className="min-w-0">
-                    <div className="truncate">{t.label}</div>
-                    <div className="text-[11px] opacity-60">{t.isLocal ? "You" : t.participantIdentity || ""}</div>
-                  </div>
-                  <div className="text-[11px] opacity-70">{getBadgeForTile(t) || ""}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : rightTab === "chat" ? (
-          <ChatPanelAny sessionId={session.id} theme={theme} />
-        ) : rightTab === "intentions" ? (
-          <IntentionsPanel sessionId={session.id} theme={theme} />
-        ) : (
-          <div className="opacity-70 text-sm">Select a tab</div>
-        )}
-      </div>
-    </div>
-  );
+    );
+  })();
 
   return (
     <>
@@ -2264,7 +2758,9 @@ export function RoomPageLiveKit() {
         devices={devices}
         value={prejoin}
         onChange={setPrejoin}
-        onRefreshDevices={() => loadBrowserDevices().catch(() => { })}
+        onRefreshDevices={() => {
+          loadBrowserDevices().catch(() => { });
+        }}
         onCancel={() => {
           cleanupPrejoinPreparedVideoTrack().catch(() => { });
           releaseTabPresence();
@@ -2291,6 +2787,7 @@ export function RoomPageLiveKit() {
 
           setDisplayName(nm);
           setSelectedAudioOutputId(pj.audioOutputId || "default");
+
           setPrejoinOpen(false);
           setJoinRequested(true);
         }}
@@ -2335,56 +2832,210 @@ export function RoomPageLiveKit() {
         <div className="h-full w-full px-2 sm:px-4 pt-3 pb-[calc(84px+env(safe-area-inset-bottom))] sm:pb-[calc(94px+env(safe-area-inset-bottom))] flex flex-col gap-3 sm:gap-4 min-h-0">
           {TopBar}
 
-          <div className={"relative grid grid-rows-1 gap-3 sm:gap-4 flex-1 min-h-0 h-full " + (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),380px] xl:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")}>
-            <div className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"}`}>
+          <div
+            className={
+              "relative grid grid-rows-1 gap-3 sm:gap-4 flex-1 min-h-0 h-full " +
+              (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),380px] xl:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
+            }
+          >
+            <div
+              ref={videoWrapRef}
+              className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
+                }`}
+            >
               <LiveKitErrorBoundary
                 isLight={isLight}
                 onReset={() => {
                   setClientError("");
                   setTokenError("");
-                  if (joinRequested && lkToken && lkServerUrl) connectRoom().catch(() => { });
+                  if (joinRequested && lkToken && lkServerUrl) {
+                    connectRoom().catch(() => { });
+                  }
                 }}
               >
                 {videoContent}
               </LiveKitErrorBoundary>
+
+              {lastErr && (
+                <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow z-30 max-w-[80%] break-words">
+                  {lastErr}
+                </div>
+              )}
             </div>
 
             {rightPanelOpen && isLgUp && <div className="min-h-0 h-full overflow-hidden">{RightPanelBody}</div>}
+
+            {rightPanelOpen && !isLgUp && (
+              <div className="absolute inset-0 z-40 min-h-0">
+                <div className="absolute inset-0 bg-black/40" onClick={() => openRightTab(null)} />
+                <div className="absolute inset-x-0 top-0 bottom-0 p-1 sm:p-2 min-h-0">{RightPanelBody}</div>
+              </div>
+            )}
           </div>
         </div>
 
         <RemoteAudioRenderer room={roomState} audioOutputId={selectedAudioOutputId} />
 
-        {/* bottom bar */}
-        <div className={`fixed left-0 right-0 bottom-0 z-50 px-2 sm:px-4 pb-[env(safe-area-inset-bottom)]`}>
-          <div className={`mx-auto max-w-[1200px] rounded-2xl ${bottomBarBg} px-3 sm:px-4 py-3 flex items-center justify-between gap-2`}>
-            <div className="flex items-center gap-2">
-              <button className={`h-11 px-4 rounded-2xl text-[13px] ${ctlBtnBase}`} onClick={toggleMic}>
-                {micOn ? "Mic on" : "Mic off"}
-              </button>
-              <button className={`h-11 px-4 rounded-2xl text-[13px] ${ctlBtnBase}`} onClick={toggleCam}>
-                {camOn ? "Cam on" : "Cam off"}
-              </button>
-              <button className={`h-11 px-4 rounded-2xl text-[13px] ${ctlBtnBase}`} onClick={toggleScreenShare}>
-                {screenShareOn ? "Stop share" : "Share"}
-              </button>
-            </div>
+        <div className="fixed inset-x-0 bottom-0 z-50">
+          <div className="w-full px-2 sm:px-4 pb-[calc(8px+env(safe-area-inset-bottom))]">
+            <div className={`h-[64px] sm:h-[74px] rounded-2xl shadow-2xl backdrop-blur grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4 ${bottomBarBg}`}>
+              <div className="flex items-center gap-2" ref={moreMenuRef}>
+                <div className="md:hidden relative">
+                  <button
+                    onClick={() => setShowMoreMenu((v) => !v)}
+                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                    title="Menu"
+                  >
+                    <span className={isLight ? "text-black/70" : "text-white/85"}>⋯</span>
+                  </button>
 
-            <div className="flex items-center gap-2">
-              <button
-                className={`h-11 px-4 rounded-2xl text-[13px] ${ctlBtnBase}`}
-                onClick={() => openRightTab(rightTab === "participants" ? null : "participants")}
-              >
-                Panel
-              </button>
+                  {showMoreMenu && (
+                    <div className="absolute bottom-[76px] sm:bottom-[86px] left-0">
+                      <div className={`w-[240px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}>
+                        <button
+                          onClick={() => {
+                            openRightTab("participants");
+                            setShowMoreMenu(false);
+                          }}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
+                        >
+                          <Icon name="participants" theme={theme} className="w-4 h-4 opacity-90" />
+                          <span>Participants</span>
+                        </button>
 
-              <button className={`h-11 px-4 rounded-2xl text-[13px] ${ctlBtnBase}`} onClick={() => setSettingsOpen(true)}>
-                FX
-              </button>
+                        <button
+                          onClick={() => {
+                            openRightTab("chat");
+                            setShowMoreMenu(false);
+                          }}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
+                        >
+                          <Icon name="chat" theme={theme} className="w-4 h-4 opacity-90" />
+                          <span>Chat</span>
+                        </button>
 
-              <button className={`h-11 px-4 rounded-2xl text-[13px] ${isLight ? "bg-red-600 text-white hover:bg-red-700" : "bg-red-500 text-white hover:bg-red-600"}`} onClick={leave}>
-                Leave
-              </button>
+                        <button
+                          onClick={() => {
+                            openRightTab("intentions");
+                            setShowMoreMenu(false);
+                          }}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
+                        >
+                          <Icon name="intentions" theme={theme} className="w-4 h-4 opacity-90" />
+                          <span>Intentions</span>
+                        </button>
+
+                        <div className={isLight ? "h-px bg-black/10" : "h-px bg-white/10"} />
+
+                        <button
+                          onClick={() => {
+                            setSettingsOpen(true);
+                            setShowMoreMenu(false);
+                          }}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
+                        >
+                          <Icon name="settings" theme={theme} className="w-4 h-4 opacity-90" />
+                          <span>Settings</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="hidden md:flex items-center gap-2">
+                  <button onClick={() => openRightTab("participants")} className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`} title="Participants">
+                    <Icon name="participants" theme={theme} className="w-5 h-5" />
+                  </button>
+
+                  <button onClick={() => openRightTab("chat")} className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`} title="Chat">
+                    <Icon name="chat" theme={theme} className="w-5 h-5" />
+                  </button>
+
+                  <button onClick={() => openRightTab("intentions")} className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`} title="Intentions">
+                    <Icon name="intentions" theme={theme} className="w-5 h-5" />
+                  </button>
+
+                  <button onClick={() => setSettingsOpen(true)} className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`} title="Settings">
+                    <Icon name="settings" theme={theme} className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-center gap-2 sm:gap-3">
+                <button
+                  onClick={toggleMic}
+                  disabled={!connected}
+                  className={"w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition disabled:opacity-50 " + (!micOn ? "bg-red-600 hover:bg-red-700" : ctlBtnBase)}
+                  title="Toggle mic"
+                >
+                  <Icon name={!micOn ? "mic-off" : "mic-on"} theme={!micOn ? "dark" : theme} className="w-5 h-5" />
+                </button>
+
+                <button
+                  onClick={toggleCam}
+                  disabled={!connected}
+                  className={"w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition disabled:opacity-50 " + (!camOn ? "bg-red-600 hover:bg-red-700" : ctlBtnBase)}
+                  title="Toggle camera"
+                >
+                  <Icon name={!camOn ? "camera-off" : "camera-on"} theme={theme} className="w-5 h-5" />
+                </button>
+
+                <button
+                  onClick={toggleScreenShare}
+                  disabled={!connected}
+                  className={"w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition disabled:opacity-50 " + (screenShareOn ? "bg-blue-600 hover:bg-blue-700" : ctlBtnBase)}
+                  title="Share screen"
+                >
+                  <Icon name="screen-share" theme={theme} className="w-5 h-5" />
+                </button>
+
+                <div className="relative" ref={reactionsMenuRef}>
+                  <button
+                    onClick={() => setShowReactionsMenu((v) => !v)}
+                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                    title="Reactions"
+                  >
+                    <Icon name="reaction" theme={theme} className="w-5 h-5" />
+                  </button>
+
+                  {showReactionsMenu && (
+                    <div className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}>
+                      {(["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown"] as ReactionType[]).map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => {
+                            handleSendReaction(t);
+                            setShowReactionsMenu(false);
+                          }}
+                          className="hover:scale-[1.06] transition"
+                          title={t}
+                        >
+                          {reactionEmoji[t]}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 sm:gap-3">
+                <button
+                  onClick={leave}
+                  className="hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white"
+                  title="Leave"
+                >
+                  <Icon name="leave" theme={theme} className="w-5 h-5" />
+                  <span className="text-[14px]">Leave</span>
+                </button>
+
+                <button
+                  onClick={leave}
+                  className="sm:hidden w-10 h-10 rounded-2xl bg-red-600 hover:bg-red-700 text-white flex items-center justify-center"
+                  title="Leave"
+                >
+                  <Icon name="leave" theme={theme} className="w-5 h-5" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
