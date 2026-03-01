@@ -89,8 +89,12 @@ export function VideoTile({
     showBadge?: string | null;
     hostActions?: HostTileActions;
 }) {
-    const ref = useRef<HTMLVideoElement | null>(null);
     const wrapRef = useRef<HTMLDivElement | null>(null);
+
+    // Container where LK will mount either <video> or <canvas>
+    const mediaHostRef = useRef<HTMLDivElement | null>(null);
+    const attachedElRef = useRef<HTMLElement | null>(null);
+
     const isLight = theme === "light";
 
     // Debug sizing overlay for solo grid testing:
@@ -121,64 +125,91 @@ export function VideoTile({
         };
     }, [debugSizing]);
 
-    // keep <video muted> synced to isLocal
     useEffect(() => {
-        const el = ref.current;
-        if (!el) return;
-        el.muted = !!isLocal;
-    }, [isLocal]);
+        const host = mediaHostRef.current;
+        if (!host) return;
 
-    useEffect(() => {
-        const el = ref.current;
-        if (!el) return;
+        const cleanup = () => {
+            try {
+                if (videoTrack && attachedElRef.current && typeof (videoTrack as any)?.detach === "function") {
+                    (videoTrack as any).detach(attachedElRef.current);
+                }
+            } catch { }
 
-        let didAttach = false;
+            try {
+                attachedElRef.current?.remove();
+            } catch { }
 
-        // hard reset element (prevents stale streams / flicker when track changes)
-        try {
-            if (videoTrack && typeof (videoTrack as any)?.detach === "function") {
-                (videoTrack as any).detach(el);
-            }
-        } catch { }
-        try {
-            el.pause();
-        } catch { }
-        try {
-            (el as any).srcObject = null;
-        } catch { }
+            attachedElRef.current = null;
 
-        if (!videoTrack) return;
+            // Ensure host is empty (defensive)
+            try {
+                while (host.firstChild) host.removeChild(host.firstChild);
+            } catch { }
+        };
 
+        // Always cleanup before (re)attach
+        cleanup();
+
+        if (!videoTrack) return cleanup;
+
+        // Attach without passing an element:
+        // LK may return <video> OR <canvas> when processors are active.
+        let el: any = null;
         try {
             if (typeof (videoTrack as any)?.attach === "function") {
-                (videoTrack as any).attach(el);
-                didAttach = true;
-
-                // Some browsers (esp. Safari) may require an explicit play() attempt after attach
-                Promise.resolve()
-                    .then(() => el.play())
-                    .catch(() => { });
+                el = (videoTrack as any).attach();
             } else {
                 console.warn("videoTrack.attach is not a function", videoTrack);
+                return cleanup;
             }
         } catch (e) {
             console.error("attach video failed:", e);
+            return cleanup;
         }
 
-        return () => {
+        if (!el) return cleanup;
+
+        // Standard styling for both <video> and <canvas>
+        try {
+            el.style.width = "100%";
+            el.style.height = "100%";
+            el.style.objectFit = "cover";
+            el.style.backgroundColor = "#000";
+            el.style.display = "block";
+            el.style.transform = "translateZ(0)";
+            el.style.backfaceVisibility = "hidden";
+            el.style.willChange = "transform";
+        } catch { }
+
+        // If LK returned a <video>, set local-mute and playback hints
+        if (el instanceof HTMLVideoElement) {
             try {
-                if (didAttach && typeof (videoTrack as any)?.detach === "function") {
-                    (videoTrack as any).detach(el);
-                }
+                el.muted = !!isLocal;
+                el.playsInline = true;
+                el.autoplay = true;
             } catch { }
-            try {
-                el.pause();
-            } catch { }
-            try {
-                (el as any).srcObject = null;
-            } catch { }
-        };
-    }, [videoTrack]);
+
+            // Safari sometimes wants an explicit play attempt
+            Promise.resolve()
+                .then(() => el.play())
+                .catch(() => { });
+        }
+
+        // Mount into host
+        try {
+            host.appendChild(el);
+        } catch (e) {
+            console.error("append child failed", e);
+            // If append fails, try cleanup
+            return cleanup;
+        }
+
+        attachedElRef.current = el as HTMLElement;
+
+        return cleanup;
+        // IMPORTANT: re-run when track changes or locality changes (mute)
+    }, [videoTrack, isLocal]);
 
     const showActions =
         !isLocal &&
@@ -197,20 +228,7 @@ export function VideoTile({
         >
             <div className="w-full aspect-video relative">
                 {videoTrack ? (
-                    <video
-                        ref={ref}
-                        autoPlay
-                        playsInline
-                        muted={isLocal}
-                        // Extra hints for smoother rendering during resize / compositor changes
-                        className="w-full h-full object-cover"
-                        style={{
-                            backgroundColor: "#000",
-                            transform: "translateZ(0)",
-                            backfaceVisibility: "hidden",
-                            willChange: "transform",
-                        }}
-                    />
+                    <div ref={mediaHostRef} className="absolute inset-0 w-full h-full" />
                 ) : (
                     <div
                         className={
@@ -265,7 +283,9 @@ export function VideoTile({
                             disabled={hostActions.busy}
                             className={
                                 "px-2 py-1 rounded-lg text-[11px] border flex items-center gap-1 " +
-                                (isLight ? "bg-white/85 text-black border-black/10 disabled:opacity-50" : "bg-black/60 text-white border-white/10 disabled:opacity-50")
+                                (isLight
+                                    ? "bg-white/85 text-black border-black/10 disabled:opacity-50"
+                                    : "bg-black/60 text-white border-white/10 disabled:opacity-50")
                             }
                             title="Mute / unmute remote microphone (host action)"
                         >
@@ -280,11 +300,17 @@ export function VideoTile({
                             disabled={hostActions.busy}
                             className={
                                 "px-2 py-1 rounded-lg text-[11px] border flex items-center gap-1 " +
-                                (isLight ? "bg-white/85 text-black border-black/10 disabled:opacity-50" : "bg-black/60 text-white border-white/10 disabled:opacity-50")
+                                (isLight
+                                    ? "bg-white/85 text-black border-black/10 disabled:opacity-50"
+                                    : "bg-black/60 text-white border-white/10 disabled:opacity-50")
                             }
                             title="Mute / unmute remote camera (host action)"
                         >
-                            <Icon name={hostActions.camMuted ? "camera-off" : "camera-on"} theme={theme} className="w-4 h-4 opacity-80" />
+                            <Icon
+                                name={hostActions.camMuted ? "camera-off" : "camera-on"}
+                                theme={theme}
+                                className="w-4 h-4 opacity-80"
+                            />
                             <span>{hostActions.camMuted ? "Unmute cam" : "Mute cam"}</span>
                         </button>
                     ) : null}

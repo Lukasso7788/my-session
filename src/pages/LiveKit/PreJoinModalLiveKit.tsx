@@ -125,60 +125,93 @@ export function PreJoinModal({
   const footerCls = `px-5 sm:px-6 py-4 sm:py-5 border-t flex items-center justify-end gap-3 ${isLight ? "border-black/10" : "border-white/10"
     }`;
 
-  const inputWrap = isLight
-    ? "bg-black/5 border border-black/10"
-    : "bg-white/5 border border-white/10";
+  const inputWrap = isLight ? "bg-black/5 border border-black/10" : "bg-white/5 border border-white/10";
 
-  const inputCls = isLight
-    ? "text-black placeholder:text-black/40"
-    : "text-white placeholder:text-white/40";
+  const inputCls = isLight ? "text-black placeholder:text-black/40" : "text-white placeholder:text-white/40";
 
   const labelCls = isLight ? "text-black/70" : "text-white/70";
 
-  const btnPrimary = isLight
-    ? "bg-blue-600 hover:bg-blue-700 text-white"
-    : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]";
+  const btnPrimary = isLight ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]";
 
-  const btnGhost = isLight
-    ? "bg-black/5 hover:bg-black/10 text-black/70"
-    : "bg-white/5 hover:bg-white/10 text-white/80";
+  const btnGhost = isLight ? "bg-black/5 hover:bg-black/10 text-black/70" : "bg-white/5 hover:bg-white/10 text-white/80";
 
   const fxBtnBase =
     "h-10 px-4 rounded-2xl text-[13px] font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed";
 
-  const fxBtnSelected = isLight
-    ? "bg-black/80 text-white hover:bg-black"
-    : "bg-white text-black hover:bg-white";
+  const fxBtnSelected = isLight ? "bg-black/80 text-white hover:bg-black" : "bg-white text-black hover:bg-white";
 
   const fxBtnIdle = btnGhost;
 
-  const videoRef = useRef<HTMLVideoElement | null>(null);
+  // Container for LK preview element (<video> or <canvas>)
+  const previewHostRef = useRef<HTMLDivElement | null>(null);
+  const attachedPreviewElRef = useRef<HTMLElement | null>(null);
 
-  // attach livekit track to <video> (re-run on previewVersion)
+  // attach livekit track to container (re-run on previewVersion)
   useEffect(() => {
-    const el = videoRef.current;
-    if (!el) return;
+    const host = previewHostRef.current;
+    if (!host) return;
 
-    try {
-      (el as any).srcObject = null;
-    } catch { }
-
-    if (!value.videoEnabled || !previewVideoTrack) return;
-
-    try {
-      el.muted = true;
-      el.playsInline = true;
-      el.autoplay = true;
-      previewVideoTrack.attach(el);
-    } catch (e) {
-      console.warn("preview attach failed", e);
-    }
-
-    return () => {
+    const cleanup = () => {
       try {
-        previewVideoTrack.detach(el);
+        if (previewVideoTrack && attachedPreviewElRef.current && typeof (previewVideoTrack as any)?.detach === "function") {
+          (previewVideoTrack as any).detach(attachedPreviewElRef.current);
+        }
+      } catch { }
+
+      try {
+        attachedPreviewElRef.current?.remove();
+      } catch { }
+
+      attachedPreviewElRef.current = null;
+
+      try {
+        while (host.firstChild) host.removeChild(host.firstChild);
       } catch { }
     };
+
+    cleanup();
+
+    if (!value.videoEnabled || !previewVideoTrack) return cleanup;
+
+    let el: any = null;
+    try {
+      el = (previewVideoTrack as any).attach?.();
+    } catch (e) {
+      console.warn("preview attach failed", e);
+      return cleanup;
+    }
+
+    if (!el) return cleanup;
+
+    try {
+      el.style.width = "100%";
+      el.style.height = "100%";
+      el.style.objectFit = "cover";
+      el.style.backgroundColor = "#000";
+      el.style.display = "block";
+    } catch { }
+
+    if (el instanceof HTMLVideoElement) {
+      try {
+        el.muted = true;
+        el.playsInline = true;
+        el.autoplay = true;
+      } catch { }
+
+      Promise.resolve()
+        .then(() => el.play())
+        .catch(() => { });
+    }
+
+    try {
+      host.appendChild(el);
+      attachedPreviewElRef.current = el as HTMLElement;
+    } catch (e) {
+      console.warn("preview append failed", e);
+      return cleanup;
+    }
+
+    return cleanup;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, value.videoEnabled, previewVideoTrack, previewVersion]);
 
@@ -265,16 +298,10 @@ export function PreJoinModal({
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="font-inter font-semibold text-[16px]">Before you join</div>
-              <div className={`mt-1 text-[12px] ${labelCls}`}>
-                Preview + devices + background effects — then join.
-              </div>
+              <div className={`mt-1 text-[12px] ${labelCls}`}>Preview + devices + background effects — then join.</div>
             </div>
 
-            <button
-              onClick={onCancel}
-              className={`w-9 h-9 rounded-2xl flex items-center justify-center ${btnGhost}`}
-              title="Close"
-            >
+            <button onClick={onCancel} className={`w-9 h-9 rounded-2xl flex items-center justify-center ${btnGhost}`} title="Close">
               ✕
             </button>
           </div>
@@ -286,20 +313,11 @@ export function PreJoinModal({
             {/* LEFT: Preview + FX */}
             <div className="flex flex-col gap-4">
               {/* Preview card */}
-              <div
-                className={`rounded-3xl overflow-hidden border ${isLight ? "border-black/10 bg-black/5" : "border-white/10 bg-white/5"
-                  }`}
-              >
+              <div className={`rounded-3xl overflow-hidden border ${isLight ? "border-black/10 bg-black/5" : "border-white/10 bg-white/5"}`}>
                 <div className="px-4 py-3 flex items-center justify-between">
                   <div className={`text-[12px] font-semibold ${labelCls}`}>{previewHint}</div>
                   <div className={`text-[11px] ${labelCls}`}>
-                    {value.videoEnabled
-                      ? videoFxMode === "blur"
-                        ? "Blur"
-                        : videoFxMode === "bg"
-                          ? "Background"
-                          : "Clean"
-                      : "Off"}
+                    {value.videoEnabled ? (videoFxMode === "blur" ? "Blur" : videoFxMode === "bg" ? "Background" : "Clean") : "Off"}
                   </div>
                 </div>
 
@@ -307,13 +325,7 @@ export function PreJoinModal({
                 <div className="relative aspect-video sm:aspect-video">
                   {value.videoEnabled ? (
                     <>
-                      <video
-                        ref={videoRef}
-                        className="absolute inset-0 w-full h-full object-cover"
-                        muted
-                        playsInline
-                        autoPlay
-                      />
+                      <div ref={previewHostRef} className="absolute inset-0 w-full h-full" />
                       {!previewVideoTrack && (
                         <div className={`absolute inset-0 flex items-center justify-center text-[12px] ${labelCls}`}>
                           Allow camera permissions to see preview
@@ -321,9 +333,7 @@ export function PreJoinModal({
                       )}
                     </>
                   ) : (
-                    <div className={`absolute inset-0 flex items-center justify-center text-[12px] ${labelCls}`}>
-                      Video disabled
-                    </div>
+                    <div className={`absolute inset-0 flex items-center justify-center text-[12px] ${labelCls}`}>Video disabled</div>
                   )}
                 </div>
               </div>
@@ -376,9 +386,7 @@ export function PreJoinModal({
 
                 {!!fxBlockedReason && <div className={`mt-2 text-[11px] ${labelCls}`}>{fxBlockedReason}</div>}
 
-                {fxError ? (
-                  <div className={`mt-3 text-[12px] ${isLight ? "text-red-700" : "text-red-300"}`}>{fxError}</div>
-                ) : null}
+                {fxError ? <div className={`mt-3 text-[12px] ${isLight ? "text-red-700" : "text-red-300"}`}>{fxError}</div> : null}
 
                 {/* Blur controls */}
                 {videoFxMode === "blur" && (
@@ -402,9 +410,7 @@ export function PreJoinModal({
                       className="mt-2 w-full"
                       disabled={!value.videoEnabled}
                     />
-                    <div className={`mt-2 text-[11px] ${labelCls}`}>
-                      Tip: Blur is CPU-heavy. If it stutters, lower strength.
-                    </div>
+                    <div className={`mt-2 text-[11px] ${labelCls}`}>Tip: Blur is CPU-heavy. If it stutters, lower strength.</div>
                   </div>
                 )}
 
@@ -483,9 +489,7 @@ export function PreJoinModal({
                       </button>
                     </div>
 
-                    <div className={`mt-2 text-[11px] ${labelCls}`}>
-                      Use presets for best performance. Large images can be heavier.
-                    </div>
+                    <div className={`mt-2 text-[11px] ${labelCls}`}>Use presets for best performance. Large images can be heavier.</div>
                   </div>
                 )}
               </div>
@@ -610,26 +614,16 @@ export function PreJoinModal({
                 </div>
 
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                  <button
-                    onClick={onRefreshDevices}
-                    className={`h-10 px-4 rounded-2xl text-[13px] font-semibold ${btnGhost}`}
-                  >
+                  <button onClick={onRefreshDevices} className={`h-10 px-4 rounded-2xl text-[13px] font-semibold ${btnGhost}`}>
                     Refresh devices
                   </button>
 
-                  <div className={`text-[12px] ${labelCls}`}>
-                    Tip: allow mic/camera to see device names
-                  </div>
+                  <div className={`text-[12px] ${labelCls}`}>Tip: allow mic/camera to see device names</div>
                 </div>
               </div>
 
-              <div
-                className={`rounded-2xl p-4 ${isLight ? "bg-blue-50 border border-blue-100" : "bg-white/5 border border-white/10"
-                  }`}
-              >
-                <div className={`text-[12px] font-semibold ${isLight ? "text-blue-900/80" : "text-white/80"}`}>
-                  Quick sanity check
-                </div>
+              <div className={`rounded-2xl p-4 ${isLight ? "bg-blue-50 border border-blue-100" : "bg-white/5 border border-white/10"}`}>
+                <div className={`text-[12px] font-semibold ${isLight ? "text-blue-900/80" : "text-white/80"}`}>Quick sanity check</div>
                 <div className={`mt-1 text-[12px] ${isLight ? "text-blue-900/70" : "text-white/65"}`}>
                   If preview is blank — allow camera permissions in the browser.
                 </div>
