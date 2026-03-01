@@ -23,7 +23,7 @@ import { UserProfileModal } from "../components/UserProfileModal";
 import { PreJoinModal } from "./LiveKit/PreJoinModalLiveKit";
 import { RoomSettingsModalLiveKit } from "./LiveKit/RoomSettingsModalLiveKit";
 import { VideoTile } from "./LiveKit/VideoTileLiveKit";
-import { RemoteAudioRenderer } from "./LiveKit/RemoteAudioRendererLiveKit";
+import { RemoteAudioRenderer } from "./LiveKit/RemoteAudioTrackRendererLiveKit"; // NOTE: if your file is named RemoteAudioRendererLiveKit.tsx, revert this line back
 
 type BgProc = ReturnType<typeof BackgroundProcessor>;
 
@@ -107,8 +107,8 @@ type TileModel = {
   isLocal: boolean;
   videoTrack?: Track;
 
-  participantIdentity?: string; // exact LK identity (may include tab suffix)
-  participantUserId?: string; // extracted base UUID (if present)
+  participantIdentity?: string;
+  participantUserId?: string;
   micTrackSid?: string;
   camTrackSid?: string;
   micMuted?: boolean;
@@ -197,7 +197,6 @@ function normalizeKey(v: unknown): string {
 
 function inferStageTypeFromLabel(raw: string): Stage["type"] {
   const k = normalizeKey(raw);
-
   if (!k) return "focus";
   if (k.includes("welcome") || k.includes("intro")) return "intro";
   if (k.includes("outro") || k.includes("farewell") || k.includes("celebrat") || k.includes("finish") || k.includes("end")) return "outro";
@@ -221,10 +220,7 @@ function normalizeInfinitePhases(anyPhases: unknown): { name: string; seconds: n
       if (explicitSeconds > 0) return explicitSeconds;
 
       const explicitMinutes =
-        num((raw as any).minutes) ||
-        num((raw as any).mins) ||
-        num((raw as any).duration_minutes) ||
-        num((raw as any).durationMinutes);
+        num((raw as any).minutes) || num((raw as any).mins) || num((raw as any).duration_minutes) || num((raw as any).durationMinutes);
       if (explicitMinutes > 0) return explicitMinutes * 60;
 
       const n = num((raw as any).duration ?? (raw as any).value ?? raw);
@@ -265,7 +261,6 @@ function normalizeInfinitePhases(anyPhases: unknown): { name: string; seconds: n
 
 function phaseToStageType(phaseName: string): Stage["type"] {
   const k = normalizeKey(phaseName);
-
   if (k.includes("welcome") || k.includes("intro")) return "intro";
   if (k.includes("outro") || k.includes("farewell") || k.includes("celebrat") || k.includes("finish") || k.includes("end")) return "outro";
   if (k.includes("checkin") || k.includes("intention")) return "intentions";
@@ -670,6 +665,7 @@ export function RoomPageLiveKit() {
   const chipBg = isLight ? "bg-black/5 border border-black/10" : "bg-[#0B1220]/70 border border-white/5";
   const strongText = isLight ? "text-black/85" : "text-[#F3F4F6]/90";
   const panelBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#0B1220]/55 border border-white/5";
+  const panelBgSolid = isLight ? "bg-white border border-black/10" : "bg-[#0B1220] border border-white/10";
   const bottomBarBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#07101E]/85 border border-white/10";
   const ctlBtnBase = isLight ? "bg-black/5 hover:bg-black/10" : "bg-[#111827] hover:bg-[#1f2937]";
 
@@ -881,7 +877,7 @@ export function RoomPageLiveKit() {
     })();
   }, [id]);
 
-  // build stages from Supabase schedule
+  // build stages from schedule
   useEffect(() => {
     if (!session) return;
 
@@ -890,7 +886,6 @@ export function RoomPageLiveKit() {
     setStagebarStartTime("");
 
     const fallbackStart = String(session?.start_time || session?.created_at || new Date().toISOString());
-
     let parsed: unknown = safeParseJson(session.schedule);
 
     if (!parsed) {
@@ -905,8 +900,7 @@ export function RoomPageLiveKit() {
     }
 
     if (isRecord(parsed)) {
-      const maybeBlocks =
-        (parsed as any).blocks || (parsed as any).script || (parsed as any).agenda || (parsed as any).items || (parsed as any).stages;
+      const maybeBlocks = (parsed as any).blocks || (parsed as any).script || (parsed as any).agenda || (parsed as any).items || (parsed as any).stages;
       if (Array.isArray(maybeBlocks)) parsed = maybeBlocks;
     }
 
@@ -987,7 +981,6 @@ export function RoomPageLiveKit() {
 
         const seconds = Number(p.seconds) || 0;
         const minutes = Math.max(1, Math.round(seconds / 60));
-
         return { name: displayName, duration: minutes, color: STAGE_COLORS[type] || "#F63135", type, durationSeconds: seconds };
       });
 
@@ -1112,10 +1105,7 @@ export function RoomPageLiveKit() {
         const u = data.user;
         setAuthUserId(u?.id || null);
 
-        let name =
-          str((u as any)?.user_metadata?.full_name) ||
-          str((u as any)?.user_metadata?.name) ||
-          (u?.email ? u.email.split("@")[0] : "");
+        let name = str((u as any)?.user_metadata?.full_name) || str((u as any)?.user_metadata?.name) || (u?.email ? u.email.split("@")[0] : "");
 
         if (!name && u?.id) {
           const { data: p } = await supabase.from("profiles").select("full_name").eq("id", u.id).single();
@@ -1159,7 +1149,7 @@ export function RoomPageLiveKit() {
     }
   };
 
-  // ---- FX state (shared: prejoin + in-room settings)
+  // ---- FX state
   const [videoFxMode, setVideoFxMode] = useState<FxMode>("off");
   const [bgImageUrl, setBgImageUrl] = useState<string>(DEFAULT_BG_DATA_URL);
   const [fxError, setFxError] = useState<string>("");
@@ -1366,7 +1356,7 @@ export function RoomPageLiveKit() {
     return !!hostId && String(hostId) === String(authUserId);
   }, [authUserId, session]);
 
-  // moderators (host is always "admin" in UI)
+  // moderators (host is always moderator in UI)
   const isSelfModerator = useMemo(() => {
     if (!authUserId) return false;
     if (isHost) return true;
@@ -1378,9 +1368,7 @@ export function RoomPageLiveKit() {
     setRolesLoading(true);
     try {
       const { data, error } = await supabase.from("session_role_assignments").select("user_id, role").eq("session_id", sessionId).eq("role", "moderator");
-
       if (error) throw error;
-
       const ids = uniqStrings((data || []).map((r: any) => String(r?.user_id || "")));
       setModeratorUserIds(ids);
     } catch (e: any) {
@@ -1451,7 +1439,7 @@ export function RoomPageLiveKit() {
   const [tokenLoading, setTokenLoading] = useState(false);
   const [tokenError, setTokenError] = useState<string>("");
 
-  // identity refs (support multi-tab without replacing prior)
+  // identity refs (support multi-tab)
   const baseUserIdRef = useRef<string>("");
   const livekitIdentityRef = useRef<string>("");
 
@@ -1500,12 +1488,8 @@ export function RoomPageLiveKit() {
   };
 
   useEffect(() => {
-    const onBeforeUnload = () => {
-      releaseTabPresence();
-    };
-    const onPageHide = () => {
-      releaseTabPresence();
-    };
+    const onBeforeUnload = () => releaseTabPresence();
+    const onPageHide = () => releaseTabPresence();
     window.addEventListener("beforeunload", onBeforeUnload);
     window.addEventListener("pagehide", onPageHide);
     return () => {
@@ -1517,13 +1501,11 @@ export function RoomPageLiveKit() {
 
   const buildAuthHeaders = async (): Promise<Record<string, string>> => {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
-
     try {
       const { data } = await supabase.auth.getSession();
       const accessToken = data.session?.access_token || "";
       if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
     } catch { }
-
     return headers;
   };
 
@@ -1549,7 +1531,6 @@ export function RoomPageLiveKit() {
     }
 
     const res = acquireTabSlot(key, tabId, maxTabs);
-
     if (!res.ok) {
       tabPresenceAcquiredRef.current = false;
       try {
@@ -1703,7 +1684,6 @@ export function RoomPageLiveKit() {
     if (!room) return;
 
     const next: TileModel[] = [];
-
     const lp = room.localParticipant;
 
     const localCamPub = Array.from(lp.videoTrackPublications.values()).find((p) => p.source === Track.Source.Camera) as any;
@@ -1712,8 +1692,7 @@ export function RoomPageLiveKit() {
     const localMicPub = Array.from(lp.audioTrackPublications.values()).find((p) => p.source === Track.Source.Microphone) as any;
 
     const localIdentity = String(lp.identity || livekitIdentityRef.current || "");
-    const localUserId =
-      authUserId && looksLikeUuid(authUserId) ? String(authUserId).toLowerCase() : extractBaseUserIdFromIdentity(localIdentity);
+    const localUserId = authUserId && looksLikeUuid(authUserId) ? String(authUserId).toLowerCase() : extractBaseUserIdFromIdentity(localIdentity);
 
     next.push({
       id: "local",
@@ -2131,7 +2110,7 @@ export function RoomPageLiveKit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bgImageUrl]);
 
-  // reactions UI
+  // reactions UI (bigger + nicer animation)
   const [showReactionsMenu, setShowReactionsMenu] = useState(false);
   const reactionsMenuRef = useRef<HTMLDivElement | null>(null);
   const [localReactions, setLocalReactions] = useState<{ id: number; type: ReactionType }[]>([]);
@@ -2143,7 +2122,7 @@ export function RoomPageLiveKit() {
     setLocalReactions((prev) => [...prev, { id: rid, type }]);
     setTimeout(() => {
       setLocalReactions((prev) => prev.filter((r) => r.id !== rid));
-    }, 1500);
+    }, 1200);
   };
 
   useEffect(() => {
@@ -2219,13 +2198,6 @@ export function RoomPageLiveKit() {
     return tilesForRender.filter((t) => (t.label || "").toLowerCase().includes(q));
   }, [tilesForRender, participantsSearch]);
 
-  const switchTrackCls =
-    "w-[84px] max-[480px]:w-[78px] h-[32px] rounded-full border relative transition flex items-center px-[3px] " +
-    (isLight ? "bg-black/5 border-black/10 hover:bg-black/10" : "bg-white/5 border-white/10 hover:bg-white/10");
-
-  const switchThumb = "absolute top-[2px] w-[26px] h-[26px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center";
-  const thumbTranslate = isLight ? "translateX(0px)" : "translateX(52px)";
-
   // video wrap resize observer
   const videoWrapRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -2252,7 +2224,7 @@ export function RoomPageLiveKit() {
 
   const lastErr = tokenError || clientError;
 
-  // ---- grid helpers (fixes: 1 tile too big, 3rd tile centered, no height stretch, smaller gaps for 5+)
+  // ---- grid helpers (fixes: no scroll on 3/4, center last rows, correct padding on mobile)
   const tileCount = tilesForRender.length;
 
   const gridColsClass = useMemo(() => {
@@ -2268,10 +2240,31 @@ export function RoomPageLiveKit() {
     return "gap-2 sm:gap-3";
   }, [tileCount]);
 
-  const gridContentClass = useMemo(() => {
-    if (tileCount <= 4) return "place-content-center";
-    return "place-content-start";
-  }, [tileCount]);
+  // ✅ 2..4 tiles must ALWAYS fit without internal scrolling
+  const gridFitNoScroll = tileCount >= 2 && tileCount <= 4;
+
+  // For <=4: force "no scroll" at every layer (some nested layouts still create scrollbars)
+  const gridScrollCls = gridFitNoScroll ? "overflow-hidden overscroll-contain" : "overflow-auto overscroll-contain";
+
+  // ✅ mobile must be able to scroll past the bottom bar when grid is scrollable
+  const gridBottomPadCls = gridFitNoScroll
+    ? "pb-2"
+    : "pb-[calc(84px+env(safe-area-inset-bottom)+12px)] sm:pb-3";
+
+  // ✅ helps grid compute heights correctly (prevents content from growing beyond container)
+  const gridAutoRowsStyle = gridFitNoScroll ? ({ gridAutoRows: "minmax(0, 1fr)" } as any) : undefined;
+
+  // When scroll is disabled, stretch rows; otherwise start at top
+  const gridPlace = gridFitNoScroll ? "place-content-stretch" : "place-content-start";
+
+  // <=4 tiles: fit inside room, NO internal scroll, rows are fr (prevents “room grows” / scrollbars)
+  const gridFitNoScroll = tileCount >= 2 && tileCount <= 4;
+
+  const gridScrollCls = gridFitNoScroll ? "overflow-hidden" : "overflow-auto";
+  const gridBottomPadCls = gridFitNoScroll
+    ? "pb-2"
+    : "pb-[calc(84px+env(safe-area-inset-bottom)+12px)] sm:pb-3"; // fixes “mobile can’t scroll fully”
+  const gridPlace = gridFitNoScroll ? "place-content-stretch" : "place-content-start";
 
   const roomReadyText = !joinRequested ? "Waiting to join…" : tokenLoading ? "Preparing token…" : !connected ? "Connecting to LiveKit…" : "";
 
@@ -2321,18 +2314,32 @@ export function RoomPageLiveKit() {
 
     const hasAnyAdminAction = (!!hostActions && (hasMuteMic || hasMuteCam || hasKick)) || canRoleManageTarget;
 
-    const thirdCenteredClass =
-      tileCount === 3 && idx === 2 ? "sm:col-span-2 sm:justify-self-center sm:w-[calc(50%-0.5rem)]" : "";
+    // ✅ Centering rules:
+    //  - 2-col layout (sm): if odd number of tiles -> last tile centered across 2 cols
+    //  - 3-col layout (xl): if remainder is 2 (e.g. 5 tiles -> 3 + 2) -> shift the first tile of last row to start at col 2
+    const isLonelyLastOn2Cols = tileCount >= 3 && tileCount % 2 === 1 && idx === tileCount - 1;
+    const lonelyCenter2ColCls = isLonelyLastOn2Cols ? "sm:col-span-2 sm:justify-self-center sm:w-[calc(50%-0.5rem)]" : "";
+
+    const uses3ColsOnXl = tileCount >= 5; // because your grid becomes xl:grid-cols-3 only for 5+
+    const isRemainder2On3Cols = uses3ColsOnXl && tileCount % 3 === 2;
+    const isFirstOfLastRowOn3Cols = isRemainder2On3Cols && idx === tileCount - 2;
+
+    // Put first tile of the last row into the middle column on xl (centers 2-tile last row visually)
+    const centerLastRow2TilesOnXlCls = isFirstOfLastRowOn3Cols ? "xl:col-start-2" : "";
+
+    const tilePosCls = [lonelyCenter2ColCls, centerLastRow2TilesOnXlCls].filter(Boolean).join(" ");
 
     return (
       <div
         key={t.id}
-        className={["relative group", thirdCenteredClass].join(" ")}
+        className={["relative group min-h-0 h-full", tilePosCls].join(" ")}
         onMouseLeave={() => {
           setOpenTileAdminMenuId((prev) => (prev === t.id ? null : prev));
         }}
       >
-        <VideoTile label={t.label} videoTrack={t.videoTrack} isLocal={t.isLocal} theme={theme} showBadge={getBadgeForTile(t)} hostActions={undefined} />
+        <div className="min-h-0 h-full">
+          <VideoTile label={t.label} videoTrack={t.videoTrack} isLocal={t.isLocal} theme={theme} showBadge={getBadgeForTile(t)} hostActions={undefined} />
+        </div>
 
         {hasAnyAdminAction && (
           <div className="absolute top-2 right-2 z-20" data-lk-admin-menu-anchor="true" onClick={(e) => e.stopPropagation()}>
@@ -2347,9 +2354,7 @@ export function RoomPageLiveKit() {
                 }}
                 className={[
                   "w-9 h-9 rounded-xl flex items-center justify-center transition shadow-sm",
-                  isLight
-                    ? "bg-white/90 border border-black/10 text-black/75 hover:bg-white"
-                    : "bg-black/55 border border-white/10 text-white/90 hover:bg-black/70",
+                  isLight ? "bg-white/90 border border-black/10 text-black/75 hover:bg-white" : "bg-black/55 border border-white/10 text-white/90 hover:bg-black/70",
                   isMenuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100",
                 ].join(" ")}
               >
@@ -2357,10 +2362,7 @@ export function RoomPageLiveKit() {
               </button>
 
               {isMenuOpen && (
-                <div
-                  className={`absolute right-0 top-[calc(100%+8px)] w-[210px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
-                    }`}
-                >
+                <div className={`absolute right-0 top-[calc(100%+8px)] w-[210px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}>
                   {canRoleManageTarget && (
                     <>
                       <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>Roles</div>
@@ -2375,8 +2377,7 @@ export function RoomPageLiveKit() {
                             await grantModerator(pidBase);
                             setOpenTileAdminMenuId(null);
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
-                            }`}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
                         >
                           Make moderator
                         </button>
@@ -2390,8 +2391,7 @@ export function RoomPageLiveKit() {
                             await revokeModerator(pidBase);
                             setOpenTileAdminMenuId(null);
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
-                            }`}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
                         >
                           Remove moderator
                         </button>
@@ -2411,8 +2411,7 @@ export function RoomPageLiveKit() {
                         await hostActions.onToggleMuteMic();
                         setOpenTileAdminMenuId(null);
                       }}
-                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
-                        }`}
+                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
                     >
                       {hostActions?.micMuted ? "Unmute Mic" : "Mute Mic"}
                     </button>
@@ -2428,8 +2427,7 @@ export function RoomPageLiveKit() {
                         await hostActions.onToggleMuteCam();
                         setOpenTileAdminMenuId(null);
                       }}
-                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
-                        }`}
+                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
                     >
                       {hostActions?.camMuted ? "Unmute Camera" : "Mute Camera"}
                     </button>
@@ -2447,8 +2445,7 @@ export function RoomPageLiveKit() {
                         await hostActions.onKick();
                         setOpenTileAdminMenuId(null);
                       }}
-                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-red-700 hover:bg-red-50" : "text-red-300 hover:bg-red-500/10"
-                        }`}
+                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-red-700 hover:bg-red-50" : "text-red-300 hover:bg-red-500/10"}`}
                     >
                       Kick participant
                     </button>
@@ -2464,32 +2461,56 @@ export function RoomPageLiveKit() {
 
   const videoContent = (
     <div className="w-full h-full min-h-0 relative">
+      <style>{`
+        @keyframes msReactionPop {
+          0% { transform: translateY(10px) scale(0.65); opacity: 0; filter: blur(1px); }
+          20% { transform: translateY(0px) scale(1.10); opacity: 1; filter: blur(0px); }
+          70% { transform: translateY(-18px) scale(1.02); opacity: 1; }
+          100% { transform: translateY(-28px) scale(0.95); opacity: 0; }
+        }
+
+        /* ✅ Hard kill scrollbars for 2..4 tiles layouts */
+        .msGridNoScroll { overflow: hidden !important; }
+        .msGridNoScroll::-webkit-scrollbar { width: 0 !important; height: 0 !important; }
+      `}</style>
+
       {roomReadyText ? (
         <div className={`absolute inset-0 flex items-center justify-center z-10 ${isLight ? "text-black/60" : "text-white/70"}`}>
-          <div className={`px-4 py-2 rounded-xl ${isLight ? "bg-white/70" : "bg-black/30"}`}>{roomReadyText}</div>
+          <div className={`px-4 py-2 rounded-xl ${isLight ? "bg-white/90 border border-black/10" : "bg-black/40 border border-white/10"}`}>{roomReadyText}</div>
         </div>
       ) : null}
 
       {tileCount === 1 ? (
-        <div className="h-full min-h-0 flex items-center justify-center p-2 sm:p-3">
-          <div className="w-full max-w-[860px]">{tilesForRender.map((t, idx) => renderTile(t, idx))}</div>
+        // ✅ single tile: fill available space, keep nice margins, no "tiny window" feeling
+        <div className="h-full min-h-0 w-full flex items-center justify-center p-2 sm:p-3 overflow-hidden">
+          <div className="h-full min-h-0 w-full max-w-none">
+            {tilesForRender.map((t, idx) => (
+              <div key={t.id} className="h-full min-h-0">
+                {renderTile(t, idx)}
+              </div>
+            ))}
+          </div>
         </div>
       ) : (
         <div
           className={[
-            "h-full min-h-0 overflow-auto p-2 sm:p-3 grid auto-rows-min items-start",
+            "h-full min-h-0 p-2 sm:p-3 grid min-w-0",
             gridColsClass,
             gridGapClass,
-            gridContentClass,
+            gridScrollCls,
+            gridBottomPadCls,
+            gridPlace,
           ].join(" ")}
+          style={
+            gridFitNoScroll
+              ? ({ gridAutoRows: "minmax(0, 1fr)" } as any) // ✅ key fix for “tiles increase height / scroll on 3-4”
+              : undefined
+          }
         >
           {tilesForRender.map((t, idx) => renderTile(t, idx))}
 
           {!tilesForRender.length && connected && (
-            <div
-              className={`col-span-full h-full min-h-[240px] rounded-2xl border flex items-center justify-center ${isLight ? "border-black/10 bg-black/5 text-black/60" : "border-white/10 bg-white/5 text-white/60"
-                }`}
-            >
+            <div className={`col-span-full h-full min-h-[240px] rounded-2xl border flex items-center justify-center ${isLight ? "border-black/10 bg-black/5 text-black/60" : "border-white/10 bg-white/5 text-white/60"}`}>
               No participants yet
             </div>
           )}
@@ -2502,8 +2523,12 @@ export function RoomPageLiveKit() {
             {localReactions.map((r) => (
               <div
                 key={r.id}
-                className="text-4xl sm:text-5xl animate-bounce select-none drop-shadow-2xl"
-                style={{ animationDuration: "700ms" }}
+                className="select-none drop-shadow-2xl"
+                style={{
+                  fontSize: "44px",
+                  lineHeight: "44px",
+                  animation: "msReactionPop 1200ms ease-out both",
+                }}
               >
                 {reactionEmoji[r.type]}
               </div>
@@ -2529,10 +2554,17 @@ export function RoomPageLiveKit() {
   const ChatPanelAny = ChatPanel as any;
 
   const RightPanelBody = (
-    <div className={`rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col ${panelBg} ${theme === "dark" ? "dark" : ""}`} data-theme={theme}>
+    <div
+      className={[
+        "rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col",
+        (isLgUp ? panelBg : panelBgSolid), // ✅ mobile panels are SOLID (fix “transparent participants/chat/intentions”)
+        theme === "dark" ? "dark" : "",
+      ].join(" ")}
+      data-theme={theme}
+    >
       {rightTab === "participants" && (
         <div className="h-full min-h-0 flex flex-col">
-          <div className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
+          <div className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/10"}`}>
             <div className="flex items-center gap-2">
               <span className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Participants</span>
               <span className={`${isLight ? "text-black/50" : "text-white/55"} text-sm`}>({participantsCount})</span>
@@ -2547,7 +2579,7 @@ export function RoomPageLiveKit() {
           </div>
 
           <div className="p-4">
-            <div className={`rounded-xl px-3 py-2 ${isLight ? "bg-black/5 border border-black/10" : "bg-[#0B1220]/70 border border-white/10"}`}>
+            <div className={`rounded-xl px-3 py-2 ${isLight ? "bg-black/5 border border-black/10" : "bg-[#020617]/40 border border-white/10"}`}>
               <input
                 value={participantsSearch}
                 onChange={(e) => setParticipantsSearch(e.target.value)}
@@ -2580,12 +2612,12 @@ export function RoomPageLiveKit() {
                     <div className="flex items-center gap-3 min-w-0">
                       <div
                         className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${p.isLocal
-                            ? isLight
-                              ? "bg-blue-500/15 text-blue-700"
-                              : "bg-emerald-500/80 text-[#02140B]"
-                            : isLight
-                              ? "bg-black/5 text-black/75"
-                              : "bg-white/10 text-white/85"
+                          ? isLight
+                            ? "bg-blue-500/15 text-blue-700"
+                            : "bg-emerald-500/80 text-[#02140B]"
+                          : isLight
+                            ? "bg-black/5 text-black/75"
+                            : "bg-white/10 text-white/85"
                           }`}
                       >
                         {initials}
@@ -2593,11 +2625,7 @@ export function RoomPageLiveKit() {
 
                       <div className="min-w-0">
                         <div className={`text-[13px] font-medium truncate ${isLight ? "text-black/85" : "text-white/90"}`}>{name}</div>
-
-                        <div className={`text-[11px] truncate ${isLight ? "text-black/45" : "text-white/45"}`}>
-                          {roleText}
-                          {(!p.isLocal && isMod) || (p.isLocal && isMod && !isHost) ? " • Moderator" : ""}
-                        </div>
+                        <div className={`text-[11px] truncate ${isLight ? "text-black/45" : "text-white/45"}`}>{roleText}</div>
                       </div>
                     </div>
 
@@ -2628,7 +2656,7 @@ export function RoomPageLiveKit() {
             </div>
           </div>
 
-          <div className={`p-3 border-t ${isLight ? "border-black/10" : "border-white/5"}`}>
+          <div className={`p-3 border-t ${isLight ? "border-black/10" : "border-white/10"}`}>
             <button
               onClick={() => { }}
               className={`w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 ${isLight ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
@@ -2643,7 +2671,7 @@ export function RoomPageLiveKit() {
 
       {rightTab === "chat" && (
         <div className="h-full min-h-0 flex flex-col">
-          <div className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
+          <div className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/10"}`}>
             <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Chat</div>
             <button
               onClick={() => openRightTab(null)}
@@ -2680,7 +2708,7 @@ export function RoomPageLiveKit() {
 
       {rightTab === "intentions" && (
         <div className="h-full min-h-0 flex flex-col">
-          <div className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
+          <div className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/10"}`}>
             <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Intentions</div>
             <button
               onClick={() => openRightTab(null)}
@@ -2754,9 +2782,7 @@ export function RoomPageLiveKit() {
                 {session.host_profile && (
                   <button
                     onClick={() => setSelectedUser(session.host_profile || null)}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition text-[13px] ${isLight
-                        ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                        : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition text-[13px] ${isLight ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75" : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                       }`}
                     title="Host profile"
                   >
@@ -2870,8 +2896,7 @@ export function RoomPageLiveKit() {
           >
             <div
               ref={videoWrapRef}
-              className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
-                }`}
+              className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"}`}
             >
               <LiveKitErrorBoundary
                 isLight={isLight}
@@ -3021,7 +3046,7 @@ export function RoomPageLiveKit() {
                   </button>
 
                   {showReactionsMenu && (
-                    <div className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}>
+                    <div className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex gap-2 text-2xl shadow-xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}>
                       {(["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown"] as ReactionType[]).map((t) => (
                         <button
                           key={t}
@@ -3029,7 +3054,7 @@ export function RoomPageLiveKit() {
                             handleSendReaction(t);
                             setShowReactionsMenu(false);
                           }}
-                          className="hover:scale-[1.06] transition"
+                          className="hover:scale-[1.08] active:scale-[0.98] transition"
                           title={t}
                         >
                           {reactionEmoji[t]}
