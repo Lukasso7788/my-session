@@ -105,14 +105,23 @@ type TileModel = {
   id: string;
   label: string;
   isLocal: boolean;
+
+  // camera
   videoTrack?: Track;
+
+  // screen-share (NEW)
+  screenTrack?: Track;
 
   participantIdentity?: string; // exact LK identity (may include tab suffix)
   participantUserId?: string; // extracted base UUID (if present)
+
   micTrackSid?: string;
   camTrackSid?: string;
+  screenTrackSid?: string; // NEW
+
   micMuted?: boolean;
   camMuted?: boolean;
+  screenMuted?: boolean; // NEW
 };
 
 type SessionRole = "moderator";
@@ -574,6 +583,83 @@ function useMediaQuery(query: string) {
   return matches;
 }
 
+// ---- Jitsi-style sizing + grid math (ported) ----
+function useElementSize<T extends HTMLElement>() {
+  const [node, setNode] = useState<T | null>(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+
+  const ref = (el: T | null) => setNode(el);
+
+  useEffect(() => {
+    if (!node) return;
+
+    const update = () => {
+      const r = node.getBoundingClientRect();
+      setSize({ width: Math.round(r.width), height: Math.round(r.height) });
+    };
+
+    update();
+
+    const RO: any = (window as any).ResizeObserver;
+    if (RO) {
+      const ro = new RO(() => update());
+      ro.observe(node);
+      return () => ro.disconnect();
+    }
+
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, [node]);
+
+  return { ref, width: size.width, height: size.height };
+}
+
+function computeCols(count: number, containerWidth: number) {
+  const w = containerWidth || 1200;
+  const isDesktop = w >= 1024;
+
+  if (count <= 1) return 1;
+  if (count === 2) return 2;
+  if (count === 4) return 2;
+
+  // 3 -> ALWAYS 2 cols on desktop (2+1)
+  if (count === 3 && isDesktop) return 2;
+
+  // 5–9 -> ALWAYS 3 cols on desktop
+  if (isDesktop && count >= 5 && count <= 9) return 3;
+
+  // fallback
+  if (count === 3) return 2;
+  if (count === 5) return w >= 900 ? 3 : 2;
+  if (count === 6) return w >= 780 ? 3 : 2;
+
+  return w >= 1400 ? 4 : 3;
+}
+
+function calcMaxGridWidthPx(params: {
+  containerWidth: number;
+  containerHeight: number;
+  cols: number;
+  rows: number;
+  gapPx: number;
+  paddingPx: number;
+  aspectHOverW: number; // 9/16
+}) {
+  const { containerWidth, containerHeight, cols, rows, gapPx, paddingPx, aspectHOverW } = params;
+  if (!containerWidth || !containerHeight) return null;
+
+  const availW = Math.max(0, containerWidth - paddingPx * 2);
+  const availH = Math.max(0, containerHeight - paddingPx * 2);
+
+  const byWidth = (availW - (cols - 1) * gapPx) / cols;
+  const byHeight = (availH - (rows - 1) * gapPx) / (rows * aspectHOverW);
+
+  const tileW = Math.max(0, Math.min(byWidth, byHeight));
+  const gridW = cols * tileW + (cols - 1) * gapPx;
+
+  return Math.min(availW, gridW);
+}
+
 // ---- ErrorBoundary ----
 class LiveKitErrorBoundary extends React.Component<
   { children: React.ReactNode; onReset: () => void; isLight: boolean },
@@ -664,6 +750,7 @@ export function RoomPageLiveKit() {
 
   const isLight = theme === "light";
   const isLgUp = useMediaQuery("(min-width: 1024px)");
+  const isMobileQuery = useMediaQuery("(max-width: 767px)");
 
   const pageBg = isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white";
   const topBarBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#111827]/40 border border-white/5";
@@ -1378,9 +1465,7 @@ export function RoomPageLiveKit() {
     setRolesLoading(true);
     try {
       const { data, error } = await supabase.from("session_role_assignments").select("user_id, role").eq("session_id", sessionId).eq("role", "moderator");
-
       if (error) throw error;
-
       const ids = uniqStrings((data || []).map((r: any) => String(r?.user_id || "")));
       setModeratorUserIds(ids);
     } catch (e: any) {
@@ -1703,13 +1788,15 @@ export function RoomPageLiveKit() {
     if (!room) return;
 
     const next: TileModel[] = [];
-
     const lp = room.localParticipant;
 
-    const localCamPub = Array.from(lp.videoTrackPublications.values()).find((p) => p.source === Track.Source.Camera) as any;
+    const localCamPub = Array.from(lp.videoTrackPublications.values()).find((p) => (p as any).source === Track.Source.Camera) as any;
     const localTrack = (localCamPub?.track as any) || undefined;
 
-    const localMicPub = Array.from(lp.audioTrackPublications.values()).find((p) => p.source === Track.Source.Microphone) as any;
+    const localScreenPub = Array.from(lp.videoTrackPublications.values()).find((p) => (p as any).source === Track.Source.ScreenShare) as any;
+    const localScreenTrack = (localScreenPub?.track as any) || undefined;
+
+    const localMicPub = Array.from(lp.audioTrackPublications.values()).find((p) => (p as any).source === Track.Source.Microphone) as any;
 
     const localIdentity = String(lp.identity || livekitIdentityRef.current || "");
     const localUserId =
@@ -1719,21 +1806,30 @@ export function RoomPageLiveKit() {
       id: "local",
       label: (displayName || userName || "You").trim() || "You",
       isLocal: true,
+
       videoTrack: localTrack,
+      screenTrack: localScreenTrack,
+
       participantIdentity: localIdentity || undefined,
       participantUserId: localUserId || undefined,
+
       micMuted: !!localMicPub?.isMuted || !micOn,
       camMuted: !localCamPub?.track || !!(localCamPub as any)?.isMuted || !camOn,
+
+      screenTrackSid: (localScreenPub as any)?.trackSid,
+      screenMuted: !!(localScreenPub as any)?.isMuted || !localScreenTrack,
     });
 
     room.remoteParticipants.forEach((rp: RemoteParticipant) => {
       const allVideoPubs = Array.from(rp.videoTrackPublications.values()) as RemoteTrackPublication[];
       const allAudioPubs = Array.from(rp.audioTrackPublications.values()) as RemoteAudioTrackPublication[];
 
-      const camPub = allVideoPubs.find((p: any) => p.source === Track.Source.Camera);
-      const micPub = allAudioPubs.find((p: any) => p.source === Track.Source.Microphone);
+      const camPub = allVideoPubs.find((p: any) => p.source === Track.Source.Camera) as any;
+      const screenPub = allVideoPubs.find((p: any) => p.source === Track.Source.ScreenShare) as any;
+      const micPub = allAudioPubs.find((p: any) => p.source === Track.Source.Microphone) as any;
 
       const vt = (camPub?.track as any) || undefined;
+      const st = (screenPub?.track as any) || undefined;
       const nm = (rp.name || rp.identity || "Guest").trim() || "Guest";
 
       const exactIdentity = String(rp.identity || "");
@@ -1743,21 +1839,28 @@ export function RoomPageLiveKit() {
         id: rp.sid,
         label: nm,
         isLocal: false,
+
         videoTrack: vt,
+        screenTrack: st,
+
         participantIdentity: exactIdentity || undefined,
         participantUserId: baseUserId || undefined,
+
         micTrackSid: micPub?.trackSid,
         camTrackSid: camPub?.trackSid,
+        screenTrackSid: screenPub?.trackSid,
+
         micMuted: !!(micPub as any)?.isMuted,
         camMuted: !!(camPub as any)?.isMuted || !vt,
+        screenMuted: !!(screenPub as any)?.isMuted || !st,
       });
     });
 
     setTiles(next);
 
     try {
-      const lpScreenPub = Array.from(lp.videoTrackPublications.values()).find((p: any) => p.source === Track.Source.ScreenShare) as any;
-      setScreenShareOn(!!lpScreenPub?.track && !lpScreenPub?.isMuted);
+      const lpScreenPub2 = Array.from(lp.videoTrackPublications.values()).find((p: any) => p.source === Track.Source.ScreenShare) as any;
+      setScreenShareOn(!!lpScreenPub2?.track && !lpScreenPub2?.isMuted);
     } catch {
       setScreenShareOn(false);
     }
@@ -2250,25 +2353,11 @@ export function RoomPageLiveKit() {
     };
   }, []);
 
+  // Jitsi-style size tracking for video area
+  const { ref: layoutRef, width: layoutW, height: layoutH } = useElementSize<HTMLDivElement>();
+
   const lastErr = tokenError || clientError;
-
-  // ---- grid helpers (fixes: 1 tile too big, 3rd tile centered, no height stretch, smaller gaps for 5+)
   const tileCount = tilesForRender.length;
-
-  const gridColsClass = useMemo(() => {
-    if (tileCount <= 1) return "grid-cols-1";
-    if (tileCount === 2) return "grid-cols-1 sm:grid-cols-2";
-    if (tileCount === 3) return "grid-cols-1 sm:grid-cols-2";
-    if (tileCount === 4) return "grid-cols-1 sm:grid-cols-2";
-    return "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3";
-  }, [tileCount]);
-
-  const gridGapClass = useMemo(() => {
-    if (tileCount >= 5) return "gap-1.5 sm:gap-2";
-    return "gap-2 sm:gap-3";
-  }, [tileCount]);
-
-  const gridContentClass = "place-content-start";
 
   const roomReadyText = !joinRequested ? "Waiting to join…" : tokenLoading ? "Preparing token…" : !connected ? "Connecting to LiveKit…" : "";
 
@@ -2318,13 +2407,10 @@ export function RoomPageLiveKit() {
 
     const hasAnyAdminAction = (!!hostActions && (hasMuteMic || hasMuteCam || hasKick)) || canRoleManageTarget;
 
-    const thirdCenteredClass =
-      tileCount === 3 && idx === 2 ? "sm:col-span-2 sm:justify-self-center sm:max-w-[560px] sm:w-full" : "";
-
     return (
       <div
         key={t.id}
-        className={["relative group", thirdCenteredClass].join(" ")}
+        className="relative group"
         onMouseLeave={() => {
           setOpenTileAdminMenuId((prev) => (prev === t.id ? null : prev));
         }}
@@ -2344,9 +2430,7 @@ export function RoomPageLiveKit() {
                 }}
                 className={[
                   "w-9 h-9 rounded-xl flex items-center justify-center transition shadow-sm",
-                  isLight
-                    ? "bg-white/90 border border-black/10 text-black/75 hover:bg-white"
-                    : "bg-black/55 border border-white/10 text-white/90 hover:bg-black/70",
+                  isLight ? "bg-white/90 border border-black/10 text-black/75 hover:bg-white" : "bg-black/55 border border-white/10 text-white/90 hover:bg-black/70",
                   isMenuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100",
                 ].join(" ")}
               >
@@ -2354,10 +2438,7 @@ export function RoomPageLiveKit() {
               </button>
 
               {isMenuOpen && (
-                <div
-                  className={`absolute right-0 top-[calc(100%+8px)] w-[210px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
-                    }`}
-                >
+                <div className={`absolute right-0 top-[calc(100%+8px)] w-[210px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}>
                   {canRoleManageTarget && (
                     <>
                       <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>Roles</div>
@@ -2372,8 +2453,7 @@ export function RoomPageLiveKit() {
                             await grantModerator(pidBase);
                             setOpenTileAdminMenuId(null);
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
-                            }`}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
                         >
                           Make moderator
                         </button>
@@ -2387,8 +2467,7 @@ export function RoomPageLiveKit() {
                             await revokeModerator(pidBase);
                             setOpenTileAdminMenuId(null);
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
-                            }`}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
                         >
                           Remove moderator
                         </button>
@@ -2408,8 +2487,7 @@ export function RoomPageLiveKit() {
                         await hostActions.onToggleMuteMic();
                         setOpenTileAdminMenuId(null);
                       }}
-                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
-                        }`}
+                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
                     >
                       {hostActions?.micMuted ? "Unmute Mic" : "Mute Mic"}
                     </button>
@@ -2425,8 +2503,7 @@ export function RoomPageLiveKit() {
                         await hostActions.onToggleMuteCam();
                         setOpenTileAdminMenuId(null);
                       }}
-                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
-                        }`}
+                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
                     >
                       {hostActions?.camMuted ? "Unmute Camera" : "Mute Camera"}
                     </button>
@@ -2444,8 +2521,7 @@ export function RoomPageLiveKit() {
                         await hostActions.onKick();
                         setOpenTileAdminMenuId(null);
                       }}
-                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-red-700 hover:bg-red-50" : "text-red-300 hover:bg-red-500/10"
-                        }`}
+                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-red-700 hover:bg-red-50" : "text-red-300 hover:bg-red-500/10"}`}
                     >
                       Kick participant
                     </button>
@@ -2459,58 +2535,200 @@ export function RoomPageLiveKit() {
     );
   };
 
+  // ---- LiveKit layout using Jitsi grid logic + LK screenshare (ported) ----
+  const LiveKitVideoLayout = () => {
+    const all = tilesForRender;
+
+    // pick first active screen sharer (local or remote)
+    const screenSharer = all.find((t) => !!t.screenTrack && !t.screenMuted) || null;
+    const others = screenSharer ? all.filter((t) => t.id !== screenSharer.id) : all;
+
+    const count = others.length || 0;
+
+    const paddingPx = layoutW && layoutW < 520 ? 8 : 10;
+    const gapPx = layoutW && layoutW < 520 ? 6 : 10;
+
+    const effectiveW = layoutW || (typeof window !== "undefined" ? window.innerWidth : 1200);
+    const effectiveH = layoutH || (typeof window !== "undefined" ? window.innerHeight : 800);
+
+    const isCompact = effectiveW < 900;
+
+    // Screenshare layout
+    if (screenSharer) {
+      const screenLabel = screenSharer.isLocal ? `${screenSharer.label || "You"} (screen)` : `${screenSharer.label || "Guest"} (screen)`;
+
+      if (isMobileQuery || isCompact) {
+        // mobile/compact: screen on top, others below
+        return (
+          <div className="w-full h-full min-h-0 overflow-y-auto p-2" style={{ paddingBottom: 12 }}>
+            <div className={`w-full relative overflow-hidden rounded-2xl ${isLight ? "bg-white ring-1 ring-black/10" : "bg-[#0B1220] ring-1 ring-white/10"}`} style={{ aspectRatio: "16 / 9" }}>
+              <div className="absolute inset-0">
+                <VideoTile label={screenLabel} videoTrack={screenSharer.screenTrack} isLocal={screenSharer.isLocal} theme={theme} showBadge={getBadgeForTile(screenSharer)} hostActions={undefined} />
+              </div>
+            </div>
+
+            <div className="mt-2 flex flex-col gap-2">
+              {others.map((t, idx) => (
+                <div key={t.id}>{renderTile(t, idx)}</div>
+              ))}
+            </div>
+          </div>
+        );
+      }
+
+      // desktop: big screen + right column
+      return (
+        <div className="relative w-full h-full min-h-0 flex flex-row gap-3 p-3 overflow-hidden">
+          <div className={`relative flex-1 overflow-hidden rounded-2xl ${isLight ? "bg-white ring-1 ring-black/10" : "bg-[#0B1220] ring-1 ring-white/10"} min-h-0`}>
+            <VideoTile label={screenLabel} videoTrack={screenSharer.screenTrack} isLocal={screenSharer.isLocal} theme={theme} showBadge={getBadgeForTile(screenSharer)} hostActions={undefined} />
+          </div>
+
+          <div className="flex flex-col gap-3 w-56 min-h-0 overflow-y-auto">
+            {others.map((t, idx) => (
+              <div key={t.id} className="w-full">
+                {renderTile(t, idx)}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // No tiles
+    if (!count) {
+      return connected ? (
+        <div className="h-full min-h-0 flex items-center justify-center p-3">
+          <div className={`w-full max-w-[860px] min-h-[240px] rounded-2xl border flex items-center justify-center ${isLight ? "border-black/10 bg-black/5 text-black/60" : "border-white/10 bg-white/5 text-white/60"}`}>
+            No participants yet
+          </div>
+        </div>
+      ) : null;
+    }
+
+    // Single tile
+    if (count === 1) {
+      return (
+        <div className="h-full min-h-0 flex items-center justify-center p-2 sm:p-3">
+          <div className="w-full max-w-[860px]">{others.map((t, idx) => renderTile(t, idx))}</div>
+        </div>
+      );
+    }
+
+    // Two tiles (P2P)
+    if (count === 2) {
+      const cols = 2;
+      const rows = 1;
+
+      const maxGridWidth = calcMaxGridWidthPx({
+        containerWidth: effectiveW,
+        containerHeight: effectiveH,
+        cols,
+        rows,
+        gapPx,
+        paddingPx,
+        aspectHOverW: 9 / 16,
+      });
+
+      return (
+        <div className="w-full h-full min-h-0 overflow-hidden flex justify-center items-center" style={{ padding: paddingPx }}>
+          <div
+            className="w-full grid"
+            style={{
+              gap: gapPx,
+              maxWidth: maxGridWidth ? `${maxGridWidth}px` : undefined,
+              gridTemplateColumns: "1fr 1fr",
+              alignContent: "center",
+            }}
+          >
+            {others.map((t, idx) => (
+              <div key={t.id}>{renderTile(t, idx)}</div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // Grid (>=3) — Jitsi-style
+    const cols = computeCols(count, effectiveW);
+    const rows = Math.ceil(count / cols);
+
+    const maxGridWidth = calcMaxGridWidthPx({
+      containerWidth: effectiveW,
+      containerHeight: effectiveH,
+      cols,
+      rows,
+      gapPx,
+      paddingPx,
+      aspectHOverW: 9 / 16,
+    });
+
+    const shouldCenterY = (() => {
+      const availW = Math.max(0, effectiveW - paddingPx * 2);
+      const availH = Math.max(0, effectiveH - paddingPx * 2);
+      if (availW <= 0 || availH <= 0) return false;
+
+      const byWidth = (availW - (cols - 1) * gapPx) / cols;
+      const byHeight = (availH - (rows - 1) * gapPx) / (rows * (9 / 16));
+
+      const tileW = Math.max(0, Math.min(byWidth, byHeight));
+      const tileH = tileW * (9 / 16);
+      const gridH = rows * tileH + (rows - 1) * gapPx;
+
+      return gridH > 0 && gridH <= availH - 4;
+    })();
+
+    const remainder = cols > 0 ? count % cols : 0;
+    const fullCount = remainder === 0 ? count : count - remainder;
+
+    const fullRows = others.slice(0, fullCount);
+    const lastRow = others.slice(fullCount);
+
+    const oneColWidth = `calc((100% - ${(cols - 1) * gapPx}px) / ${cols})`;
+
+    return (
+      <div className={"w-full h-full min-h-0 overflow-y-auto flex justify-center " + (shouldCenterY ? "items-center" : "items-start")} style={{ padding: paddingPx }}>
+        <div
+          className="w-full grid"
+          style={{
+            gap: gapPx,
+            maxWidth: maxGridWidth ? `${maxGridWidth}px` : undefined,
+            gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+            alignContent: shouldCenterY ? "center" : "start",
+          }}
+        >
+          {fullRows.map((t, idx) => (
+            <div key={t.id}>{renderTile(t, idx)}</div>
+          ))}
+
+          {lastRow.length > 0 && (
+            <div className="col-span-full w-full flex justify-center" style={{ gap: gapPx, alignItems: shouldCenterY ? "center" : "flex-start" }}>
+              {lastRow.map((t, idx) => (
+                <div key={t.id} className="shrink-0" style={{ width: oneColWidth }}>
+                  {renderTile(t, fullCount + idx)}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const videoContent = (
-    <div className="w-full h-full min-h-0 relative">
+    <div ref={layoutRef} className="w-full h-full min-h-0 relative">
       {roomReadyText ? (
         <div className={`absolute inset-0 flex items-center justify-center z-10 ${isLight ? "text-black/60" : "text-white/70"}`}>
           <div className={`px-4 py-2 rounded-xl ${isLight ? "bg-white/70" : "bg-black/30"}`}>{roomReadyText}</div>
         </div>
       ) : null}
 
-      {tileCount === 1 ? (
-        <div className="h-full min-h-0 flex items-center justify-center p-2 sm:p-3">
-          <div className="w-full max-w-[860px]">{tilesForRender.map((t, idx) => renderTile(t, idx))}</div>
-        </div>
-      ) : (
-        <div className="h-full min-h-0 overflow-auto p-2 sm:p-3">
-          <div
-            className={[
-              // важно: min-h-full делает внутреннюю область минимум высотой контейнера,
-              // и мы центрируем внутри неё — без “минусового скролла”
-              "min-h-full w-full grid auto-rows-min",
-              gridColsClass,
-              gridGapClass,
-
-              // центрируем весь блок тайлов по вертикали/горизонтали
-              "place-content-center",
-
-              // но items пусть стартуют нормально (чтобы не было странных stretch)
-              "items-start",
-            ].join(" ")}
-          >
-            {tilesForRender.map((t, idx) => renderTile(t, idx))}
-
-            {!tilesForRender.length && connected && (
-              <div
-                className={`col-span-full h-full min-h-[240px] rounded-2xl border flex items-center justify-center ${isLight ? "border-black/10 bg-black/5 text-black/60" : "border-white/10 bg-white/5 text-white/60"
-                  }`}
-              >
-                No participants yet
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      <LiveKitVideoLayout />
 
       {localReactions.length > 0 && (
         <div className="pointer-events-none absolute inset-0 z-20 flex items-end justify-center pb-20 sm:pb-24">
           <div className="flex items-center gap-2">
             {localReactions.map((r) => (
-              <div
-                key={r.id}
-                className="text-4xl sm:text-5xl animate-bounce select-none drop-shadow-2xl"
-                style={{ animationDuration: "700ms" }}
-              >
+              <div key={r.id} className="text-4xl sm:text-5xl animate-bounce select-none drop-shadow-2xl" style={{ animationDuration: "700ms" }}>
                 {reactionEmoji[r.type]}
               </div>
             ))}
@@ -2876,8 +3094,7 @@ export function RoomPageLiveKit() {
           >
             <div
               ref={videoWrapRef}
-              className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
-                }`}
+              className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"}`}
             >
               <LiveKitErrorBoundary
                 isLight={isLight}
@@ -2893,9 +3110,7 @@ export function RoomPageLiveKit() {
               </LiveKitErrorBoundary>
 
               {lastErr && (
-                <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow z-30 max-w-[80%] break-words">
-                  {lastErr}
-                </div>
+                <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow z-30 max-w-[80%] break-words">{lastErr}</div>
               )}
             </div>
 
