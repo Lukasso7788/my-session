@@ -625,7 +625,6 @@ function useElementSizeStable<T extends HTMLElement>(thresholdPx = 2) {
   return { ref, width: size.width, height: size.height };
 }
 
-// Keep your “good sizing” math
 function computeCols(count: number, containerWidth: number) {
   const w = containerWidth || 1200;
   const isDesktop = w >= 1024;
@@ -633,14 +632,9 @@ function computeCols(count: number, containerWidth: number) {
   if (count <= 1) return 1;
   if (count === 2) return 2;
   if (count === 4) return 2;
-
-  // 3 -> 2 cols on desktop (2+1)
   if (count === 3 && isDesktop) return 2;
-
-  // 5–9 -> 3 cols on desktop
   if (isDesktop && count >= 5 && count <= 9) return 3;
 
-  // fallback
   if (count === 3) return 2;
   if (count === 5) return w >= 900 ? 3 : 2;
   if (count === 6) return w >= 780 ? 3 : 2;
@@ -715,6 +709,50 @@ class LiveKitErrorBoundary extends React.Component<
 const LK_CAPTURE_WIDTH = 960;
 const LK_CAPTURE_HEIGHT = 540;
 const LK_CAPTURE_FPS = 24;
+
+// ---- FX hardening helpers (prevents hangs + data-url bg issues) ----
+function withTimeout<T>(p: Promise<T>, ms: number, label = "operation"): Promise<T> {
+  let t: any = null;
+  const timeout = new Promise<T>((_, rej) => {
+    t = setTimeout(() => rej(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => {
+    if (t) clearTimeout(t);
+  }) as Promise<T>;
+}
+
+function isDataImageUrl(u: string) {
+  return typeof u === "string" && u.startsWith("data:image/");
+}
+
+function dataUrlToBlobUrl(dataUrl: string): string | null {
+  try {
+    const comma = dataUrl.indexOf(",");
+    if (comma < 0) return null;
+    const meta = dataUrl.slice(0, comma);
+    const data = dataUrl.slice(comma + 1);
+
+    const isBase64 = /;base64/i.test(meta);
+    const mimeMatch = meta.match(/^data:([^;]+)(;|$)/i);
+    const mime = mimeMatch?.[1] || "application/octet-stream";
+
+    let bytes: Uint8Array;
+
+    if (isBase64) {
+      const bin = atob(data);
+      bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    } else {
+      const decoded = decodeURIComponent(data);
+      bytes = new TextEncoder().encode(decoded);
+    }
+
+    const blob = new Blob([bytes], { type: mime });
+    return URL.createObjectURL(blob);
+  } catch {
+    return null;
+  }
+}
 
 // ---- MAIN ----
 export function RoomPageLiveKit() {
@@ -1253,7 +1291,7 @@ export function RoomPageLiveKit() {
 
   const uploadedBgUrlRef = useRef<string | null>(null);
 
-  // stable processors (do NOT recreate pipelines on every toggle)
+  // stable processors
   const prejoinFxProcessorRef = useRef<BgProc | null>(null);
   const prejoinFxAttachedTrackIdRef = useRef<string>("");
 
@@ -1262,13 +1300,45 @@ export function RoomPageLiveKit() {
 
   const fxSwitchDebounceRef = useRef<number | null>(null);
 
+  // prevent overlapping FX calls (this was a major hang trigger)
+  const fxApplySeqRef = useRef<number>(0);
+
+  // cache blob URLs for data: backgrounds (data url fetch inside processor can be flaky)
+  const resolvedBgUrlCacheRef = useRef<Map<string, string>>(new Map());
+
+  const resolveBgUrl = (u: string) => {
+    const raw = String(u || "").trim();
+    if (!raw) return raw;
+
+    if (!isDataImageUrl(raw)) return raw;
+
+    const cached = resolvedBgUrlCacheRef.current.get(raw);
+    if (cached) return cached;
+
+    const blobUrl = dataUrlToBlobUrl(raw);
+    if (!blobUrl) return raw;
+    resolvedBgUrlCacheRef.current.set(raw, blobUrl);
+    return blobUrl;
+  };
+
+  const cleanupResolvedBgUrls = () => {
+    try {
+      for (const [, v] of resolvedBgUrlCacheRef.current.entries()) {
+        try {
+          URL.revokeObjectURL(v);
+        } catch { }
+      }
+      resolvedBgUrlCacheRef.current.clear();
+    } catch { }
+  };
+
   const ensureFxSupportedOrThrow = () => {
     if (!supportsBackgroundProcessors()) {
       throw new Error("Background processors are not supported in this browser/device");
     }
     try {
       if (supportsModernBackgroundProcessors()) {
-        // hint only
+        // just a hint; nothing required here
       }
     } catch { }
   };
@@ -1282,24 +1352,32 @@ export function RoomPageLiveKit() {
     }
   };
 
+  // IMPORTANT FIX:
+  // Do NOT pass showProcessedStreamLocally/options into setProcessor. It can break depending on LK client version
+  // and can lead to "black preview + tab freeze" in some builds.
   const ensureProcessorAttached = async (
     track: LocalVideoTrack,
     processorRef: React.MutableRefObject<BgProc | null>,
-    attachedIdRef: React.MutableRefObject<string>,
-    showProcessedStreamLocally: boolean
+    attachedIdRef: React.MutableRefObject<string>
   ) => {
     const tid = getTrackStableId(track as any);
+
     if (!processorRef.current) {
       processorRef.current = BackgroundProcessor({ mode: "disabled" } as any);
     }
+
     if (tid && attachedIdRef.current === tid) return;
 
-    try {
-      await (track as any).setProcessor(processorRef.current, { showProcessedStreamLocally });
-    } catch {
-      await (track as any).setProcessor(processorRef.current, showProcessedStreamLocally as any);
-    }
+    await withTimeout((track as any).setProcessor(processorRef.current), 7000, "setProcessor");
     attachedIdRef.current = tid;
+  };
+
+  const safeStopProcessor = async (track: LocalVideoTrack) => {
+    try {
+      await withTimeout((track as any).stopProcessor?.() ?? Promise.resolve(), 5000, "stopProcessor");
+    } catch {
+      // ignore
+    }
   };
 
   const switchProcessorMode = async (processor: BgProc, mode: FxMode, blur: number, bgUrl: string) => {
@@ -1309,16 +1387,16 @@ export function RoomPageLiveKit() {
     }
 
     if (mode === "off") {
-      await p.switchTo({ mode: "disabled" });
+      await withTimeout(p.switchTo({ mode: "disabled" }), 8000, "switchTo(disabled)");
       return;
     }
 
     if (mode === "blur") {
-      await p.switchTo({ mode: "background-blur", blurRadius: blur });
+      await withTimeout(p.switchTo({ mode: "background-blur", blurRadius: blur }), 12000, "switchTo(blur)");
       return;
     }
 
-    await p.switchTo({ mode: "virtual-background", imagePath: bgUrl });
+    await withTimeout(p.switchTo({ mode: "virtual-background", imagePath: bgUrl }), 15000, "switchTo(bg)");
   };
 
   const scheduleFxApply = (fn: () => void, ms = 220) => {
@@ -1332,6 +1410,10 @@ export function RoomPageLiveKit() {
     prejoinPreparedVideoTrackRef.current = null;
 
     if (!t) return;
+
+    try {
+      await safeStopProcessor(t as any);
+    } catch { }
 
     try {
       t.stop?.();
@@ -1360,6 +1442,10 @@ export function RoomPageLiveKit() {
   };
 
   const applyPrejoinVideoFx = async (mode: FxMode) => {
+    if (fxApplying) return;
+
+    const seq = ++fxApplySeqRef.current;
+
     setFxError("");
     setFxApplying(true);
     setFxStatusText("");
@@ -1374,15 +1460,53 @@ export function RoomPageLiveKit() {
 
       ensureFxSupportedOrThrow();
 
-      await ensureProcessorAttached(track, prejoinFxProcessorRef, prejoinFxAttachedTrackIdRef, true);
-      await switchProcessorMode(prejoinFxProcessorRef.current!, mode, blurStrength, bgImageUrl);
+      // OFF should *stopProcessor* (more stable than switchTo disabled for your case)
+      if (mode === "off") {
+        await safeStopProcessor(track);
+        if (seq !== fxApplySeqRef.current) return;
+
+        prejoinFxAttachedTrackIdRef.current = "";
+        prejoinFxProcessorRef.current = null;
+
+        setVideoFxMode("off");
+        setFxStatusText("FX disabled");
+        setPrejoinPreviewVersion((v) => v + 1);
+        return;
+      }
+
+      // For blur/bg:
+      // 1) attach processor ONCE (no extra options)
+      // 2) switchTo desired mode with timeouts
+      await ensureProcessorAttached(track, prejoinFxProcessorRef, prejoinFxAttachedTrackIdRef);
+
+      const bgResolved = resolveBgUrl(bgImageUrl);
+      await switchProcessorMode(prejoinFxProcessorRef.current!, mode, blurStrength, bgResolved);
+
+      if (seq !== fxApplySeqRef.current) return;
 
       setVideoFxMode(mode);
-      setFxStatusText(mode === "off" ? "FX disabled" : mode === "blur" ? `Blur applied (${blurStrength})` : "Virtual background applied");
+      setFxStatusText(mode === "blur" ? `Blur applied (${blurStrength})` : "Virtual background applied");
       setPrejoinPreviewVersion((v) => v + 1);
     } catch (e: any) {
       console.error("applyPrejoinVideoFx failed:", e);
+
+      // Hard recovery: stop processor and recreate preview track (prevents “black preview + modal freeze” loop)
+      try {
+        const tr = prejoinPreparedVideoTrackRef.current;
+        if (tr) await safeStopProcessor(tr);
+      } catch { }
+
+      try {
+        await createPrejoinPreparedVideoTrack();
+      } catch { }
+
+      prejoinFxAttachedTrackIdRef.current = "";
+      prejoinFxProcessorRef.current = null;
+
+      setVideoFxMode("off");
       setFxError(String(e?.message || e || "prejoin_video_fx_failed"));
+      setFxStatusText("");
+      setPrejoinPreviewVersion((v) => v + 1);
     } finally {
       setFxApplying(false);
     }
@@ -1789,7 +1913,7 @@ export function RoomPageLiveKit() {
     return safeRoomName(`session-${session.id}`);
   }, [session]);
 
-  // IMPORTANT: rebuildTiles stays simple and stable (no screenshare tiles, no re-mount tricks)
+  // IMPORTANT: rebuildTiles stays simple and stable
   const rebuildTiles = () => {
     const room = roomRef.current;
     if (!room) return;
@@ -1880,6 +2004,7 @@ export function RoomPageLiveKit() {
 
       releaseTabPresence();
       inRoomFxAttachedTrackIdRef.current = "";
+      inRoomFxProcessorRef.current = null;
     }
   };
 
@@ -1915,6 +2040,7 @@ export function RoomPageLiveKit() {
 
         releaseTabPresence();
         inRoomFxAttachedTrackIdRef.current = "";
+        inRoomFxProcessorRef.current = null;
       });
 
       r.on(RoomEvent.Reconnected, refresh);
@@ -1946,13 +2072,13 @@ export function RoomPageLiveKit() {
           await r.localParticipant.publishTrack(prepared, { source: Track.Source.Camera } as any);
           setCamOn(true);
 
-          if (prejoinFxProcessorRef.current) {
-            inRoomFxProcessorRef.current = prejoinFxProcessorRef.current;
-          }
+          // IMPORTANT: do not “share” processor objects across contexts unless already attached on that track
+          // We'll (re)attach on demand in applyVideoFx anyway.
           inRoomFxAttachedTrackIdRef.current = getTrackStableId(prepared as any);
 
           prejoinPreparedVideoTrackRef.current = null;
           prejoinFxAttachedTrackIdRef.current = "";
+          prejoinFxProcessorRef.current = null;
         } else {
           await r.localParticipant.setCameraEnabled(
             true,
@@ -1974,10 +2100,11 @@ export function RoomPageLiveKit() {
       setPrejoinOpen(false);
       setPrejoinPreviewVersion((v) => v + 1);
 
+      // Re-apply FX in-room (safe + debounced)
       if (pj.videoEnabled && videoFxMode !== "off") {
         scheduleFxApply(() => {
           applyVideoFx(videoFxMode).catch(() => { });
-        }, 80);
+        }, 120);
       }
     } catch (e: any) {
       console.error("LiveKit connect failed:", e);
@@ -2003,6 +2130,7 @@ export function RoomPageLiveKit() {
           URL.revokeObjectURL(uploadedBgUrlRef.current);
         } catch { }
       }
+      cleanupResolvedBgUrls();
       stopWelcomeLoop();
       releaseTabPresence();
 
@@ -2066,14 +2194,15 @@ export function RoomPageLiveKit() {
       if (next) {
         scheduleFxApply(() => {
           if (videoFxMode !== "off") applyVideoFx(videoFxMode).catch(() => { });
-        }, 140);
+        }, 180);
       } else {
         try {
-          if (inRoomFxProcessorRef.current) {
-            await switchProcessorMode(inRoomFxProcessorRef.current, "off", blurStrength, bgImageUrl);
-          }
+          const tr = getLocalCameraTrack();
+          if (tr) await safeStopProcessor(tr);
         } catch { }
         inRoomFxAttachedTrackIdRef.current = "";
+        inRoomFxProcessorRef.current = null;
+        setVideoFxMode("off");
         setFxStatusText("");
         setFxError("");
       }
@@ -2164,10 +2293,13 @@ export function RoomPageLiveKit() {
     }
   };
 
-  // ---- FX APPLY (stable: attach once + switchTo)
+  // ---- FX APPLY (hardened: no hangs, no data-url issues, no setProcessor options) ----
   const applyVideoFx = async (mode: FxMode) => {
     const r = roomRef.current;
     if (!r) return;
+    if (fxApplying) return;
+
+    const seq = ++fxApplySeqRef.current;
 
     setFxError("");
     setFxApplying(true);
@@ -2181,18 +2313,41 @@ export function RoomPageLiveKit() {
 
       ensureFxSupportedOrThrow();
 
-      // NOTE: keep this as TRUE, but DO NOT cause layout loops.
-      await ensureProcessorAttached(tr, inRoomFxProcessorRef, inRoomFxAttachedTrackIdRef, true);
-      await switchProcessorMode(inRoomFxProcessorRef.current!, mode, blurStrength, bgImageUrl);
+      if (mode === "off") {
+        await safeStopProcessor(tr);
+        if (seq !== fxApplySeqRef.current) return;
+
+        inRoomFxAttachedTrackIdRef.current = "";
+        inRoomFxProcessorRef.current = null;
+
+        setVideoFxMode("off");
+        setFxStatusText("FX disabled");
+        return;
+      }
+
+      await ensureProcessorAttached(tr, inRoomFxProcessorRef, inRoomFxAttachedTrackIdRef);
+
+      const bgResolved = resolveBgUrl(bgImageUrl);
+      await switchProcessorMode(inRoomFxProcessorRef.current!, mode, blurStrength, bgResolved);
+
+      if (seq !== fxApplySeqRef.current) return;
 
       setVideoFxMode(mode);
-      setFxStatusText(mode === "off" ? "FX disabled" : mode === "blur" ? `Blur applied (strength ${blurStrength})` : "Virtual background applied");
-
-      // IMPORTANT: no rebuildTiles() here. It was a big source of re-render thrash during FX.
-      // Tiles will refresh on LK events anyway; local tile shows processed track automatically.
-      await delay(50);
+      setFxStatusText(mode === "blur" ? `Blur applied (strength ${blurStrength})` : "Virtual background applied");
     } catch (e: any) {
       console.error("applyVideoFx failed:", e);
+
+      // recovery: stop processor and return to OFF (prevents “room freezes”)
+      try {
+        const tr = getLocalCameraTrack();
+        if (tr) await safeStopProcessor(tr);
+      } catch { }
+
+      inRoomFxAttachedTrackIdRef.current = "";
+      inRoomFxProcessorRef.current = null;
+
+      setVideoFxMode("off");
+      setFxStatusText("");
       setFxError(String(e?.message || e || "video_fx_failed"));
     } finally {
       setFxApplying(false);
@@ -2394,7 +2549,7 @@ export function RoomPageLiveKit() {
     return null;
   };
 
-  const renderTile = (t: TileModel, idx: number) => {
+  const renderTile = (t: TileModel) => {
     const hostActions = getTileHostActions(t);
     const isMenuOpen = openTileAdminMenuId === t.id;
     const hasMuteMic = !!hostActions?.canMuteMic && !!hostActions?.onToggleMuteMic;
@@ -2536,13 +2691,6 @@ export function RoomPageLiveKit() {
     );
   };
 
-  // reactions overlay
-  const [showReactionsMenu2, setShowReactionsMenu2] = useState(false);
-  useEffect(() => {
-    if (showReactionsMenu2) setShowReactionsMenu(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showReactionsMenu2]);
-
   const videoContent = (
     <div ref={layoutRef} className="w-full h-full min-h-0 relative">
       {roomReadyText ? (
@@ -2553,7 +2701,7 @@ export function RoomPageLiveKit() {
 
       {tileCount === 1 ? (
         <div className="h-full min-h-0 flex items-center justify-center p-2 sm:p-3">
-          <div className="w-full max-w-[860px]">{tilesForRender.map((t, idx) => renderTile(t, idx))}</div>
+          <div className="w-full max-w-[860px]">{tilesForRender.map((t) => renderTile(t))}</div>
         </div>
       ) : (
         <div className="h-full min-h-0 overflow-auto" style={{ padding: paddingPx }}>
@@ -2571,15 +2719,15 @@ export function RoomPageLiveKit() {
                   gridTemplateColumns: `repeat(${gridCols || 1}, minmax(0, 1fr))`,
                 }}
               >
-                {fullRowsTiles.map((t, idx) => (
-                  <div key={t.id}>{renderTile(t, idx)}</div>
+                {fullRowsTiles.map((t) => (
+                  <div key={t.id}>{renderTile(t)}</div>
                 ))}
 
                 {lastRowTiles.length > 0 && (
                   <div className="col-span-full w-full flex justify-center" style={{ gap: gapPx }}>
-                    {lastRowTiles.map((t, idx) => (
+                    {lastRowTiles.map((t) => (
                       <div key={t.id} className="shrink-0" style={{ width: oneColWidth }}>
-                        {renderTile(t, fullCount + idx)}
+                        {renderTile(t)}
                       </div>
                     ))}
                   </div>
@@ -2967,10 +3115,7 @@ export function RoomPageLiveKit() {
               (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),380px] xl:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
             }
           >
-            <div
-              className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
-                }`}
-            >
+            <div className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"}`}>
               <LiveKitErrorBoundary
                 isLight={isLight}
                 onReset={() => {
