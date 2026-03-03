@@ -1,5 +1,4 @@
-// src/pages/RoomPageLiveKit.tsx
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   Room,
@@ -22,20 +21,20 @@ import {
 } from "@livekit/track-processors";
 
 import { supabase } from "../lib/supabase";
-import ChatPanel from "../components/ChatPanel";
-import { IntentionsPanel } from "../components/IntentionsPanel";
-import { SessionStageBar } from "../components/SessionStageBar";
 import { UserProfileModal } from "../components/UserProfileModal";
 import { PreJoinModal } from "./LiveKit/PreJoinModalLiveKit";
 import { RoomSettingsModalLiveKit } from "./LiveKit/RoomSettingsModalLiveKit";
 import { VideoTile } from "./LiveKit/VideoTileLiveKit";
 import { RemoteAudioRenderer } from "./LiveKit/RemoteAudioRendererLiveKit";
 
-type RoomTheme = "dark" | "light";
-type RightPanelTab = "participants" | "chat" | "intentions" | null;
-type FxMode = "off" | "blur" | "bg";
+import { useElementSize, GridLayoutSizing, P2PLayoutSizing, MobileFillLayoutSizing, MobileStackLayoutSizing } from "./LiveKit/sizing";
 
-type ReactionType = "fire" | "laugh" | "clap" | "heart" | "thumbsUp" | "thumbsDown";
+import { LiveKitBottomBar } from "./LiveKit/LiveKitBottomBar";
+import { LiveKitRightPanel } from "./LiveKit/LiveKitRightPanel";
+import { LiveKitTopBar } from "./LiveKit/LiveKitTopBar";
+import { LiveKitErrorBoundary, RightPanelTab, RoomTheme, useMediaQuery } from "./LiveKit/LiveKitUI";
+
+type FxMode = "off" | "blur" | "bg";
 
 type HostProfile = {
   id: string;
@@ -111,8 +110,8 @@ type TileModel = {
   isLocal: boolean;
   videoTrack?: Track;
 
-  participantIdentity?: string; // exact LK identity (may include tab suffix)
-  participantUserId?: string; // extracted base UUID (if present)
+  participantIdentity?: string;
+  participantUserId?: string;
   micTrackSid?: string;
   camTrackSid?: string;
   micMuted?: boolean;
@@ -471,424 +470,6 @@ const FX_BG_PRESETS = [
   { id: "sunset", label: "Sunset", url: makeBgPresetDataUrl("#1c0d10", "#7c2d12", "#11070a", "#fb7185") },
 ];
 
-function Icon({
-  name,
-  theme,
-  className = "w-5 h-5",
-  alt = "",
-}: {
-  name:
-  | "mic-on"
-  | "mic-off"
-  | "camera-on"
-  | "camera-off"
-  | "screen-share"
-  | "reaction"
-  | "leave"
-  | "participants"
-  | "chat"
-  | "intentions"
-  | "settings"
-  | "theme-sun"
-  | "theme-moon"
-  | "timer";
-  theme: RoomTheme;
-  className?: string;
-  alt?: string;
-}) {
-  const themedSrc = `/icons/${name}-${theme}.svg`;
-  const fallbackSrc = `/icons/${name}.svg`;
-  const [src, setSrc] = useState(themedSrc);
-
-  useEffect(() => {
-    setSrc(themedSrc);
-  }, [themedSrc]);
-
-  return (
-    <img
-      src={src}
-      onError={() => {
-        if (src !== fallbackSrc) setSrc(fallbackSrc);
-      }}
-      className={className}
-      alt={alt}
-      draggable={false}
-    />
-  );
-}
-
-function ParticipantsSmartIcon({ theme, className = "w-4 h-4" }: { theme: RoomTheme; className?: string }) {
-  return <Icon name="participants" theme={theme} className={className} alt="" />;
-}
-
-const reactionEmoji: Record<ReactionType, string> = {
-  fire: "🔥",
-  laugh: "😂",
-  clap: "👏",
-  heart: "❤️",
-  thumbsUp: "👍",
-  thumbsDown: "👎",
-};
-
-function useMediaQuery(query: string) {
-  const [matches, setMatches] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return;
-    const mql = window.matchMedia(query);
-    const onChange = () => setMatches(!!mql.matches);
-    onChange();
-
-    try {
-      mql.addEventListener("change", onChange);
-      return () => mql.removeEventListener("change", onChange);
-    } catch {
-      // @ts-ignore
-      mql.addListener(onChange);
-      // @ts-ignore
-      return () => mql.removeListener(onChange);
-    }
-  }, [query]);
-
-  return matches;
-}
-
-// ----------------------- SIZING (ported from VideoRoom, ONLY sizing) -----------------------
-function useElementSize<T extends HTMLElement>() {
-  const [node, setNode] = useState<T | null>(null);
-  const [size, setSize] = useState({ width: 0, height: 0 });
-
-  const ref = useCallback((el: T | null) => {
-    setNode(el);
-  }, []);
-
-  useEffect(() => {
-    if (!node) return;
-
-    const update = () => {
-      const r = node.getBoundingClientRect();
-      setSize({
-        width: Math.round(r.width),
-        height: Math.round(r.height),
-      });
-    };
-
-    update();
-
-    const RO: any = (window as any).ResizeObserver;
-    if (RO) {
-      const ro = new RO(() => update());
-      ro.observe(node);
-      return () => ro.disconnect();
-    }
-
-    window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
-  }, [node]);
-
-  return { ref, width: size.width, height: size.height };
-}
-
-function computeCols(count: number, containerWidth: number) {
-  const w = containerWidth || 1200;
-  const isDesktop = w >= 1024;
-
-  if (count <= 1) return 1;
-  if (count === 2) return 2;
-  if (count === 4) return 2;
-
-  // ✅ requirement:
-  // - for 3 participants on desktop widths (>=1024): ALWAYS 2 columns (2 + 1)
-  if (count === 3 && isDesktop) return 2;
-
-  // ✅ requirement:
-  // - for 5–9 participants on desktop widths (>=1024): ALWAYS 3 columns
-  if (isDesktop && count >= 5 && count <= 9) return 3;
-
-  // fallback (mobile/tablet/other cases)
-  if (count === 3) return 2;
-  if (count === 5) return w >= 900 ? 3 : 2;
-  if (count === 6) return w >= 780 ? 3 : 2;
-
-  return w >= 1400 ? 4 : 3;
-}
-
-function calcMaxGridWidthPx(params: {
-  containerWidth: number;
-  containerHeight: number;
-  cols: number;
-  rows: number;
-  gapPx: number;
-  paddingPx: number;
-  aspectHOverW: number;
-}) {
-  const { containerWidth, containerHeight, cols, rows, gapPx, paddingPx, aspectHOverW } = params;
-
-  if (!containerWidth || !containerHeight) return null;
-
-  const availW = Math.max(0, containerWidth - paddingPx * 2);
-  const availH = Math.max(0, containerHeight - paddingPx * 2);
-
-  const byWidth = (availW - (cols - 1) * gapPx) / cols;
-  const byHeight = (availH - (rows - 1) * gapPx) / (rows * aspectHOverW);
-
-  const tileW = Math.max(0, Math.min(byWidth, byHeight));
-  const gridW = cols * tileW + (cols - 1) * gapPx;
-
-  return Math.min(availW, gridW);
-}
-
-function GridLayoutSizing<T extends { id: string }>(props: {
-  items: T[];
-  containerWidth: number;
-  containerHeight: number;
-  forceThreeAsTwoPlusOne?: boolean;
-  renderItem: (t: T, idx: number) => React.ReactNode;
-}) {
-  const { items, containerWidth, containerHeight, forceThreeAsTwoPlusOne, renderItem } = props;
-
-  const paddingPx = containerWidth && containerWidth < 520 ? 8 : 10;
-  const gapPx = containerWidth && containerWidth < 520 ? 6 : 10;
-
-  const cols = useMemo(() => {
-    if (forceThreeAsTwoPlusOne && items.length === 3) return 2;
-    return computeCols(items.length, containerWidth || 1200);
-  }, [items.length, containerWidth, forceThreeAsTwoPlusOne]);
-
-  const rows = useMemo(() => Math.ceil(items.length / cols), [items.length, cols]);
-
-  const maxGridWidth = useMemo(() => {
-    const w = calcMaxGridWidthPx({
-      containerWidth: containerWidth || 0,
-      containerHeight: containerHeight || 0,
-      cols,
-      rows,
-      gapPx,
-      paddingPx,
-      aspectHOverW: 9 / 16,
-    });
-    return w;
-  }, [containerWidth, containerHeight, cols, rows, gapPx, paddingPx]);
-
-  const shouldCenterY = useMemo(() => {
-    if (!containerWidth || !containerHeight) return false;
-
-    const availW = Math.max(0, containerWidth - paddingPx * 2);
-    const availH = Math.max(0, containerHeight - paddingPx * 2);
-
-    if (availW <= 0 || availH <= 0) return false;
-
-    const byWidth = (availW - (cols - 1) * gapPx) / cols;
-    const byHeight = (availH - (rows - 1) * gapPx) / (rows * (9 / 16));
-
-    const tileW = Math.max(0, Math.min(byWidth, byHeight));
-    const tileH = tileW * (9 / 16);
-    const gridH = rows * tileH + (rows - 1) * gapPx;
-
-    return gridH > 0 && gridH <= availH - 4;
-  }, [containerWidth, containerHeight, paddingPx, gapPx, cols, rows]);
-
-  const count = items.length;
-  const remainder = cols > 0 ? count % cols : 0;
-  const fullCount = remainder === 0 ? count : count - remainder;
-
-  const oneColWidth = `calc((100% - ${(cols - 1) * gapPx}px) / ${cols})`;
-
-  const fullRows = items.slice(0, fullCount);
-  const lastRow = items.slice(fullCount);
-
-  return (
-    <div
-      className={
-        "w-full h-full min-h-0 overflow-y-auto flex justify-center " +
-        (shouldCenterY ? "items-center" : "items-start")
-      }
-      style={{ padding: paddingPx }}
-    >
-      <div
-        className="w-full grid"
-        style={{
-          gap: gapPx,
-          maxWidth: maxGridWidth ? `${maxGridWidth}px` : undefined,
-          gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-          alignContent: shouldCenterY ? "center" : "start",
-        }}
-      >
-        {fullRows.map((t, i) => (
-          <React.Fragment key={t.id}>{renderItem(t, i)}</React.Fragment>
-        ))}
-
-        {lastRow.length > 0 && (
-          <div
-            className="col-span-full w-full flex justify-center"
-            style={{
-              gap: gapPx,
-              alignItems: shouldCenterY ? "center" : "flex-start",
-            }}
-          >
-            {lastRow.map((t, i) => (
-              <div key={t.id} className="shrink-0" style={{ width: oneColWidth }}>
-                {renderItem(t, fullCount + i)}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function P2PLayoutSizing<T extends { id: string }>(props: {
-  items: T[];
-  containerWidth: number;
-  containerHeight: number;
-  stack?: boolean;
-  renderItem: (t: T, idx: number) => React.ReactNode;
-}) {
-  const { items, containerWidth, containerHeight, stack = false, renderItem } = props;
-
-  const paddingPx = containerWidth && containerWidth < 520 ? 8 : 10;
-  const gapPx = containerWidth && containerWidth < 520 ? 6 : 10;
-
-  const count = items.length;
-
-  const cols = stack ? 1 : count <= 1 ? 1 : 2;
-  const rows = count <= 1 ? 1 : stack ? 2 : 1;
-
-  const maxGridWidth = useMemo(() => {
-    const w = calcMaxGridWidthPx({
-      containerWidth: containerWidth || 0,
-      containerHeight: containerHeight || 0,
-      cols,
-      rows,
-      gapPx,
-      paddingPx,
-      aspectHOverW: 9 / 16,
-    });
-
-    if (!w) return null;
-    return w;
-  }, [containerWidth, containerHeight, cols, rows, gapPx, paddingPx]);
-
-  return (
-    <div className="w-full h-full min-h-0 overflow-hidden flex justify-center items-center" style={{ padding: paddingPx }}>
-      <div
-        className="w-full grid"
-        style={{
-          gap: gapPx,
-          maxWidth: maxGridWidth ? `${maxGridWidth}px` : undefined,
-          gridTemplateColumns: cols === 1 ? "1fr" : "1fr 1fr",
-          alignContent: "center",
-        }}
-      >
-        {items.map((t, idx) => (
-          <React.Fragment key={t.id}>{renderItem(t, idx)}</React.Fragment>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function MobileFillLayoutSizing<T extends { id: string }>(props: {
-  items: T[];
-  containerWidth: number;
-  containerHeight: number;
-  paddingBottomPx?: number;
-  renderItem: (t: T, idx: number) => React.ReactNode;
-}) {
-  const { items, containerWidth, containerHeight, paddingBottomPx = 12, renderItem } = props;
-  const count = items.length || 1;
-
-  const paddingPx = containerWidth && containerWidth < 520 ? 8 : 10;
-  const gapPx = containerWidth && containerWidth < 520 ? 6 : 10;
-
-  const availW = Math.max(0, (containerWidth || 0) - paddingPx * 2);
-  const availH = Math.max(0, (containerHeight || 0) - paddingPx * 2 - paddingBottomPx - (count - 1) * gapPx);
-
-  const tileH = availH > 0 ? availH / count : 0;
-  const tileWByH = tileH > 0 ? tileH * (16 / 9) : 0;
-
-  const maxTileW = Math.max(0, Math.min(availW || 0, tileWByH || availW || 0));
-
-  return (
-    <div
-      className="w-full h-full min-h-0 flex flex-col justify-center"
-      style={{
-        padding: paddingPx,
-        paddingBottom: paddingBottomPx,
-        gap: gapPx,
-      }}
-    >
-      {items.map((t, idx) => (
-        <div key={t.id} className="w-full flex justify-center">
-          <div className="w-full" style={{ maxWidth: maxTileW ? `${maxTileW}px` : undefined }}>
-            {renderItem(t, idx)}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function MobileStackLayoutSizing<T extends { id: string }>(props: {
-  items: T[];
-  paddingBottomPx?: number;
-  renderItem: (t: T, idx: number) => React.ReactNode;
-}) {
-  const { items, paddingBottomPx = 12, renderItem } = props;
-  return (
-    <div className="w-full h-full min-h-0 overflow-y-auto p-2 flex flex-col gap-2" style={{ paddingBottom: paddingBottomPx }}>
-      {items.map((t, idx) => (
-        <React.Fragment key={t.id}>{renderItem(t, idx)}</React.Fragment>
-      ))}
-    </div>
-  );
-}
-// ----------------------- /SIZING -----------------------
-
-// ---- ErrorBoundary ----
-class LiveKitErrorBoundary extends React.Component<
-  { children: React.ReactNode; onReset: () => void; isLight: boolean },
-  { hasError: boolean; errorText: string }
-> {
-  constructor(props: any) {
-    super(props);
-    this.state = { hasError: false, errorText: "" };
-  }
-  static getDerivedStateFromError(err: any) {
-    return {
-      hasError: true,
-      errorText: String(err?.message || err || "LiveKit error"),
-    };
-  }
-  componentDidCatch(err: any) {
-    console.error("LiveKit UI crashed:", err);
-  }
-  render() {
-    if (!this.state.hasError) return this.props.children;
-
-    return (
-      <div className="h-full w-full flex flex-col items-center justify-center gap-3 px-6">
-        <div className="text-red-500 font-semibold">LiveKit UI crashed</div>
-        <div className="text-xs opacity-80 break-words text-center">{this.state.errorText}</div>
-        <button
-          onClick={() => {
-            this.setState({ hasError: false, errorText: "" });
-            this.props.onReset();
-          }}
-          className={
-            this.props.isLight
-              ? "px-4 py-2 rounded-xl bg-black/5 hover:bg-black/10"
-              : "px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10"
-          }
-        >
-          Reset + retry
-        </button>
-      </div>
-    );
-  }
-}
-
 // ---- capture defaults ----
 const LK_CAPTURE_WIDTH = 960;
 const LK_CAPTURE_HEIGHT = 540;
@@ -1180,8 +761,7 @@ export function RoomPageLiveKit() {
     }
 
     if (isRecord(parsed)) {
-      const maybeBlocks =
-        (parsed as any).blocks || (parsed as any).script || (parsed as any).agenda || (parsed as any).items || (parsed as any).stages;
+      const maybeBlocks = (parsed as any).blocks || (parsed as any).script || (parsed as any).agenda || (parsed as any).items || (parsed as any).stages;
       if (Array.isArray(maybeBlocks)) parsed = maybeBlocks;
     }
 
@@ -1387,10 +967,7 @@ export function RoomPageLiveKit() {
         const u = data.user;
         setAuthUserId(u?.id || null);
 
-        let name =
-          str((u as any)?.user_metadata?.full_name) ||
-          str((u as any)?.user_metadata?.name) ||
-          (u?.email ? u.email.split("@")[0] : "");
+        let name = str((u as any)?.user_metadata?.full_name) || str((u as any)?.user_metadata?.name) || (u?.email ? u.email.split("@")[0] : "");
 
         if (!name && u?.id) {
           const { data: p } = await supabase.from("profiles").select("full_name").eq("id", u.id).single();
@@ -1434,7 +1011,7 @@ export function RoomPageLiveKit() {
     }
   };
 
-  // ---- FX state (shared: prejoin + in-room settings) [SECOND VERSION LOGIC]
+  // ---- FX state (shared: prejoin + in-room settings)
   const [videoFxMode, setVideoFxMode] = useState<FxMode>("off");
   const [bgImageUrl, setBgImageUrl] = useState<string>(DEFAULT_BG_DATA_URL);
   const [fxError, setFxError] = useState<string>("");
@@ -1617,11 +1194,7 @@ export function RoomPageLiveKit() {
     setRolesError("");
     setRolesLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("session_role_assignments")
-        .select("user_id, role")
-        .eq("session_id", sessionId)
-        .eq("role", "moderator");
+      const { data, error } = await supabase.from("session_role_assignments").select("user_id, role").eq("session_id", sessionId).eq("role", "moderator");
 
       if (error) throw error;
 
@@ -1673,12 +1246,7 @@ export function RoomPageLiveKit() {
     setRolesError("");
     setRoleBusyKey(`mod:${uid}:revoke`);
     try {
-      const { error } = await supabase
-        .from("session_role_assignments")
-        .delete()
-        .eq("session_id", session.id)
-        .eq("user_id", uid)
-        .eq("role", "moderator");
+      const { error } = await supabase.from("session_role_assignments").delete().eq("session_id", session.id).eq("user_id", uid).eq("role", "moderator");
       if (error) throw error;
       setModeratorUserIds((prev) => prev.filter((x) => x !== uid));
     } catch (e: any) {
@@ -1771,13 +1339,7 @@ export function RoomPageLiveKit() {
   };
 
   const tryAcquireTabGate = (sessionId: string, baseUserId: string) => {
-    const maxTabs = Math.max(
-      1,
-      Math.min(
-        6,
-        Number((import.meta as any)?.env?.VITE_LIVEKIT_MAX_TABS || LK_MAX_TABS_DEFAULT) || LK_MAX_TABS_DEFAULT
-      )
-    );
+    const maxTabs = Math.max(1, Math.min(6, Number((import.meta as any)?.env?.VITE_LIVEKIT_MAX_TABS || LK_MAX_TABS_DEFAULT) || LK_MAX_TABS_DEFAULT));
     const key = makeTabPresenceKey(sessionId, baseUserId);
 
     tabPresenceKeyRef.current = key;
@@ -1961,8 +1523,7 @@ export function RoomPageLiveKit() {
     const localMicPub = Array.from(lp.audioTrackPublications.values()).find((p) => p.source === Track.Source.Microphone) as any;
 
     const localIdentity = String(lp.identity || livekitIdentityRef.current || "");
-    const localUserId =
-      authUserId && looksLikeUuid(authUserId) ? String(authUserId).toLowerCase() : extractBaseUserIdFromIdentity(localIdentity);
+    const localUserId = authUserId && looksLikeUuid(authUserId) ? String(authUserId).toLowerCase() : extractBaseUserIdFromIdentity(localIdentity);
 
     next.push({
       id: "local",
@@ -2272,12 +1833,7 @@ export function RoomPageLiveKit() {
     return res.json().catch(() => ({}));
   };
 
-  const hostToggleRemoteTrackMute = async (
-    participantIdentity: string,
-    trackSid: string,
-    currentlyMuted: boolean | undefined,
-    kind: "mic" | "cam"
-  ) => {
+  const hostToggleRemoteTrackMute = async (participantIdentity: string, trackSid: string, currentlyMuted: boolean | undefined, kind: "mic" | "cam") => {
     const roomName = roomNameForApi;
     if (!roomName) return;
 
@@ -2341,13 +1897,7 @@ export function RoomPageLiveKit() {
       await safeApplyProcessor(tr, mode, blurStrength, bgImageUrl);
 
       setVideoFxMode(mode);
-      setFxStatusText(
-        mode === "off"
-          ? "FX disabled"
-          : mode === "blur"
-            ? `Blur applied (strength ${blurStrength})`
-            : "Virtual background applied"
-      );
+      setFxStatusText(mode === "off" ? "FX disabled" : mode === "blur" ? `Blur applied (strength ${blurStrength})` : "Virtual background applied");
 
       await delay(40);
     } catch (e: any) {
@@ -2384,66 +1934,6 @@ export function RoomPageLiveKit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bgImageUrl]);
 
-  // ---- UI: reactions + menus (FROM UI VERSION)
-  const [showReactionsMenu, setShowReactionsMenu] = useState(false);
-  const reactionsMenuRef = useRef<HTMLDivElement | null>(null);
-  const [localReactions, setLocalReactions] = useState<{ id: number; type: ReactionType }[]>([]);
-  const localReactionIdRef = useRef<number>(0);
-
-  const handleSendReaction = (type: ReactionType) => {
-    const rid = localReactionIdRef.current + 1;
-    localReactionIdRef.current = rid;
-    setLocalReactions((prev) => [...prev, { id: rid, type }]);
-    setTimeout(() => {
-      setLocalReactions((prev) => prev.filter((r) => r.id !== rid));
-    }, 1500);
-  };
-
-  useEffect(() => {
-    if (!showReactionsMenu) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as Node | null;
-      if (!reactionsMenuRef.current || !target) return;
-      if (!reactionsMenuRef.current.contains(target)) setShowReactionsMenu(false);
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [showReactionsMenu]);
-
-  const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const moreMenuRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!showMoreMenu) return;
-    const onDown = (e: MouseEvent) => {
-      const t = e.target as Node | null;
-      if (!moreMenuRef.current || !t) return;
-      if (!moreMenuRef.current.contains(t)) setShowMoreMenu(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [showMoreMenu]);
-
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return;
-    const mql = window.matchMedia("(min-width: 768px)");
-    const onChange = () => {
-      if (mql.matches) setShowMoreMenu(false);
-    };
-    onChange();
-    try {
-      mql.addEventListener("change", onChange);
-      return () => mql.removeEventListener("change", onChange);
-    } catch {
-      // @ts-ignore
-      mql.addListener(onChange);
-      // @ts-ignore
-      return () => mql.removeListener(onChange);
-    }
-  }, []);
-
-  const [participantsSearch, setParticipantsSearch] = useState("");
-
   const tilesForRender = useMemo(() => {
     if (!devClones) return tiles;
 
@@ -2465,16 +1955,9 @@ export function RoomPageLiveKit() {
     return [local, ...clones, ...tiles.filter((t) => t !== local)];
   }, [tiles, devClones]);
 
-  const filteredParticipants = useMemo(() => {
-    const q = participantsSearch.trim().toLowerCase();
-    if (!q) return tilesForRender;
-    return tilesForRender.filter((t) => (t.label || "").toLowerCase().includes(q));
-  }, [tilesForRender, participantsSearch]);
-
-  // video wrap resize observer (UI expects it)
   const videoWrapRef = useRef<HTMLDivElement | null>(null);
 
-  // ✅ sizing measurement (ported logic)
+  // ✅ sizing measurement
   const { ref: videoSizerRef, width: videoWrapW, height: videoWrapH } = useElementSize<HTMLDivElement>();
   const fallbackW = typeof window !== "undefined" ? window.innerWidth : 1200;
   const fallbackH = typeof window !== "undefined" ? window.innerHeight : 800;
@@ -2538,8 +2021,7 @@ export function RoomPageLiveKit() {
     return null;
   };
 
-  // ✅ Tile renderer: ONLY sizing touched (aspectRatio + removed special centering hack)
-  const renderTile = (t: TileModel, idx: number) => {
+  const renderTile = (t: TileModel) => {
     const hostActions = getTileHostActions(t);
     const isMenuOpen = openTileAdminMenuId === t.id;
     const hasMuteMic = !!hostActions?.canMuteMic && !!hostActions?.onToggleMuteMic;
@@ -2561,14 +2043,7 @@ export function RoomPageLiveKit() {
           setOpenTileAdminMenuId((prev) => (prev === t.id ? null : prev));
         }}
       >
-        <VideoTile
-          label={t.label}
-          videoTrack={t.videoTrack}
-          isLocal={t.isLocal}
-          theme={theme}
-          showBadge={getBadgeForTile(t)}
-          hostActions={undefined}
-        />
+        <VideoTile label={t.label} videoTrack={t.videoTrack} isLocal={t.isLocal} theme={theme} showBadge={getBadgeForTile(t)} hostActions={undefined} />
 
         {hasAnyAdminAction && (
           <div className="absolute top-2 right-2 z-20" data-lk-admin-menu-anchor="true" onClick={(e) => e.stopPropagation()}>
@@ -2583,9 +2058,7 @@ export function RoomPageLiveKit() {
                 }}
                 className={[
                   "w-9 h-9 rounded-xl flex items-center justify-center transition shadow-sm",
-                  isLight
-                    ? "bg-white/90 border border-black/10 text-black/75 hover:bg-white"
-                    : "bg-black/55 border border-white/10 text-white/90 hover:bg-black/70",
+                  isLight ? "bg-white/90 border border-black/10 text-black/75 hover:bg-white" : "bg-black/55 border border-white/10 text-white/90 hover:bg-black/70",
                   isMenuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100",
                 ].join(" ")}
               >
@@ -2593,10 +2066,7 @@ export function RoomPageLiveKit() {
               </button>
 
               {isMenuOpen && (
-                <div
-                  className={`absolute right-0 top-[calc(100%+8px)] w-[210px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
-                    }`}
-                >
+                <div className={`absolute right-0 top-[calc(100%+8px)] w-[210px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}>
                   {canRoleManageTarget && (
                     <>
                       <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>Roles</div>
@@ -2611,8 +2081,7 @@ export function RoomPageLiveKit() {
                             await grantModerator(pidBase);
                             setOpenTileAdminMenuId(null);
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
-                            }`}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
                         >
                           Make moderator
                         </button>
@@ -2626,8 +2095,7 @@ export function RoomPageLiveKit() {
                             await revokeModerator(pidBase);
                             setOpenTileAdminMenuId(null);
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
-                            }`}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
                         >
                           Remove moderator
                         </button>
@@ -2647,8 +2115,7 @@ export function RoomPageLiveKit() {
                         await hostActions.onToggleMuteMic();
                         setOpenTileAdminMenuId(null);
                       }}
-                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
-                        }`}
+                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
                     >
                       {hostActions?.micMuted ? "Unmute Mic" : "Mute Mic"}
                     </button>
@@ -2664,8 +2131,7 @@ export function RoomPageLiveKit() {
                         await hostActions.onToggleMuteCam();
                         setOpenTileAdminMenuId(null);
                       }}
-                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
-                        }`}
+                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
                     >
                       {hostActions?.camMuted ? "Unmute Camera" : "Mute Camera"}
                     </button>
@@ -2683,8 +2149,7 @@ export function RoomPageLiveKit() {
                         await hostActions.onKick();
                         setOpenTileAdminMenuId(null);
                       }}
-                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-red-700 hover:bg-red-50" : "text-red-300 hover:bg-red-500/10"
-                        }`}
+                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-red-700 hover:bg-red-50" : "text-red-300 hover:bg-red-500/10"}`}
                     >
                       Kick participant
                     </button>
@@ -2698,7 +2163,7 @@ export function RoomPageLiveKit() {
     );
   };
 
-  // ✅ Layout decision (ported from VideoRoom sizing)
+  // Layout decision
   const tileCount = tilesForRender.length;
   const paddingBottomPx = 12;
 
@@ -2707,55 +2172,27 @@ export function RoomPageLiveKit() {
   const isCompact = effectiveW < 900;
 
   const useVeryNarrowMode = isVeryNarrow || (isMobileQuery && isNarrowForColumns);
-  const stackTwoOnThisViewport =
-    tileCount === 2 && !useVeryNarrowMode && (isTabletQuery || (isMobileQuery && effectiveW < 640) || isCompact);
+  const stackTwoOnThisViewport = tileCount === 2 && !useVeryNarrowMode && (isTabletQuery || (isMobileQuery && effectiveW < 640) || isCompact);
 
   const videoLayout = (
     <>
       {!tileCount && connected ? (
-        <div
-          className={`h-full w-full flex items-center justify-center px-4 ${isLight ? "text-black/60" : "text-white/60"}`}
-        >
-          <div
-            className={`min-h-[240px] w-full max-w-[680px] rounded-2xl border flex items-center justify-center ${isLight ? "border-black/10 bg-black/5" : "border-white/10 bg-white/5"
-              }`}
-          >
+        <div className={`h-full w-full flex items-center justify-center px-4 ${isLight ? "text-black/60" : "text-white/60"}`}>
+          <div className={`min-h-[240px] w-full max-w-[680px] rounded-2xl border flex items-center justify-center ${isLight ? "border-black/10 bg-black/5" : "border-white/10 bg-white/5"}`}>
             No participants yet
           </div>
         </div>
       ) : tileCount ? (
         useVeryNarrowMode ? (
           tileCount <= 2 ? (
-            <MobileFillLayoutSizing<TileModel>
-              items={tilesForRender}
-              containerWidth={effectiveW}
-              containerHeight={effectiveH}
-              paddingBottomPx={paddingBottomPx}
-              renderItem={renderTile}
-            />
+            <MobileFillLayoutSizing<TileModel> items={tilesForRender} containerWidth={effectiveW} containerHeight={effectiveH} paddingBottomPx={paddingBottomPx} renderItem={(t) => renderTile(t)} />
           ) : (
-            <MobileStackLayoutSizing<TileModel>
-              items={tilesForRender}
-              paddingBottomPx={paddingBottomPx}
-              renderItem={renderTile}
-            />
+            <MobileStackLayoutSizing<TileModel> items={tilesForRender} paddingBottomPx={paddingBottomPx} renderItem={(t) => renderTile(t)} />
           )
         ) : tileCount <= 2 ? (
-          <P2PLayoutSizing<TileModel>
-            items={tilesForRender}
-            containerWidth={effectiveW}
-            containerHeight={effectiveH}
-            stack={stackTwoOnThisViewport}
-            renderItem={renderTile}
-          />
+          <P2PLayoutSizing<TileModel> items={tilesForRender} containerWidth={effectiveW} containerHeight={effectiveH} stack={stackTwoOnThisViewport} renderItem={(t) => renderTile(t)} />
         ) : (
-          <GridLayoutSizing<TileModel>
-            items={tilesForRender}
-            containerWidth={effectiveW}
-            containerHeight={effectiveH}
-            forceThreeAsTwoPlusOne={rightPanelOpen}
-            renderItem={renderTile}
-          />
+          <GridLayoutSizing<TileModel> items={tilesForRender} containerWidth={effectiveW} containerHeight={effectiveH} forceThreeAsTwoPlusOne={rightPanelOpen} renderItem={(t) => renderTile(t)} />
         )
       ) : null}
     </>
@@ -2770,18 +2207,6 @@ export function RoomPageLiveKit() {
       ) : null}
 
       {videoLayout}
-
-      {localReactions.length > 0 && (
-        <div className="pointer-events-none absolute inset-0 z-20 flex items-end justify-center pb-20 sm:pb-24">
-          <div className="flex items-center gap-2">
-            {localReactions.map((r) => (
-              <div key={r.id} className="text-4xl sm:text-5xl animate-bounce select-none drop-shadow-2xl" style={{ animationDuration: "700ms" }}>
-                {reactionEmoji[r.type]}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 
@@ -2796,279 +2221,6 @@ export function RoomPageLiveKit() {
       </div>
     );
   }
-
-  const ChatPanelAny = ChatPanel as any;
-
-  const RightPanelBody = (
-    <div
-      className={`rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col ${panelBg} ${theme === "dark" ? "dark" : ""}`}
-      data-theme={theme}
-    >
-      {rightTab === "participants" && (
-        <div className="h-full min-h-0 flex flex-col">
-          <div className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
-            <div className="flex items-center gap-2">
-              <span className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Participants</span>
-              <span className={`${isLight ? "text-black/50" : "text-white/55"} text-sm`}>({participantsCount})</span>
-            </div>
-            <button
-              onClick={() => openRightTab(null)}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
-                }`}
-              title="Close"
-            >
-              ✕
-            </button>
-          </div>
-
-          <div className="p-4">
-            <div className={`rounded-xl px-3 py-2 ${isLight ? "bg-black/5 border border-black/10" : "bg-[#0B1220]/70 border border-white/10"}`}>
-              <input
-                value={participantsSearch}
-                onChange={(e) => setParticipantsSearch(e.target.value)}
-                placeholder="Search participants..."
-                className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${isLight ? "text-black/80 placeholder:text-black/40" : "text-white/85 placeholder:text-white/35"
-                  }`}
-              />
-            </div>
-            {rolesError ? <div className={`mt-2 text-[12px] ${isLight ? "text-red-600" : "text-red-300"}`}>{rolesError}</div> : null}
-          </div>
-
-          <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-3">
-            <div className="flex flex-col gap-2">
-              {filteredParticipants.map((p) => {
-                const name = p.isLocal ? "You" : p.label || "Guest";
-                const initials =
-                  name
-                    .split(" ")
-                    .filter(Boolean)
-                    .slice(0, 2)
-                    .map((x) => x[0]?.toUpperCase())
-                    .join("") || "U";
-
-                const pidBase = String(p.participantUserId || extractBaseUserIdFromIdentity(String(p.participantIdentity || ""))).toLowerCase();
-                const isMod = !p.isLocal && looksLikeUuid(pidBase) ? moderatorUserIds.includes(pidBase) : p.isLocal ? isSelfModerator && !isHost : false;
-
-                const roleText = p.isLocal ? (isHost ? "Host" : isMod ? "Moderator" : "You") : isMod ? "Moderator" : "Participant";
-
-                return (
-                  <div key={p.id} className={`flex items-center justify-between px-3 py-2 rounded-xl transition ${isLight ? "hover:bg-black/5" : "hover:bg-white/5"}`}>
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div
-                        className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${p.isLocal
-                          ? isLight
-                            ? "bg-blue-500/15 text-blue-700"
-                            : "bg-emerald-500/80 text-[#02140B]"
-                          : isLight
-                            ? "bg-black/5 text-black/75"
-                            : "bg-white/10 text-white/85"
-                          }`}
-                      >
-                        {initials}
-                      </div>
-
-                      <div className="min-w-0">
-                        <div className={`text-[13px] font-medium truncate ${isLight ? "text-black/85" : "text-white/90"}`}>{name}</div>
-
-                        <div className={`text-[11px] truncate ${isLight ? "text-black/45" : "text-white/45"}`}>
-                          {roleText}
-                          {(!p.isLocal && isMod) || (p.isLocal && isMod && !isHost) ? " • Moderator" : ""}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <div
-                        className={
-                          "w-8 h-8 rounded-lg flex items-center justify-center " +
-                          (p.micMuted ? (isLight ? "bg-red-500/10" : "bg-red-500/20") : isLight ? "bg-black/5" : "bg-white/5")
-                        }
-                        title={p.micMuted ? "Muted" : "Unmuted"}
-                      >
-                        <Icon name={p.micMuted ? "mic-off" : "mic-on"} theme={theme} className={`w-4 h-4 ${p.micMuted ? "opacity-90" : "opacity-80"}`} />
-                      </div>
-
-                      <div
-                        className={
-                          "w-8 h-8 rounded-lg flex items-center justify-center " +
-                          (p.camMuted ? (isLight ? "bg-red-500/10" : "bg-red-500/20") : isLight ? "bg-black/5" : "bg-white/5")
-                        }
-                        title={p.camMuted ? "Video off" : "Video on"}
-                      >
-                        <Icon name={p.camMuted ? "camera-off" : "camera-on"} theme={theme} className={`w-4 h-4 ${p.camMuted ? "opacity-90" : "opacity-80"}`} />
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className={`p-3 border-t ${isLight ? "border-black/10" : "border-white/5"}`}>
-            <button
-              onClick={() => { }}
-              className={`w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 ${isLight ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
-                }`}
-            >
-              <span className="text-lg">+</span>
-              <span>Invite People</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {rightTab === "chat" && (
-        <div className="h-full min-h-0 flex flex-col">
-          <div className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
-            <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Chat</div>
-            <button
-              onClick={() => openRightTab(null)}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
-                }`}
-              title="Close"
-            >
-              ✕
-            </button>
-          </div>
-
-          <div className="flex-1 min-h-0 p-3 overflow-hidden">
-            <div className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}>
-              <div className="h-full min-h-0 flex flex-col overflow-hidden [&>*]:h-full [&>*]:min-h-0">
-                {session?.id ? (
-                  <div data-theme={theme} style={{ colorScheme: theme }} className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}>
-                    <ChatPanelAny
-                      sessionId={session.id}
-                      theme={theme}
-                      showHeader={false}
-                      title="Chat"
-                      onClose={() => openRightTab(null)}
-                      embedded={true}
-                      hideHeader={true}
-                      authUserId={authUserId}
-                      displayName={displayName || userName}
-                    />
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {rightTab === "intentions" && (
-        <div className="h-full min-h-0 flex flex-col">
-          <div className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
-            <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Intentions</div>
-            <button
-              onClick={() => openRightTab(null)}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
-                }`}
-              title="Close"
-            >
-              ✕
-            </button>
-          </div>
-
-          <div className="flex-1 min-h-0 overflow-hidden p-3">
-            <div className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}>
-              <div className="h-full min-h-0 overflow-y-auto [&>*]:min-h-0">
-                <div data-theme={theme} style={{ colorScheme: theme }} className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}>
-                  <IntentionsPanel key={`intentions-${session.id}-${theme}`} theme={theme} sessionId={session.id} timerText={remainingTime || "--:--"} />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
-  const TopBar = (() => {
-    const switchTrackClsLocal =
-      "w-[84px] max-[480px]:w-[78px] h-[32px] rounded-full border relative transition flex items-center px-[3px] " +
-      (isLight ? "bg-black/5 border-black/10 hover:bg-black/10" : "bg-white/5 border-white/10 hover:bg-white/10");
-    const switchThumbLocal =
-      "absolute top-[2px] w-[26px] h-[26px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center";
-    const thumbTranslateLocal = isLight ? "translateX(0px)" : "translateX(52px)";
-
-    return (
-      <div className={`flex w-full rounded-2xl overflow-hidden ${topBarBg}`}>
-        <div className="flex-1 px-4 sm:px-6 py-3 sm:py-4">
-          <div className="flex flex-col gap-2 max-[480px]:gap-2">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 min-w-0">
-                  <p className={`min-w-0 font-inter font-semibold text-[16px] sm:text-[18px] truncate ${strongText}`}>
-                    {String(session?.title || "Session")}
-                  </p>
-
-                  <span
-                    className={["shrink-0 px-2 py-[3px] rounded-lg border text-[12px] font-inter", chipBg, isLight ? "text-black/65" : "text-white/80"].join(" ")}
-                    title="Participants now / limit"
-                  >
-                    {participantsCount}/{maxParticipants}
-                  </span>
-
-                  <span
-                    className={["hidden sm:inline-flex shrink-0 px-2 py-[3px] rounded-lg border text-[11px] font-inter", chipBg, isLight ? "text-black/65" : "text-white/75"].join(" ")}
-                    title="Engine"
-                  >
-                    LiveKit
-                  </span>
-
-                  {!isHost && isSelfModerator && (
-                    <span
-                      className={["hidden sm:inline-flex shrink-0 px-2 py-[3px] rounded-lg border text-[11px] font-inter", chipBg, isLight ? "text-black/65" : "text-white/75"].join(" ")}
-                      title="Your role"
-                    >
-                      Moderator
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <div className="hidden min-[481px]:flex items-center gap-2 shrink-0">
-                {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
-                  <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}>
-                    <Icon name="timer" theme={theme} className="w-4 h-4 opacity-80" alt="Timer" />
-                    <span className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"}`}>{remainingTime || "--:--"}</span>
-                  </div>
-                )}
-
-                <button onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))} className={switchTrackClsLocal} title="Toggle theme" aria-label="Toggle theme">
-                  <div className={switchThumbLocal} style={{ transform: thumbTranslateLocal }}>
-                    <Icon name={isLight ? "theme-sun" : "theme-moon"} theme={theme} className="w-4 h-4" />
-                  </div>
-                </button>
-
-                {session.host_profile && (
-                  <button
-                    onClick={() => setSelectedUser(session.host_profile || null)}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition text-[13px] ${isLight
-                      ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                      : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
-                      }`}
-                    title="Host profile"
-                  >
-                    <ParticipantsSmartIcon theme={theme} className="w-4 h-4 opacity-90" />
-                    <span className="font-inter">
-                      <span className="font-light">Host:</span> <span className="font-bold">{String(session.host_profile.full_name || "Host")}</span>
-                    </span>
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
-              <div className="mt-1 max-[480px]:mt-1 w-full overflow-hidden">
-                <SessionStageBar stages={stages} startTime={stagebarStartTime} cycleSeconds={stagebarCycleSeconds} onHoverStage={setHoveredStage} />
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  })();
 
   return (
     <>
@@ -3150,7 +2302,27 @@ export function RoomPageLiveKit() {
 
       <div className={`h-[100dvh] overflow-hidden ${pageBg}`}>
         <div className="h-full w-full px-2 sm:px-4 pt-3 pb-[calc(84px+env(safe-area-inset-bottom))] sm:pb-[calc(94px+env(safe-area-inset-bottom))] flex flex-col gap-3 sm:gap-4 min-h-0">
-          {TopBar}
+          <LiveKitTopBar
+            theme={theme}
+            isLight={isLight}
+            topBarBg={topBarBg}
+            chipBg={chipBg}
+            strongText={strongText}
+            sessionTitle={String(session?.title || "Session")}
+            participantsCount={participantsCount}
+            maxParticipants={maxParticipants}
+            isHost={isHost}
+            isSelfModerator={isSelfModerator}
+            isSilentRoom={isSilentRoom}
+            stages={stages}
+            stagebarStartTime={stagebarStartTime}
+            stagebarCycleSeconds={stagebarCycleSeconds}
+            remainingTime={remainingTime}
+            onHoverStage={setHoveredStage}
+            onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+            hostName={session.host_profile?.full_name ? String(session.host_profile.full_name) : undefined}
+            onOpenHostProfile={session.host_profile ? () => setSelectedUser(session.host_profile || null) : undefined}
+          />
 
           <div
             className={
@@ -3163,8 +2335,7 @@ export function RoomPageLiveKit() {
                 videoWrapRef.current = el;
                 videoSizerRef(el);
               }}
-              className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
-                }`}
+              className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"}`}
             >
               <LiveKitErrorBoundary
                 isLight={isLight}
@@ -3186,12 +2357,56 @@ export function RoomPageLiveKit() {
               )}
             </div>
 
-            {rightPanelOpen && isLgUp && <div className="min-h-0 h-full overflow-hidden">{RightPanelBody}</div>}
+            {rightPanelOpen && isLgUp && (
+              <div className="min-h-0 h-full overflow-hidden">
+                <LiveKitRightPanel
+                  theme={theme}
+                  isLight={isLight}
+                  panelBg={panelBg}
+                  rightTab={rightTab}
+                  onClose={() => openRightTab(null)}
+                  participantsCount={participantsCount}
+                  participants={tilesForRender as any}
+                  rolesError={rolesError}
+                  rolesLoading={rolesLoading}
+                  isHost={isHost}
+                  isSelfModerator={isSelfModerator}
+                  moderatorUserIds={moderatorUserIds}
+                  looksLikeUuid={looksLikeUuid}
+                  extractBaseUserIdFromIdentity={extractBaseUserIdFromIdentity}
+                  sessionId={session.id}
+                  authUserId={authUserId}
+                  displayName={(displayName || userName || "Guest").trim() || "Guest"}
+                  timerText={remainingTime || "--:--"}
+                />
+              </div>
+            )}
 
             {rightPanelOpen && !isLgUp && (
               <div className="absolute inset-0 z-40 min-h-0">
                 <div className="absolute inset-0 bg-black/40" onClick={() => openRightTab(null)} />
-                <div className="absolute inset-x-0 top-0 bottom-0 p-1 sm:p-2 min-h-0">{RightPanelBody}</div>
+                <div className="absolute inset-x-0 top-0 bottom-0 p-1 sm:p-2 min-h-0">
+                  <LiveKitRightPanel
+                    theme={theme}
+                    isLight={isLight}
+                    panelBg={panelBg}
+                    rightTab={rightTab}
+                    onClose={() => openRightTab(null)}
+                    participantsCount={participantsCount}
+                    participants={tilesForRender as any}
+                    rolesError={rolesError}
+                    rolesLoading={rolesLoading}
+                    isHost={isHost}
+                    isSelfModerator={isSelfModerator}
+                    moderatorUserIds={moderatorUserIds}
+                    looksLikeUuid={looksLikeUuid}
+                    extractBaseUserIdFromIdentity={extractBaseUserIdFromIdentity}
+                    sessionId={session.id}
+                    authUserId={authUserId}
+                    displayName={(displayName || userName || "Guest").trim() || "Guest"}
+                    timerText={remainingTime || "--:--"}
+                  />
+                </div>
               </div>
             )}
           </div>
@@ -3199,169 +2414,32 @@ export function RoomPageLiveKit() {
 
         <RemoteAudioRenderer room={roomState} audioOutputId={selectedAudioOutputId} />
 
-        <div className="fixed inset-x-0 bottom-0 z-50">
-          <div className="w-full px-2 sm:px-4 pb-[calc(8px+env(safe-area-inset-bottom))]">
-            <div className={`h-[64px] sm:h-[74px] rounded-2xl shadow-2xl backdrop-blur grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4 ${bottomBarBg}`}>
-              <div className="flex items-center gap-2" ref={moreMenuRef}>
-                <div className="md:hidden relative">
-                  <button
-                    onClick={() => setShowMoreMenu((v) => !v)}
-                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                    title="Menu"
-                  >
-                    <span className={isLight ? "text-black/70" : "text-white/85"}>⋯</span>
-                  </button>
-
-                  {showMoreMenu && (
-                    <div className="absolute bottom-[76px] sm:bottom-[86px] left-0">
-                      <div className={`w-[240px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}>
-                        <button
-                          onClick={() => {
-                            openRightTab("participants");
-                            setShowMoreMenu(false);
-                          }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
-                        >
-                          <Icon name="participants" theme={theme} className="w-4 h-4 opacity-90" />
-                          <span>Participants</span>
-                        </button>
-
-                        <button
-                          onClick={() => {
-                            openRightTab("chat");
-                            setShowMoreMenu(false);
-                          }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
-                        >
-                          <Icon name="chat" theme={theme} className="w-4 h-4 opacity-90" />
-                          <span>Chat</span>
-                        </button>
-
-                        <button
-                          onClick={() => {
-                            openRightTab("intentions");
-                            setShowMoreMenu(false);
-                          }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
-                        >
-                          <Icon name="intentions" theme={theme} className="w-4 h-4 opacity-90" />
-                          <span>Intentions</span>
-                        </button>
-
-                        <div className={isLight ? "h-px bg-black/10" : "h-px bg-white/10"} />
-
-                        <button
-                          onClick={() => {
-                            setSettingsOpen(true);
-                            setShowMoreMenu(false);
-                          }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
-                        >
-                          <Icon name="settings" theme={theme} className="w-4 h-4 opacity-90" />
-                          <span>Settings</span>
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="hidden md:flex items-center gap-2">
-                  <button onClick={() => openRightTab("participants")} className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`} title="Participants">
-                    <Icon name="participants" theme={theme} className="w-5 h-5" />
-                  </button>
-
-                  <button onClick={() => openRightTab("chat")} className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`} title="Chat">
-                    <Icon name="chat" theme={theme} className="w-5 h-5" />
-                  </button>
-
-                  <button onClick={() => openRightTab("intentions")} className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`} title="Intentions">
-                    <Icon name="intentions" theme={theme} className="w-5 h-5" />
-                  </button>
-
-                  <button onClick={() => setSettingsOpen(true)} className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`} title="Settings">
-                    <Icon name="settings" theme={theme} className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-center gap-2 sm:gap-3">
-                <button
-                  onClick={toggleMic}
-                  disabled={!connected}
-                  className={"w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition disabled:opacity-50 " + (!micOn ? "bg-red-600 hover:bg-red-700" : ctlBtnBase)}
-                  title="Toggle mic"
-                >
-                  <Icon name={!micOn ? "mic-off" : "mic-on"} theme={!micOn ? "dark" : theme} className="w-5 h-5" />
-                </button>
-
-                <button
-                  onClick={toggleCam}
-                  disabled={!connected}
-                  className={"w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition disabled:opacity-50 " + (!camOn ? "bg-red-600 hover:bg-red-700" : ctlBtnBase)}
-                  title="Toggle camera"
-                >
-                  <Icon name={!camOn ? "camera-off" : "camera-on"} theme={theme} className="w-5 h-5" />
-                </button>
-
-                <button
-                  onClick={toggleScreenShare}
-                  disabled={!connected}
-                  className={"w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition disabled:opacity-50 " + (screenShareOn ? "bg-blue-600 hover:bg-blue-700" : ctlBtnBase)}
-                  title="Share screen"
-                >
-                  <Icon name="screen-share" theme={theme} className="w-5 h-5" />
-                </button>
-
-                <div className="relative" ref={reactionsMenuRef}>
-                  <button
-                    onClick={() => setShowReactionsMenu((v) => !v)}
-                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                    title="Reactions"
-                  >
-                    <Icon name="reaction" theme={theme} className="w-5 h-5" />
-                  </button>
-
-                  {showReactionsMenu && (
-                    <div className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}>
-                      {(["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown"] as ReactionType[]).map((t) => (
-                        <button
-                          key={t}
-                          onClick={() => {
-                            handleSendReaction(t);
-                            setShowReactionsMenu(false);
-                          }}
-                          className="hover:scale-[1.06] transition"
-                          title={t}
-                        >
-                          {reactionEmoji[t]}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 sm:gap-3">
-                <button
-                  onClick={leave}
-                  className="hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white"
-                  title="Leave"
-                >
-                  <Icon name="leave" theme={theme} className="w-5 h-5" />
-                  <span className="text-[14px]">Leave</span>
-                </button>
-
-                <button
-                  onClick={leave}
-                  className="sm:hidden w-10 h-10 rounded-2xl bg-red-600 hover:bg-red-700 text-white flex items-center justify-center"
-                  title="Leave"
-                >
-                  <Icon name="leave" theme={theme} className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <LiveKitBottomBar
+          theme={theme}
+          isLight={isLight}
+          bottomBarBg={bottomBarBg}
+          ctlBtnBase={ctlBtnBase}
+          connected={connected}
+          micOn={micOn}
+          camOn={camOn}
+          screenShareOn={screenShareOn}
+          onToggleMic={() => {
+            toggleMic().catch?.(() => { });
+          }}
+          onToggleCam={() => {
+            toggleCam().catch?.(() => { });
+          }}
+          onToggleScreenShare={() => {
+            toggleScreenShare().catch?.(() => { });
+          }}
+          onLeave={() => {
+            leave().catch?.(() => { });
+          }}
+          onOpenParticipants={() => openRightTab("participants")}
+          onOpenChat={() => openRightTab("chat")}
+          onOpenIntentions={() => openRightTab("intentions")}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
 
         <RoomSettingsModalLiveKit
           open={settingsOpen}
