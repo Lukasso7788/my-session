@@ -1,3 +1,4 @@
+// src/pages/RoomPageLiveKit.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -22,16 +23,23 @@ import {
 
 import { supabase } from "../lib/supabase";
 import { UserProfileModal } from "../components/UserProfileModal";
+
 import { PreJoinModal } from "./LiveKit/PreJoinModalLiveKit";
 import { RoomSettingsModalLiveKit } from "./LiveKit/RoomSettingsModalLiveKit";
 import { VideoTile } from "./LiveKit/VideoTileLiveKit";
 import { RemoteAudioRenderer } from "./LiveKit/RemoteAudioRendererLiveKit";
 
-import { useElementSize, GridLayoutSizing, P2PLayoutSizing, MobileFillLayoutSizing, MobileStackLayoutSizing } from "./LiveKit/sizing";
+import {
+  useElementSize,
+  GridLayoutSizing,
+  P2PLayoutSizing,
+  MobileFillLayoutSizing,
+  MobileStackLayoutSizing,
+} from "./LiveKit/sizing";
 
-import { LiveKitBottomBar } from "./LiveKit/LiveKitBottomBar";
-import { LiveKitRightPanel } from "./LiveKit/LiveKitRightPanel";
 import { LiveKitTopBar } from "./LiveKit/LiveKitTopBar";
+import { LiveKitRightPanel } from "./LiveKit/LiveKitRightPanel";
+import { LiveKitBottomBar } from "./LiveKit/LiveKitBottomBar";
 import { LiveKitErrorBoundary, RightPanelTab, RoomTheme, useMediaQuery } from "./LiveKit/LiveKitUI";
 
 type FxMode = "off" | "blur" | "bg";
@@ -761,7 +769,8 @@ export function RoomPageLiveKit() {
     }
 
     if (isRecord(parsed)) {
-      const maybeBlocks = (parsed as any).blocks || (parsed as any).script || (parsed as any).agenda || (parsed as any).items || (parsed as any).stages;
+      const maybeBlocks =
+        (parsed as any).blocks || (parsed as any).script || (parsed as any).agenda || (parsed as any).items || (parsed as any).stages;
       if (Array.isArray(maybeBlocks)) parsed = maybeBlocks;
     }
 
@@ -1339,7 +1348,10 @@ export function RoomPageLiveKit() {
   };
 
   const tryAcquireTabGate = (sessionId: string, baseUserId: string) => {
-    const maxTabs = Math.max(1, Math.min(6, Number((import.meta as any)?.env?.VITE_LIVEKIT_MAX_TABS || LK_MAX_TABS_DEFAULT) || LK_MAX_TABS_DEFAULT));
+    const maxTabs = Math.max(
+      1,
+      Math.min(6, Number((import.meta as any)?.env?.VITE_LIVEKIT_MAX_TABS || LK_MAX_TABS_DEFAULT) || LK_MAX_TABS_DEFAULT)
+    );
     const key = makeTabPresenceKey(sessionId, baseUserId);
 
     tabPresenceKeyRef.current = key;
@@ -1934,6 +1946,7 @@ export function RoomPageLiveKit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bgImageUrl]);
 
+  // participants list (dev clones)
   const tilesForRender = useMemo(() => {
     if (!devClones) return tiles;
 
@@ -1955,9 +1968,9 @@ export function RoomPageLiveKit() {
     return [local, ...clones, ...tiles.filter((t) => t !== local)];
   }, [tiles, devClones]);
 
+  // sizing
   const videoWrapRef = useRef<HTMLDivElement | null>(null);
 
-  // ✅ sizing measurement
   const { ref: videoSizerRef, width: videoWrapW, height: videoWrapH } = useElementSize<HTMLDivElement>();
   const fallbackW = typeof window !== "undefined" ? window.innerWidth : 1200;
   const fallbackH = typeof window !== "undefined" ? window.innerHeight : 800;
@@ -2021,6 +2034,7 @@ export function RoomPageLiveKit() {
     return null;
   };
 
+  // tile renderer (admin menu stays here)
   const renderTile = (t: TileModel) => {
     const hostActions = getTileHostActions(t);
     const isMenuOpen = openTileAdminMenuId === t.id;
@@ -2163,7 +2177,7 @@ export function RoomPageLiveKit() {
     );
   };
 
-  // Layout decision
+  // layout selection
   const tileCount = tilesForRender.length;
   const paddingBottomPx = 12;
 
@@ -2185,14 +2199,32 @@ export function RoomPageLiveKit() {
       ) : tileCount ? (
         useVeryNarrowMode ? (
           tileCount <= 2 ? (
-            <MobileFillLayoutSizing<TileModel> items={tilesForRender} containerWidth={effectiveW} containerHeight={effectiveH} paddingBottomPx={paddingBottomPx} renderItem={(t) => renderTile(t)} />
+            <MobileFillLayoutSizing<TileModel>
+              items={tilesForRender}
+              containerWidth={effectiveW}
+              containerHeight={effectiveH}
+              paddingBottomPx={paddingBottomPx}
+              renderItem={(item) => renderTile(item)}
+            />
           ) : (
-            <MobileStackLayoutSizing<TileModel> items={tilesForRender} paddingBottomPx={paddingBottomPx} renderItem={(t) => renderTile(t)} />
+            <MobileStackLayoutSizing<TileModel> items={tilesForRender} paddingBottomPx={paddingBottomPx} renderItem={(item) => renderTile(item)} />
           )
         ) : tileCount <= 2 ? (
-          <P2PLayoutSizing<TileModel> items={tilesForRender} containerWidth={effectiveW} containerHeight={effectiveH} stack={stackTwoOnThisViewport} renderItem={(t) => renderTile(t)} />
+          <P2PLayoutSizing<TileModel>
+            items={tilesForRender}
+            containerWidth={effectiveW}
+            containerHeight={effectiveH}
+            stack={stackTwoOnThisViewport}
+            renderItem={(item) => renderTile(item)}
+          />
         ) : (
-          <GridLayoutSizing<TileModel> items={tilesForRender} containerWidth={effectiveW} containerHeight={effectiveH} forceThreeAsTwoPlusOne={rightPanelOpen} renderItem={(t) => renderTile(t)} />
+          <GridLayoutSizing<TileModel>
+            items={tilesForRender}
+            containerWidth={effectiveW}
+            containerHeight={effectiveH}
+            forceThreeAsTwoPlusOne={rightPanelOpen}
+            renderItem={(item) => renderTile(item)}
+          />
         )
       ) : null}
     </>
@@ -2314,11 +2346,11 @@ export function RoomPageLiveKit() {
             isHost={isHost}
             isSelfModerator={isSelfModerator}
             isSilentRoom={isSilentRoom}
-            stages={stages}
+            stages={stages as any}
             stagebarStartTime={stagebarStartTime}
             stagebarCycleSeconds={stagebarCycleSeconds}
             remainingTime={remainingTime}
-            onHoverStage={setHoveredStage}
+            onHoverStage={setHoveredStage as any}
             onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
             hostName={session.host_profile?.full_name ? String(session.host_profile.full_name) : undefined}
             onOpenHostProfile={session.host_profile ? () => setSelectedUser(session.host_profile || null) : undefined}
@@ -2423,18 +2455,10 @@ export function RoomPageLiveKit() {
           micOn={micOn}
           camOn={camOn}
           screenShareOn={screenShareOn}
-          onToggleMic={() => {
-            toggleMic().catch?.(() => { });
-          }}
-          onToggleCam={() => {
-            toggleCam().catch?.(() => { });
-          }}
-          onToggleScreenShare={() => {
-            toggleScreenShare().catch?.(() => { });
-          }}
-          onLeave={() => {
-            leave().catch?.(() => { });
-          }}
+          onToggleMic={() => toggleMic().catch(() => { })}
+          onToggleCam={() => toggleCam().catch(() => { })}
+          onToggleScreenShare={() => toggleScreenShare().catch(() => { })}
+          onLeave={() => leave().catch(() => { })}
           onOpenParticipants={() => openRightTab("participants")}
           onOpenChat={() => openRightTab("chat")}
           onOpenIntentions={() => openRightTab("intentions")}
