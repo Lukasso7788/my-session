@@ -58,19 +58,13 @@ type FocusPlanItem = {
 type IntentionsPanelProps = {
   sessionId?: string; // should be UUID ideally
   theme?: RoomTheme;
-
-  // ✅ Timer from top-bar (recommended)
   timerText?: string;
-
-  // ✅ IMPORTANT:
   timerTextClassName?: string;
 };
 
-// UUID matcher (so we can safely detect slug vs uuid)
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-// ---- Document Picture-in-Picture typings (Chromium) ----
 type DocPiPWindow = Window & { document: Document; close: () => void };
 
 declare global {
@@ -114,7 +108,6 @@ function IconButton({
   );
 }
 
-// ✅ Same timer icon approach as RoomPageIFrame Icon("timer")
 function TimerSmartIcon({
   theme,
   className = "w-4 h-4",
@@ -195,8 +188,6 @@ export function IntentionsPanel({
   const isLight = theme === "light";
 
   const [user, setUser] = useState<any>(null);
-
-  // ✅ resolved UUID (so realtime filter + queries always match DB)
   const [sessionId, setSessionId] = useState<string | null>(null);
 
   const [intentions, setIntentions] = useState<Intention[]>([]);
@@ -206,19 +197,14 @@ export function IntentionsPanel({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState<string>("");
 
-  // avoid overlapping loads + stale updates
   const loadSeqRef = useRef(0);
 
-  // ✅ timer label shown in the panel header
   const [timerText, setTimerText] = useState<string>("--:--");
 
-  // ✅ overlay state (PiP / Popout)
   const overlayRef = useRef<{ win: any; container: HTMLElement; kind: "pip" | "window" } | null>(null);
   const [overlayOpen, setOverlayOpen] = useState(false);
 
-  // =========================
-  // ✅ Import from Focus plans (Supabase)
-  // =========================
+  // Import modal (Supabase focus plans)
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [plans, setPlans] = useState<FocusPlan[]>([]);
   const [plansLoading, setPlansLoading] = useState(false);
@@ -231,7 +217,6 @@ export function IntentionsPanel({
   const [importingItemId, setImportingItemId] = useState<string | null>(null);
   const [lastPlansLoadedAt, setLastPlansLoadedAt] = useState<string>("");
 
-  // tokens
   const titleText = isLight ? "text-black/85" : "text-white/85";
   const mutedText = isLight ? "text-black/50" : "text-white/45";
   const divider = isLight ? "bg-black/10" : "bg-white/5";
@@ -268,8 +253,7 @@ export function IntentionsPanel({
 
   const primaryBtn = "bg-emerald-500 hover:bg-emerald-600 text-[#02140B] font-semibold";
 
-  // ✅ FIX: stop bubbling to room WITHOUT breaking internal clicks
-  // IMPORTANT: DO NOT use capture here, otherwise events won't reach buttons/inputs.
+  // ✅ prevents room “tint” without breaking internal clicks
   const stopRoomBubbling = useCallback((e: any) => {
     e?.stopPropagation?.();
   }, []);
@@ -278,13 +262,11 @@ export function IntentionsPanel({
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
   }, []);
 
-  // ✅ timer: prefer prop
   useEffect(() => {
     const t = typeof timerTextProp === "string" ? timerTextProp.trim() : "";
     if (t) setTimerText(t);
   }, [timerTextProp]);
 
-  // ✅ fallback: if prop is NOT provided, listen to window event
   useEffect(() => {
     const t = typeof timerTextProp === "string" ? timerTextProp.trim() : "";
     if (t) return;
@@ -326,13 +308,11 @@ export function IntentionsPanel({
         return;
       }
 
-      // already UUID
       if (UUID_RE.test(raw)) {
         if (!cancelled) setSessionId(raw);
         return;
       }
 
-      // treat as slug → resolve sessions.id
       const slug = raw.toLowerCase();
 
       try {
@@ -383,7 +363,6 @@ export function IntentionsPanel({
     [sessionId]
   );
 
-  // ✅ Initial load + realtime (proper filter by session_id)
   useEffect(() => {
     if (!sessionId) return;
 
@@ -501,7 +480,6 @@ export function IntentionsPanel({
     [user?.id]
   );
 
-  // When modal opens → load plans and items
   useEffect(() => {
     if (!importModalOpen) return;
     if (!user?.id) return;
@@ -525,27 +503,55 @@ export function IntentionsPanel({
   }, [planItems, planSearch]);
 
   // =========================
-  // ✅ Two-way sync helpers
+  // ✅ NEW: exact sync from intention -> focus_plan_items
   // =========================
-  const syncFocusPlanCompletedFromIntention = useCallback(
+  const syncFocusPlanItemCompletedFromIntention = useCallback(
     async (intentionText: string, nextCompleted: boolean) => {
       if (!user?.id) return;
       if (!sessionId) return;
 
-      const t = safeTrim(intentionText);
-      if (!t) return;
+      const text = safeTrim(intentionText);
+      if (!text) return;
 
-      // Update items that match by text for this user,
-      // and are either already attached to this session OR not attached yet.
-      // This avoids needing a schema change.
       try {
-        // 1) mark completed
-        await supabase
+        // 1) Try find item already linked to this session
+        const { data: linked } = await supabase
           .from("focus_plan_items")
-          .update({ completed: nextCompleted, session_id: sessionId })
+          .select("id,session_id")
           .eq("user_id", user.id)
-          .eq("text", t)
-          .in("session_id", [sessionId, null] as any);
+          .eq("text", text)
+          .eq("session_id", sessionId)
+          .limit(1);
+
+        if (Array.isArray(linked) && linked[0]?.id) {
+          await supabase
+            .from("focus_plan_items")
+            .update({ completed: nextCompleted })
+            .eq("id", linked[0].id)
+            .eq("user_id", user.id);
+          return;
+        }
+
+        // 2) Else find item not linked yet (session_id IS NULL)
+        const { data: unlinked } = await supabase
+          .from("focus_plan_items")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("text", text)
+          .is("session_id", null)
+          .limit(1);
+
+        if (Array.isArray(unlinked) && unlinked[0]?.id) {
+          // link it + mark completed
+          await supabase
+            .from("focus_plan_items")
+            .update({ completed: nextCompleted, session_id: sessionId })
+            .eq("id", unlinked[0].id)
+            .eq("user_id", user.id);
+          return;
+        }
+
+        // 3) If nothing found — do nothing (MVP safe)
       } catch {
         // ignore
       }
@@ -560,26 +566,18 @@ export function IntentionsPanel({
       const text = safeTrim(item?.text);
       if (!text) return;
 
-      // If already in this session by text, we still may want to attach item to session.
       const alreadyInSession = myTextSet.has(text.toLowerCase());
-
       setImportingItemId(item.id);
 
       try {
-        // Attach focus plan item to this session (so FocusPlanPage knows it is linked)
-        // (safe even if it already had session_id)
+        // Link focus plan item to this session (persist!)
         try {
-          await supabase
-            .from("focus_plan_items")
-            .update({ session_id: sessionId })
-            .eq("id", item.id)
-            .eq("user_id", user.id);
+          await supabase.from("focus_plan_items").update({ session_id: sessionId }).eq("id", item.id).eq("user_id", user.id);
         } catch {
           // ignore
         }
 
         if (!alreadyInSession) {
-          // avoid DB duplicates too
           const { data: existing } = await supabase
             .from("intentions")
             .select("id")
@@ -597,10 +595,8 @@ export function IntentionsPanel({
           }
         }
 
-        // refresh intentions
         loadIntentions(sessionId);
 
-        // refresh plan items list to reflect attachment
         if (selectedPlanId) loadPlanItems(selectedPlanId);
       } finally {
         setImportingItemId(null);
@@ -609,9 +605,6 @@ export function IntentionsPanel({
     [user?.id, sessionId, myTextSet, loadIntentions, selectedPlanId, loadPlanItems]
   );
 
-  // =========================
-  // Intentions CRUD
-  // =========================
   const handleAddIntention = async () => {
     if (!newIntention.trim() || !user || !sessionId) return;
 
@@ -658,8 +651,8 @@ export function IntentionsPanel({
       return;
     }
 
-    // ✅ sync back to focus plan items
-    void syncFocusPlanCompletedFromIntention(text, next);
+    // ✅ FIXED: now it REALLY updates focus_plan_items reliably
+    void syncFocusPlanItemCompletedFromIntention(text, next);
   };
 
   const handleDelete = async (id: string) => {
@@ -701,16 +694,32 @@ export function IntentionsPanel({
     setEditingId(null);
     setEditingText("");
 
-    // (optional) we can also try to rename matching focus_plan_items for this session
-    // but do it best-effort & safe:
+    // best-effort: rename in focus_plan_items (linked or unlinked)
     try {
       if (user?.id && old.trim() && text.trim()) {
-        await supabase
+        const { data: linked } = await supabase
           .from("focus_plan_items")
-          .update({ text })
+          .select("id,session_id")
           .eq("user_id", user.id)
           .eq("text", old.trim())
-          .in("session_id", [sessionId, null] as any);
+          .eq("session_id", sessionId)
+          .limit(1);
+
+        if (Array.isArray(linked) && linked[0]?.id) {
+          await supabase.from("focus_plan_items").update({ text }).eq("id", linked[0].id).eq("user_id", user.id);
+        } else {
+          const { data: unlinked } = await supabase
+            .from("focus_plan_items")
+            .select("id")
+            .eq("user_id", user.id)
+            .eq("text", old.trim())
+            .is("session_id", null)
+            .limit(1);
+
+          if (Array.isArray(unlinked) && unlinked[0]?.id) {
+            await supabase.from("focus_plan_items").update({ text, session_id: sessionId }).eq("id", unlinked[0].id).eq("user_id", user.id);
+          }
+        }
       }
     } catch {
       // ignore
@@ -718,7 +727,7 @@ export function IntentionsPanel({
   };
 
   // =========================
-  // ✅ Pin / Overlay functions
+  // Overlay
   // =========================
   const closeOverlay = useCallback(() => {
     const o = overlayRef.current;
@@ -794,24 +803,15 @@ export function IntentionsPanel({
     };
   }, [closeOverlay]);
 
-  // =========================
-  // ✅ Import modal helpers
-  // =========================
   const getPortalDocument = useCallback((): Document => {
     const o = overlayRef.current;
     const doc = o?.win?.document;
     return doc || document;
   }, []);
 
-  const openImportModal = useCallback(() => {
-    setImportModalOpen(true);
-  }, []);
+  const openImportModal = useCallback(() => setImportModalOpen(true), []);
+  const closeImportModal = useCallback(() => setImportModalOpen(false), []);
 
-  const closeImportModal = useCallback(() => {
-    setImportModalOpen(false);
-  }, []);
-
-  // ESC to close import modal (works in normal and pip/window)
   useEffect(() => {
     if (!importModalOpen) return;
 
@@ -829,9 +829,6 @@ export function IntentionsPanel({
     return () => win.removeEventListener("keydown", onKeyDown);
   }, [importModalOpen, closeImportModal, getPortalDocument]);
 
-  // =========================
-  // UI states for session id
-  // =========================
   if (!rawSessionId) {
     return (
       <div className={"h-full flex items-center justify-center font-inter " + panelBg}>
@@ -850,13 +847,8 @@ export function IntentionsPanel({
 
   const timerPillCls = isLight ? "bg-black/5 border border-black/10 text-black/80" : "bg-white/5 border border-white/10 text-white/80";
   const headerTitle = isLight ? "text-black/85" : "text-white/85";
-
-  // ✅ Timer typography
   const timerTextCls = `tabular-nums text-[12px] ${timerTextClassName || ""} font-inter font-normal`.trim();
 
-  // =========================
-  // ✅ Import modal UI (real Supabase focus plans)
-  // =========================
   const ImportModal = importModalOpen
     ? (() => {
       const modalDoc = getPortalDocument();
@@ -883,12 +875,10 @@ export function IntentionsPanel({
               modalBorder,
             ].join(" ")}
             style={{ fontFamily: OVERLAY_FONT_FAMILY }}
-            // prevent room bubbling but allow internal clicks
             onMouseDown={stopRoomBubbling}
             onPointerDown={stopRoomBubbling}
             onClick={stopRoomBubbling}
           >
-            {/* header */}
             <div className={["px-4 py-3 border-b", modalBorder].join(" ")}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -921,7 +911,6 @@ export function IntentionsPanel({
               </div>
             </div>
 
-            {/* body */}
             <div className="p-4 overflow-y-auto custom-scrollbar" style={{ maxHeight: "calc(78vh - 56px)" }}>
               {plansLoading ? (
                 <div className={"text-[12px] italic " + mutedText}>Loading plans…</div>
@@ -985,10 +974,7 @@ export function IntentionsPanel({
                         const isAttachedToThisSession = safeTrim(it.session_id) === safeTrim(sessionId);
 
                         return (
-                          <div
-                            key={it.id}
-                            className={["rounded-xl border px-3 py-2.5 transition", rowBg, rowBorder].join(" ")}
-                          >
+                          <div key={it.id} className={["rounded-xl border px-3 py-2.5 transition", rowBg, rowBorder].join(" ")}>
                             <div className="flex items-start gap-3">
                               <div className="flex-1 min-w-0">
                                 <div
@@ -1041,16 +1027,12 @@ export function IntentionsPanel({
                       })}
 
                       {filteredPlanItems.length > 40 ? (
-                        <div className={"text-[11px] italic mt-1 " + mutedText}>
-                          Showing first 40 items (filter to find more).
-                        </div>
+                        <div className={"text-[11px] italic mt-1 " + mutedText}>Showing first 40 items (filter to find more).</div>
                       ) : null}
                     </div>
                   )}
 
-                  <div className={"mt-4 text-[11px] " + mutedText}>
-                    Tip: you can still fully edit items in Focus plan page; here you import + link.
-                  </div>
+                  <div className={"mt-4 text-[11px] " + mutedText}>Tip: you can still fully edit items in Focus plan page; here you import + link.</div>
                 </>
               )}
             </div>
@@ -1064,12 +1046,10 @@ export function IntentionsPanel({
   const PanelUI = (
     <div
       className={"h-full flex flex-col min-h-0 font-inter " + panelBg}
-      // ✅ prevents room “tint” without breaking internal clicks
       onPointerDown={stopRoomBubbling}
       onMouseDown={stopRoomBubbling}
       onClick={stopRoomBubbling}
     >
-      {/* Header */}
       <div className={"px-4 pt-4 pb-3 shrink-0 border-b " + headerBorder + " " + headerBg}>
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
@@ -1078,15 +1058,13 @@ export function IntentionsPanel({
           </div>
 
           <div className="flex items-center gap-2 shrink-0 font-inter">
-            {/* ✅ Timer pill */}
             <div className={"inline-flex items-center gap-2 px-3 py-2 rounded-xl " + timerPillCls} title="Timer">
               <TimerSmartIcon theme={theme} className="w-4 h-4 opacity-80" />
-              <span className={`tabular-nums text-[12px] ${timerTextClassName || ""} font-inter font-normal`.trim() + " leading-none"} style={{ fontFamily: OVERLAY_FONT_FAMILY }}>
+              <span className={timerTextCls + " leading-none"} style={{ fontFamily: OVERLAY_FONT_FAMILY }}>
                 {timerText || "--:--"}
               </span>
             </div>
 
-            {/* ✅ Import icon (opens modal) */}
             <IconButton
               theme={theme}
               title="Import from my plans"
@@ -1138,7 +1116,6 @@ export function IntentionsPanel({
         </div>
       </div>
 
-      {/* Content */}
       <div className="px-4 pb-4 pt-4 min-h-0 flex-1 overflow-y-auto custom-scrollbar font-inter">
         <div className="mb-5">
           <div className={titleText + " font-inter font-semibold text-[13px] mb-3"}>My intentions</div>
