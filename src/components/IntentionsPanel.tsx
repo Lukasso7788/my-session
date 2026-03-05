@@ -35,6 +35,26 @@ interface Intention {
   };
 }
 
+type FocusPlan = {
+  id: string;
+  user_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type FocusPlanItem = {
+  id: string;
+  plan_id: string;
+  user_id: string;
+  text: string;
+  target_date: string | null; // YYYY-MM-DD
+  session_id: string | null;
+  created_at: string;
+  completed: boolean;
+  sort_order: number;
+};
+
 type IntentionsPanelProps = {
   sessionId?: string; // should be UUID ideally
   theme?: RoomTheme;
@@ -63,61 +83,6 @@ declare global {
 
 const OVERLAY_FONT_FAMILY =
   'Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"';
-
-// =========================
-// ✅ Focus-plan localStorage types (MVP)
-// =========================
-type PlanItem = {
-  id: string;
-  text: string;
-  due_at?: string | null;
-  session_id?: string | null;
-  done?: boolean;
-  attached?: boolean;
-  attached_at?: string | null;
-};
-
-type Plan = {
-  id: string;
-  title: string;
-  created_at: string;
-  updated_at: string;
-  items: PlanItem[];
-};
-
-function storageKey(userId: string) {
-  return `mysession_focus_plans_v1_${userId}`;
-}
-
-function safeParsePlans(raw: string | null): Plan[] {
-  if (!raw) return [];
-  try {
-    const v = JSON.parse(raw);
-    if (!Array.isArray(v)) return [];
-    return v
-      .filter((p) => p && typeof p === "object" && typeof p.id === "string")
-      .map((p) => ({
-        id: String((p as any).id),
-        title: String((p as any).title || "Plan"),
-        created_at: String((p as any).created_at || new Date().toISOString()),
-        updated_at: String((p as any).updated_at || new Date().toISOString()),
-        items: Array.isArray((p as any).items)
-          ? (p as any).items.map((it: any) => ({
-            id: String(it?.id || ""),
-            text: String(it?.text || "").trim(),
-            due_at: it?.due_at ? String(it.due_at) : null,
-            session_id: it?.session_id ? String(it.session_id) : null,
-            done: Boolean(it?.done),
-            attached: Boolean(it?.attached),
-            attached_at: it?.attached_at ? String(it.attached_at) : null,
-          }))
-          : [],
-      }))
-      .filter((p) => p.id && Array.isArray(p.items));
-  } catch {
-    return [];
-  }
-}
 
 function IconButton({
   title,
@@ -210,6 +175,14 @@ function applyOverlayBaseStyles(doc: Document, isLight: boolean) {
   }
 }
 
+function safeTrim(x: any) {
+  return String(x || "").trim();
+}
+
+function safeLower(x: any) {
+  return safeTrim(x).toLowerCase();
+}
+
 export function IntentionsPanel({
   sessionId: sessionIdProp,
   theme = "dark",
@@ -244,14 +217,19 @@ export function IntentionsPanel({
   const [overlayOpen, setOverlayOpen] = useState(false);
 
   // =========================
-  // ✅ Import from Plans (modal) state
+  // ✅ Import from Focus plans (Supabase)
   // =========================
   const [importModalOpen, setImportModalOpen] = useState(false);
-  const [plans, setPlans] = useState<Plan[]>([]);
+  const [plans, setPlans] = useState<FocusPlan[]>([]);
+  const [plansLoading, setPlansLoading] = useState(false);
+
   const [selectedPlanId, setSelectedPlanId] = useState<string>("");
+  const [planItems, setPlanItems] = useState<FocusPlanItem[]>([]);
+  const [planItemsLoading, setPlanItemsLoading] = useState(false);
+
   const [planSearch, setPlanSearch] = useState("");
   const [importingItemId, setImportingItemId] = useState<string | null>(null);
-  const [plansLastLoadedAt, setPlansLastLoadedAt] = useState<string>("");
+  const [lastPlansLoadedAt, setLastPlansLoadedAt] = useState<string>("");
 
   // tokens
   const titleText = isLight ? "text-black/85" : "text-white/85";
@@ -290,10 +268,9 @@ export function IntentionsPanel({
 
   const primaryBtn = "bg-emerald-500 hover:bg-emerald-600 text-[#02140B] font-semibold";
 
-  // ✅ FIX: stop bubbling to room (prevents whole room tint / click side-effects)
-  const stopRoomBubblingCapture = useCallback((e: any) => {
-    // We only stop propagation; we don't block default, so inputs still work.
-    // Use capture phase so parent room handlers won't see it.
+  // ✅ FIX: stop bubbling to room WITHOUT breaking internal clicks
+  // IMPORTANT: DO NOT use capture here, otherwise events won't reach buttons/inputs.
+  const stopRoomBubbling = useCallback((e: any) => {
     e?.stopPropagation?.();
   }, []);
 
@@ -301,7 +278,7 @@ export function IntentionsPanel({
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
   }, []);
 
-  // ✅ timer: prefer prop (this is what makes it match top bar 1:1)
+  // ✅ timer: prefer prop
   useEffect(() => {
     const t = typeof timerTextProp === "string" ? timerTextProp.trim() : "";
     if (t) setTimerText(t);
@@ -441,152 +418,200 @@ export function IntentionsPanel({
   }, [sessionId, loadIntentions]);
 
   const myIntentions = useMemo(() => intentions.filter((i) => i.user_id === user?.id), [intentions, user?.id]);
-
   const teamIntentions = useMemo(() => intentions, [intentions]);
 
   const myTextSet = useMemo(() => {
     const set = new Set<string>();
     for (const i of myIntentions) {
-      const t = String(i?.text || "").trim().toLowerCase();
+      const t = safeLower(i?.text);
       if (t) set.add(t);
     }
     return set;
   }, [myIntentions]);
 
   // =========================
-  // ✅ Plans load / sync (storage)
+  // ✅ Focus plans load (Supabase)
   // =========================
-  const loadPlansFromStorage = useCallback(() => {
-    if (!user?.id) {
-      setPlans([]);
-      setSelectedPlanId("");
-      setPlansLastLoadedAt(new Date().toISOString());
-      return;
-    }
+  const loadPlans = useCallback(async () => {
+    if (!user?.id) return;
 
+    setPlansLoading(true);
     try {
-      const key = storageKey(user.id);
-      const parsed = safeParsePlans(localStorage.getItem(key));
-      setPlans(parsed);
+      const { data, error } = await supabase
+        .from("focus_plans")
+        .select("id,user_id,title,created_at,updated_at")
+        .eq("user_id", user.id)
+        .order("updated_at", { ascending: false });
+
+      if (error || !Array.isArray(data)) {
+        setPlans([]);
+        setSelectedPlanId("");
+        return;
+      }
+
+      const list = data as FocusPlan[];
+      setPlans(list);
 
       setSelectedPlanId((prev) => {
-        if (parsed.length === 0) return "";
-        if (!prev) return parsed[0].id;
-        if (!parsed.find((p) => p.id === prev)) return parsed[0].id;
-        return prev;
+        if (list.length === 0) return "";
+        if (prev && list.some((p) => p.id === prev)) return prev;
+        return list[0].id;
       });
 
-      setPlansLastLoadedAt(new Date().toISOString());
+      setLastPlansLoadedAt(new Date().toISOString());
     } catch {
       setPlans([]);
       setSelectedPlanId("");
-      setPlansLastLoadedAt(new Date().toISOString());
+      setLastPlansLoadedAt(new Date().toISOString());
+    } finally {
+      setPlansLoading(false);
     }
   }, [user?.id]);
 
-  // load once on auth
-  useEffect(() => {
-    if (!user?.id) return;
-    loadPlansFromStorage();
-  }, [user?.id, loadPlansFromStorage]);
-
-  // listen storage changes (if focus-plan open in another tab)
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const key = storageKey(user.id);
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === key) loadPlansFromStorage();
-    };
-
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, [user?.id, loadPlansFromStorage]);
-
-  const selectedPlan = useMemo(() => {
-    if (!selectedPlanId) return null;
-    return plans.find((p) => p.id === selectedPlanId) || null;
-  }, [plans, selectedPlanId]);
-
-  const planItemsVisible = useMemo(() => {
-    const p = selectedPlan;
-    if (!p) return [];
-
-    const q = String(planSearch || "").trim().toLowerCase();
-    const base = (p.items || []).filter((it) => String(it?.text || "").trim().length > 0);
-
-    if (!q) return base;
-    return base.filter((it) => String(it.text || "").toLowerCase().includes(q));
-  }, [selectedPlan, planSearch]);
-
-  const markPlanItemAttached = useCallback(
-    (planId: string, itemId: string) => {
+  const loadPlanItems = useCallback(
+    async (planId: string) => {
       if (!user?.id) return;
+      if (!planId) {
+        setPlanItems([]);
+        return;
+      }
 
-      const key = storageKey(user.id);
-      const now = new Date().toISOString();
-
-      const nextPlans = plans.map((p) => {
-        if (p.id !== planId) return p;
-        return {
-          ...p,
-          updated_at: now,
-          items: (p.items || []).map((it) => (it.id === itemId ? { ...it, attached: true, attached_at: now } : it)),
-        };
-      });
-
-      setPlans(nextPlans);
+      setPlanItemsLoading(true);
       try {
-        localStorage.setItem(key, JSON.stringify(nextPlans));
+        const { data, error } = await supabase
+          .from("focus_plan_items")
+          .select("id,plan_id,user_id,text,target_date,session_id,created_at,completed,sort_order")
+          .eq("user_id", user.id)
+          .eq("plan_id", planId)
+          .order("sort_order", { ascending: true })
+          .order("created_at", { ascending: false });
+
+        if (error || !Array.isArray(data)) {
+          setPlanItems([]);
+          return;
+        }
+
+        setPlanItems(data as FocusPlanItem[]);
+      } catch {
+        setPlanItems([]);
+      } finally {
+        setPlanItemsLoading(false);
+      }
+    },
+    [user?.id]
+  );
+
+  // When modal opens → load plans and items
+  useEffect(() => {
+    if (!importModalOpen) return;
+    if (!user?.id) return;
+    void loadPlans();
+  }, [importModalOpen, user?.id, loadPlans]);
+
+  useEffect(() => {
+    if (!importModalOpen) return;
+    if (!selectedPlanId) {
+      setPlanItems([]);
+      return;
+    }
+    void loadPlanItems(selectedPlanId);
+  }, [importModalOpen, selectedPlanId, loadPlanItems]);
+
+  const filteredPlanItems = useMemo(() => {
+    const q = safeLower(planSearch);
+    const base = (planItems || []).filter((it) => safeTrim(it?.text).length > 0);
+    if (!q) return base;
+    return base.filter((it) => safeLower(it.text).includes(q));
+  }, [planItems, planSearch]);
+
+  // =========================
+  // ✅ Two-way sync helpers
+  // =========================
+  const syncFocusPlanCompletedFromIntention = useCallback(
+    async (intentionText: string, nextCompleted: boolean) => {
+      if (!user?.id) return;
+      if (!sessionId) return;
+
+      const t = safeTrim(intentionText);
+      if (!t) return;
+
+      // Update items that match by text for this user,
+      // and are either already attached to this session OR not attached yet.
+      // This avoids needing a schema change.
+      try {
+        // 1) mark completed
+        await supabase
+          .from("focus_plan_items")
+          .update({ completed: nextCompleted, session_id: sessionId })
+          .eq("user_id", user.id)
+          .eq("text", t)
+          .in("session_id", [sessionId, null] as any);
       } catch {
         // ignore
       }
     },
-    [plans, user?.id]
+    [user?.id, sessionId]
   );
 
   const importPlanItemToThisSession = useCallback(
-    async (item: PlanItem) => {
+    async (item: FocusPlanItem) => {
       if (!user?.id || !sessionId) return;
 
-      const text = String(item?.text || "").trim();
+      const text = safeTrim(item?.text);
       if (!text) return;
 
-      // if already in current session (by text), do nothing
-      if (myTextSet.has(text.toLowerCase())) return;
+      // If already in this session by text, we still may want to attach item to session.
+      const alreadyInSession = myTextSet.has(text.toLowerCase());
 
       setImportingItemId(item.id);
 
       try {
-        // avoid duplicates from DB side too
-        const { data: existing } = await supabase
-          .from("intentions")
-          .select("id")
-          .eq("user_id", user.id)
-          .eq("session_id", sessionId)
-          .eq("text", text)
-          .limit(1);
-
-        if (!existing || existing.length === 0) {
-          const { error } = await supabase
-            .from("intentions")
-            .insert([{ user_id: user.id, session_id: sessionId, text, completed: false }]);
-
-          if (error) return;
+        // Attach focus plan item to this session (so FocusPlanPage knows it is linked)
+        // (safe even if it already had session_id)
+        try {
+          await supabase
+            .from("focus_plan_items")
+            .update({ session_id: sessionId })
+            .eq("id", item.id)
+            .eq("user_id", user.id);
+        } catch {
+          // ignore
         }
 
-        // refresh intentions list
+        if (!alreadyInSession) {
+          // avoid DB duplicates too
+          const { data: existing } = await supabase
+            .from("intentions")
+            .select("id")
+            .eq("user_id", user.id)
+            .eq("session_id", sessionId)
+            .eq("text", text)
+            .limit(1);
+
+          if (!existing || existing.length === 0) {
+            const { error } = await supabase
+              .from("intentions")
+              .insert([{ user_id: user.id, session_id: sessionId, text, completed: Boolean(item.completed) }]);
+
+            if (error) return;
+          }
+        }
+
+        // refresh intentions
         loadIntentions(sessionId);
 
-        // mark attached in local plans (nice UX)
-        if (selectedPlanId) markPlanItemAttached(selectedPlanId, item.id);
+        // refresh plan items list to reflect attachment
+        if (selectedPlanId) loadPlanItems(selectedPlanId);
       } finally {
         setImportingItemId(null);
       }
     },
-    [user?.id, sessionId, myTextSet, loadIntentions, selectedPlanId, markPlanItemAttached]
+    [user?.id, sessionId, myTextSet, loadIntentions, selectedPlanId, loadPlanItems]
   );
 
+  // =========================
+  // Intentions CRUD
+  // =========================
   const handleAddIntention = async () => {
     if (!newIntention.trim() || !user || !sessionId) return;
 
@@ -622,6 +647,7 @@ export function IntentionsPanel({
     if (!sessionId) return;
 
     const next = !Boolean(intention.completed);
+    const text = safeTrim(intention.text);
 
     setIntentions((prev) => prev.map((i) => (i.id === intention.id ? { ...i, completed: next } : i)));
 
@@ -629,7 +655,11 @@ export function IntentionsPanel({
 
     if (error) {
       setIntentions((prev) => prev.map((i) => (i.id === intention.id ? { ...i, completed: !next } : i)));
+      return;
     }
+
+    // ✅ sync back to focus plan items
+    void syncFocusPlanCompletedFromIntention(text, next);
   };
 
   const handleDelete = async (id: string) => {
@@ -670,6 +700,21 @@ export function IntentionsPanel({
 
     setEditingId(null);
     setEditingText("");
+
+    // (optional) we can also try to rename matching focus_plan_items for this session
+    // but do it best-effort & safe:
+    try {
+      if (user?.id && old.trim() && text.trim()) {
+        await supabase
+          .from("focus_plan_items")
+          .update({ text })
+          .eq("user_id", user.id)
+          .eq("text", old.trim())
+          .in("session_id", [sessionId, null] as any);
+      }
+    } catch {
+      // ignore
+    }
   };
 
   // =========================
@@ -701,7 +746,6 @@ export function IntentionsPanel({
 
         pipWin.document.title = "Intentions";
         applyOverlayBaseStyles(pipWin.document, isLight);
-
         copyStylesToDocument(document, pipWin.document);
 
         const container = pipWin.document.createElement("div");
@@ -723,7 +767,6 @@ export function IntentionsPanel({
 
       w.document.title = "Intentions";
       applyOverlayBaseStyles(w.document, isLight);
-
       copyStylesToDocument(document, w.document);
 
       const container = w.document.createElement("div");
@@ -762,8 +805,7 @@ export function IntentionsPanel({
 
   const openImportModal = useCallback(() => {
     setImportModalOpen(true);
-    loadPlansFromStorage();
-  }, [loadPlansFromStorage]);
+  }, []);
 
   const closeImportModal = useCallback(() => {
     setImportModalOpen(false);
@@ -813,7 +855,7 @@ export function IntentionsPanel({
   const timerTextCls = `tabular-nums text-[12px] ${timerTextClassName || ""} font-inter font-normal`.trim();
 
   // =========================
-  // ✅ Import modal UI
+  // ✅ Import modal UI (real Supabase focus plans)
   // =========================
   const ImportModal = importModalOpen
     ? (() => {
@@ -831,34 +873,36 @@ export function IntentionsPanel({
         <div
           className={["fixed inset-0 z-[9999] flex items-center justify-center", backdropBg, "font-inter"].join(" ")}
           onMouseDown={(e) => {
-            // click on backdrop closes
             if (e.target === e.currentTarget) closeImportModal();
           }}
         >
           <div
-            className={["w-[min(680px,calc(100vw-24px))] max-h-[min(78vh,720px)] rounded-2xl border shadow-xl overflow-hidden", modalBg, modalBorder].join(
-              " "
-            )}
+            className={[
+              "w-[min(720px,calc(100vw-24px))] max-h-[min(78vh,760px)] rounded-2xl border shadow-xl overflow-hidden",
+              modalBg,
+              modalBorder,
+            ].join(" ")}
             style={{ fontFamily: OVERLAY_FONT_FAMILY }}
-            // ✅ FIX: stop bubbling to room (modal too, esp. when panel is inside room DOM)
-            onMouseDownCapture={stopRoomBubblingCapture}
-            onPointerDownCapture={stopRoomBubblingCapture}
-            onClickCapture={stopRoomBubblingCapture}
-            onDoubleClickCapture={stopRoomBubblingCapture}
+            // prevent room bubbling but allow internal clicks
+            onMouseDown={stopRoomBubbling}
+            onPointerDown={stopRoomBubbling}
+            onClick={stopRoomBubbling}
           >
             {/* header */}
             <div className={["px-4 py-3 border-b", modalBorder].join(" ")}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className={["text-[13px] font-semibold", modalTitle].join(" ")}>Import from my plans</div>
-                  <div className={["text-[11px] mt-0.5", modalSub].join(" ")}>Adds items into this session’s intentions.</div>
+                  <div className={["text-[11px] mt-0.5", modalSub].join(" ")}>
+                    Imports Focus plan items into this session’s intentions, and links the item to this session.
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
                   <button
                     type="button"
                     className={"h-9 px-3 rounded-xl text-[12px] font-semibold transition inline-flex items-center gap-2 " + ghostBtn}
-                    onClick={() => loadPlansFromStorage()}
+                    onClick={() => loadPlans()}
                     title="Refresh plans"
                   >
                     <RefreshCw size={14} />
@@ -879,10 +923,12 @@ export function IntentionsPanel({
 
             {/* body */}
             <div className="p-4 overflow-y-auto custom-scrollbar" style={{ maxHeight: "calc(78vh - 56px)" }}>
-              {plans.length === 0 ? (
+              {plansLoading ? (
+                <div className={"text-[12px] italic " + mutedText}>Loading plans…</div>
+              ) : plans.length === 0 ? (
                 <div className={"text-[12px] italic " + mutedText}>
                   No plans found. Create a plan in Focus plan page.
-                  {plansLastLoadedAt ? ` (checked ${new Date(plansLastLoadedAt).toLocaleTimeString()})` : ""}
+                  {lastPlansLoadedAt ? ` (checked ${new Date(lastPlansLoadedAt).toLocaleTimeString()})` : ""}
                 </div>
               ) : (
                 <>
@@ -900,7 +946,7 @@ export function IntentionsPanel({
                     >
                       {plans.map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.title} ({p.items?.length || 0})
+                          {p.title}
                         </option>
                       ))}
                     </select>
@@ -916,43 +962,51 @@ export function IntentionsPanel({
                         <Search size={16} className={isLight ? "text-black/40" : "text-white/45"} />
                       </div>
 
-                      <input value={planSearch} onChange={(e) => setPlanSearch(e.target.value)} placeholder="Type to filter plan items..." className={"flex-1 " + inputCls} />
+                      <input
+                        value={planSearch}
+                        onChange={(e) => setPlanSearch(e.target.value)}
+                        placeholder="Type to filter plan items..."
+                        className={"flex-1 " + inputCls}
+                      />
                     </div>
                   </div>
 
                   <div className={"h-px my-4 " + divider} />
 
-                  {!selectedPlan ? (
-                    <div className={"text-[12px] italic " + mutedText}>Select a plan.</div>
-                  ) : planItemsVisible.length === 0 ? (
+                  {planItemsLoading ? (
+                    <div className={"text-[12px] italic " + mutedText}>Loading items…</div>
+                  ) : filteredPlanItems.length === 0 ? (
                     <div className={"text-[12px] italic " + mutedText}>No items match your filter.</div>
                   ) : (
                     <div className="flex flex-col gap-2">
-                      {planItemsVisible.slice(0, 30).map((it) => {
-                        const text = String(it.text || "").trim();
+                      {filteredPlanItems.slice(0, 40).map((it) => {
+                        const text = safeTrim(it.text);
                         const alreadyInSession = myTextSet.has(text.toLowerCase());
-                        const attached = Boolean(it.attached);
+                        const isAttachedToThisSession = safeTrim(it.session_id) === safeTrim(sessionId);
 
                         return (
-                          <div key={it.id} className={["rounded-xl border px-3 py-2.5 transition", rowBg, rowBorder].join(" ")}>
+                          <div
+                            key={it.id}
+                            className={["rounded-xl border px-3 py-2.5 transition", rowBg, rowBorder].join(" ")}
+                          >
                             <div className="flex items-start gap-3">
                               <div className="flex-1 min-w-0">
                                 <div
                                   className={[
                                     "text-[13px] break-words leading-5",
-                                    it.done ? (isLight ? "text-black/45 line-through" : "text-white/50 line-through") : isLight ? "text-black/80" : "text-white/80",
+                                    it.completed ? (isLight ? "text-black/45 line-through" : "text-white/50 line-through") : isLight ? "text-black/80" : "text-white/80",
                                   ].join(" ")}
                                 >
                                   {text}
                                 </div>
 
                                 <div className={"mt-1 text-[11px] " + mutedText}>
-                                  {attached ? "Marked attached in plan" : "Plan item"}
-                                  {it.due_at ? ` · Due: ${new Date(it.due_at).toLocaleString()}` : ""}
+                                  {isAttachedToThisSession ? "Linked to this session" : it.session_id ? "Linked to another session" : "Not linked yet"}
+                                  {it.target_date ? ` · Due: ${it.target_date}` : ""}
                                 </div>
                               </div>
 
-                              {alreadyInSession ? (
+                              {alreadyInSession && isAttachedToThisSession ? (
                                 <div className="shrink-0">
                                   <div
                                     className={[
@@ -986,11 +1040,17 @@ export function IntentionsPanel({
                         );
                       })}
 
-                      {planItemsVisible.length > 30 ? <div className={"text-[11px] italic mt-1 " + mutedText}>Showing first 30 items (filter to find more).</div> : null}
+                      {filteredPlanItems.length > 40 ? (
+                        <div className={"text-[11px] italic mt-1 " + mutedText}>
+                          Showing first 40 items (filter to find more).
+                        </div>
+                      ) : null}
                     </div>
                   )}
 
-                  <div className={"mt-4 text-[11px] " + mutedText}>Tip: full editing stays in Focus plan; here you only push items into the room.</div>
+                  <div className={"mt-4 text-[11px] " + mutedText}>
+                    Tip: you can still fully edit items in Focus plan page; here you import + link.
+                  </div>
                 </>
               )}
             </div>
@@ -1004,11 +1064,10 @@ export function IntentionsPanel({
   const PanelUI = (
     <div
       className={"h-full flex flex-col min-h-0 font-inter " + panelBg}
-      // ✅ FIX: stop bubbling to room (prevents whole room tint)
-      onMouseDownCapture={stopRoomBubblingCapture}
-      onPointerDownCapture={stopRoomBubblingCapture}
-      onClickCapture={stopRoomBubblingCapture}
-      onDoubleClickCapture={stopRoomBubblingCapture}
+      // ✅ prevents room “tint” without breaking internal clicks
+      onPointerDown={stopRoomBubbling}
+      onMouseDown={stopRoomBubbling}
+      onClick={stopRoomBubbling}
     >
       {/* Header */}
       <div className={"px-4 pt-4 pb-3 shrink-0 border-b " + headerBorder + " " + headerBg}>
@@ -1022,7 +1081,7 @@ export function IntentionsPanel({
             {/* ✅ Timer pill */}
             <div className={"inline-flex items-center gap-2 px-3 py-2 rounded-xl " + timerPillCls} title="Timer">
               <TimerSmartIcon theme={theme} className="w-4 h-4 opacity-80" />
-              <span className={timerTextCls + " leading-none"} style={{ fontFamily: OVERLAY_FONT_FAMILY }}>
+              <span className={`tabular-nums text-[12px] ${timerTextClassName || ""} font-inter font-normal`.trim() + " leading-none"} style={{ fontFamily: OVERLAY_FONT_FAMILY }}>
                 {timerText || "--:--"}
               </span>
             </div>
@@ -1250,7 +1309,6 @@ export function IntentionsPanel({
 
                     <div className="flex-1 min-w-0">
                       <div className={"text-[13px] font-medium truncate font-inter " + nameCls}>{isMine ? "You" : item.profiles?.full_name || "Participant"}</div>
-
                       <div className={"text-[13px] break-words leading-5 font-inter " + (item.completed ? bodyDone : bodyActive)}>{item.text}</div>
                     </div>
 
@@ -1265,7 +1323,6 @@ export function IntentionsPanel({
         )}
       </div>
 
-      {/* ✅ Modal */}
       {ImportModal}
     </div>
   );
@@ -1277,14 +1334,7 @@ export function IntentionsPanel({
       {!overlayOpen ? (
         PanelUI
       ) : (
-        <div
-          className={"h-full flex items-center justify-center font-inter " + panelBg}
-          // ✅ FIX: stop bubbling to room even on "Pinned" placeholder
-          onMouseDownCapture={stopRoomBubblingCapture}
-          onPointerDownCapture={stopRoomBubblingCapture}
-          onClickCapture={stopRoomBubblingCapture}
-          onDoubleClickCapture={stopRoomBubblingCapture}
-        >
+        <div className={"h-full flex items-center justify-center font-inter " + panelBg} onPointerDown={stopRoomBubbling} onMouseDown={stopRoomBubbling} onClick={stopRoomBubbling}>
           <div className="text-center font-inter">
             <div className={"text-[12px] font-inter " + titleText}>Pinned</div>
             <div className={"text-[12px] italic mt-1 font-inter " + mutedText}>Intentions are opened in a floating window.</div>

@@ -33,10 +33,17 @@ type SessionLite = {
     custom_slug?: string | null;
 };
 
-type RecentItemRow = {
+type IntentionRow = {
     id: string;
     text: string;
+    user_id: string;
+    session_id: string;
     created_at?: string;
+    completed?: boolean;
+    profiles?: {
+        full_name?: string;
+        avatar_url?: string;
+    };
 };
 
 const UUID_RE =
@@ -44,6 +51,10 @@ const UUID_RE =
 
 function safeLower(x: any) {
     return String(x || "").toLowerCase();
+}
+
+function safeTrim(x: any) {
+    return String(x || "").trim();
 }
 
 function fmtWhen(iso?: string | null) {
@@ -82,124 +93,6 @@ function buildLoginNext(urlPath: string) {
     return `/login?next=${encodeURIComponent(next)}`;
 }
 
-// best-effort safe remove channel across supabase versions
-function safeRemoveRealtimeChannel(ch: any) {
-    if (!ch) return;
-    try {
-        if (typeof ch.unsubscribe === "function") {
-            void ch.unsubscribe();
-            return;
-        }
-    } catch { }
-
-    const sb: any = supabase as any;
-
-    try {
-        if (typeof sb.removeChannel === "function") {
-            void sb.removeChannel(ch);
-            return;
-        }
-    } catch { }
-
-    try {
-        if (typeof sb.removeSubscription === "function") {
-            void sb.removeSubscription(ch);
-            return;
-        }
-    } catch { }
-
-    try {
-        if (sb.realtime && typeof sb.realtime.removeChannel === "function") {
-            void sb.realtime.removeChannel(ch);
-            return;
-        }
-    } catch { }
-}
-
-// ✅ ensure team visibility: keep a shadow row in `intentions` (best-effort)
-async function ensureSessionIntentionRow(args: { userId: string; sessionId: string; text: string; completed?: boolean }) {
-    const userId = String(args.userId || "").trim();
-    const sessionId = String(args.sessionId || "").trim();
-    const text = String(args.text || "").trim();
-    if (!userId || !sessionId || !UUID_RE.test(sessionId) || !text) return;
-
-    try {
-        const { data: existing } = await supabase
-            .from("intentions")
-            .select("id")
-            .eq("user_id", userId)
-            .eq("session_id", sessionId)
-            .eq("text", text)
-            .limit(1);
-
-        if (!existing || existing.length === 0) {
-            await supabase.from("intentions").insert([{ user_id: userId, session_id: sessionId, text, completed: !!args.completed }]);
-        } else {
-            // optional sync completed
-            if (typeof args.completed === "boolean") {
-                await supabase
-                    .from("intentions")
-                    .update({ completed: !!args.completed })
-                    .eq("user_id", userId)
-                    .eq("session_id", sessionId)
-                    .eq("text", text);
-            }
-        }
-    } catch {
-        // ignore
-    }
-}
-
-// ✅ best-effort sync for edits / completion into `intentions`
-async function syncIntentionCompleted(userId: string, sessionId: string, text: string, completed: boolean) {
-    const uid = String(userId || "").trim();
-    const sid = String(sessionId || "").trim();
-    const t = String(text || "").trim();
-    if (!uid || !sid || !UUID_RE.test(sid) || !t) return;
-
-    try {
-        await supabase
-            .from("intentions")
-            .update({ completed: !!completed })
-            .eq("user_id", uid)
-            .eq("session_id", sid)
-            .eq("text", t);
-    } catch { }
-}
-
-async function syncIntentionText(userId: string, sessionId: string, oldText: string, newText: string) {
-    const uid = String(userId || "").trim();
-    const sid = String(sessionId || "").trim();
-    const o = String(oldText || "").trim();
-    const n = String(newText || "").trim();
-    if (!uid || !sid || !UUID_RE.test(sid) || !o || !n) return;
-
-    try {
-        await supabase
-            .from("intentions")
-            .update({ text: n })
-            .eq("user_id", uid)
-            .eq("session_id", sid)
-            .eq("text", o);
-    } catch { }
-}
-
-async function deleteIntentionRow(userId: string, sessionId: string, text: string) {
-    const uid = String(userId || "").trim();
-    const sid = String(sessionId || "").trim();
-    const t = String(text || "").trim();
-    if (!uid || !sid || !UUID_RE.test(sid) || !t) return;
-
-    try {
-        await supabase
-            .from("intentions")
-            .delete()
-            .eq("user_id", uid)
-            .eq("session_id", sid)
-            .eq("text", t);
-    } catch { }
-}
-
 export default function FocusPlanPage() {
     const navigate = useNavigate();
     const [sp, setSp] = useSearchParams();
@@ -217,8 +110,8 @@ export default function FocusPlanPage() {
     const [rawDefaultSession, setRawDefaultSession] = useState<string>(initialParam);
     const [defaultSessionId, setDefaultSessionId] = useState<string | null>(null);
 
-    // library (recent unique items by text) — now from focus_plan_items ✅
-    const [library, setLibrary] = useState<RecentItemRow[]>([]);
+    // library (recent unique intentions)
+    const [library, setLibrary] = useState<IntentionRow[]>([]);
     const [loadingLibrary, setLoadingLibrary] = useState(false);
 
     // plans + items (Supabase)
@@ -452,30 +345,7 @@ export default function FocusPlanPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id, selectedPlanId]);
 
-    // ✅ realtime for items in selected plan (so room changes reflect here)
-    useEffect(() => {
-        if (!user?.id) return;
-        if (!selectedPlanId) return;
-
-        const ch = supabase
-            .channel(`focus-plan-items:${selectedPlanId}`)
-            .on(
-                "postgres_changes",
-                { event: "*", schema: "public", table: "focus_plan_items", filter: `plan_id=eq.${selectedPlanId}` },
-                () => {
-                    // simplest + safe: reload, ordering stays correct
-                    void reloadItems(selectedPlanId);
-                }
-            )
-            .subscribe();
-
-        return () => {
-            safeRemoveRealtimeChannel(ch);
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user?.id, selectedPlanId]);
-
-    // ===== library (recent unique items by text) from focus_plan_items ✅
+    // ===== library (recent unique intentions) =====
     const loadLibrary = async () => {
         if (!user?.id) return;
 
@@ -484,11 +354,11 @@ export default function FocusPlanPage() {
 
         try {
             const { data, error } = await supabase
-                .from("focus_plan_items")
-                .select("id, text, created_at")
+                .from("intentions")
+                .select("id, text, user_id, session_id, created_at, completed")
                 .eq("user_id", user.id)
                 .order("created_at", { ascending: false })
-                .limit(220);
+                .limit(120);
 
             if (seq !== libSeqRef.current) return;
 
@@ -498,14 +368,14 @@ export default function FocusPlanPage() {
             }
 
             const seen = new Set<string>();
-            const out: RecentItemRow[] = [];
+            const out: IntentionRow[] = [];
             for (const row of data as any[]) {
                 const t = String(row?.text || "").trim();
                 if (!t) continue;
                 const k = t.toLowerCase();
                 if (seen.has(k)) continue;
                 seen.add(k);
-                out.push({ id: String(row?.id || ""), text: t, created_at: row?.created_at ? String(row.created_at) : undefined });
+                out.push(row as any);
                 if (out.length >= 24) break;
             }
             setLibrary(out);
@@ -551,14 +421,8 @@ export default function FocusPlanPage() {
     const deletePlan = async (id: string) => {
         if (!requireAuth()) return;
         try {
-            const { error } = await supabase
-                .from("focus_plans")
-                .delete()
-                .eq("id", id)
-                .eq("user_id", user.id);
-
+            const { error } = await supabase.from("focus_plans").delete().eq("id", id).eq("user_id", user.id);
             if (error) return;
-
             await reloadPlans();
         } catch {
             // silent
@@ -633,14 +497,6 @@ export default function FocusPlanPage() {
             setItems((prev) => [data as FocusPlanItem, ...prev]);
             setNewItemText("");
             setNewItemDueDate("");
-
-            // if user linked to a session — ensure team visibility
-            if (sid && UUID_RE.test(sid)) {
-                await ensureSessionIntentionRow({ userId: user.id, sessionId: sid, text, completed: false });
-            }
-
-            // refresh library
-            void loadLibrary();
         } catch {
             // silent
         }
@@ -650,32 +506,36 @@ export default function FocusPlanPage() {
         if (!requireAuth()) return;
         if (!selectedPlan) return;
 
-        const cur = items.find((x) => x.id === itemId);
-        const curText = String(cur?.text || "").trim();
-        const curSessionId = String(cur?.session_id || "").trim();
-
         // optimistic remove
         const prev = items;
         setItems((x) => x.filter((it) => it.id !== itemId));
 
         try {
-            const { error } = await supabase
-                .from("focus_plan_items")
-                .delete()
-                .eq("id", itemId)
-                .eq("user_id", user.id);
-
+            const { error } = await supabase.from("focus_plan_items").delete().eq("id", itemId).eq("user_id", user.id);
             if (error) setItems(prev);
-            else {
-                if (curSessionId && UUID_RE.test(curSessionId) && curText) {
-                    await deleteIntentionRow(user.id, curSessionId, curText);
-                }
-            }
         } catch {
             setItems(prev);
         }
 
         if (editingItemId === itemId) cancelEditItem();
+    };
+
+    // ✅ NEW: sync intentions.completed when focus_plan_items.completed changes
+    const syncIntentionsCompletedFromItem = async (item: FocusPlanItem, nextCompleted: boolean) => {
+        try {
+            const sid = safeTrim(item.session_id);
+            const text = safeTrim(item.text);
+            if (!sid || !UUID_RE.test(sid) || !text) return;
+
+            await supabase
+                .from("intentions")
+                .update({ completed: nextCompleted })
+                .eq("user_id", user.id)
+                .eq("session_id", sid)
+                .eq("text", text);
+        } catch {
+            // ignore
+        }
     };
 
     const toggleItemDone = async (itemId: string) => {
@@ -701,13 +561,8 @@ export default function FocusPlanPage() {
                 return;
             }
 
-            // best-effort sync to intentions for team view
-            const sid = String(cur.session_id || "").trim();
-            const text = String(cur.text || "").trim();
-            if (sid && UUID_RE.test(sid) && text) {
-                await ensureSessionIntentionRow({ userId: user.id, sessionId: sid, text, completed: nextVal });
-                await syncIntentionCompleted(user.id, sid, text, nextVal);
-            }
+            // ✅ sync to intentions
+            void syncIntentionsCompletedFromItem(cur, nextVal);
         } catch {
             setItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, completed: !nextVal } : it)));
         }
@@ -737,24 +592,21 @@ export default function FocusPlanPage() {
         const due = editingItemDueDate ? editingItemDueDate : null;
         const sid = editingItemSessionId ? String(editingItemSessionId) : null;
 
-        const cur = items.find((x) => x.id === editingItemId);
-        const oldText = String(cur?.text || "").trim();
-        const oldSid = String(cur?.session_id || "").trim();
+        const prev = items;
+        const before = items.find((x) => x.id === editingItemId);
+        const oldText = safeTrim(before?.text);
 
         // optimistic
-        const prev = items;
         setItems((x) =>
-            x.map((it) => (it.id === editingItemId ? { ...it, text, target_date: due, session_id: sid } : it))
+            x.map((it) =>
+                it.id === editingItemId ? { ...it, text, target_date: due, session_id: sid } : it
+            )
         );
 
         try {
             const { error } = await supabase
                 .from("focus_plan_items")
-                .update({
-                    text,
-                    target_date: due,
-                    session_id: sid,
-                })
+                .update({ text, target_date: due, session_id: sid })
                 .eq("id", editingItemId)
                 .eq("user_id", user.id);
 
@@ -763,23 +615,21 @@ export default function FocusPlanPage() {
                 return;
             }
 
-            // sync intentions shadow rows
-            if (oldSid && UUID_RE.test(oldSid) && oldText) {
-                // if session changed away, remove old row
-                if (!sid || sid !== oldSid) {
-                    await deleteIntentionRow(user.id, oldSid, oldText);
-                }
-            }
-
-            if (sid && UUID_RE.test(sid)) {
-                await ensureSessionIntentionRow({ userId: user.id, sessionId: sid, text, completed: cur?.completed });
-                if (oldSid === sid && oldText && oldText !== text) {
-                    await syncIntentionText(user.id, sid, oldText, text);
-                }
-            }
-
             cancelEditItem();
-            void loadLibrary();
+
+            // ✅ NEW: best-effort sync rename into intentions if item is linked to a session
+            try {
+                if (sid && UUID_RE.test(String(sid)) && oldText && oldText !== text) {
+                    await supabase
+                        .from("intentions")
+                        .update({ text })
+                        .eq("user_id", user.id)
+                        .eq("session_id", String(sid))
+                        .eq("text", oldText);
+                }
+            } catch {
+                // ignore
+            }
         } catch {
             setItems(prev);
         }
@@ -792,7 +642,7 @@ export default function FocusPlanPage() {
         setNewItemText(t);
     };
 
-    // ✅ attach now = ensure intention exists for that session (team view), no more “intentions as source of truth”
+    // attach = create real intention row (so it appears in room panel)
     const attachItemToSession = async (item: FocusPlanItem) => {
         if (!requireAuth()) return;
 
@@ -803,9 +653,25 @@ export default function FocusPlanPage() {
         setAttachingItemId(item.id);
 
         try {
-            await ensureSessionIntentionRow({ userId: user.id, sessionId: sid, text, completed: !!item.completed });
+            // avoid obvious duplicates for this user/session/text
+            const { data: existing } = await supabase
+                .from("intentions")
+                .select("id")
+                .eq("user_id", user.id)
+                .eq("session_id", sid)
+                .eq("text", text)
+                .limit(1);
+
+            if (!existing || existing.length === 0) {
+                const { error } = await supabase
+                    .from("intentions")
+                    .insert([{ user_id: user.id, session_id: sid, text, completed: Boolean(item.completed) }]);
+
+                if (error) return;
+            }
+
             setAttachedItemIds((m) => ({ ...m, [item.id]: true }));
-            void loadLibrary();
+            loadLibrary();
         } finally {
             setAttachingItemId(null);
         }
@@ -818,10 +684,8 @@ export default function FocusPlanPage() {
     };
 
     const pageWrap = "w-full max-w-[1200px] mx-auto px-4 md:px-6 py-8";
-    const card =
-        "border border-borderGray rounded-[42px] bg-white p-6 md:p-7 transition-all duration-200";
-    const softCard =
-        "border border-[#E5E7EB] rounded-[24px] bg-white p-4 md:p-5";
+    const card = "border border-borderGray rounded-[42px] bg-white p-6 md:p-7 transition-all duration-200";
+    const softCard = "border border-[#E5E7EB] rounded-[24px] bg-white p-4 md:p-5";
 
     const btnPrimary =
         "h-11 rounded-full px-5 text-[13px] font-semibold border border-[#111827] bg-[#111827] text-white hover:opacity-90 transition";
@@ -835,25 +699,14 @@ export default function FocusPlanPage() {
         return (
             <div className={pageWrap}>
                 <div className={card}>
-                    <div className="text-[28px] md:text-[34px] font-bold text-[#111827] leading-tight">
-                        Focus plan
-                    </div>
-                    <div className="mt-2 text-[13px] text-[#606060]">
-                        Build your plan: intentions + due dates + session links.
-                    </div>
+                    <div className="text-[28px] md:text-[34px] font-bold text-[#111827] leading-tight">Focus plan</div>
+                    <div className="mt-2 text-[13px] text-[#606060]">Build your plan: intentions + due dates + session links.</div>
 
                     <div className="mt-6 flex flex-col sm:flex-row gap-3">
-                        <button
-                            className={btnPrimary}
-                            onClick={() => navigate(buildLoginNext("/focus-plan"))}
-                            type="button"
-                        >
+                        <button className={btnPrimary} onClick={() => navigate(buildLoginNext("/focus-plan"))} type="button">
                             Log in
                         </button>
-                        <Link
-                            to="/sessions"
-                            className={btnGhost + " inline-flex items-center justify-center"}
-                        >
+                        <Link to="/sessions" className={btnGhost + " inline-flex items-center justify-center"}>
                             Back to sessions
                         </Link>
                     </div>
@@ -870,19 +723,13 @@ export default function FocusPlanPage() {
                 {/* header */}
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                     <div>
-                        <div className="text-[28px] md:text-[34px] font-bold text-[#111827] leading-tight">
-                            Focus plan
-                        </div>
-                        <div className="mt-2 text-[13px] text-[#606060]">
-                            Plans → items (intentions) → due date → session link → attach to room.
-                        </div>
+                        <div className="text-[28px] md:text-[34px] font-bold text-[#111827] leading-tight">Focus plan</div>
+                        <div className="mt-2 text-[13px] text-[#606060]">Plans → items (intentions) → due date → session link → attach to room.</div>
 
                         {defaultSession ? (
                             <div className="mt-2 text-[12px] text-[#606060]">
                                 Default session for new items:{" "}
-                                <span className="font-semibold text-[#111827]">
-                                    {defaultSession.title || "Session"}
-                                </span>
+                                <span className="font-semibold text-[#111827]">{defaultSession.title || "Session"}</span>
                                 {safeLower(defaultSession.session_format_type) === "infinite"
                                     ? " · ∞"
                                     : defaultSession.start_time
@@ -890,26 +737,16 @@ export default function FocusPlanPage() {
                                         : ""}
                             </div>
                         ) : rawDefaultSession ? (
-                            <div className="mt-2 text-[12px] text-[#606060]">
-                                Default session: resolving…
-                            </div>
+                            <div className="mt-2 text-[12px] text-[#606060]">Default session: resolving…</div>
                         ) : null}
                     </div>
 
                     <div className="flex items-center gap-3">
-                        <Link
-                            to="/sessions"
-                            className={btnGhost + " inline-flex items-center justify-center"}
-                        >
+                        <Link to="/sessions" className={btnGhost + " inline-flex items-center justify-center"}>
                             Sessions
                         </Link>
 
-                        <button
-                            className={btnGhost}
-                            onClick={() => loadLibrary()}
-                            type="button"
-                            title="Refresh library"
-                        >
+                        <button className={btnGhost} onClick={() => loadLibrary()} type="button" title="Refresh library">
                             <span className="inline-flex items-center gap-2">
                                 <RefreshCw size={16} />
                                 Refresh
@@ -921,9 +758,7 @@ export default function FocusPlanPage() {
                 {/* default session picker (optional) */}
                 <div className="mt-6">
                     <div className={softCard}>
-                        <div className="text-[12px] font-semibold text-[#111827] mb-2">
-                            Default session (optional)
-                        </div>
+                        <div className="text-[12px] font-semibold text-[#111827] mb-2">Default session (optional)</div>
 
                         <div className="flex flex-col md:flex-row gap-3 md:items-center">
                             <div className="flex-1">
@@ -945,8 +780,7 @@ export default function FocusPlanPage() {
                                         sessions.map((s) => {
                                             const when = fmtWhen(s.start_time);
                                             const isInf = safeLower(s.session_format_type) === "infinite";
-                                            const label = `${s.title || "Session"}${isInf ? " · ∞" : when ? ` · ${when}` : ""
-                                                }`;
+                                            const label = `${s.title || "Session"}${isInf ? " · ∞" : when ? ` · ${when}` : ""}`;
                                             return (
                                                 <option key={s.id} value={s.id}>
                                                     {label}
@@ -956,9 +790,7 @@ export default function FocusPlanPage() {
                                     )}
                                 </select>
 
-                                <div className="mt-2 text-[12px] text-[#606060]">
-                                    If you open this page from the room later, we can auto-set this.
-                                </div>
+                                <div className="mt-2 text-[12px] text-[#606060]">If you open this page from the room later, we can auto-set this.</div>
                             </div>
 
                             <div className="flex items-center gap-2">
@@ -987,17 +819,10 @@ export default function FocusPlanPage() {
                         <div className="flex items-start justify-between gap-3">
                             <div>
                                 <div className="text-[16px] font-bold text-[#111827]">Plans</div>
-                                <div className="mt-1 text-[13px] text-[#606060]">
-                                    Create a plan, then add items.
-                                </div>
+                                <div className="mt-1 text-[13px] text-[#606060]">Create a plan, then add items.</div>
                             </div>
 
-                            <button
-                                className={btnGhost}
-                                onClick={() => reloadPlans()}
-                                type="button"
-                                title="Refresh plans"
-                            >
+                            <button className={btnGhost} onClick={() => reloadPlans()} type="button" title="Refresh plans">
                                 <span className="inline-flex items-center gap-2">
                                     <RefreshCw size={16} />
                                     Refresh
@@ -1014,12 +839,7 @@ export default function FocusPlanPage() {
                                 placeholder="New plan title…"
                                 className={"flex-1 " + inputPill}
                             />
-                            <button
-                                className={btnPrimary}
-                                onClick={createPlan}
-                                type="button"
-                                title="Create plan"
-                            >
+                            <button className={btnPrimary} onClick={createPlan} type="button" title="Create plan">
                                 <span className="inline-flex items-center gap-2">
                                     <Plus size={16} />
                                     Create
@@ -1032,9 +852,7 @@ export default function FocusPlanPage() {
                             {plansLoading ? (
                                 <div className="text-[13px] text-[#606060] italic">Loading plans…</div>
                             ) : plans.length === 0 ? (
-                                <div className="text-[13px] text-[#606060] italic">
-                                    No plans yet. Create your first one above.
-                                </div>
+                                <div className="text-[13px] text-[#606060] italic">No plans yet. Create your first one above.</div>
                             ) : (
                                 plans.map((p) => {
                                     const active = p.id === selectedPlanId;
@@ -1057,20 +875,10 @@ export default function FocusPlanPage() {
                                         >
                                             <div className="flex items-center justify-between gap-3">
                                                 <div className="min-w-0">
-                                                    <div
-                                                        className={[
-                                                            "text-[13px] font-semibold truncate",
-                                                            active ? "text-white" : "text-[#111827]",
-                                                        ].join(" ")}
-                                                    >
+                                                    <div className={["text-[13px] font-semibold truncate", active ? "text-white" : "text-[#111827]"].join(" ")}>
                                                         {p.title}
                                                     </div>
-                                                    <div
-                                                        className={[
-                                                            "text-[11px] mt-1",
-                                                            active ? "text-white/70" : "text-[#606060]",
-                                                        ].join(" ")}
-                                                    >
+                                                    <div className={["text-[11px] mt-1", active ? "text-white/70" : "text-[#606060]"].join(" ")}>
                                                         {typeof count === "number" ? `${count} items` : "—"}
                                                     </div>
                                                 </div>
@@ -1082,9 +890,7 @@ export default function FocusPlanPage() {
                                                     }}
                                                     className={[
                                                         "h-10 w-10 rounded-full border flex items-center justify-center transition",
-                                                        active
-                                                            ? "border-white/25 hover:bg-white/10"
-                                                            : "border-[#E5E7EB] hover:bg-[#F3F4F6]",
+                                                        active ? "border-white/25 hover:bg-white/10" : "border-[#E5E7EB] hover:bg-[#F3F4F6]",
                                                     ].join(" ")}
                                                     type="button"
                                                     title="Delete plan"
@@ -1102,9 +908,7 @@ export default function FocusPlanPage() {
                     {/* right: plan builder */}
                     <div className={softCard}>
                         {!selectedPlan ? (
-                            <div className="text-[13px] text-[#606060] italic">
-                                Select or create a plan.
-                            </div>
+                            <div className="text-[13px] text-[#606060] italic">Select or create a plan.</div>
                         ) : (
                             <>
                                 {/* plan title row */}
@@ -1112,9 +916,7 @@ export default function FocusPlanPage() {
                                     <div className="min-w-0 flex-1">
                                         {!editingPlanTitle ? (
                                             <div className="flex items-center gap-2">
-                                                <div className="text-[18px] font-bold text-[#111827] truncate">
-                                                    {selectedPlan.title}
-                                                </div>
+                                                <div className="text-[18px] font-bold text-[#111827] truncate">{selectedPlan.title}</div>
                                                 <button
                                                     onClick={beginRenamePlan}
                                                     className="h-10 px-4 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] transition text-[12px] font-semibold"
@@ -1143,17 +945,10 @@ export default function FocusPlanPage() {
                                             </div>
                                         )}
 
-                                        <div className="mt-1 text-[12px] text-[#606060]">
-                                            Updated: {fmtWhen(selectedPlan.updated_at)}
-                                        </div>
+                                        <div className="mt-1 text-[12px] text-[#606060]">Updated: {fmtWhen(selectedPlan.updated_at)}</div>
                                     </div>
 
-                                    <button
-                                        className={btnGhost}
-                                        onClick={() => selectedPlanId && reloadItems(selectedPlanId)}
-                                        type="button"
-                                        title="Refresh items"
-                                    >
+                                    <button className={btnGhost} onClick={() => selectedPlanId && reloadItems(selectedPlanId)} type="button" title="Refresh items">
                                         <span className="inline-flex items-center gap-2">
                                             <RefreshCw size={16} />
                                             Refresh
@@ -1163,12 +958,8 @@ export default function FocusPlanPage() {
 
                                 {/* add item */}
                                 <div className="mt-5 border border-[#F0F0F0] rounded-[22px] p-4 md:p-5">
-                                    <div className="text-[14px] font-bold text-[#111827]">
-                                        Add item
-                                    </div>
-                                    <div className="mt-1 text-[12px] text-[#606060]">
-                                        Each item = intention + due date + session link.
-                                    </div>
+                                    <div className="text-[14px] font-bold text-[#111827]">Add item</div>
+                                    <div className="mt-1 text-[12px] text-[#606060]">Each item = intention + due date + session link.</div>
 
                                     <div className="mt-4 flex flex-col gap-3">
                                         <input
@@ -1181,21 +972,12 @@ export default function FocusPlanPage() {
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                             <div>
-                                                <div className="text-[11px] font-semibold text-[#606060] mb-2">
-                                                    Due date (optional)
-                                                </div>
-                                                <input
-                                                    type="date"
-                                                    value={newItemDueDate}
-                                                    onChange={(e) => setNewItemDueDate(e.target.value)}
-                                                    className={inputPill}
-                                                />
+                                                <div className="text-[11px] font-semibold text-[#606060] mb-2">Due date (optional)</div>
+                                                <input type="date" value={newItemDueDate} onChange={(e) => setNewItemDueDate(e.target.value)} className={inputPill} />
                                             </div>
 
                                             <div>
-                                                <div className="text-[11px] font-semibold text-[#606060] mb-2">
-                                                    Session (optional)
-                                                </div>
+                                                <div className="text-[11px] font-semibold text-[#606060] mb-2">Session (optional)</div>
                                                 <select
                                                     value={newItemSessionId}
                                                     onChange={(e) => setNewItemSessionId(e.target.value)}
@@ -1214,8 +996,7 @@ export default function FocusPlanPage() {
                                                         sessions.map((s) => {
                                                             const when = fmtWhen(s.start_time);
                                                             const isInf = safeLower(s.session_format_type) === "infinite";
-                                                            const label = `${s.title || "Session"}${isInf ? " · ∞" : when ? ` · ${when}` : ""
-                                                                }`;
+                                                            const label = `${s.title || "Session"}${isInf ? " · ∞" : when ? ` · ${when}` : ""}`;
                                                             return (
                                                                 <option key={s.id} value={s.id}>
                                                                     {label}
@@ -1251,45 +1032,27 @@ export default function FocusPlanPage() {
                                 {/* items list */}
                                 <div className="mt-5">
                                     <div className="flex items-center justify-between gap-3">
-                                        <div className="text-[16px] font-bold text-[#111827]">
-                                            Items
-                                        </div>
-                                        <div className="text-[12px] text-[#606060]">
-                                            {items.length} total
-                                        </div>
+                                        <div className="text-[16px] font-bold text-[#111827]">Items</div>
+                                        <div className="text-[12px] text-[#606060]">{items.length} total</div>
                                     </div>
 
                                     <div className="mt-3 flex flex-col gap-2">
                                         {itemsLoading ? (
-                                            <div className="text-[13px] text-[#606060] italic">
-                                                Loading items…
-                                            </div>
+                                            <div className="text-[13px] text-[#606060] italic">Loading items…</div>
                                         ) : items.length === 0 ? (
-                                            <div className="text-[13px] text-[#606060] italic">
-                                                Add your first item above.
-                                            </div>
+                                            <div className="text-[13px] text-[#606060] italic">Add your first item above.</div>
                                         ) : (
                                             items.map((it) => {
                                                 const isEditing = editingItemId === it.id;
                                                 const done = Boolean(it.completed);
 
-                                                const session =
-                                                    it.session_id
-                                                        ? sessions.find((s) => String(s.id) === String(it.session_id))
-                                                        : null;
+                                                const session = it.session_id ? sessions.find((s) => String(s.id) === String(it.session_id)) : null;
 
-                                                const canAttach =
-                                                    Boolean(it.session_id) &&
-                                                    UUID_RE.test(String(it.session_id)) &&
-                                                    String(it.text || "").trim().length > 0;
-
+                                                const canAttach = Boolean(it.session_id) && UUID_RE.test(String(it.session_id)) && String(it.text || "").trim().length > 0;
                                                 const attached = Boolean(attachedItemIds[it.id]);
 
                                                 return (
-                                                    <div
-                                                        key={it.id}
-                                                        className="rounded-[18px] border border-[#F0F0F0] hover:bg-[#F6F6F6] hover:border-[#E5E7EB] transition px-4 py-3"
-                                                    >
+                                                    <div key={it.id} className="rounded-[18px] border border-[#F0F0F0] hover:bg-[#F6F6F6] hover:border-[#E5E7EB] transition px-4 py-3">
                                                         {!isEditing ? (
                                                             <div className="flex items-start gap-3">
                                                                 <button
@@ -1306,31 +1069,20 @@ export default function FocusPlanPage() {
                                                                 </button>
 
                                                                 <div className="flex-1 min-w-0">
-                                                                    <div
-                                                                        className={[
-                                                                            "text-[13px] leading-5 break-words",
-                                                                            done ? "text-[#606060] line-through" : "text-[#111827]",
-                                                                        ].join(" ")}
-                                                                    >
+                                                                    <div className={["text-[13px] leading-5 break-words", done ? "text-[#606060] line-through" : "text-[#111827]"].join(" ")}>
                                                                         {it.text}
                                                                     </div>
 
                                                                     <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px] text-[#606060]">
                                                                         {it.target_date ? (
                                                                             <span className="px-3 py-1 rounded-full border border-[#E5E7EB] bg-white">
-                                                                                Due:{" "}
-                                                                                <span className="font-semibold text-[#111827]">
-                                                                                    {fmtDueDate(it.target_date)}
-                                                                                </span>
+                                                                                Due: <span className="font-semibold text-[#111827]">{fmtDueDate(it.target_date)}</span>
                                                                             </span>
                                                                         ) : null}
 
                                                                         {session ? (
                                                                             <span className="px-3 py-1 rounded-full border border-[#E5E7EB] bg-white">
-                                                                                Session:{" "}
-                                                                                <span className="font-semibold text-[#111827]">
-                                                                                    {session.title || "Session"}
-                                                                                </span>
+                                                                                Session: <span className="font-semibold text-[#111827]">{session.title || "Session"}</span>
                                                                                 {safeLower(session.session_format_type) === "infinite"
                                                                                     ? " · ∞"
                                                                                     : session.start_time
@@ -1339,8 +1091,7 @@ export default function FocusPlanPage() {
                                                                             </span>
                                                                         ) : it.session_id ? (
                                                                             <span className="px-3 py-1 rounded-full border border-[#E5E7EB] bg-white">
-                                                                                Session:{" "}
-                                                                                <span className="font-semibold text-[#111827]">resolving…</span>
+                                                                                Session: <span className="font-semibold text-[#111827]">resolving…</span>
                                                                             </span>
                                                                         ) : (
                                                                             <span className="px-3 py-1 rounded-full border border-[#E5E7EB] bg-white">
@@ -1358,29 +1109,18 @@ export default function FocusPlanPage() {
 
                                                                 {/* actions */}
                                                                 <div className="flex items-center gap-2 shrink-0">
-                                                                    <button
-                                                                        className="h-10 px-4 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] transition text-[12px] font-semibold"
-                                                                        onClick={() => startEditItem(it)}
-                                                                        type="button"
-                                                                    >
+                                                                    <button className="h-10 px-4 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] transition text-[12px] font-semibold" onClick={() => startEditItem(it)} type="button">
                                                                         Edit
                                                                     </button>
 
-                                                                    <button
-                                                                        className="h-10 w-10 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] transition flex items-center justify-center"
-                                                                        onClick={() => deleteItem(it.id)}
-                                                                        type="button"
-                                                                        title="Delete item"
-                                                                    >
+                                                                    <button className="h-10 w-10 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] transition flex items-center justify-center" onClick={() => deleteItem(it.id)} type="button" title="Delete item">
                                                                         <Trash2 size={16} />
                                                                     </button>
                                                                 </div>
                                                             </div>
                                                         ) : (
                                                             <div className="flex flex-col gap-3">
-                                                                <div className="text-[12px] font-semibold text-[#606060]">
-                                                                    Edit item
-                                                                </div>
+                                                                <div className="text-[12px] font-semibold text-[#606060]">Edit item</div>
 
                                                                 <input
                                                                     value={editingItemText}
@@ -1396,21 +1136,12 @@ export default function FocusPlanPage() {
 
                                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                                                     <div>
-                                                                        <div className="text-[11px] font-semibold text-[#606060] mb-2">
-                                                                            Due date (optional)
-                                                                        </div>
-                                                                        <input
-                                                                            type="date"
-                                                                            value={editingItemDueDate}
-                                                                            onChange={(e) => setEditingItemDueDate(e.target.value)}
-                                                                            className={inputPill}
-                                                                        />
+                                                                        <div className="text-[11px] font-semibold text-[#606060] mb-2">Due date (optional)</div>
+                                                                        <input type="date" value={editingItemDueDate} onChange={(e) => setEditingItemDueDate(e.target.value)} className={inputPill} />
                                                                     </div>
 
                                                                     <div>
-                                                                        <div className="text-[11px] font-semibold text-[#606060] mb-2">
-                                                                            Session (optional)
-                                                                        </div>
+                                                                        <div className="text-[11px] font-semibold text-[#606060] mb-2">Session (optional)</div>
                                                                         <select
                                                                             value={editingItemSessionId}
                                                                             onChange={(e) => setEditingItemSessionId(e.target.value)}
@@ -1420,8 +1151,7 @@ export default function FocusPlanPage() {
                                                                             {sessions.map((s) => {
                                                                                 const when = fmtWhen(s.start_time);
                                                                                 const isInf = safeLower(s.session_format_type) === "infinite";
-                                                                                const label = `${s.title || "Session"}${isInf ? " · ∞" : when ? ` · ${when}` : ""
-                                                                                    }`;
+                                                                                const label = `${s.title || "Session"}${isInf ? " · ∞" : when ? ` · ${when}` : ""}`;
                                                                                 return (
                                                                                     <option key={s.id} value={s.id}>
                                                                                         {label}
@@ -1480,16 +1210,14 @@ export default function FocusPlanPage() {
                                                                         !canAttach
                                                                             ? "Set session + intention text first"
                                                                             : attached
-                                                                                ? "Already attached"
-                                                                                : "Attach: ensures it appears in room (team feed)"
+                                                                                ? "Already attached (will still be safe)"
+                                                                                : "Attach intention to the session (shows in room)"
                                                                     }
                                                                 >
                                                                     {attachingItemId === it.id ? "Attaching…" : attached ? "Attached" : "Attach to session"}
                                                                 </button>
 
-                                                                <div className="text-[11px] text-[#606060]">
-                                                                    Attach = ensure team-visible “intentions” row (focus_plan_items stays source of truth).
-                                                                </div>
+                                                                <div className="text-[11px] text-[#606060]">Attach = create real intention row for that session.</div>
                                                             </div>
                                                         ) : null}
                                                     </div>
@@ -1503,20 +1231,11 @@ export default function FocusPlanPage() {
                                 <div className="mt-6 border border-[#F0F0F0] rounded-[22px] p-4 md:p-5">
                                     <div className="flex items-center justify-between gap-3">
                                         <div>
-                                            <div className="text-[14px] font-bold text-[#111827]">
-                                                My library
-                                            </div>
-                                            <div className="mt-1 text-[12px] text-[#606060]">
-                                                Your recent plan items (unique by text). Click to fill “Add item”.
-                                            </div>
+                                            <div className="text-[14px] font-bold text-[#111827]">My library</div>
+                                            <div className="mt-1 text-[12px] text-[#606060]">Your recent intentions (unique by text). Click to fill “Add item”.</div>
                                         </div>
 
-                                        <button
-                                            className={btnGhost}
-                                            onClick={() => loadLibrary()}
-                                            type="button"
-                                            title="Refresh library"
-                                        >
+                                        <button className={btnGhost} onClick={() => loadLibrary()} type="button" title="Refresh library">
                                             <span className="inline-flex items-center gap-2">
                                                 <RefreshCw size={16} />
                                                 Refresh
@@ -1528,25 +1247,16 @@ export default function FocusPlanPage() {
                                         {loadingLibrary ? (
                                             <div className="text-[13px] text-[#606060] italic">Loading…</div>
                                         ) : library.length === 0 ? (
-                                            <div className="text-[13px] text-[#606060] italic">
-                                                No recent items yet. Create items above.
-                                            </div>
+                                            <div className="text-[13px] text-[#606060] italic">No recent intentions yet. Attach some intentions in rooms first, or create items above.</div>
                                         ) : (
                                             <div className="flex flex-col gap-2">
                                                 {library.map((it) => {
                                                     const text = String(it.text || "").trim();
                                                     return (
-                                                        <div
-                                                            key={it.id}
-                                                            className="rounded-[18px] border border-[#F0F0F0] hover:bg-[#F6F6F6] hover:border-[#E5E7EB] transition px-4 py-3 flex items-center gap-3"
-                                                        >
+                                                        <div key={it.id} className="rounded-[18px] border border-[#F0F0F0] hover:bg-[#F6F6F6] hover:border-[#E5E7EB] transition px-4 py-3 flex items-center gap-3">
                                                             <div className="flex-1 min-w-0">
-                                                                <div className="text-[13px] text-[#111827] break-words leading-5">
-                                                                    {text}
-                                                                </div>
-                                                                <div className="mt-1 text-[11px] text-[#606060]">
-                                                                    {it.created_at ? `Last used: ${fmtWhen(it.created_at)}` : ""}
-                                                                </div>
+                                                                <div className="text-[13px] text-[#111827] break-words leading-5">{text}</div>
+                                                                <div className="mt-1 text-[11px] text-[#606060]">{it.created_at ? `Last used: ${fmtWhen(it.created_at)}` : ""}</div>
                                                             </div>
 
                                                             <button
