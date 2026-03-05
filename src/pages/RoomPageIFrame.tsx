@@ -49,6 +49,10 @@
 // ✅ NEW (this change #2):
 // - Reactions: make floating reaction bigger, emoji above name, add fade-in + float-up animation.
 // - Ensure sender also sees own reaction instantly (local echo), while keeping broadcast self=false (no duplicates).
+//
+// ✅ NEW (this change #3):
+// - Join gate: do NOT allow entering the room earlier than 10 minutes before session.start_time.
+// - Shows a branded "You can’t join yet" screen with countdown, and does NOT create Jitsi API until allowed.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -127,6 +131,38 @@ declare global {
 // ===============================
 const UUID_RE =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+// ===============================
+// Join gate (do not allow entering too early)
+// ===============================
+const JOIN_EARLY_WINDOW_MINUTES = 10;
+
+function formatLocalDateTime(ms: number) {
+    try {
+        return new Intl.DateTimeFormat(undefined, {
+            weekday: "short",
+            month: "short",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+        }).format(new Date(ms));
+    } catch {
+        return new Date(ms).toLocaleString();
+    }
+}
+
+function formatCountdown(msUntil: number) {
+    const ms = Math.max(0, Number(msUntil) || 0);
+    const totalSec = Math.max(0, Math.ceil(ms / 1000));
+    const s = totalSec % 60;
+    const totalMin = Math.floor(totalSec / 60);
+    const m = totalMin % 60;
+    const h = Math.floor(totalMin / 60);
+
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+}
 
 function sanitizeSlug(input: string) {
     const raw = String(input || "").trim().toLowerCase();
@@ -683,6 +719,64 @@ export default function RoomPageIFrame() {
     const sessionId = useMemo(() => String(session?.id || ""), [session?.id]);
     const sessionTitle = useMemo(() => String(session?.title || "Session"), [session?.title]);
 
+    // ===============================
+    // Join gate logic (based on sessions.start_time)
+    // ===============================
+    const [joinNowTickMs, setJoinNowTickMs] = useState<number>(() => Date.now());
+
+    useEffect(() => {
+        const startIso = String(session?.start_time || "").trim();
+        if (!startIso) return;
+
+        const startMs = new Date(startIso).getTime();
+        if (!Number.isFinite(startMs) || startMs <= 0) return;
+
+        const allowMs = startMs - JOIN_EARLY_WINDOW_MINUTES * 60 * 1000;
+
+        if (Date.now() >= allowMs) return;
+
+        const t = window.setInterval(() => setJoinNowTickMs(Date.now()), 1000);
+        return () => window.clearInterval(t);
+    }, [session?.start_time]);
+
+    const joinGateInfo = useMemo(() => {
+        const startIso = String(session?.start_time || "").trim();
+        if (!startIso) {
+            return {
+                enabled: false,
+                canJoinNow: true,
+                startMs: 0,
+                allowMs: 0,
+                msUntilAllowed: 0,
+            };
+        }
+
+        const startMs = new Date(startIso).getTime();
+        if (!Number.isFinite(startMs) || startMs <= 0) {
+            return {
+                enabled: false,
+                canJoinNow: true,
+                startMs: 0,
+                allowMs: 0,
+                msUntilAllowed: 0,
+            };
+        }
+
+        const allowMs = startMs - JOIN_EARLY_WINDOW_MINUTES * 60 * 1000;
+        const canJoinNow = joinNowTickMs >= allowMs;
+
+        return {
+            enabled: true,
+            canJoinNow,
+            startMs,
+            allowMs,
+            msUntilAllowed: Math.max(0, allowMs - joinNowTickMs),
+        };
+    }, [session?.start_time, joinNowTickMs]);
+
+    const canJoinNow = joinGateInfo.canJoinNow;
+    const joinBlocked = joinGateInfo.enabled && !joinGateInfo.canJoinNow;
+
     // auth gate
     const [authStatus, setAuthStatus] = useState<"checking" | "authed" | "redirecting">("checking");
     const [userName, setUserName] = useState<string>("");
@@ -981,7 +1075,6 @@ export default function RoomPageIFrame() {
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [authStatus, sessionId, currentUserId, chatReadKey]);
-
     // =========================
     // reactions via broadcast
     // =========================
@@ -1423,7 +1516,6 @@ export default function RoomPageIFrame() {
             }
         })();
     }, [idOrSlug]);
-
     // ============================================
     // STAGES TIMER + SOUND
     // ============================================
@@ -2182,6 +2274,9 @@ export default function RoomPageIFrame() {
         if (!iframeContainerRef.current) return;
         if (!userName) return;
 
+        // ✅ Join-gate: do NOT create Jitsi API until allowed
+        if (!canJoinNow) return;
+
         let cancelled = false;
         let iframeAttrObserver: MutationObserver | null = null;
 
@@ -2377,7 +2472,7 @@ export default function RoomPageIFrame() {
             clearVideoQualityTimer();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [authStatus, sessionId, jitsiKey, roomName, sessionTitle, userName, userAvatarUrl]);
+    }, [authStatus, sessionId, jitsiKey, roomName, sessionTitle, userName, userAvatarUrl, canJoinNow]);
 
     // ============================================
     // UI actions
@@ -2434,7 +2529,8 @@ export default function RoomPageIFrame() {
 
     const ChatPanelAny = ChatPanel as any;
 
-    const isPrejoinUi = inPrejoin && !apiReady;
+    // ✅ do not show prejoin fullscreen layout when join is blocked
+    const isPrejoinUi = canJoinNow && inPrejoin && !apiReady;
 
     const RightPanelBody = (
         <div
@@ -2649,6 +2745,71 @@ export default function RoomPageIFrame() {
         return (
             <div className={`flex h-screen items-center justify-center ${pageBg}`}>
                 <button onClick={() => navigate("/sessions")}>Back</button>
+            </div>
+        );
+    }
+
+    // ✅ Join gate screen (do not render / create Jitsi until allowed)
+    if (joinBlocked) {
+        return (
+            <div className={`h-[100dvh] w-full flex items-center justify-center ${pageBg}`}>
+                <div
+                    className={[
+                        "w-[92%] max-w-[560px] rounded-2xl border shadow-2xl p-6",
+                        isLight ? "bg-white/90 border-black/10 text-black/85" : "bg-[#020617]/70 border-white/10 text-white/90",
+                    ].join(" ")}
+                >
+                    <div className="text-[22px] font-extrabold tracking-tight">MySession</div>
+                    <div className={`mt-1 text-[14px] font-semibold ${isLight ? "text-black/70" : "text-white/75"}`}>
+                        {sessionTitle}
+                    </div>
+
+                    <div className="mt-5 text-[14px] leading-relaxed">
+                        <div className="font-semibold">You can’t join this session yet.</div>
+                        <div className={`mt-1 ${isLight ? "text-black/65" : "text-white/70"}`}>
+                            You’ll be able to join <b>{JOIN_EARLY_WINDOW_MINUTES} minutes</b> before the start.
+                        </div>
+                    </div>
+
+                    <div className={`mt-5 rounded-xl border p-4 ${isLight ? "border-black/10 bg-black/5" : "border-white/10 bg-white/5"}`}>
+                        <div className="flex items-center justify-between gap-3">
+                            <div className={`${isLight ? "text-black/60" : "text-white/65"} text-[12px]`}>Starts at</div>
+                            <div className="text-[13px] font-semibold">{formatLocalDateTime(joinGateInfo.startMs)}</div>
+                        </div>
+                        <div className="mt-2 flex items-center justify-between gap-3">
+                            <div className={`${isLight ? "text-black/60" : "text-white/65"} text-[12px]`}>Join opens</div>
+                            <div className="text-[13px] font-semibold">{formatLocalDateTime(joinGateInfo.allowMs)}</div>
+                        </div>
+                        <div className="mt-2 flex items-center justify-between gap-3">
+                            <div className={`${isLight ? "text-black/60" : "text-white/65"} text-[12px]`}>Available in</div>
+                            <div className="text-[13px] font-semibold">{formatCountdown(joinGateInfo.msUntilAllowed)}</div>
+                        </div>
+                    </div>
+
+                    <div className="mt-6 flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => navigate("/sessions", { replace: true })}
+                            className={[
+                                "h-11 px-4 rounded-xl font-semibold border transition",
+                                isLight ? "bg-black/5 border-black/10 hover:bg-black/10 text-black/75" : "bg-white/5 border-white/10 hover:bg-white/10 text-white/85",
+                            ].join(" ")}
+                        >
+                            Back to sessions
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => window.location.reload()}
+                            className={[
+                                "h-11 px-4 rounded-xl font-semibold transition",
+                                isLight ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]",
+                            ].join(" ")}
+                        >
+                            Reload
+                        </button>
+                    </div>
+                </div>
             </div>
         );
     }
