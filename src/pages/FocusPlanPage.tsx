@@ -33,17 +33,10 @@ type SessionLite = {
     custom_slug?: string | null;
 };
 
-type IntentionRow = {
+type RecentItemRow = {
     id: string;
     text: string;
-    user_id: string;
-    session_id: string;
     created_at?: string;
-    completed?: boolean;
-    profiles?: {
-        full_name?: string;
-        avatar_url?: string;
-    };
 };
 
 const UUID_RE =
@@ -89,6 +82,124 @@ function buildLoginNext(urlPath: string) {
     return `/login?next=${encodeURIComponent(next)}`;
 }
 
+// best-effort safe remove channel across supabase versions
+function safeRemoveRealtimeChannel(ch: any) {
+    if (!ch) return;
+    try {
+        if (typeof ch.unsubscribe === "function") {
+            void ch.unsubscribe();
+            return;
+        }
+    } catch { }
+
+    const sb: any = supabase as any;
+
+    try {
+        if (typeof sb.removeChannel === "function") {
+            void sb.removeChannel(ch);
+            return;
+        }
+    } catch { }
+
+    try {
+        if (typeof sb.removeSubscription === "function") {
+            void sb.removeSubscription(ch);
+            return;
+        }
+    } catch { }
+
+    try {
+        if (sb.realtime && typeof sb.realtime.removeChannel === "function") {
+            void sb.realtime.removeChannel(ch);
+            return;
+        }
+    } catch { }
+}
+
+// ✅ ensure team visibility: keep a shadow row in `intentions` (best-effort)
+async function ensureSessionIntentionRow(args: { userId: string; sessionId: string; text: string; completed?: boolean }) {
+    const userId = String(args.userId || "").trim();
+    const sessionId = String(args.sessionId || "").trim();
+    const text = String(args.text || "").trim();
+    if (!userId || !sessionId || !UUID_RE.test(sessionId) || !text) return;
+
+    try {
+        const { data: existing } = await supabase
+            .from("intentions")
+            .select("id")
+            .eq("user_id", userId)
+            .eq("session_id", sessionId)
+            .eq("text", text)
+            .limit(1);
+
+        if (!existing || existing.length === 0) {
+            await supabase.from("intentions").insert([{ user_id: userId, session_id: sessionId, text, completed: !!args.completed }]);
+        } else {
+            // optional sync completed
+            if (typeof args.completed === "boolean") {
+                await supabase
+                    .from("intentions")
+                    .update({ completed: !!args.completed })
+                    .eq("user_id", userId)
+                    .eq("session_id", sessionId)
+                    .eq("text", text);
+            }
+        }
+    } catch {
+        // ignore
+    }
+}
+
+// ✅ best-effort sync for edits / completion into `intentions`
+async function syncIntentionCompleted(userId: string, sessionId: string, text: string, completed: boolean) {
+    const uid = String(userId || "").trim();
+    const sid = String(sessionId || "").trim();
+    const t = String(text || "").trim();
+    if (!uid || !sid || !UUID_RE.test(sid) || !t) return;
+
+    try {
+        await supabase
+            .from("intentions")
+            .update({ completed: !!completed })
+            .eq("user_id", uid)
+            .eq("session_id", sid)
+            .eq("text", t);
+    } catch { }
+}
+
+async function syncIntentionText(userId: string, sessionId: string, oldText: string, newText: string) {
+    const uid = String(userId || "").trim();
+    const sid = String(sessionId || "").trim();
+    const o = String(oldText || "").trim();
+    const n = String(newText || "").trim();
+    if (!uid || !sid || !UUID_RE.test(sid) || !o || !n) return;
+
+    try {
+        await supabase
+            .from("intentions")
+            .update({ text: n })
+            .eq("user_id", uid)
+            .eq("session_id", sid)
+            .eq("text", o);
+    } catch { }
+}
+
+async function deleteIntentionRow(userId: string, sessionId: string, text: string) {
+    const uid = String(userId || "").trim();
+    const sid = String(sessionId || "").trim();
+    const t = String(text || "").trim();
+    if (!uid || !sid || !UUID_RE.test(sid) || !t) return;
+
+    try {
+        await supabase
+            .from("intentions")
+            .delete()
+            .eq("user_id", uid)
+            .eq("session_id", sid)
+            .eq("text", t);
+    } catch { }
+}
+
 export default function FocusPlanPage() {
     const navigate = useNavigate();
     const [sp, setSp] = useSearchParams();
@@ -106,8 +217,8 @@ export default function FocusPlanPage() {
     const [rawDefaultSession, setRawDefaultSession] = useState<string>(initialParam);
     const [defaultSessionId, setDefaultSessionId] = useState<string | null>(null);
 
-    // library (recent unique intentions)
-    const [library, setLibrary] = useState<IntentionRow[]>([]);
+    // library (recent unique items by text) — now from focus_plan_items ✅
+    const [library, setLibrary] = useState<RecentItemRow[]>([]);
     const [loadingLibrary, setLoadingLibrary] = useState(false);
 
     // plans + items (Supabase)
@@ -341,7 +452,30 @@ export default function FocusPlanPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id, selectedPlanId]);
 
-    // ===== library (recent unique intentions) =====
+    // ✅ realtime for items in selected plan (so room changes reflect here)
+    useEffect(() => {
+        if (!user?.id) return;
+        if (!selectedPlanId) return;
+
+        const ch = supabase
+            .channel(`focus-plan-items:${selectedPlanId}`)
+            .on(
+                "postgres_changes",
+                { event: "*", schema: "public", table: "focus_plan_items", filter: `plan_id=eq.${selectedPlanId}` },
+                () => {
+                    // simplest + safe: reload, ordering stays correct
+                    void reloadItems(selectedPlanId);
+                }
+            )
+            .subscribe();
+
+        return () => {
+            safeRemoveRealtimeChannel(ch);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id, selectedPlanId]);
+
+    // ===== library (recent unique items by text) from focus_plan_items ✅
     const loadLibrary = async () => {
         if (!user?.id) return;
 
@@ -350,11 +484,11 @@ export default function FocusPlanPage() {
 
         try {
             const { data, error } = await supabase
-                .from("intentions")
-                .select("id, text, user_id, session_id, created_at, completed")
+                .from("focus_plan_items")
+                .select("id, text, created_at")
                 .eq("user_id", user.id)
                 .order("created_at", { ascending: false })
-                .limit(120);
+                .limit(220);
 
             if (seq !== libSeqRef.current) return;
 
@@ -364,14 +498,14 @@ export default function FocusPlanPage() {
             }
 
             const seen = new Set<string>();
-            const out: IntentionRow[] = [];
+            const out: RecentItemRow[] = [];
             for (const row of data as any[]) {
                 const t = String(row?.text || "").trim();
                 if (!t) continue;
                 const k = t.toLowerCase();
                 if (seen.has(k)) continue;
                 seen.add(k);
-                out.push(row as any);
+                out.push({ id: String(row?.id || ""), text: t, created_at: row?.created_at ? String(row.created_at) : undefined });
                 if (out.length >= 24) break;
             }
             setLibrary(out);
@@ -499,6 +633,14 @@ export default function FocusPlanPage() {
             setItems((prev) => [data as FocusPlanItem, ...prev]);
             setNewItemText("");
             setNewItemDueDate("");
+
+            // if user linked to a session — ensure team visibility
+            if (sid && UUID_RE.test(sid)) {
+                await ensureSessionIntentionRow({ userId: user.id, sessionId: sid, text, completed: false });
+            }
+
+            // refresh library
+            void loadLibrary();
         } catch {
             // silent
         }
@@ -507,6 +649,10 @@ export default function FocusPlanPage() {
     const deleteItem = async (itemId: string) => {
         if (!requireAuth()) return;
         if (!selectedPlan) return;
+
+        const cur = items.find((x) => x.id === itemId);
+        const curText = String(cur?.text || "").trim();
+        const curSessionId = String(cur?.session_id || "").trim();
 
         // optimistic remove
         const prev = items;
@@ -520,6 +666,11 @@ export default function FocusPlanPage() {
                 .eq("user_id", user.id);
 
             if (error) setItems(prev);
+            else {
+                if (curSessionId && UUID_RE.test(curSessionId) && curText) {
+                    await deleteIntentionRow(user.id, curSessionId, curText);
+                }
+            }
         } catch {
             setItems(prev);
         }
@@ -546,11 +697,18 @@ export default function FocusPlanPage() {
                 .eq("user_id", user.id);
 
             if (error) {
-                // revert
                 setItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, completed: !nextVal } : it)));
+                return;
+            }
+
+            // best-effort sync to intentions for team view
+            const sid = String(cur.session_id || "").trim();
+            const text = String(cur.text || "").trim();
+            if (sid && UUID_RE.test(sid) && text) {
+                await ensureSessionIntentionRow({ userId: user.id, sessionId: sid, text, completed: nextVal });
+                await syncIntentionCompleted(user.id, sid, text, nextVal);
             }
         } catch {
-            // revert
             setItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, completed: !nextVal } : it)));
         }
     };
@@ -579,14 +737,14 @@ export default function FocusPlanPage() {
         const due = editingItemDueDate ? editingItemDueDate : null;
         const sid = editingItemSessionId ? String(editingItemSessionId) : null;
 
+        const cur = items.find((x) => x.id === editingItemId);
+        const oldText = String(cur?.text || "").trim();
+        const oldSid = String(cur?.session_id || "").trim();
+
         // optimistic
         const prev = items;
         setItems((x) =>
-            x.map((it) =>
-                it.id === editingItemId
-                    ? { ...it, text, target_date: due, session_id: sid }
-                    : it
-            )
+            x.map((it) => (it.id === editingItemId ? { ...it, text, target_date: due, session_id: sid } : it))
         );
 
         try {
@@ -605,7 +763,23 @@ export default function FocusPlanPage() {
                 return;
             }
 
+            // sync intentions shadow rows
+            if (oldSid && UUID_RE.test(oldSid) && oldText) {
+                // if session changed away, remove old row
+                if (!sid || sid !== oldSid) {
+                    await deleteIntentionRow(user.id, oldSid, oldText);
+                }
+            }
+
+            if (sid && UUID_RE.test(sid)) {
+                await ensureSessionIntentionRow({ userId: user.id, sessionId: sid, text, completed: cur?.completed });
+                if (oldSid === sid && oldText && oldText !== text) {
+                    await syncIntentionText(user.id, sid, oldText, text);
+                }
+            }
+
             cancelEditItem();
+            void loadLibrary();
         } catch {
             setItems(prev);
         }
@@ -618,7 +792,7 @@ export default function FocusPlanPage() {
         setNewItemText(t);
     };
 
-    // attach = create real intention row (so it appears in room panel)
+    // ✅ attach now = ensure intention exists for that session (team view), no more “intentions as source of truth”
     const attachItemToSession = async (item: FocusPlanItem) => {
         if (!requireAuth()) return;
 
@@ -629,25 +803,9 @@ export default function FocusPlanPage() {
         setAttachingItemId(item.id);
 
         try {
-            // avoid obvious duplicates for this user/session/text
-            const { data: existing } = await supabase
-                .from("intentions")
-                .select("id")
-                .eq("user_id", user.id)
-                .eq("session_id", sid)
-                .eq("text", text)
-                .limit(1);
-
-            if (!existing || existing.length === 0) {
-                const { error } = await supabase
-                    .from("intentions")
-                    .insert([{ user_id: user.id, session_id: sid, text, completed: false }]);
-
-                if (error) return;
-            }
-
+            await ensureSessionIntentionRow({ userId: user.id, sessionId: sid, text, completed: !!item.completed });
             setAttachedItemIds((m) => ({ ...m, [item.id]: true }));
-            loadLibrary();
+            void loadLibrary();
         } finally {
             setAttachingItemId(null);
         }
@@ -1322,15 +1480,15 @@ export default function FocusPlanPage() {
                                                                         !canAttach
                                                                             ? "Set session + intention text first"
                                                                             : attached
-                                                                                ? "Already attached (will still be safe)"
-                                                                                : "Attach intention to the session (shows in room)"
+                                                                                ? "Already attached"
+                                                                                : "Attach: ensures it appears in room (team feed)"
                                                                     }
                                                                 >
                                                                     {attachingItemId === it.id ? "Attaching…" : attached ? "Attached" : "Attach to session"}
                                                                 </button>
 
                                                                 <div className="text-[11px] text-[#606060]">
-                                                                    Attach = create real intention row for that session.
+                                                                    Attach = ensure team-visible “intentions” row (focus_plan_items stays source of truth).
                                                                 </div>
                                                             </div>
                                                         ) : null}
@@ -1349,7 +1507,7 @@ export default function FocusPlanPage() {
                                                 My library
                                             </div>
                                             <div className="mt-1 text-[12px] text-[#606060]">
-                                                Your recent intentions (unique by text). Click to fill “Add item”.
+                                                Your recent plan items (unique by text). Click to fill “Add item”.
                                             </div>
                                         </div>
 
@@ -1371,7 +1529,7 @@ export default function FocusPlanPage() {
                                             <div className="text-[13px] text-[#606060] italic">Loading…</div>
                                         ) : library.length === 0 ? (
                                             <div className="text-[13px] text-[#606060] italic">
-                                                No recent intentions yet. Attach some intentions in rooms first, or create items above.
+                                                No recent items yet. Create items above.
                                             </div>
                                         ) : (
                                             <div className="flex flex-col gap-2">
