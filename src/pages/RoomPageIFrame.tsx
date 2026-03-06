@@ -54,7 +54,7 @@
 // - Shows a branded "You can’t join yet" screen with countdown, and does NOT create Jitsi API until allowed.
 //
 // ✅ NEW #4:
-// - Add custom block sound with lowercase primary path + uppercase fallback for older deploys.
+// - Add custom block sound: /sounds/custom-block.mp3
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -469,10 +469,7 @@ const STAGE_SOUND_CANDIDATES: Record<string, string[]> = {
     break: ["/sounds/break_start.mp3"],
     outro: ["/sounds/outro.mp3"],
     celebrate: ["/sounds/outro.mp3"],
-    custom: [
-        "/sounds/custom.mp3",
-        "/sounds/Custom.mp3", // legacy / case-mismatch fallback
-    ],
+    custom: ["/sounds/custom-block.mp3"],
 };
 
 const BREAK_END_SOUND = "/sounds/break_end.mp3";
