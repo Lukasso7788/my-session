@@ -326,6 +326,20 @@ function IconCopy({ size = 16 }: { size?: number }) {
     );
 }
 
+function IconCheckSuccess({ size = 16 }: { size?: number }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+                d="M20 7L10 17l-6-6"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+        </svg>
+    );
+}
+
 function DotsFallbackIcon({ size = 18 }: { size?: number }) {
     return (
         <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -364,27 +378,49 @@ function MenuItem({
     icon,
     label,
     danger,
+    success,
     outlined,
     onClick,
 }: {
     icon: any;
     label: string;
     danger?: boolean;
+    success?: boolean;
     outlined?: boolean;
     onClick: () => void;
 }) {
+    const baseTone = danger
+        ? "text-[#F65252] hover:bg-[#FFF1F2]"
+        : success
+            ? "text-[#22C55E] hover:bg-[#F0FDF4]"
+            : "text-[#111827]";
+
+    const outlinedTone = outlined
+        ? success
+            ? "border border-[#BBF7D0] bg-[#F0FDF4] hover:border-[#22C55E] hover:bg-[#DCFCE7]"
+            : "border border-[#E5E7EB] hover:border-[#111827] hover:bg-[#F6F6F6]"
+        : "";
+
     return (
         <button
             className={[
                 "w-full text-left px-3 py-2 rounded-[12px] text-[13px] font-semibold flex items-center gap-2 transition",
-                outlined
-                    ? "border border-[#E5E7EB] hover:border-[#111827] hover:bg-[#F6F6F6]"
-                    : "hover:bg-[#F3F4F6]",
-                danger ? "text-[#F65252] hover:bg-[#FFF1F2]" : "text-[#111827]",
+                outlined ? outlinedTone : "hover:bg-[#F3F4F6]",
+                baseTone,
             ].join(" ")}
             onClick={onClick}
         >
-            <span className={danger ? "text-[#F65252]" : "text-[#111827]"}>{icon}</span>
+            <span
+                className={
+                    danger
+                        ? "text-[#F65252]"
+                        : success
+                            ? "text-[#22C55E]"
+                            : "text-[#111827]"
+                }
+            >
+                {icon}
+            </span>
             <span>{label}</span>
         </button>
     );
@@ -1468,7 +1504,6 @@ export default function SessionCard({
     const custom = isCustomStudioSession(session);
     const resolvedType = custom ? "Custom session" : baseResolvedType;
 
-    // ✅ FIX: typeMap must be declared BEFORE it's used
     const typeMap: Record<string, { color: string; bg: string; icon: string }> = {
         "Deep work": { color: "#3B82F6", bg: "#E4EDFF", icon: "/icons/deepwork.svg" },
         Pomodoro: { color: "#EF4444", bg: "#FFE4E4", icon: "/icons/pomodoro.svg" },
@@ -1707,10 +1742,6 @@ export default function SessionCard({
         copyInviteTimerRef.current = window.setTimeout(() => {
             setCopyInviteState("idle");
         }, ok ? 2200 : 2600);
-
-        if (ok) {
-            setIsOptionsOpen(false);
-        }
     };
 
     const onEnterBooked = () => {
@@ -2249,9 +2280,14 @@ export default function SessionCard({
 
                                     <div className="p-2 flex flex-col gap-1">
                                         <MenuItem
-                                            icon={<IconCopy />}
+                                            icon={
+                                                copyInviteState === "copied"
+                                                    ? <IconCheckSuccess />
+                                                    : <IconCopy />
+                                            }
                                             label={copyInviteLabel}
                                             outlined
+                                            success={copyInviteState === "copied"}
                                             onClick={handleCopyInviteLink}
                                         />
 
