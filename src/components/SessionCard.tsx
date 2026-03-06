@@ -312,20 +312,6 @@ function IconInfo({ size = 16 }: { size?: number }) {
     );
 }
 
-function IconCopy({ size = 16 }: { size?: number }) {
-    return (
-        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <rect x="9" y="9" width="11" height="11" rx="2" stroke="currentColor" strokeWidth="2" />
-            <path
-                d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-            />
-        </svg>
-    );
-}
-
 function DotsFallbackIcon({ size = 18 }: { size?: number }) {
     return (
         <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1330,54 +1316,6 @@ function buildLoginNext(urlPath: string): string {
     return `/login?next=${encodeURIComponent(next)}`;
 }
 
-function buildSessionInvitePath(session: any): string {
-    const roomParam = getRoomParam(session);
-    return roomParam ? `/room-iframe/${roomParam}` : "/sessions";
-}
-
-function buildAbsoluteInviteUrl(session: any): string {
-    const path = buildSessionInvitePath(session);
-
-    if (typeof window !== "undefined" && window.location?.origin) {
-        return `${window.location.origin}${path}`;
-    }
-
-    return `https://mysession.club${path}`;
-}
-
-async function copyTextToClipboard(text: string): Promise<boolean> {
-    try {
-        if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-            await navigator.clipboard.writeText(text);
-            return true;
-        }
-    } catch {
-        // fallback below
-    }
-
-    try {
-        if (typeof document === "undefined") return false;
-
-        const ta = document.createElement("textarea");
-        ta.value = text;
-        ta.setAttribute("readonly", "");
-        ta.style.position = "fixed";
-        ta.style.opacity = "0";
-        ta.style.pointerEvents = "none";
-        ta.style.left = "-9999px";
-        document.body.appendChild(ta);
-        ta.focus();
-        ta.select();
-        ta.setSelectionRange(0, ta.value.length);
-
-        const ok = document.execCommand("copy");
-        document.body.removeChild(ta);
-        return ok;
-    } catch {
-        return false;
-    }
-}
-
 export default function SessionCard({
     session,
     userId,
@@ -1443,9 +1381,6 @@ export default function SessionCard({
         leftSec: number;
     } | null>(null);
 
-    const [copyInviteState, setCopyInviteState] = useState<"idle" | "copied" | "error">("idle");
-    const copyInviteTimerRef = useRef<number | null>(null);
-
     useEffect(() => setIsBookingConfirmed(!!initialIsBooked), [session.id, initialIsBooked]);
     useEffect(() => setBookers(initialBookers), [initialBookers]);
 
@@ -1454,14 +1389,6 @@ export default function SessionCard({
             if (cancelHoverTimer) window.clearTimeout(cancelHoverTimer);
         };
     }, [cancelHoverTimer]);
-
-    useEffect(() => {
-        return () => {
-            if (copyInviteTimerRef.current) {
-                window.clearTimeout(copyInviteTimerRef.current);
-            }
-        };
-    }, []);
 
     useEffect(() => {
         function onDocClick(e: MouseEvent) {
@@ -1546,6 +1473,13 @@ export default function SessionCard({
 
     const custom = isCustomStudioSession(session);
     const resolvedType = custom ? "Custom session" : baseResolvedType;
+
+    const typeMap: Record<string, { color: string; bg: string; icon: string }> = {
+        "Deep work": { color: "#3B82F6", bg: "#E4EDFF", icon: "/icons/deepwork.svg" },
+        Pomodoro: { color: "#EF4444", bg: "#FFE4E4", icon: "/icons/pomodoro.svg" },
+        "Short sprints": { color: "#22C55E", bg: "#E5FFE9", icon: "/icons/sprints.svg" },
+        "Custom session": { color: "#6366F1", bg: "#EEF2FF", icon: "/icons/custom.svg" },
+    };
 
     const t = typeMap[resolvedType] || {
         color: "#111827",
@@ -1771,25 +1705,6 @@ export default function SessionCard({
         setIsHoveringCancel(false);
     };
 
-    const handleCopyInviteLink = async () => {
-        const url = buildAbsoluteInviteUrl(session);
-        const ok = await copyTextToClipboard(url);
-
-        setCopyInviteState(ok ? "copied" : "error");
-
-        if (copyInviteTimerRef.current) {
-            window.clearTimeout(copyInviteTimerRef.current);
-        }
-
-        copyInviteTimerRef.current = window.setTimeout(() => {
-            setCopyInviteState("idle");
-        }, ok ? 2200 : 2600);
-
-        if (ok) {
-            setIsOptionsOpen(false);
-        }
-    };
-
     const onEnterBooked = () => {
         if (cancelHoverTimer) window.clearTimeout(cancelHoverTimer);
         const tt = window.setTimeout(() => setIsHoveringCancel(true), CANCEL_HOVER_DELAY_MS);
@@ -1929,13 +1844,6 @@ export default function SessionCard({
     const canCancelBooking = !!isBookingConfirmed;
     const canCancelSession = isHost;
 
-    const copyInviteLabel =
-        copyInviteState === "copied"
-            ? "Copied!"
-            : copyInviteState === "error"
-                ? "Copy failed"
-                : "Copy invite link";
-
     const peopleInline = (
         <div className="inline-flex items-center gap-3">
             {/* LIVE NOW */}
@@ -2066,13 +1974,6 @@ export default function SessionCard({
         undefined;
 
     const tickEveryMs = isInfinite ? 15000 : 1000;
-
-    const typeMap: Record<string, { color: string; bg: string; icon: string }> = {
-        "Deep work": { color: "#3B82F6", bg: "#E4EDFF", icon: "/icons/deepwork.svg" },
-        Pomodoro: { color: "#EF4444", bg: "#FFE4E4", icon: "/icons/pomodoro.svg" },
-        "Short sprints": { color: "#22C55E", bg: "#E5FFE9", icon: "/icons/sprints.svg" },
-        "Custom session": { color: "#6366F1", bg: "#EEF2FF", icon: "/icons/custom.svg" },
-    };
 
     return (
         <>
@@ -2344,13 +2245,6 @@ export default function SessionCard({
                                     </div>
 
                                     <div className="p-2 flex flex-col gap-1">
-                                        <MenuItem
-                                            icon={<IconCopy />}
-                                            label={copyInviteLabel}
-                                            outlined
-                                            onClick={handleCopyInviteLink}
-                                        />
-
                                         {canEdit && (
                                             <MenuItem
                                                 icon={<IconEdit />}
