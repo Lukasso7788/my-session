@@ -245,6 +245,7 @@ export function IntentionsPanel({
 
   const loadSeqRef = useRef(0);
   const panelSeqRef = useRef(0);
+  const sessionReloadTimerRef = useRef<number | null>(null);
 
   const [timerText, setTimerText] = useState<string>("--:--");
 
@@ -462,6 +463,23 @@ export function IntentionsPanel({
     [sessionId]
   );
 
+  const scheduleSessionIntentionsReload = useCallback(
+    (sid?: string | null) => {
+      const targetSid = String(sid || sessionId || "");
+      if (!targetSid) return;
+
+      if (sessionReloadTimerRef.current) {
+        window.clearTimeout(sessionReloadTimerRef.current);
+      }
+
+      sessionReloadTimerRef.current = window.setTimeout(() => {
+        sessionReloadTimerRef.current = null;
+        void loadSessionIntentions(targetSid);
+      }, 120);
+    },
+    [sessionId, loadSessionIntentions]
+  );
+
   useEffect(() => {
     if (!sessionId) return;
 
@@ -471,15 +489,31 @@ export function IntentionsPanel({
       .channel(`intentions_realtime_${sessionId}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: SESSION_INTENTIONS_TABLE, filter: `session_id=eq.${sessionId}` },
-        () => void loadSessionIntentions(sessionId)
+        { event: "*", schema: "public", table: SESSION_INTENTIONS_TABLE },
+        (payload: any) => {
+          const payloadSessionId = String(
+            payload?.new?.session_id ||
+            payload?.old?.session_id ||
+            ""
+          ).trim();
+
+          // INSERT/UPDATE usually carry session_id, DELETE may not.
+          // If session_id is missing, still reload current session as fallback.
+          if (!payloadSessionId || payloadSessionId === String(sessionId)) {
+            scheduleSessionIntentionsReload(sessionId);
+          }
+        }
       )
       .subscribe();
 
     return () => {
+      if (sessionReloadTimerRef.current) {
+        window.clearTimeout(sessionReloadTimerRef.current);
+        sessionReloadTimerRef.current = null;
+      }
       supabase.removeChannel(channel);
     };
-  }, [sessionId, loadSessionIntentions]);
+  }, [sessionId, loadSessionIntentions, scheduleSessionIntentionsReload]);
 
   const findOwnSessionIntentionLocal = useCallback(
     (text: string) => {
@@ -584,6 +618,9 @@ export function IntentionsPanel({
       const existing = findOwnSessionIntentionLocal(text);
       if (!existing) return;
 
+      // optimistic local delete so author sees removal immediately
+      setSessionIntentions((prev) => prev.filter((x) => x.id !== existing.id));
+
       try {
         const { error } = await supabase
           .from(SESSION_INTENTIONS_TABLE)
@@ -593,11 +630,15 @@ export function IntentionsPanel({
           .eq("session_id", sessionId);
 
         if (error) throw error;
-      } catch { }
+      } catch {
+        void loadSessionIntentions(sessionId);
+        return;
+      }
 
-      void loadSessionIntentions(sessionId);
+      // keep a refresh anyway for consistency
+      scheduleSessionIntentionsReload(sessionId);
     },
-    [user?.id, sessionId, findOwnSessionIntentionLocal, loadSessionIntentions]
+    [user?.id, sessionId, findOwnSessionIntentionLocal, loadSessionIntentions, scheduleSessionIntentionsReload]
   );
 
   const loadPlans = useCallback(async () => {
@@ -961,6 +1002,10 @@ export function IntentionsPanel({
   useEffect(() => {
     return () => {
       try {
+        if (sessionReloadTimerRef.current) {
+          window.clearTimeout(sessionReloadTimerRef.current);
+          sessionReloadTimerRef.current = null;
+        }
         closeOverlay();
       } catch { }
     };
@@ -993,9 +1038,8 @@ export function IntentionsPanel({
   }, [importModalOpen, closeImportModal, getPortalDocument]);
 
   const teamIntentions = useMemo(() => {
-    const uid = String(user?.id || "");
-    return sessionIntentions.filter((x) => String(x.user_id) !== uid);
-  }, [sessionIntentions, user?.id]);
+    return sessionIntentions;
+  }, [sessionIntentions]);
 
   if (!rawSessionId) {
     return (
