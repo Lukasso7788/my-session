@@ -1308,7 +1308,7 @@ export function IntentionsPanel({
         <div className={"h-px my-5 " + divider} />
 
         {/* Team intentions (session) */}
-        <div className={titleText + " font-inter font-semibold text-[13px] mb-3"}>Team intentions (this session)</div>
+        <div className={titleText + " font-inter font-semibold text-[13px] mb-3"}>Team intentions</div>
 
         {sessionLoading ? (
           <div className={"text-[12px] italic font-inter " + mutedText}>Loading...</div>
