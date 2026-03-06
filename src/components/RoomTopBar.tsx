@@ -1,4 +1,3 @@
-// src/components/RoomTopBar.tsx
 import React from "react";
 import { SessionStageBar } from "./SessionStageBar";
 import { Icon, ParticipantsSmartIcon, type RoomTheme } from "./VideoControls";
@@ -72,10 +71,10 @@ export default function RoomTopBar(props: {
     const showTimer = !isSilentRoom && stages.length > 0 && !!stagebarStartTime;
 
     return (
-        <div className={`flex w-full rounded-2xl overflow-hidden ${topBarBg}`}>
-            <div className="flex-1 px-4 sm:px-6 py-3 sm:py-4">
-                <div className="flex flex-col gap-2 max-[480px]:gap-2">
-                    {/* ROW 1: title + count (always 1 line) */}
+        <div className={`flex w-full rounded-2xl overflow-visible ${topBarBg}`}>
+            <div className="flex-1 px-4 sm:px-6 py-3 sm:py-4 overflow-visible">
+                <div className="flex flex-col gap-2 max-[480px]:gap-2 overflow-visible">
+                    {/* ROW 1: title + count */}
                     <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0">
                             <div className="flex items-center gap-2 min-w-0">
@@ -96,7 +95,7 @@ export default function RoomTopBar(props: {
                             </div>
                         </div>
 
-                        {/* desktop+ : controls stay here */}
+                        {/* desktop+ */}
                         <div className="hidden min-[481px]:flex items-center gap-2 shrink-0">
                             {showTimer && (
                                 <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}>
@@ -112,6 +111,7 @@ export default function RoomTopBar(props: {
                                 className={`${switchTrack} ${switchTrackCls}`}
                                 title="Toggle theme"
                                 aria-label="Toggle theme"
+                                type="button"
                             >
                                 <div className={switchThumb} style={{ transform: thumbTranslate }}>
                                     <Icon name={isLight ? "theme-sun" : "theme-moon"} theme={theme} className="w-4 h-4" />
@@ -122,10 +122,11 @@ export default function RoomTopBar(props: {
                                 <button
                                     onClick={onOpenHostProfile}
                                     className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition text-[13px] ${isLight
-                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                        ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
+                                        : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
                                         }`}
                                     title="Host profile"
+                                    type="button"
                                 >
                                     <ParticipantsSmartIcon theme={theme} className="w-4 h-4 opacity-90" />
                                     <span className="font-inter">
@@ -137,7 +138,7 @@ export default function RoomTopBar(props: {
                         </div>
                     </div>
 
-                    {/* ROW 2: controls (mobile <=480) */}
+                    {/* ROW 2: mobile controls */}
                     <div className="min-[481px]:hidden flex items-center justify-start gap-2">
                         {showTimer && (
                             <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}>
@@ -153,6 +154,7 @@ export default function RoomTopBar(props: {
                             className={`${switchTrack} ${switchTrackCls}`}
                             title="Toggle theme"
                             aria-label="Toggle theme"
+                            type="button"
                         >
                             <div className={switchThumb} style={{ transform: thumbTranslate }}>
                                 <Icon name={isLight ? "theme-sun" : "theme-moon"} theme={theme} className="w-4 h-4" />
@@ -163,25 +165,29 @@ export default function RoomTopBar(props: {
                             <button
                                 onClick={onOpenHostProfile}
                                 className={`w-10 h-10 rounded-2xl flex items-center justify-center border transition ${isLight
-                                        ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70"
-                                        : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-white/85"
+                                    ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70"
+                                    : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-white/85"
                                     }`}
                                 title={`Host: ${String(hostProfile.full_name || "Host")}`}
                                 aria-label="Host profile"
+                                type="button"
                             >
                                 <ParticipantsSmartIcon theme={theme} className="w-5 h-5 opacity-90" />
                             </button>
                         )}
                     </div>
 
-                    {/* ROW 3: stage bar (full width) */}
+                    {/* ROW 3: stage bar */}
                     {!isSilentRoom && stages.length > 0 && !!stagebarStartTime && (
-                        <div className="mt-1 max-[480px]:mt-1 w-full overflow-hidden">
+                        <div className="mt-1 max-[480px]:mt-1 w-full overflow-visible pt-1">
                             <SessionStageBar
                                 stages={stages}
                                 startTime={stagebarStartTime}
                                 cycleSeconds={stagebarCycleSeconds}
                                 onHoverStage={onHoverStage as any}
+                                progressStyle="tick"
+                                tickEveryMs={1000}
+                                theme={theme}
                             />
                         </div>
                     )}
