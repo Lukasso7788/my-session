@@ -72,6 +72,12 @@ type IntentionsPanelProps = {
   timerTextClassName?: string;
 };
 
+type ProfileMini = {
+  id: string;
+  full_name?: string;
+  avatar_url?: string;
+};
+
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -183,6 +189,33 @@ function safeTrim(x: any) {
 
 function normalizeTextForMatch(x: any) {
   return String(x || "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+async function fetchProfilesMap(userIds: string[]): Promise<Map<string, ProfileMini>> {
+  const ids = [...new Set((userIds || []).map((x) => String(x || "").trim()).filter(Boolean))];
+  const map = new Map<string, ProfileMini>();
+  if (!ids.length) return map;
+
+  try {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, full_name, avatar_url")
+      .in("id", ids);
+
+    if (error || !Array.isArray(data)) return map;
+
+    for (const row of data) {
+      const id = String((row as any)?.id || "").trim();
+      if (!id) continue;
+      map.set(id, {
+        id,
+        full_name: (row as any)?.full_name || undefined,
+        avatar_url: (row as any)?.avatar_url || undefined,
+      });
+    }
+  } catch { }
+
+  return map;
 }
 
 export function IntentionsPanel({
@@ -322,7 +355,12 @@ export function IntentionsPanel({
       const slug = raw.toLowerCase();
 
       try {
-        const { data, error } = await supabase.from("sessions").select("id").eq("custom_slug", slug).single();
+        const { data, error } = await supabase
+          .from("sessions")
+          .select("id")
+          .eq("custom_slug", slug)
+          .single();
+
         if (!cancelled) {
           if (!error && data?.id) setSessionId(String(data.id));
           else setSessionId(null);
@@ -395,10 +433,7 @@ export function IntentionsPanel({
       try {
         const { data, error } = await supabase
           .from(SESSION_INTENTIONS_TABLE)
-          .select(
-            `id, text, user_id, session_id, created_at, completed,
-             profiles ( full_name, avatar_url )`
-          )
+          .select("id, text, user_id, session_id, created_at, completed")
           .eq("session_id", s)
           .order("created_at", { ascending: false });
 
@@ -409,7 +444,17 @@ export function IntentionsPanel({
           return;
         }
 
-        setSessionIntentions(data as any);
+        const rows = data as SessionIntention[];
+        const profileMap = await fetchProfilesMap(rows.map((r) => r.user_id));
+
+        if (seq !== loadSeqRef.current) return;
+
+        const merged = rows.map((row) => ({
+          ...row,
+          profiles: profileMap.get(String(row.user_id)) || undefined,
+        }));
+
+        setSessionIntentions(merged);
       } finally {
         if (seq === loadSeqRef.current) setSessionLoading(false);
       }
@@ -441,7 +486,6 @@ export function IntentionsPanel({
       const uid = String(user?.id || "");
       const sid = String(sessionId || "");
       const norm = normalizeTextForMatch(text);
-
       if (!uid || !sid || !norm) return null;
 
       return (
@@ -485,17 +529,6 @@ export function IntentionsPanel({
 
         if (Object.keys(updates).length === 0) return existing.id;
 
-        setSessionIntentions((prev) =>
-          prev.map((x) =>
-            x.id === existing.id
-              ? {
-                ...x,
-                ...updates,
-              }
-              : x
-          )
-        );
-
         try {
           const { error } = await supabase
             .from(SESSION_INTENTIONS_TABLE)
@@ -531,7 +564,7 @@ export function IntentionsPanel({
         if (error) throw error;
 
         if (data) {
-          setSessionIntentions((prev) => [data as any, ...prev.filter((x) => x.id !== data.id)]);
+          setSessionIntentions((prev) => [data as any, ...prev]);
         }
 
         void loadSessionIntentions(sessionId);
@@ -551,9 +584,6 @@ export function IntentionsPanel({
       const existing = findOwnSessionIntentionLocal(text);
       if (!existing) return;
 
-      const prev = sessionIntentions;
-      setSessionIntentions((p) => p.filter((x) => x.id !== existing.id));
-
       try {
         const { error } = await supabase
           .from(SESSION_INTENTIONS_TABLE)
@@ -563,11 +593,11 @@ export function IntentionsPanel({
           .eq("session_id", sessionId);
 
         if (error) throw error;
-      } catch {
-        setSessionIntentions(prev);
-      }
+      } catch { }
+
+      void loadSessionIntentions(sessionId);
     },
-    [user?.id, sessionId, findOwnSessionIntentionLocal, sessionIntentions]
+    [user?.id, sessionId, findOwnSessionIntentionLocal, loadSessionIntentions]
   );
 
   const loadPlans = useCallback(async () => {
@@ -807,11 +837,15 @@ export function IntentionsPanel({
 
     const prev = panelIntentions;
     const target = panelIntentions.find((x) => x.id === id) || null;
-
     setPanelIntentions((p) => p.filter((x) => x.id !== id));
 
     try {
-      const { error } = await supabase.from(PANEL_INTENTIONS_TABLE).delete().eq("id", id).eq("user_id", user.id);
+      const { error } = await supabase
+        .from(PANEL_INTENTIONS_TABLE)
+        .delete()
+        .eq("id", id)
+        .eq("user_id", user.id);
+
       if (error) throw error;
 
       if (target?.text) {
@@ -1106,7 +1140,6 @@ export function IntentionsPanel({
                         const text = safeTrim(it.text);
                         const inPanelById = panelIntentions.some((p) => String(p.focus_plan_item_id || "") === String(it.id));
                         const inPanelByText = panelTextSet.has(normalizeTextForMatch(text));
-
                         const already = inPanelById || inPanelByText;
 
                         return (
