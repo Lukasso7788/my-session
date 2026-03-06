@@ -312,6 +312,20 @@ function IconInfo({ size = 16 }: { size?: number }) {
     );
 }
 
+function IconCopy({ size = 16 }: { size?: number }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect x="9" y="9" width="11" height="11" rx="2" stroke="currentColor" strokeWidth="2" />
+            <path
+                d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+            />
+        </svg>
+    );
+}
+
 function DotsFallbackIcon({ size = 18 }: { size?: number }) {
     return (
         <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -341,28 +355,6 @@ function OptionsSmartIcon({ hovered, size = 18 }: { hovered: boolean; size?: num
                 width: size,
                 height: size,
                 filter: hovered ? "brightness(0) invert(1)" : "none",
-            }}
-        />
-    );
-}
-
-function InfoSmartIcon({ hovered, size = 16 }: { hovered: boolean; size?: number }) {
-    const [useFallback, setUseFallback] = useState(false);
-
-    if (useFallback) return <IconInfo size={size} />;
-
-    return (
-        <img
-            src="/icons/info.svg"
-            alt=""
-            draggable={false}
-            onError={() => setUseFallback(true)}
-            style={{
-                width: size,
-                height: size,
-                // делаем белой на hover/pinned ровно как options
-                filter: hovered ? "brightness(0) invert(1)" : "none",
-                opacity: 0.85,
             }}
         />
     );
@@ -413,24 +405,10 @@ function isCustomStudioSession(session: any): boolean {
 
 /** =========================
  * ✅ Stages resolver
- * Derive from:
- *   1) session.schedule.timer.phases
- *   2) embedded template schedule
- *   3) session.stages_json / template.stages_json
- *   4) optional session_stages table
- *
- * ✅ FIX for Custom sessions:
- * - if list query doesn't include schedule/stages_json (common optimization),
- *   fetch missing fields from "sessions" on-demand to render SessionStageBar.
- *
- * ✅ IMPORTANT FIX (jsonb schedule):
- * - session.schedule can be a jsonb ARRAY directly in Postgres (Supabase),
- *   e.g. [{name:"Focus", minutes:50}, ...]
- *   -> we must parse it as timeline and map to stages.
  * ========================= */
 function tryParseJson<T = any>(x: any): T | null {
     if (!x) return null;
-    if (typeof x === "object") return x as T; // ✅ arrays (jsonb) also hit this branch
+    if (typeof x === "object") return x as T;
     if (typeof x === "string") {
         const s = x.trim();
         if (!s) return null;
@@ -535,20 +513,12 @@ function tryStagesFromSchedule(scheduleAny: any): SessionStage[] {
     const schedule = tryParseJson<any>(scheduleAny);
     if (!schedule) return [];
 
-    // ✅ FIX: jsonb array schedule stored directly in sessions.schedule
-    // Example:
-    // [
-    //   { "name": "Welcome & Set-up", "minutes": 5 },
-    //   { "name": "Focus", "minutes": 50 },
-    //   ...
-    // ]
     if (Array.isArray(schedule) && schedule.length) {
         return phasesToStages(schedule);
     }
 
     if (typeof schedule !== "object") return [];
 
-    // ✅ broaden keys (custom/studio schedules often differ)
     const phases =
         (schedule as any)?.timer?.phases ||
         (schedule as any)?.timer?.timeline ||
@@ -597,8 +567,6 @@ async function ensureAuthReady(sb: SupabaseClient) {
 let _hasSessionStagesTable: boolean | null = null;
 const _stagesBySessionId = new Map<string, SessionStage[]>();
 const _stagesByTemplateId = new Map<string, SessionStage[]>();
-
-// ✅ NEW: cache for "sessions" extra fetch (when list query omits schedule/stages_json)
 const _sessionExtrasById = new Map<string, any | null>();
 
 function looksLikeUuid(x: any): boolean {
@@ -675,7 +643,6 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
     const sessionId = session?.id ? String(session.id) : "";
     if (sessionId && _stagesBySessionId.has(sessionId)) return _stagesBySessionId.get(sessionId)!;
 
-    // 0) already embedded in the session object
     if (Array.isArray(session?.session_stages) && session.session_stages.length) {
         const out = normalizeStages(sortStagesInClient(session.session_stages));
         if (sessionId) _stagesBySessionId.set(sessionId, out);
@@ -696,7 +663,6 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
         return out;
     }
 
-    // ✅ IMPORTANT: schedule can be jsonb array OR object -> handled in tryStagesFromSchedule
     const scheduleStages = tryStagesFromSchedule(session?.schedule);
     if (scheduleStages.length) {
         if (sessionId) _stagesBySessionId.set(sessionId, scheduleStages);
@@ -722,10 +688,8 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
         }
     }
 
-    // ✅ 1) Try DB fetches
     const sb = getSupabase();
     if (!sb) {
-        // last fallback from duration (works even without Supabase)
         const durMin = Number(session?.duration_minutes);
         if (Number.isFinite(durMin) && durMin > 0) {
             const out = normalizeStages(
@@ -740,7 +704,6 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
     }
     await ensureAuthReady(sb);
 
-    // 1a) session_stages table
     if (_hasSessionStagesTable !== false && sessionId) {
         const { data: ssData, error: ssErr } = await sb
             .from("session_stages")
@@ -757,7 +720,6 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
         }
     }
 
-    // 1b) template cache / template fetch (if template id is known from list query)
     const templateId = getTemplateIdFromSession(session);
     if (templateId && _stagesByTemplateId.has(templateId)) {
         const out = _stagesByTemplateId.get(templateId)!;
@@ -791,8 +753,6 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
         }
     }
 
-    // ✅ 2) FINAL FIX: If the list page didn't select schedule/stages_json for Custom sessions,
-    // fetch missing fields from "sessions" and try again.
     if (sessionId) {
         const extra = await fetchSessionExtrasForStages(sessionId);
         if (extra) {
@@ -811,7 +771,6 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
                 return schedStages;
             }
 
-            // if extra has template id (but list object didn't), try template fetch once
             const tid =
                 extra?.session_template_id ||
                 extra?.template_id ||
@@ -855,7 +814,6 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
         }
     }
 
-    // ✅ 3) Absolute fallback: show a single "Focus" block based on duration_minutes
     const durMin = Number(session?.duration_minutes);
     if (Number.isFinite(durMin) && durMin > 0) {
         const out = normalizeStages(
@@ -871,7 +829,7 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
 }
 
 /** =========================
- * ✅ Live users resolver (ACTIVE = last_seen_at within window)
+ * ✅ Live users resolver
  * ========================= */
 function normalizeUsers(raw: any[]): BookedUser[] {
     const users: BookedUser[] = (raw || [])
@@ -897,7 +855,6 @@ function normalizeUsers(raw: any[]): BookedUser[] {
     return out;
 }
 
-/** === local time parser for current-stage calc (also used for last_seen_at) === */
 function parseTimeMs(input: any): number | null {
     if (input == null) return null;
 
@@ -930,7 +887,6 @@ function parseTimeMs(input: any): number | null {
     return null;
 }
 
-/** ✅ NEW: parse Postgres counts that may come as bigint strings */
 function parseDbCount(v: any): number | null {
     if (v == null) return null;
     if (typeof v === "number") return Number.isFinite(v) ? v : null;
@@ -946,8 +902,8 @@ function parseDbCount(v: any): number | null {
     return null;
 }
 
-const LIVE_ACTIVE_WINDOW_MS = 2 * 60 * 1000; // last_seen_at within 2 minutes = "in session now"
-const LIVE_FALLBACK_JOIN_MAX_AGE_MS = 24 * 60 * 60 * 1000; // ✅ if last_seen_at missing/null, accept joined_at/created_at within 24h
+const LIVE_ACTIVE_WINDOW_MS = 2 * 60 * 1000;
+const LIVE_FALLBACK_JOIN_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 function isColumnMissingErr(err: any, col: string): boolean {
     const status = (err as any)?.status;
@@ -964,14 +920,11 @@ function filterActiveRows(rows: any[], cutoffMs: number): any[] {
 
     return (rows || []).filter((r: any) => {
         if (!r) return false;
-
-        // left_at might not exist in your schema
         if (r?.left_at) return false;
 
         const ls = parseTimeMs(r?.last_seen_at);
         if (ls != null) return ls >= cutoffMs;
 
-        // joined_at might not exist; created_at is a good fallback in your current schema
         const j = parseTimeMs(r?.joined_at ?? r?.created_at);
         if (j != null) return j >= joinCutoffMs;
 
@@ -983,7 +936,7 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
     const sb = getSupabase();
     if (!sb) return [];
     await ensureAuthReady(sb);
-    // ✅ 0) Try SECURITY DEFINER RPC first (bypasses RLS issues)
+
     const { data: rpcData, error: rpcErr } = await sb.rpc("get_live_users", {
         p_session_id: sessionId,
     });
@@ -998,7 +951,6 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
 
     const cutoffMs = Date.now() - LIVE_ACTIVE_WINDOW_MS;
 
-    // 1) Try session_attendance
     {
         const selectSimple =
             "user_id, profiles:profiles(id, full_name, avatar_url), last_seen_at, created_at";
@@ -1022,7 +974,6 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
             return normalizeUsers(rows);
         }
 
-        // legacy attempt
         const selectLegacy =
             "user_id, profiles:profiles(id, full_name, avatar_url), left_at, joined_at, last_seen_at, created_at";
 
@@ -1063,7 +1014,6 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
         }
     }
 
-    // 2) Fallback to session_participants
     {
         const selectLegacy =
             "user_id, profiles:profiles(id, full_name, avatar_url), left_at, joined_at, last_seen_at, created_at";
@@ -1142,7 +1092,6 @@ function normKey(raw: any) {
 function normalizeKind(raw: any): StageKind {
     const k = normKey(raw);
 
-    // ✅ FIX: farewell/closing is NOT welcome
     if (k.includes("farewell") || k.includes("goodbye") || k === "celebrate-and-farewell") {
         return "celebrate";
     }
@@ -1164,7 +1113,6 @@ function inferKindFromText(text: any): StageKind | null {
     if (!t) return null;
     const k = normKey(t);
 
-    // ✅ FIX: farewell/closing should be celebrate
     if (k.includes("farewell") || k.includes("goodbye") || k.includes("closing"))
         return "celebrate";
     if (k.includes("welcome") || k.includes("intro")) return "welcome";
@@ -1245,7 +1193,6 @@ function getStageSeconds(stage: any): number {
     return 0;
 }
 
-/** ✅ IMPORTANT: must exist at module scope (fixes "clamp is not defined") */
 function clamp(n: number, a: number, b: number) {
     return Math.max(a, Math.min(b, n));
 }
@@ -1301,9 +1248,6 @@ function computeNowStage(
     };
 }
 
-/** =========================
- * ✅ Room param resolver (uuid preferred; fallback to custom_slug)
- * ========================= */
 function getRoomParam(session: any): string {
     const id = session?.id != null ? String(session.id).trim() : "";
     if (id) return id;
@@ -1314,6 +1258,52 @@ function getRoomParam(session: any): string {
 function buildLoginNext(urlPath: string): string {
     const next = urlPath || "/sessions";
     return `/login?next=${encodeURIComponent(next)}`;
+}
+
+function buildSessionInvitePath(session: any): string {
+    const roomParam = getRoomParam(session);
+    return roomParam ? `/room-iframe/${roomParam}` : "/sessions";
+}
+
+function buildAbsoluteInviteUrl(session: any): string {
+    const path = buildSessionInvitePath(session);
+
+    if (typeof window !== "undefined" && window.location?.origin) {
+        return `${window.location.origin}${path}`;
+    }
+
+    return `https://mysession.club${path}`;
+}
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+    try {
+        if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(text);
+            return true;
+        }
+    } catch { }
+
+    try {
+        if (typeof document === "undefined") return false;
+
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.setAttribute("readonly", "");
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        ta.style.pointerEvents = "none";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        ta.setSelectionRange(0, ta.value.length);
+
+        const ok = document.execCommand("copy");
+        document.body.removeChild(ta);
+        return ok;
+    } catch {
+        return false;
+    }
 }
 
 export default function SessionCard({
@@ -1349,14 +1339,12 @@ export default function SessionCard({
 
     const [stages, setStages] = useState<SessionStage[]>([]);
     const [liveUsers, setLiveUsers] = useState<BookedUser[]>([]);
-    const [isLiveLoading, setIsLiveLoading] = useState(false); // ✅ NEW
+    const [isLiveLoading, setIsLiveLoading] = useState(false);
     const [peopleTab, setPeopleTab] = useState<"booked" | "live">("booked");
     const [peopleTabPinned, setPeopleTabPinned] = useState(false);
 
-    // quick lookup: кто сейчас online
     const liveIdSet = useMemo(() => new Set(liveUsers.map((u) => u.id)), [liveUsers]);
 
-    // если сменили сессию — сброс “ручного выбора”
     useEffect(() => {
         setPeopleTabPinned(false);
     }, [session?.id]);
@@ -1368,18 +1356,19 @@ export default function SessionCard({
     const [isOptionsOpen, setIsOptionsOpen] = useState(false);
     const optionsRef = useRef<HTMLDivElement | null>(null);
 
-    // ✅ Info popover
     const [isInfoOpen, setIsInfoOpen] = useState(false);
     const [isInfoPinned, setIsInfoPinned] = useState(false);
     const infoRef = useRef<HTMLDivElement | null>(null);
 
-    // ✅ current stage state
     const [nowStage, setNowStage] = useState<{
         name: string;
         color: string;
         kind: any;
         leftSec: number;
     } | null>(null);
+
+    const [copyInviteState, setCopyInviteState] = useState<"idle" | "copied" | "error">("idle");
+    const copyInviteTimerRef = useRef<number | null>(null);
 
     useEffect(() => setIsBookingConfirmed(!!initialIsBooked), [session.id, initialIsBooked]);
     useEffect(() => setBookers(initialBookers), [initialBookers]);
@@ -1391,7 +1380,15 @@ export default function SessionCard({
     }, [cancelHoverTimer]);
 
     useEffect(() => {
-        function onDocClick(e: MouseEvent) {
+        return () => {
+            if (copyInviteTimerRef.current) {
+                window.clearTimeout(copyInviteTimerRef.current);
+            }
+        };
+    }, []);
+
+    useEffect(() => {
+        function onDocClick(e: globalThis.MouseEvent) {
             const t = e.target as any;
 
             if (isOptionsOpen && optionsRef.current && !optionsRef.current.contains(t)) {
@@ -1410,7 +1407,6 @@ export default function SessionCard({
     const sessionType = resolveSessionType(session);
     const isInfinite = sessionType === "infinite";
 
-    // ✅ FIX: live_count может прилетать строкой (bigint)
     const liveCountFromSession: number | null = parseDbCount(
         session?.live_count ??
         session?.liveCount ??
@@ -1440,8 +1436,6 @@ export default function SessionCard({
         return Date.now() >= t;
     }, [isInfinite, liveNowCount, session?.start_time]);
 
-    // For future sessions: don't pass real future start_time to stage timeline.
-    // ✅ Prefer started_at; if only start_time is in the future -> use "now"
     const timelineStartTime = useMemo(() => {
         const startedAt = session?.started_at;
         const startTime = session?.start_time;
@@ -1474,6 +1468,7 @@ export default function SessionCard({
     const custom = isCustomStudioSession(session);
     const resolvedType = custom ? "Custom session" : baseResolvedType;
 
+    // ✅ FIX: typeMap must be declared BEFORE it's used
     const typeMap: Record<string, { color: string; bg: string; icon: string }> = {
         "Deep work": { color: "#3B82F6", bg: "#E4EDFF", icon: "/icons/deepwork.svg" },
         Pomodoro: { color: "#EF4444", bg: "#FFE4E4", icon: "/icons/pomodoro.svg" },
@@ -1504,7 +1499,6 @@ export default function SessionCard({
         })
         : "";
 
-    // ✅ Load stages (now supports jsonb array schedule)
     useEffect(() => {
         let cancelled = false;
 
@@ -1523,7 +1517,6 @@ export default function SessionCard({
         };
     }, [session?.id, session?.schedule, session?.session_template_id, session?.template_id]);
 
-    // ✅ Precompute stages with normalized kind + color
     const stagesVisual = useMemo(() => {
         return (stages || []).map((s) => {
             const v = resolveStageVisualLocal(s as any);
@@ -1539,7 +1532,6 @@ export default function SessionCard({
         });
     }, [stages]);
 
-    // ✅ Poll live users (background)
     const shouldPollLive = useMemo(() => {
         if (!session?.id) return false;
         if (isInfinite) return true;
@@ -1549,8 +1541,8 @@ export default function SessionCard({
         if (startMs == null) return false;
 
         const diff = startMs - Date.now();
-        const beforeMs = 6 * 60 * 60 * 1000; // 6h before
-        const afterMs = 12 * 60 * 60 * 1000; // 12h after
+        const beforeMs = 6 * 60 * 60 * 1000;
+        const afterMs = 12 * 60 * 60 * 1000;
         return diff <= beforeMs && diff >= -afterMs;
     }, [session?.id, isInfinite, liveNowCount, session?.start_time]);
 
@@ -1582,7 +1574,6 @@ export default function SessionCard({
         };
     }, [session?.id, shouldPollLive, isInfinite]);
 
-    // ✅ NEW: On-demand fetch when modal is open AND "live" tab selected
     useEffect(() => {
         if (!session?.id) return;
         if (!isBookersModalOpen) return;
@@ -1605,7 +1596,6 @@ export default function SessionCard({
 
         run();
 
-        // while modal open, keep it fresh even if shouldPollLive was false
         const every = isInfinite ? 15000 : 8000;
         const timer = window.setInterval(run, every);
 
@@ -1616,12 +1606,11 @@ export default function SessionCard({
     }, [session?.id, isBookersModalOpen, peopleTab, isInfinite]);
 
     useEffect(() => {
-        if (peopleTabPinned) return; // не ломаем выбор юзера
+        if (peopleTabPinned) return;
         if (hasLiveNow) setPeopleTab("live");
         else setPeopleTab("booked");
     }, [peopleTabPinned, hasLiveNow, session?.id]);
 
-    // ✅ compute current stage only when info popover open
     useEffect(() => {
         if (!isInfoOpen) {
             setNowStage(null);
@@ -1705,6 +1694,25 @@ export default function SessionCard({
         setIsHoveringCancel(false);
     };
 
+    const handleCopyInviteLink = async () => {
+        const url = buildAbsoluteInviteUrl(session);
+        const ok = await copyTextToClipboard(url);
+
+        setCopyInviteState(ok ? "copied" : "error");
+
+        if (copyInviteTimerRef.current) {
+            window.clearTimeout(copyInviteTimerRef.current);
+        }
+
+        copyInviteTimerRef.current = window.setTimeout(() => {
+            setCopyInviteState("idle");
+        }, ok ? 2200 : 2600);
+
+        if (ok) {
+            setIsOptionsOpen(false);
+        }
+    };
+
     const onEnterBooked = () => {
         if (cancelHoverTimer) window.clearTimeout(cancelHoverTimer);
         const tt = window.setTimeout(() => setIsHoveringCancel(true), CANCEL_HOVER_DELAY_MS);
@@ -1723,14 +1731,12 @@ export default function SessionCard({
 
         const nextPath = `/room-iframe/${roomParam}`;
 
-        // ✅ RoomPageIFrame requires auth — redirect early for nicer UX
         if (!userId) {
             navigate(buildLoginNext(nextPath));
             return;
         }
 
         try {
-            // keep uuid if available; fallback to roomParam
             const idForJoin = session?.id ? String(session.id) : roomParam;
             onJoin(idForJoin);
         } catch { }
@@ -1740,7 +1746,6 @@ export default function SessionCard({
 
     const maxStack = 6;
 
-    // ✅ Always show BOTH: Booked + Live Now
     const bookedStackUsers = bookers.slice(0, maxStack);
     const bookedRemaining = Math.max(0, bookedCount - bookedStackUsers.length);
 
@@ -1844,9 +1849,15 @@ export default function SessionCard({
     const canCancelBooking = !!isBookingConfirmed;
     const canCancelSession = isHost;
 
+    const copyInviteLabel =
+        copyInviteState === "copied"
+            ? "Copied!"
+            : copyInviteState === "error"
+                ? "Copy failed"
+                : "Copy invite link";
+
     const peopleInline = (
         <div className="inline-flex items-center gap-3">
-            {/* LIVE NOW */}
             <button
                 type="button"
                 onClick={() => {
@@ -1863,7 +1874,6 @@ export default function SessionCard({
                     </div>
                 ) : (
                     <>
-                        {/* ✅ Hide avatars on mobile, keep on md+ */}
                         {liveStackUsers.length > 0 && (
                             <div className="hidden md:flex items-center">
                                 {liveStackUsers.map((u, idx) => (
@@ -1896,7 +1906,6 @@ export default function SessionCard({
                 )}
             </button>
 
-            {/* BOOKED */}
             <button
                 type="button"
                 onClick={() => {
@@ -1913,7 +1922,6 @@ export default function SessionCard({
                     </div>
                 ) : (
                     <>
-                        {/* ✅ Hide avatars on mobile, keep on md+ */}
                         {bookedStackUsers.length > 0 && (
                             <div className="hidden md:flex items-center">
                                 {bookedStackUsers.map((u, idx) => (
@@ -1956,7 +1964,6 @@ export default function SessionCard({
     const modalUsers = peopleTab === "live" ? liveUsers : bookers;
     const modalCount = peopleTab === "live" ? liveNowCount : bookedCount;
 
-    // ✅ description: prefer session.description, else template description if nested
     const embeddedTemplate = getEmbeddedTemplate(session);
     const description = String(
         session?.description ??
@@ -1966,7 +1973,6 @@ export default function SessionCard({
         ""
     ).trim();
 
-    // cycleSeconds is optional; StageBar also works without it
     const scheduleObj = tryParseJson<any>(session?.schedule);
     const cycleSeconds =
         Number((scheduleObj as any)?.timer?.cycleSeconds) ||
@@ -2049,7 +2055,6 @@ export default function SessionCard({
 
                                     {peopleInline}
 
-                                    {/* ✅ Info icon (hover + click) */}
                                     <div
                                         ref={infoRef}
                                         className="relative"
@@ -2108,7 +2113,6 @@ export default function SessionCard({
                                                         </div>
                                                     )}
 
-                                                    {/* current stage */}
                                                     {nowStage && (
                                                         <div className="flex items-center gap-2">
                                                             <div className="text-[12px] text-[#606060]">
@@ -2139,7 +2143,6 @@ export default function SessionCard({
                                                         </div>
                                                     )}
 
-                                                    {/* timeline */}
                                                     {stagesVisual?.length ? (
                                                         <div className="w-full">
                                                             <SessionStageBar
@@ -2245,6 +2248,13 @@ export default function SessionCard({
                                     </div>
 
                                     <div className="p-2 flex flex-col gap-1">
+                                        <MenuItem
+                                            icon={<IconCopy />}
+                                            label={copyInviteLabel}
+                                            outlined
+                                            onClick={handleCopyInviteLink}
+                                        />
+
                                         {canEdit && (
                                             <MenuItem
                                                 icon={<IconEdit />}
@@ -2305,7 +2315,6 @@ export default function SessionCard({
                 </div>
             </div>
 
-            {/* people modal (booked + live switch) */}
             <ModalShell
                 title={hasStarted || hasLiveNow ? "People" : "People who booked this session"}
                 isOpen={isBookersModalOpen}
@@ -2397,7 +2406,6 @@ export default function SessionCard({
                 </div>
             </ModalShell>
 
-            {/* edit modal */}
             <ModalShell
                 title="Edit session"
                 isOpen={isEditModalOpen}
@@ -2491,7 +2499,6 @@ export default function SessionCard({
                 </div>
             </ModalShell>
 
-            {/* invite modal */}
             <ModalShell
                 title="Invite to session"
                 isOpen={isInviteModalOpen}
