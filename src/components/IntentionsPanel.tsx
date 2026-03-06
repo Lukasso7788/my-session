@@ -1154,7 +1154,7 @@ export function IntentionsPanel({
               value={newIntention}
               onChange={(e) => setNewIntention(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleAddPanelIntention()}
-              placeholder="Add an intention (saved across all sessions)..."
+              placeholder="Add an intention"
               className={"flex-1 " + inputCls}
             />
 
