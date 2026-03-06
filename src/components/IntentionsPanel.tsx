@@ -1080,7 +1080,7 @@ export function IntentionsPanel({
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <div className={"font-inter font-semibold text-[13px] " + headerTitle}>Intentions</div>
-            <div className={"text-[11px] font-inter " + mutedText}>Your panel intentions stay across all sessions</div>
+            <div className={"text-[11px] font-inter " + mutedText}>Keep it visible while you work</div>
           </div>
 
           <div className="flex items-center gap-2 shrink-0 font-inter">
@@ -1146,7 +1146,7 @@ export function IntentionsPanel({
       <div className="px-4 pb-4 pt-4 min-h-0 flex-1 overflow-y-auto custom-scrollbar font-inter">
         {/* My panel intentions */}
         <div className="mb-5">
-          <div className={titleText + " font-inter font-semibold text-[13px] mb-3"}>My intentions (panel)</div>
+          <div className={titleText + " font-inter font-semibold text-[13px] mb-3"}>My intentions</div>
 
           <div className="flex items-center gap-2 mb-3">
             <input
