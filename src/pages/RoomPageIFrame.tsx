@@ -469,7 +469,7 @@ const STAGE_SOUND_MAP: Record<string, string> = {
     break: "/sounds/break_start.mp3",
     outro: "/sounds/outro.mp3",
     celebrate: "/sounds/outro.mp3",
-    custom: "/sounds/Custom.mp3",
+    custom: "/sounds/custom.mp3",
 };
 
 const BREAK_END_SOUND = "/sounds/break_end.mp3";
