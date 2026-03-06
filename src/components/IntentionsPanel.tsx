@@ -199,11 +199,9 @@ export function IntentionsPanel({
   const [user, setUser] = useState<any>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
 
-  // ✅ Global panel intentions (my intentions across ALL sessions)
   const [panelIntentions, setPanelIntentions] = useState<PanelIntention[]>([]);
   const [panelLoading, setPanelLoading] = useState(true);
 
-  // ✅ Session intentions (team intentions for current session)
   const [sessionIntentions, setSessionIntentions] = useState<SessionIntention[]>([]);
   const [sessionLoading, setSessionLoading] = useState(true);
 
@@ -220,7 +218,6 @@ export function IntentionsPanel({
   const overlayRef = useRef<{ win: any; container: HTMLElement; kind: "pip" | "window" } | null>(null);
   const [overlayOpen, setOverlayOpen] = useState(false);
 
-  // Import from focus plans (now attaches to PANEL, not session)
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [plans, setPlans] = useState<FocusPlan[]>([]);
   const [plansLoading, setPlansLoading] = useState(false);
@@ -233,7 +230,6 @@ export function IntentionsPanel({
   const [importingItemId, setImportingItemId] = useState<string | null>(null);
   const [lastPlansLoadedAt, setLastPlansLoadedAt] = useState<string>("");
 
-  // tokens
   const titleText = isLight ? "text-black/85" : "text-white/85";
   const mutedText = isLight ? "text-black/50" : "text-white/45";
   const divider = isLight ? "bg-black/10" : "bg-white/5";
@@ -278,13 +274,11 @@ export function IntentionsPanel({
     supabase.auth.getUser().then(({ data }) => setUser(data.user || null));
   }, []);
 
-  // timer prop
   useEffect(() => {
     const t = typeof timerTextProp === "string" ? timerTextProp.trim() : "";
     if (t) setTimerText(t);
   }, [timerTextProp]);
 
-  // fallback timer
   useEffect(() => {
     const t = typeof timerTextProp === "string" ? timerTextProp.trim() : "";
     if (t) return;
@@ -310,7 +304,6 @@ export function IntentionsPanel({
     };
   }, [timerTextProp]);
 
-  // resolve session uuid from slug
   useEffect(() => {
     let cancelled = false;
 
@@ -347,9 +340,6 @@ export function IntentionsPanel({
   const getAvatar = (profile?: any) =>
     profile?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || "User")}`;
 
-  // =========================
-  // Load PANEL intentions (global)
-  // =========================
   const loadPanelIntentions = useCallback(async () => {
     if (!user?.id) return;
 
@@ -369,6 +359,7 @@ export function IntentionsPanel({
         setPanelIntentions([]);
         return;
       }
+
       setPanelIntentions(data as any);
     } finally {
       if (seq === panelSeqRef.current) setPanelLoading(false);
@@ -393,9 +384,6 @@ export function IntentionsPanel({
     };
   }, [user?.id, loadPanelIntentions]);
 
-  // =========================
-  // Load SESSION intentions (team)
-  // =========================
   const loadSessionIntentions = useCallback(
     async (sid?: string | null) => {
       const s = String(sid || sessionId || "");
@@ -420,6 +408,7 @@ export function IntentionsPanel({
           setSessionIntentions([]);
           return;
         }
+
         setSessionIntentions(data as any);
       } finally {
         if (seq === loadSeqRef.current) setSessionLoading(false);
@@ -447,9 +436,140 @@ export function IntentionsPanel({
     };
   }, [sessionId, loadSessionIntentions]);
 
-  // =========================
-  // Focus plans load (Supabase)
-  // =========================
+  const findOwnSessionIntentionLocal = useCallback(
+    (text: string) => {
+      const uid = String(user?.id || "");
+      const sid = String(sessionId || "");
+      const norm = normalizeTextForMatch(text);
+
+      if (!uid || !sid || !norm) return null;
+
+      return (
+        sessionIntentions.find(
+          (x) =>
+            String(x.user_id) === uid &&
+            String(x.session_id) === sid &&
+            normalizeTextForMatch(x.text) === norm
+        ) || null
+      );
+    },
+    [user?.id, sessionId, sessionIntentions]
+  );
+
+  const upsertOwnSessionIntention = useCallback(
+    async ({
+      matchText,
+      text,
+      completed,
+    }: {
+      matchText?: string;
+      text: string;
+      completed?: boolean;
+    }) => {
+      if (!user?.id || !sessionId) return null;
+
+      const nextText = safeTrim(text);
+      if (!nextText) return null;
+
+      const existing =
+        (matchText ? findOwnSessionIntentionLocal(matchText) : null) ||
+        findOwnSessionIntentionLocal(nextText);
+
+      if (existing) {
+        const updates: any = {};
+
+        if (safeTrim(existing.text) !== nextText) updates.text = nextText;
+        if (typeof completed === "boolean" && Boolean(existing.completed) !== completed) {
+          updates.completed = completed;
+        }
+
+        if (Object.keys(updates).length === 0) return existing.id;
+
+        setSessionIntentions((prev) =>
+          prev.map((x) =>
+            x.id === existing.id
+              ? {
+                ...x,
+                ...updates,
+              }
+              : x
+          )
+        );
+
+        try {
+          const { error } = await supabase
+            .from(SESSION_INTENTIONS_TABLE)
+            .update(updates)
+            .eq("id", existing.id)
+            .eq("user_id", user.id)
+            .eq("session_id", sessionId);
+
+          if (error) throw error;
+        } catch {
+          void loadSessionIntentions(sessionId);
+          return null;
+        }
+
+        void loadSessionIntentions(sessionId);
+        return existing.id;
+      }
+
+      try {
+        const payload: any = {
+          user_id: user.id,
+          session_id: sessionId,
+          text: nextText,
+          completed: typeof completed === "boolean" ? completed : false,
+        };
+
+        const { data, error } = await supabase
+          .from(SESSION_INTENTIONS_TABLE)
+          .insert(payload)
+          .select("id, text, user_id, session_id, created_at, completed")
+          .single();
+
+        if (error) throw error;
+
+        if (data) {
+          setSessionIntentions((prev) => [data as any, ...prev.filter((x) => x.id !== data.id)]);
+        }
+
+        void loadSessionIntentions(sessionId);
+        return data?.id || null;
+      } catch {
+        void loadSessionIntentions(sessionId);
+        return null;
+      }
+    },
+    [user?.id, sessionId, findOwnSessionIntentionLocal, loadSessionIntentions]
+  );
+
+  const deleteOwnSessionIntentionByText = useCallback(
+    async (text: string) => {
+      if (!user?.id || !sessionId) return;
+
+      const existing = findOwnSessionIntentionLocal(text);
+      if (!existing) return;
+
+      const prev = sessionIntentions;
+      setSessionIntentions((p) => p.filter((x) => x.id !== existing.id));
+
+      try {
+        const { error } = await supabase
+          .from(SESSION_INTENTIONS_TABLE)
+          .delete()
+          .eq("id", existing.id)
+          .eq("user_id", user.id)
+          .eq("session_id", sessionId);
+
+        if (error) throw error;
+      } catch {
+        setSessionIntentions(prev);
+      }
+    },
+    [user?.id, sessionId, findOwnSessionIntentionLocal, sessionIntentions]
+  );
+
   const loadPlans = useCallback(async () => {
     if (!user?.id) return;
 
@@ -541,9 +661,6 @@ export function IntentionsPanel({
     return base.filter((it) => normalizeTextForMatch(it.text).includes(q));
   }, [planItems, planSearch]);
 
-  // =========================
-  // Sync: PanelIntention.completed -> FocusPlanItem.completed
-  // =========================
   const syncFocusPlanItemCompleted = useCallback(
     async (focusPlanItemId: string, nextCompleted: boolean) => {
       if (!user?.id) return;
@@ -560,9 +677,6 @@ export function IntentionsPanel({
     [user?.id]
   );
 
-  // =========================
-  // Import FocusPlanItem -> Panel Intention (Attach to panel)
-  // =========================
   const panelTextSet = useMemo(() => {
     const s = new Set<string>();
     for (const it of panelIntentions) {
@@ -584,10 +698,8 @@ export function IntentionsPanel({
       setImportingItemId(item.id);
 
       try {
-        // If already attached by focus_plan_item_id, do nothing
         const alreadyById = panelIntentions.some((p) => String(p.focus_plan_item_id || "") === String(item.id));
         if (!alreadyById) {
-          // try by text: if same text exists, just link it to this focus item (nice)
           const existingSameText = panelIntentions.find((p) => normalizeTextForMatch(p.text) === norm) || null;
 
           if (existingSameText) {
@@ -597,7 +709,6 @@ export function IntentionsPanel({
               .eq("id", existingSameText.id)
               .eq("user_id", user.id);
           } else {
-            // create new panel intention
             await supabase.from(PANEL_INTENTIONS_TABLE).insert({
               user_id: user.id,
               text,
@@ -607,18 +718,19 @@ export function IntentionsPanel({
           }
         }
 
-        // reload
         void loadPanelIntentions();
+        void upsertOwnSessionIntention({
+          matchText: text,
+          text,
+          completed: Boolean(item.completed),
+        });
       } finally {
         setImportingItemId(null);
       }
     },
-    [user?.id, panelIntentions, loadPanelIntentions]
+    [user?.id, panelIntentions, loadPanelIntentions, upsertOwnSessionIntention]
   );
 
-  // =========================
-  // Panel intention CRUD
-  // =========================
   const handleAddPanelIntention = async () => {
     if (!user?.id) return;
 
@@ -627,7 +739,6 @@ export function IntentionsPanel({
 
     setNewIntention("");
 
-    // optimistic add
     const optimisticId = `optimistic-${Date.now()}`;
     const optimistic: PanelIntention = {
       id: optimisticId,
@@ -654,6 +765,7 @@ export function IntentionsPanel({
       }
 
       setPanelIntentions((prev) => [data as any, ...prev.filter((x) => x.id !== optimisticId)]);
+      void upsertOwnSessionIntention({ text, completed: false });
     } catch {
       setPanelIntentions((prev) => prev.filter((x) => x.id !== optimisticId));
     }
@@ -665,7 +777,6 @@ export function IntentionsPanel({
 
     const next = !Boolean(it.completed);
 
-    // optimistic
     setPanelIntentions((prev) => prev.map((x) => (x.id === it.id ? { ...x, completed: next } : x)));
 
     try {
@@ -677,12 +788,16 @@ export function IntentionsPanel({
 
       if (error) throw error;
 
-      // ✅ sync to focus plan item if linked
       if (it.focus_plan_item_id) {
         void syncFocusPlanItemCompleted(String(it.focus_plan_item_id), next);
       }
+
+      void upsertOwnSessionIntention({
+        matchText: it.text,
+        text: it.text,
+        completed: next,
+      });
     } catch {
-      // revert
       setPanelIntentions((prev) => prev.map((x) => (x.id === it.id ? { ...x, completed: !next } : x)));
     }
   };
@@ -691,17 +806,22 @@ export function IntentionsPanel({
     if (!user?.id) return;
 
     const prev = panelIntentions;
+    const target = panelIntentions.find((x) => x.id === id) || null;
+
     setPanelIntentions((p) => p.filter((x) => x.id !== id));
 
     try {
       const { error } = await supabase.from(PANEL_INTENTIONS_TABLE).delete().eq("id", id).eq("user_id", user.id);
       if (error) throw error;
+
+      if (target?.text) {
+        void deleteOwnSessionIntentionByText(target.text);
+      }
     } catch {
       setPanelIntentions(prev);
     }
   };
 
-  // Edit panel intention
   const startEdit = (id: string, text: string) => {
     setEditingId(id);
     setEditingText(text || "");
@@ -720,9 +840,11 @@ export function IntentionsPanel({
     if (!text) return;
 
     const targetId = editingId;
-
-    // optimistic
     const prev = panelIntentions;
+    const prevItem = panelIntentions.find((x) => x.id === targetId) || null;
+    const prevText = prevItem?.text || text;
+    const prevCompleted = Boolean(prevItem?.completed);
+
     setPanelIntentions((p) => p.map((x) => (x.id === targetId ? { ...x, text } : x)));
 
     try {
@@ -736,14 +858,17 @@ export function IntentionsPanel({
 
       setEditingId(null);
       setEditingText("");
+
+      void upsertOwnSessionIntention({
+        matchText: prevText,
+        text,
+        completed: prevCompleted,
+      });
     } catch {
       setPanelIntentions(prev);
     }
   };
 
-  // =========================
-  // Overlay (PiP / Popout)
-  // =========================
   const closeOverlay = useCallback(() => {
     const o = overlayRef.current;
     overlayRef.current = null;
@@ -807,9 +932,6 @@ export function IntentionsPanel({
     };
   }, [closeOverlay]);
 
-  // =========================
-  // Import modal helpers
-  // =========================
   const getPortalDocument = useCallback((): Document => {
     const o = overlayRef.current;
     const doc = o?.win?.document;
@@ -836,18 +958,11 @@ export function IntentionsPanel({
     return () => win.removeEventListener("keydown", onKeyDown);
   }, [importModalOpen, closeImportModal, getPortalDocument]);
 
-  // =========================
-  // Derived lists
-  // =========================
   const teamIntentions = useMemo(() => {
-    // Exclude your own session intentions to avoid duplication with Panel Intentions
     const uid = String(user?.id || "");
     return sessionIntentions.filter((x) => String(x.user_id) !== uid);
   }, [sessionIntentions, user?.id]);
 
-  // =========================
-  // UI guard
-  // =========================
   if (!rawSessionId) {
     return (
       <div className={"h-full flex items-center justify-center font-inter " + panelBg}>
@@ -868,9 +983,6 @@ export function IntentionsPanel({
   const headerTitle = isLight ? "text-black/85" : "text-white/85";
   const timerTextCls = `tabular-nums text-[12px] ${timerTextClassName || ""} font-inter font-normal`.trim();
 
-  // =========================
-  // Import modal UI
-  // =========================
   const ImportModal = importModalOpen
     ? (() => {
       const modalDoc = getPortalDocument();
@@ -1065,9 +1177,6 @@ export function IntentionsPanel({
     })()
     : null;
 
-  // =========================
-  // Main UI
-  // =========================
   const PanelUI = (
     <div
       className={"h-full flex flex-col min-h-0 font-inter " + panelBg}
@@ -1075,7 +1184,6 @@ export function IntentionsPanel({
       onMouseDown={stopRoomBubbling}
       onClick={stopRoomBubbling}
     >
-      {/* Header */}
       <div className={"px-4 pt-4 pb-3 shrink-0 border-b " + headerBorder + " " + headerBg}>
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
@@ -1091,7 +1199,6 @@ export function IntentionsPanel({
               </span>
             </div>
 
-            {/* Attach from focus plan (panel) */}
             <IconButton
               theme={theme}
               title="Attach from Focus plan to panel"
@@ -1142,9 +1249,7 @@ export function IntentionsPanel({
         </div>
       </div>
 
-      {/* Content */}
       <div className="px-4 pb-4 pt-4 min-h-0 flex-1 overflow-y-auto custom-scrollbar font-inter">
-        {/* My panel intentions */}
         <div className="mb-5">
           <div className={titleText + " font-inter font-semibold text-[13px] mb-3"}>My intentions</div>
 
@@ -1232,7 +1337,6 @@ export function IntentionsPanel({
                           />
                         )}
 
-                        {/* linked to focus plan item */}
                         {i.focus_plan_item_id ? (
                           <div className={"mt-1 text-[11px] " + mutedText}>
                             Linked to Focus plan item
@@ -1307,7 +1411,6 @@ export function IntentionsPanel({
 
         <div className={"h-px my-5 " + divider} />
 
-        {/* Team intentions (session) */}
         <div className={titleText + " font-inter font-semibold text-[13px] mb-3"}>Team intentions</div>
 
         {sessionLoading ? (
