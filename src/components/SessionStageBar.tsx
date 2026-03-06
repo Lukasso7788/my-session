@@ -375,16 +375,20 @@ export function SessionStageBar({
     setProgress(Number.isFinite(stageProgress) ? stageProgress : 0);
   }, [elapsed, stages, loopSeconds, stageSecondsList]);
 
-  const markerColor = theme === "light" ? "#374151" : "#FFFFFF";
-  const markerShadow =
+  const markerColor = theme === "light" ? "#1F2937" : "#FFFFFF";
+
+  const markerOutline =
     theme === "light"
-      ? "0 0 0 1px rgba(17,24,39,0.10), 0 1px 4px rgba(17,24,39,0.12)"
-      : "0 0 0 1px rgba(255,255,255,0.10), 0 1px 6px rgba(255,255,255,0.12)";
+      ? "0 0 0 1px rgba(255,255,255,0.75), 0 1px 6px rgba(17,24,39,0.28)"
+      : "0 0 0 1px rgba(0,0,0,0.45), 0 1px 6px rgba(0,0,0,0.35)";
 
   const trackBgClass =
     theme === "light"
       ? "bg-black/10 shadow-[inset_0_1px_2px_rgba(17,24,39,0.08)]"
       : "bg-white/10 shadow-inner";
+
+  // Делаем маркер не упираться в самые края, чтобы его не визуально не срезало.
+  const markerLeftPercent = clamp(cycleProgress * 100, 0.75, 99.25);
 
   return (
     <div className="relative w-full h-4 overflow-visible">
@@ -425,13 +429,12 @@ export function SessionStageBar({
                 ...(typeof bg === "string" && bg.toLowerCase().includes("gradient")
                   ? { background: bg }
                   : { backgroundColor: bg }),
-                opacity: isActive ? 1 : 0.8,
+                opacity: isActive ? 1 : 0.82,
               }}
               onMouseEnter={() => onHoverStage?.(hoverStage)}
               onMouseLeave={() => onHoverStage?.(null)}
               title={`${displayName}${labelMins ? ` • ${labelMins} min` : ""}`}
             >
-              {/* Fill stays visible in BOTH modes */}
               <div
                 className="absolute left-0 top-0 bottom-0 bg-black/15 transition-all"
                 style={{ width: progressWidth }}
@@ -452,34 +455,47 @@ export function SessionStageBar({
       {/* Moving marker tick */}
       {progressStyle === "tick" && (
         <div
-          className="absolute pointer-events-none z-[30]"
+          className="absolute pointer-events-none z-[40]"
           style={{
-            left: `${clamp(cycleProgress, 0, 1) * 100}%`,
-            top: -4,
+            left: `${markerLeftPercent}%`,
+            top: -3,
             transform: "translateX(-50%)",
           }}
         >
-          {/* top cap so marker is easier to see */}
+          {/* Верхняя шапка маркера */}
           <div
             className="rounded-full"
             style={{
-              width: 8,
-              height: 8,
+              width: 10,
+              height: 6,
               marginLeft: -3,
               backgroundColor: markerColor,
-              boxShadow: markerShadow,
+              boxShadow: markerOutline,
             }}
           />
 
-          {/* main line */}
+          {/* Основная вертикальная линия */}
           <div
             className="rounded-full"
             style={{
-              width: 2,
-              height: 20,
+              width: 4,
+              height: 18,
               marginTop: 1,
               backgroundColor: markerColor,
-              boxShadow: markerShadow,
+              boxShadow: markerOutline,
+            }}
+          />
+
+          {/* Внутренний сегмент внутри бара, чтобы было видно даже если верх где-то режется */}
+          <div
+            className="rounded-full"
+            style={{
+              width: 4,
+              height: 10,
+              marginTop: -12,
+              backgroundColor: markerColor,
+              boxShadow: markerOutline,
+              opacity: 0.98,
             }}
           />
         </div>
