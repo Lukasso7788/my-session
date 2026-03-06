@@ -54,7 +54,7 @@
 // - Shows a branded "You can’t join yet" screen with countdown, and does NOT create Jitsi API until allowed.
 //
 // ✅ NEW #4:
-// - Add custom block sound: /sounds/Custom.mp3
+// - Add custom block sound with lowercase primary path + uppercase fallback for older deploys.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -462,19 +462,44 @@ function patchJitsiIframeAttributes(parentNode?: HTMLElement | null) {
 }
 
 // ====== AUDIO ======
-const STAGE_SOUND_MAP: Record<string, string> = {
-    intentions: "/sounds/intentions.mp3",
-    checkin: "/sounds/intentions.mp3",
-    focus: "/sounds/focus.mp3",
-    break: "/sounds/break_start.mp3",
-    outro: "/sounds/outro.mp3",
-    celebrate: "/sounds/outro.mp3",
-    custom: "/sounds/custom.mp3",
+const STAGE_SOUND_CANDIDATES: Record<string, string[]> = {
+    intentions: ["/sounds/intentions.mp3"],
+    checkin: ["/sounds/intentions.mp3"],
+    focus: ["/sounds/focus.mp3"],
+    break: ["/sounds/break_start.mp3"],
+    outro: ["/sounds/outro.mp3"],
+    celebrate: ["/sounds/outro.mp3"],
+    custom: [
+        "/sounds/custom.mp3",
+        "/sounds/Custom.mp3", // legacy / case-mismatch fallback
+    ],
 };
 
 const BREAK_END_SOUND = "/sounds/break_end.mp3";
 const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
 const STAGE_SOUNDS_PREF_KEY = "mysession_stage_sounds";
+
+function normalizeStageSoundKey(raw: any): string {
+    const s = String(raw || "").trim().toLowerCase();
+    if (!s) return "";
+
+    if (s.includes("custom")) return "custom";
+    if (s.includes("check-in") || s.includes("checkin")) return "checkin";
+    if (s.includes("intention")) return "intentions";
+    if (s.includes("celebrate") || s.includes("celebration")) return "celebrate";
+    if (s.includes("recap")) return "recap";
+    if (s.includes("focus")) return "focus";
+    if (s.includes("break") || s.includes("rest") || s.includes("pause")) return "break";
+    if (s.includes("outro") || s.includes("wrap") || s.includes("farewell") || s.includes("end")) return "outro";
+    if (s.includes("intro") || s.includes("welcome")) return "intro";
+
+    return s;
+}
+
+function getStageSoundCandidates(stageType: any): string[] {
+    const key = normalizeStageSoundKey(stageType);
+    return STAGE_SOUND_CANDIDATES[key] || [];
+}
 
 // ====== participants ======
 const DEFAULT_MAX_PARTICIPANTS = 16;
@@ -1608,6 +1633,43 @@ export default function RoomPageIFrame() {
         a.play().catch(() => { });
     };
 
+    const playOneShotFromCandidates = (urls: string[], volume = 0.9) => {
+        if (!stageSoundsEnabledRef.current) return;
+
+        const list = Array.from(
+            new Set(
+                (urls || [])
+                    .map((u) => String(u || "").trim())
+                    .filter(Boolean)
+            )
+        );
+
+        if (!list.length) return;
+
+        const tryIndex = (index: number) => {
+            if (index >= list.length) return;
+
+            const a = new Audio(list[index]);
+            a.preload = "auto";
+            a.volume = volume;
+
+            let advanced = false;
+            const next = () => {
+                if (advanced) return;
+                advanced = true;
+                tryIndex(index + 1);
+            };
+
+            try {
+                a.addEventListener("error", next, { once: true });
+            } catch { }
+
+            a.play().catch(() => next());
+        };
+
+        tryIndex(0);
+    };
+
     const startWelcomeLoop = () => {
         stopWelcomeLoop();
         if (!stageSoundsEnabledRef.current) return;
@@ -1663,6 +1725,10 @@ export default function RoomPageIFrame() {
         const startMs = new Date(stagebarStartTime).getTime();
         if (Number.isNaN(startMs)) return;
 
+        firstTickDoneRef.current = false;
+        prevStageRef.current = -1;
+        stopWelcomeLoop();
+
         const stageSeconds = stages.map((s) => {
             const sec = Number(s.durationSeconds || 0);
             if (sec > 0) return sec;
@@ -1708,8 +1774,10 @@ export default function RoomPageIFrame() {
             const stage = stages[active];
             if (!stage) return;
 
+            const normalizedCurrentType = normalizeStageSoundKey(stage.type);
+
             if (!firstTickDoneRef.current) {
-                if (stage.type === "intro") startWelcomeLoop();
+                if (normalizedCurrentType === "intro") startWelcomeLoop();
                 else stopWelcomeLoop();
 
                 prevStageRef.current = active;
@@ -1719,8 +1787,8 @@ export default function RoomPageIFrame() {
 
             if (prevStageRef.current !== active) {
                 const prev = stages[prevStageRef.current];
-                const prevType = prev?.type;
-                const newType = stage.type;
+                const prevType = normalizeStageSoundKey(prev?.type);
+                const newType = normalizeStageSoundKey(stage.type);
 
                 if (prevType === "break" && newType !== "break") playOneShot(BREAK_END_SOUND);
 
@@ -1728,14 +1796,14 @@ export default function RoomPageIFrame() {
                     startWelcomeLoop();
                 } else {
                     stopWelcomeLoop();
-                    const sound = STAGE_SOUND_MAP[newType];
-                    if (sound) playOneShot(sound);
+                    const soundCandidates = getStageSoundCandidates(newType);
+                    if (soundCandidates.length) playOneShotFromCandidates(soundCandidates);
                 }
 
                 prevStageRef.current = active;
             }
 
-            if (stage.type !== "intro" && welcomeLoopRef.current) stopWelcomeLoop();
+            if (normalizedCurrentType !== "intro" && welcomeLoopRef.current) stopWelcomeLoop();
         }, 1000);
 
         return () => window.clearInterval(timer);
