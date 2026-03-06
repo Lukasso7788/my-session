@@ -5,9 +5,9 @@
 // - Hide ALL native Jitsi UI inside iframe (CSS from SAME Jitsi domain)
 // - Use our own controls only
 // - Tile view ON by default
-// - ✅ Enforce participant limit from sessions.max_participants (default 16)
 // - ✅ Allow opening by UUID OR by sessions.custom_slug (no uuid cast error)
 // - ✅ Require login to enter room (redirect to /login on unauth)
+// - ✅ No client-side kick / moderator enforcement in iframe
 //
 // ✅ Ported + fixed (parity with RoomPage):
 // - Right panel rendered ONLY ONCE (desktop OR mobile overlay) -> no double-mount flicker
@@ -21,38 +21,40 @@
 // - Top bar moved to <RoomTopBar />
 // - Bottom controls moved to <VideoControls /> (src/components/VideoControls.tsx)
 //
-// ✅ Prejoin (NEW):
+// ✅ Prejoin:
 // - Enable Jitsi prejoin screen
 // - Fullscreen iframe until user clicks Join
 // - Hide name input + hide internal title via CSS inside iframe (jitsi-custom.css)
 // - Overlay our own title during prejoin
 //
-// ✅ Prejoin Settings FIX (THIS ITERATION):
+// ✅ Prejoin Settings:
 // - Ensure settings are actually available (TOOLBAR_BUTTONS contains "settings")
-// - Provide our own clickable ⚙ Settings overlay in prejoin + in-room
 // - Best-effort auto-open settings once during prejoin (toggleSettings)
 //
-// ✅ Avatar (NEW):
+// ✅ Avatar:
 // - Prefer Supabase profiles.avatar_url (public bucket)
 // - Fallback to Google auth avatar (user_metadata.picture / avatar_url)
 // - Inject into Jitsi as userInfo.avatarUrl + executeCommand("avatarUrl", ...)
 //
-// ✅ This iteration (iframe warnings cleanup):
+// ✅ This iteration:
 // - Remove premature AudioContext unlock attempt (must be only after user gesture)
 // - Best-effort iframe allow attribute cleanup (remove unsupported "speaker-selection")
 // - Prime browser audio only on actual user actions (controls / clicks)
 //
-// ✅ NEW (this change):
+// ✅ NEW:
 // - Add per-user toggle for "Stage sounds" (our local mp3 sounds), independent from Jitsi mic mute.
 // - Persists in localStorage and immediately stops welcome loop when disabled.
 //
-// ✅ NEW (this change #2):
+// ✅ NEW #2:
 // - Reactions: make floating reaction bigger, emoji above name, add fade-in + float-up animation.
 // - Ensure sender also sees own reaction instantly (local echo), while keeping broadcast self=false (no duplicates).
 //
-// ✅ NEW (this change #3):
+// ✅ NEW #3:
 // - Join gate: do NOT allow entering the room earlier than 10 minutes before session.start_time.
 // - Shows a branded "You can’t join yet" screen with countdown, and does NOT create Jitsi API until allowed.
+//
+// ✅ NEW #4:
+// - Add custom block sound: /sounds/Custom.mp3
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -65,7 +67,6 @@ import ChatPanel from "../components/ChatPanel";
 import RoomTopBar from "../components/RoomTopBar";
 import VideoControls, {
     Icon,
-    ParticipantsSmartIcon,
     REACTION_EMOJI,
     type ReactionType,
     type RoomTheme,
@@ -223,7 +224,6 @@ async function resolveAvatarUrlFromProfilesField(avatarUrlOrPath: string): Promi
     if (!v) return "";
     if (isProbablyUrl(v)) return v;
 
-    // If they stored a storage path instead of a URL, build public URL from bucket
     try {
         const { data } = supabase.storage.from(AVATARS_BUCKET).getPublicUrl(v);
         const u = String(data?.publicUrl || "").trim();
@@ -405,8 +405,6 @@ const TOOLBAR_MOUNT_BUTTONS = ["settings"];
 const TOOLBAR_VISIBLE_BUTTONS: string[] = ["settings"];
 const JITSI_CUSTOM_CSS_PATH = "/jitsi-custom.css";
 
-// Best-effort iframe allow policy without unsupported speaker-selection token.
-// (Some Chromium builds log: "Unrecognized feature: 'speaker-selection'")
 const JITSI_IFRAME_ALLOW = [
     "camera",
     "microphone",
@@ -471,14 +469,14 @@ const STAGE_SOUND_MAP: Record<string, string> = {
     break: "/sounds/break_start.mp3",
     outro: "/sounds/outro.mp3",
     celebrate: "/sounds/outro.mp3",
+    custom: "/sounds/Custom.mp3",
 };
+
 const BREAK_END_SOUND = "/sounds/break_end.mp3";
 const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
-
-// ✅ NEW: stage sounds preference key
 const STAGE_SOUNDS_PREF_KEY = "mysession_stage_sounds";
 
-// ====== participants limit ======
+// ====== participants ======
 const DEFAULT_MAX_PARTICIPANTS = 16;
 const MIN_PARTICIPANTS = 3;
 const MAX_PARTICIPANTS = 64;
@@ -572,7 +570,6 @@ async function createJitsiApiWithFallback(args: {
                 parentNode: args.parentNode,
                 width: "100%",
                 height: "100%",
-                // Best-effort override for iframe allow attr (if supported by current external_api.js build)
                 allow: JITSI_IFRAME_ALLOW,
                 onload: () => patchJitsiIframeAttributes(args.parentNode),
 
@@ -646,7 +643,6 @@ async function createJitsiApiWithFallback(args: {
                 },
             });
 
-            // Extra post-create patching (some builds ignore `allow` in options and set iframe later)
             patchJitsiIframeAttributes(args.parentNode);
             window.setTimeout(() => patchJitsiIframeAttributes(args.parentNode), 50);
             window.setTimeout(() => patchJitsiIframeAttributes(args.parentNode), 300);
@@ -659,7 +655,6 @@ async function createJitsiApiWithFallback(args: {
                 api.executeCommand?.("displayName", args.userName);
             } catch { }
 
-            // Best-effort: some builds prefer command over userInfo for avatar
             try {
                 if (avatarUrl) api.executeCommand?.("avatarUrl", avatarUrl);
             } catch { }
@@ -847,21 +842,14 @@ export default function RoomPageIFrame() {
     // stages
     const [stages, setStages] = useState<Stage[]>([]);
     const [, setHoveredStage] = useState<Stage | null>(null);
-    const [currentStage, setCurrentStage] = useState(0);
+    const [, setCurrentStage] = useState(0);
     const [remainingTime, setRemainingTime] = useState<string>("");
 
     const [stagebarStartTime, setStagebarStartTime] = useState<string>("");
     const [stagebarCycleSeconds, setStagebarCycleSeconds] = useState<number | undefined>(undefined);
 
     const [lastErr, setLastErr] = useState<string>("");
-
-    // capacity enforcement
-    const [capacityError, setCapacityError] = useState<string | null>(null);
-    const capacityTriggeredRef = useRef(false);
-    const localJoinedRef = useRef(false);
-    const localParticipantIdRef = useRef<string | null>(null);
-    const kickedIdsRef = useRef<Set<string>>(new Set());
-    const localIsModeratorRef = useRef<boolean>(false);
+    const [uiMessage, setUiMessage] = useState<string | null>(null);
 
     // iframe state
     const [tile, setTile] = useState(true);
@@ -872,14 +860,10 @@ export default function RoomPageIFrame() {
 
     const [inPrejoin, setInPrejoin] = useState(true);
     const prejoinSettingsAutoOpenedRef = useRef(false);
+    const localJoinedRef = useRef(false);
 
-    const tileRef = useRef<boolean>(true);
     const tileEventSeenRef = useRef<boolean>(false);
     const tileEnforcedOnceRef = useRef<boolean>(false);
-
-    useEffect(() => {
-        tileRef.current = tile;
-    }, [tile]);
 
     const forceTileViewOnAfterJoin = (api?: any) => {
         const a = api || apiRef.current;
@@ -1003,7 +987,6 @@ export default function RoomPageIFrame() {
         if (rightPanelOpen && rightTab === "chat") {
             markChatRead();
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [rightPanelOpen, rightTab, sessionId]);
 
     useEffect(() => {
@@ -1073,8 +1056,8 @@ export default function RoomPageIFrame() {
             cancelled = true;
             safeRemoveRealtimeChannel(ch);
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [authStatus, sessionId, currentUserId, chatReadKey]);
+
     // =========================
     // reactions via broadcast
     // =========================
@@ -1084,7 +1067,6 @@ export default function RoomPageIFrame() {
 
     const REACTION_TTL_MS = 2750;
 
-    // ✅ one place to add a floating reaction (reused by remote + local echo)
     const pushFloatingReaction = (type: ReactionType, fromUserId: string, fromName: string) => {
         if (!type || !REACTION_EMOJI[type]) return;
 
@@ -1093,7 +1075,6 @@ export default function RoomPageIFrame() {
 
         setFloatingReactions((prev) => {
             const next = [...prev, { id, type, fromUserId, fromName }];
-            // keep list bounded
             return next.length > 12 ? next.slice(-12) : next;
         });
 
@@ -1109,7 +1090,6 @@ export default function RoomPageIFrame() {
 
         const ch = supabase
             .channel(`reactions:${sessionId}`, {
-                // keep self=false to avoid duplicating local echo
                 config: { broadcast: { self: false }, presence: { key: currentUserId } },
             })
             .on("broadcast", { event: "reaction" }, (payload: any) => {
@@ -1129,14 +1109,12 @@ export default function RoomPageIFrame() {
             reactionsChannelRef.current = null;
             safeRemoveRealtimeChannel(ch);
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [authStatus, sessionId, currentUserId]);
 
     const sendReaction = (type: ReactionType) => {
         try {
             if (!sessionId || !currentUserId) return;
 
-            // local echo so sender sees it instantly
             pushFloatingReaction(type, currentUserId, userName || "You");
 
             const ch = reactionsChannelRef.current;
@@ -1190,29 +1168,29 @@ export default function RoomPageIFrame() {
                 let name = "";
                 let profileAvatar = "";
 
-                // profiles first (name + avatar)
                 if (u?.id) {
                     try {
-                        const { data: p } = await supabase.from("profiles").select("full_name, avatar_url").eq("id", u.id).single();
+                        const { data: p } = await supabase
+                            .from("profiles")
+                            .select("full_name, avatar_url")
+                            .eq("id", u.id)
+                            .single();
 
                         name = String(p?.full_name || "").trim();
                         profileAvatar = await resolveAvatarUrlFromProfilesField(String(p?.avatar_url || "").trim());
                     } catch { }
                 }
 
-                // fallback: user_metadata for name
                 if (!name) {
                     name =
                         String((u as any)?.user_metadata?.full_name || "").trim() ||
                         String((u as any)?.user_metadata?.name || "").trim();
                 }
 
-                // fallback: email
                 if (!name) {
                     name = u?.email ? String(u.email.split("@")[0] || "").trim() : "";
                 }
 
-                // Avatar fallback: Google auth avatar
                 const googleAvatar = getGoogleAvatarFromUser(u);
                 const finalAvatar = profileAvatar || googleAvatar || "";
 
@@ -1230,13 +1208,7 @@ export default function RoomPageIFrame() {
                 navigate(`/login?redirect=${redirect}`, { replace: true });
             }
         })();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [navigate, location.pathname, location.search]);
-
-    const isHost = useMemo(() => {
-        const sid = String(session?.host_id || "");
-        return !!currentUserId && !!sid && currentUserId === sid;
-    }, [currentUserId, session?.host_id]);
 
     const maxParticipants = useMemo(() => {
         const n = Number(session?.max_participants);
@@ -1516,6 +1488,7 @@ export default function RoomPageIFrame() {
             }
         })();
     }, [idOrSlug]);
+
     // ============================================
     // STAGES TIMER + SOUND
     // ============================================
@@ -1526,7 +1499,6 @@ export default function RoomPageIFrame() {
     const audioPrimerCtxRef = useRef<AudioContext | null>(null);
     const audioUnlockBusyRef = useRef<boolean>(false);
 
-    // stage sounds toggle (our mp3 sounds, not Jitsi)
     const [stageSoundsEnabled, setStageSoundsEnabled] = useState<boolean>(() => {
         try {
             const v = localStorage.getItem(STAGE_SOUNDS_PREF_KEY);
@@ -1568,7 +1540,6 @@ export default function RoomPageIFrame() {
                 }
             } catch { }
 
-            // Tiny silent pulse to satisfy autoplay policies after actual user gesture
             try {
                 const osc = ctx.createOscillator();
                 const gain = ctx.createGain();
@@ -1904,14 +1875,12 @@ export default function RoomPageIFrame() {
             window.removeEventListener("beforeunload", onBeforeUnload);
             window.removeEventListener("pagehide", onPageHide);
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionId, currentUserId]);
 
     useEffect(() => {
         return () => {
             void leaveOnce({ dispose: true, keepalive: false });
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // ============================================
@@ -2018,7 +1987,6 @@ export default function RoomPageIFrame() {
             }
             safeRemoveRealtimeChannel(ch);
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [authStatus, sessionId, currentUserId]);
 
     // ============================================
@@ -2089,20 +2057,6 @@ export default function RoomPageIFrame() {
         }, 450);
     };
 
-    const supportsCmd = (cmd: string) => {
-        const list = supportedCmdsRef.current;
-        return !list || list.includes(cmd);
-    };
-
-    const openJitsiSettings = () => {
-        const api = apiRef.current;
-        if (!api) return;
-        void tryUnlockAudio();
-        try {
-            api.executeCommand?.("toggleSettings");
-        } catch { }
-    };
-
     const applyJitsiAvatarBestEffort = (api: any, avatar: string) => {
         const url = String(avatar || "").trim();
         if (!api || !url) return;
@@ -2124,13 +2078,9 @@ export default function RoomPageIFrame() {
         setInPrejoin(true);
         if (iframeContainerRef.current) iframeContainerRef.current.innerHTML = "";
         setLastErr("");
+        setUiMessage(null);
 
-        setCapacityError(null);
-        capacityTriggeredRef.current = false;
         localJoinedRef.current = false;
-        localParticipantIdRef.current = null;
-        kickedIdsRef.current = new Set();
-        localIsModeratorRef.current = false;
 
         setParticipantsNow(0);
         setParticipantRows([]);
@@ -2151,48 +2101,9 @@ export default function RoomPageIFrame() {
         setJitsiKey((x) => x + 1);
     };
 
-    const maybeKickOrRejectIfOverLimit = async (api: any, joinedParticipantId?: string) => {
-        try {
-            if (!api) return;
-            if (capacityTriggeredRef.current) return;
-
-            const remote = Array.isArray(api.getParticipantsInfo?.()) ? api.getParticipantsInfo() : [];
-            const count = 1 + remote.length;
-
-            setParticipantsNow((prev) => (prev > 0 ? prev : count));
-
-            if (count <= maxParticipants) return;
-
-            capacityTriggeredRef.current = true;
-
-            if (isHost || localIsModeratorRef.current) {
-                const pid = String(joinedParticipantId || "");
-                if (pid && !kickedIdsRef.current.has(pid)) {
-                    kickedIdsRef.current.add(pid);
-                    try {
-                        api.executeCommand?.("kickParticipant", pid);
-                    } catch { }
-                }
-                setCapacityError(`Room is full (${maxParticipants}). Extra participants will be removed.`);
-                window.setTimeout(() => {
-                    setCapacityError(null);
-                    capacityTriggeredRef.current = false;
-                }, 3500);
-                return;
-            }
-
-            setCapacityError(`Room is full (${maxParticipants}). Redirecting…`);
-            try {
-                api.executeCommand?.("hangup");
-            } catch { }
-            await leaveOnce({ dispose: true, keepalive: true });
-            navigate("/sessions", { replace: true });
-        } catch { }
-    };
-
     const refreshParticipantsList = async (api: any) => {
         try {
-            const localId = String(localParticipantIdRef.current || "local");
+            const localId = String(currentUserId || "local");
             const localName = "You";
 
             let remote: any[] = [];
@@ -2257,7 +2168,6 @@ export default function RoomPageIFrame() {
         const api = apiRef.current;
         if (!api) return;
         void refreshParticipantsList(api);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [rightPanelOpen, rightTab, apiReady, mutedAudio, mutedVideo]);
 
     const filteredParticipants = useMemo(() => {
@@ -2273,8 +2183,6 @@ export default function RoomPageIFrame() {
         if (!session) return;
         if (!iframeContainerRef.current) return;
         if (!userName) return;
-
-        // ✅ Join-gate: do NOT create Jitsi API until allowed
         if (!canJoinNow) return;
 
         let cancelled = false;
@@ -2297,7 +2205,6 @@ export default function RoomPageIFrame() {
                 const parent = iframeContainerRef.current!;
                 const domains = domainsForSession(session);
 
-                // Watch iframe insertion and patch attrs best-effort
                 try {
                     iframeAttrObserver = new MutationObserver(() => {
                         patchJitsiIframeAttributes(parent);
@@ -2338,7 +2245,6 @@ export default function RoomPageIFrame() {
 
                 patchJitsiIframeAttributes(parent);
 
-                // apply avatar early (prejoin)
                 if (userAvatarUrl) {
                     window.setTimeout(() => {
                         if (cancelled) return;
@@ -2367,7 +2273,6 @@ export default function RoomPageIFrame() {
                         api.executeCommand?.("displayName", userName);
                     } catch { }
 
-                    // re-apply avatar after join
                     if (userAvatarUrl) {
                         window.setTimeout(() => applyJitsiAvatarBestEffort(api, userAvatarUrl), 120);
                         window.setTimeout(() => applyJitsiAvatarBestEffort(api, userAvatarUrl), 650);
@@ -2377,7 +2282,6 @@ export default function RoomPageIFrame() {
                     startAttendanceHeartbeat();
 
                     void refreshParticipantsList(api);
-                    void maybeKickOrRejectIfOverLimit(api, undefined);
 
                     forceTileViewOnAfterJoin(api);
 
@@ -2385,14 +2289,11 @@ export default function RoomPageIFrame() {
                     scheduleAdaptiveVideoQuality(api, initialTotal, true);
                 };
 
-                const onParticipantJoined = (e: any) => {
-                    const pid = String(e?.id || e?.participantId || "");
-                    void maybeKickOrRejectIfOverLimit(api, pid);
+                const onParticipantJoined = () => {
                     void refreshParticipantsList(api);
                 };
 
                 const onParticipantLeft = () => {
-                    capacityTriggeredRef.current = false;
                     void refreshParticipantsList(api);
                 };
 
@@ -2417,15 +2318,6 @@ export default function RoomPageIFrame() {
                     setTile(!!v);
                 };
 
-                const onRole = (e: any) => {
-                    const pid = String(e?.id || e?.participantId || "");
-                    const role = String(e?.role || "");
-                    if (!pid) return;
-                    if (localParticipantIdRef.current && pid === localParticipantIdRef.current) {
-                        localIsModeratorRef.current = role === "moderator";
-                    }
-                };
-
                 const onReadyToClose = async () => {
                     await leaveOnce({ dispose: true, keepalive: true });
                     navigate("/sessions", { replace: true });
@@ -2438,7 +2330,6 @@ export default function RoomPageIFrame() {
                 api.addEventListener?.("videoMuteStatusChanged", onVideoMute);
                 api.addEventListener?.("screenSharingStatusChanged", onScreenShare);
                 api.addEventListener?.("tileViewChanged", onTile);
-                api.addEventListener?.("participantRoleChanged", onRole);
                 api.addEventListener?.("readyToClose", onReadyToClose);
 
                 void refreshParticipantsList(api);
@@ -2471,8 +2362,7 @@ export default function RoomPageIFrame() {
 
             clearVideoQualityTimer();
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [authStatus, sessionId, jitsiKey, roomName, sessionTitle, userName, userAvatarUrl, canJoinNow]);
+    }, [authStatus, sessionId, jitsiKey, roomName, sessionTitle, userName, userAvatarUrl, canJoinNow, session]);
 
     // ============================================
     // UI actions
@@ -2511,11 +2401,11 @@ export default function RoomPageIFrame() {
         try {
             const url = window.location.href;
             await navigator.clipboard.writeText(url);
-            setCapacityError("Link copied ✅");
-            window.setTimeout(() => setCapacityError(null), 1300);
+            setUiMessage("Link copied ✅");
+            window.setTimeout(() => setUiMessage(null), 1300);
         } catch {
-            setCapacityError("Could not copy link");
-            window.setTimeout(() => setCapacityError(null), 1200);
+            setUiMessage("Could not copy link");
+            window.setTimeout(() => setUiMessage(null), 1200);
         }
     };
 
@@ -2529,7 +2419,6 @@ export default function RoomPageIFrame() {
 
     const ChatPanelAny = ChatPanel as any;
 
-    // ✅ do not show prejoin fullscreen layout when join is blocked
     const isPrejoinUi = canJoinNow && inPrejoin && !apiReady;
 
     const RightPanelBody = (
@@ -2610,7 +2499,9 @@ export default function RoomPageIFrame() {
 
                                             <div className="min-w-0">
                                                 <div className={`text-[13px] font-medium truncate ${isLight ? "text-black/85" : "text-white/90"}`}>{name}</div>
-                                                <div className={`text-[11px] truncate ${isLight ? "text-black/45" : "text-white/45"}`}>{p.isLocal ? "Team member" : "Participant"}</div>
+                                                <div className={`text-[11px] truncate ${isLight ? "text-black/45" : "text-white/45"}`}>
+                                                    {p.isLocal ? "Team member" : "Participant"}
+                                                </div>
                                             </div>
                                         </div>
 
@@ -2749,7 +2640,6 @@ export default function RoomPageIFrame() {
         );
     }
 
-    // ✅ Join gate screen (do not render / create Jitsi until allowed)
     if (joinBlocked) {
         return (
             <div className={`h-[100dvh] w-full flex items-center justify-center ${pageBg}`}>
@@ -2760,9 +2650,7 @@ export default function RoomPageIFrame() {
                     ].join(" ")}
                 >
                     <div className="text-[22px] font-extrabold tracking-tight">MySession</div>
-                    <div className={`mt-1 text-[14px] font-semibold ${isLight ? "text-black/70" : "text-white/75"}`}>
-                        {sessionTitle}
-                    </div>
+                    <div className={`mt-1 text-[14px] font-semibold ${isLight ? "text-black/70" : "text-white/75"}`}>{sessionTitle}</div>
 
                     <div className="mt-5 text-[14px] leading-relaxed">
                         <div className="font-semibold">You can’t join this session yet.</div>
@@ -2874,8 +2762,7 @@ export default function RoomPageIFrame() {
                                 ? isLight
                                     ? "bg-white"
                                     : "bg-[#050F1A]"
-                                : `rounded-2xl ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"}`
-                            )
+                                : `rounded-2xl ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"}`)
                         }
                     >
                         <div className="w-full h-full min-h-0">
@@ -2901,9 +2788,9 @@ export default function RoomPageIFrame() {
                             </div>
                         )}
 
-                        {(lastErr || capacityError) && (
+                        {(lastErr || uiMessage) && (
                             <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow">
-                                {capacityError || lastErr}
+                                {uiMessage || lastErr}
                             </div>
                         )}
 
