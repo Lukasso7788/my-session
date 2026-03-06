@@ -16,7 +16,6 @@ import {
   ListPlus,
   RefreshCw,
   Search,
-  ThumbsUp,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useParams } from "react-router-dom";
@@ -66,16 +65,6 @@ type FocusPlanItem = {
   sort_order: number;
 };
 
-type IntentionReactionRow = {
-  id: string;
-  intention_kind: "panel" | "session";
-  intention_id: string;
-  session_id: string | null;
-  user_id: string;
-  emoji: string;
-  created_at: string;
-};
-
 type IntentionsPanelProps = {
   sessionId?: string; // uuid or slug
   theme?: RoomTheme;
@@ -101,15 +90,6 @@ const OVERLAY_FONT_FAMILY =
 
 const PANEL_INTENTIONS_TABLE = "panel_intentions";
 const SESSION_INTENTIONS_TABLE = "intentions";
-const REACTIONS_TABLE = "intention_reactions";
-
-const REACTION_CHOICES = [
-  { key: "thumb", emoji: "👍", title: "Nice!" },
-  { key: "strong", emoji: "💪", title: "Strength" },
-  { key: "fire", emoji: "🔥", title: "Fire" },
-  { key: "clap", emoji: "👏", title: "Applause" },
-  { key: "mind", emoji: "🤯", title: "Mindblown" },
-] as const;
 
 function IconButton({
   title,
@@ -205,15 +185,6 @@ function normalizeTextForMatch(x: any) {
   return String(x || "").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
-type ReactionState = {
-  counts: Record<string, number>;
-  mine: Set<string>;
-};
-
-function reactionKey(kind: "panel" | "session", id: string) {
-  return `${kind}:${id}`;
-}
-
 export function IntentionsPanel({
   sessionId: sessionIdProp,
   theme = "dark",
@@ -261,10 +232,6 @@ export function IntentionsPanel({
   const [planSearch, setPlanSearch] = useState("");
   const [importingItemId, setImportingItemId] = useState<string | null>(null);
   const [lastPlansLoadedAt, setLastPlansLoadedAt] = useState<string>("");
-
-  // Reactions state
-  const [reactionsByKey, setReactionsByKey] = useState<Record<string, ReactionState>>({});
-  const reactionsSeqRef = useRef(0);
 
   // tokens
   const titleText = isLight ? "text-black/85" : "text-white/85";
@@ -479,186 +446,6 @@ export function IntentionsPanel({
       supabase.removeChannel(channel);
     };
   }, [sessionId, loadSessionIntentions]);
-
-  // =========================
-  // Reactions loading helpers
-  // =========================
-  const computeReactionState = useCallback(
-    (rows: IntentionReactionRow[], kind: "panel" | "session", id: string) => {
-      const counts: Record<string, number> = {};
-      const mine = new Set<string>();
-
-      for (const r of rows) {
-        if (r.intention_kind !== kind) continue;
-        if (String(r.intention_id) !== String(id)) continue;
-        const e = String(r.emoji || "");
-        if (!e) continue;
-        counts[e] = (counts[e] || 0) + 1;
-        if (user?.id && String(r.user_id) === String(user.id)) mine.add(e);
-      }
-      return { counts, mine } as ReactionState;
-    },
-    [user?.id]
-  );
-
-  const loadReactionsForVisible = useCallback(async () => {
-    if (!user?.id) return;
-
-    const seq = ++reactionsSeqRef.current;
-
-    const panelIds = panelIntentions.map((x) => String(x.id));
-    const sessionIds = sessionIntentions.map((x) => String(x.id));
-
-    // nothing to load
-    if (panelIds.length === 0 && sessionIds.length === 0) {
-      setReactionsByKey({});
-      return;
-    }
-
-    try {
-      // pull by two queries (simpler + reliable)
-      const rows: IntentionReactionRow[] = [];
-
-      if (panelIds.length > 0) {
-        const { data } = await supabase
-          .from(REACTIONS_TABLE)
-          .select("id,intention_kind,intention_id,session_id,user_id,emoji,created_at")
-          .eq("intention_kind", "panel")
-          .in("intention_id", panelIds)
-          .limit(2000);
-        if (Array.isArray(data)) rows.push(...(data as any));
-      }
-
-      if (sessionIds.length > 0 && sessionId) {
-        const { data } = await supabase
-          .from(REACTIONS_TABLE)
-          .select("id,intention_kind,intention_id,session_id,user_id,emoji,created_at")
-          .eq("intention_kind", "session")
-          .eq("session_id", sessionId)
-          .in("intention_id", sessionIds)
-          .limit(2000);
-        if (Array.isArray(data)) rows.push(...(data as any));
-      }
-
-      if (seq !== reactionsSeqRef.current) return;
-
-      const next: Record<string, ReactionState> = {};
-
-      for (const it of panelIntentions) {
-        const k = reactionKey("panel", String(it.id));
-        next[k] = computeReactionState(rows, "panel", String(it.id));
-      }
-      for (const it of sessionIntentions) {
-        const k = reactionKey("session", String(it.id));
-        next[k] = computeReactionState(rows, "session", String(it.id));
-      }
-
-      setReactionsByKey(next);
-    } catch {
-      if (seq === reactionsSeqRef.current) setReactionsByKey({});
-    }
-  }, [user?.id, panelIntentions, sessionIntentions, sessionId, computeReactionState]);
-
-  useEffect(() => {
-    if (!user?.id) return;
-    void loadReactionsForVisible();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id, panelIntentions, sessionIntentions, sessionId]);
-
-  // realtime for reactions: two channels (panel + session)
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const chans: any[] = [];
-
-    // panel reactions (session_id IS NULL)
-    const ch1 = supabase
-      .channel(`reactions_panel_${user.id}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: REACTIONS_TABLE, filter: `intention_kind=eq.panel` },
-        () => void loadReactionsForVisible()
-      )
-      .subscribe();
-    chans.push(ch1);
-
-    // session reactions (filter by session_id)
-    if (sessionId) {
-      const ch2 = supabase
-        .channel(`reactions_session_${sessionId}`)
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: REACTIONS_TABLE, filter: `session_id=eq.${sessionId}` },
-          () => void loadReactionsForVisible()
-        )
-        .subscribe();
-      chans.push(ch2);
-    }
-
-    return () => {
-      for (const c of chans) supabase.removeChannel(c);
-    };
-  }, [user?.id, sessionId, loadReactionsForVisible]);
-
-  const toggleReaction = useCallback(
-    async (args: { kind: "panel" | "session"; intentionId: string; emoji: string }) => {
-      if (!user?.id) return;
-
-      const { kind, intentionId, emoji } = args;
-      const key = reactionKey(kind, intentionId);
-      const cur = reactionsByKey[key] || { counts: {}, mine: new Set<string>() };
-
-      const already = cur.mine.has(emoji);
-
-      // optimistic
-      setReactionsByKey((prev) => {
-        const p = prev[key] || { counts: {}, mine: new Set<string>() };
-        const counts = { ...p.counts };
-        const mine = new Set<string>(Array.from(p.mine || []));
-        if (already) {
-          mine.delete(emoji);
-          counts[emoji] = Math.max(0, (counts[emoji] || 0) - 1);
-          if (counts[emoji] === 0) delete counts[emoji];
-        } else {
-          mine.add(emoji);
-          counts[emoji] = (counts[emoji] || 0) + 1;
-        }
-        return { ...prev, [key]: { counts, mine } };
-      });
-
-      try {
-        if (!already) {
-          const payload = {
-            intention_kind: kind,
-            intention_id: intentionId,
-            session_id: kind === "session" ? (sessionId || null) : null,
-            user_id: user.id,
-            emoji,
-          };
-          const { error } = await supabase.from(REACTIONS_TABLE).insert(payload as any);
-          if (error) throw error;
-        } else {
-          const q = supabase
-            .from(REACTIONS_TABLE)
-            .delete()
-            .eq("intention_kind", kind)
-            .eq("intention_id", intentionId)
-            .eq("user_id", user.id)
-            .eq("emoji", emoji);
-
-          if (kind === "session" && sessionId) q.eq("session_id", sessionId);
-          else q.is("session_id", null);
-
-          const { error } = await q;
-          if (error) throw error;
-        }
-      } catch {
-        // revert by reloading (safe)
-        void loadReactionsForVisible();
-      }
-    },
-    [user?.id, reactionsByKey, sessionId, loadReactionsForVisible]
-  );
 
   // =========================
   // Focus plans load (Supabase)
@@ -1082,55 +869,6 @@ export function IntentionsPanel({
   const timerTextCls = `tabular-nums text-[12px] ${timerTextClassName || ""} font-inter font-normal`.trim();
 
   // =========================
-  // Reactions UI component
-  // =========================
-  const ReactionsRow = ({
-    kind,
-    intentionId,
-    small,
-  }: {
-    kind: "panel" | "session";
-    intentionId: string;
-    small?: boolean;
-  }) => {
-    const k = reactionKey(kind, intentionId);
-    const st = reactionsByKey[k] || { counts: {}, mine: new Set<string>() };
-    const btnBase = isLight
-      ? "border border-black/10 bg-white hover:bg-black/5 text-black/70"
-      : "border border-white/10 bg-white/0 hover:bg-white/5 text-white/80";
-
-    return (
-      <div className={"mt-2 flex flex-wrap items-center gap-1.5 " + (small ? "opacity-95" : "")} onClick={stopRoomBubbling}>
-        {REACTION_CHOICES.map((r) => {
-          const active = st.mine.has(r.emoji);
-          const count = st.counts[r.emoji] || 0;
-
-          return (
-            <button
-              key={r.key}
-              type="button"
-              title={r.title}
-              className={[
-                "h-8 px-2 rounded-xl text-[12px] font-semibold transition inline-flex items-center gap-1",
-                btnBase,
-                active ? (isLight ? "ring-1 ring-emerald-500" : "ring-1 ring-emerald-400") : "",
-              ].join(" ")}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                void toggleReaction({ kind, intentionId, emoji: r.emoji });
-              }}
-            >
-              <span className="text-[14px] leading-none">{r.emoji}</span>
-              {count > 0 ? <span className={isLight ? "text-black/60" : "text-white/70"}>{count}</span> : null}
-            </button>
-          );
-        })}
-      </div>
-    );
-  };
-
-  // =========================
   // Import modal UI
   // =========================
   const ImportModal = importModalOpen
@@ -1359,7 +1097,7 @@ export function IntentionsPanel({
               title="Attach from Focus plan to panel"
               onClick={(e) => {
                 e.preventDefault();
-                setImportModalOpen(true);
+                openImportModal();
               }}
             >
               <ListPlus size={16} />
@@ -1500,9 +1238,6 @@ export function IntentionsPanel({
                             Linked to Focus plan item
                           </div>
                         ) : null}
-
-                        {/* reactions */}
-                        <ReactionsRow kind="panel" intentionId={String(i.id)} />
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
@@ -1600,9 +1335,6 @@ export function IntentionsPanel({
                       <div className={"text-[13px] break-words leading-5 font-inter " + (item.completed ? bodyDone : bodyActive)}>
                         {item.text}
                       </div>
-
-                      {/* reactions */}
-                      <ReactionsRow kind="session" intentionId={String(item.id)} small />
                     </div>
 
                     <div className="shrink-0 mt-1">
