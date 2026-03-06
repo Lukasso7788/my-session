@@ -55,6 +55,11 @@
 //
 // ✅ NEW #4:
 // - Add custom block sound: /sounds/custom-block.mp3
+//
+// ✅ NEW #5:
+// - In-room timeline editor for host only.
+// - Open from RoomTopBar hover button.
+// - Save directly into sessions.schedule and refresh stage bar immediately.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -65,6 +70,13 @@ import { UserProfileModal } from "../components/UserProfileModal";
 import ChatPanel from "../components/ChatPanel";
 
 import RoomTopBar from "../components/RoomTopBar";
+import RoomTimelineEditor, {
+    type RoomTimelineBlock,
+    timelineBlocksFromSchedule,
+    timelineBlocksToSchedulePayload,
+    getTimelineTotalMinutes,
+    makeDefaultTimelineBlocks,
+} from "../components/RoomTimelineEditor";
 import VideoControls, {
     Icon,
     REACTION_EMOJI,
@@ -126,6 +138,9 @@ declare global {
         JitsiMeetExternalAPI?: any;
     }
 }
+
+const SESSION_SELECT_STR =
+    "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)";
 
 // ===============================
 // helpers: uuid / slug
@@ -335,6 +350,217 @@ const STAGE_COLORS: Record<string, string> = {
     break: "#F9ADA2",
     outro: "#80DF86",
 };
+
+function buildStageStateFromSession(data: any): {
+    stages: Stage[];
+    stagebarStartTime: string;
+    stagebarCycleSeconds?: number;
+} {
+    const fallbackStart = String(data?.start_time || data?.created_at || new Date().toISOString());
+
+    let parsed: any = safeParseJson(data?.schedule);
+
+    if (!parsed) {
+        const t = parse50505(data?.schedule);
+        if (t) {
+            parsed = {
+                kind: "infinite_room",
+                timer: {
+                    phases: [
+                        { name: "Focus", type: "focus", minutes: t.focus },
+                        { name: "Break", type: "break", minutes: t.break },
+                        { name: "Intentions", type: "intentions", minutes: t.intentions },
+                    ],
+                },
+                anchor_ts: data?.start_time || data?.created_at || fallbackStart,
+            };
+        }
+    }
+
+    parsed = unwrapScheduleBlocks(parsed);
+
+    let nextStages: Stage[] = [];
+    let nextStart = fallbackStart;
+    let nextCycle: number | undefined = undefined;
+
+    if (Array.isArray(parsed)) {
+        nextStages = parsed
+            .map((b: any) => {
+                const rawName = String(
+                    b?.name || b?.title || b?.label || b?.text || b?.key || ""
+                ).trim();
+
+                const labelLower = rawName.toLowerCase();
+                const rawType = String(b?.type || b?.kind || b?.stageType || "")
+                    .toLowerCase()
+                    .trim();
+
+                const inferTypeFromText = (lower: string): Stage["type"] => {
+                    if (lower.includes("welcome") || lower.includes("intro")) return "intro";
+                    if (lower.includes("checkin") || lower.includes("check-in")) return "checkin";
+                    if (lower.includes("intention")) return "intentions";
+                    if (lower.includes("recap")) return "recap";
+                    if (lower.includes("celebrate") || lower.includes("celebration")) return "celebrate";
+                    if (lower.includes("custom")) return "custom";
+                    if (lower.includes("break") || lower.includes("rest") || lower.includes("pause")) return "break";
+                    if (
+                        lower.includes("outro") ||
+                        lower.includes("wrap") ||
+                        lower.includes("farewell") ||
+                        lower.includes("end")
+                    ) {
+                        return "outro";
+                    }
+                    if (lower.includes("focus")) return "focus";
+                    return "focus";
+                };
+
+                const type: Stage["type"] =
+                    rawType && rawType !== "stage" && rawType !== "block"
+                        ? inferTypeFromText(rawType)
+                        : inferTypeFromText(labelLower);
+
+                const secondsExplicit =
+                    Number(b?.seconds) ||
+                    Number(b?.duration_seconds) ||
+                    Number(b?.durationSeconds) ||
+                    Number(b?.duration_sec) ||
+                    0;
+
+                const minsLike =
+                    Number(b?.minutes) ||
+                    Number(b?.mins) ||
+                    Number(b?.duration_minutes) ||
+                    Number(b?.durationMinutes) ||
+                    0;
+
+                const n = typeof b === "number" ? b : Number(b?.duration ?? b?.value ?? 0);
+
+                let durationSeconds = 0;
+
+                if (secondsExplicit > 0) durationSeconds = secondsExplicit;
+                else if (minsLike > 0) durationSeconds = minsLike * 60;
+                else if (Number.isFinite(n) && n > 0) durationSeconds = n <= 180 ? n * 60 : n;
+
+                if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return null;
+
+                const minutes = Math.max(1, Math.round(durationSeconds / 60));
+
+                const defaultLabel =
+                    type === "focus"
+                        ? "Focus"
+                        : type === "intentions"
+                            ? "Intentions (spoken)"
+                            : type === "checkin"
+                                ? "Check-in"
+                                : type === "break"
+                                    ? "Break"
+                                    : type === "intro"
+                                        ? "Welcome"
+                                        : type === "outro"
+                                            ? "Outro"
+                                            : type === "recap"
+                                                ? "Recap"
+                                                : type === "celebrate"
+                                                    ? "Celebrate"
+                                                    : type === "custom"
+                                                        ? "Custom"
+                                                        : "Stage";
+
+                const displayName = rawName || defaultLabel;
+
+                return {
+                    name: displayName,
+                    duration: minutes,
+                    durationSeconds,
+                    color: STAGE_COLORS[type] || "#F63135",
+                    type,
+                } as Stage;
+            })
+            .filter(Boolean) as Stage[];
+
+        nextStart = String(data?.start_time || fallbackStart);
+        nextCycle = undefined;
+    }
+
+    const isInfiniteScheduleObject =
+        parsed &&
+        typeof parsed === "object" &&
+        !Array.isArray(parsed) &&
+        (String(parsed?.kind || "").toLowerCase().includes("infinite") ||
+            parsed?.timer?.phases ||
+            parsed?.timer?.segments ||
+            parsed?.phases ||
+            parsed?.segments);
+
+    if (isInfiniteScheduleObject) {
+        const phasesRaw =
+            parsed?.timer?.phases || parsed?.timer?.segments || parsed?.phases || parsed?.segments || null;
+
+        const phases = normalizeInfinitePhases(phasesRaw);
+
+        nextStages = phases.map((p) => {
+            const rawName = String(p.name || "").trim();
+            const lower = rawName.toLowerCase();
+            const type = phaseToStageType(lower);
+
+            const defaultLabel =
+                type === "focus"
+                    ? "Focus"
+                    : type === "intentions"
+                        ? "Intentions (spoken)"
+                        : type === "checkin"
+                            ? "Check-in"
+                            : type === "break"
+                                ? "Break"
+                                : type === "intro"
+                                    ? "Welcome"
+                                    : type === "outro"
+                                        ? "Outro"
+                                        : type === "recap"
+                                            ? "Recap"
+                                            : type === "celebrate"
+                                                ? "Celebrate"
+                                                : type === "custom"
+                                                    ? "Custom"
+                                                    : "Stage";
+
+            const displayName = rawName || defaultLabel;
+            const seconds = Number(p.seconds) || 0;
+            const minutes = Math.max(1, Math.round(seconds / 60));
+
+            return {
+                name: displayName,
+                duration: minutes,
+                color: STAGE_COLORS[type] || "#F63135",
+                type,
+                durationSeconds: seconds,
+            };
+        });
+
+        nextStart = String(parsed?.anchor_ts || parsed?.anchorTs || data?.start_time || fallbackStart);
+
+        const sumSeconds = phases.reduce((acc, p) => acc + (Number(p.seconds) || 0), 0);
+
+        let cycleSeconds =
+            Number(parsed?.timer?.cycle_seconds) ||
+            Number(parsed?.timer?.cycleSeconds) ||
+            Number(parsed?.cycle_seconds) ||
+            Number(parsed?.cycleSeconds) ||
+            0;
+
+        if (!cycleSeconds || cycleSeconds <= 0) cycleSeconds = sumSeconds;
+        if (cycleSeconds < sumSeconds) cycleSeconds = sumSeconds;
+
+        nextCycle = Math.max(1, cycleSeconds);
+    }
+
+    return {
+        stages: nextStages,
+        stagebarStartTime: nextStart,
+        stagebarCycleSeconds: nextCycle,
+    };
+}
 
 // ============================================
 // realtime cleanup safe
@@ -861,6 +1087,10 @@ export default function RoomPageIFrame() {
 
     const isLgUp = useMediaQuery("(min-width: 1024px)");
 
+    const isHost = useMemo(() => {
+        return !!currentUserId && !!session?.host_id && String(currentUserId) === String(session.host_id);
+    }, [currentUserId, session?.host_id]);
+
     // stages
     const [stages, setStages] = useState<Stage[]>([]);
     const [, setHoveredStage] = useState<Stage | null>(null);
@@ -869,6 +1099,10 @@ export default function RoomPageIFrame() {
 
     const [stagebarStartTime, setStagebarStartTime] = useState<string>("");
     const [stagebarCycleSeconds, setStagebarCycleSeconds] = useState<number | undefined>(undefined);
+
+    const [timelineEditorOpen, setTimelineEditorOpen] = useState(false);
+    const [timelineDraftBlocks, setTimelineDraftBlocks] = useState<RoomTimelineBlock[]>([]);
+    const [timelineSaving, setTimelineSaving] = useState(false);
 
     const [lastErr, setLastErr] = useState<string>("");
     const [uiMessage, setUiMessage] = useState<string | null>(null);
@@ -1307,8 +1541,7 @@ export default function RoomPageIFrame() {
 
             setLoading(true);
 
-            const selectStr =
-                "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)";
+            const selectStr = SESSION_SELECT_STR;
 
             try {
                 const isUuid = UUID_RE.test(idOrSlug);
@@ -1320,185 +1553,10 @@ export default function RoomPageIFrame() {
                 if (data && !error) {
                     setSession(data);
 
-                    setStages([]);
-                    setStagebarCycleSeconds(undefined);
-                    setStagebarStartTime("");
-
-                    const fallbackStart = String(data?.start_time || data?.created_at || new Date().toISOString());
-
-                    let parsed: any = safeParseJson(data.schedule);
-
-                    if (!parsed) {
-                        const t = parse50505(data.schedule);
-                        if (t) {
-                            parsed = {
-                                kind: "infinite_room",
-                                timer: { phases: { focus: t.focus, break: t.break, intentions: t.intentions } },
-                                anchor_ts: data?.start_time || data?.created_at || fallbackStart,
-                            };
-                        }
-                    }
-
-                    parsed = unwrapScheduleBlocks(parsed);
-
-                    if (Array.isArray(parsed)) {
-                        const formatted: Stage[] = parsed
-                            .map((b: any) => {
-                                const rawName = String(b?.name || b?.title || b?.label || b?.text || b?.key || "").trim();
-
-                                const labelLower = rawName.toLowerCase();
-                                const rawType = String(b?.type || b?.kind || b?.stageType || "").toLowerCase().trim();
-
-                                const inferTypeFromText = (lower: string): Stage["type"] => {
-                                    if (lower.includes("welcome") || lower.includes("intro")) return "intro";
-                                    if (lower.includes("checkin") || lower.includes("check-in")) return "checkin";
-                                    if (lower.includes("intention")) return "intentions";
-                                    if (lower.includes("recap")) return "recap";
-                                    if (lower.includes("celebrate") || lower.includes("celebration")) return "celebrate";
-                                    if (lower.includes("custom")) return "custom";
-                                    if (lower.includes("break") || lower.includes("rest") || lower.includes("pause")) return "break";
-                                    if (lower.includes("outro") || lower.includes("wrap") || lower.includes("farewell") || lower.includes("end"))
-                                        return "outro";
-                                    if (lower.includes("focus")) return "focus";
-                                    return "focus";
-                                };
-
-                                const type: Stage["type"] =
-                                    rawType && rawType !== "stage" && rawType !== "block"
-                                        ? inferTypeFromText(rawType)
-                                        : inferTypeFromText(labelLower);
-
-                                const secondsExplicit =
-                                    Number(b?.seconds) || Number(b?.duration_seconds) || Number(b?.durationSeconds) || Number(b?.duration_sec) || 0;
-
-                                const minsLike =
-                                    Number(b?.minutes) || Number(b?.mins) || Number(b?.duration_minutes) || Number(b?.durationMinutes) || 0;
-
-                                const n = typeof b === "number" ? b : Number(b?.duration ?? b?.value ?? 0);
-
-                                let durationSeconds = 0;
-
-                                if (secondsExplicit > 0) durationSeconds = secondsExplicit;
-                                else if (minsLike > 0) durationSeconds = minsLike * 60;
-                                else if (Number.isFinite(n) && n > 0) durationSeconds = n <= 180 ? n * 60 : n;
-
-                                if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return null;
-
-                                const minutes = Math.max(1, Math.round(durationSeconds / 60));
-
-                                const defaultLabel =
-                                    type === "focus"
-                                        ? "Focus"
-                                        : type === "intentions"
-                                            ? "Intentions (spoken)"
-                                            : type === "checkin"
-                                                ? "Check-in"
-                                                : type === "break"
-                                                    ? "Break"
-                                                    : type === "intro"
-                                                        ? "Welcome"
-                                                        : type === "outro"
-                                                            ? "Outro"
-                                                            : type === "recap"
-                                                                ? "Recap"
-                                                                : type === "celebrate"
-                                                                    ? "Celebrate"
-                                                                    : type === "custom"
-                                                                        ? "Custom"
-                                                                        : "Stage";
-
-                                const displayName = rawName || defaultLabel;
-
-                                return {
-                                    name: displayName,
-                                    duration: minutes,
-                                    durationSeconds,
-                                    color: STAGE_COLORS[type] || "#F63135",
-                                    type,
-                                } as Stage;
-                            })
-                            .filter(Boolean) as Stage[];
-
-                        setStages(formatted);
-                        setStagebarStartTime(String(data.start_time || fallbackStart));
-                        setStagebarCycleSeconds(undefined);
-                    }
-
-                    const isInfiniteScheduleObject =
-                        parsed &&
-                        typeof parsed === "object" &&
-                        !Array.isArray(parsed) &&
-                        (String(parsed?.kind || "").toLowerCase().includes("infinite") ||
-                            parsed?.timer?.phases ||
-                            parsed?.timer?.segments ||
-                            parsed?.phases ||
-                            parsed?.segments);
-
-                    if (isInfiniteScheduleObject) {
-                        const phasesRaw = parsed?.timer?.phases || parsed?.timer?.segments || parsed?.phases || parsed?.segments || null;
-
-                        const phases = normalizeInfinitePhases(phasesRaw);
-
-                        const formatted: Stage[] = phases.map((p) => {
-                            const rawName = String(p.name || "").trim();
-                            const lower = rawName.toLowerCase();
-                            const type = phaseToStageType(lower);
-
-                            const defaultLabel =
-                                type === "focus"
-                                    ? "Focus"
-                                    : type === "intentions"
-                                        ? "Intentions (spoken)"
-                                        : type === "checkin"
-                                            ? "Check-in"
-                                            : type === "break"
-                                                ? "Break"
-                                                : type === "intro"
-                                                    ? "Welcome"
-                                                    : type === "outro"
-                                                        ? "Outro"
-                                                        : type === "recap"
-                                                            ? "Recap"
-                                                            : type === "celebrate"
-                                                                ? "Celebrate"
-                                                                : type === "custom"
-                                                                    ? "Custom"
-                                                                    : "Stage";
-
-                            const displayName = rawName || defaultLabel;
-                            const seconds = Number(p.seconds) || 0;
-                            const minutes = Math.max(1, Math.round(seconds / 60));
-
-                            return {
-                                name: displayName,
-                                duration: minutes,
-                                color: STAGE_COLORS[type] || "#F63135",
-                                type,
-                                durationSeconds: seconds,
-                            };
-                        });
-
-                        setStages(formatted);
-
-                        const anchor = String(parsed?.anchor_ts || parsed?.anchorTs || data?.start_time || fallbackStart);
-                        setStagebarStartTime(anchor);
-
-                        const sumSeconds = phases.reduce((acc, p) => acc + (Number(p.seconds) || 0), 0);
-
-                        let cycleSeconds =
-                            Number(parsed?.timer?.cycle_seconds) ||
-                            Number(parsed?.timer?.cycleSeconds) ||
-                            Number(parsed?.cycle_seconds) ||
-                            Number(parsed?.cycleSeconds) ||
-                            0;
-
-                        if (!cycleSeconds || cycleSeconds <= 0) cycleSeconds = sumSeconds;
-                        if (cycleSeconds < sumSeconds) cycleSeconds = sumSeconds;
-
-                        setStagebarCycleSeconds(Math.max(1, cycleSeconds));
-                    }
-
-                    if (!parsed) setStagebarStartTime(fallbackStart);
+                    const built = buildStageStateFromSession(data);
+                    setStages(built.stages);
+                    setStagebarStartTime(built.stagebarStartTime);
+                    setStagebarCycleSeconds(built.stagebarCycleSeconds);
                 } else {
                     setSession(null);
                 }
@@ -2242,6 +2300,75 @@ export default function RoomPageIFrame() {
         return base.filter((p) => (p.isLocal ? "you" : p.displayName || "guest").toLowerCase().includes(q));
     }, [participantRows, participantsSearch]);
 
+    const openTimelineEditor = () => {
+        if (!isHost) return;
+
+        const parsedBlocks = timelineBlocksFromSchedule(session?.schedule);
+        setTimelineDraftBlocks(parsedBlocks.length ? parsedBlocks : makeDefaultTimelineBlocks());
+        setTimelineEditorOpen(true);
+    };
+
+    const closeTimelineEditor = () => {
+        if (timelineSaving) return;
+        setTimelineEditorOpen(false);
+    };
+
+    const saveTimelineEditor = async () => {
+        if (!isHost) return;
+        if (!sessionId) return;
+        if (!timelineDraftBlocks.length) {
+            setUiMessage("Add at least one block before saving");
+            window.setTimeout(() => setUiMessage(null), 1500);
+            return;
+        }
+
+        setTimelineSaving(true);
+        setLastErr("");
+
+        try {
+            const nextSchedule = timelineBlocksToSchedulePayload(timelineDraftBlocks, {
+                preserveInfinite: isInfiniteRoom,
+                anchorTs: stagebarStartTime || session?.start_time || session?.created_at || new Date().toISOString(),
+            });
+
+            const nextDurationMinutes = getTimelineTotalMinutes(timelineDraftBlocks);
+
+            const { data: updated, error } = await supabase
+                .from("sessions")
+                .update({
+                    schedule: nextSchedule,
+                    duration_minutes: nextDurationMinutes,
+                })
+                .eq("id", sessionId)
+                .select(SESSION_SELECT_STR)
+                .single();
+
+            if (error) throw error;
+
+            const nextSession = updated || {
+                ...session,
+                schedule: nextSchedule,
+                duration_minutes: nextDurationMinutes,
+            };
+
+            setSession(nextSession);
+
+            const built = buildStageStateFromSession(nextSession);
+            setStages(built.stages);
+            setStagebarStartTime(built.stagebarStartTime);
+            setStagebarCycleSeconds(built.stagebarCycleSeconds);
+
+            setTimelineEditorOpen(false);
+            setUiMessage("Timeline updated ✅");
+            window.setTimeout(() => setUiMessage(null), 1400);
+        } catch (e: any) {
+            console.log("Timeline save error:", e);
+            setLastErr(String(e?.message || e || "Failed to save timeline"));
+        } finally {
+            setTimelineSaving(false);
+        }
+    };
+
     // create API when authed + session ready
     useEffect(() => {
         if (authStatus !== "authed") return;
@@ -2501,8 +2628,7 @@ export default function RoomPageIFrame() {
                         </div>
                         <button
                             onClick={() => openRightTab(null)}
-                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
-                                }`}
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"}`}
                             title="Close"
                         >
                             ✕
@@ -2515,8 +2641,7 @@ export default function RoomPageIFrame() {
                                 value={participantsSearch}
                                 onChange={(e) => setParticipantsSearch(e.target.value)}
                                 placeholder="Search participants..."
-                                className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${isLight ? "text-black/80 placeholder:text-black/40" : "text-white/85 placeholder:text-white/35"
-                                    }`}
+                                className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${isLight ? "text-black/80 placeholder:text-black/40" : "text-white/85 placeholder:text-white/35"}`}
                             />
                         </div>
                     </div>
@@ -2555,8 +2680,7 @@ export default function RoomPageIFrame() {
                                                 />
                                             ) : (
                                                 <div
-                                                    className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${isLight ? "bg-blue-500/15 text-blue-700" : "bg-emerald-500/80 text-[#02140B]"
-                                                        }`}
+                                                    className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${isLight ? "bg-blue-500/15 text-blue-700" : "bg-emerald-500/80 text-[#02140B]"}`}
                                                 >
                                                     {initials}
                                                 </div>
@@ -2608,8 +2732,7 @@ export default function RoomPageIFrame() {
                     <div className={`p-4 border-t ${isLight ? "border-black/10" : "border-white/5"}`}>
                         <button
                             onClick={copyInviteLink}
-                            className={`w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 ${isLight ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
-                                }`}
+                            className={`w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 ${isLight ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"}`}
                         >
                             <span className="text-lg">⎘</span>
                             <span>Copy invite link</span>
@@ -2624,8 +2747,7 @@ export default function RoomPageIFrame() {
                         <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Chat</div>
                         <button
                             onClick={() => openRightTab(null)}
-                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
-                                }`}
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"}`}
                             title="Close"
                         >
                             ✕
@@ -2663,8 +2785,7 @@ export default function RoomPageIFrame() {
                         <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Intentions</div>
                         <button
                             onClick={() => openRightTab(null)}
-                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
-                                }`}
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"}`}
                             title="Close"
                         >
                             ✕
@@ -2808,6 +2929,8 @@ export default function RoomPageIFrame() {
                         onHoverStage={setHoveredStage as any}
                         onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
                         onOpenHostProfile={() => setSelectedUser((session?.host_profile as any) || null)}
+                        canEditTimeline={isHost}
+                        onEditTimeline={openTimelineEditor}
                     />
                 )}
 
@@ -2837,8 +2960,7 @@ export default function RoomPageIFrame() {
                         {isPrejoinUi && (
                             <div className="pointer-events-none absolute inset-x-0 top-0 z-20">
                                 <div
-                                    className={`pointer-events-none px-4 pt-[max(10px,env(safe-area-inset-top))] pb-3 ${isLight ? "bg-white/85" : "bg-[#050F1A]/85"
-                                        } backdrop-blur`}
+                                    className={`pointer-events-none px-4 pt-[max(10px,env(safe-area-inset-top))] pb-3 ${isLight ? "bg-white/85" : "bg-[#050F1A]/85"} backdrop-blur`}
                                 >
                                     <div className="flex items-center justify-between gap-3">
                                         <div className="flex items-center gap-3 min-w-0">
@@ -2927,6 +3049,20 @@ export default function RoomPageIFrame() {
                         <span>Stage sounds</span>
                     </button>
                 </div>
+            )}
+
+            {timelineEditorOpen && (
+                <RoomTimelineEditor
+                    open={timelineEditorOpen}
+                    theme={theme}
+                    title={sessionTitle}
+                    blocks={timelineDraftBlocks}
+                    onChange={setTimelineDraftBlocks}
+                    onClose={closeTimelineEditor}
+                    onSave={saveTimelineEditor}
+                    saving={timelineSaving}
+                    preserveInfinite={isInfiniteRoom}
+                />
             )}
 
             {selectedUser && <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />}
