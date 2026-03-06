@@ -376,11 +376,22 @@ export function SessionStageBar({
   }, [elapsed, stages, loopSeconds, stageSecondsList]);
 
   const markerColor = theme === "light" ? "#374151" : "#FFFFFF";
+  const markerShadow =
+    theme === "light"
+      ? "0 0 0 1px rgba(17,24,39,0.10), 0 1px 4px rgba(17,24,39,0.12)"
+      : "0 0 0 1px rgba(255,255,255,0.10), 0 1px 6px rgba(255,255,255,0.12)";
+
+  const trackBgClass =
+    theme === "light"
+      ? "bg-black/10 shadow-[inset_0_1px_2px_rgba(17,24,39,0.08)]"
+      : "bg-white/10 shadow-inner";
 
   return (
     <div className="relative w-full h-4 overflow-visible">
       {/* Track */}
-      <div className="absolute inset-x-0 top-0 h-4 flex rounded-2xl overflow-hidden bg-white/10 shadow-inner">
+      <div
+        className={`absolute inset-x-0 top-0 h-4 flex rounded-2xl overflow-hidden ${trackBgClass}`}
+      >
         {(stages || []).map((stage, index) => {
           const durSec = stageSecondsList[index] || 0;
           const width = durSec > 0 ? (durSec / totalStagesSeconds) * 100 : 0;
@@ -426,7 +437,7 @@ export function SessionStageBar({
                 style={{ width: progressWidth }}
               />
 
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center z-50">
+              <div className="absolute bottom-full left-1/2 z-50 mb-2 hidden -translate-x-1/2 group-hover:flex flex-col items-center">
                 <div className="bg-slate-900 text-white text-[11px] px-2 py-1 rounded-md shadow-lg whitespace-nowrap">
                   {displayName}
                   {labelMins ? ` • ${labelMins} min` : ""}
@@ -441,22 +452,40 @@ export function SessionStageBar({
       {/* Moving marker tick */}
       {progressStyle === "tick" && (
         <div
-          className="absolute pointer-events-none rounded-full"
+          className="absolute pointer-events-none z-[30]"
           style={{
             left: `${clamp(cycleProgress, 0, 1) * 100}%`,
-            top: -3,
-            width: 2,
-            height: 22,
-            transform: "translateX(-1px)",
-            backgroundColor: markerColor,
-            boxShadow:
-              theme === "light"
-                ? "0 0 0 1px rgba(17,24,39,0.08)"
-                : "0 0 0 1px rgba(255,255,255,0.08)",
-            zIndex: 20,
+            top: -4,
+            transform: "translateX(-50%)",
           }}
-        />
+        >
+          {/* top cap so marker is easier to see */}
+          <div
+            className="rounded-full"
+            style={{
+              width: 8,
+              height: 8,
+              marginLeft: -3,
+              backgroundColor: markerColor,
+              boxShadow: markerShadow,
+            }}
+          />
+
+          {/* main line */}
+          <div
+            className="rounded-full"
+            style={{
+              width: 2,
+              height: 20,
+              marginTop: 1,
+              backgroundColor: markerColor,
+              boxShadow: markerShadow,
+            }}
+          />
+        </div>
       )}
     </div>
   );
 }
+
+export default SessionStageBar;
