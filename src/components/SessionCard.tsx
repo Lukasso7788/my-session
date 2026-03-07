@@ -675,6 +675,19 @@ function getEmbeddedTemplate(session: any): any | null {
     );
 }
 
+function getSessionDescriptionText(session: any, extra?: any | null) {
+    const embeddedTemplate = getEmbeddedTemplate(session);
+
+    return String(
+        session?.description ??
+        extra?.description ??
+        embeddedTemplate?.description ??
+        session?.session_template?.description ??
+        session?.template?.description ??
+        ""
+    ).trim();
+}
+
 async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
     const sessionId = session?.id ? String(session.id) : "";
     if (sessionId && _stagesBySessionId.has(sessionId)) return _stagesBySessionId.get(sessionId)!;
@@ -1396,6 +1409,10 @@ export default function SessionCard({
     const [isInfoPinned, setIsInfoPinned] = useState(false);
     const infoRef = useRef<HTMLDivElement | null>(null);
 
+    const [resolvedDescription, setResolvedDescription] = useState<string>(() =>
+        getSessionDescriptionText(session)
+    );
+
     const [nowStage, setNowStage] = useState<{
         name: string;
         color: string;
@@ -1439,6 +1456,36 @@ export default function SessionCard({
         document.addEventListener("mousedown", onDocClick);
         return () => document.removeEventListener("mousedown", onDocClick);
     }, [isOptionsOpen, isInfoOpen]);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const immediate = getSessionDescriptionText(session);
+        setResolvedDescription(immediate);
+
+        if (immediate || !session?.id) return;
+
+        (async () => {
+            try {
+                const extra = await fetchSessionExtrasForStages(String(session.id));
+                if (cancelled) return;
+                setResolvedDescription(getSessionDescriptionText(session, extra));
+            } catch {
+                if (!cancelled) setResolvedDescription("");
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        session?.id,
+        session?.description,
+        session?.session_template?.description,
+        session?.template?.description,
+        session?.session_templates?.description,
+        session?.templates?.description,
+    ]);
 
     const sessionType = resolveSessionType(session);
     const isInfinite = sessionType === "infinite";
@@ -1995,14 +2042,7 @@ export default function SessionCard({
     const modalUsers = peopleTab === "live" ? liveUsers : bookers;
     const modalCount = peopleTab === "live" ? liveNowCount : bookedCount;
 
-    const embeddedTemplate = getEmbeddedTemplate(session);
-    const description = String(
-        session?.description ??
-        embeddedTemplate?.description ??
-        session?.session_template?.description ??
-        session?.template?.description ??
-        ""
-    ).trim();
+    const description = resolvedDescription;
 
     const scheduleObj = tryParseJson<any>(session?.schedule);
     const cycleSeconds =
