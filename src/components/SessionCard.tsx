@@ -1334,7 +1334,7 @@ function buildLoginNext(urlPath: string): string {
 
 function buildSessionInvitePath(session: any): string {
     const roomParam = getRoomParam(session);
-    return roomParam ? `/room-iframe/${roomParam}` : "/sessions";
+    return roomParam ? `/room-livekit/${roomParam}` : "/sessions";
 }
 
 function buildAbsoluteInviteUrl(session: any): string {
@@ -1824,7 +1824,7 @@ export default function SessionCard({
         const roomParam = getRoomParam(session);
         if (!roomParam) return;
 
-        const nextPath = `/room-iframe/${roomParam}`;
+        const nextPath = `/room-livekit/${roomParam}`;
 
         if (!userId) {
             navigate(buildLoginNext(nextPath));
