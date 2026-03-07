@@ -2176,11 +2176,11 @@ export default function SessionCard({
                                                 <div className="p-4 flex flex-col gap-3">
                                                     {description ? (
                                                         <div className="text-[13px] text-[#111827] leading-snug">
-                                                            {session?.description}
+                                                            {description}
                                                         </div>
                                                     ) : (
                                                         <div className="text-[12px] text-[#606060]">
-                                                            No description yet.
+                                                            {description}
                                                         </div>
                                                     )}
 
