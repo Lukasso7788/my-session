@@ -2042,7 +2042,9 @@ export default function SessionCard({
     const modalUsers = peopleTab === "live" ? liveUsers : bookers;
     const modalCount = peopleTab === "live" ? liveNowCount : bookedCount;
 
-    const description = String(session?.description || "").trim();
+    const description = typeof session?.description === "string"
+        ? session.description.trim()
+        : "";
 
     const scheduleObj = tryParseJson<any>(session?.schedule);
     const cycleSeconds =
