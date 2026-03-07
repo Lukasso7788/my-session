@@ -70,13 +70,10 @@ export default function RegisterPage() {
 
       const redirectTo = `${window.location.origin}/auth/callback/`;
 
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
           redirectTo,
-          skipBrowserRedirect: true,
-          // (optional) you can request extra scopes here if needed later
-          // scopes: "email profile",
         },
       });
 
