@@ -129,7 +129,7 @@ function extractBookers(session: any): BookedUser[] {
     return out;
 }
 
-// ✅ NEW: infer visual type from title for newer/infinite room titles
+// ✅ infer visual type from title for newer/infinite room titles
 function inferTypeFromTitle(
     title: any
 ): "Deep work" | "Pomodoro" | "Short sprints" | null {
@@ -604,6 +604,7 @@ let _hasSessionStagesTable: boolean | null = null;
 const _stagesBySessionId = new Map<string, SessionStage[]>();
 const _stagesByTemplateId = new Map<string, SessionStage[]>();
 const _sessionExtrasById = new Map<string, any | null>();
+const _sessionDescriptionById = new Map<string, string>();
 
 function looksLikeUuid(x: any): boolean {
     const s = String(x || "").trim();
@@ -644,6 +645,41 @@ async function fetchSessionExtrasForStages(sessionId: string): Promise<any | nul
     return data;
 }
 
+async function fetchSessionDescriptionById(sessionId: string): Promise<string> {
+    const sid = String(sessionId || "").trim();
+    if (!sid) return "";
+    if (!looksLikeUuid(sid)) return "";
+
+    if (_sessionDescriptionById.has(sid)) {
+        return _sessionDescriptionById.get(sid) || "";
+    }
+
+    const sb = getSupabase();
+    if (!sb) {
+        _sessionDescriptionById.set(sid, "");
+        return "";
+    }
+
+    await ensureAuthReady(sb);
+
+    const { data, error } = await sb
+        .from("sessions")
+        .select("description")
+        .eq("id", sid)
+        .maybeSingle();
+
+    if (error || !data) {
+        _sessionDescriptionById.set(sid, "");
+        return "";
+    }
+
+    const text =
+        typeof data?.description === "string" ? data.description.trim() : "";
+
+    _sessionDescriptionById.set(sid, text);
+    return text;
+}
+
 function isNotFoundErr(err: any): boolean {
     const status = (err as any)?.status;
     const msg = String((err as any)?.message || "");
@@ -673,19 +709,6 @@ function getEmbeddedTemplate(session: any): any | null {
         session?.templates ||
         null
     );
-}
-
-function getSessionDescriptionText(session: any, extra?: any | null) {
-    const embeddedTemplate = getEmbeddedTemplate(session);
-
-    return String(
-        session?.description ??
-        extra?.description ??
-        embeddedTemplate?.description ??
-        session?.session_template?.description ??
-        session?.template?.description ??
-        ""
-    ).trim();
 }
 
 async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
@@ -1410,7 +1433,7 @@ export default function SessionCard({
     const infoRef = useRef<HTMLDivElement | null>(null);
 
     const [resolvedDescription, setResolvedDescription] = useState<string>(() =>
-        getSessionDescriptionText(session)
+        typeof session?.description === "string" ? session.description.trim() : ""
     );
 
     const [nowStage, setNowStage] = useState<{
@@ -1460,16 +1483,17 @@ export default function SessionCard({
     useEffect(() => {
         let cancelled = false;
 
-        const immediate = getSessionDescriptionText(session);
+        const immediate =
+            typeof session?.description === "string" ? session.description.trim() : "";
+
         setResolvedDescription(immediate);
 
         if (immediate || !session?.id) return;
 
         (async () => {
             try {
-                const extra = await fetchSessionExtrasForStages(String(session.id));
-                if (cancelled) return;
-                setResolvedDescription(getSessionDescriptionText(session, extra));
+                const text = await fetchSessionDescriptionById(String(session.id));
+                if (!cancelled) setResolvedDescription(text);
             } catch {
                 if (!cancelled) setResolvedDescription("");
             }
@@ -1478,14 +1502,7 @@ export default function SessionCard({
         return () => {
             cancelled = true;
         };
-    }, [
-        session?.id,
-        session?.description,
-        session?.session_template?.description,
-        session?.template?.description,
-        session?.session_templates?.description,
-        session?.templates?.description,
-    ]);
+    }, [session?.id, session?.description]);
 
     const sessionType = resolveSessionType(session);
     const isInfinite = sessionType === "infinite";
@@ -2042,9 +2059,7 @@ export default function SessionCard({
     const modalUsers = peopleTab === "live" ? liveUsers : bookers;
     const modalCount = peopleTab === "live" ? liveNowCount : bookedCount;
 
-    const description = typeof session?.description === "string"
-        ? session.description.trim()
-        : "";
+    const description = resolvedDescription;
 
     const scheduleObj = tryParseJson<any>(session?.schedule);
     const cycleSeconds =
@@ -2177,7 +2192,7 @@ export default function SessionCard({
 
                                                 <div className="p-4 flex flex-col gap-3">
                                                     {description ? (
-                                                        <div className="text-[13px] text-[#111827] leading-snug">
+                                                        <div className="text-[13px] text-[#111827] leading-snug whitespace-pre-wrap">
                                                             {description}
                                                         </div>
                                                     ) : (
