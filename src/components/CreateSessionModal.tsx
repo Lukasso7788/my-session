@@ -1,7 +1,8 @@
 // src/components/CreateSessionModal.tsx
 // Full file replacement
+// ✅ Added session description field + save to sessions.description
 // ✅ Removed server region picker entirely (no auto/manual domain in modal)
-// ✅ All sessions created with fixed EU domain: jitsi.mysession.club (can later be moved to DB default/other sources)
+// ✅ All sessions created with fixed EU domain: jitsi.mysession.club
 
 import {
   useState,
@@ -422,6 +423,7 @@ export function CreateSessionModal({
   const { user, profile, loading } = useAuth();
 
   const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
   const [templates, setTemplates] = useState<SessionTemplate[]>([]);
@@ -473,6 +475,14 @@ export function CreateSessionModal({
 
   useEffect(() => {
     if (!isOpen) return;
+    setTitle("");
+    setDescription("");
+    setScheduledAt("");
+    setSelectedTemplate("");
+    setTemplates([]);
+    setIsCreating(false);
+    setError(null);
+
     setMaxParticipants(DEFAULT_MAX_PARTICIPANTS);
     setCustomSlugInput("");
     setSlugStatus("idle");
@@ -481,6 +491,8 @@ export function CreateSessionModal({
     setDailyDays(7);
     setWeeklyCount(3);
 
+    setStudioEnabled(false);
+    setStudioBlocks([]);
     setSelectedBlockId(null);
     setDraggingId(null);
     setDragOverId(null);
@@ -1115,6 +1127,8 @@ export function CreateSessionModal({
           : "Session Studio"
         : template?.name || "Unspecified";
 
+      const normalizedDescription = String(description || "").trim() || null;
+
       const step = stepDaysForMode(scheduleMode);
       const datesLocal = Array.from({ length: occurrencesCount }, (_, i) =>
         scheduleMode === "single"
@@ -1172,6 +1186,7 @@ export function CreateSessionModal({
 
         return {
           title,
+          description: normalizedDescription,
           host_id: profile.id,
           host_name: profile.full_name,
 
@@ -1198,6 +1213,7 @@ export function CreateSessionModal({
       if (insertError) throw insertError;
 
       setTitle("");
+      setDescription("");
       setScheduledAt("");
       setSelectedTemplate("");
       setStudioEnabled(false);
@@ -1350,6 +1366,20 @@ export function CreateSessionModal({
                     className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter"
                   />
                 </div>
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-[14px] font-medium text-brandBlack mb-1 font-inter">
+                  Description
+                </label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Optional. Describe what this session is about, who it’s for, or what people should expect."
+                  rows={4}
+                  className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter resize-y"
+                />
               </div>
 
               {/* Row 2: Scheduling + Custom link */}
@@ -1610,8 +1640,8 @@ export function CreateSessionModal({
                         Video server:{" "}
                         <span className="font-semibold text-brandBlack">
                           {FIXED_JITSI_DOMAIN}
-                        </span>
-                        {" "} (fixed)
+                        </span>{" "}
+                        (fixed)
                       </div>
                     </div>
                   </div>
@@ -1714,8 +1744,8 @@ export function CreateSessionModal({
                   </label>
 
                   <div className="text-[12px] text-gray-600 font-inter whitespace-nowrap">
-                    Length:{" "}
-                    <span className="font-semibold">{studioTotal}</span> min
+                    Length: <span className="font-semibold">{studioTotal}</span>{" "}
+                    min
                   </div>
                 </div>
 
