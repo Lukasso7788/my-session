@@ -2042,7 +2042,7 @@ export default function SessionCard({
     const modalUsers = peopleTab === "live" ? liveUsers : bookers;
     const modalCount = peopleTab === "live" ? liveNowCount : bookedCount;
 
-    const description = resolvedDescription;
+    const description = String(session?.description || "").trim();
 
     const scheduleObj = tryParseJson<any>(session?.schedule);
     const cycleSeconds =
@@ -2180,7 +2180,7 @@ export default function SessionCard({
                                                         </div>
                                                     ) : (
                                                         <div className="text-[12px] text-[#606060]">
-                                                            {description}
+                                                            No description yet.
                                                         </div>
                                                     )}
 
