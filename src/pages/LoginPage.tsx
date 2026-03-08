@@ -1,5 +1,3 @@
-// src/pages/LoginPage.tsx
-
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useNavigate } from "react-router-dom";
@@ -21,13 +19,11 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
-
   const [oauthLoading, setOauthLoading] = useState<null | "google" | "facebook">(null);
 
   const inApp = useMemo(() => isInAppBrowser(), []);
 
   useEffect(() => {
-    // Optional: if user is already logged in, bounce to /sessions
     (async () => {
       try {
         const { data } = await supabase.auth.getUser();
@@ -57,6 +53,8 @@ export default function LoginPage() {
       }
 
       navigate("/sessions");
+    } catch (error: any) {
+      alert(error?.message || "Failed to log in");
     } finally {
       setLoading(false);
     }
@@ -66,30 +64,22 @@ export default function LoginPage() {
     try {
       setOauthLoading("google");
 
-      const redirectTo = `${window.location.origin}/auth/callback/`;
+      const redirectTo = `${window.location.origin}/auth/callback`;
 
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
           redirectTo,
-          // ✅ critical for in-app browsers: don’t try to redirect inside webview
-          skipBrowserRedirect: true,
         },
       });
 
       if (error) {
         console.log("[auth] google oauth error:", error);
         alert(error.message);
-        return;
       }
-
-      if (data?.url) {
-        // ✅ open in a real browser tab/window
-        window.open(data.url, "_blank", "noopener,noreferrer");
-      } else {
-        console.log("[auth] google oauth: no url returned");
-        alert("Failed to start Google login. Please try again.");
-      }
+    } catch (error: any) {
+      console.log("[auth] google oauth unexpected error:", error);
+      alert(error?.message || "Failed to start Google login. Please try again.");
     } finally {
       setOauthLoading(null);
     }
@@ -99,35 +89,28 @@ export default function LoginPage() {
     try {
       setOauthLoading("facebook");
 
-      const redirectTo = `${window.location.origin}/auth/callback/`;
+      const redirectTo = `${window.location.origin}/auth/callback`;
 
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      const { error } = await supabase.auth.signInWithOAuth({
         provider: "facebook",
         options: {
           redirectTo,
-          skipBrowserRedirect: true,
         },
       });
 
       if (error) {
         console.log("[auth] facebook oauth error:", error);
         alert(error.message);
-        return;
       }
-
-      if (data?.url) {
-        window.open(data.url, "_blank", "noopener,noreferrer");
-      } else {
-        console.log("[auth] facebook oauth: no url returned");
-        alert("Failed to start Facebook login. Please try again.");
-      }
+    } catch (error: any) {
+      console.log("[auth] facebook oauth unexpected error:", error);
+      alert(error?.message || "Failed to start Facebook login. Please try again.");
     } finally {
       setOauthLoading(null);
     }
   };
 
   const openInBrowserHint = () => {
-    // helps users in webviews: they can long-press/copy, or use the menu.
     const url = window.location.href;
     try {
       navigator.clipboard?.writeText(url);
@@ -145,10 +128,9 @@ export default function LoginPage() {
         <div className="w-full max-w-md mx-auto">
           <h2 className="text-center text-[32px] font-bold mb-6">Log in</h2>
 
-          {/* In-app browser warning */}
           {inApp && (
             <div className="mb-6 rounded-[16px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              <div className="font-semibold mb-1">Google login can be blocked here</div>
+              <div className="font-semibold mb-1">Social login can be blocked here</div>
               <div className="opacity-90">
                 You’re likely in an in-app browser (Discord/Telegram/etc). Open this page in Chrome/Safari to log in.
               </div>
@@ -162,7 +144,6 @@ export default function LoginPage() {
             </div>
           )}
 
-          {/* Email */}
           <label className="block text-sm mb-1">Email address</label>
           <input
             type="email"
@@ -172,7 +153,6 @@ export default function LoginPage() {
             onChange={(e) => setEmail(e.target.value)}
           />
 
-          {/* Password */}
           <label className="block text-sm mb-1">Your password</label>
           <div className="relative mb-6">
             <input
@@ -191,7 +171,6 @@ export default function LoginPage() {
             </button>
           </div>
 
-          {/* LOGIN BUTTON */}
           <button
             onClick={handleLogin}
             disabled={loading}
@@ -204,7 +183,6 @@ export default function LoginPage() {
             Forgot Password?
           </p>
 
-          {/* Google */}
           <button
             onClick={loginWithGoogle}
             disabled={oauthLoading !== null}
@@ -218,7 +196,6 @@ export default function LoginPage() {
             {oauthLoading === "google" ? "Opening Google…" : "Continue with Google"}
           </button>
 
-          {/* Facebook */}
           <button
             onClick={loginWithFacebook}
             disabled={oauthLoading !== null}

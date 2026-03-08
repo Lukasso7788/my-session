@@ -1,5 +1,3 @@
-// src/pages/RegisterPage.tsx
-
 import { useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useNavigate } from "react-router-dom";
@@ -22,7 +20,6 @@ export default function RegisterPage() {
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
-
   const [oauthLoading, setOauthLoading] = useState<null | "google" | "facebook">(null);
 
   const inApp = useMemo(() => isInAppBrowser(), []);
@@ -33,19 +30,23 @@ export default function RegisterPage() {
       return;
     }
 
-    setLoading(true);
-
     try {
+      setLoading(true);
+
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { full_name: fullName } },
+        options: {
+          data: { full_name: fullName },
+        },
       });
 
-      if (error) throw error;
+      if (error) {
+        alert(error.message);
+        return;
+      }
 
       if (data.user) {
-        // best-effort profile row
         await supabase.from("profiles").upsert([
           {
             id: data.user.id,
@@ -58,19 +59,19 @@ export default function RegisterPage() {
 
       navigate("/login");
     } catch (error: any) {
-      alert(error.message);
+      alert(error?.message || "Failed to create account");
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   const signupWithGoogle = async () => {
     try {
       setOauthLoading("google");
 
-      const redirectTo = `${window.location.origin}/auth/callback/`;
+      const redirectTo = `${window.location.origin}/auth/callback`;
 
-      await supabase.auth.signInWithOAuth({
+      const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
           redirectTo,
@@ -80,14 +81,10 @@ export default function RegisterPage() {
       if (error) {
         console.log("[auth] google oauth error:", error);
         alert(error.message);
-        return;
       }
-
-      if (data?.url) {
-        window.open(data.url, "_blank", "noopener,noreferrer");
-      } else {
-        alert("Failed to start Google signup. Please try again.");
-      }
+    } catch (error: any) {
+      console.log("[auth] google oauth unexpected error:", error);
+      alert(error?.message || "Failed to start Google signup. Please try again.");
     } finally {
       setOauthLoading(null);
     }
@@ -97,27 +94,22 @@ export default function RegisterPage() {
     try {
       setOauthLoading("facebook");
 
-      const redirectTo = `${window.location.origin}/auth/callback/`;
+      const redirectTo = `${window.location.origin}/auth/callback`;
 
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      const { error } = await supabase.auth.signInWithOAuth({
         provider: "facebook",
         options: {
           redirectTo,
-          skipBrowserRedirect: true,
         },
       });
 
       if (error) {
         console.log("[auth] facebook oauth error:", error);
         alert(error.message);
-        return;
       }
-
-      if (data?.url) {
-        window.open(data.url, "_blank", "noopener,noreferrer");
-      } else {
-        alert("Failed to start Facebook signup. Please try again.");
-      }
+    } catch (error: any) {
+      console.log("[auth] facebook oauth unexpected error:", error);
+      alert(error?.message || "Failed to start Facebook signup. Please try again.");
     } finally {
       setOauthLoading(null);
     }
@@ -143,10 +135,9 @@ export default function RegisterPage() {
             Create an Account
           </h2>
 
-          {/* In-app browser warning */}
           {inApp && (
             <div className="mb-6 rounded-[16px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              <div className="font-semibold mb-1">Google signup can be blocked here</div>
+              <div className="font-semibold mb-1">Social login can be blocked here</div>
               <div className="opacity-90">
                 You’re likely in an in-app browser (Discord/Telegram/etc). Open this page in Chrome/Safari to continue.
               </div>
@@ -160,7 +151,6 @@ export default function RegisterPage() {
             </div>
           )}
 
-          {/* Name */}
           <label className="block text-sm mb-1">Name</label>
           <input
             type="text"
@@ -170,7 +160,6 @@ export default function RegisterPage() {
             onChange={(e) => setFullName(e.target.value)}
           />
 
-          {/* Email */}
           <label className="block text-sm mb-1">Email address</label>
           <input
             type="email"
@@ -180,7 +169,6 @@ export default function RegisterPage() {
             onChange={(e) => setEmail(e.target.value)}
           />
 
-          {/* Password */}
           <label className="block text-sm mb-1">Your password</label>
           <div className="relative mb-6">
             <input
@@ -199,7 +187,6 @@ export default function RegisterPage() {
             </button>
           </div>
 
-          {/* Sign Up button */}
           <button
             onClick={handleRegister}
             disabled={loading}
@@ -208,7 +195,6 @@ export default function RegisterPage() {
             {loading ? "Creating…" : "Sign Up"}
           </button>
 
-          {/* Google */}
           <button
             onClick={signupWithGoogle}
             disabled={oauthLoading !== null}
@@ -222,7 +208,6 @@ export default function RegisterPage() {
             {oauthLoading === "google" ? "Opening Google…" : "Continue with Google"}
           </button>
 
-          {/* Facebook */}
           <button
             onClick={signupWithFacebook}
             disabled={oauthLoading !== null}
