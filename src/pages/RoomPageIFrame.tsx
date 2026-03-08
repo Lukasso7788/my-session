@@ -60,6 +60,11 @@
 // - In-room timeline editor for host only.
 // - Open from RoomTopBar hover button.
 // - Save directly into sessions.schedule and refresh stage bar immediately.
+//
+// ✅ FIX:
+// - Timeline save must NOT recreate / dispose Jitsi room.
+// - Jitsi init effect no longer depends on full `session` object or `sessionTitle`.
+// - Subject / displayName / avatar are updated via separate lightweight effects.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -615,15 +620,18 @@ const FORCE_JITSI_ONLY = (import.meta as any).env.VITE_FORCE_JITSI_ONLY === "tru
 
 type JitsiDomain = (typeof ALL_JITSI_DOMAINS)[number] | string;
 
-function domainsForSession(session: any): readonly string[] {
+function domainsForPreferredDomain(preferred?: string | null): readonly string[] {
     if (FORCE_JITSI_DOMAIN) {
         const uniq = (d: string, i: number, arr: string[]) => arr.indexOf(d) === i;
         if (FORCE_JITSI_ONLY) return [FORCE_JITSI_DOMAIN];
         return [FORCE_JITSI_DOMAIN, ...ALL_JITSI_DOMAINS].filter(uniq);
     }
 
-    const preferred = String(session?.jitsi_domain || "").trim();
-    if (preferred) return [preferred, ...ALL_JITSI_DOMAINS.filter((d) => d !== preferred)];
+    const normalizedPreferred = String(preferred || "").trim();
+    if (normalizedPreferred) {
+        return [normalizedPreferred, ...ALL_JITSI_DOMAINS.filter((d) => d !== normalizedPreferred)];
+    }
+
     return ALL_JITSI_DOMAINS;
 }
 
@@ -961,6 +969,10 @@ export default function RoomPageIFrame() {
 
     const sessionId = useMemo(() => String(session?.id || ""), [session?.id]);
     const sessionTitle = useMemo(() => String(session?.title || "Session"), [session?.title]);
+    const preferredJitsiDomain = useMemo(
+        () => String(session?.jitsi_domain || "").trim(),
+        [session?.jitsi_domain]
+    );
 
     // ===============================
     // Join gate logic (based on sessions.start_time)
@@ -1472,7 +1484,7 @@ export default function RoomPageIFrame() {
             return Math.max(MIN_PARTICIPANTS, Math.min(MAX_PARTICIPANTS, Math.floor(n)));
         }
         return DEFAULT_MAX_PARTICIPANTS;
-    }, [session]);
+    }, [session?.max_participants]);
 
     const roomName = useMemo(() => {
         const fallback = idOrSlug ? `session-${idOrSlug}` : "session-unknown";
@@ -1494,7 +1506,7 @@ export default function RoomPageIFrame() {
         }
 
         return fallback;
-    }, [session, idOrSlug]);
+    }, [session?.jitsi_room_name, session?.daily_room_url, idOrSlug]);
 
     const isInfiniteRoom = useMemo(() => {
         const raw = session?.schedule;
@@ -1513,7 +1525,7 @@ export default function RoomPageIFrame() {
         if (parsed?.segments) return true;
 
         return false;
-    }, [session]);
+    }, [session?.schedule]);
 
     const isSilentRoom = useMemo(() => {
         const fmt = String(session?.format || "").toLowerCase();
@@ -1530,7 +1542,7 @@ export default function RoomPageIFrame() {
 
         const hay = `${fmt} ${title} ${tplName} ${tplKey} ${tplFmt}`.toLowerCase();
         return hay.includes("silent");
-    }, [session]);
+    }, [session?.format, session?.title, session?.session_templates]);
 
     // ============================================
     // LOAD SESSION + BUILD STAGES (UUID OR SLUG)
@@ -2372,7 +2384,7 @@ export default function RoomPageIFrame() {
     // create API when authed + session ready
     useEffect(() => {
         if (authStatus !== "authed") return;
-        if (!session) return;
+        if (!sessionId) return;
         if (!iframeContainerRef.current) return;
         if (!userName) return;
         if (!canJoinNow) return;
@@ -2395,7 +2407,7 @@ export default function RoomPageIFrame() {
                 lastAppliedVideoHeightRef.current = 0;
 
                 const parent = iframeContainerRef.current!;
-                const domains = domainsForSession(session);
+                const domains = domainsForPreferredDomain(preferredJitsiDomain);
 
                 try {
                     iframeAttrObserver = new MutationObserver(() => {
@@ -2554,7 +2566,56 @@ export default function RoomPageIFrame() {
 
             clearVideoQualityTimer();
         };
-    }, [authStatus, sessionId, jitsiKey, roomName, sessionTitle, userName, userAvatarUrl, canJoinNow, session]);
+    }, [authStatus, sessionId, jitsiKey, roomName, userName, canJoinNow, preferredJitsiDomain, navigate, sessionTitle, userAvatarUrl]);
+
+    // lightweight Jitsi updates that should NOT recreate the room
+    useEffect(() => {
+        if (!apiReady) return;
+        const api = apiRef.current;
+        if (!api) return;
+        if (!sessionTitle) return;
+
+        try {
+            api.executeCommand?.("subject", String(sessionTitle));
+        } catch { }
+    }, [sessionTitle, apiReady]);
+
+    useEffect(() => {
+        if (!apiReady) return;
+        const api = apiRef.current;
+        if (!api) return;
+        if (!userName) return;
+
+        try {
+            api.executeCommand?.("displayName", String(userName));
+        } catch { }
+    }, [userName, apiReady]);
+
+    useEffect(() => {
+        if (!apiReady) return;
+        const api = apiRef.current;
+        if (!api) return;
+        if (!userAvatarUrl) return;
+
+        applyJitsiAvatarBestEffort(api, userAvatarUrl);
+
+        const t1 = window.setTimeout(() => {
+            const currentApi = apiRef.current;
+            if (!currentApi) return;
+            applyJitsiAvatarBestEffort(currentApi, userAvatarUrl);
+        }, 150);
+
+        const t2 = window.setTimeout(() => {
+            const currentApi = apiRef.current;
+            if (!currentApi) return;
+            applyJitsiAvatarBestEffort(currentApi, userAvatarUrl);
+        }, 650);
+
+        return () => {
+            window.clearTimeout(t1);
+            window.clearTimeout(t2);
+        };
+    }, [userAvatarUrl, apiReady]);
 
     // ============================================
     // UI actions
