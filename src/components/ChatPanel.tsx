@@ -31,6 +31,9 @@ type ReactionRow = {
 const MSG_TABLE = "session_chat_messages";
 const REACTIONS_TABLE = "session_chat_message_reactions";
 
+const MESSAGE_BOOTSTRAP_LIMIT = 300;
+const REACTIONS_BOOTSTRAP_LIMIT = 300;
+
 // базовый набор эмодзи (можешь расширить)
 const REACTION_EMOJIS = ["🔥", "😂", "👏", "❤️", "👍", "👎", "👌", "👋", "🙌", "🎉"] as const;
 
@@ -95,7 +98,7 @@ function withTimeout<T>(p: Promise<T>, ms: number, label = "timeout"): Promise<T
 }
 
 function normalizeMessageIds(ids: string[]) {
-    // keep order, unique, no optimistic, and last 300
+    // keep order, unique, no optimistic, and last MESSAGE_BOOTSTRAP_LIMIT
     const seen = new Set<string>();
     const out: string[] = [];
 
@@ -107,7 +110,7 @@ function normalizeMessageIds(ids: string[]) {
         out.push(id);
     }
 
-    return out.length > 300 ? out.slice(out.length - 300) : out;
+    return out.length > MESSAGE_BOOTSTRAP_LIMIT ? out.slice(out.length - MESSAGE_BOOTSTRAP_LIMIT) : out;
 }
 
 /** -----------------------
@@ -941,8 +944,8 @@ export function ChatPanel({
                 .from(MSG_TABLE)
                 .select("id, session_id, user_id, body, created_at")
                 .eq("session_id", sessionId)
-                .order("created_at", { ascending: true })
-                .limit(300);
+                .order("created_at", { ascending: false })
+                .limit(MESSAGE_BOOTSTRAP_LIMIT);
 
             const { data: rows, error } = await withTimeout(q as any, 12000, "loadMessages timeout");
 
@@ -955,7 +958,7 @@ export function ChatPanel({
                 return null;
             }
 
-            const safeRows = (rows as any as MsgRow[]) || [];
+            const safeRows = (((rows as any as MsgRow[]) || []).slice()).reverse();
             await ensureProfiles(safeRows.map((r) => r.user_id));
 
             if (!aliveRef.current) return null;
@@ -1020,7 +1023,8 @@ export function ChatPanel({
                 .select("id, session_id, message_id, user_id, emoji, created_at")
                 .eq("session_id", sessionId)
                 .in("message_id", msgIds)
-                .limit(5000);
+                .order("created_at", { ascending: false })
+                .limit(REACTIONS_BOOTSTRAP_LIMIT);
 
             const { data, error } = await withTimeout(q as any, 12000, "loadReactions timeout");
 
