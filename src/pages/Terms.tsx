@@ -9,23 +9,23 @@ export default function Terms() {
     const lastUpdated = new Date().toISOString().slice(0, 10);
 
     return (
-        <div className="min-h-[calc(100vh-80px)] bg-transparent text-[#0B1220]">
+        <div className="min-h-[calc(100vh-80px)] bg-transparent text-white">
             <main className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
-                <div className="rounded-[28px] border border-black/10 bg-white/85 shadow-sm backdrop-blur-sm">
+                <div className="overflow-hidden rounded-[28px] border border-black/10 bg-[#2f2f2f] shadow-[0_12px_40px_rgba(0,0,0,0.14)]">
                     <div className="px-6 py-7 sm:px-8 sm:py-8">
-                        <div className="inline-flex items-center rounded-full border border-black/10 bg-black/[0.03] px-3 py-1 text-[12px] font-medium text-black/65">
+                        <div className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[12px] font-medium text-white/70">
                             Legal
                         </div>
 
-                        <h1 className="mt-4 text-[30px] font-semibold tracking-tight text-[#111111] sm:text-[38px]">
+                        <h1 className="mt-4 text-[30px] font-semibold tracking-tight text-white sm:text-[38px]">
                             Terms of Service
                         </h1>
 
-                        <p className="mt-2 text-[13px] text-black/55">
+                        <p className="mt-2 text-[13px] text-white/45">
                             Last updated: {lastUpdated}
                         </p>
 
-                        <p className="mt-5 max-w-3xl text-[15px] leading-7 text-black/75">
+                        <p className="mt-5 max-w-3xl text-[15px] leading-7 text-white/75">
                             Welcome to {APP_NAME}. These Terms of Service govern your access to
                             and use of the MySession website, platform, video rooms, focus
                             sessions, and related services. By accessing or using {APP_NAME},
@@ -33,12 +33,12 @@ export default function Terms() {
                         </p>
                     </div>
 
-                    <div className="border-t border-black/8 px-6 py-2 sm:px-8" />
+                    <div className="border-t border-white/10" />
 
                     <div className="px-6 pb-6 sm:px-8 sm:pb-8">
-                        <div className="space-y-0 text-[14px] leading-relaxed text-black/80">
+                        <div className="space-y-0 text-[14px] leading-relaxed text-white/78">
                             <section className="py-5">
-                                <h2 className="text-[17px] font-semibold text-black/90">
+                                <h2 className="text-[17px] font-semibold text-white">
                                     1. Description of the service
                                 </h2>
                                 <p className="mt-2">
@@ -52,14 +52,14 @@ export default function Terms() {
                                 </p>
                             </section>
 
-                            <div className="border-t border-black/8" />
+                            <div className="border-t border-white/10" />
 
                             <section className="py-5">
-                                <h2 className="text-[17px] font-semibold text-black/90">
+                                <h2 className="text-[17px] font-semibold text-white">
                                     2. Eligibility
                                 </h2>
                                 <p className="mt-2">
-                                    You must be at least <span className="font-semibold">13 years old</span>{" "}
+                                    You must be at least <span className="font-semibold text-white">13 years old</span>{" "}
                                     to use the Service.
                                 </p>
                                 <p className="mt-2">
@@ -69,10 +69,10 @@ export default function Terms() {
                                 </p>
                             </section>
 
-                            <div className="border-t border-black/8" />
+                            <div className="border-t border-white/10" />
 
                             <section className="py-5">
-                                <h2 className="text-[17px] font-semibold text-black/90">
+                                <h2 className="text-[17px] font-semibold text-white">
                                     3. Accounts
                                 </h2>
                                 <p className="mt-2">
@@ -86,14 +86,14 @@ export default function Terms() {
                                 </p>
                             </section>
 
-                            <div className="border-t border-black/8" />
+                            <div className="border-t border-white/10" />
 
                             <section className="py-5">
-                                <h2 className="text-[17px] font-semibold text-black/90">
+                                <h2 className="text-[17px] font-semibold text-white">
                                     4. Acceptable use
                                 </h2>
                                 <p className="mt-2">You agree not to use {APP_NAME} to:</p>
-                                <ul className="mt-3 list-disc space-y-1.5 pl-5">
+                                <ul className="mt-3 list-disc space-y-1.5 pl-5 marker:text-white/45">
                                     <li>harass, threaten, abuse, or intimidate others;</li>
                                     <li>share unlawful, infringing, or harmful content;</li>
                                     <li>disrupt sessions or interfere with others’ experience;</li>
@@ -106,10 +106,10 @@ export default function Terms() {
                                 </ul>
                             </section>
 
-                            <div className="border-t border-black/8" />
+                            <div className="border-t border-white/10" />
 
                             <section className="py-5">
-                                <h2 className="text-[17px] font-semibold text-black/90">
+                                <h2 className="text-[17px] font-semibold text-white">
                                     5. Sessions and hosts
                                 </h2>
                                 <p className="mt-2">
@@ -123,10 +123,10 @@ export default function Terms() {
                                 </p>
                             </section>
 
-                            <div className="border-t border-black/8" />
+                            <div className="border-t borderwhite/10 border-white/10" />
 
                             <section className="py-5">
-                                <h2 className="text-[17px] font-semibold text-black/90">
+                                <h2 className="text-[17px] font-semibold text-white">
                                     6. User content
                                 </h2>
                                 <p className="mt-2">
@@ -148,10 +148,10 @@ export default function Terms() {
                                 </p>
                             </section>
 
-                            <div className="border-t border-black/8" />
+                            <div className="border-t border-white/10" />
 
                             <section className="py-5">
-                                <h2 className="text-[17px] font-semibold text-black/90">
+                                <h2 className="text-[17px] font-semibold text-white">
                                     7. Video and third-party services
                                 </h2>
                                 <p className="mt-2">
@@ -165,10 +165,10 @@ export default function Terms() {
                                 </p>
                             </section>
 
-                            <div className="border-t border-black/8" />
+                            <div className="border-t border-white/10" />
 
                             <section className="py-5">
-                                <h2 className="text-[17px] font-semibold text-black/90">
+                                <h2 className="text-[17px] font-semibold text-white">
                                     8. Paid features and billing
                                 </h2>
                                 <p className="mt-2">
@@ -182,10 +182,10 @@ export default function Terms() {
                                 </p>
                             </section>
 
-                            <div className="border-t border-black/8" />
+                            <div className="border-t border-white/10" />
 
                             <section className="py-5">
-                                <h2 className="text-[17px] font-semibold text-black/90">
+                                <h2 className="text-[17px] font-semibold text-white">
                                     9. Termination and suspension
                                 </h2>
                                 <p className="mt-2">You may stop using the Service at any time.</p>
@@ -196,16 +196,16 @@ export default function Terms() {
                                 </p>
                             </section>
 
-                            <div className="border-t border-black/8" />
+                            <div className="border-t border-white/10" />
 
                             <section className="py-5">
-                                <h2 className="text-[17px] font-semibold text-black/90">
+                                <h2 className="text-[17px] font-semibold text-white">
                                     10. Disclaimer of warranties
                                 </h2>
                                 <p className="mt-2">
                                     The Service is provided on an{" "}
-                                    <span className="font-semibold">&quot;as is&quot;</span> and{" "}
-                                    <span className="font-semibold">&quot;as available&quot;</span>{" "}
+                                    <span className="font-semibold text-white">&quot;as is&quot;</span> and{" "}
+                                    <span className="font-semibold text-white">&quot;as available&quot;</span>{" "}
                                     basis, without warranties of any kind, whether express or
                                     implied.
                                 </p>
@@ -216,10 +216,10 @@ export default function Terms() {
                                 </p>
                             </section>
 
-                            <div className="border-t border-black/8" />
+                            <div className="border-t border-white/10" />
 
                             <section className="py-5">
-                                <h2 className="text-[17px] font-semibold text-black/90">
+                                <h2 className="text-[17px] font-semibold text-white">
                                     11. Limitation of liability
                                 </h2>
                                 <p className="mt-2">
@@ -237,10 +237,10 @@ export default function Terms() {
                                 </p>
                             </section>
 
-                            <div className="border-t border-black/8" />
+                            <div className="border-t border-white/10" />
 
                             <section className="py-5">
-                                <h2 className="text-[17px] font-semibold text-black/90">
+                                <h2 className="text-[17px] font-semibold text-white">
                                     12. Indemnification
                                 </h2>
                                 <p className="mt-2">
@@ -248,7 +248,7 @@ export default function Terms() {
                                     operators from claims, liabilities, damages, losses, and
                                     expenses arising out of or related to:
                                 </p>
-                                <ul className="mt-3 list-disc space-y-1.5 pl-5">
+                                <ul className="mt-3 list-disc space-y-1.5 pl-5 marker:text-white/45">
                                     <li>your use of the Service;</li>
                                     <li>your content;</li>
                                     <li>your sessions or interactions with other users;</li>
@@ -256,17 +256,17 @@ export default function Terms() {
                                 </ul>
                             </section>
 
-                            <div className="border-t border-black/8" />
+                            <div className="border-t border-white/10" />
 
                             <section className="py-5">
-                                <h2 className="text-[17px] font-semibold text-black/90">
+                                <h2 className="text-[17px] font-semibold text-white">
                                     13. Privacy
                                 </h2>
                                 <p className="mt-2">
                                     Your use of the Service is also subject to our{" "}
                                     <Link
                                         to="/privacy"
-                                        className="underline underline-offset-2 transition hover:opacity-80"
+                                        className="underline underline-offset-2 text-white/90 transition hover:text-white"
                                     >
                                         Privacy Policy
                                     </Link>
@@ -274,10 +274,10 @@ export default function Terms() {
                                 </p>
                             </section>
 
-                            <div className="border-t border-black/8" />
+                            <div className="border-t border-white/10" />
 
                             <section className="py-5">
-                                <h2 className="text-[17px] font-semibold text-black/90">
+                                <h2 className="text-[17px] font-semibold text-white">
                                     14. Changes to these Terms
                                 </h2>
                                 <p className="mt-2">
@@ -292,10 +292,10 @@ export default function Terms() {
                                 </p>
                             </section>
 
-                            <div className="border-t border-black/8" />
+                            <div className="border-t border-white/10" />
 
                             <section className="py-5">
-                                <h2 className="text-[17px] font-semibold text-black/90">
+                                <h2 className="text-[17px] font-semibold text-white">
                                     15. Governing law
                                 </h2>
                                 <p className="mt-2">
@@ -305,16 +305,16 @@ export default function Terms() {
                                 </p>
                             </section>
 
-                            <div className="border-t border-black/8" />
+                            <div className="border-t border-white/10" />
 
                             <section className="py-5">
-                                <h2 className="text-[17px] font-semibold text-black/90">
+                                <h2 className="text-[17px] font-semibold text-white">
                                     16. Contact
                                 </h2>
                                 <p className="mt-2">
                                     For questions about these Terms, contact:{" "}
                                     <a
-                                        className="underline underline-offset-2 hover:opacity-80"
+                                        className="underline underline-offset-2 text-white/90 hover:text-white"
                                         href={`mailto:${SUPPORT_EMAIL}`}
                                     >
                                         {SUPPORT_EMAIL}
@@ -323,10 +323,10 @@ export default function Terms() {
                             </section>
                         </div>
 
-                        <div className="mt-4 flex flex-col gap-3 border-t border-black/10 pt-6 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="mt-4 flex flex-col gap-3 border-t border-white/10 pt-6 sm:flex-row sm:items-center sm:justify-between">
                             <Link
                                 to="/"
-                                className="text-[13px] text-black/65 transition hover:text-black/90"
+                                className="text-[13px] text-white/60 transition hover:text-white/90"
                             >
                                 ← Back to home
                             </Link>
@@ -334,14 +334,14 @@ export default function Terms() {
                             <div className="flex flex-wrap items-center gap-2">
                                 <Link
                                     to="/privacy"
-                                    className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-[13px] transition hover:bg-black/10"
+                                    className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[13px] text-white/85 transition hover:bg-white/10"
                                 >
                                     Privacy policy
                                 </Link>
 
                                 <Link
                                     to="/data-deletion"
-                                    className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-[13px] transition hover:bg-black/10"
+                                    className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[13px] text-white/85 transition hover:bg-white/10"
                                 >
                                     Data deletion
                                 </Link>
