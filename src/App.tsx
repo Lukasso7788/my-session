@@ -18,6 +18,7 @@ import UpdatesPage from "./pages/UpdatesPage";
 
 import PrivacyPage from "./pages/PrivacyPage";
 import DataDeletionPage from "./pages/DataDeletionPage";
+import Terms from "./pages/Terms";
 
 import AppLayout from "./layouts/AppLayout";
 import { CreateSessionModalProvider } from "./context/CreateSessionModalContext";
@@ -58,6 +59,7 @@ export default function App() {
           <Route path="/ui-playground" element={<SessionCardsPlayground />} />
 
           {/* Legal */}
+          <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/data-deletion" element={<DataDeletionPage />} />
 
