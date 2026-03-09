@@ -3037,7 +3037,7 @@ export default function RoomPageIFrame() {
                         )}
 
                         {(lastErr || uiMessage) && (
-                            <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow">
+                            <div className="absolute top-4 left-4 text-xs bg-green-600 text-white px-3 py-2 rounded-lg shadow">
                                 {uiMessage || lastErr}
                             </div>
                         )}
