@@ -121,7 +121,7 @@ type TileModel = {
 
   micMuted?: boolean;
 
-  // ✅ публикационные факты (истина)
+  // publication truth
   camPubExists?: boolean;
   camPubMuted?: boolean;
   camPubHasTrack?: boolean;
@@ -138,6 +138,40 @@ type SessionRoleAssignmentRow = {
   role: SessionRole;
   granted_by?: string | null;
   created_at?: string;
+};
+
+type RightPanelTab = "participants" | "chat" | "intentions" | null;
+
+type FloatingReaction = {
+  id: number;
+  type: ReactionType;
+  fromUserId: string;
+  fromName: string;
+};
+
+type RoomSystemNotice = {
+  open: boolean;
+  kind: "info" | "error" | "kick";
+  title: string;
+  body: string;
+};
+
+type KickBroadcastPayload = {
+  type?: "participant_kicked";
+  targetIdentity?: string | null;
+  targetUserId?: string | null;
+  kickedByUserId?: string | null;
+  kickedByName?: string | null;
+  roomName?: string | null;
+  sessionId?: string | null;
+  at?: number;
+};
+
+type ColorCorrectionState = {
+  brightness: number; // %
+  contrast: number; // %
+  saturation: number; // %
+  warmth: number; // -100..100
 };
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -220,11 +254,17 @@ function normalizeInfinitePhases(anyPhases: unknown): { name: string; seconds: n
 
   const toSeconds = (raw: unknown): number => {
     if (isRecord(raw)) {
-      const explicitSeconds = num((raw as any).seconds) || num((raw as any).duration_seconds) || num((raw as any).durationSeconds);
+      const explicitSeconds =
+        num((raw as any).seconds) ||
+        num((raw as any).duration_seconds) ||
+        num((raw as any).durationSeconds);
       if (explicitSeconds > 0) return explicitSeconds;
 
       const explicitMinutes =
-        num((raw as any).minutes) || num((raw as any).mins) || num((raw as any).duration_minutes) || num((raw as any).durationMinutes);
+        num((raw as any).minutes) ||
+        num((raw as any).mins) ||
+        num((raw as any).duration_minutes) ||
+        num((raw as any).durationMinutes);
       if (explicitMinutes > 0) return explicitMinutes * 60;
 
       const n = num((raw as any).duration ?? (raw as any).value ?? raw);
@@ -387,6 +427,109 @@ async function resolveAvatarUrlFromProfilesField(avatarUrlOrPath: string): Promi
   return "";
 }
 
+// ---- room reports / kick events / sounds
+const REPORTS_TABLE = "participant_reports";
+const KICK_EVENTS_CHANNEL_PREFIX = "mysession_lk_kick_events";
+const KICK_REDIRECT_DELAY_MS = 1800;
+
+const ROOM_SOUNDS_PREF_KEY = "mysession_lk_room_sounds";
+const JOIN_SOUND_CANDIDATES = [
+  "/sounds/jitsi/joined.mp3",
+  "/sounds/joined.mp3",
+  "/sounds/user_joined.mp3",
+];
+const LEAVE_SOUND_CANDIDATES = [
+  "/sounds/jitsi/left.mp3",
+  "/sounds/left.mp3",
+  "/sounds/user_left.mp3",
+];
+
+function makeKickBroadcastChannelName(sessionId: string) {
+  return `${KICK_EVENTS_CHANNEL_PREFIX}:${String(sessionId || "").trim()}`;
+}
+
+function normalizeIdentityKey(v: unknown) {
+  return String(v || "").trim().toLowerCase();
+}
+
+function matchesKickPayload(args: {
+  payload: KickBroadcastPayload | null | undefined;
+  localIdentity: string;
+  authUserId: string;
+  baseUserId: string;
+}) {
+  const payload = args.payload;
+  if (!payload) return false;
+
+  const targetIdentity = normalizeIdentityKey(payload.targetIdentity);
+  const targetUserId = normalizeIdentityKey(payload.targetUserId);
+
+  const localIdentity = normalizeIdentityKey(args.localIdentity);
+  const authUserId = normalizeIdentityKey(args.authUserId);
+  const baseUserId = normalizeIdentityKey(args.baseUserId);
+
+  if (targetIdentity && localIdentity && targetIdentity === localIdentity) return true;
+  if (targetUserId && authUserId && targetUserId === authUserId) return true;
+  if (targetUserId && baseUserId && targetUserId === baseUserId) return true;
+
+  return false;
+}
+
+function playOneShotFromCandidates(urls: string[], volume = 0.9) {
+  const list = Array.from(
+    new Set(
+      (urls || [])
+        .map((u) => String(u || "").trim())
+        .filter(Boolean)
+    )
+  );
+
+  if (!list.length) return;
+
+  const tryIndex = (index: number) => {
+    if (index >= list.length) return;
+
+    const a = new Audio(list[index]);
+    a.preload = "auto";
+    a.volume = volume;
+
+    let advanced = false;
+    const next = () => {
+      if (advanced) return;
+      advanced = true;
+      tryIndex(index + 1);
+    };
+
+    try {
+      a.addEventListener("error", next, { once: true });
+    } catch { }
+
+    a.play().catch(() => next());
+  };
+
+  tryIndex(0);
+}
+
+function buildColorCorrectionFilter(state: ColorCorrectionState) {
+  const brightness = Math.max(50, Math.min(150, Math.round(state.brightness || 100)));
+  const contrast = Math.max(50, Math.min(150, Math.round(state.contrast || 100)));
+  const saturation = Math.max(0, Math.min(200, Math.round(state.saturation || 100)));
+  const warmth = Math.max(-100, Math.min(100, Math.round(state.warmth || 0)));
+
+  const sepia = warmth > 0 ? Math.min(0.32, warmth / 1000 + warmth / 500) : 0;
+  const hueRotate = warmth < 0 ? Math.round((Math.abs(warmth) / 100) * 16) : 0;
+
+  return [
+    `brightness(${brightness}%)`,
+    `contrast(${contrast}%)`,
+    `saturate(${saturation}%)`,
+    `sepia(${sepia})`,
+    hueRotate ? `hue-rotate(${hueRotate}deg)` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 // ---- tab presence
 const LK_TAB_PREFIX = "mysession_lk_tabs";
 const LK_TAB_TTL_MS = 18_000;
@@ -430,7 +573,9 @@ function readPresence(key: string): TabPresence {
     const j = JSON.parse(raw);
     if (!j || typeof j !== "object") return { v: 1, tabs: [] };
     const tabs = Array.isArray((j as any).tabs) ? (j as any).tabs : [];
-    const norm = tabs.map((t: any) => ({ id: String(t?.id || ""), ts: Number(t?.ts || 0) })).filter((t: any) => !!t.id && Number.isFinite(t.ts) && t.ts > 0);
+    const norm = tabs
+      .map((t: any) => ({ id: String(t?.id || ""), ts: Number(t?.ts || 0) }))
+      .filter((t: any) => !!t.id && Number.isFinite(t.ts) && t.ts > 0);
     return { v: Number((j as any).v || 1) || 1, tabs: norm };
   } catch {
     return { v: 1, tabs: [] };
@@ -554,12 +699,6 @@ const LK_CAPTURE_FPS = 24;
 const CHAT_MSG_TABLE = "session_chat_messages";
 
 // reactions
-type FloatingReaction = {
-  id: number;
-  type: ReactionType;
-  fromUserId: string;
-  fromName: string;
-};
 const REACTION_TTL_MS = 2750;
 
 export function RoomPageLiveKit() {
@@ -691,8 +830,10 @@ export function RoomPageLiveKit() {
     audioInputId: "",
     videoInputId: "",
     audioOutputId: "default",
+
     audioEnabled: true,
     videoEnabled: true,
+
     echoCancellation: true,
     noiseSuppression: true,
     autoGainControl: true,
@@ -703,6 +844,12 @@ export function RoomPageLiveKit() {
   }, [prejoin]);
 
   const [selectedAudioOutputId, setSelectedAudioOutputId] = useState<string>("default");
+  const [selectedAudioInputId, setSelectedAudioInputId] = useState<string>("");
+  const [selectedVideoInputId, setSelectedVideoInputId] = useState<string>("");
+
+  const [echoCancellationEnabled, setEchoCancellationEnabled] = useState(true);
+  const [noiseSuppressionEnabled, setNoiseSuppressionEnabled] = useState(true);
+  const [autoGainControlEnabled, setAutoGainControlEnabled] = useState(true);
 
   // pre-join prepared preview track
   const prejoinPreparedVideoTrackRef = useRef<LocalVideoTrack | null>(null);
@@ -715,7 +862,6 @@ export function RoomPageLiveKit() {
   const [roleBusyKey, setRoleBusyKey] = useState<string>("");
 
   // right panel
-  type RightPanelTab = "participants" | "chat" | "intentions" | null;
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightTab, setRightTab] = useState<RightPanelTab>(null);
   const openRightTab = (tab: RightPanelTab) => {
@@ -770,8 +916,25 @@ export function RoomPageLiveKit() {
   const BREAK_END_SOUND = "/sounds/break_end.mp3";
   const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
 
+  const [roomSoundsEnabled, setRoomSoundsEnabled] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem(ROOM_SOUNDS_PREF_KEY);
+      return raw === null ? true : raw === "true";
+    } catch {
+      return true;
+    }
+  });
+  const roomSoundsEnabledRef = useRef(roomSoundsEnabled);
+  useEffect(() => {
+    roomSoundsEnabledRef.current = roomSoundsEnabled;
+    try {
+      localStorage.setItem(ROOM_SOUNDS_PREF_KEY, String(roomSoundsEnabled));
+    } catch { }
+  }, [roomSoundsEnabled]);
+
   const playOneShot = (url: string, volume = 0.9) => {
     if (!url) return;
+    if (!roomSoundsEnabledRef.current) return;
     const a = new Audio(url);
     a.volume = volume;
     a.play().catch(() => { });
@@ -779,6 +942,7 @@ export function RoomPageLiveKit() {
 
   const startWelcomeLoop = () => {
     stopWelcomeLoop();
+    if (!roomSoundsEnabledRef.current) return;
     const a = new Audio(WELCOME_LOOP_SOUND);
     a.loop = true;
     a.volume = 0.6;
@@ -795,6 +959,10 @@ export function RoomPageLiveKit() {
       }
     } catch { }
   };
+
+  useEffect(() => {
+    if (!roomSoundsEnabled) stopWelcomeLoop();
+  }, [roomSoundsEnabled]);
 
   useEffect(() => {
     const unlock = () => {
@@ -835,7 +1003,7 @@ export function RoomPageLiveKit() {
     if (kind === "infinite_room") return true;
     if (kind.includes("infinite")) return true;
 
-    if (isRecord((parsed as any).timer) && ((parsed as any).timer.phases || (parsed as any).timer.segments)) return true;
+    if (isRecord((parsed as any).timer) && (((parsed as any).timer as any).phases || ((parsed as any).timer as any).segments)) return true;
     if ((parsed as any).phases || (parsed as any).segments) return true;
 
     return false;
@@ -900,7 +1068,12 @@ export function RoomPageLiveKit() {
     }
 
     if (isRecord(parsed)) {
-      const maybeBlocks = (parsed as any).blocks || (parsed as any).script || (parsed as any).agenda || (parsed as any).items || (parsed as any).stages;
+      const maybeBlocks =
+        (parsed as any).blocks ||
+        (parsed as any).script ||
+        (parsed as any).agenda ||
+        (parsed as any).items ||
+        (parsed as any).stages;
       if (Array.isArray(maybeBlocks)) parsed = maybeBlocks;
     }
 
@@ -930,7 +1103,11 @@ export function RoomPageLiveKit() {
             num((blk as any).duration) ||
             0;
 
-          const seconds = num((blk as any).seconds) || num((blk as any).durationSeconds) || num((blk as any).duration_seconds) || 0;
+          const seconds =
+            num((blk as any).seconds) ||
+            num((blk as any).durationSeconds) ||
+            num((blk as any).duration_seconds) ||
+            0;
 
           const durationSeconds = seconds > 0 ? seconds : minutes > 0 ? minutes * 60 : 0;
           const displayMinutes = minutes > 0 ? minutes : seconds > 0 ? Math.max(1, Math.round(seconds / 60)) : 0;
@@ -987,13 +1164,22 @@ export function RoomPageLiveKit() {
 
       setStages(formatted);
 
-      const anchor = String(str((parsed as any).anchor_ts) || str((parsed as any).anchorTs) || str(session?.start_time) || fallbackStart);
+      const anchor = String(
+        str((parsed as any).anchor_ts) ||
+        str((parsed as any).anchorTs) ||
+        str(session?.start_time) ||
+        fallbackStart
+      );
       setStagebarStartTime(anchor);
 
       const sumSeconds = phases.reduce((acc, p) => acc + (Number(p.seconds) || 0), 0);
       const timerCycle = timer && isRecord(timer) ? num((timer as any).cycle_seconds) || num((timer as any).cycleSeconds) : 0;
 
-      let cycleSeconds = timerCycle || num((parsed as any).cycle_seconds) || num((parsed as any).cycleSeconds) || 0;
+      let cycleSeconds =
+        timerCycle ||
+        num((parsed as any).cycle_seconds) ||
+        num((parsed as any).cycleSeconds) ||
+        0;
       if (!cycleSeconds || cycleSeconds <= 0) cycleSeconds = sumSeconds;
       if (cycleSeconds < sumSeconds) cycleSeconds = sumSeconds;
 
@@ -1027,12 +1213,16 @@ export function RoomPageLiveKit() {
     });
 
     const sumStageSeconds = stageSeconds.reduce((acc, v) => acc + v, 0);
-    const loopSeconds = (Number(stagebarCycleSeconds) || 0) > 0 ? Number(stagebarCycleSeconds) : Math.max(1, sumStageSeconds);
+    const loopSeconds =
+      (Number(stagebarCycleSeconds) || 0) > 0 ? Number(stagebarCycleSeconds) : Math.max(1, sumStageSeconds);
 
     const timer = window.setInterval(() => {
       const now = Date.now();
       const diffSecRaw = (now - startMs) / 1000;
-      const diffSec = loopSeconds > 0 && isInfiniteRoom ? ((diffSecRaw % loopSeconds) + loopSeconds) % loopSeconds : diffSecRaw;
+      const diffSec =
+        loopSeconds > 0 && isInfiniteRoom
+          ? ((diffSecRaw % loopSeconds) + loopSeconds) % loopSeconds
+          : diffSecRaw;
 
       let total = 0;
       let active = 0;
@@ -1111,7 +1301,11 @@ export function RoomPageLiveKit() {
 
         if (u?.id) {
           try {
-            const { data: p } = await supabase.from("profiles").select("id, full_name, avatar_url").eq("id", u.id).single();
+            const { data: p } = await supabase
+              .from("profiles")
+              .select("id, full_name, avatar_url")
+              .eq("id", u.id)
+              .single();
             name = String((p as any)?.full_name || "").trim();
             avatar = await resolveAvatarUrlFromProfilesField(String((p as any)?.avatar_url || ""));
           } catch { }
@@ -1123,6 +1317,9 @@ export function RoomPageLiveKit() {
         setDisplayName((prev) => prev || name || "User");
         setPrejoin((prev) => ({ ...prev, displayName: prev.displayName || name || "User" }));
         setLocalAvatarUrl(avatar || "");
+
+        setSelectedAudioInputId((prev) => prev || prejoinRef.current.audioInputId || "");
+        setSelectedVideoInputId((prev) => prev || prejoinRef.current.videoInputId || "");
       } finally {
         setAuthReady(true);
       }
@@ -1152,6 +1349,10 @@ export function RoomPageLiveKit() {
         audioInputId: prev.audioInputId || audioInputs?.[0]?.deviceId || "",
         audioOutputId: prev.audioOutputId || "default",
       }));
+
+      setSelectedVideoInputId((prev) => prev || videoInputs?.[0]?.deviceId || "");
+      setSelectedAudioInputId((prev) => prev || audioInputs?.[0]?.deviceId || "");
+      setSelectedAudioOutputId((prev) => prev || "default");
     } catch (e) {
       console.error("loadBrowserDevices error:", e);
     }
@@ -1165,6 +1366,15 @@ export function RoomPageLiveKit() {
   const [fxStatusText, setFxStatusText] = useState<string>("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [blurStrength, setBlurStrength] = useState<number>(12);
+
+  const [colorCorrection, setColorCorrection] = useState<ColorCorrectionState>({
+    brightness: 100,
+    contrast: 100,
+    saturation: 100,
+    warmth: 0,
+  });
+
+  const localVideoFilterCss = useMemo(() => buildColorCorrectionFilter(colorCorrection), [colorCorrection]);
 
   const uploadedBgUrlRef = useRef<string | null>(null);
   const fxOpIdRef = useRef<number>(0);
@@ -1255,7 +1465,13 @@ export function RoomPageLiveKit() {
       await safeApplyProcessor(track, mode, blurStrength, bgImageUrl);
 
       setVideoFxMode(mode);
-      setFxStatusText(mode === "off" ? "FX disabled" : mode === "blur" ? `Blur applied (${blurStrength})` : "Virtual background applied");
+      setFxStatusText(
+        mode === "off"
+          ? "FX disabled"
+          : mode === "blur"
+            ? `Blur applied (${blurStrength})`
+            : "Virtual background applied"
+      );
       setPrejoinPreviewVersion((v) => v + 1);
     } catch (e: any) {
       console.error("applyPrejoinVideoFx failed:", e);
@@ -1315,6 +1531,7 @@ export function RoomPageLiveKit() {
     createPrejoinPreparedVideoTrack().catch(() => { });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prejoin.videoEnabled, prejoinOpen]);
+
   // host flag
   const isHost = useMemo(() => {
     if (!authUserId) return false;
@@ -1365,7 +1582,12 @@ export function RoomPageLiveKit() {
     setRolesError("");
     setRoleBusyKey(`mod:${uid}:grant`);
     try {
-      const payload: SessionRoleAssignmentRow = { session_id: session.id, user_id: uid, role: "moderator", granted_by: authUserId };
+      const payload: SessionRoleAssignmentRow = {
+        session_id: session.id,
+        user_id: uid,
+        role: "moderator",
+        granted_by: authUserId,
+      };
       const { error } = await supabase.from("session_role_assignments").insert(payload as any);
       if (error) throw error;
       setModeratorUserIds((prev) => uniqStrings([...prev, uid]));
@@ -1422,6 +1644,17 @@ export function RoomPageLiveKit() {
   const tabPresenceAcquiredRef = useRef<boolean>(false);
   const tabPresenceHeartbeatRef = useRef<number | null>(null);
   const tabPresenceChannelRef = useRef<any>(null);
+
+  // kick / system notice
+  const [systemNotice, setSystemNotice] = useState<RoomSystemNotice>({
+    open: false,
+    kind: "info",
+    title: "",
+    body: "",
+  });
+  const [kickRedirecting, setKickRedirecting] = useState(false);
+  const kickEventChannelRef = useRef<any>(null);
+  const kickedBySignalRef = useRef(false);
 
   const stopTabPresenceHeartbeat = () => {
     if (tabPresenceHeartbeatRef.current) {
@@ -1523,6 +1756,7 @@ export function RoomPageLiveKit() {
     return { ok: true, max: res.max, count: res.count };
   };
 
+// ---- continue in chunk 2 ----
   const requestToken = async () => {
     if (!session) return;
     setTokenError("");
@@ -1533,7 +1767,9 @@ export function RoomPageLiveKit() {
       const nameToUse = (pj.displayName || displayName || userName || "User").trim() || "User";
       const roomName = safeRoomName(`session-${session.id}`);
 
-      const baseUser = safeIdentity((authUserId && looksLikeUuid(authUserId) ? authUserId : authUserId || nameToUse) as any);
+      const baseUser = safeIdentity(
+        (authUserId && looksLikeUuid(authUserId) ? authUserId : authUserId || nameToUse) as any
+      );
       baseUserIdRef.current = baseUser;
 
       const identity = safeIdentity(`${baseUser}--${tabId}`);
@@ -1563,7 +1799,9 @@ export function RoomPageLiveKit() {
           name: nameToUse,
           isHost,
           sessionId: session.id,
-          isModerator: !isHost && !!authUserId ? moderatorUserIds.includes(String(authUserId).toLowerCase()) : false,
+          isModerator: !isHost && !!authUserId
+            ? moderatorUserIds.includes(String(authUserId).toLowerCase())
+            : false,
           baseUserId: baseUser,
           tabId,
         }),
@@ -1620,11 +1858,11 @@ export function RoomPageLiveKit() {
   const [adminBusyKey, setAdminBusyKey] = useState<string>("");
   const [openTileAdminMenuId, setOpenTileAdminMenuId] = useState<string | null>(null);
 
-  // hide/pin
+  // hide / pin
   const [hiddenTileIds, setHiddenTileIds] = useState<Record<string, boolean>>({});
   const [pinnedTileId, setPinnedTileId] = useState<string | null>(null);
 
-  // per participant volume (0..100)
+  // per participant volume
   const [volumePctByTileId, setVolumePctByTileId] = useState<Record<string, number>>({});
 
   // chat unread
@@ -1677,28 +1915,125 @@ export function RoomPageLiveKit() {
     return safeRoomName(`session-${session.id}`);
   }, [session]);
 
-  // RAF-scheduled rebuild (чтобы события LK не спамили рендер)
-  const rebuildRafRef = useRef<number | null>(null);
-  const scheduleRebuildTiles = () => {
-    if (rebuildRafRef.current) return;
-    rebuildRafRef.current = window.requestAnimationFrame(() => {
-      rebuildRafRef.current = null;
-      rebuildTiles();
+  const showSystemNotice = (next: Omit<RoomSystemNotice, "open">) => {
+    setSystemNotice({
+      open: true,
+      kind: next.kind,
+      title: next.title,
+      body: next.body,
     });
   };
 
-  // pull profiles for anyone we see in room (for names + avatars)
+  const closeSystemNotice = () => {
+    setSystemNotice((prev) => ({ ...prev, open: false }));
+  };
+
+  const handleKickedOut = async (payload?: KickBroadcastPayload | null) => {
+    if (kickRedirecting) return;
+    setKickRedirecting(true);
+    kickedBySignalRef.current = true;
+
+    const byName = String(payload?.kickedByName || "").trim();
+    const body = byName
+      ? `You were removed from this room by ${byName}.`
+      : "You were removed from this room by a moderator.";
+
+    showSystemNotice({
+      kind: "kick",
+      title: "Disconnected from room",
+      body,
+    });
+
+    await disconnectRoom({ skipNavigate: true, preserveKickNotice: true });
+
+    window.setTimeout(() => {
+      navigate("/sessions", {
+        replace: true,
+        state: {
+          livekitNotice: {
+            kind: "kick",
+            title: "Disconnected from room",
+            body,
+          },
+        } as any,
+      });
+    }, KICK_REDIRECT_DELAY_MS);
+  };
+
   useEffect(() => {
-    const ids = uniqStrings(tiles.map((t) => String(t.participantUserId || "").toLowerCase()).filter((x) => looksLikeUuid(x)));
+    if (!session?.id) return;
+    if (!authUserId) return;
+
+    const channelName = makeKickBroadcastChannelName(session.id);
+
+    const ch = supabase
+      .channel(channelName, {
+        config: { broadcast: { self: true } },
+      })
+      .on("broadcast", { event: "participant_kicked" }, async (payload: any) => {
+        const p = (payload?.payload || payload || {}) as KickBroadcastPayload;
+
+        const matched = matchesKickPayload({
+          payload: p,
+          localIdentity: livekitIdentityRef.current,
+          authUserId: String(authUserId || ""),
+          baseUserId: String(baseUserIdRef.current || ""),
+        });
+
+        if (!matched) return;
+        await handleKickedOut(p);
+      })
+      .subscribe();
+
+    kickEventChannelRef.current = ch;
+
+    return () => {
+      if (kickEventChannelRef.current === ch) kickEventChannelRef.current = null;
+      safeRemoveRealtimeChannel(ch);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.id, authUserId, kickRedirecting]);
+
+  useEffect(() => {
+    const stateNotice = (window.history.state as any)?.usr?.livekitNotice;
+    if (!stateNotice) return;
+    if (stateNotice.kind !== "kick") return;
+
+    showSystemNotice({
+      kind: "kick",
+      title: String(stateNotice.title || "Disconnected from room"),
+      body: String(stateNotice.body || "You were removed from this room."),
+    });
+
+    try {
+      const current = window.history.state || {};
+      const nextUsr = { ...(current.usr || {}) };
+      delete nextUsr.livekitNotice;
+      window.history.replaceState({ ...current, usr: nextUsr }, "");
+    } catch { }
+  }, []);
+
+  // pull profiles for anyone we see in room
+  useEffect(() => {
+    const ids = uniqStrings(
+      tiles
+        .map((t) => String(t.participantUserId || "").toLowerCase())
+        .filter((x) => looksLikeUuid(x))
+    );
     if (!ids.length) return;
     const missing = ids.filter((id) => !profilesById[id]);
     if (!missing.length) return;
 
     (async () => {
       try {
-        const { data } = await supabase.from("profiles").select("id, full_name, avatar_url, bio").in("id", missing);
+        const { data } = await supabase
+          .from("profiles")
+          .select("id, full_name, avatar_url, bio")
+          .in("id", missing);
+
         const rows = Array.isArray(data) ? data : [];
         const patch: Record<string, HostProfile> = {};
+
         for (const r of rows as any[]) {
           const pid = String(r?.id || "").toLowerCase();
           if (!pid) continue;
@@ -1710,8 +2045,11 @@ export function RoomPageLiveKit() {
             bio: r?.bio ?? null,
           };
         }
-        if (Object.keys(patch).length) setProfilesById((prev) => ({ ...prev, ...patch }));
-        // после догрузки профилей — перерисуем лейблы аккуратно
+
+        if (Object.keys(patch).length) {
+          setProfilesById((prev) => ({ ...prev, ...patch }));
+        }
+
         scheduleRebuildTiles();
       } catch (e) {
         console.warn("profiles fetch failed", e);
@@ -1720,6 +2058,16 @@ export function RoomPageLiveKit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tiles.map((t) => `${t.participantUserId || ""}`).join("|")]);
 
+  // RAF-scheduled rebuild
+  const rebuildRafRef = useRef<number | null>(null);
+  const scheduleRebuildTiles = () => {
+    if (rebuildRafRef.current) return;
+    rebuildRafRef.current = window.requestAnimationFrame(() => {
+      rebuildRafRef.current = null;
+      rebuildTiles();
+    });
+  };
+
   const applyVolumeToRemoteParticipant = (tileId: string, pct: number) => {
     const r = roomRef.current;
     if (!r) return;
@@ -1727,7 +2075,9 @@ export function RoomPageLiveKit() {
     if (!p) return;
 
     try {
-      const micPub = Array.from(p.audioTrackPublications.values()).find((x: any) => x.source === Track.Source.Microphone) as any;
+      const micPub = Array.from(p.audioTrackPublications.values()).find(
+        (x: any) => x.source === Track.Source.Microphone
+      ) as any;
       const tr = micPub?.track as any;
       const vol = clamp(pct, 0, 100) / 100;
       if (tr?.setVolume) tr.setVolume(vol);
@@ -1745,7 +2095,9 @@ export function RoomPageLiveKit() {
     const r = roomRef.current;
     if (!r) return null;
     const lp = r.localParticipant;
-    const pub = Array.from(lp.videoTrackPublications.values()).find((p: LocalTrackPublication) => p.source === Track.Source.Camera);
+    const pub = Array.from(lp.videoTrackPublications.values()).find(
+      (p: LocalTrackPublication) => p.source === Track.Source.Camera
+    );
     return pub || null;
   };
 
@@ -1758,7 +2110,9 @@ export function RoomPageLiveKit() {
     const r = roomRef.current;
     if (!r) return null;
     const lp = r.localParticipant;
-    const pub = Array.from(lp.audioTrackPublications.values()).find((p: any) => p.source === Track.Source.Microphone);
+    const pub = Array.from(lp.audioTrackPublications.values()).find(
+      (p: any) => p.source === Track.Source.Microphone
+    );
     return pub || null;
   };
 
@@ -1769,22 +2123,27 @@ export function RoomPageLiveKit() {
     const next: TileModel[] = [];
     const lp = room.localParticipant;
 
-    const localCamPub = Array.from(lp.videoTrackPublications.values()).find((p) => p.source === Track.Source.Camera) as any;
-    const localMicPub = Array.from(lp.audioTrackPublications.values()).find((p) => p.source === Track.Source.Microphone) as any;
+    const localCamPub = Array.from(lp.videoTrackPublications.values()).find(
+      (p) => p.source === Track.Source.Camera
+    ) as any;
+    const localMicPub = Array.from(lp.audioTrackPublications.values()).find(
+      (p) => p.source === Track.Source.Microphone
+    ) as any;
 
     const localCamTrack = (localCamPub?.track as any) || undefined;
 
     const localIdentity = String(lp.identity || livekitIdentityRef.current || "");
-    const localUserId = authUserId && looksLikeUuid(authUserId) ? String(authUserId).toLowerCase() : extractBaseUserIdFromIdentity(localIdentity);
+    const localUserId =
+      authUserId && looksLikeUuid(authUserId)
+        ? String(authUserId).toLowerCase()
+        : extractBaseUserIdFromIdentity(localIdentity);
 
     const localMicMuted = localMicPub ? !!(localMicPub as any).isMuted : true;
 
-    // ✅ истина по камере из публикации
     const localCamPubExists = !!localCamPub;
     const localCamPubHasTrack = !!localCamPub?.track;
     const localCamPubMuted = localCamPub ? !!localCamPub.isMuted : true;
 
-    // ✅ sync micOn/camOn from pubs
     setMicOn((prev) => {
       const nextOn = !localMicMuted;
       return prev === nextOn ? prev : nextOn;
@@ -1818,15 +2177,15 @@ export function RoomPageLiveKit() {
 
       const exactIdentity = String(rp.identity || "");
       const baseUserId = extractBaseUserIdFromIdentity(exactIdentity);
-      const prof = looksLikeUuid(baseUserId) ? profilesById[String(baseUserId).toLowerCase()] : undefined;
+      const prof = looksLikeUuid(baseUserId)
+        ? profilesById[String(baseUserId).toLowerCase()]
+        : undefined;
 
       const nameFromProfile = String(prof?.full_name || "").trim();
       const nm = (nameFromProfile || rp.name || rp.identity || "Guest").trim() || "Guest";
 
       const tileId = rp.sid;
-
       const remoteMicMuted = micPub ? !!(micPub as any).isMuted : true;
-
       const remoteCamPubExists = !!camPub;
       const remoteCamPubHasTrack = !!camPub?.track;
       const remoteCamPubMuted = camPub ? !!camPub.isMuted : true;
@@ -1847,7 +2206,6 @@ export function RoomPageLiveKit() {
         remoteMicPubSid: micPub?.trackSid ? String(micPub.trackSid) : undefined,
       });
 
-      // apply stored volume immediately if track exists
       const pct = Number(volumePctByTileId[tileId] ?? 100);
       if (Number.isFinite(pct)) applyVolumeToRemoteParticipant(tileId, pct);
     });
@@ -1855,14 +2213,19 @@ export function RoomPageLiveKit() {
     setTiles(next);
 
     try {
-      const lpScreenPub = Array.from(lp.videoTrackPublications.values()).find((p: any) => p.source === Track.Source.ScreenShare) as any;
+      const lpScreenPub = Array.from(lp.videoTrackPublications.values()).find(
+        (p: any) => p.source === Track.Source.ScreenShare
+      ) as any;
       setScreenShareOn(!!lpScreenPub?.track && !lpScreenPub?.isMuted);
     } catch {
       setScreenShareOn(false);
     }
   };
 
-  const disconnectRoom = async () => {
+  const disconnectRoom = async (opts?: {
+    skipNavigate?: boolean;
+    preserveKickNotice?: boolean;
+  }) => {
     try {
       const r = roomRef.current;
       roomRef.current = null;
@@ -1885,7 +2248,78 @@ export function RoomPageLiveKit() {
       setFxApplying(false);
       setOpenTileAdminMenuId(null);
 
+      if (!opts?.preserveKickNotice) {
+        setSystemNotice((prev) => ({ ...prev, open: false }));
+      }
+
       releaseTabPresence();
+    }
+  };
+
+  const syncLiveAudioInput = async (deviceId: string) => {
+    const r = roomRef.current;
+    if (!r) return;
+    try {
+      const useId = String(deviceId || "");
+      await r.localParticipant.setMicrophoneEnabled(true, {
+        deviceId: useId || undefined,
+      } as any);
+      scheduleRebuildTiles();
+    } catch (e) {
+      console.error("syncLiveAudioInput failed:", e);
+      setClientError(String((e as any)?.message || e || "audio_input_switch_failed"));
+    }
+  };
+
+  const syncLiveVideoInput = async (deviceId: string) => {
+    const r = roomRef.current;
+    if (!r) return;
+    try {
+      const wasCamOn = camOn;
+      if (!wasCamOn) {
+        setSelectedVideoInputId(deviceId);
+        return;
+      }
+
+      await r.localParticipant.setCameraEnabled(true, {
+        deviceId: deviceId || undefined,
+        resolution: { width: LK_CAPTURE_WIDTH, height: LK_CAPTURE_HEIGHT },
+        frameRate: LK_CAPTURE_FPS,
+      } as any);
+
+      await delay(60);
+
+      if (videoFxMode !== "off") {
+        const tr = getLocalCameraTrack();
+        if (tr) await safeApplyProcessor(tr, videoFxMode, blurStrength, bgImageUrl);
+      }
+
+      scheduleRebuildTiles();
+    } catch (e) {
+      console.error("syncLiveVideoInput failed:", e);
+      setClientError(String((e as any)?.message || e || "video_input_switch_failed"));
+    }
+  };
+
+  const syncLiveAudioProcessing = async (next: {
+    echoCancellation: boolean;
+    noiseSuppression: boolean;
+    autoGainControl: boolean;
+  }) => {
+    const r = roomRef.current;
+    if (!r) return;
+    if (!micOn) return;
+
+    try {
+      await r.localParticipant.setMicrophoneEnabled(true, {
+        deviceId: selectedAudioInputId || prejoinRef.current.audioInputId || undefined,
+        echoCancellation: next.echoCancellation,
+        noiseSuppression: next.noiseSuppression,
+        autoGainControl: next.autoGainControl,
+      } as any);
+      scheduleRebuildTiles();
+    } catch (e) {
+      console.error("syncLiveAudioProcessing failed:", e);
     }
   };
 
@@ -1919,12 +2353,25 @@ export function RoomPageLiveKit() {
         setConnected(false);
         setTiles([]);
         setOpenTileAdminMenuId(null);
+
+        if (!kickedBySignalRef.current && !kickRedirecting) {
+          showSystemNotice({
+            kind: "info",
+            title: "Disconnected",
+            body: "You were disconnected from the room.",
+          });
+        }
+
         releaseTabPresence();
       });
 
-      // ✅ rebuild на всех pub/track событиях (через RAF)
       r.on(RoomEvent.Reconnected, refresh);
-      r.on(RoomEvent.ParticipantConnected, refresh);
+      r.on(RoomEvent.ParticipantConnected, () => {
+        if (roomSoundsEnabledRef.current) {
+          playOneShotFromCandidates(JOIN_SOUND_CANDIDATES, 0.8);
+        }
+        refresh();
+      });
       r.on(RoomEvent.ParticipantDisconnected, refresh);
       r.on(RoomEvent.TrackSubscribed, refresh);
       r.on(RoomEvent.TrackUnsubscribed, refresh);
@@ -1935,9 +2382,16 @@ export function RoomPageLiveKit() {
 
       await r.connect(lkServerUrl, lkToken, { autoSubscribe: true });
 
+      kickedBySignalRef.current = false;
+
       // mic
       if (pj.audioEnabled) {
-        await r.localParticipant.setMicrophoneEnabled(true, { deviceId: pj.audioInputId || undefined } as any);
+        await r.localParticipant.setMicrophoneEnabled(true, {
+          deviceId: pj.audioInputId || selectedAudioInputId || undefined,
+          echoCancellation: pj.echoCancellation,
+          noiseSuppression: pj.noiseSuppression,
+          autoGainControl: pj.autoGainControl,
+        } as any);
       } else {
         await r.localParticipant.setMicrophoneEnabled(false);
       }
@@ -1956,7 +2410,7 @@ export function RoomPageLiveKit() {
           await r.localParticipant.setCameraEnabled(
             true,
             {
-              deviceId: pj.videoInputId || undefined,
+              deviceId: pj.videoInputId || selectedVideoInputId || undefined,
               resolution: { width: LK_CAPTURE_WIDTH, height: LK_CAPTURE_HEIGHT },
               frameRate: LK_CAPTURE_FPS,
             } as any
@@ -1968,17 +2422,28 @@ export function RoomPageLiveKit() {
 
       refresh();
 
+      setSelectedAudioOutputId(pj.audioOutputId || "default");
+      setSelectedAudioInputId(pj.audioInputId || selectedAudioInputId || "");
+      setSelectedVideoInputId(pj.videoInputId || selectedVideoInputId || "");
+
+      setEchoCancellationEnabled(!!pj.echoCancellation);
+      setNoiseSuppressionEnabled(!!pj.noiseSuppression);
+      setAutoGainControlEnabled(!!pj.autoGainControl);
+
       setPrejoinOpen(false);
       setPrejoinPreviewVersion((v) => v + 1);
 
-      // ✅ если не использовали prepared, apply FX ровно 1 раз после connect
       if (!usedPrepared && pj.videoEnabled && videoFxMode !== "off") {
         await delay(80);
         const tr = getLocalCameraTrack();
         if (tr) {
           try {
             await safeApplyProcessor(tr, videoFxMode, blurStrength, bgImageUrl);
-            setFxStatusText(videoFxMode === "blur" ? `Blur applied (strength ${blurStrength})` : "Virtual background applied");
+            setFxStatusText(
+              videoFxMode === "blur"
+                ? `Blur applied (strength ${blurStrength})`
+                : "Virtual background applied"
+            );
           } catch (e: any) {
             console.warn("auto-apply fx after connect failed:", e);
           }
@@ -2034,16 +2499,20 @@ export function RoomPageLiveKit() {
         return;
       }
 
-      // fallback
       const next = !micOn;
-      await r.localParticipant.setMicrophoneEnabled(next);
+      await r.localParticipant.setMicrophoneEnabled(next, {
+        deviceId: selectedAudioInputId || prejoinRef.current.audioInputId || undefined,
+        echoCancellation: echoCancellationEnabled,
+        noiseSuppression: noiseSuppressionEnabled,
+        autoGainControl: autoGainControlEnabled,
+      } as any);
       scheduleRebuildTiles();
     } catch (e) {
       console.error("toggleMic error:", e);
     }
   };
 
-  // ✅ toggle cam WITHOUT re-creating track (mute/unmute publication) → no blur re-apply
+  // toggle cam without recreating track
   const toggleCam = async () => {
     const r = roomRef.current;
     if (!r) return;
@@ -2052,18 +2521,17 @@ export function RoomPageLiveKit() {
       const pub: any = getLocalCameraPublication();
 
       if (pub) {
-        const nextOn = !!pub.isMuted; // if muted → turn on (unmute)
+        const nextOn = !!pub.isMuted;
         if (nextOn) await pub.unmute?.();
         else await pub.mute?.();
         scheduleRebuildTiles();
         return;
       }
 
-      // если pub вообще нет (редко) → создаём 1 раз
       if (camOn) return;
 
       await r.localParticipant.setCameraEnabled(true, {
-        deviceId: prejoinRef.current.videoInputId || undefined,
+        deviceId: selectedVideoInputId || prejoinRef.current.videoInputId || undefined,
         resolution: { width: LK_CAPTURE_WIDTH, height: LK_CAPTURE_HEIGHT },
         frameRate: LK_CAPTURE_FPS,
       } as any);
@@ -2080,6 +2548,44 @@ export function RoomPageLiveKit() {
       console.error("toggleCam error:", e);
     }
   };
+
+  const createRoomScreenshot = async () => {
+    const root = videoWrapRef.current;
+    if (!root) throw new Error("Video container is not ready");
+
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="${Math.max(1280, root.clientWidth || 1280)}" height="${Math.max(720, root.clientHeight || 720)}">
+        <rect width="100%" height="100%" fill="#0B1220" />
+        <text x="50%" y="46%" dominant-baseline="middle" text-anchor="middle" fill="#F8FAFC" font-size="34" font-family="Arial, sans-serif">
+          Room screenshot placeholder
+        </text>
+        <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="#94A3B8" font-size="18" font-family="Arial, sans-serif">
+          Browser-safe fallback. Replace with html-to-image or captureStream later.
+        </text>
+      </svg>
+    `.trim();
+
+    const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+
+    try {
+      const a = document.createElement("a");
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      a.href = url;
+      a.download = `mysession-room-${stamp}.svg`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      showSystemNotice({
+        kind: "info",
+        title: "Screenshot downloaded",
+        body: "A room snapshot placeholder file was downloaded. Next step: swap this with real DOM capture.",
+      });
+    } finally {
+      window.setTimeout(() => URL.revokeObjectURL(url), 1200);
+    }
+  };
+
   const toggleScreenShare = async () => {
     const r = roomRef.current;
     if (!r) return;
@@ -2098,7 +2604,7 @@ export function RoomPageLiveKit() {
     navigate("/sessions", { replace: true });
   };
 
-  // admin endpoint (host OR moderator)
+  // admin endpoint
   const callAdmin = async (body: Record<string, unknown>) => {
     const res = await fetch(adminEndpoint, {
       method: "POST",
@@ -2128,7 +2634,11 @@ export function RoomPageLiveKit() {
     );
   };
 
-  const adminMuteRemoteTrack = async (tileId: string, participantIdentity: string, trackSid: string) => {
+  const adminMuteRemoteTrack = async (
+    tileId: string,
+    participantIdentity: string,
+    trackSid: string
+  ) => {
     const roomName = roomNameForApi;
     if (!roomName) return;
 
@@ -2147,7 +2657,7 @@ export function RoomPageLiveKit() {
 
       scheduleRebuildTiles();
     } catch (e: any) {
-      console.error(`mute mic failed:`, e);
+      console.error("mute mic failed:", e);
       alert(String(e?.message || e || "mute_failed"));
       scheduleRebuildTiles();
     } finally {
@@ -2155,7 +2665,11 @@ export function RoomPageLiveKit() {
     }
   };
 
-  const adminKickParticipant = async (participantIdentity: string) => {
+  const adminKickParticipant = async (
+    participantIdentity: string,
+    targetUserId?: string,
+    targetLabel?: string
+  ) => {
     const roomName = roomNameForApi;
     if (!roomName) return;
 
@@ -2163,11 +2677,47 @@ export function RoomPageLiveKit() {
     setAdminBusyKey(busyKey);
 
     try {
+      const kickedByName = (displayName || userName || "Moderator").trim() || "Moderator";
+
+      const channel = kickEventChannelRef.current;
+      if (channel) {
+        const payload: KickBroadcastPayload = {
+          type: "participant_kicked",
+          targetIdentity: participantIdentity,
+          targetUserId: targetUserId || null,
+          kickedByUserId: authUserId || null,
+          kickedByName,
+          roomName,
+          sessionId: session?.id || null,
+          at: Date.now(),
+        };
+
+        try {
+          await channel.send({
+            type: "broadcast",
+            event: "participant_kicked",
+            payload,
+          });
+          await delay(180);
+        } catch (e) {
+          console.warn("kick broadcast failed:", e);
+        }
+      }
+
       await callAdmin({
         action: "remove_participant",
         roomName,
         participantIdentity,
       });
+
+      showSystemNotice({
+        kind: "info",
+        title: "Participant removed",
+        body: targetLabel
+          ? `${targetLabel} was removed from the room.`
+          : "Participant was removed from the room.",
+      });
+
       scheduleRebuildTiles();
     } catch (e: any) {
       console.error("kick failed:", e);
@@ -2192,7 +2742,13 @@ export function RoomPageLiveKit() {
       await safeApplyProcessor(tr, mode, blurStrength, bgImageUrl);
 
       setVideoFxMode(mode);
-      setFxStatusText(mode === "off" ? "FX disabled" : mode === "blur" ? `Blur applied (strength ${blurStrength})` : "Virtual background applied");
+      setFxStatusText(
+        mode === "off"
+          ? "FX disabled"
+          : mode === "blur"
+            ? `Blur applied (strength ${blurStrength})`
+            : "Virtual background applied"
+      );
       await delay(40);
     } catch (e: any) {
       console.error("applyVideoFx failed:", e);
@@ -2202,7 +2758,6 @@ export function RoomPageLiveKit() {
     }
   };
 
-  // auto re-apply blur/bg after changes (NOT tied to cam toggle)
   useEffect(() => {
     if (!connected) return;
     if (videoFxMode !== "blur") return;
@@ -2274,7 +2829,9 @@ export function RoomPageLiveKit() {
       lastChatReadAtRef.current = lastRead;
 
       try {
-        const sinceIso = lastRead > 0 ? new Date(lastRead).toISOString() : "1970-01-01T00:00:00.000Z";
+        const sinceIso = lastRead > 0
+          ? new Date(lastRead).toISOString()
+          : "1970-01-01T00:00:00.000Z";
 
         const { count } = await supabase
           .from(CHAT_MSG_TABLE)
@@ -2291,24 +2848,30 @@ export function RoomPageLiveKit() {
 
     const ch = supabase
       .channel(`chat-unread:${session.id}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: CHAT_MSG_TABLE, filter: `session_id=eq.${session.id}` }, (payload: any) => {
-        const row = payload?.new;
-        if (!row) return;
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: CHAT_MSG_TABLE, filter: `session_id=eq.${session.id}` },
+        (payload: any) => {
+          const row = payload?.new;
+          if (!row) return;
 
-        const senderId = String(row.user_id || "");
-        if (!senderId) return;
-        if (senderId === authUserId) return;
+          const senderId = String(row.user_id || "");
+          if (!senderId) return;
+          if (senderId === authUserId) return;
 
-        const ts = new Date(row.created_at).getTime();
-        const msgMs = Number.isFinite(ts) ? ts : Date.now();
+          const ts = new Date(row.created_at).getTime();
+          const msgMs = Number.isFinite(ts) ? ts : Date.now();
 
-        if (chatVisibleRef.current) {
-          markChatRead(msgMs);
-          return;
+          if (chatVisibleRef.current) {
+            markChatRead(msgMs);
+            return;
+          }
+
+          if (msgMs > (lastChatReadAtRef.current || 0)) {
+            setUnreadChat((prev) => Math.min(99, prev + 1));
+          }
         }
-
-        if (msgMs > (lastChatReadAtRef.current || 0)) setUnreadChat((prev) => Math.min(99, prev + 1));
-      })
+      )
       .subscribe();
 
     return () => {
@@ -2425,15 +2988,25 @@ export function RoomPageLiveKit() {
         session_id: session?.id || null,
         reporter_user_id: authUserId || null,
         target_identity: t.participantIdentity || null,
-        target_user_id: looksLikeUuid(String(t.participantUserId || "")) ? String(t.participantUserId).toLowerCase() : null,
+        target_user_id: looksLikeUuid(String(t.participantUserId || ""))
+          ? String(t.participantUserId).toLowerCase()
+          : null,
+        target_name: String(t.label || "").trim() || null,
         reason: String(reason || "").trim(),
         created_at: new Date().toISOString(),
       };
 
-      await supabase.from("participant_reports").insert(payload as any);
-      alert("Report submitted ✅");
-    } catch {
-      alert("Report saved locally (backend table may be missing).");
+      const { error } = await supabase.from(REPORTS_TABLE).insert(payload as any);
+      if (error) throw error;
+
+      showSystemNotice({
+        kind: "info",
+        title: "Report submitted",
+        body: `Your report about ${t.label || "this participant"} has been saved.`,
+      });
+    } catch (e: any) {
+      console.error("report failed:", e);
+      alert(String(e?.message || e || "report_failed"));
     }
   };
 
@@ -2504,7 +3077,13 @@ export function RoomPageLiveKit() {
     };
   }, []);
 
-  const roomReadyText = !joinRequested ? "Waiting to join…" : tokenLoading ? "Preparing token…" : !connected ? "Connecting to LiveKit…" : "";
+  const roomReadyText = !joinRequested
+    ? "Waiting to join…"
+    : tokenLoading
+      ? "Preparing token…"
+      : !connected
+        ? "Connecting to LiveKit…"
+        : "";
   const lastErr = tokenError || clientError;
 
   // hide/pin helpers
@@ -2530,7 +3109,11 @@ export function RoomPageLiveKit() {
       return null;
     }
 
-    const pid = (t.participantUserId || extractBaseUserIdFromIdentity(String(t.participantIdentity || ""))).toLowerCase();
+    const pid = (
+      t.participantUserId ||
+      extractBaseUserIdFromIdentity(String(t.participantIdentity || ""))
+    ).toLowerCase();
+
     if (pid && looksLikeUuid(pid) && moderatorUserIds.includes(pid)) return "Moderator";
     return null;
   };
@@ -2542,15 +3125,13 @@ export function RoomPageLiveKit() {
     return String(p?.avatar_url || "") || "";
   };
 
-  // ✅ camOff строго по публикациям (истина) — никаких залипаний
   const isTileCamOff = (t: TileModel) => {
     const exists = !!t.camPubExists;
     const hasTrack = !!t.camPubHasTrack;
-    const muted = t.camPubMuted !== false; // undefined → считаем как muted/off
+    const muted = t.camPubMuted !== false;
     return !exists || !hasTrack || muted;
   };
 
-  // avatar overlay WITHOUT any background fill
   const renderAvatarFallback = (t: TileModel) => {
     const avatar = getAvatarForTile(t);
     const name = t.label || "User";
@@ -2577,12 +3158,18 @@ export function RoomPageLiveKit() {
               }}
             />
           ) : (
-            <div className={`text-xl font-bold ${isLight ? "text-black/70" : "text-white/85"}`}>{initials}</div>
+            <div className={`text-xl font-bold ${isLight ? "text-black/70" : "text-white/85"}`}>
+              {initials}
+            </div>
           )}
         </div>
 
-        <div className={`mt-3 px-3 py-1.5 rounded-xl border backdrop-blur ${isLight ? "border-black/10 text-black/85" : "border-white/10 text-white/90"}`}>
-          <div className="text-[13px] font-semibold max-w-[260px] truncate text-center">{name}</div>
+        <div
+          className={`mt-3 px-3 py-1.5 rounded-xl border backdrop-blur ${isLight ? "border-black/10 text-black/85" : "border-white/10 text-white/90"}`}
+        >
+          <div className="text-[13px] font-semibold max-w-[260px] truncate text-center">
+            {name}
+          </div>
         </div>
       </div>
     );
@@ -2592,27 +3179,40 @@ export function RoomPageLiveKit() {
     const isMenuOpen = openTileAdminMenuId === t.id;
 
     const canAdminTarget = isSelfModerator && !t.isLocal && !!t.participantIdentity;
-    const pidBase = String(t.participantUserId || extractBaseUserIdFromIdentity(String(t.participantIdentity || ""))).toLowerCase();
+    const pidBase = String(
+      t.participantUserId || extractBaseUserIdFromIdentity(String(t.participantIdentity || ""))
+    ).toLowerCase();
     const canRoleManageTarget = isHost && !!pidBase && looksLikeUuid(pidBase) && !t.isLocal;
     const isTargetModerator = !!pidBase && moderatorUserIds.includes(pidBase);
     const roleBusy = roleBusyKey === `mod:${pidBase}:grant` || roleBusyKey === `mod:${pidBase}:revoke`;
 
     const hasMicTrack = !!t.micTrackSid && !!t.participantIdentity;
     const muteMicDisabled = !canAdminTarget || !hasMicTrack || !!t.micMuted;
-
     const kickDisabled = !canAdminTarget || !t.participantIdentity;
 
     const isHidden = !!hiddenTileIds[t.id];
     const isPinned = pinnedTileId === t.id;
 
-    const busyMuteMic = !!t.participantIdentity && !!t.micTrackSid && adminBusyKey === `${t.participantIdentity}:${t.micTrackSid}:mute`;
-    const busyKick = !!t.participantIdentity && adminBusyKey === `${t.participantIdentity}:kick`;
+    const busyMuteMic =
+      !!t.participantIdentity &&
+      !!t.micTrackSid &&
+      adminBusyKey === `${t.participantIdentity}:${t.micTrackSid}:mute`;
+
+    const busyKick =
+      !!t.participantIdentity &&
+      adminBusyKey === `${t.participantIdentity}:kick`;
 
     const camOff = isTileCamOff(t);
     const nameText = t.label || "User";
     const micMuted = !!t.micMuted;
 
     const volPct = !t.isLocal ? Number(volumePctByTileId[t.id] ?? 100) : 100;
+
+    const namePlateBaseCls = [
+      "group/name inline-flex items-center gap-2 rounded-2xl border backdrop-blur shadow-sm",
+      "px-3 py-2",
+      isLight ? "bg-white/70 border-black/10 text-black/85" : "bg-black/30 border-white/10 text-white/90",
+    ].join(" ");
 
     return (
       <div
@@ -2623,30 +3223,36 @@ export function RoomPageLiveKit() {
         style={{ aspectRatio: "16 / 9" }}
         onMouseLeave={() => setOpenTileAdminMenuId((prev) => (prev === t.id ? null : prev))}
       >
-        {/* IMPORTANT: VideoTile должен быть максимально голым.
-            Мы даём label="" чтобы он не рисовал подписи/иконки. */}
-        <VideoTile
-          label={""}
-          videoTrack={t.videoTrack}
-          isLocal={t.isLocal}
-          theme={theme}
-          showBadge={getBadgeForTile(t)}
-          hostActions={undefined}
-        />
+        <div
+          className="absolute inset-0"
+          style={
+            t.isLocal
+              ? {
+                filter: localVideoFilterCss || undefined,
+              }
+              : undefined
+          }
+        >
+          <VideoTile
+            label={""}
+            videoTrack={t.videoTrack}
+            isLocal={t.isLocal}
+            theme={theme}
+            showBadge={getBadgeForTile(t)}
+            hostActions={undefined}
+          />
+        </div>
 
         {camOff && renderAvatarFallback(t)}
 
-        {/* nameplate bottom-left, mic icon только здесь, edit — только на hover */}
+        {/* nameplate */}
         <div className="absolute bottom-2 left-2 z-20 max-w-[78%]">
-          <div
-            className={[
-              "group/name inline-flex items-center gap-2 px-3 py-2 rounded-2xl border backdrop-blur shadow-sm",
-              isLight ? "bg-white/70 border-black/10 text-black/85" : "bg-black/30 border-white/10 text-white/90",
-            ].join(" ")}
-          >
-            <div className="max-w-[340px] truncate text-[13px] font-semibold leading-none">{nameText}</div>
+          <div className={namePlateBaseCls}>
+            <div className="max-w-[340px] truncate text-[13px] font-semibold leading-none">
+              {nameText}
+            </div>
 
-            <div className="flex items-center gap-1 opacity-90">
+            <div className="flex items-center gap-1 opacity-90 shrink-0">
               <Icon name={micMuted ? "mic-off" : "mic-on"} theme={theme} className="w-4 h-4" />
             </div>
 
@@ -2660,8 +3266,8 @@ export function RoomPageLiveKit() {
                   openEditName();
                 }}
                 className={[
-                  "ml-1 w-7 h-7 rounded-xl flex items-center justify-center transition",
-                  "opacity-0 group-hover/name:opacity-100",
+                  "ml-0 w-0 h-7 overflow-hidden rounded-xl flex items-center justify-center transition-all duration-150",
+                  "opacity-0 group-hover/name:opacity-100 group-hover/name:w-7 group-hover/name:ml-1",
                   isLight ? "bg-black/5 hover:bg-black/10 text-black/70" : "bg-white/5 hover:bg-white/10 text-white/85",
                 ].join(" ")}
               >
@@ -2672,7 +3278,11 @@ export function RoomPageLiveKit() {
         </div>
 
         {/* menu */}
-        <div className="absolute top-2 right-2 z-30" data-lk-admin-menu-anchor="true" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="absolute top-2 right-2 z-30"
+          data-lk-admin-menu-anchor="true"
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="relative">
             <button
               type="button"
@@ -2684,7 +3294,9 @@ export function RoomPageLiveKit() {
               }}
               className={[
                 "w-9 h-9 rounded-xl flex items-center justify-center transition shadow-sm",
-                isLight ? "bg-white/90 border border-black/10 text-black/75 hover:bg-white" : "bg-black/55 border border-white/10 text-white/90 hover:bg-black/70",
+                isLight
+                  ? "bg-white/90 border border-black/10 text-black/75 hover:bg-white"
+                  : "bg-black/55 border border-white/10 text-white/90 hover:bg-black/70",
                 isMenuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100",
               ].join(" ")}
             >
@@ -2692,10 +3304,14 @@ export function RoomPageLiveKit() {
             </button>
 
             {isMenuOpen && (
-              <div className={`absolute right-0 top-[calc(100%+8px)] w-[260px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}>
+              <div
+                className={`absolute right-0 top-[calc(100%+8px)] w-[260px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}
+              >
                 {canRoleManageTarget && (
                   <>
-                    <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>Roles</div>
+                    <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>
+                      Roles
+                    </div>
 
                     {!isTargetModerator ? (
                       <button
@@ -2733,7 +3349,9 @@ export function RoomPageLiveKit() {
 
                 {!t.isLocal && (
                   <>
-                    <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>Moderation</div>
+                    <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>
+                      Moderation
+                    </div>
 
                     <button
                       type="button"
@@ -2754,13 +3372,16 @@ export function RoomPageLiveKit() {
                   </>
                 )}
 
-                {/* ✅ volume slider inside ⋯ menu (remote only) */}
                 {!t.isLocal && (
                   <>
-                    <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>Audio</div>
+                    <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>
+                      Audio
+                    </div>
                     <div className="px-4 pb-3">
                       <div className="flex items-center gap-3">
-                        <div className={`text-[11px] ${isLight ? "text-black/55" : "text-white/55"} w-[46px]`}>Vol</div>
+                        <div className={`text-[11px] ${isLight ? "text-black/55" : "text-white/55"} w-[46px]`}>
+                          Vol
+                        </div>
                         <input
                           type="range"
                           min={0}
@@ -2823,11 +3444,14 @@ export function RoomPageLiveKit() {
                         e.stopPropagation();
                         if (!t.participantIdentity) return;
                         if (!confirm(`Kick "${t.label}"?`)) return;
-                        await adminKickParticipant(t.participantIdentity);
+                        await adminKickParticipant(
+                          t.participantIdentity,
+                          looksLikeUuid(pidBase) ? pidBase : undefined,
+                          t.label
+                        );
                         setOpenTileAdminMenuId(null);
                       }}
-                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-red-700 hover:bg-red-50" : "text-red-300 hover:bg-red-500/10"
-                        }`}
+                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-red-700 hover:bg-red-50" : "text-red-300 hover:bg-red-500/10"}`}
                     >
                       Kick participant
                     </button>
@@ -2850,7 +3474,10 @@ export function RoomPageLiveKit() {
   const isCompact = effectiveW < 900;
 
   const useVeryNarrowMode = isVeryNarrow || (isMobileQuery && isNarrowForColumns);
-  const stackTwoOnThisViewport = tileCount === 2 && !useVeryNarrowMode && (isTabletQuery || (isMobileQuery && effectiveW < 640) || isCompact);
+  const stackTwoOnThisViewport =
+    tileCount === 2 &&
+    !useVeryNarrowMode &&
+    (isTabletQuery || (isMobileQuery && effectiveW < 640) || isCompact);
 
   const videoLayout = (
     <>
@@ -2871,7 +3498,11 @@ export function RoomPageLiveKit() {
               renderItem={(t) => renderTile(t)}
             />
           ) : (
-            <MobileStackLayoutSizing<TileModel> items={tilesForRender} paddingBottomPx={paddingBottomPx} renderItem={(t) => renderTile(t)} />
+            <MobileStackLayoutSizing<TileModel>
+              items={tilesForRender}
+              paddingBottomPx={paddingBottomPx}
+              renderItem={(t) => renderTile(t)}
+            />
           )
         ) : tileCount <= 2 ? (
           <P2PLayoutSizing<TileModel>
@@ -2898,11 +3529,12 @@ export function RoomPageLiveKit() {
     <div className="w-full h-full min-h-0 relative">
       {roomReadyText ? (
         <div className={`absolute inset-0 flex items-center justify-center z-10 ${isLight ? "text-black/60" : "text-white/70"}`}>
-          <div className={`px-4 py-2 rounded-xl ${isLight ? "bg-white/70" : "bg-black/30"}`}>{roomReadyText}</div>
+          <div className={`px-4 py-2 rounded-xl ${isLight ? "bg-white/70" : "bg-black/30"}`}>
+            {roomReadyText}
+          </div>
         </div>
       ) : null}
 
-      {/* ✅ hidden participants unhide panel inside tiles space */}
       {hiddenTiles.length > 0 && (
         <div className="absolute top-3 left-3 z-30 max-w-[80%]">
           <div
@@ -2928,7 +3560,9 @@ export function RoomPageLiveKit() {
                 </button>
               ))}
               {hiddenTiles.length > 8 ? (
-                <span className={`text-[12px] opacity-70 ${isLight ? "text-black/60" : "text-white/70"}`}>+{hiddenTiles.length - 8}</span>
+                <span className={`text-[12px] opacity-70 ${isLight ? "text-black/60" : "text-white/70"}`}>
+                  +{hiddenTiles.length - 8}
+                </span>
               ) : null}
             </div>
           </div>
@@ -2937,7 +3571,6 @@ export function RoomPageLiveKit() {
 
       {videoLayout}
 
-      {/* reactions overlay */}
       {floatingReactions.length > 0 && (
         <div className="pointer-events-none absolute inset-x-0 bottom-6 z-30 flex items-end justify-center">
           <div className="relative flex flex-col items-center gap-2">
@@ -2953,7 +3586,9 @@ export function RoomPageLiveKit() {
                 style={{ animationDelay: `${idx * 0.05}s` }}
               >
                 <div className="text-[44px] leading-none">{REACTION_EMOJI[r.type]}</div>
-                <div className="mt-1 text-[12px] leading-tight opacity-80 max-w-[260px] truncate">{r.fromName}</div>
+                <div className="mt-1 text-[12px] leading-tight opacity-80 max-w-[260px] truncate">
+                  {r.fromName}
+                </div>
               </div>
             ))}
           </div>
@@ -2984,15 +3619,16 @@ export function RoomPageLiveKit() {
       data-theme={theme}
       style={{ colorScheme: theme }}
     >
-      {/* participants/chat/intentions body — оставлено как у тебя (без volume слайдера в списке) */}
-      {/* ... (ТВОЙ existing RightPanelBody ниже можно оставлять как есть, но НЕ добавляй туда volume slider) */}
-
       {rightTab === "participants" && (
         <div className="h-full min-h-0 flex flex-col">
           <div className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
             <div className="flex items-center gap-2 min-w-0">
-              <span className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold truncate`}>Participants</span>
-              <span className={`${isLight ? "text-black/50" : "text-white/55"} text-sm`}>({participantsCount})</span>
+              <span className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold truncate`}>
+                Participants
+              </span>
+              <span className={`${isLight ? "text-black/50" : "text-white/55"} text-sm`}>
+                ({participantsCount})
+              </span>
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -3023,7 +3659,11 @@ export function RoomPageLiveKit() {
               />
             </div>
 
-            {rolesError ? <div className={`mt-2 text-[12px] ${isLight ? "text-red-600" : "text-red-300"}`}>{rolesError}</div> : null}
+            {rolesError ? (
+              <div className={`mt-2 text-[12px] ${isLight ? "text-red-600" : "text-red-300"}`}>
+                {rolesError}
+              </div>
+            ) : null}
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
@@ -3036,12 +3676,27 @@ export function RoomPageLiveKit() {
                 const initials = getInitials(p.label);
 
                 const pidBase = String(p.participantUserId || "").toLowerCase();
-                const isMod = !p.isLocal && looksLikeUuid(pidBase) ? moderatorUserIds.includes(pidBase) : p.isLocal ? isSelfModerator && !isHost : false;
+                const isMod = !p.isLocal && looksLikeUuid(pidBase)
+                  ? moderatorUserIds.includes(pidBase)
+                  : p.isLocal
+                    ? isSelfModerator && !isHost
+                    : false;
 
-                const roleText = p.isLocal ? (isHost ? "Host" : isMod ? "Moderator" : "You") : isMod ? "Moderator" : "Participant";
+                const roleText = p.isLocal
+                  ? isHost
+                    ? "Host"
+                    : isMod
+                      ? "Moderator"
+                      : "You"
+                  : isMod
+                    ? "Moderator"
+                    : "Participant";
 
                 return (
-                  <div key={p.id} className={`px-3 py-2 rounded-xl transition ${isLight ? "hover:bg-black/5" : "hover:bg-white/5"}`}>
+                  <div
+                    key={p.id}
+                    className={`px-3 py-2 rounded-xl transition ${isLight ? "hover:bg-black/5" : "hover:bg-white/5"}`}
+                  >
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
                         {avatar ? (
@@ -3068,7 +3723,9 @@ export function RoomPageLiveKit() {
                             {isPinned ? <span className="ml-2 opacity-70">📌</span> : null}
                             {isHidden ? <span className="ml-2 opacity-70">🙈</span> : null}
                           </div>
-                          <div className={`text-[11px] truncate ${isLight ? "text-black/45" : "text-white/45"}`}>{roleText}</div>
+                          <div className={`text-[11px] truncate ${isLight ? "text-black/45" : "text-white/45"}`}>
+                            {roleText}
+                          </div>
                         </div>
                       </div>
 
@@ -3119,7 +3776,9 @@ export function RoomPageLiveKit() {
       {rightTab === "chat" && (
         <div className="h-full min-h-0 flex flex-col">
           <div className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
-            <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Chat</div>
+            <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>
+              Chat
+            </div>
             <button
               onClick={() => openRightTab(null)}
               className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"}`}
@@ -3133,7 +3792,11 @@ export function RoomPageLiveKit() {
             <div className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight ? "bg-white/70 border border-black/10" : "bg-[#020617]/40 border border-white/10"}`}>
               <div className="h-full min-h-0 flex flex-col overflow-hidden [&>*]:h-full [&>*]:min-h-0">
                 {session?.id ? (
-                  <div data-theme={theme} style={{ colorScheme: theme }} className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}>
+                  <div
+                    data-theme={theme}
+                    style={{ colorScheme: theme }}
+                    className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
+                  >
                     <ChatPanelAny
                       sessionId={session.id}
                       theme={theme}
@@ -3157,7 +3820,9 @@ export function RoomPageLiveKit() {
       {rightTab === "intentions" && (
         <div className="h-full min-h-0 flex flex-col">
           <div className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
-            <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Intentions</div>
+            <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>
+              Intentions
+            </div>
             <button
               onClick={() => openRightTab(null)}
               className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"}`}
@@ -3170,8 +3835,19 @@ export function RoomPageLiveKit() {
           <div className="flex-1 min-h-0 overflow-hidden p-4">
             <div className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight ? "bg-white/70 border border-black/10" : "bg-[#020617]/40 border border-white/10"}`}>
               <div className="h-full min-h-0 overflow-y-auto [&>*]:min-h-0">
-                <div data-theme={theme} style={{ colorScheme: theme }} className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}>
-                  {session?.id ? <IntentionsPanel key={`intentions-${session.id}-${theme}`} theme={theme} sessionId={session.id} timerText={remainingTime || "--:--"} /> : null}
+                <div
+                  data-theme={theme}
+                  style={{ colorScheme: theme }}
+                  className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
+                >
+                  {session?.id ? (
+                    <IntentionsPanel
+                      key={`intentions-${session.id}-${theme}`}
+                      theme={theme}
+                      sessionId={session.id}
+                      timerText={remainingTime || "--:--"}
+                    />
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -3181,7 +3857,10 @@ export function RoomPageLiveKit() {
     </div>
   );
 
-  if (loading) return <div className={`flex h-screen items-center justify-center ${pageBg}`}>Loading session...</div>;
+// ---- continue in chunk 3 ----
+  if (loading) {
+    return <div className={`flex h-screen items-center justify-center ${pageBg}`}>Loading session...</div>;
+  }
 
   if (!session) {
     return (
@@ -3191,13 +3870,14 @@ export function RoomPageLiveKit() {
     );
   }
 
-  // ✅ ВАЖНО: тут больше НЕТ useEffect внутри render (у тебя был — я убрал)
-
   const onJoinGate = () => {
     const pj = prejoinRef.current;
     const nm = (pj.displayName || displayName || userName || "User").trim() || "User";
 
-    const baseUser = safeIdentity((authUserId && looksLikeUuid(authUserId) ? authUserId : authUserId || nm) as any);
+    const baseUser = safeIdentity(
+      (authUserId && looksLikeUuid(authUserId) ? authUserId : authUserId || nm) as any
+    );
+
     if (session?.id && !tabPresenceAcquiredRef.current) {
       const g = tryAcquireTabGate(session.id, baseUser);
       if (!g.ok) {
@@ -3214,6 +3894,11 @@ export function RoomPageLiveKit() {
 
     setDisplayName(nm);
     setSelectedAudioOutputId(pj.audioOutputId || "default");
+    setSelectedAudioInputId(pj.audioInputId || "");
+    setSelectedVideoInputId(pj.videoInputId || "");
+    setEchoCancellationEnabled(!!pj.echoCancellation);
+    setNoiseSuppressionEnabled(!!pj.noiseSuppression);
+    setAutoGainControlEnabled(!!pj.autoGainControl);
 
     setPrejoinOpen(false);
     setJoinRequested(true);
@@ -3305,7 +3990,12 @@ export function RoomPageLiveKit() {
             onOpenHostProfile={() => setSelectedUser((session?.host_profile as any) || null)}
           />
 
-          <div className={"relative grid grid-rows-1 gap-2 sm:gap-3 flex-1 min-h-0 h-full " + (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")}>
+          <div
+            className={
+              "relative grid grid-rows-1 gap-2 sm:gap-3 flex-1 min-h-0 h-full " +
+              (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
+            }
+          >
             <div
               ref={(el) => {
                 videoWrapRef.current = el;
@@ -3322,7 +4012,9 @@ export function RoomPageLiveKit() {
               )}
             </div>
 
-            {rightPanelOpen && isLgUp && <div className="min-h-0 h-full overflow-hidden">{RightPanelBody}</div>}
+            {rightPanelOpen && isLgUp && (
+              <div className="min-h-0 h-full overflow-hidden">{RightPanelBody}</div>
+            )}
 
             {rightPanelOpen && !isLgUp && (
               <div className="absolute inset-0 z-40 min-h-0">
@@ -3335,25 +4027,9 @@ export function RoomPageLiveKit() {
 
         <RemoteAudioRenderer room={roomState} audioOutputId={selectedAudioOutputId} />
 
-        {connected && (
-          <div className="fixed right-3 sm:right-4 bottom-[calc(92px+env(safe-area-inset-bottom))] z-[55]">
-            <button
-              type="button"
-              onClick={() => setSettingsOpen(true)}
-              className={[
-                "w-11 h-11 rounded-2xl shadow-xl text-[16px] font-semibold border backdrop-blur flex items-center justify-center",
-                isLight ? "bg-white/90 border-black/10 text-black/80 hover:bg-white" : "bg-[#020617]/70 border-white/10 text-white/85 hover:bg-[#020617]/85",
-              ].join(" ")}
-              title="Settings"
-            >
-              ⚙
-            </button>
-          </div>
-        )}
-
         <VideoControls
           theme={theme}
-          tile={true}
+          tile={false}
           mutedAudio={!micOn}
           mutedVideo={!camOn}
           isScreenSharing={screenShareOn}
@@ -3362,7 +4038,7 @@ export function RoomPageLiveKit() {
           onToggleAudio={() => toggleMic().catch?.(() => { })}
           onToggleVideo={() => toggleCam().catch?.(() => { })}
           onToggleScreenShare={() => toggleScreenShare().catch?.(() => { })}
-          onToggleTile={() => { }}
+          onToggleTile={() => setSettingsOpen(true)} // temporary: later replace tile button with settings button in VideoControls
           onReloadRoom={() => {
             disconnectRoom().catch(() => { });
             setLkToken("");
@@ -3411,32 +4087,157 @@ export function RoomPageLiveKit() {
             }
             setBgImageUrl(DEFAULT_BG_DATA_URL);
           }}
+          devices={devices}
+          selectedAudioInputId={selectedAudioInputId}
+          selectedVideoInputId={selectedVideoInputId}
+          selectedAudioOutputId={selectedAudioOutputId}
+          onChangeAudioInput={async (deviceId: string) => {
+            setSelectedAudioInputId(deviceId);
+            setPrejoin((prev) => ({ ...prev, audioInputId: deviceId }));
+            await syncLiveAudioInput(deviceId);
+          }}
+          onChangeVideoInput={async (deviceId: string) => {
+            setSelectedVideoInputId(deviceId);
+            setPrejoin((prev) => ({ ...prev, videoInputId: deviceId }));
+            await syncLiveVideoInput(deviceId);
+          }}
+          onChangeAudioOutput={(deviceId: string) => {
+            setSelectedAudioOutputId(deviceId || "default");
+            setPrejoin((prev) => ({ ...prev, audioOutputId: deviceId || "default" }));
+          }}
+          echoCancellationEnabled={echoCancellationEnabled}
+          noiseSuppressionEnabled={noiseSuppressionEnabled}
+          autoGainControlEnabled={autoGainControlEnabled}
+          onChangeEchoCancellation={async (v: boolean) => {
+            setEchoCancellationEnabled(v);
+            setPrejoin((prev) => ({ ...prev, echoCancellation: v }));
+            await syncLiveAudioProcessing({
+              echoCancellation: v,
+              noiseSuppression: noiseSuppressionEnabled,
+              autoGainControl: autoGainControlEnabled,
+            });
+          }}
+          onChangeNoiseSuppression={async (v: boolean) => {
+            setNoiseSuppressionEnabled(v);
+            setPrejoin((prev) => ({ ...prev, noiseSuppression: v }));
+            await syncLiveAudioProcessing({
+              echoCancellation: echoCancellationEnabled,
+              noiseSuppression: v,
+              autoGainControl: autoGainControlEnabled,
+            });
+          }}
+          onChangeAutoGainControl={async (v: boolean) => {
+            setAutoGainControlEnabled(v);
+            setPrejoin((prev) => ({ ...prev, autoGainControl: v }));
+            await syncLiveAudioProcessing({
+              echoCancellation: echoCancellationEnabled,
+              noiseSuppression: noiseSuppressionEnabled,
+              autoGainControl: v,
+            });
+          }}
+          roomSoundsEnabled={roomSoundsEnabled}
+          onToggleRoomSounds={() => setRoomSoundsEnabled((prev) => !prev)}
+          colorCorrectionEnabled={colorCorrectionEnabled}
+          brightness={brightness}
+          contrast={contrast}
+          saturate={saturate}
+          onToggleColorCorrection={(v: boolean) => setColorCorrectionEnabled(v)}
+          onChangeBrightness={setBrightness}
+          onChangeContrast={setContrast}
+          onChangeSaturate={setSaturate}
+          onCaptureScreenshot={async () => {
+            await createRoomScreenshot();
+          }}
         />
+
+        {systemNotice.open && (
+          <div className="fixed inset-0 z-[90] flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/45 backdrop-blur-[2px]" onClick={closeSystemNotice} />
+            <div
+              className={`relative w-[92%] max-w-[520px] rounded-2xl border shadow-2xl p-5 ${isLight ? "bg-white border-black/10 text-black/85" : "bg-[#020617] border-white/10 text-white/90"
+                }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-[18px] font-semibold">{systemNotice.title}</div>
+                  <div className={`mt-1 text-[13px] leading-relaxed ${isLight ? "text-black/65" : "text-white/70"}`}>
+                    {systemNotice.body}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={closeSystemNotice}
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/70" : "bg-white/5 hover:bg-white/10 text-white/80"
+                    }`}
+                  title="Close"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="mt-5 flex items-center justify-end gap-2">
+                {systemNotice.kind === "kick" ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      closeSystemNotice();
+                      navigate("/sessions", { replace: true });
+                    }}
+                    className={`px-4 h-10 rounded-xl font-semibold ${isLight ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
+                      }`}
+                  >
+                    Go to sessions
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={closeSystemNotice}
+                    className={`px-4 h-10 rounded-xl font-semibold ${isLight ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
+                      }`}
+                  >
+                    OK
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {editNameOpen && (
           <div className="fixed inset-0 z-[80] flex items-center justify-center">
             <div className="absolute inset-0 bg-black/40" onClick={() => setEditNameOpen(false)} />
-            <div className={`relative w-[92%] max-w-[480px] rounded-2xl border shadow-2xl p-5 ${isLight ? "bg-white border-black/10" : "bg-[#020617] border-white/10"}`}>
-              <div className={`text-[16px] font-semibold ${isLight ? "text-black/85" : "text-white/90"}`}>Edit your name</div>
-              <div className={`mt-1 text-[12px] ${isLight ? "text-black/50" : "text-white/50"}`}>Saved into Supabase profiles (full_name).</div>
+            <div
+              className={`relative w-[92%] max-w-[480px] rounded-2xl border shadow-2xl p-5 ${isLight ? "bg-white border-black/10" : "bg-[#020617] border-white/10"
+                }`}
+            >
+              <div className={`text-[16px] font-semibold ${isLight ? "text-black/85" : "text-white/90"}`}>
+                Edit your name
+              </div>
+              <div className={`mt-1 text-[12px] ${isLight ? "text-black/50" : "text-white/50"}`}>
+                Saved into Supabase profiles (full_name).
+              </div>
 
               <input
                 value={editNameValue}
                 onChange={(e) => setEditNameValue(e.target.value)}
                 placeholder="Your name"
-                className={`mt-4 w-full rounded-xl px-3 py-2 outline-none border ${isLight ? "bg-white border-black/10 text-black/85" : "bg-black/20 border-white/10 text-white/90"}`}
+                className={`mt-4 w-full rounded-xl px-3 py-2 outline-none border ${isLight ? "bg-white border-black/10 text-black/85" : "bg-black/20 border-white/10 text-white/90"
+                  }`}
               />
 
               <div className="mt-4 flex items-center justify-end gap-2">
                 <button
                   onClick={() => setEditNameOpen(false)}
-                  className={`px-4 h-10 rounded-xl font-semibold ${isLight ? "bg-black/5 hover:bg-black/10 text-black/75" : "bg-white/5 hover:bg-white/10 text-white/85"}`}
+                  className={`px-4 h-10 rounded-xl font-semibold ${isLight ? "bg-black/5 hover:bg-black/10 text-black/75" : "bg-white/5 hover:bg-white/10 text-white/85"
+                    }`}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => saveEditName().catch(() => { })}
-                  className={`px-4 h-10 rounded-xl font-semibold ${isLight ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"}`}
+                  className={`px-4 h-10 rounded-xl font-semibold ${isLight ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
+                    }`}
                 >
                   Save
                 </button>

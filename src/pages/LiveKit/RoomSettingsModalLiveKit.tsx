@@ -51,6 +51,138 @@ const FX_BG_PRESETS = [
     },
 ];
 
+function ToggleRow(props: {
+    label: string;
+    description?: string;
+    checked: boolean;
+    onChange: (v: boolean) => void;
+    disabled?: boolean;
+    isLight: boolean;
+}) {
+    const { label, description, checked, onChange, disabled, isLight } = props;
+
+    return (
+        <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+                <div className={`text-[13px] font-semibold ${isLight ? "text-black/85" : "text-white/90"}`}>
+                    {label}
+                </div>
+                {description ? (
+                    <div className={`mt-1 text-[12px] ${isLight ? "text-black/55" : "text-white/55"}`}>
+                        {description}
+                    </div>
+                ) : null}
+            </div>
+
+            <button
+                type="button"
+                disabled={disabled}
+                onClick={() => onChange(!checked)}
+                className={[
+                    "relative shrink-0 w-[50px] h-[30px] rounded-full transition border disabled:opacity-50",
+                    checked
+                        ? isLight
+                            ? "bg-blue-600 border-blue-600"
+                            : "bg-emerald-500 border-emerald-500"
+                        : isLight
+                            ? "bg-black/5 border-black/10"
+                            : "bg-white/5 border-white/10",
+                ].join(" ")}
+                aria-pressed={checked}
+                title={label}
+            >
+                <span
+                    className={[
+                        "absolute top-[2px] left-[2px] w-[24px] h-[24px] rounded-full bg-white shadow-md transition-transform",
+                    ].join(" ")}
+                    style={{
+                        transform: checked ? "translateX(20px)" : "translateX(0px)",
+                    }}
+                />
+            </button>
+        </div>
+    );
+}
+
+function SelectField(props: {
+    label: string;
+    value: string;
+    onChange: (v: string) => void;
+    options: Array<{ value: string; label: string }>;
+    isLight: boolean;
+}) {
+    const { label, value, onChange, options, isLight } = props;
+
+    return (
+        <div>
+            <div className={`text-[13px] font-semibold mb-2 ${isLight ? "text-black/85" : "text-white/90"}`}>
+                {label}
+            </div>
+            <select
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                className={[
+                    "w-full h-11 rounded-xl px-3 outline-none border text-[13px]",
+                    isLight
+                        ? "bg-white border-black/10 text-black/85"
+                        : "bg-[#0b1220] border-white/10 text-white/90",
+                ].join(" ")}
+            >
+                {options.map((opt) => (
+                    <option key={`${label}-${opt.value}`} value={opt.value}>
+                        {opt.label}
+                    </option>
+                ))}
+            </select>
+        </div>
+    );
+}
+
+function SliderField(props: {
+    label: string;
+    description?: string;
+    min: number;
+    max: number;
+    step?: number;
+    value: number;
+    onChange: (v: number) => void;
+    disabled?: boolean;
+    isLight: boolean;
+}) {
+    const { label, description, min, max, step = 1, value, onChange, disabled, isLight } = props;
+
+    return (
+        <div>
+            <div className="flex items-center justify-between gap-3">
+                <div>
+                    <div className={`text-[13px] font-semibold ${isLight ? "text-black/85" : "text-white/90"}`}>
+                        {label}
+                    </div>
+                    {description ? (
+                        <div className={`mt-1 text-[12px] ${isLight ? "text-black/55" : "text-white/55"}`}>
+                            {description}
+                        </div>
+                    ) : null}
+                </div>
+                <div className={`text-[13px] font-semibold ${isLight ? "text-black/70" : "text-white/80"}`}>
+                    {value}
+                </div>
+            </div>
+
+            <input
+                type="range"
+                min={min}
+                max={max}
+                step={step}
+                value={value}
+                disabled={disabled}
+                onChange={(e) => onChange(Number(e.target.value))}
+                className="w-full mt-3"
+            />
+        </div>
+    );
+}
+
 export function RoomSettingsModalLiveKit({
     open,
     theme,
@@ -66,6 +198,35 @@ export function RoomSettingsModalLiveKit({
     fxStatusText,
     onUploadBg,
     onResetBg,
+
+    devices,
+    selectedAudioInputId,
+    selectedVideoInputId,
+    selectedAudioOutputId,
+    onChangeAudioInput,
+    onChangeVideoInput,
+    onChangeAudioOutput,
+
+    echoCancellationEnabled,
+    noiseSuppressionEnabled,
+    autoGainControlEnabled,
+    onChangeEchoCancellation,
+    onChangeNoiseSuppression,
+    onChangeAutoGainControl,
+
+    roomSoundsEnabled,
+    onToggleRoomSounds,
+
+    colorCorrectionEnabled,
+    brightness,
+    contrast,
+    saturate,
+    onToggleColorCorrection,
+    onChangeBrightness,
+    onChangeContrast,
+    onChangeSaturate,
+
+    onCaptureScreenshot,
 }: {
     open: boolean;
     theme: RoomTheme;
@@ -81,73 +242,213 @@ export function RoomSettingsModalLiveKit({
     fxStatusText: string;
     onUploadBg: (file: File) => void;
     onResetBg: () => void;
+
+    devices: {
+        videoInputs: MediaDeviceInfo[];
+        audioInputs: MediaDeviceInfo[];
+        audioOutputs: MediaDeviceInfo[];
+    };
+    selectedAudioInputId: string;
+    selectedVideoInputId: string;
+    selectedAudioOutputId: string;
+    onChangeAudioInput: (v: string) => void | Promise<void>;
+    onChangeVideoInput: (v: string) => void | Promise<void>;
+    onChangeAudioOutput: (v: string) => void;
+
+    echoCancellationEnabled: boolean;
+    noiseSuppressionEnabled: boolean;
+    autoGainControlEnabled: boolean;
+    onChangeEchoCancellation: (v: boolean) => void | Promise<void>;
+    onChangeNoiseSuppression: (v: boolean) => void | Promise<void>;
+    onChangeAutoGainControl: (v: boolean) => void | Promise<void>;
+
+    roomSoundsEnabled: boolean;
+    onToggleRoomSounds: () => void;
+
+    colorCorrectionEnabled: boolean;
+    brightness: number;
+    contrast: number;
+    saturate: number;
+    onToggleColorCorrection: (v: boolean) => void;
+    onChangeBrightness: (v: number) => void;
+    onChangeContrast: (v: number) => void;
+    onChangeSaturate: (v: number) => void;
+
+    onCaptureScreenshot: () => void | Promise<void>;
 }) {
     if (!open) return null;
 
     const isLight = theme === "light";
-    const overlay = "fixed inset-0 z-[1001] flex items-center justify-center px-3";
+
+    const overlay = "fixed inset-0 z-[1001] flex items-center justify-center px-3 py-4";
     const backdrop = "absolute inset-0 bg-black/60";
     const card = [
-        "relative w-full max-w-[680px] rounded-3xl shadow-2xl overflow-hidden",
+        "relative w-full max-w-[760px] rounded-3xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col",
         isLight
             ? "bg-white text-black border border-black/10"
             : "bg-[#020617] text-white border border-white/10",
     ].join(" ");
 
-    const inputWrap = isLight
+    const sectionCls = isLight
         ? "bg-black/5 border border-black/10"
         : "bg-white/5 border border-white/10";
+
     const ghostBtn = isLight
         ? "bg-black/5 hover:bg-black/10 text-black/80"
         : "bg-white/5 hover:bg-white/10 text-white/85";
+
     const activeBtn = isLight ? "bg-blue-600 text-white" : "bg-emerald-500 text-[#03110a]";
+
     const subtleText = isLight ? "text-black/60" : "text-white/60";
+
+    const audioInputOptions = [
+        { value: "", label: devices.audioInputs?.length ? "Default microphone" : "No microphones found" },
+        ...(devices.audioInputs || []).map((d, idx) => ({
+            value: d.deviceId,
+            label: d.label || `Microphone ${idx + 1}`,
+        })),
+    ];
+
+    const videoInputOptions = [
+        { value: "", label: devices.videoInputs?.length ? "Default camera" : "No cameras found" },
+        ...(devices.videoInputs || []).map((d, idx) => ({
+            value: d.deviceId,
+            label: d.label || `Camera ${idx + 1}`,
+        })),
+    ];
+
+    const audioOutputOptions = [
+        { value: "default", label: "Default speakers" },
+        ...(devices.audioOutputs || []).map((d, idx) => ({
+            value: d.deviceId,
+            label: d.label || `Output ${idx + 1}`,
+        })),
+    ];
 
     return (
         <div className={overlay} data-theme={theme} style={{ colorScheme: theme }}>
             <div className={backdrop} onClick={onClose} />
             <div className={card}>
-                <div
-                    className={`px-6 py-5 border-b ${isLight ? "border-black/10" : "border-white/10"}`}
-                >
+                <div className={`px-6 py-5 border-b ${isLight ? "border-black/10" : "border-white/10"}`}>
                     <div className="flex items-center justify-between gap-3">
                         <div>
                             <div className="font-semibold text-[16px]">Settings</div>
                             <div className={`text-[12px] mt-1 ${subtleText}`}>
-                                Background blur / virtual background for your LiveKit camera.
+                                Camera, mic, speakers, FX, room sounds, screenshot and color tuning.
                             </div>
                         </div>
-                        <button onClick={onClose} className={`w-9 h-9 rounded-2xl ${ghostBtn}`}>
+
+                        <button
+                            onClick={onClose}
+                            className={`w-9 h-9 rounded-2xl ${ghostBtn}`}
+                            type="button"
+                            title="Close"
+                        >
                             ✕
                         </button>
                     </div>
                 </div>
 
-                <div className="px-6 py-5 flex flex-col gap-5">
-                    <div className={`rounded-2xl p-4 ${inputWrap}`}>
-                        <div className="text-[13px] font-semibold mb-3">Effect mode</div>
+                <div className="px-6 py-5 flex-1 overflow-y-auto flex flex-col gap-5">
+                    <div className={`rounded-2xl p-4 ${sectionCls}`}>
+                        <div className="text-[13px] font-semibold mb-4">Devices</div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <SelectField
+                                label="Microphone"
+                                value={selectedAudioInputId}
+                                onChange={(v) => {
+                                    void onChangeAudioInput(v);
+                                }}
+                                options={audioInputOptions}
+                                isLight={isLight}
+                            />
+
+                            <SelectField
+                                label="Camera"
+                                value={selectedVideoInputId}
+                                onChange={(v) => {
+                                    void onChangeVideoInput(v);
+                                }}
+                                options={videoInputOptions}
+                                isLight={isLight}
+                            />
+
+                            <div className="md:col-span-2">
+                                <SelectField
+                                    label="Speakers / output"
+                                    value={selectedAudioOutputId}
+                                    onChange={onChangeAudioOutput}
+                                    options={audioOutputOptions}
+                                    isLight={isLight}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className={`rounded-2xl p-4 ${sectionCls}`}>
+                        <div className="text-[13px] font-semibold mb-4">Microphone processing</div>
+
+                        <div className="flex flex-col gap-4">
+                            <ToggleRow
+                                label="Echo cancellation"
+                                description="Reduce echo from speakers going back into the mic."
+                                checked={echoCancellationEnabled}
+                                onChange={(v) => {
+                                    void onChangeEchoCancellation(v);
+                                }}
+                                isLight={isLight}
+                            />
+
+                            <ToggleRow
+                                label="Noise suppression"
+                                description="Reduce keyboard noise, fan noise and room hum."
+                                checked={noiseSuppressionEnabled}
+                                onChange={(v) => {
+                                    void onChangeNoiseSuppression(v);
+                                }}
+                                isLight={isLight}
+                            />
+
+                            <ToggleRow
+                                label="Auto gain control"
+                                description="Automatically normalize mic loudness."
+                                checked={autoGainControlEnabled}
+                                onChange={(v) => {
+                                    void onChangeAutoGainControl(v);
+                                }}
+                                isLight={isLight}
+                            />
+                        </div>
+                    </div>
+
+                    <div className={`rounded-2xl p-4 ${sectionCls}`}>
+                        <div className="text-[13px] font-semibold mb-3">Video effect mode</div>
+
                         <div className="flex flex-wrap gap-2">
                             <button
-                                onClick={() => onApplyMode("off")}
-                                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "off" ? activeBtn : ghostBtn
-                                    }`}
+                                onClick={() => void onApplyMode("off")}
+                                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "off" ? activeBtn : ghostBtn}`}
                                 disabled={fxApplying}
+                                type="button"
                             >
                                 FX off
                             </button>
+
                             <button
-                                onClick={() => onApplyMode("blur")}
-                                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "blur" ? activeBtn : ghostBtn
-                                    }`}
+                                onClick={() => void onApplyMode("blur")}
+                                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "blur" ? activeBtn : ghostBtn}`}
                                 disabled={fxApplying}
+                                type="button"
                             >
                                 Blur
                             </button>
+
                             <button
-                                onClick={() => onApplyMode("bg")}
-                                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "bg" ? activeBtn : ghostBtn
-                                    }`}
+                                onClick={() => void onApplyMode("bg")}
+                                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "bg" ? activeBtn : ghostBtn}`}
                                 disabled={fxApplying}
+                                type="button"
                             >
                                 Background image
                             </button>
@@ -156,34 +457,26 @@ export function RoomSettingsModalLiveKit({
                         <div className={`mt-3 text-[12px] ${subtleText}`}>
                             {fxApplying ? "Applying effect…" : fxStatusText || "Ready"}
                         </div>
+
                         {fxError ? (
                             <div className="mt-2 text-[12px] text-red-500 break-words">{fxError}</div>
                         ) : null}
                     </div>
 
-                    <div className={`rounded-2xl p-4 ${inputWrap}`}>
-                        <div className="flex items-center justify-between gap-3">
-                            <div>
-                                <div className="text-[13px] font-semibold">Blur strength</div>
-                                <div className={`text-[12px] mt-1 ${subtleText}`}>
-                                    Used when Blur mode is active.
-                                </div>
-                            </div>
-                            <div className="text-[13px] font-semibold">{blurStrength}</div>
-                        </div>
-
-                        <input
-                            type="range"
+                    <div className={`rounded-2xl p-4 ${sectionCls}`}>
+                        <SliderField
+                            label="Blur strength"
+                            description="Used when Blur mode is active."
                             min={4}
                             max={30}
                             step={1}
                             value={blurStrength}
-                            onChange={(e) => onBlurStrengthChange(Number(e.target.value))}
-                            className="w-full mt-3"
+                            onChange={onBlurStrengthChange}
+                            isLight={isLight}
                         />
                     </div>
 
-                    <div className={`rounded-2xl p-4 ${inputWrap}`}>
+                    <div className={`rounded-2xl p-4 ${sectionCls}`}>
                         <div className="flex items-center justify-between gap-3 mb-3">
                             <div>
                                 <div className="text-[13px] font-semibold">Background presets</div>
@@ -197,9 +490,11 @@ export function RoomSettingsModalLiveKit({
                                     onClick={onResetBg}
                                     className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn}`}
                                     disabled={fxApplying}
+                                    type="button"
                                 >
                                     Reset
                                 </button>
+
                                 <label
                                     className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn} cursor-pointer flex items-center`}
                                 >
@@ -238,6 +533,7 @@ export function RoomSettingsModalLiveKit({
                                         }
                                         title={p.label}
                                         disabled={fxApplying}
+                                        type="button"
                                     >
                                         <div className="aspect-video w-full">
                                             <img src={p.url} alt={p.label} className="w-full h-full object-cover" />
@@ -250,15 +546,95 @@ export function RoomSettingsModalLiveKit({
                             })}
                         </div>
                     </div>
+
+                    <div className={`rounded-2xl p-4 ${sectionCls}`}>
+                        <div className="text-[13px] font-semibold mb-4">Color correction</div>
+
+                        <div className="flex flex-col gap-4">
+                            <ToggleRow
+                                label="Enable color correction"
+                                description="Applies CSS video correction in the room UI. This is visual and local."
+                                checked={colorCorrectionEnabled}
+                                onChange={onToggleColorCorrection}
+                                isLight={isLight}
+                            />
+
+                            <SliderField
+                                label="Brightness"
+                                min={50}
+                                max={150}
+                                step={1}
+                                value={brightness}
+                                onChange={onChangeBrightness}
+                                disabled={!colorCorrectionEnabled}
+                                isLight={isLight}
+                            />
+
+                            <SliderField
+                                label="Contrast"
+                                min={50}
+                                max={150}
+                                step={1}
+                                value={contrast}
+                                onChange={onChangeContrast}
+                                disabled={!colorCorrectionEnabled}
+                                isLight={isLight}
+                            />
+
+                            <SliderField
+                                label="Saturation"
+                                min={50}
+                                max={180}
+                                step={1}
+                                value={saturate}
+                                onChange={onChangeSaturate}
+                                disabled={!colorCorrectionEnabled}
+                                isLight={isLight}
+                            />
+                        </div>
+                    </div>
+
+                    <div className={`rounded-2xl p-4 ${sectionCls}`}>
+                        <div className="text-[13px] font-semibold mb-4">Room tools</div>
+
+                        <div className="flex flex-col gap-4">
+                            <ToggleRow
+                                label="Room sounds"
+                                description="Enable join / leave and other room UI sounds."
+                                checked={roomSoundsEnabled}
+                                onChange={() => onToggleRoomSounds()}
+                                isLight={isLight}
+                            />
+
+                            <div className="flex items-center justify-between gap-4">
+                                <div>
+                                    <div className={`text-[13px] font-semibold ${isLight ? "text-black/85" : "text-white/90"}`}>
+                                        Screenshot
+                                    </div>
+                                    <div className={`mt-1 text-[12px] ${subtleText}`}>
+                                        Capture current room view to an image file.
+                                    </div>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={() => void onCaptureScreenshot()}
+                                    className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${activeBtn}`}
+                                >
+                                    Capture
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div
-                    className={`px-6 py-4 border-t flex items-center justify-end gap-3 ${isLight ? "border-black/10" : "border-white/10"
-                        }`}
+                    className={`px-6 py-4 border-t flex items-center justify-end gap-3 ${isLight ? "border-black/10" : "border-white/10"}`}
                 >
                     <button
                         onClick={onClose}
                         className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${ghostBtn}`}
+                        type="button"
                     >
                         Close
                     </button>
