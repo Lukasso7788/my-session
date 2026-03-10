@@ -1,15 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+    useCallback,
+    useLayoutEffect,
+} from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { Layers, ArrowUp, ArrowDown, Trash2, RotateCcw, Eraser } from "lucide-react";
 import { SessionStageBar } from "./SessionStageBar";
 import type { SessionStage } from "../SessionConfig";
-import RoomTimelineEditor, {
-    type RoomTimelineBlock,
-    makeDefaultTimelineBlocks,
-    getTimelineTotalMinutes,
-    timelineBlocksFromSchedule,
-    timelineBlocksToSchedulePayload,
-} from "./RoomTimelineEditor";
 
 /** =========================
  * ✅ Global Supabase singleton (avoid multiple GoTrueClient instances)
@@ -69,9 +70,9 @@ interface SessionCardProps {
         sessionId: string,
         updates: {
             title?: string;
-            start_time?: string; // ISO
+            start_time?: string;
             max_participants?: number | null;
-            description?: string;
+            description?: string | null;
             schedule?: any;
             stages_json?: any;
             duration_minutes?: number | null;
@@ -105,12 +106,6 @@ function getInitials(nameOrId: string) {
     return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
-/**
- * ✅ Extract bookers from nested select:
- * session_bookings ( user_id, profiles:profiles ( id, full_name, avatar_url ) )
- *
- * ❌ Privacy: do NOT keep or show emails
- */
 function extractBookers(session: any): BookedUser[] {
     const raw = session?.session_bookings || [];
     if (!Array.isArray(raw)) return [];
@@ -139,7 +134,6 @@ function extractBookers(session: any): BookedUser[] {
     return out;
 }
 
-// ✅ infer visual type from title for newer/infinite room titles
 function inferTypeFromTitle(
     title: any
 ): "Deep work" | "Pomodoro" | "Short sprints" | null {
@@ -352,10 +346,6 @@ function DotsFallbackIcon({ size = 18 }: { size?: number }) {
     );
 }
 
-/**
- * ✅ Options icon from file:
- * Put your custom SVG here: public/icons/options.svg  ->  "/icons/options.svg"
- */
 function OptionsSmartIcon({ hovered, size = 18 }: { hovered: boolean; size?: number }) {
     const [useFallback, setUseFallback] = useState(false);
 
@@ -429,7 +419,6 @@ function MenuItem({
     );
 }
 
-// ✅ Detect studio/custom sessions (prefer DB flag; fallback to formatLabel)
 function isCustomStudioSession(session: any): boolean {
     if (session?.is_custom === true) return true;
 
@@ -442,9 +431,6 @@ function isCustomStudioSession(session: any): boolean {
     return false;
 }
 
-/** =========================
- * ✅ Stages resolver
- * ========================= */
 function tryParseJson<T = any>(x: any): T | null {
     if (!x) return null;
     if (typeof x === "object") return x as T;
@@ -486,7 +472,6 @@ function normalizeStages(raw: any): SessionStage[] {
                 title,
                 name: title ?? s.name,
                 color,
-
                 durationSeconds:
                     durationSeconds || s.durationSeconds || s.seconds || s.duration_seconds,
                 duration_seconds: s.duration_seconds ?? s.durationSeconds ?? s.seconds,
@@ -903,9 +888,6 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
     return [];
 }
 
-/** =========================
- * ✅ Live users resolver
- * ========================= */
 function normalizeUsers(raw: any[]): BookedUser[] {
     const users: BookedUser[] = (raw || [])
         .map((row: any) => {
@@ -969,7 +951,6 @@ function parseDbCount(v: any): number | null {
     if (typeof v === "string") {
         const s = v.trim();
         if (!s) return null;
-
         const n = Number(s);
         return Number.isFinite(n) ? n : null;
     }
@@ -1133,9 +1114,6 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
     return [];
 }
 
-/** =========================
- * ✅ Stage visuals
- * ========================= */
 type StageKind =
     | "welcome"
     | "intentions"
@@ -1340,16 +1318,6 @@ function buildSessionInvitePath(session: any): string {
     return roomParam ? `/room-iframe/${roomParam}` : "/sessions";
 }
 
-function buildAbsoluteInviteUrl(session: any): string {
-    const path = buildSessionInvitePath(session);
-
-    if (typeof window !== "undefined" && window.location?.origin) {
-        return `${window.location.origin}${path}`;
-    }
-
-    return `https://mysession.club${path}`;
-}
-
 async function copyTextToClipboard(text: string): Promise<boolean> {
     try {
         if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
@@ -1382,152 +1350,1194 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
 }
 
 /** =========================
- * ✅ SessionCard timeline bridge -> RoomTimelineEditor
+ * ✅ Edit Session Studio (CreateSessionModal-like)
  * ========================= */
-function normalizeTimelineKind(raw: any): RoomTimelineBlock["kind"] {
+type StudioBlockKind =
+    | "welcome"
+    | "intentions"
+    | "focus"
+    | "break"
+    | "checkin"
+    | "recap"
+    | "celebrate"
+    | "custom";
+
+type StudioBlock = {
+    id: string;
+    kind: StudioBlockKind;
+    title: string;
+    note?: string;
+    minutes: number;
+};
+
+function uid() {
+    const c: any = (globalThis as any)?.crypto;
+    if (c?.randomUUID) return c.randomUUID();
+    return `b_${Math.random().toString(36).slice(2)}_${Date.now().toString(36)}`;
+}
+
+const STUDIO_LIBRARY: StudioBlock[] = [
+    { id: "lib_welcome", kind: "welcome", title: "Welcome", note: "Quick intro / rules / vibe", minutes: 3 },
+    { id: "lib_intentions", kind: "intentions", title: "Intentions", note: "Say what you’ll finish", minutes: 5 },
+    { id: "lib_focus", kind: "focus", title: "Focus", note: "Deep work block", minutes: 50 },
+    { id: "lib_break", kind: "break", title: "Break", note: "Recharge / stretch", minutes: 10 },
+    { id: "lib_checkin", kind: "checkin", title: "Check-in", note: "Short accountability checkpoint", minutes: 3 },
+    { id: "lib_recap", kind: "recap", title: "Recap", note: "What got done / what’s next", minutes: 5 },
+    { id: "lib_celebrate", kind: "celebrate", title: "Celebrate", note: "Closure + positive finish", minutes: 3 },
+    { id: "lib_custom", kind: "custom", title: "Custom", note: "Any special block", minutes: 5 },
+];
+
+const QUICK_MINUTES = [3, 5, 10, 15, 25, 50];
+const END_DROP_ID = "__end__";
+
+function defaultStudioTitle(kind: StudioBlockKind) {
+    switch (kind) {
+        case "welcome": return "Welcome";
+        case "intentions": return "Intentions";
+        case "focus": return "Focus";
+        case "break": return "Break";
+        case "checkin": return "Check-in";
+        case "recap": return "Recap";
+        case "celebrate": return "Celebrate";
+        default: return "Custom";
+    }
+}
+
+function studioKindFromRaw(raw: any): StudioBlockKind {
     const s = String(raw || "").trim().toLowerCase();
 
-    if (
-        s.includes("welcome") ||
-        s.includes("intro") ||
-        s.includes("opening") ||
-        s === "start"
-    ) {
-        return "welcome";
-    }
-
-    if (s.includes("intention") || s.includes("goal") || s.includes("plan")) {
-        return "intentions";
-    }
-
+    if (s.includes("welcome") || s.includes("intro") || s.includes("opening")) return "welcome";
+    if (s.includes("intention") || s.includes("goal") || s.includes("plan")) return "intentions";
     if (s.includes("checkin") || s.includes("check-in")) return "checkin";
-    if (s.includes("focus") || s.includes("work")) return "focus";
+    if (s.includes("focus") || s.includes("work") || s.includes("deep")) return "focus";
     if (s.includes("break") || s.includes("pause") || s.includes("rest")) return "break";
     if (s.includes("recap") || s.includes("review") || s.includes("reflection")) return "recap";
     if (s.includes("celebrate") || s.includes("celebration")) return "celebrate";
-    if (
-        s.includes("outro") ||
-        s.includes("farewell") ||
-        s.includes("wrap") ||
-        s.includes("closing") ||
-        s.includes("end")
-    ) {
-        return "outro";
-    }
 
     return "custom";
 }
 
-function defaultTimelineTitle(kind: RoomTimelineBlock["kind"]) {
-    switch (kind) {
-        case "welcome":
-            return "Welcome";
-        case "intentions":
-            return "Intentions";
-        case "focus":
-            return "Focus";
-        case "break":
-            return "Break";
-        case "checkin":
-            return "Check-in";
-        case "recap":
-            return "Recap";
-        case "celebrate":
-            return "Celebrate";
-        case "outro":
-            return "Outro";
-        default:
-            return "Custom";
-    }
-}
+function studioMinutesFromAny(raw: any) {
+    const sec =
+        Number(raw?.durationSeconds) ||
+        Number(raw?.duration_seconds) ||
+        Number(raw?.seconds);
 
-function timelineColor(kind: RoomTimelineBlock["kind"]) {
-    switch (kind) {
-        case "welcome":
-            return "#34D399";
-        case "intentions":
-            return "#38BDF8";
-        case "focus":
-            return "#3B82F6";
-        case "break":
-            return "#FDA4AF";
-        case "checkin":
-            return "#67E8F9";
-        case "recap":
-            return "#A78BFA";
-        case "celebrate":
-            return "#F472B6";
-        case "outro":
-            return "#6EE7B7";
-        default:
-            return "#6366F1";
-    }
-}
-
-function blocksFromStagesFallback(stages: SessionStage[]): RoomTimelineBlock[] {
-    const arr = Array.isArray(stages) ? stages : [];
-    const out = arr
-        .map((stage: any, idx: number) => {
-            const kind = normalizeTimelineKind(
-                stage?.kind || stage?.type || stage?.title || stage?.name
-            );
-            const seconds = getStageSeconds(stage);
-            const minutes = Math.max(1, Math.round((seconds || 60) / 60));
-            const title =
-                String(stage?.title || stage?.name || stage?.label || "").trim() ||
-                defaultTimelineTitle(kind);
-
-            return {
-                id: String(stage?.id ?? `fallback-${idx}`),
-                kind,
-                title,
-                minutes,
-                note: String(stage?.note || stage?.description || "").trim() || undefined,
-            } as RoomTimelineBlock;
-        })
-        .filter(Boolean);
-
-    return out.length ? out : makeDefaultTimelineBlocks();
-}
-
-function blocksFromSessionData(session: any, stagesVisual: SessionStage[]): RoomTimelineBlock[] {
-    const fromSchedule = timelineBlocksFromSchedule(session?.schedule);
-    if (Array.isArray(fromSchedule) && fromSchedule.length) return fromSchedule;
-
-    const fromStagesJson = tryParseJson<any[]>(session?.stages_json || session?.session_stages_json);
-    if (Array.isArray(fromStagesJson) && fromStagesJson.length) {
-        return blocksFromStagesFallback(normalizeStages(fromStagesJson));
+    if (Number.isFinite(sec) && sec > 0) {
+        return Math.max(1, Math.round(sec / 60));
     }
 
-    if (Array.isArray(stagesVisual) && stagesVisual.length) {
-        return blocksFromStagesFallback(stagesVisual);
+    const mins =
+        Number(raw?.minutes) ||
+        Number(raw?.duration_minutes) ||
+        Number(raw?.durationMinutes) ||
+        Number(raw?.duration);
+
+    if (Number.isFinite(mins) && mins > 0) {
+        return Math.max(1, Math.round(mins));
     }
 
-    return makeDefaultTimelineBlocks();
+    return 0;
+}
+function normalizeStudioBlocksFromSession(session: any): StudioBlock[] {
+    const rawStages =
+        session?.stages ??
+        tryParseJson<any[]>(session?.stages_json) ??
+        tryParseJson<any[]>(session?.session_stages_json);
+
+    if (Array.isArray(rawStages) && rawStages.length) {
+        const sorted = sortStagesInClient(rawStages);
+        const out = sorted
+            .map((s: any) => {
+                const kind = studioKindFromRaw(s?.kind || s?.type || s?.title || s?.name);
+                const title =
+                    String(s?.title || s?.name || s?.label || defaultStudioTitle(kind)).trim() ||
+                    defaultStudioTitle(kind);
+                const minutes = studioMinutesFromAny(s);
+                if (!minutes) return null;
+
+                return {
+                    id: uid(),
+                    kind,
+                    title,
+                    note: String(s?.note || s?.description || "").trim() || undefined,
+                    minutes,
+                } as StudioBlock;
+            })
+            .filter(Boolean) as StudioBlock[];
+
+        if (out.length) return out;
+    }
+
+    const parsed = tryParseJson<any>(session?.schedule);
+
+    if (Array.isArray(parsed) && parsed.length) {
+        const out = parsed
+            .map((b: any) => {
+                const kind = studioKindFromRaw(b?.kind || b?.type || b?.title || b?.name);
+                const title =
+                    String(b?.title || b?.name || b?.label || defaultStudioTitle(kind)).trim() ||
+                    defaultStudioTitle(kind);
+                const minutes = studioMinutesFromAny(b);
+                if (!minutes) return null;
+
+                return {
+                    id: uid(),
+                    kind,
+                    title,
+                    note: String(b?.note || b?.description || "").trim() || undefined,
+                    minutes,
+                } as StudioBlock;
+            })
+            .filter(Boolean) as StudioBlock[];
+
+        if (out.length) return out;
+    }
+
+    const phases =
+        parsed?.timer?.phases ||
+        parsed?.timer?.timeline ||
+        parsed?.timer?.stages ||
+        parsed?.timer?.segments ||
+        parsed?.phases ||
+        parsed?.timeline ||
+        parsed?.stages ||
+        parsed?.segments ||
+        parsed?.timer?.blocks ||
+        parsed?.blocks;
+
+    if (Array.isArray(phases) && phases.length) {
+        const out = phases
+            .map((b: any) => {
+                const kind = studioKindFromRaw(b?.kind || b?.type || b?.title || b?.name);
+                const title =
+                    String(b?.title || b?.name || b?.label || defaultStudioTitle(kind)).trim() ||
+                    defaultStudioTitle(kind);
+                const minutes = studioMinutesFromAny(b);
+                if (!minutes) return null;
+
+                return {
+                    id: uid(),
+                    kind,
+                    title,
+                    note: String(b?.note || b?.description || "").trim() || undefined,
+                    minutes,
+                } as StudioBlock;
+            })
+            .filter(Boolean) as StudioBlock[];
+
+        if (out.length) return out;
+    }
+
+    const durMin = Number(session?.duration_minutes);
+    if (Number.isFinite(durMin) && durMin > 0) {
+        return [
+            {
+                id: uid(),
+                kind: "focus",
+                title: "Focus",
+                minutes: Math.max(1, Math.round(durMin)),
+            },
+        ];
+    }
+
+    return [
+        { id: uid(), kind: "welcome", title: "Welcome", note: "Quick intro / rules / vibe", minutes: 3 },
+        { id: uid(), kind: "intentions", title: "Intentions", note: "Say what you’ll finish", minutes: 5 },
+        { id: uid(), kind: "focus", title: "Focus", note: "Deep work block", minutes: 50 },
+        { id: uid(), kind: "recap", title: "Recap", note: "What got done / what’s next", minutes: 5 },
+    ];
 }
 
-function stagesJsonFromBlocks(blocks: RoomTimelineBlock[]): SessionStage[] {
-    return (blocks || []).map((b, idx) => {
-        const mins = Math.max(1, Number(b.minutes) || 1);
-        const secs = mins * 60;
-
-        return {
-            id: String(b.id || idx),
+function exportStudioToSchedule(blocks: StudioBlock[], preserveInfinite = false, anchorTs?: string | null) {
+    const cleaned = (blocks || [])
+        .map((b, index) => ({
             kind: b.kind,
-            type: b.kind,
-            title: String(b.title || "").trim() || defaultTimelineTitle(b.kind),
-            name: String(b.title || "").trim() || defaultTimelineTitle(b.kind),
-            color: timelineColor(b.kind),
-            position: idx,
-            order: idx,
-            durationSeconds: secs,
-            duration_seconds: secs,
-            seconds: secs,
-            duration_minutes: mins,
-            minutes: mins,
-            note: b.note,
-        } as any;
+            title: String(b.title || "").trim() || defaultStudioTitle(b.kind),
+            minutes: clamp(Number(b.minutes) || 1, 1, 24 * 60),
+            note: String(b.note || "").trim() || null,
+            order: index,
+            v: 1,
+        }))
+        .filter((b) => b.minutes > 0);
+
+    if (preserveInfinite) {
+        return {
+            kind: "infinite_room",
+            anchor_ts: String(anchorTs || new Date().toISOString()),
+            timer: {
+                phases: cleaned.map((b, index) => ({
+                    kind: b.kind,
+                    type: b.kind,
+                    name: b.title,
+                    title: b.title,
+                    minutes: b.minutes,
+                    note: b.note,
+                    order: index,
+                    v: 1,
+                })),
+            },
+            v: 1,
+        };
+    }
+
+    return cleaned;
+}
+
+function SessionTimeline({ blocks }: { blocks: StudioBlock[] }) {
+    const total = blocks.reduce((s, b) => s + (Number(b.minutes) || 0), 0);
+
+    const rows = useMemo(() => {
+        let acc = 0;
+        return blocks.map((b) => {
+            const start = acc;
+            const end = acc + (Number(b.minutes) || 0);
+            acc = end;
+            return { ...b, start, end };
+        });
+    }, [blocks]);
+
+    function kindBg(kind: StudioBlockKind) {
+        switch (kind) {
+            case "welcome":
+                return "bg-slate-200";
+            case "intentions":
+                return "bg-indigo-200";
+            case "focus":
+                return "bg-emerald-200";
+            case "break":
+                return "bg-amber-200";
+            case "checkin":
+                return "bg-cyan-200";
+            case "recap":
+                return "bg-violet-200";
+            case "celebrate":
+                return "bg-pink-200";
+            default:
+                return "bg-gray-200";
+        }
+    }
+
+    return (
+        <div className="mt-3">
+            <div className="flex items-center justify-between">
+                <div className="font-inter text-[12px] text-gray-600">Session timeline</div>
+                <div className="font-inter text-[12px] text-gray-600">
+                    Total:{" "}
+                    <span className="font-semibold text-brandBlack">{formatMinutes(total)}</span>
+                </div>
+            </div>
+
+            <div className="mt-2 border border-gray-200 rounded-[999px] overflow-hidden bg-gray-50">
+                <div className="flex h-3">
+                    {blocks.length === 0 ? (
+                        <div className="w-full h-full flex items-center justify-center text-[12px] text-gray-500 font-inter">
+                            Add blocks to build a timeline
+                        </div>
+                    ) : (
+                        blocks.map((b) => {
+                            const mins = clamp(Number(b.minutes) || 1, 1, 24 * 60);
+                            const showText = mins >= 10;
+                            return (
+                                <div
+                                    key={b.id}
+                                    className={`h-full ${kindBg(
+                                        b.kind
+                                    )} border-r border-white/70 flex items-center justify-center`}
+                                    style={{ flexGrow: mins, flexBasis: 0, minWidth: 6 }}
+                                    title={`${b.title} • ${mins} min`}
+                                >
+                                    {showText ? (
+                                        <span className="px-2 text-[11px] font-inter text-gray-800 truncate">
+                                            {b.title} · {mins}m
+                                        </span>
+                                    ) : null}
+                                </div>
+                            );
+                        })
+                    )}
+                </div>
+            </div>
+
+            {blocks.length > 0 && (
+                <details className="mt-2">
+                    <summary className="cursor-pointer select-none text-[12px] text-gray-600 font-inter hover:text-gray-800">
+                        Show breakdown
+                    </summary>
+
+                    <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {rows.map((r) => (
+                            <div
+                                key={r.id}
+                                className="border border-gray-200 rounded-[14px] px-3 py-2 flex items-center justify-between gap-3"
+                            >
+                                <div className="min-w-0 flex items-center gap-2">
+                                    <span className={`w-3 h-3 rounded-full ${kindBg(r.kind)}`} />
+                                    <span className="text-[12px] font-inter text-brandBlack truncate">
+                                        {r.title}
+                                    </span>
+                                </div>
+
+                                <div className="text-[12px] font-inter text-gray-600 whitespace-nowrap">
+                                    {r.start}–{r.end}m · {r.minutes}m
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </details>
+            )}
+        </div>
+    );
+}
+
+function isInteractiveEl(target: EventTarget | null) {
+    const t = target as HTMLElement | null;
+    if (!t) return false;
+    const tag = (t.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select" || tag === "button") return true;
+    if (t.isContentEditable) return true;
+    return !!t.closest?.("input,textarea,select,button,[contenteditable='true']");
+}
+
+function EditSessionStudioModal(props: {
+    isOpen: boolean;
+    onClose: () => void;
+    onSave: (payload: {
+        title: string;
+        start_time?: string;
+        max_participants?: number | null;
+        description?: string | null;
+        schedule?: any;
+        stages_json?: any;
+        duration_minutes?: number | null;
+    }) => Promise<void> | void;
+    session: any;
+}) {
+    const { isOpen, onClose, onSave, session } = props;
+
+    const [editTitle, setEditTitle] = useState<string>(session?.title || "");
+    const [editDescription, setEditDescription] = useState<string>(
+        typeof session?.description === "string" ? session.description : ""
+    );
+    const [editStartLocal, setEditStartLocal] = useState<string>("");
+    const [editMaxParticipants, setEditMaxParticipants] = useState<string>(() => {
+        const v = session?.max_participants;
+        return v == null ? "" : String(v);
     });
+
+    const [studioBlocks, setStudioBlocks] = useState<StudioBlock[]>([]);
+    const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
+    const [draggingId, setDraggingId] = useState<string | null>(null);
+    const [dragOverId, setDragOverId] = useState<string | null>(null);
+    const [dropEdge, setDropEdge] = useState<"before" | "after">("after");
+    const [isSaving, setIsSaving] = useState(false);
+
+    const modalScrollRef = useRef<HTMLDivElement | null>(null);
+    const autoScrollRafRef = useRef<number | null>(null);
+    const autoScrollVelRef = useRef<number>(0);
+    const draggingRef = useRef<boolean>(false);
+
+    const flipPrevTopsRef = useRef<Record<string, number>>({});
+    const flipArmedRef = useRef<boolean>(false);
+
+    const isInfinite = resolveSessionType(session) === "infinite";
+    const studioTotal = useMemo(
+        () => studioBlocks.reduce((sum, b) => sum + (Number(b.minutes) || 0), 0),
+        [studioBlocks]
+    );
+
+    useEffect(() => {
+        if (!isOpen) return;
+
+        setEditTitle(session?.title || "");
+        setEditDescription(typeof session?.description === "string" ? session.description : "");
+        if (session?.start_time) {
+            try {
+                const d = new Date(session.start_time);
+                const pad = (n: number) => String(n).padStart(2, "0");
+                setEditStartLocal(
+                    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+                        d.getHours()
+                    )}:${pad(d.getMinutes())}`
+                );
+            } catch {
+                setEditStartLocal("");
+            }
+        } else {
+            setEditStartLocal("");
+        }
+
+        setEditMaxParticipants(
+            session?.max_participants == null ? "" : String(session?.max_participants)
+        );
+        setStudioBlocks(normalizeStudioBlocksFromSession(session));
+        setSelectedBlockId(null);
+        setDraggingId(null);
+        setDragOverId(null);
+        setDropEdge("after");
+        setIsSaving(false);
+    }, [isOpen, session]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        const prev = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+        return () => {
+            document.body.style.overflow = prev;
+        };
+    }, [isOpen]);
+
+    const focusBlock = useCallback((id: string) => {
+        if (!id) return;
+        requestAnimationFrame(() => {
+            const el = document.getElementById(`studio-block-${id}`) as HTMLElement | null;
+            if (!el) return;
+            el.focus();
+            try {
+                el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+            } catch { }
+        });
+    }, []);
+
+    const startAutoScrollLoop = useCallback(() => {
+        if (autoScrollRafRef.current) return;
+        draggingRef.current = true;
+
+        const tick = () => {
+            if (!draggingRef.current) {
+                autoScrollRafRef.current = null;
+                return;
+            }
+
+            const scroller = modalScrollRef.current;
+            const v = autoScrollVelRef.current;
+
+            if (scroller && v !== 0) {
+                scroller.scrollTop += v;
+            }
+
+            autoScrollRafRef.current = requestAnimationFrame(tick);
+        };
+
+        autoScrollRafRef.current = requestAnimationFrame(tick);
+    }, []);
+
+    const stopAutoScrollLoop = useCallback(() => {
+        draggingRef.current = false;
+        autoScrollVelRef.current = 0;
+        if (autoScrollRafRef.current) {
+            cancelAnimationFrame(autoScrollRafRef.current);
+            autoScrollRafRef.current = null;
+        }
+    }, []);
+
+    const updateAutoScrollFromClientY = useCallback((clientY: number) => {
+        const scroller = modalScrollRef.current;
+        if (!scroller) {
+            autoScrollVelRef.current = 0;
+            return;
+        }
+
+        const rect = scroller.getBoundingClientRect();
+        const threshold = 80;
+        const maxSpeed = 18;
+
+        const topZone = rect.top + threshold;
+        const bottomZone = rect.bottom - threshold;
+
+        let vel = 0;
+
+        if (clientY < topZone) {
+            const t = clamp((topZone - clientY) / threshold, 0, 1);
+            vel = -Math.round(maxSpeed * t);
+        } else if (clientY > bottomZone) {
+            const t = clamp((clientY - bottomZone) / threshold, 0, 1);
+            vel = Math.round(maxSpeed * t);
+        } else {
+            vel = 0;
+        }
+
+        autoScrollVelRef.current = vel;
+    }, []);
+
+    const armFlip = useCallback(() => {
+        const tops: Record<string, number> = {};
+        for (const b of studioBlocks) {
+            const el = document.getElementById(`studio-block-${b.id}`) as HTMLElement | null;
+            if (!el) continue;
+            tops[b.id] = el.getBoundingClientRect().top;
+        }
+        flipPrevTopsRef.current = tops;
+        flipArmedRef.current = true;
+    }, [studioBlocks]);
+
+    useLayoutEffect(() => {
+        if (!flipArmedRef.current) return;
+
+        const prev = flipPrevTopsRef.current || {};
+        flipArmedRef.current = false;
+
+        for (const b of studioBlocks) {
+            const el = document.getElementById(`studio-block-${b.id}`) as HTMLElement | null;
+            if (!el) continue;
+
+            const prevTop = prev[b.id];
+            if (typeof prevTop !== "number") continue;
+
+            const nextTop = el.getBoundingClientRect().top;
+            const dy = prevTop - nextTop;
+
+            if (Math.abs(dy) < 1) continue;
+
+            try {
+                el.animate(
+                    [{ transform: `translateY(${dy}px)` }, { transform: "translateY(0px)" }],
+                    {
+                        duration: 180,
+                        easing: "cubic-bezier(0.2, 0, 0, 1)",
+                    }
+                );
+            } catch { }
+        }
+    }, [studioBlocks]);
+
+    const updateBlock = useCallback((id: string, patch: Partial<StudioBlock>) => {
+        setStudioBlocks((prev) =>
+            prev.map((b) => (b.id === id ? { ...b, ...patch } : b))
+        );
+    }, []);
+
+    const removeBlock = useCallback((id: string) => {
+        setStudioBlocks((prev) => prev.filter((b) => b.id !== id));
+        setSelectedBlockId((cur) => (cur === id ? null : cur));
+    }, []);
+
+    const addFromLibrary = useCallback((b: StudioBlock) => {
+        setStudioBlocks((prev) => [
+            ...prev,
+            {
+                id: uid(),
+                kind: b.kind,
+                title: b.title,
+                note: b.note,
+                minutes: b.minutes,
+            },
+        ]);
+    }, []);
+
+    const resetDefaultStudio = useCallback(() => {
+        setStudioBlocks([
+            { id: uid(), kind: "welcome", title: "Welcome", note: "Quick intro / rules / vibe", minutes: 3 },
+            { id: uid(), kind: "intentions", title: "Intentions", note: "Say what you’ll finish", minutes: 5 },
+            { id: uid(), kind: "focus", title: "Focus", note: "Deep work block", minutes: 50 },
+            { id: uid(), kind: "break", title: "Break", note: "Recharge / stretch", minutes: 10 },
+            { id: uid(), kind: "focus", title: "Focus", note: "Second focus block", minutes: 50 },
+            { id: uid(), kind: "recap", title: "Recap", note: "What got done / what’s next", minutes: 5 },
+            { id: uid(), kind: "celebrate", title: "Celebrate", note: "Closure + positive finish", minutes: 3 },
+        ]);
+    }, []);
+
+    const clearStudio = useCallback(() => setStudioBlocks([]), []);
+
+    const moveBlock = useCallback(
+        (id: string, dir: -1 | 1) => {
+            armFlip();
+
+            setStudioBlocks((prev) => {
+                const idx = prev.findIndex((b) => b.id === id);
+                if (idx < 0) return prev;
+                const nextIdx = idx + dir;
+                if (nextIdx < 0 || nextIdx >= prev.length) return prev;
+                const copy = [...prev];
+                const [item] = copy.splice(idx, 1);
+                copy.splice(nextIdx, 0, item);
+                return copy;
+            });
+
+            setSelectedBlockId(id);
+            focusBlock(id);
+        },
+        [armFlip, focusBlock]
+    );
+
+    const moveBlockTo = useCallback(
+        (dragId: string, overId: string, edge: "before" | "after") => {
+            if (!dragId || !overId) return;
+
+            armFlip();
+
+            setStudioBlocks((prev) => {
+                const from = prev.findIndex((b) => b.id === dragId);
+                if (from < 0) return prev;
+
+                if (overId === END_DROP_ID) {
+                    const copy = [...prev];
+                    const [item] = copy.splice(from, 1);
+                    copy.push(item);
+                    return copy;
+                }
+
+                const to = prev.findIndex((b) => b.id === overId);
+                if (to < 0 || dragId === overId) return prev;
+
+                const copy = [...prev];
+                const [item] = copy.splice(from, 1);
+                const toAfterRemoval = from < to ? to - 1 : to;
+                const insertIndex = toAfterRemoval + (edge === "after" ? 1 : 0);
+                copy.splice(clamp(insertIndex, 0, copy.length), 0, item);
+                return copy;
+            });
+
+            setSelectedBlockId(dragId);
+            focusBlock(dragId);
+        },
+        [armFlip, focusBlock]
+    );
+
+    if (!isOpen) return null;
+
+    return (
+        <ModalShell
+            title="Edit session"
+            isOpen={isOpen}
+            onClose={onClose}
+            widthClass="max-w-[1200px]"
+        >
+            <div ref={modalScrollRef} className="space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-[14px] font-medium text-brandBlack mb-1 font-inter">
+                            Session title
+                        </label>
+                        <input
+                            type="text"
+                            value={editTitle}
+                            onChange={(e) => setEditTitle(e.target.value)}
+                            placeholder="e.g., Deep Work Session"
+                            className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-[14px] font-medium text-brandBlack mb-1 font-inter">
+                            Start time
+                        </label>
+                        <input
+                            type="datetime-local"
+                            value={editStartLocal}
+                            onChange={(e) => setEditStartLocal(e.target.value)}
+                            className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter"
+                        />
+                    </div>
+                </div>
+
+                <div>
+                    <label className="block text-[14px] font-medium text-brandBlack mb-1 font-inter">
+                        Description
+                    </label>
+                    <textarea
+                        value={editDescription}
+                        onChange={(e) => setEditDescription(e.target.value)}
+                        placeholder="Optional. Describe what this session is about."
+                        rows={4}
+                        className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter resize-y"
+                    />
+                </div>
+
+                <div className="border border-[#DBD8D8] rounded-[18px] bg-white p-3 sm:p-4">
+                    <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-start gap-3 min-w-0">
+                            <div className="w-10 h-10 p-2 rounded-[14px] bg-[#111827] text-white flex items-center justify-center shrink-0">
+                                <Layers size={18} />
+                            </div>
+
+                            <div className="min-w-0">
+                                <div className="font-inter font-semibold text-[14px] text-brandBlack">
+                                    Session Studio
+                                </div>
+                                <div className="font-inter text-[12px] text-gray-500">
+                                    Edit session description and timeline with the same style as CreateSessionModal.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="mt-4 border border-gray-200 rounded-[16px] p-3">
+                        <div className="font-inter font-semibold text-[13px] text-brandBlack">
+                            Participant limit
+                        </div>
+                        <div className="mt-2 flex items-center gap-2">
+                            <input
+                                type="number"
+                                min={1}
+                                value={editMaxParticipants}
+                                onChange={(e) => setEditMaxParticipants(e.target.value)}
+                                className="w-28 px-3 py-2 border border-gray-300 rounded-[14px] font-inter text-center"
+                            />
+                            <span className="font-inter text-[12px] text-gray-600">people</span>
+                        </div>
+                    </div>
+
+                    <SessionTimeline blocks={studioBlocks} />
+
+                    <div className="mt-3">
+                        <div className="flex items-center justify-end gap-2 flex-wrap">
+                            <button
+                                onClick={resetDefaultStudio}
+                                className="inline-flex items-center gap-2 px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
+                                type="button"
+                            >
+                                <RotateCcw size={14} />
+                                Reset default
+                            </button>
+
+                            <button
+                                onClick={clearStudio}
+                                className="inline-flex items-center gap-2 px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
+                                type="button"
+                            >
+                                <Eraser size={14} />
+                                Clear
+                            </button>
+                        </div>
+
+                        <div className="mt-2 text-[12px] text-gray-500 font-inter">
+                            Tip: drag blocks to reorder, or click a block and use ↑ / ↓.
+                        </div>
+
+                        <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
+                            <div className="border border-gray-200 rounded-[18px] p-3 sm:p-4">
+                                <div>
+                                    <div className="font-inter font-semibold text-[13px] text-brandBlack">
+                                        Block Library
+                                    </div>
+                                    <div className="font-inter text-[12px] text-gray-500">
+                                        Add blocks to the script.
+                                    </div>
+                                </div>
+
+                                <div className="mt-3 grid grid-cols-2 gap-2 sm:gap-3">
+                                    {STUDIO_LIBRARY.map((b) => (
+                                        <button
+                                            key={b.id}
+                                            onClick={() => addFromLibrary(b)}
+                                            className="text-left border border-gray-200 rounded-[14px] p-3 hover:bg-gray-50 transition"
+                                            type="button"
+                                        >
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="font-inter font-semibold text-[12px] text-brandBlack">
+                                                    {b.title}
+                                                </div>
+                                                <div className="font-inter text-[12px] text-gray-500 whitespace-nowrap">
+                                                    {b.minutes}m
+                                                </div>
+                                            </div>
+                                            <div className="mt-1 font-inter text-[12px] text-gray-500 leading-snug">
+                                                {b.note}
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div
+                                className="border border-gray-200 rounded-[18px] p-3 sm:p-4"
+                                onDragOver={(e) => {
+                                    if (!draggingId) return;
+                                    updateAutoScrollFromClientY(e.clientY);
+                                }}
+                                onDragLeave={() => {
+                                    if (!draggingId) return;
+                                    autoScrollVelRef.current = 0;
+                                }}
+                            >
+                                <div className="flex items-center justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <div className="font-inter font-semibold text-[13px] text-brandBlack">
+                                            Script
+                                        </div>
+                                        <div className="font-inter text-[12px] text-gray-500">
+                                            Reorder with drag & drop, keyboard ↑/↓, or arrows.
+                                        </div>
+                                    </div>
+
+                                    <div className="text-right shrink-0">
+                                        <div className="font-inter text-[12px] text-gray-500">Total:</div>
+                                        <div className="font-inter font-semibold text-[12px] text-brandBlack whitespace-nowrap">
+                                            {studioTotal} min
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {studioBlocks.length === 0 ? (
+                                    <div className="mt-4 text-[12px] text-gray-500 font-inter">
+                                        No blocks yet. Add from the library on the left.
+                                    </div>
+                                ) : (
+                                    <div className="mt-3 space-y-2 sm:space-y-3">
+                                        {studioBlocks.map((b, idx) => {
+                                            const selected = selectedBlockId === b.id;
+                                            const isDragging = draggingId === b.id;
+                                            const isOverSelf =
+                                                dragOverId === b.id &&
+                                                draggingId &&
+                                                draggingId !== b.id;
+
+                                            return (
+                                                <div
+                                                    key={b.id}
+                                                    id={`studio-block-${b.id}`}
+                                                    tabIndex={0}
+                                                    draggable
+                                                    onClick={() => {
+                                                        setSelectedBlockId(b.id);
+                                                        focusBlock(b.id);
+                                                    }}
+                                                    onFocus={() => setSelectedBlockId(b.id)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === "ArrowUp") {
+                                                            e.preventDefault();
+                                                            moveBlock(b.id, -1);
+                                                        } else if (e.key === "ArrowDown") {
+                                                            e.preventDefault();
+                                                            moveBlock(b.id, 1);
+                                                        } else if (
+                                                            e.key === "Delete" ||
+                                                            e.key === "Backspace"
+                                                        ) {
+                                                            if (!isInteractiveEl(e.target)) {
+                                                                e.preventDefault();
+                                                                removeBlock(b.id);
+                                                            }
+                                                        }
+                                                    }}
+                                                    onDragStart={(e) => {
+                                                        if (isInteractiveEl(e.target)) {
+                                                            e.preventDefault();
+                                                            return;
+                                                        }
+                                                        setDraggingId(b.id);
+                                                        setDragOverId(null);
+                                                        setDropEdge("after");
+
+                                                        try {
+                                                            e.dataTransfer.effectAllowed = "move";
+                                                            e.dataTransfer.setData("text/plain", b.id);
+                                                            const img = new Image();
+                                                            img.src =
+                                                                "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+                                                            e.dataTransfer.setDragImage(img, 0, 0);
+                                                        } catch { }
+
+                                                        startAutoScrollLoop();
+                                                    }}
+                                                    onDragOver={(e) => {
+                                                        e.preventDefault();
+                                                        if (!draggingId) return;
+
+                                                        updateAutoScrollFromClientY(e.clientY);
+
+                                                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                                        const mid = rect.top + rect.height / 2;
+                                                        const edge: "before" | "after" =
+                                                            e.clientY < mid ? "before" : "after";
+
+                                                        if (dragOverId !== b.id) setDragOverId(b.id);
+                                                        if (dropEdge !== edge) setDropEdge(edge);
+                                                    }}
+                                                    onDrop={(e) => {
+                                                        e.preventDefault();
+
+                                                        const dragIdFromData = (() => {
+                                                            try {
+                                                                return e.dataTransfer.getData("text/plain") || "";
+                                                            } catch {
+                                                                return "";
+                                                            }
+                                                        })();
+
+                                                        const dragId = draggingId || dragIdFromData;
+                                                        if (dragId) moveBlockTo(dragId, b.id, dropEdge);
+
+                                                        setDraggingId(null);
+                                                        setDragOverId(null);
+                                                        setDropEdge("after");
+                                                        stopAutoScrollLoop();
+                                                    }}
+                                                    onDragEnd={() => {
+                                                        setDraggingId(null);
+                                                        setDragOverId(null);
+                                                        setDropEdge("after");
+                                                        stopAutoScrollLoop();
+                                                    }}
+                                                    className={
+                                                        "relative border rounded-[16px] p-2.5 sm:p-3 outline-none transition " +
+                                                        "cursor-grab active:cursor-grabbing " +
+                                                        (selected
+                                                            ? "border-brandBlack ring-2 ring-black/10"
+                                                            : "border-gray-200") +
+                                                        (isDragging ? " opacity-60" : "") +
+                                                        " hover:bg-gray-50"
+                                                    }
+                                                    title="Drag to reorder. Click + use ↑/↓ to move."
+                                                >
+                                                    {isOverSelf && (
+                                                        <div
+                                                            className={
+                                                                "pointer-events-none absolute left-3 right-3 h-[3px] rounded-full bg-brandBlack/80 " +
+                                                                (dropEdge === "before" ? "-top-[6px]" : "-bottom-[6px]")
+                                                            }
+                                                        />
+                                                    )}
+
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <span className="px-2 py-1 rounded-full border border-gray-200 text-[10px] sm:text-[11px] font-inter text-gray-600 whitespace-nowrap">
+                                                            {b.kind}
+                                                        </span>
+
+                                                        <div className="flex items-center gap-2 shrink-0">
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    moveBlock(b.id, -1);
+                                                                }}
+                                                                disabled={idx === 0}
+                                                                className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 flex items-center justify-center disabled:opacity-40 hover:bg-gray-50 transition"
+                                                                type="button"
+                                                                title="Move up"
+                                                            >
+                                                                <ArrowUp size={16} />
+                                                            </button>
+
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    moveBlock(b.id, 1);
+                                                                }}
+                                                                disabled={idx === studioBlocks.length - 1}
+                                                                className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 flex items-center justify-center disabled:opacity-40 hover:bg-gray-50 transition"
+                                                                type="button"
+                                                                title="Move down"
+                                                            >
+                                                                <ArrowDown size={16} />
+                                                            </button>
+
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    removeBlock(b.id);
+                                                                }}
+                                                                className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 flex items-center justify-center hover:bg-gray-50 transition"
+                                                                type="button"
+                                                                title="Remove"
+                                                            >
+                                                                <Trash2 size={16} />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="mt-2">
+                                                        <input
+                                                            value={b.title}
+                                                            onChange={(e) =>
+                                                                updateBlock(b.id, { title: e.target.value })
+                                                            }
+                                                            className="w-full px-3 py-2.5 border border-gray-200 rounded-[14px] text-[13px] font-inter"
+                                                            placeholder="Block title…"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            onFocus={() => setSelectedBlockId(b.id)}
+                                                        />
+                                                    </div>
+
+                                                    <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                                        <span className="text-[12px] text-gray-500 font-inter shrink-0">
+                                                            Minutes
+                                                        </span>
+
+                                                        <div
+                                                            className="flex items-center gap-1 sm:gap-2 flex-nowrap shrink-0"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                        >
+                                                            <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    updateBlock(b.id, {
+                                                                        minutes: clamp(b.minutes - 1, 1, 24 * 60),
+                                                                    })
+                                                                }
+                                                                className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 hover:bg-gray-50 transition"
+                                                            >
+                                                                –
+                                                            </button>
+
+                                                            <input
+                                                                type="number"
+                                                                value={b.minutes}
+                                                                onChange={(e) =>
+                                                                    updateBlock(b.id, {
+                                                                        minutes: clamp(
+                                                                            Number(e.target.value) || 1,
+                                                                            1,
+                                                                            24 * 60
+                                                                        ),
+                                                                    })
+                                                                }
+                                                                className="w-14 sm:w-16 h-8 sm:h-9 px-2 border border-gray-200 rounded-[12px] text-[13px] font-inter text-center"
+                                                                onFocus={() => setSelectedBlockId(b.id)}
+                                                            />
+
+                                                            <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    updateBlock(b.id, {
+                                                                        minutes: clamp(b.minutes + 1, 1, 24 * 60),
+                                                                    })
+                                                                }
+                                                                className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 hover:bg-gray-50 transition"
+                                                            >
+                                                                +
+                                                            </button>
+
+                                                            <span className="hidden sm:inline text-[12px] text-gray-500 font-inter whitespace-nowrap">
+                                                                min
+                                                            </span>
+                                                        </div>
+                                                    </div>
+
+                                                    <div
+                                                        className="mt-2 flex items-center gap-2 flex-wrap"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    >
+                                                        {QUICK_MINUTES.map((m) => (
+                                                            <button
+                                                                key={m}
+                                                                type="button"
+                                                                onClick={() => updateBlock(b.id, { minutes: m })}
+                                                                className="px-2.5 py-1.5 rounded-full border border-gray-200 text-[11px] sm:text-[12px] font-inter hover:bg-gray-50 transition"
+                                                            >
+                                                                {m}m
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+
+                                        {draggingId && (
+                                            <div
+                                                className="relative h-10 rounded-[14px] border border-dashed border-gray-200 bg-gray-50/60"
+                                                onDragOver={(e) => {
+                                                    e.preventDefault();
+                                                    updateAutoScrollFromClientY(e.clientY);
+                                                    if (dragOverId !== END_DROP_ID) setDragOverId(END_DROP_ID);
+                                                    if (dropEdge !== "after") setDropEdge("after");
+                                                }}
+                                                onDrop={(e) => {
+                                                    e.preventDefault();
+                                                    const dragIdFromData = (() => {
+                                                        try {
+                                                            return e.dataTransfer.getData("text/plain") || "";
+                                                        } catch {
+                                                            return "";
+                                                        }
+                                                    })();
+                                                    const dragId = draggingId || dragIdFromData;
+                                                    if (dragId) moveBlockTo(dragId, END_DROP_ID, "after");
+
+                                                    setDraggingId(null);
+                                                    setDragOverId(null);
+                                                    setDropEdge("after");
+                                                    stopAutoScrollLoop();
+                                                }}
+                                            >
+                                                {dragOverId === END_DROP_ID && (
+                                                    <div className="pointer-events-none absolute left-3 right-3 top-1/2 -translate-y-1/2 h-[3px] rounded-full bg-brandBlack/70" />
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex gap-3 justify-end">
+                    <button
+                        className="h-11 px-5 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] text-[13px] font-semibold"
+                        onClick={onClose}
+                        type="button"
+                        disabled={isSaving}
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        className="h-11 px-6 rounded-full border border-[#111827] bg-[#111827] text-white hover:opacity-90 text-[13px] font-semibold disabled:opacity-60"
+                        type="button"
+                        disabled={isSaving || !studioBlocks.length}
+                        onClick={async () => {
+                            setIsSaving(true);
+                            try {
+                                const updates: any = {};
+                                const title = String(editTitle || "").trim();
+                                if (title !== String(session?.title || "").trim()) updates.title = title;
+
+                                const description = String(editDescription || "").trim();
+                                const prevDescription = String(session?.description || "").trim();
+                                if (description !== prevDescription) {
+                                    updates.description = description || null;
+                                }
+
+                                if (editStartLocal) {
+                                    try {
+                                        const iso = new Date(editStartLocal).toISOString();
+                                        if (iso !== session?.start_time) updates.start_time = iso;
+                                    } catch { }
+                                }
+
+                                if (editMaxParticipants.trim() === "") {
+                                    if (session?.max_participants != null) updates.max_participants = null;
+                                } else {
+                                    const n = Number(editMaxParticipants);
+                                    if (Number.isFinite(n) && n > 0 && n !== session?.max_participants) {
+                                        updates.max_participants = n;
+                                    }
+                                }
+
+                                const nextSchedule = exportStudioToSchedule(
+                                    studioBlocks,
+                                    isInfinite,
+                                    session?.start_time || session?.created_at || new Date().toISOString()
+                                );
+                                const nextStagesJson = studioBlocks.map((b, index) => ({
+                                    id: String(index),
+                                    kind: b.kind,
+                                    title: b.title,
+                                    name: b.title,
+                                    note: b.note || null,
+                                    minutes: b.minutes,
+                                    duration_minutes: b.minutes,
+                                    durationSeconds: b.minutes * 60,
+                                    order: index,
+                                    position: index,
+                                }));
+
+                                updates.schedule = nextSchedule;
+                                updates.stages_json = nextStagesJson;
+                                updates.duration_minutes = studioTotal || null;
+
+                                await onSave(updates);
+                            } finally {
+                                setIsSaving(false);
+                            }
+                        }}
+                    >
+                        {isSaving ? "Saving..." : "Save changes"}
+                    </button>
+                </div>
+            </div>
+        </ModalShell>
+    );
 }
 
 export default function SessionCard({
@@ -1574,7 +2584,6 @@ export default function SessionCard({
 
     const [isBookersModalOpen, setIsBookersModalOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-    const [isTimelineEditorOpen, setIsTimelineEditorOpen] = useState(false);
 
     const [isOptionsOpen, setIsOptionsOpen] = useState(false);
     const optionsRef = useRef<HTMLDivElement | null>(null);
@@ -1765,7 +2774,7 @@ export default function SessionCard({
         return () => {
             cancelled = true;
         };
-    }, [session?.id, session?.schedule, session?.session_template_id, session?.template_id]);
+    }, [session?.id, session?.schedule, session?.session_template_id, session?.template_id, session?.stages_json]);
 
     const stagesVisual = useMemo(() => {
         return (stages || []).map((s) => {
@@ -1945,7 +2954,14 @@ export default function SessionCard({
     };
 
     const handleCopyInviteLink = async () => {
-        const url = buildAbsoluteInviteUrl(session);
+        const roomParam = getRoomParam(session);
+        const path = roomParam ? `/room-iframe/${roomParam}` : "/sessions";
+        const origin =
+            typeof window !== "undefined" && window.location?.origin
+                ? window.location.origin
+                : "https://mysession.club";
+        const url = `${origin}${path}`;
+
         const ok = await copyTextToClipboard(url);
 
         setCopyInviteState(ok ? "copied" : "error");
@@ -1997,162 +3013,6 @@ export default function SessionCard({
 
     const liveStackUsers = liveUsers.slice(0, maxStack);
     const liveRemaining = Math.max(0, liveNowCount - liveStackUsers.length);
-
-    const [editTitle, setEditTitle] = useState<string>(session?.title || "");
-    const [editStartLocal, setEditStartLocal] = useState<string>(() => {
-        if (!session?.start_time) return "";
-        try {
-            const d = new Date(session.start_time);
-            const pad = (n: number) => String(n).padStart(2, "0");
-            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
-                d.getHours()
-            )}:${pad(d.getMinutes())}`;
-        } catch {
-            return "";
-        }
-    });
-    const [editMaxParticipants, setEditMaxParticipants] = useState<string>(() => {
-        const v = session?.max_participants;
-        return v == null ? "" : String(v);
-    });
-    const [editDescription, setEditDescription] = useState<string>("");
-    const [editTimelineBlocks, setEditTimelineBlocks] = useState<RoomTimelineBlock[]>([]);
-    const [editSaveError, setEditSaveError] = useState<string>("");
-    const [editSaving, setEditSaving] = useState(false);
-
-    const editTimelineStagesPreview = useMemo(
-        () => stagesJsonFromBlocks(editTimelineBlocks),
-        [editTimelineBlocks]
-    );
-
-    const editTimelineTotalMinutes = useMemo(
-        () => getTimelineTotalMinutes(editTimelineBlocks),
-        [editTimelineBlocks]
-    );
-
-    useEffect(() => {
-        setEditTitle(session?.title || "");
-        if (session?.start_time) {
-            try {
-                const d = new Date(session.start_time);
-                const pad = (n: number) => String(n).padStart(2, "0");
-                setEditStartLocal(
-                    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
-                        d.getHours()
-                    )}:${pad(d.getMinutes())}`
-                );
-            } catch {
-                setEditStartLocal("");
-            }
-        } else {
-            setEditStartLocal("");
-        }
-
-        setEditMaxParticipants(
-            session?.max_participants == null ? "" : String(session?.max_participants)
-        );
-        setEditDescription(
-            typeof session?.description === "string"
-                ? session.description
-                : resolvedDescription || ""
-        );
-        setEditTimelineBlocks(blocksFromSessionData(session, stagesVisual));
-        setEditSaveError("");
-    }, [
-        session?.id,
-        session?.title,
-        session?.start_time,
-        session?.max_participants,
-        session?.description,
-        resolvedDescription,
-        stagesVisual,
-    ]);
-
-    const openEditModal = () => {
-        setEditTitle(session?.title || "");
-        if (session?.start_time) {
-            try {
-                const d = new Date(session.start_time);
-                const pad = (n: number) => String(n).padStart(2, "0");
-                setEditStartLocal(
-                    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
-                        d.getHours()
-                    )}:${pad(d.getMinutes())}`
-                );
-            } catch {
-                setEditStartLocal("");
-            }
-        } else {
-            setEditStartLocal("");
-        }
-
-        setEditMaxParticipants(
-            session?.max_participants == null ? "" : String(session?.max_participants)
-        );
-        setEditDescription(
-            typeof session?.description === "string"
-                ? session.description
-                : resolvedDescription || ""
-        );
-        setEditTimelineBlocks(blocksFromSessionData(session, stagesVisual));
-        setEditSaveError("");
-        setIsEditModalOpen(true);
-    };
-
-    const bookSessionButton = (
-        <button
-            onClick={handleBookSession}
-            onMouseEnter={() => setIsHoveringBook(true)}
-            onMouseLeave={() => setIsHoveringBook(false)}
-            className={`
-        h-12 min-w-[160px] rounded-full px-6 text-[14px] font-semibold
-        flex items-center justify-center gap-2
-        transition-all duration-200 ease-in-out
-        w-full xl:w-auto
-        ${isHoveringBook
-                    ? "text-[#65D46C] border border-[#65D46C] bg-[#65D46C]/10"
-                    : "border border-brandBlack text-brandBlack bg-white"
-                }
-      `}
-            type="button"
-        >
-            <img
-                src={isHoveringBook ? "/icons/book-session-green.svg" : "/icons/book-session.svg"}
-                className="w-4 h-4"
-                alt=""
-            />
-            <span>Book session</span>
-        </button>
-    );
-
-    const confirmedBookingButton = (
-        <button
-            onClick={isHoveringCancel ? handleCancelBooking : undefined}
-            onMouseEnter={onEnterBooked}
-            onMouseLeave={onLeaveBooked}
-            className={`
-        h-12 rounded-full text-[14px] font-semibold
-        flex items-center justify-center
-        transition-all duration-300 ease-in-out
-        w-full xl:w-auto
-        ${isHoveringCancel
-                    ? "px-6 border border-[#F65252] bg-[#F65252]/5 text-[#F65252]"
-                    : "px-5 border border-[#65D46C] bg-[#65D46C]/10 text-[#65D46C]"
-                }
-      `}
-            style={{ willChange: "width, padding" }}
-            type="button"
-        >
-            {isHoveringCancel ? (
-                <>
-                    <img src="/icons/cross-cancel.svg" className="w-6 h-6 mr-2" alt="" />
-                    Cancel booking
-                </>
-            ) : (
-                <img src="/icons/book-session-green.svg" className="w-6 h-6" alt="" />
-            )}
-        </button>
-    );
 
     const canEdit = isHost && !!onEditSession;
     const canCancelBooking = !!isBookingConfirmed;
@@ -2283,19 +3143,72 @@ export default function SessionCard({
 
     const tickEveryMs = isInfinite ? 15000 : 1000;
 
+    const bookSessionButton = (
+        <button
+            onClick={handleBookSession}
+            onMouseEnter={() => setIsHoveringBook(true)}
+            onMouseLeave={() => setIsHoveringBook(false)}
+            className={`
+                h-12 min-w-[160px] rounded-full px-6 text-[14px] font-semibold
+                flex items-center justify-center gap-2
+                transition-all duration-200 ease-in-out
+                w-full xl:w-auto
+                ${isHoveringBook
+                    ? "text-[#65D46C] border border-[#65D46C] bg-[#65D46C]/10"
+                    : "border border-brandBlack text-brandBlack bg-white"
+                }
+            `}
+        >
+            <img
+                src={isHoveringBook ? "/icons/book-session-green.svg" : "/icons/book-session.svg"}
+                className="w-4 h-4"
+                alt=""
+            />
+            <span>Book session</span>
+        </button>
+    );
+
+    const confirmedBookingButton = (
+        <button
+            onClick={isHoveringCancel ? handleCancelBooking : undefined}
+            onMouseEnter={onEnterBooked}
+            onMouseLeave={onLeaveBooked}
+            className={`
+                h-12 rounded-full text-[14px] font-semibold
+                flex items-center justify-center
+                transition-all duration-300 ease-in-out
+                w-full xl:w-auto
+                ${isHoveringCancel
+                    ? "px-6 border border-[#F65252] bg-[#F65252]/5 text-[#F65252]"
+                    : "px-5 border border-[#65D46C] bg-[#65D46C]/10 text-[#65D46C]"
+                }
+            `}
+            style={{ willChange: "width, padding" }}
+        >
+            {isHoveringCancel ? (
+                <>
+                    <img src="/icons/cross-cancel.svg" className="w-6 h-6 mr-2" alt="" />
+                    Cancel booking
+                </>
+            ) : (
+                <img src="/icons/book-session-green.svg" className="w-6 h-6" alt="" />
+            )}
+        </button>
+    );
+
     return (
         <>
             <div
                 onMouseEnter={() => setIsHoveringCard(true)}
                 onMouseLeave={() => setIsHoveringCard(false)}
                 className="
-          border border-borderGray rounded-[42px] bg-white
-          transition-all duration-200
-          hover:bg-[#F6F6F6] hover:border-[#A3A3A3]
-          p-6
-          flex flex-col
-          w-full gap-4
-        "
+                    border border-borderGray rounded-[42px] bg-white
+                    transition-all duration-200
+                    hover:bg-[#F6F6F6] hover:border-[#A3A3A3]
+                    p-6
+                    flex flex-col
+                    w-full gap-4
+                "
             >
                 <div className="flex flex-col xl:flex-row w-full gap-6">
                     <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 flex-1">
@@ -2385,15 +3298,15 @@ export default function SessionCard({
                                         {isInfoOpen && (
                                             <div
                                                 className="
-                          absolute left-0 top-[38px]
-                          z-[250]
-                          w-[420px] max-w-[85vw]
-                          rounded-[18px]
-                          border border-[#E5E7EB]
-                          bg-white
-                          shadow-xl
-                          overflow-hidden
-                        "
+                                                    absolute left-0 top-[38px]
+                                                    z-[250]
+                                                    w-[420px] max-w-[85vw]
+                                                    rounded-[18px]
+                                                    border border-[#E5E7EB]
+                                                    bg-white
+                                                    shadow-xl
+                                                    overflow-hidden
+                                                "
                                             >
                                                 <div className="px-4 py-3 text-[12px] text-[#606060] border-b border-[#F3F4F6] flex items-center justify-between">
                                                     <span>Session info</span>
@@ -2434,11 +3347,7 @@ export default function SessionCard({
                                                                 {Number.isFinite(nowStage.leftSec) &&
                                                                     nowStage.leftSec > 0 && (
                                                                         <span className="opacity-80 font-semibold">
-                                                                            ·{" "}
-                                                                            {Math.ceil(
-                                                                                nowStage.leftSec / 60
-                                                                            )}
-                                                                            m left
+                                                                            · {Math.ceil(nowStage.leftSec / 60)}m left
                                                                         </span>
                                                                     )}
                                                             </div>
@@ -2494,18 +3403,17 @@ export default function SessionCard({
                             onMouseEnter={() => setIsHoveringJoinIframe(true)}
                             onMouseLeave={() => setIsHoveringJoinIframe(false)}
                             className="
-                h-12 rounded-full px-6 text-[14px] font-semibold
-                flex items-center justify-center
-                transition-all duration-200 ease-in-out
-                w-full xl:w-auto
-                border
-              "
+                                h-12 rounded-full px-6 text-[14px] font-semibold
+                                flex items-center justify-center
+                                transition-all duration-200 ease-in-out
+                                w-full xl:w-auto
+                                border
+                            "
                             style={{
                                 borderColor: isHoveringJoinIframe ? joinHoverBg : "#111827",
                                 color: isHoveringJoinIframe ? "white" : "#111827",
                                 backgroundColor: isHoveringJoinIframe ? joinHoverBg : "transparent",
                             }}
-                            type="button"
                         >
                             Join session
                         </button>
@@ -2517,11 +3425,11 @@ export default function SessionCard({
                                 onMouseEnter={() => setIsHoveringOptions(true)}
                                 onMouseLeave={() => setIsHoveringOptions(false)}
                                 className="
-                  h-12 w-full xl:w-12
-                  rounded-full border
-                  flex items-center justify-center
-                  transition-all duration-200 ease-in-out
-                "
+                                    h-12 w-full xl:w-12
+                                    rounded-full border
+                                    flex items-center justify-center
+                                    transition-all duration-200 ease-in-out
+                                "
                                 title="Options"
                                 aria-label="Options"
                                 style={{
@@ -2536,15 +3444,15 @@ export default function SessionCard({
                             {isOptionsOpen && (
                                 <div
                                     className="
-                    absolute right-0 top-[52px]
-                    z-[200]
-                    w-[260px]
-                    rounded-[18px]
-                    border border-[#E5E7EB]
-                    bg-white
-                    shadow-xl
-                    overflow-hidden
-                  "
+                                        absolute right-0 top-[52px]
+                                        z-[200]
+                                        w-[260px]
+                                        rounded-[18px]
+                                        border border-[#E5E7EB]
+                                        bg-white
+                                        shadow-xl
+                                        overflow-hidden
+                                    "
                                 >
                                     <div className="px-4 py-3 text-[12px] text-[#606060] border-b border-[#F3F4F6]">
                                         Session options
@@ -2570,7 +3478,7 @@ export default function SessionCard({
                                                 outlined
                                                 onClick={() => {
                                                     setIsOptionsOpen(false);
-                                                    openEditModal();
+                                                    setIsEditModalOpen(true);
                                                 }}
                                             />
                                         )}
@@ -2674,11 +3582,11 @@ export default function SessionCard({
                                     to={`/profile/${u.id}`}
                                     onClick={() => setIsBookersModalOpen(false)}
                                     className="
-                flex items-center gap-3 px-3 py-2 rounded-[16px]
-                border border-[#F0F0F0]
-                hover:bg-[#F6F6F6] hover:border-[#E5E7EB]
-                transition
-            "
+                                        flex items-center gap-3 px-3 py-2 rounded-[16px]
+                                        border border-[#F0F0F0]
+                                        hover:bg-[#F6F6F6] hover:border-[#E5E7EB]
+                                        transition
+                                    "
                                 >
                                     <AvatarCircle
                                         user={u}
@@ -2705,227 +3613,27 @@ export default function SessionCard({
                 </div>
             </ModalShell>
 
-            <ModalShell
-                title="Edit session"
-                isOpen={isEditModalOpen}
-                onClose={() => {
-                    if (editSaving) return;
-                    setIsTimelineEditorOpen(false);
-                    setIsEditModalOpen(false);
-                }}
-                widthClass="max-w-[900px]"
-            >
-                <div className="flex flex-col gap-5">
-                    <div>
-                        <div className="text-[12px] font-semibold text-[#111827] mb-1">
-                            Title
-                        </div>
-                        <input
-                            value={editTitle}
-                            onChange={(e) => setEditTitle(e.target.value)}
-                            className="w-full h-11 px-4 rounded-[14px] border border-[#E5E7EB] outline-none focus:border-[#111827]"
-                            placeholder="Session title"
-                        />
-                    </div>
-
-                    <div>
-                        <div className="text-[12px] font-semibold text-[#111827] mb-1">
-                            Start time
-                        </div>
-                        <input
-                            value={editStartLocal}
-                            onChange={(e) => setEditStartLocal(e.target.value)}
-                            type="datetime-local"
-                            className="w-full h-11 px-4 rounded-[14px] border border-[#E5E7EB] outline-none focus:border-[#111827]"
-                        />
-                        <div className="text-[11px] text-[#606060] mt-1">
-                            Uses your local timezone.
-                        </div>
-                    </div>
-
-                    <div>
-                        <div className="text-[12px] font-semibold text-[#111827] mb-1">
-                            Participants limit
-                        </div>
-                        <input
-                            value={editMaxParticipants}
-                            onChange={(e) => setEditMaxParticipants(e.target.value)}
-                            type="number"
-                            min={1}
-                            className="w-full h-11 px-4 rounded-[14px] border border-[#E5E7EB] outline-none focus:border-[#111827]"
-                            placeholder="e.g. 12 (empty = unlimited)"
-                        />
-                    </div>
-
-                    <div>
-                        <div className="text-[12px] font-semibold text-[#111827] mb-1">
-                            Description
-                        </div>
-                        <textarea
-                            value={editDescription}
-                            onChange={(e) => setEditDescription(e.target.value)}
-                            className="w-full min-h-[120px] p-4 rounded-[14px] border border-[#E5E7EB] outline-none focus:border-[#111827]"
-                            placeholder="Session description..."
-                        />
-                    </div>
-
-                    <div className="border border-[#E5E7EB] rounded-[18px] p-4">
-                        <div className="flex items-center justify-between gap-3 flex-wrap">
-                            <div>
-                                <div className="text-[13px] font-semibold text-[#111827]">
-                                    Timeline
-                                </div>
-                                <div className="text-[11px] text-[#606060] mt-1">
-                                    Edit the session script using your Room Timeline Editor.
-                                </div>
-                            </div>
-
-                            <div className="flex items-center gap-3">
-                                <div className="text-[12px] text-[#606060]">
-                                    Total: <span className="font-semibold text-[#111827]">{editTimelineTotalMinutes} min</span>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() => setIsTimelineEditorOpen(true)}
-                                    className="h-10 px-4 rounded-full border border-[#111827] bg-[#111827] text-white hover:opacity-90 text-[13px] font-semibold"
-                                >
-                                    Edit timeline
-                                </button>
-                            </div>
-                        </div>
-
-                        <div className="mt-4">
-                            {editTimelineStagesPreview.length > 0 ? (
-                                <SessionStageBar
-                                    {...({
-                                        stages: editTimelineStagesPreview,
-                                        startTime: new Date().toISOString(),
-                                        cycleSeconds: undefined,
-                                        progressStyle: "tick",
-                                        tickEveryMs: 1000,
-                                    } as any)}
-                                />
-                            ) : (
-                                <div className="w-full h-2 rounded-full bg-[#111827]/5" />
-                            )}
-                        </div>
-
-                        {editTimelineBlocks.length > 0 && (
-                            <div className="mt-3 flex flex-wrap gap-2">
-                                {editTimelineBlocks.map((b) => (
-                                    <div
-                                        key={b.id}
-                                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-[#E5E7EB] bg-[#FAFAFA] text-[12px] text-[#111827]"
-                                    >
-                                        <span>{b.title}</span>
-                                        <span className="text-[#606060]">· {b.minutes}m</span>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-
-                    {editSaveError ? (
-                        <div className="rounded-[14px] border border-[#FECACA] bg-[#FFF1F2] px-4 py-3 text-[12px] text-[#B91C1C]">
-                            {editSaveError}
-                        </div>
-                    ) : null}
-
-                    <div className="flex gap-3 justify-end">
-                        <button
-                            className="h-11 px-5 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] text-[13px] font-semibold disabled:opacity-50"
-                            onClick={() => {
-                                setIsTimelineEditorOpen(false);
-                                setIsEditModalOpen(false);
-                            }}
-                            disabled={editSaving}
-                            type="button"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            className="h-11 px-6 rounded-full border border-[#111827] bg-[#111827] text-white hover:opacity-90 text-[13px] font-semibold disabled:opacity-60"
-                            onClick={async () => {
-                                if (!onEditSession) return;
-
-                                setEditSaving(true);
-                                setEditSaveError("");
-
-                                try {
-                                    const updates: any = {};
-                                    const title = String(editTitle || "").trim();
-                                    if (title && title !== session?.title) updates.title = title;
-
-                                    if (editStartLocal) {
-                                        try {
-                                            const iso = new Date(editStartLocal).toISOString();
-                                            if (iso !== session?.start_time) updates.start_time = iso;
-                                        } catch { }
-                                    }
-
-                                    if (editMaxParticipants.trim() === "") {
-                                        if (session?.max_participants != null) updates.max_participants = null;
-                                    } else {
-                                        const n = Number(editMaxParticipants);
-                                        if (Number.isFinite(n) && n > 0 && n !== session?.max_participants) {
-                                            updates.max_participants = n;
-                                        }
-                                    }
-
-                                    const nextDescription = String(editDescription || "").trim();
-                                    updates.description = nextDescription;
-
-                                    const nextSchedule = timelineBlocksToSchedulePayload(editTimelineBlocks, {
-                                        preserveInfinite: isInfinite,
-                                        anchorTs:
-                                            session?.started_at ||
-                                            session?.start_time ||
-                                            session?.created_at ||
-                                            new Date().toISOString(),
-                                    });
-
-                                    const nextStagesJson = stagesJsonFromBlocks(editTimelineBlocks);
-
-                                    updates.schedule = nextSchedule;
-                                    updates.stages_json = nextStagesJson;
-                                    updates.duration_minutes =
-                                        editTimelineBlocks.length > 0
-                                            ? getTimelineTotalMinutes(editTimelineBlocks)
-                                            : null;
-
-                                    await onEditSession(session.id, updates);
-
-                                    setResolvedDescription(nextDescription);
-                                    setStages(nextStagesJson);
-                                    setIsTimelineEditorOpen(false);
-                                    setIsEditModalOpen(false);
-                                } catch (e: any) {
-                                    console.error("onEditSession failed:", e);
-                                    setEditSaveError(String(e?.message || "Failed to save session"));
-                                } finally {
-                                    setEditSaving(false);
-                                }
-                            }}
-                            disabled={editSaving}
-                            type="button"
-                        >
-                            {editSaving ? "Saving..." : "Save changes"}
-                        </button>
-                    </div>
-                </div>
-            </ModalShell>
-
-            <RoomTimelineEditor
-                open={isTimelineEditorOpen}
-                theme="light"
-                title={editTitle || session?.title || "Session"}
-                blocks={editTimelineBlocks}
-                onChange={setEditTimelineBlocks}
-                onClose={() => setIsTimelineEditorOpen(false)}
-                onSave={() => setIsTimelineEditorOpen(false)}
-                saving={false}
-                preserveInfinite={isInfinite}
-            />
+            {isEditModalOpen && onEditSession && (
+                <EditSessionStudioModal
+                    isOpen={isEditModalOpen}
+                    onClose={() => setIsEditModalOpen(false)}
+                    session={session}
+                    onSave={async (updates) => {
+                        await onEditSession(session.id, updates);
+                        setResolvedDescription(
+                            updates.description == null
+                                ? ""
+                                : String(updates.description || "").trim()
+                        );
+                        _sessionDescriptionById.set(
+                            String(session.id),
+                            updates.description == null ? "" : String(updates.description || "").trim()
+                        );
+                        _stagesBySessionId.delete(String(session.id));
+                        setIsEditModalOpen(false);
+                    }}
+                />
+            )}
         </>
     );
 }
