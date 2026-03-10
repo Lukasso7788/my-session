@@ -3,6 +3,13 @@ import { Link, useNavigate } from "react-router-dom";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { SessionStageBar } from "./SessionStageBar";
 import type { SessionStage } from "../SessionConfig";
+import RoomTimelineEditor, {
+    type RoomTimelineBlock,
+    makeDefaultTimelineBlocks,
+    getTimelineTotalMinutes,
+    timelineBlocksFromSchedule,
+    timelineBlocksToSchedulePayload,
+} from "./RoomTimelineEditor";
 
 /** =========================
  * ✅ Global Supabase singleton (avoid multiple GoTrueClient instances)
@@ -408,7 +415,11 @@ function MenuItem({
         >
             <span
                 className={
-                    danger ? "text-[#F65252]" : success ? "text-[#22C55E]" : "text-[#111827]"
+                    danger
+                        ? "text-[#F65252]"
+                        : success
+                            ? "text-[#22C55E]"
+                            : "text-[#111827]"
                 }
             >
                 {icon}
@@ -476,7 +487,8 @@ function normalizeStages(raw: any): SessionStage[] {
                 name: title ?? s.name,
                 color,
 
-                durationSeconds: durationSeconds || s.durationSeconds || s.seconds || s.duration_seconds,
+                durationSeconds:
+                    durationSeconds || s.durationSeconds || s.seconds || s.duration_seconds,
                 duration_seconds: s.duration_seconds ?? s.durationSeconds ?? s.seconds,
                 seconds: s.seconds ?? s.durationSeconds ?? s.duration_seconds,
                 duration_minutes: s.duration_minutes ?? s.durationMinutes,
@@ -560,12 +572,8 @@ function tryStagesFromSchedule(scheduleAny: any): SessionStage[] {
 
     if (Array.isArray(phases) && phases.length) return phasesToStages(phases);
 
-    const focusSec = Number(
-        (schedule as any)?.timer?.focusSeconds || (schedule as any)?.timer?.focus_seconds
-    );
-    const breakSec = Number(
-        (schedule as any)?.timer?.breakSeconds || (schedule as any)?.timer?.break_seconds
-    );
+    const focusSec = Number((schedule as any)?.timer?.focusSeconds || (schedule as any)?.timer?.focus_seconds);
+    const breakSec = Number((schedule as any)?.timer?.breakSeconds || (schedule as any)?.timer?.break_seconds);
     const cycles = Number((schedule as any)?.timer?.cycles || (schedule as any)?.timer?.rounds);
 
     if (
@@ -668,7 +676,8 @@ async function fetchSessionDescriptionById(sessionId: string): Promise<string> {
         return "";
     }
 
-    const text = typeof data?.description === "string" ? data.description.trim() : "";
+    const text =
+        typeof data?.description === "string" ? data.description.trim() : "";
 
     _sessionDescriptionById.set(sid, text);
     return text;
@@ -721,7 +730,8 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
     }
 
     const fromSessionJson =
-        tryParseJson<any[]>(session?.stages_json) || tryParseJson<any[]>(session?.session_stages_json);
+        tryParseJson<any[]>(session?.stages_json) ||
+        tryParseJson<any[]>(session?.session_stages_json);
     if (Array.isArray(fromSessionJson) && fromSessionJson.length) {
         const out = normalizeStages(sortStagesInClient(fromSessionJson));
         if (sessionId) _stagesBySessionId.set(sessionId, out);
@@ -800,7 +810,8 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
             .maybeSingle();
 
         if (!tErr && tData) {
-            const sj = tryParseJson<any[]>(tData?.stages_json) || tryParseJson<any[]>(tData?.stages);
+            const sj =
+                tryParseJson<any[]>(tData?.stages_json) || tryParseJson<any[]>(tData?.stages);
             if (Array.isArray(sj) && sj.length) {
                 const out = normalizeStages(sortStagesInClient(sj));
                 _stagesByTemplateId.set(templateId, out);
@@ -857,7 +868,9 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
                     .maybeSingle();
 
                 if (!tErr && tData) {
-                    const tj = tryParseJson<any[]>(tData?.stages_json) || tryParseJson<any[]>(tData?.stages);
+                    const tj =
+                        tryParseJson<any[]>(tData?.stages_json) ||
+                        tryParseJson<any[]>(tData?.stages);
                     if (Array.isArray(tj) && tj.length) {
                         const out = normalizeStages(sortStagesInClient(tj));
                         _stagesByTemplateId.set(tidStr, out);
@@ -1049,9 +1062,7 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
         if (legacy.error && isColumnMissingErr(legacy.error, "left_at")) {
             legacy = await sb
                 .from("session_attendance")
-                .select(
-                    "user_id, profiles:profiles(id, full_name, avatar_url), joined_at, last_seen_at, created_at"
-                )
+                .select("user_id, profiles:profiles(id, full_name, avatar_url), joined_at, last_seen_at, created_at")
                 .eq("session_id", sessionId)
                 .order("joined_at", { ascending: false });
         }
@@ -1092,9 +1103,7 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
         if (res.error && isColumnMissingErr(res.error, "left_at")) {
             res = await sb
                 .from("session_participants")
-                .select(
-                    "user_id, profiles:profiles(id, full_name, avatar_url), joined_at, last_seen_at, created_at"
-                )
+                .select("user_id, profiles:profiles(id, full_name, avatar_url), joined_at, last_seen_at, created_at")
                 .eq("session_id", sessionId)
                 .order("joined_at", { ascending: false });
         }
@@ -1125,7 +1134,7 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
 }
 
 /** =========================
- * ✅ Stage visuals + editor
+ * ✅ Stage visuals
  * ========================= */
 type StageKind =
     | "welcome"
@@ -1147,343 +1156,6 @@ const KIND_META: Record<StageKind, { label: string; color: string }> = {
     celebrate: { label: "Celebrate", color: "#F472B6" },
     custom: { label: "Custom", color: "#6366F1" },
 };
-
-type TimelineEditorStage = {
-    id: string;
-    kind: StageKind;
-    title: string;
-    durationMinutes: number;
-    color: string;
-};
-
-function makeTimelineEditorStage(partial?: Partial<TimelineEditorStage>): TimelineEditorStage {
-    const kind = (partial?.kind || "focus") as StageKind;
-    return {
-        id:
-            partial?.id ||
-            `stage-${Math.random().toString(36).slice(2, 10)}-${Date.now().toString(36)}`,
-        kind,
-        title: String(partial?.title || KIND_META[kind].label),
-        durationMinutes: Math.max(1, Number(partial?.durationMinutes) || 25),
-        color: String(partial?.color || KIND_META[kind].color),
-    };
-}
-
-function makeTimelineEditorStagesFromSessionStages(stages: SessionStage[]): TimelineEditorStage[] {
-    const base = Array.isArray(stages) ? stages : [];
-    const out = base.map((stage, idx) => {
-        const kind = getStageKind(stage as any);
-        const seconds = Math.max(0, getStageSeconds(stage as any));
-        return makeTimelineEditorStage({
-            id: String((stage as any)?.id ?? idx),
-            kind,
-            title: String(
-                (stage as any)?.title ??
-                (stage as any)?.name ??
-                (stage as any)?.label ??
-                KIND_META[kind].label
-            ),
-            durationMinutes: Math.max(1, Math.round((seconds || 60) / 60)),
-            color: String((stage as any)?.color || KIND_META[kind].color),
-        });
-    });
-
-    return out.length ? out : [makeTimelineEditorStage({ kind: "focus", title: "Focus", durationMinutes: 25 })];
-}
-
-function buildStagesJsonFromTimelineEditor(stages: TimelineEditorStage[]): SessionStage[] {
-    return stages.map((stage, idx) => ({
-        id: String(stage.id || idx),
-        kind: stage.kind,
-        title: stage.title,
-        name: stage.title,
-        color: stage.color,
-        position: idx,
-        durationSeconds: Math.max(60, Math.round(Number(stage.durationMinutes || 1) * 60)),
-        duration_minutes: Math.max(1, Math.round(Number(stage.durationMinutes || 1))),
-        seconds: Math.max(60, Math.round(Number(stage.durationMinutes || 1) * 60)),
-    })) as SessionStage[];
-}
-
-function keepOriginalJsonShape(originalValue: any, nextValue: any) {
-    if (typeof originalValue === "string") {
-        try {
-            return JSON.stringify(nextValue);
-        } catch {
-            return originalValue;
-        }
-    }
-    return nextValue;
-}
-
-function buildScheduleFromTimelineEditor(originalSchedule: any, stages: TimelineEditorStage[]) {
-    const nextPhases = stages.map((stage, idx) => ({
-        id: stage.id || String(idx),
-        title: stage.title,
-        name: stage.title,
-        label: stage.title,
-        kind: stage.kind,
-        type: stage.kind,
-        color: stage.color,
-        duration_minutes: Math.max(1, Math.round(Number(stage.durationMinutes || 1))),
-        durationSeconds: Math.max(60, Math.round(Number(stage.durationMinutes || 1) * 60)),
-        seconds: Math.max(60, Math.round(Number(stage.durationMinutes || 1) * 60)),
-        position: idx,
-    }));
-
-    const parsed = tryParseJson<any>(originalSchedule);
-
-    if (Array.isArray(parsed)) {
-        return keepOriginalJsonShape(originalSchedule, nextPhases);
-    }
-
-    if (parsed && typeof parsed === "object") {
-        const next: any = { ...parsed };
-
-        if (next?.timer && typeof next.timer === "object") {
-            next.timer = { ...next.timer };
-            if (Array.isArray(next.timer.phases)) next.timer.phases = nextPhases;
-            else if (Array.isArray(next.timer.timeline)) next.timer.timeline = nextPhases;
-            else if (Array.isArray(next.timer.stages)) next.timer.stages = nextPhases;
-            else if (Array.isArray(next.timer.segments)) next.timer.segments = nextPhases;
-            else next.timer.phases = nextPhases;
-
-            return keepOriginalJsonShape(originalSchedule, next);
-        }
-
-        if (Array.isArray(next.phases)) next.phases = nextPhases;
-        else if (Array.isArray(next.timeline)) next.timeline = nextPhases;
-        else if (Array.isArray(next.stages)) next.stages = nextPhases;
-        else if (Array.isArray(next.segments)) next.segments = nextPhases;
-        else if (next.kind === "infinite_room") next.phases = nextPhases;
-        else next.stages = nextPhases;
-
-        return keepOriginalJsonShape(originalSchedule, next);
-    }
-
-    return keepOriginalJsonShape(originalSchedule, nextPhases);
-}
-
-function RoomTimelineEditor({
-    value,
-    onChange,
-}: {
-    value: TimelineEditorStage[];
-    onChange: (next: TimelineEditorStage[]) => void;
-}) {
-    const stages = Array.isArray(value) && value.length ? value : [makeTimelineEditorStage()];
-
-    const totalMinutes = useMemo(
-        () =>
-            stages.reduce((sum, stage) => sum + Math.max(1, Number(stage.durationMinutes || 1)), 0),
-        [stages]
-    );
-
-    const updateStage = (id: string, patch: Partial<TimelineEditorStage>) => {
-        onChange(
-            stages.map((stage) => {
-                if (stage.id !== id) return stage;
-
-                const nextKind = (patch.kind || stage.kind) as StageKind;
-                const nextTitle =
-                    patch.title !== undefined
-                        ? patch.title
-                        : patch.kind && stage.title === KIND_META[stage.kind].label
-                            ? KIND_META[nextKind].label
-                            : stage.title;
-
-                const nextColor =
-                    patch.color !== undefined
-                        ? patch.color
-                        : patch.kind
-                            ? KIND_META[nextKind].color
-                            : stage.color;
-
-                return {
-                    ...stage,
-                    ...patch,
-                    kind: nextKind,
-                    title: nextTitle,
-                    color: nextColor,
-                    durationMinutes: Math.max(
-                        1,
-                        Number(patch.durationMinutes ?? stage.durationMinutes ?? 1)
-                    ),
-                };
-            })
-        );
-    };
-
-    const addStage = () => {
-        onChange([
-            ...stages,
-            makeTimelineEditorStage({
-                kind: "focus",
-                title: "Focus",
-                durationMinutes: 25,
-                color: KIND_META.focus.color,
-            }),
-        ]);
-    };
-
-    const removeStage = (id: string) => {
-        if (stages.length <= 1) return;
-        onChange(stages.filter((stage) => stage.id !== id));
-    };
-
-    const moveStage = (id: string, dir: -1 | 1) => {
-        const idx = stages.findIndex((stage) => stage.id === id);
-        if (idx < 0) return;
-        const nextIdx = idx + dir;
-        if (nextIdx < 0 || nextIdx >= stages.length) return;
-
-        const next = [...stages];
-        const tmp = next[idx];
-        next[idx] = next[nextIdx];
-        next[nextIdx] = tmp;
-        onChange(next);
-    };
-
-    return (
-        <div className="flex flex-col gap-4">
-            <div className="rounded-[18px] border border-[#E5E7EB] bg-[#FAFAFA] p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                        <div className="text-[13px] font-semibold text-[#111827]">Room timeline editor</div>
-                        <div className="text-[11px] text-[#606060] mt-1">
-                            Edit stages visually instead of JSON.
-                        </div>
-                    </div>
-
-                    <div className="inline-flex items-center gap-2 rounded-full border border-[#E5E7EB] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#111827]">
-                        Total: {totalMinutes} min
-                    </div>
-                </div>
-
-                <div className="mt-4 h-3 rounded-full overflow-hidden bg-[#ECECEC] flex">
-                    {stages.map((stage) => {
-                        const part = Math.max(1, Number(stage.durationMinutes || 1));
-                        const widthPct = (part / Math.max(1, totalMinutes)) * 100;
-                        return (
-                            <div
-                                key={`preview-${stage.id}`}
-                                style={{
-                                    width: `${widthPct}%`,
-                                    backgroundColor: stage.color || KIND_META[stage.kind].color,
-                                }}
-                                title={`${stage.title} · ${part}m`}
-                            />
-                        );
-                    })}
-                </div>
-            </div>
-
-            <div className="flex flex-col gap-3">
-                {stages.map((stage, idx) => (
-                    <div
-                        key={stage.id}
-                        className="rounded-[18px] border border-[#E5E7EB] bg-white p-4 flex flex-col gap-3"
-                    >
-                        <div className="flex items-center justify-between gap-3">
-                            <div className="text-[12px] font-semibold text-[#606060]">
-                                Stage {idx + 1}
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                                <button
-                                    type="button"
-                                    className="h-9 px-3 rounded-full border border-[#E5E7EB] text-[12px] font-semibold hover:bg-[#F6F6F6] disabled:opacity-40"
-                                    onClick={() => moveStage(stage.id, -1)}
-                                    disabled={idx === 0}
-                                >
-                                    ↑
-                                </button>
-                                <button
-                                    type="button"
-                                    className="h-9 px-3 rounded-full border border-[#E5E7EB] text-[12px] font-semibold hover:bg-[#F6F6F6] disabled:opacity-40"
-                                    onClick={() => moveStage(stage.id, 1)}
-                                    disabled={idx === stages.length - 1}
-                                >
-                                    ↓
-                                </button>
-                                <button
-                                    type="button"
-                                    className="h-9 px-3 rounded-full border border-[#FECACA] bg-[#FFF1F2] text-[12px] font-semibold text-[#DC2626] hover:bg-[#FFE4E6] disabled:opacity-40"
-                                    onClick={() => removeStage(stage.id)}
-                                    disabled={stages.length <= 1}
-                                >
-                                    Remove
-                                </button>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr),170px,140px,86px] gap-3">
-                            <div>
-                                <div className="text-[12px] font-semibold text-[#111827] mb-1">Stage title</div>
-                                <input
-                                    value={stage.title}
-                                    onChange={(e) => updateStage(stage.id, { title: e.target.value })}
-                                    className="w-full h-11 px-4 rounded-[14px] border border-[#E5E7EB] outline-none focus:border-[#111827]"
-                                    placeholder="Focus"
-                                />
-                            </div>
-
-                            <div>
-                                <div className="text-[12px] font-semibold text-[#111827] mb-1">Type</div>
-                                <select
-                                    value={stage.kind}
-                                    onChange={(e) => updateStage(stage.id, { kind: e.target.value as StageKind })}
-                                    className="w-full h-11 px-4 rounded-[14px] border border-[#E5E7EB] outline-none focus:border-[#111827] bg-white"
-                                >
-                                    {Object.entries(KIND_META).map(([kind, meta]) => (
-                                        <option key={kind} value={kind}>
-                                            {meta.label}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div>
-                                <div className="text-[12px] font-semibold text-[#111827] mb-1">Minutes</div>
-                                <input
-                                    value={stage.durationMinutes}
-                                    onChange={(e) =>
-                                        updateStage(stage.id, {
-                                            durationMinutes: Math.max(1, Number(e.target.value) || 1),
-                                        })
-                                    }
-                                    type="number"
-                                    min={1}
-                                    className="w-full h-11 px-4 rounded-[14px] border border-[#E5E7EB] outline-none focus:border-[#111827]"
-                                />
-                            </div>
-
-                            <div>
-                                <div className="text-[12px] font-semibold text-[#111827] mb-1">Color</div>
-                                <input
-                                    value={stage.color}
-                                    onChange={(e) => updateStage(stage.id, { color: e.target.value })}
-                                    type="color"
-                                    className="w-full h-11 px-2 rounded-[14px] border border-[#E5E7EB] outline-none bg-white"
-                                />
-                            </div>
-                        </div>
-                    </div>
-                ))}
-            </div>
-
-            <div className="flex justify-start">
-                <button
-                    type="button"
-                    onClick={addStage}
-                    className="h-11 px-5 rounded-full border border-[#111827] bg-white text-[#111827] hover:bg-[#F6F6F6] text-[13px] font-semibold"
-                >
-                    + Add stage
-                </button>
-            </div>
-        </div>
-    );
-}
 
 function normKey(raw: any) {
     return String(raw || "")
@@ -1564,7 +1236,11 @@ function resolveStageColor(stage: any, kind: StageKind) {
 
     const s = String(raw).trim().toLowerCase();
 
-    if (s === "#4ca0ff" || s === "rgb(76,160,255)" || s === "rgba(76,160,255,1)") {
+    if (
+        s === "#4ca0ff" ||
+        s === "rgb(76,160,255)" ||
+        s === "rgba(76,160,255,1)"
+    ) {
         return KIND_META[kind].color;
     }
 
@@ -1705,6 +1381,155 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
     }
 }
 
+/** =========================
+ * ✅ SessionCard timeline bridge -> RoomTimelineEditor
+ * ========================= */
+function normalizeTimelineKind(raw: any): RoomTimelineBlock["kind"] {
+    const s = String(raw || "").trim().toLowerCase();
+
+    if (
+        s.includes("welcome") ||
+        s.includes("intro") ||
+        s.includes("opening") ||
+        s === "start"
+    ) {
+        return "welcome";
+    }
+
+    if (s.includes("intention") || s.includes("goal") || s.includes("plan")) {
+        return "intentions";
+    }
+
+    if (s.includes("checkin") || s.includes("check-in")) return "checkin";
+    if (s.includes("focus") || s.includes("work")) return "focus";
+    if (s.includes("break") || s.includes("pause") || s.includes("rest")) return "break";
+    if (s.includes("recap") || s.includes("review") || s.includes("reflection")) return "recap";
+    if (s.includes("celebrate") || s.includes("celebration")) return "celebrate";
+    if (
+        s.includes("outro") ||
+        s.includes("farewell") ||
+        s.includes("wrap") ||
+        s.includes("closing") ||
+        s.includes("end")
+    ) {
+        return "outro";
+    }
+
+    return "custom";
+}
+
+function defaultTimelineTitle(kind: RoomTimelineBlock["kind"]) {
+    switch (kind) {
+        case "welcome":
+            return "Welcome";
+        case "intentions":
+            return "Intentions";
+        case "focus":
+            return "Focus";
+        case "break":
+            return "Break";
+        case "checkin":
+            return "Check-in";
+        case "recap":
+            return "Recap";
+        case "celebrate":
+            return "Celebrate";
+        case "outro":
+            return "Outro";
+        default:
+            return "Custom";
+    }
+}
+
+function timelineColor(kind: RoomTimelineBlock["kind"]) {
+    switch (kind) {
+        case "welcome":
+            return "#34D399";
+        case "intentions":
+            return "#38BDF8";
+        case "focus":
+            return "#3B82F6";
+        case "break":
+            return "#FDA4AF";
+        case "checkin":
+            return "#67E8F9";
+        case "recap":
+            return "#A78BFA";
+        case "celebrate":
+            return "#F472B6";
+        case "outro":
+            return "#6EE7B7";
+        default:
+            return "#6366F1";
+    }
+}
+
+function blocksFromStagesFallback(stages: SessionStage[]): RoomTimelineBlock[] {
+    const arr = Array.isArray(stages) ? stages : [];
+    const out = arr
+        .map((stage: any, idx: number) => {
+            const kind = normalizeTimelineKind(
+                stage?.kind || stage?.type || stage?.title || stage?.name
+            );
+            const seconds = getStageSeconds(stage);
+            const minutes = Math.max(1, Math.round((seconds || 60) / 60));
+            const title =
+                String(stage?.title || stage?.name || stage?.label || "").trim() ||
+                defaultTimelineTitle(kind);
+
+            return {
+                id: String(stage?.id ?? `fallback-${idx}`),
+                kind,
+                title,
+                minutes,
+                note: String(stage?.note || stage?.description || "").trim() || undefined,
+            } as RoomTimelineBlock;
+        })
+        .filter(Boolean);
+
+    return out.length ? out : makeDefaultTimelineBlocks();
+}
+
+function blocksFromSessionData(session: any, stagesVisual: SessionStage[]): RoomTimelineBlock[] {
+    const fromSchedule = timelineBlocksFromSchedule(session?.schedule);
+    if (Array.isArray(fromSchedule) && fromSchedule.length) return fromSchedule;
+
+    const fromStagesJson = tryParseJson<any[]>(session?.stages_json || session?.session_stages_json);
+    if (Array.isArray(fromStagesJson) && fromStagesJson.length) {
+        return blocksFromStagesFallback(normalizeStages(fromStagesJson));
+    }
+
+    if (Array.isArray(stagesVisual) && stagesVisual.length) {
+        return blocksFromStagesFallback(stagesVisual);
+    }
+
+    return makeDefaultTimelineBlocks();
+}
+
+function stagesJsonFromBlocks(blocks: RoomTimelineBlock[]): SessionStage[] {
+    return (blocks || []).map((b, idx) => {
+        const mins = Math.max(1, Number(b.minutes) || 1);
+        const secs = mins * 60;
+
+        return {
+            id: String(b.id || idx),
+            kind: b.kind,
+            type: b.kind,
+            title: String(b.title || "").trim() || defaultTimelineTitle(b.kind),
+            name: String(b.title || "").trim() || defaultTimelineTitle(b.kind),
+            color: timelineColor(b.kind),
+            position: idx,
+            order: idx,
+            durationSeconds: secs,
+            duration_seconds: secs,
+            seconds: secs,
+            duration_minutes: mins,
+            minutes: mins,
+            note: b.note,
+        } as any;
+    });
+}
+
 export default function SessionCard({
     session,
     userId,
@@ -1749,6 +1574,7 @@ export default function SessionCard({
 
     const [isBookersModalOpen, setIsBookersModalOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [isTimelineEditorOpen, setIsTimelineEditorOpen] = useState(false);
 
     const [isOptionsOpen, setIsOptionsOpen] = useState(false);
     const optionsRef = useRef<HTMLDivElement | null>(null);
@@ -2190,13 +2016,21 @@ export default function SessionCard({
         return v == null ? "" : String(v);
     });
     const [editDescription, setEditDescription] = useState<string>("");
-    const [editTimelineStages, setEditTimelineStages] = useState<TimelineEditorStage[]>([]);
-    const [isSavingEdit, setIsSavingEdit] = useState(false);
-    const [editError, setEditError] = useState("");
+    const [editTimelineBlocks, setEditTimelineBlocks] = useState<RoomTimelineBlock[]>([]);
+    const [editSaveError, setEditSaveError] = useState<string>("");
+    const [editSaving, setEditSaving] = useState(false);
+
+    const editTimelineStagesPreview = useMemo(
+        () => stagesJsonFromBlocks(editTimelineBlocks),
+        [editTimelineBlocks]
+    );
+
+    const editTimelineTotalMinutes = useMemo(
+        () => getTimelineTotalMinutes(editTimelineBlocks),
+        [editTimelineBlocks]
+    );
 
     useEffect(() => {
-        if (isEditModalOpen) return;
-
         setEditTitle(session?.title || "");
         if (session?.start_time) {
             try {
@@ -2217,17 +2051,21 @@ export default function SessionCard({
         setEditMaxParticipants(
             session?.max_participants == null ? "" : String(session?.max_participants)
         );
-        setEditDescription(resolvedDescription || "");
-        setEditTimelineStages(makeTimelineEditorStagesFromSessionStages(stagesVisual));
-        setEditError("");
+        setEditDescription(
+            typeof session?.description === "string"
+                ? session.description
+                : resolvedDescription || ""
+        );
+        setEditTimelineBlocks(blocksFromSessionData(session, stagesVisual));
+        setEditSaveError("");
     }, [
         session?.id,
         session?.title,
         session?.start_time,
         session?.max_participants,
+        session?.description,
         resolvedDescription,
         stagesVisual,
-        isEditModalOpen,
     ]);
 
     const openEditModal = () => {
@@ -2251,9 +2089,13 @@ export default function SessionCard({
         setEditMaxParticipants(
             session?.max_participants == null ? "" : String(session?.max_participants)
         );
-        setEditDescription(resolvedDescription || "");
-        setEditTimelineStages(makeTimelineEditorStagesFromSessionStages(stagesVisual));
-        setEditError("");
+        setEditDescription(
+            typeof session?.description === "string"
+                ? session.description
+                : resolvedDescription || ""
+        );
+        setEditTimelineBlocks(blocksFromSessionData(session, stagesVisual));
+        setEditSaveError("");
         setIsEditModalOpen(true);
     };
 
@@ -2441,13 +2283,6 @@ export default function SessionCard({
 
     const tickEveryMs = isInfinite ? 15000 : 1000;
 
-    const currentStagesComparable = useMemo(() => {
-        const normalized = buildStagesJsonFromTimelineEditor(
-            makeTimelineEditorStagesFromSessionStages(stagesVisual)
-        );
-        return JSON.stringify(normalized);
-    }, [stagesVisual]);
-
     return (
         <>
             <div
@@ -2563,7 +2398,9 @@ export default function SessionCard({
                                                 <div className="px-4 py-3 text-[12px] text-[#606060] border-b border-[#F3F4F6] flex items-center justify-between">
                                                     <span>Session info</span>
                                                     {isInfoPinned && (
-                                                        <span className="text-[11px] text-[#111827]/60">Pinned</span>
+                                                        <span className="text-[11px] text-[#111827]/60">
+                                                            Pinned
+                                                        </span>
                                                     )}
                                                 </div>
 
@@ -2573,12 +2410,16 @@ export default function SessionCard({
                                                             {description}
                                                         </div>
                                                     ) : (
-                                                        <div className="text-[12px] text-[#606060]">No description yet.</div>
+                                                        <div className="text-[12px] text-[#606060]">
+                                                            No description yet.
+                                                        </div>
                                                     )}
 
                                                     {nowStage && (
                                                         <div className="flex items-center gap-2">
-                                                            <div className="text-[12px] text-[#606060]">Current:</div>
+                                                            <div className="text-[12px] text-[#606060]">
+                                                                Current:
+                                                            </div>
                                                             <div
                                                                 className="inline-flex items-center gap-2 px-3 py-1 rounded-full border"
                                                                 style={{
@@ -2590,11 +2431,16 @@ export default function SessionCard({
                                                                 }}
                                                             >
                                                                 <span>{nowStage.name}</span>
-                                                                {Number.isFinite(nowStage.leftSec) && nowStage.leftSec > 0 && (
-                                                                    <span className="opacity-80 font-semibold">
-                                                                        · {Math.ceil(nowStage.leftSec / 60)}m left
-                                                                    </span>
-                                                                )}
+                                                                {Number.isFinite(nowStage.leftSec) &&
+                                                                    nowStage.leftSec > 0 && (
+                                                                        <span className="opacity-80 font-semibold">
+                                                                            ·{" "}
+                                                                            {Math.ceil(
+                                                                                nowStage.leftSec / 60
+                                                                            )}
+                                                                            m left
+                                                                        </span>
+                                                                    )}
                                                             </div>
                                                         </div>
                                                     )}
@@ -2630,7 +2476,9 @@ export default function SessionCard({
                         <div className="hidden xl:flex items-center gap-6">
                             <div className="w-px h-10 bg-[#D9D9D9]" />
                             <div className="text-center">
-                                <div className="text-[32px] font-bold text-brandBlack">{liveNowCount}</div>
+                                <div className="text-[32px] font-bold text-brandBlack">
+                                    {liveNowCount}
+                                </div>
                                 <div className="text-[10px] text-[#606060] font-light -mt-1">
                                     {shouldPollLive ? "in the session now" : "live count soon"}
                                 </div>
@@ -2705,7 +2553,9 @@ export default function SessionCard({
                                     <div className="p-2 flex flex-col gap-1">
                                         <MenuItem
                                             icon={
-                                                copyInviteState === "copied" ? <IconCheckSuccess /> : <IconCopy />
+                                                copyInviteState === "copied"
+                                                    ? <IconCheckSuccess />
+                                                    : <IconCopy />
                                             }
                                             label={copyInviteLabel}
                                             outlined
@@ -2824,11 +2674,11 @@ export default function SessionCard({
                                     to={`/profile/${u.id}`}
                                     onClick={() => setIsBookersModalOpen(false)}
                                     className="
-                    flex items-center gap-3 px-3 py-2 rounded-[16px]
-                    border border-[#F0F0F0]
-                    hover:bg-[#F6F6F6] hover:border-[#E5E7EB]
-                    transition
-                  "
+                flex items-center gap-3 px-3 py-2 rounded-[16px]
+                border border-[#F0F0F0]
+                hover:bg-[#F6F6F6] hover:border-[#E5E7EB]
+                transition
+            "
                                 >
                                     <AvatarCircle
                                         user={u}
@@ -2843,7 +2693,9 @@ export default function SessionCard({
                                         </div>
 
                                         {peopleTab === "booked" && isLive && (
-                                            <div className="text-[11px] text-[#65D46C] font-semibold">Online</div>
+                                            <div className="text-[11px] text-[#65D46C] font-semibold">
+                                                Online
+                                            </div>
                                         )}
                                     </div>
                                 </Link>
@@ -2857,38 +2709,23 @@ export default function SessionCard({
                 title="Edit session"
                 isOpen={isEditModalOpen}
                 onClose={() => {
-                    if (isSavingEdit) return;
+                    if (editSaving) return;
+                    setIsTimelineEditorOpen(false);
                     setIsEditModalOpen(false);
                 }}
-                widthClass="max-w-[980px]"
+                widthClass="max-w-[900px]"
             >
                 <div className="flex flex-col gap-5">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <div className="text-[12px] font-semibold text-[#111827] mb-1">
-                                Title
-                            </div>
-                            <input
-                                value={editTitle}
-                                onChange={(e) => setEditTitle(e.target.value)}
-                                className="w-full h-11 px-4 rounded-[14px] border border-[#E5E7EB] outline-none focus:border-[#111827]"
-                                placeholder="Session title"
-                            />
+                    <div>
+                        <div className="text-[12px] font-semibold text-[#111827] mb-1">
+                            Title
                         </div>
-
-                        <div>
-                            <div className="text-[12px] font-semibold text-[#111827] mb-1">
-                                Participants limit
-                            </div>
-                            <input
-                                value={editMaxParticipants}
-                                onChange={(e) => setEditMaxParticipants(e.target.value)}
-                                type="number"
-                                min={1}
-                                className="w-full h-11 px-4 rounded-[14px] border border-[#E5E7EB] outline-none focus:border-[#111827]"
-                                placeholder="e.g. 12 (empty = unlimited)"
-                            />
-                        </div>
+                        <input
+                            value={editTitle}
+                            onChange={(e) => setEditTitle(e.target.value)}
+                            className="w-full h-11 px-4 rounded-[14px] border border-[#E5E7EB] outline-none focus:border-[#111827]"
+                            placeholder="Session title"
+                        />
                     </div>
 
                     <div>
@@ -2908,58 +2745,116 @@ export default function SessionCard({
 
                     <div>
                         <div className="text-[12px] font-semibold text-[#111827] mb-1">
+                            Participants limit
+                        </div>
+                        <input
+                            value={editMaxParticipants}
+                            onChange={(e) => setEditMaxParticipants(e.target.value)}
+                            type="number"
+                            min={1}
+                            className="w-full h-11 px-4 rounded-[14px] border border-[#E5E7EB] outline-none focus:border-[#111827]"
+                            placeholder="e.g. 12 (empty = unlimited)"
+                        />
+                    </div>
+
+                    <div>
+                        <div className="text-[12px] font-semibold text-[#111827] mb-1">
                             Description
                         </div>
                         <textarea
                             value={editDescription}
                             onChange={(e) => setEditDescription(e.target.value)}
                             className="w-full min-h-[120px] p-4 rounded-[14px] border border-[#E5E7EB] outline-none focus:border-[#111827]"
-                            placeholder="Describe the session, format, vibe, expectations..."
+                            placeholder="Session description..."
                         />
                     </div>
 
-                    <div>
-                        <div className="text-[12px] font-semibold text-[#111827] mb-3">
-                            Timeline
+                    <div className="border border-[#E5E7EB] rounded-[18px] p-4">
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                            <div>
+                                <div className="text-[13px] font-semibold text-[#111827]">
+                                    Timeline
+                                </div>
+                                <div className="text-[11px] text-[#606060] mt-1">
+                                    Edit the session script using your Room Timeline Editor.
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                                <div className="text-[12px] text-[#606060]">
+                                    Total: <span className="font-semibold text-[#111827]">{editTimelineTotalMinutes} min</span>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsTimelineEditorOpen(true)}
+                                    className="h-10 px-4 rounded-full border border-[#111827] bg-[#111827] text-white hover:opacity-90 text-[13px] font-semibold"
+                                >
+                                    Edit timeline
+                                </button>
+                            </div>
                         </div>
-                        <RoomTimelineEditor
-                            value={editTimelineStages}
-                            onChange={setEditTimelineStages}
-                        />
+
+                        <div className="mt-4">
+                            {editTimelineStagesPreview.length > 0 ? (
+                                <SessionStageBar
+                                    {...({
+                                        stages: editTimelineStagesPreview,
+                                        startTime: new Date().toISOString(),
+                                        cycleSeconds: undefined,
+                                        progressStyle: "tick",
+                                        tickEveryMs: 1000,
+                                    } as any)}
+                                />
+                            ) : (
+                                <div className="w-full h-2 rounded-full bg-[#111827]/5" />
+                            )}
+                        </div>
+
+                        {editTimelineBlocks.length > 0 && (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                                {editTimelineBlocks.map((b) => (
+                                    <div
+                                        key={b.id}
+                                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-[#E5E7EB] bg-[#FAFAFA] text-[12px] text-[#111827]"
+                                    >
+                                        <span>{b.title}</span>
+                                        <span className="text-[#606060]">· {b.minutes}m</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
 
-                    {editError ? (
+                    {editSaveError ? (
                         <div className="rounded-[14px] border border-[#FECACA] bg-[#FFF1F2] px-4 py-3 text-[12px] text-[#B91C1C]">
-                            {editError}
+                            {editSaveError}
                         </div>
                     ) : null}
 
                     <div className="flex gap-3 justify-end">
                         <button
                             className="h-11 px-5 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] text-[13px] font-semibold disabled:opacity-50"
-                            onClick={() => setIsEditModalOpen(false)}
-                            disabled={isSavingEdit}
+                            onClick={() => {
+                                setIsTimelineEditorOpen(false);
+                                setIsEditModalOpen(false);
+                            }}
+                            disabled={editSaving}
                             type="button"
                         >
                             Cancel
                         </button>
                         <button
                             className="h-11 px-6 rounded-full border border-[#111827] bg-[#111827] text-white hover:opacity-90 text-[13px] font-semibold disabled:opacity-60"
-                            disabled={isSavingEdit}
-                            type="button"
                             onClick={async () => {
                                 if (!onEditSession) return;
 
-                                setEditError("");
-                                setIsSavingEdit(true);
+                                setEditSaving(true);
+                                setEditSaveError("");
 
                                 try {
                                     const updates: any = {};
-
                                     const title = String(editTitle || "").trim();
-                                    if (title && title !== session?.title) {
-                                        updates.title = title;
-                                    }
+                                    if (title && title !== session?.title) updates.title = title;
 
                                     if (editStartLocal) {
                                         try {
@@ -2978,46 +2873,59 @@ export default function SessionCard({
                                     }
 
                                     const nextDescription = String(editDescription || "").trim();
-                                    if (nextDescription !== String(resolvedDescription || "")) {
-                                        updates.description = nextDescription;
-                                    }
+                                    updates.description = nextDescription;
 
-                                    const nextStagesJson = buildStagesJsonFromTimelineEditor(editTimelineStages);
-                                    const nextStagesComparable = JSON.stringify(nextStagesJson);
+                                    const nextSchedule = timelineBlocksToSchedulePayload(editTimelineBlocks, {
+                                        preserveInfinite: isInfinite,
+                                        anchorTs:
+                                            session?.started_at ||
+                                            session?.start_time ||
+                                            session?.created_at ||
+                                            new Date().toISOString(),
+                                    });
 
-                                    if (nextStagesComparable !== currentStagesComparable) {
-                                        updates.stages_json = keepOriginalJsonShape(
-                                            session?.stages_json ?? session?.session_stages_json,
-                                            nextStagesJson
-                                        );
-                                        updates.schedule = buildScheduleFromTimelineEditor(
-                                            session?.schedule,
-                                            editTimelineStages
-                                        );
-                                        updates.duration_minutes = editTimelineStages.reduce(
-                                            (sum, stage) => sum + Math.max(1, Number(stage.durationMinutes || 1)),
-                                            0
-                                        );
-                                    }
+                                    const nextStagesJson = stagesJsonFromBlocks(editTimelineBlocks);
+
+                                    updates.schedule = nextSchedule;
+                                    updates.stages_json = nextStagesJson;
+                                    updates.duration_minutes =
+                                        editTimelineBlocks.length > 0
+                                            ? getTimelineTotalMinutes(editTimelineBlocks)
+                                            : null;
 
                                     await onEditSession(session.id, updates);
 
                                     setResolvedDescription(nextDescription);
                                     setStages(nextStagesJson);
+                                    setIsTimelineEditorOpen(false);
                                     setIsEditModalOpen(false);
                                 } catch (e: any) {
                                     console.error("onEditSession failed:", e);
-                                    setEditError(String(e?.message || "Failed to save session changes."));
+                                    setEditSaveError(String(e?.message || "Failed to save session"));
                                 } finally {
-                                    setIsSavingEdit(false);
+                                    setEditSaving(false);
                                 }
                             }}
+                            disabled={editSaving}
+                            type="button"
                         >
-                            {isSavingEdit ? "Saving..." : "Save changes"}
+                            {editSaving ? "Saving..." : "Save changes"}
                         </button>
                     </div>
                 </div>
             </ModalShell>
+
+            <RoomTimelineEditor
+                open={isTimelineEditorOpen}
+                theme="light"
+                title={editTitle || session?.title || "Session"}
+                blocks={editTimelineBlocks}
+                onChange={setEditTimelineBlocks}
+                onClose={() => setIsTimelineEditorOpen(false)}
+                onSave={() => setIsTimelineEditorOpen(false)}
+                saving={false}
+                preserveInfinite={isInfinite}
+            />
         </>
     );
 }
