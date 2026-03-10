@@ -1584,6 +1584,16 @@ function exportStudioToSchedule(blocks: StudioBlock[], preserveInfinite = false,
     return cleaned;
 }
 
+function formatMinutes(total: number) {
+    const mins = Math.max(0, Math.round(Number(total) || 0));
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+
+    if (h > 0 && m > 0) return `${h}h ${m}m`;
+    if (h > 0) return `${h}h`;
+    return `${m}m`;
+}
+
 function SessionTimeline({ blocks }: { blocks: StudioBlock[] }) {
     const total = blocks.reduce((s, b) => s + (Number(b.minutes) || 0), 0);
 
