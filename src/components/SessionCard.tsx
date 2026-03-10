@@ -1,4 +1,3 @@
-// src/components/SessionCard.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -65,9 +64,13 @@ interface SessionCardProps {
             title?: string;
             start_time?: string; // ISO
             max_participants?: number | null;
+            description?: string | null;
+            schedule?: any;
+            stages_json?: any[] | null;
         }
     ) => void | Promise<any>;
 
+    // legacy prop intentionally kept for parent compatibility
     onInviteToSession?: (
         sessionId: string,
         payload: { email: string; message?: string }
@@ -269,15 +272,6 @@ function IconEdit({ size = 16 }: { size?: number }) {
                 strokeLinejoin="round"
             />
             <path d="M13.5 6.5l4 4" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-        </svg>
-    );
-}
-
-function IconInvite({ size = 16 }: { size?: number }) {
-    return (
-        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M4 6h16v12H4V6Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-            <path d="M4 7l8 6 8-6" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
         </svg>
     );
 }
@@ -1378,6 +1372,57 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
     }
 }
 
+function safePrettyJson(value: any) {
+    try {
+        return JSON.stringify(value, null, 2);
+    } catch {
+        return "";
+    }
+}
+
+function buildTimelineDraftText(session: any): string {
+    const explicitStages =
+        tryParseJson<any[]>(session?.stages_json) ||
+        tryParseJson<any[]>(session?.session_stages_json);
+
+    if (Array.isArray(explicitStages) && explicitStages.length) {
+        return safePrettyJson(explicitStages);
+    }
+
+    const schedule = tryParseJson<any>(session?.schedule);
+    if (schedule) return safePrettyJson(schedule);
+
+    return "";
+}
+
+function jsonStableStringify(value: any) {
+    try {
+        return JSON.stringify(value);
+    } catch {
+        return String(value);
+    }
+}
+
+function isJsonEqual(a: any, b: any) {
+    return jsonStableStringify(a) === jsonStableStringify(b);
+}
+
+function parseTimelineEditorValue(input: string):
+    | { kind: "skip" }
+    | { kind: "stages"; value: any[] }
+    | { kind: "schedule"; value: any } {
+    const text = String(input || "").trim();
+    if (!text) return { kind: "skip" };
+
+    const parsed = JSON.parse(text);
+
+    if (Array.isArray(parsed)) {
+        return { kind: "stages", value: parsed };
+    }
+
+    return { kind: "schedule", value: parsed };
+}
+
 export default function SessionCard({
     session,
     userId,
@@ -1386,7 +1431,6 @@ export default function SessionCard({
     onJoin,
     onDelete,
     onEditSession,
-    onInviteToSession,
     currentUser,
 }: SessionCardProps) {
     const navigate = useNavigate();
@@ -1423,7 +1467,6 @@ export default function SessionCard({
 
     const [isBookersModalOpen, setIsBookersModalOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-    const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
 
     const [isOptionsOpen, setIsOptionsOpen] = useState(false);
     const optionsRef = useRef<HTMLDivElement | null>(null);
@@ -1614,7 +1657,7 @@ export default function SessionCard({
         return () => {
             cancelled = true;
         };
-    }, [session?.id, session?.schedule, session?.session_template_id, session?.template_id]);
+    }, [session?.id, session?.schedule, session?.session_template_id, session?.template_id, session?.stages_json, session?.session_stages_json]);
 
     const stagesVisual = useMemo(() => {
         return (stages || []).map((s) => {
@@ -1864,6 +1907,12 @@ export default function SessionCard({
         const v = session?.max_participants;
         return v == null ? "" : String(v);
     });
+    const [editDescription, setEditDescription] = useState<string>(
+        typeof session?.description === "string" ? session.description : ""
+    );
+    const [editTimelineText, setEditTimelineText] = useState<string>(() =>
+        buildTimelineDraftText(session)
+    );
 
     useEffect(() => {
         setEditTitle(session?.title || "");
@@ -1881,10 +1930,9 @@ export default function SessionCard({
         setEditMaxParticipants(
             session?.max_participants == null ? "" : String(session?.max_participants)
         );
-    }, [session?.id]);
-
-    const [inviteEmail, setInviteEmail] = useState<string>("");
-    const [inviteMessage, setInviteMessage] = useState<string>("");
+        setEditDescription(typeof session?.description === "string" ? session.description : resolvedDescription || "");
+        setEditTimelineText(buildTimelineDraftText(session));
+    }, [session?.id, session?.title, session?.start_time, session?.max_participants, session?.description, session?.schedule, session?.stages_json, session?.session_stages_json, resolvedDescription]);
 
     const bookSessionButton = (
         <button
@@ -1940,7 +1988,6 @@ export default function SessionCard({
     );
 
     const canEdit = isHost && !!onEditSession;
-    const canInvite = isHost && !!onInviteToSession;
     const canCancelBooking = !!isBookingConfirmed;
     const canCancelSession = isHost;
 
@@ -2220,11 +2267,7 @@ export default function SessionCard({
                                                                 {Number.isFinite(nowStage.leftSec) &&
                                                                     nowStage.leftSec > 0 && (
                                                                         <span className="opacity-80 font-semibold">
-                                                                            ·{" "}
-                                                                            {Math.ceil(
-                                                                                nowStage.leftSec / 60
-                                                                            )}
-                                                                            m left
+                                                                            · {Math.ceil(nowStage.leftSec / 60)}m left
                                                                         </span>
                                                                     )}
                                                             </div>
@@ -2360,17 +2403,6 @@ export default function SessionCard({
                                             />
                                         )}
 
-                                        {canInvite && (
-                                            <MenuItem
-                                                icon={<IconInvite />}
-                                                label="Invite…"
-                                                onClick={() => {
-                                                    setIsOptionsOpen(false);
-                                                    setIsInviteModalOpen(true);
-                                                }}
-                                            />
-                                        )}
-
                                         {canCancelBooking && (
                                             <MenuItem
                                                 icon={<IconCancel />}
@@ -2395,7 +2427,7 @@ export default function SessionCard({
                                             />
                                         )}
 
-                                        {!canEdit && !canInvite && !canCancelBooking && !canCancelSession && (
+                                        {!canEdit && !canCancelBooking && !canCancelSession && (
                                             <div className="px-3 py-2 text-[12px] text-[#606060]">
                                                 No actions available
                                             </div>
@@ -2468,11 +2500,11 @@ export default function SessionCard({
                                     to={`/profile/${u.id}`}
                                     onClick={() => setIsBookersModalOpen(false)}
                                     className="
-                flex items-center gap-3 px-3 py-2 rounded-[16px]
-                border border-[#F0F0F0]
-                hover:bg-[#F6F6F6] hover:border-[#E5E7EB]
-                transition
-            "
+                    flex items-center gap-3 px-3 py-2 rounded-[16px]
+                    border border-[#F0F0F0]
+                    hover:bg-[#F6F6F6] hover:border-[#E5E7EB]
+                    transition
+                  "
                                 >
                                     <AvatarCircle
                                         user={u}
@@ -2503,6 +2535,7 @@ export default function SessionCard({
                 title="Edit session"
                 isOpen={isEditModalOpen}
                 onClose={() => setIsEditModalOpen(false)}
+                widthClass="max-w-[760px]"
             >
                 <div className="flex flex-col gap-4">
                     <div>
@@ -2546,6 +2579,45 @@ export default function SessionCard({
                         />
                     </div>
 
+                    <div>
+                        <div className="text-[12px] font-semibold text-[#111827] mb-1">
+                            Description
+                        </div>
+                        <textarea
+                            value={editDescription}
+                            onChange={(e) => setEditDescription(e.target.value)}
+                            className="w-full min-h-[120px] p-4 rounded-[14px] border border-[#E5E7EB] outline-none focus:border-[#111827]"
+                            placeholder="Describe this session..."
+                        />
+                    </div>
+
+                    <div>
+                        <div className="text-[12px] font-semibold text-[#111827] mb-1">
+                            Session timeline JSON
+                        </div>
+                        <textarea
+                            value={editTimelineText}
+                            onChange={(e) => setEditTimelineText(e.target.value)}
+                            className="w-full min-h-[220px] p-4 rounded-[14px] border border-[#E5E7EB] outline-none focus:border-[#111827] font-mono text-[12px]"
+                            placeholder={`[
+  {
+    "title": "Focus",
+    "seconds": 3000,
+    "position": 0
+  },
+  {
+    "title": "Break",
+    "seconds": 300,
+    "position": 1
+  }
+]`}
+                            spellCheck={false}
+                        />
+                        <div className="text-[11px] text-[#606060] mt-1">
+                            Paste either a stages array or a schedule JSON object.
+                        </div>
+                    </div>
+
                     <div className="flex gap-3 justify-end">
                         <button
                             className="h-11 px-5 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] text-[13px] font-semibold"
@@ -2556,9 +2628,8 @@ export default function SessionCard({
                         <button
                             className="h-11 px-6 rounded-full border border-[#111827] bg-[#111827] text-white hover:opacity-90 text-[13px] font-semibold"
                             onClick={async () => {
-                                setIsEditModalOpen(false);
-
                                 const updates: any = {};
+
                                 const title = String(editTitle || "").trim();
                                 if (title && title !== session?.title) updates.title = title;
 
@@ -2578,80 +2649,63 @@ export default function SessionCard({
                                     }
                                 }
 
+                                const nextDescription = String(editDescription || "");
+                                const currentDescription = String(resolvedDescription || session?.description || "");
+                                if (nextDescription.trim() !== currentDescription.trim()) {
+                                    updates.description = nextDescription.trim() || null;
+                                }
+
+                                let nextStagesOptimistic: SessionStage[] | null = null;
+
+                                try {
+                                    const timelineParsed = parseTimelineEditorValue(editTimelineText);
+
+                                    if (timelineParsed.kind === "stages") {
+                                        const currentStagesJson =
+                                            tryParseJson<any[]>(session?.stages_json) ||
+                                            tryParseJson<any[]>(session?.session_stages_json) ||
+                                            null;
+
+                                        if (!isJsonEqual(currentStagesJson, timelineParsed.value)) {
+                                            updates.stages_json = timelineParsed.value;
+                                            nextStagesOptimistic = normalizeStages(
+                                                sortStagesInClient(timelineParsed.value)
+                                            );
+                                        }
+                                    } else if (timelineParsed.kind === "schedule") {
+                                        const currentSchedule = tryParseJson<any>(session?.schedule);
+                                        if (!isJsonEqual(currentSchedule, timelineParsed.value)) {
+                                            updates.schedule = timelineParsed.value;
+                                            nextStagesOptimistic = tryStagesFromSchedule(timelineParsed.value);
+                                        }
+                                    }
+                                } catch (e) {
+                                    alert("Timeline JSON is invalid. Please fix it before saving.");
+                                    return;
+                                }
+
+                                setIsEditModalOpen(false);
+
                                 if (!onEditSession) return;
                                 try {
                                     await onEditSession(session.id, updates);
+
+                                    if (Object.prototype.hasOwnProperty.call(updates, "description")) {
+                                        const nextText = typeof updates.description === "string" ? updates.description : "";
+                                        setResolvedDescription(nextText);
+                                        if (session?.id) _sessionDescriptionById.set(String(session.id), nextText);
+                                    }
+
+                                    if (nextStagesOptimistic) {
+                                        setStages(nextStagesOptimistic);
+                                        if (session?.id) _stagesBySessionId.set(String(session.id), nextStagesOptimistic);
+                                    }
                                 } catch (e) {
                                     console.error("onEditSession failed:", e);
                                 }
                             }}
                         >
                             Save changes
-                        </button>
-                    </div>
-                </div>
-            </ModalShell>
-
-            <ModalShell
-                title="Invite to session"
-                isOpen={isInviteModalOpen}
-                onClose={() => setIsInviteModalOpen(false)}
-            >
-                <div className="flex flex-col gap-4">
-                    <div className="text-[12px] text-[#606060]">Invite someone by email.</div>
-
-                    <div>
-                        <div className="text-[12px] font-semibold text-[#111827] mb-1">
-                            Email
-                        </div>
-                        <input
-                            value={inviteEmail}
-                            onChange={(e) => setInviteEmail(e.target.value)}
-                            className="w-full h-11 px-4 rounded-[14px] border border-[#E5E7EB] outline-none focus:border-[#111827]"
-                            placeholder="name@example.com"
-                        />
-                    </div>
-
-                    <div>
-                        <div className="text-[12px] font-semibold text-[#111827] mb-1">
-                            Message (optional)
-                        </div>
-                        <textarea
-                            value={inviteMessage}
-                            onChange={(e) => setInviteMessage(e.target.value)}
-                            className="w-full min-h-[90px] p-4 rounded-[14px] border border-[#E5E7EB] outline-none focus:border-[#111827]"
-                            placeholder="Join my focus session…"
-                        />
-                    </div>
-
-                    <div className="flex gap-3 justify-end">
-                        <button
-                            className="h-11 px-5 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] text-[13px] font-semibold"
-                            onClick={() => setIsInviteModalOpen(false)}
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            className="h-11 px-6 rounded-full border border-[#111827] bg-[#111827] text-white hover:opacity-90 text-[13px] font-semibold"
-                            onClick={async () => {
-                                const email = inviteEmail.trim();
-                                const msg = inviteMessage.trim();
-
-                                setIsInviteModalOpen(false);
-                                setInviteEmail("");
-                                setInviteMessage("");
-
-                                if (!email) return;
-                                if (!onInviteToSession) return;
-
-                                try {
-                                    await onInviteToSession(session.id, { email, message: msg || undefined });
-                                } catch (e) {
-                                    console.error("onInviteToSession failed:", e);
-                                }
-                            }}
-                        >
-                            Send invite
                         </button>
                     </div>
                 </div>
