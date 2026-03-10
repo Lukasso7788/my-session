@@ -4137,14 +4137,20 @@ export function RoomPageLiveKit() {
           }}
           roomSoundsEnabled={roomSoundsEnabled}
           onToggleRoomSounds={() => setRoomSoundsEnabled((prev) => !prev)}
-          colorCorrectionEnabled={colorCorrectionEnabled}
-          brightness={brightness}
-          contrast={contrast}
-          saturate={saturate}
-          onToggleColorCorrection={(v: boolean) => setColorCorrectionEnabled(v)}
-          onChangeBrightness={setBrightness}
-          onChangeContrast={setContrast}
-          onChangeSaturate={setSaturate}
+          colorCorrectionEnabled={true}
+          brightness={colorCorrection.brightness}
+          contrast={colorCorrection.contrast}
+          saturate={colorCorrection.saturation}
+          onToggleColorCorrection={() => { }}
+          onChangeBrightness={(v: number) =>
+            setColorCorrection((p) => ({ ...p, brightness: v }))
+          }
+          onChangeContrast={(v: number) =>
+            setColorCorrection((p) => ({ ...p, contrast: v }))
+          }
+          onChangeSaturate={(v: number) =>
+            setColorCorrection((p) => ({ ...p, saturation: v }))
+          }
           onCaptureScreenshot={async () => {
             await createRoomScreenshot();
           }}
