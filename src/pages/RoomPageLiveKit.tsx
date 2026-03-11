@@ -439,7 +439,7 @@ async function resolveAvatarUrlFromProfilesField(avatarUrlOrPath: string): Promi
 }
 
 // reports / kick events / sounds
-const REPORTS_TABLE = "participant_reports";
+const REPORTS_TABLE = "session_reports";
 const KICK_EVENTS_CHANNEL_PREFIX = "mysession_lk_kick_events";
 
 const ROOM_SOUNDS_PREF_KEY = "mysession_lk_room_sounds";
@@ -3031,16 +3031,23 @@ export function RoomPageLiveKit() {
     setReportError("");
 
     try {
+      const reportedParticipantId =
+        String(
+          reportTarget.participantUserId ||
+          reportTarget.participantIdentity ||
+          reportTarget.id ||
+          ""
+        ).trim() || null;
+
       const payload = {
         session_id: session?.id || null,
         reporter_user_id: authUserId || null,
-        target_identity: reportTarget.participantIdentity || null,
-        target_user_id: looksLikeUuid(String(reportTarget.participantUserId || ""))
-          ? String(reportTarget.participantUserId).toLowerCase()
-          : null,
-        target_name: String(reportTarget.label || "").trim() || null,
+        reported_participant_id: reportedParticipantId,
         reason,
         created_at: new Date().toISOString(),
+        status: "open",
+        resolved_at: null,
+        resolved_by: null,
       };
 
       const { error } = await supabase.from(REPORTS_TABLE).insert(payload as any);
