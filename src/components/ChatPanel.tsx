@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import Picker from "@emoji-mart/react";
+import emojiData from "@emoji-mart/data";
 import { supabase } from "../lib/supabase";
 import { CornerUpLeft, X, Smile, SendHorizontal, Pencil, Trash2, Check } from "lucide-react";
 
@@ -169,54 +171,7 @@ function EmojiPickerPopover({
     onClose: () => void;
     maxHeight: number;
 }) {
-    const [PickerComp, setPickerComp] = useState<any>(null);
-    const [emojiData, setEmojiData] = useState<any>(null);
-    const [err, setErr] = useState<string>("");
-
-    useEffect(() => {
-        let alive = true;
-
-        (async () => {
-            try {
-                setErr("");
-                const [{ default: Picker }, dataMod] = await Promise.all([
-                    import("@emoji-mart/react"),
-                    import("@emoji-mart/data"),
-                ]);
-
-                if (!alive) return;
-
-                setPickerComp(() => Picker);
-                setEmojiData(dataMod?.default || dataMod);
-            } catch (e: any) {
-                if (!alive) return;
-                setErr(String(e?.message || e || "Failed to load emoji picker"));
-            }
-        })();
-
-        return () => {
-            alive = false;
-        };
-    }, []);
-
-    const Picker = PickerComp;
     const pickerTheme = theme === "light" ? "light" : "dark";
-
-    if (err) {
-        return (
-            <div className={theme === "light" ? "p-3 text-sm text-red-700" : "p-3 text-sm text-red-300"}>
-                {err}
-            </div>
-        );
-    }
-
-    if (!Picker || !emojiData) {
-        return (
-            <div className={theme === "light" ? "p-4 text-sm text-black/60" : "p-4 text-sm text-white/60"}>
-                Loading emoji picker…
-            </div>
-        );
-    }
 
     return (
         <div style={{ maxHeight }} className="overflow-hidden">
@@ -268,13 +223,34 @@ function MessageCard({
     const time = formatTime(msg.created_at);
 
     const [openReactions, setOpenReactions] = useState(false);
-    const menuRef = useRef<HTMLDivElement | null>(null);
+    const reactionButtonRef = useRef<HTMLButtonElement | null>(null);
+    const reactionMenuRef = useRef<HTMLDivElement | null>(null);
+    const [reactionMenuPos, setReactionMenuPos] = useState<{ top: number; left: number } | null>(null);
 
     // edit state
     const [isEditing, setIsEditing] = useState(false);
     const [draft, setDraft] = useState(msg.body);
     const [savingEdit, setSavingEdit] = useState(false);
     const [deleting, setDeleting] = useState(false);
+
+    const updateReactionMenuPos = useCallback(() => {
+        if (!reactionButtonRef.current) return;
+
+        const rect = reactionButtonRef.current.getBoundingClientRect();
+        const menuWidth = 260;
+        const menuHeight = 72;
+        const margin = 8;
+
+        let left = rect.right - menuWidth;
+        left = Math.max(margin, Math.min(left, window.innerWidth - menuWidth - margin));
+
+        let top = rect.bottom + 8;
+        if (top + menuHeight > window.innerHeight - margin) {
+            top = Math.max(margin, rect.top - menuHeight - 8);
+        }
+
+        setReactionMenuPos({ top, left });
+    }, []);
 
     useEffect(() => {
         // если сообщение обновилось realtime — синхронизируем draft, если не в режиме редактирования
@@ -284,14 +260,35 @@ function MessageCard({
 
     useEffect(() => {
         if (!openReactions) return;
+
+        updateReactionMenuPos();
+
         const onDown = (e: MouseEvent) => {
             const t = e.target as Node | null;
-            if (!t || !menuRef.current) return;
-            if (!menuRef.current.contains(t)) setOpenReactions(false);
+            if (!t) return;
+
+            const clickedButton = reactionButtonRef.current?.contains(t);
+            const clickedMenu = reactionMenuRef.current?.contains(t);
+
+            if (!clickedButton && !clickedMenu) {
+                setOpenReactions(false);
+            }
         };
+
+        const onRelayout = () => {
+            updateReactionMenuPos();
+        };
+
         document.addEventListener("mousedown", onDown);
-        return () => document.removeEventListener("mousedown", onDown);
-    }, [openReactions]);
+        window.addEventListener("resize", onRelayout);
+        window.addEventListener("scroll", onRelayout, true);
+
+        return () => {
+            document.removeEventListener("mousedown", onDown);
+            window.removeEventListener("resize", onRelayout);
+            window.removeEventListener("scroll", onRelayout, true);
+        };
+    }, [openReactions, updateReactionMenuPos]);
 
     const hasReactions = reactionsCounts && Object.keys(reactionsCounts).length > 0;
 
@@ -393,10 +390,14 @@ function MessageCard({
                             </button>
 
                             {/* reactions button */}
-                            <div className="relative" ref={menuRef}>
+                            <div className="relative">
                                 <button
+                                    ref={reactionButtonRef}
                                     type="button"
-                                    onClick={() => setOpenReactions((v) => !v)}
+                                    onClick={() => {
+                                        if (!openReactions) updateReactionMenuPos();
+                                        setOpenReactions((v) => !v);
+                                    }}
                                     className={"ml-1 inline-flex items-center gap-1 text-[11px] transition " + actionBtnCls}
                                     title="React"
                                 >
@@ -404,34 +405,46 @@ function MessageCard({
                                     React
                                 </button>
 
-                                {openReactions && (
-                                    <div className={"absolute z-50 mt-2 right-0 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl " + menuCls}>
-                                        {REACTION_EMOJIS.map((e) => {
-                                            const isMine = !!myReactions?.[e];
-                                            return (
-                                                <button
-                                                    key={e}
-                                                    onClick={() => {
-                                                        onToggleReaction(msg.id, e);
-                                                        setOpenReactions(false);
-                                                    }}
-                                                    className={
-                                                        "hover:scale-[1.06] transition " +
-                                                        (isMine
-                                                            ? (isLight
-                                                                ? "drop-shadow-[0_0_0.6rem_rgba(16,185,129,0.35)]"
-                                                                : "drop-shadow-[0_0_0.7rem_rgba(16,185,129,0.25)]")
-                                                            : "")
-                                                    }
-                                                    title={isMine ? `Remove ${e}` : e}
-                                                    type="button"
-                                                >
-                                                    {e}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                )}
+                                {openReactions &&
+                                    reactionMenuPos &&
+                                    typeof document !== "undefined" &&
+                                    createPortal(
+                                        <div
+                                            ref={reactionMenuRef}
+                                            className={"fixed z-[99999] rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl " + menuCls}
+                                            style={{
+                                                top: reactionMenuPos.top,
+                                                left: reactionMenuPos.left,
+                                            }}
+                                            onMouseDown={(e) => e.stopPropagation()}
+                                        >
+                                            {REACTION_EMOJIS.map((e) => {
+                                                const isMine = !!myReactions?.[e];
+                                                return (
+                                                    <button
+                                                        key={e}
+                                                        onClick={() => {
+                                                            onToggleReaction(msg.id, e);
+                                                            setOpenReactions(false);
+                                                        }}
+                                                        className={
+                                                            "hover:scale-[1.06] transition " +
+                                                            (isMine
+                                                                ? (isLight
+                                                                    ? "drop-shadow-[0_0_0.6rem_rgba(16,185,129,0.35)]"
+                                                                    : "drop-shadow-[0_0_0.7rem_rgba(16,185,129,0.25)]")
+                                                                : "")
+                                                        }
+                                                        title={isMine ? `Remove ${e}` : e}
+                                                        type="button"
+                                                    >
+                                                        {e}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>,
+                                        document.body
+                                    )}
                             </div>
 
                             {/* edit/delete for mine */}
