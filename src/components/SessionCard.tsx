@@ -74,7 +74,6 @@ interface SessionCardProps {
             max_participants?: number | null;
             description?: string | null;
             schedule?: any;
-            stages_json?: any;
             duration_minutes?: number | null;
         }
     ) => void | Promise<any>;
@@ -619,7 +618,7 @@ async function fetchSessionExtrasForStages(sessionId: string): Promise<any | nul
     const { data, error } = await sb
         .from("sessions")
         .select(
-            "id, schedule, stages_json, session_stages_json, session_template_id, template_id, description, created_at"
+            "id, schedule, session_template_id, template_id, description, created_at"
         )
         .eq("id", sid)
         .maybeSingle();
@@ -714,15 +713,6 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
         return out;
     }
 
-    const fromSessionJson =
-        tryParseJson<any[]>(session?.stages_json) ||
-        tryParseJson<any[]>(session?.session_stages_json);
-    if (Array.isArray(fromSessionJson) && fromSessionJson.length) {
-        const out = normalizeStages(sortStagesInClient(fromSessionJson));
-        if (sessionId) _stagesBySessionId.set(sessionId, out);
-        return out;
-    }
-
     const scheduleStages = tryStagesFromSchedule(session?.schedule);
     if (scheduleStages.length) {
         if (sessionId) _stagesBySessionId.set(sessionId, scheduleStages);
@@ -731,12 +721,12 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
 
     const embeddedTemplate = getEmbeddedTemplate(session);
     if (embeddedTemplate) {
-        const embStagesJson =
-            tryParseJson<any[]>(embeddedTemplate?.stages_json) ||
+        const embBlocks =
+            tryParseJson<any[]>(embeddedTemplate?.blocks) ||
             tryParseJson<any[]>(embeddedTemplate?.stages);
 
-        if (Array.isArray(embStagesJson) && embStagesJson.length) {
-            const out = normalizeStages(sortStagesInClient(embStagesJson));
+        if (Array.isArray(embBlocks) && embBlocks.length) {
+            const out = normalizeStages(sortStagesInClient(embBlocks));
             if (sessionId) _stagesBySessionId.set(sessionId, out);
             return out;
         }
@@ -790,13 +780,13 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
     if (templateId) {
         const { data: tData, error: tErr } = await sb
             .from("session_templates")
-            .select("id, stages, stages_json, schedule, description")
+            .select("id, blocks, stages, schedule, description")
             .eq("id", templateId)
             .maybeSingle();
 
         if (!tErr && tData) {
             const sj =
-                tryParseJson<any[]>(tData?.stages_json) || tryParseJson<any[]>(tData?.stages);
+                tryParseJson<any[]>(tData?.blocks) || tryParseJson<any[]>(tData?.stages);
             if (Array.isArray(sj) && sj.length) {
                 const out = normalizeStages(sortStagesInClient(sj));
                 _stagesByTemplateId.set(templateId, out);
@@ -816,15 +806,6 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
     if (sessionId) {
         const extra = await fetchSessionExtrasForStages(sessionId);
         if (extra) {
-            const sj =
-                tryParseJson<any[]>(extra?.stages_json) ||
-                tryParseJson<any[]>(extra?.session_stages_json);
-            if (Array.isArray(sj) && sj.length) {
-                const out = normalizeStages(sortStagesInClient(sj));
-                _stagesBySessionId.set(sessionId, out);
-                return out;
-            }
-
             const schedStages = tryStagesFromSchedule(extra?.schedule);
             if (schedStages.length) {
                 _stagesBySessionId.set(sessionId, schedStages);
@@ -848,13 +829,13 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
 
                 const { data: tData, error: tErr } = await sb
                     .from("session_templates")
-                    .select("id, stages, stages_json, schedule, description")
+                    .select("id, blocks, stages, schedule, description")
                     .eq("id", tidStr)
                     .maybeSingle();
 
                 if (!tErr && tData) {
                     const tj =
-                        tryParseJson<any[]>(tData?.stages_json) ||
+                        tryParseJson<any[]>(tData?.blocks) ||
                         tryParseJson<any[]>(tData?.stages);
                     if (Array.isArray(tj) && tj.length) {
                         const out = normalizeStages(sortStagesInClient(tj));
@@ -1441,9 +1422,8 @@ function studioMinutesFromAny(raw: any) {
 }
 function normalizeStudioBlocksFromSession(session: any): StudioBlock[] {
     const rawStages =
-        session?.stages ??
-        tryParseJson<any[]>(session?.stages_json) ??
-        tryParseJson<any[]>(session?.session_stages_json);
+        session?.session_stages ??
+        session?.stages;
 
     if (Array.isArray(rawStages) && rawStages.length) {
         const sorted = sortStagesInClient(rawStages);
@@ -1713,12 +1693,11 @@ function EditSessionStudioModal(props: {
     isOpen: boolean;
     onClose: () => void;
     onSave: (payload: {
-        title: string;
+        title?: string;
         start_time?: string;
         max_participants?: number | null;
         description?: string | null;
         schedule?: any;
-        stages_json?: any;
         duration_minutes?: number | null;
     }) => Promise<void> | void;
     session: any;
@@ -2519,21 +2498,7 @@ function EditSessionStudioModal(props: {
                                     isInfinite,
                                     session?.start_time || session?.created_at || new Date().toISOString()
                                 );
-                                const nextStagesJson = studioBlocks.map((b, index) => ({
-                                    id: String(index),
-                                    kind: b.kind,
-                                    title: b.title,
-                                    name: b.title,
-                                    note: b.note || null,
-                                    minutes: b.minutes,
-                                    duration_minutes: b.minutes,
-                                    durationSeconds: b.minutes * 60,
-                                    order: index,
-                                    position: index,
-                                }));
-
                                 updates.schedule = nextSchedule;
-                                updates.stages_json = nextStagesJson;
                                 updates.duration_minutes = studioTotal || null;
 
                                 await onSave(updates);
@@ -2784,7 +2749,7 @@ export default function SessionCard({
         return () => {
             cancelled = true;
         };
-    }, [session?.id, session?.schedule, session?.session_template_id, session?.template_id, session?.stages_json]);
+    }, [session?.id, session?.schedule, session?.session_template_id, session?.template_id]);
 
     const stagesVisual = useMemo(() => {
         return (stages || []).map((s) => {
@@ -3630,16 +3595,26 @@ export default function SessionCard({
                     session={session}
                     onSave={async (updates) => {
                         await onEditSession(session.id, updates);
+
                         setResolvedDescription(
                             updates.description == null
                                 ? ""
                                 : String(updates.description || "").trim()
                         );
+
                         _sessionDescriptionById.set(
                             String(session.id),
                             updates.description == null ? "" : String(updates.description || "").trim()
                         );
+
+                        _sessionExtrasById.delete(String(session.id));
                         _stagesBySessionId.delete(String(session.id));
+
+                        if (updates.schedule !== undefined) {
+                            const nextStages = tryStagesFromSchedule(updates.schedule);
+                            setStages(Array.isArray(nextStages) ? nextStages : []);
+                        }
+
                         setIsEditModalOpen(false);
                     }}
                 />
