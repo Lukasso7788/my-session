@@ -3724,35 +3724,222 @@ export function RoomPageLiveKit() {
   const ChatPanelAny = ChatPanel as any;
 
   const RightPanelBody = (
-    { rightTab === "participants" && (
-      <div className="h-full min-h-0 flex flex-col">
-        <div
-          className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
-            }`}
-        >
-          <div className="flex items-center gap-2 min-w-0">
-            <span
-              className={`${isLight ? "text-black/80" : "text-white/85"
-                } font-inter font-semibold truncate`}
-            >
-              Participants
-            </span>
-            <span className={`${isLight ? "text-black/50" : "text-white/55"} text-sm`}>
-              ({participantsCount})
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={openEditName}
-              className={`px-3 h-9 rounded-xl text-[12px] font-semibold border transition ${isLight
-                  ? "bg-black/5 border-black/10 hover:bg-black/10 text-black/70"
-                  : "bg-white/5 border-white/10 hover:bg-white/10 text-white/85"
-                }`}
-              title="Edit my name"
-            >
-              Edit my name
-            </button>
+    <div
+      className={`rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col ${panelBg} ${theme === "dark" ? "dark" : ""}`}
+      data-theme={theme}
+      style={{ colorScheme: theme }}
+    >
+      {rightTab === "participants" && (
+        <div className="h-full min-h-0 flex flex-col">
+          <div
+            className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
+              }`}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span
+                className={`${isLight ? "text-black/80" : "text-white/85"
+                  } font-inter font-semibold truncate`}
+              >
+                Participants
+              </span>
+              <span className={`${isLight ? "text-black/50" : "text-white/55"} text-sm`}>
+                ({participantsCount})
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={openEditName}
+                className={`px-3 h-9 rounded-xl text-[12px] font-semibold border transition ${isLight
+                    ? "bg-black/5 border-black/10 hover:bg-black/10 text-black/70"
+                    : "bg-white/5 border-white/10 hover:bg-white/10 text-white/85"
+                  }`}
+                title="Edit my name"
+              >
+                Edit my name
+              </button>
 
+              <button
+                onClick={() => openRightTab(null)}
+                className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
+                    ? "bg-black/5 hover:bg-black/10 text-black/60"
+                    : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                  }`}
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+
+          <div className="p-4">
+            <div
+              className={`rounded-xl px-3 py-2 ${isLight ? "bg-black/5 border border-black/10" : "bg-[#0B1220]/70 border border-white/10"
+                }`}
+            >
+              <input
+                value={participantsSearch}
+                onChange={(e) => setParticipantsSearch(e.target.value)}
+                placeholder="Search participants..."
+                className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${isLight
+                    ? "text-black/80 placeholder:text-black/40"
+                    : "text-white/85 placeholder:text-white/35"
+                  }`}
+              />
+            </div>
+
+            {rolesError ? (
+              <div className={`mt-2 text-[12px] ${isLight ? "text-red-600" : "text-red-300"}`}>
+                {rolesError}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
+            <div className="flex flex-col gap-2">
+              {participantsForPanel.map((p) => {
+                const isHidden = !!hiddenTileIds[p.id];
+                const isPinned = pinnedTileId === p.id;
+
+                const avatar = getAvatarForTile(p);
+                const initials = getInitials(p.label);
+
+                const pidBase = String(p.participantUserId || "").toLowerCase();
+                const isMod = !p.isLocal && looksLikeUuid(pidBase)
+                  ? moderatorUserIds.includes(pidBase)
+                  : p.isLocal
+                    ? isSelfModerator && !isHost
+                    : false;
+
+                const roleText =
+                  p.kind === "screen"
+                    ? p.isLocal
+                      ? "Your screen"
+                      : "Screen share"
+                    : p.isLocal
+                      ? isHost
+                        ? "Host"
+                        : isMod
+                          ? "Moderator"
+                          : "You"
+                      : isMod
+                        ? "Moderator"
+                        : "Participant";
+
+                return (
+                  <div
+                    key={p.id}
+                    className={`px-3 py-2 rounded-xl transition ${isLight ? "hover:bg-black/5" : "hover:bg-white/5"
+                      }`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        {avatar ? (
+                          <img
+                            src={avatar}
+                            alt={p.label}
+                            className="w-10 h-10 rounded-full object-cover"
+                            referrerPolicy="no-referrer"
+                            onError={(e) => {
+                              try {
+                                (e.currentTarget as any).style.display = "none";
+                              } catch { }
+                            }}
+                          />
+                        ) : (
+                          <div
+                            className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${isLight
+                                ? "bg-blue-500/15 text-blue-700"
+                                : "bg-emerald-500/80 text-[#02140B]"
+                              }`}
+                          >
+                            {p.kind === "screen" ? "🖥️" : initials}
+                          </div>
+                        )}
+
+                        <div className="min-w-0">
+                          <div
+                            className={`text-[13px] font-medium truncate ${isLight ? "text-black/85" : "text-white/90"
+                              }`}
+                          >
+                            {p.label}
+                            {isPinned ? <span className="ml-2 opacity-70">📌</span> : null}
+                            {isHidden ? <span className="ml-2 opacity-70">🙈</span> : null}
+                          </div>
+                          <div
+                            className={`text-[11px] truncate ${isLight ? "text-black/45" : "text-white/45"
+                              }`}
+                          >
+                            {roleText}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {p.kind !== "screen" && (
+                          <>
+                            <button
+                              onClick={() => togglePin(p.id)}
+                              className={`w-9 h-9 rounded-xl flex items-center justify-center border transition ${isLight
+                                  ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70"
+                                  : "border-white/10 bg-white/5 hover:bg-white/10 text-white/85"
+                                }`}
+                              title={isPinned ? "Unpin" : "Pin"}
+                            >
+                              📌
+                            </button>
+
+                            <button
+                              onClick={() => toggleHide(p.id)}
+                              className={`w-9 h-9 rounded-xl flex items-center justify-center border transition ${isLight
+                                  ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70"
+                                  : "border-white/10 bg-white/5 hover:bg-white/10 text-white/85"
+                                }`}
+                              title={isHidden ? "Unhide" : "Hide"}
+                            >
+                              🙈
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className={`p-4 border-t ${isLight ? "border-black/10" : "border-white/5"}`}>
+            <button
+              onClick={() => {
+                try {
+                  const url = window.location.href;
+                  void navigator.clipboard.writeText(url);
+                  alert("Invite link copied ✅");
+                } catch {
+                  alert("Could not copy link");
+                }
+              }}
+              className={`w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 ${isLight
+                  ? "bg-blue-600 hover:bg-blue-700 text-white"
+                  : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
+                }`}
+            >
+              <span className="text-lg">⎘</span>
+              <span>Copy invite link</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {rightTab === "chat" && (
+        <div className="h-full min-h-0 flex flex-col">
+          <div
+            className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
+              }`}
+          >
+            <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>
+              Chat
+            </div>
             <button
               onClick={() => openRightTab(null)}
               className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
@@ -3764,278 +3951,91 @@ export function RoomPageLiveKit() {
               ✕
             </button>
           </div>
-        </div>
 
-        <div className="p-4">
-          <div
-            className={`rounded-xl px-3 py-2 ${isLight ? "bg-black/5 border border-black/10" : "bg-[#0B1220]/70 border border-white/10"
-              }`}
-          >
-            <input
-              value={participantsSearch}
-              onChange={(e) => setParticipantsSearch(e.target.value)}
-              placeholder="Search participants..."
-              className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${isLight
-                  ? "text-black/80 placeholder:text-black/40"
-                  : "text-white/85 placeholder:text-white/35"
-                }`}
-            />
-          </div>
-
-          {rolesError ? (
-            <div className={`mt-2 text-[12px] ${isLight ? "text-red-600" : "text-red-300"}`}>
-              {rolesError}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
-          <div className="flex flex-col gap-2">
-            {participantsForPanel.map((p) => {
-              const isHidden = !!hiddenTileIds[p.id];
-              const isPinned = pinnedTileId === p.id;
-
-              const avatar = getAvatarForTile(p);
-              const initials = getInitials(p.label);
-
-              const pidBase = String(p.participantUserId || "").toLowerCase();
-              const isMod = !p.isLocal && looksLikeUuid(pidBase)
-                ? moderatorUserIds.includes(pidBase)
-                : p.isLocal
-                  ? isSelfModerator && !isHost
-                  : false;
-
-              const roleText =
-                p.kind === "screen"
-                  ? p.isLocal
-                    ? "Your screen"
-                    : "Screen share"
-                  : p.isLocal
-                    ? isHost
-                      ? "Host"
-                      : isMod
-                        ? "Moderator"
-                        : "You"
-                    : isMod
-                      ? "Moderator"
-                      : "Participant";
-
-              return (
-                <div
-                  key={p.id}
-                  className={`px-3 py-2 rounded-xl transition ${isLight ? "hover:bg-black/5" : "hover:bg-white/5"
-                    }`}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                      {avatar ? (
-                        <img
-                          src={avatar}
-                          alt={p.label}
-                          className="w-10 h-10 rounded-full object-cover"
-                          referrerPolicy="no-referrer"
-                          onError={(e) => {
-                            try {
-                              (e.currentTarget as any).style.display = "none";
-                            } catch { }
-                          }}
-                        />
-                      ) : (
-                        <div
-                          className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${isLight
-                              ? "bg-blue-500/15 text-blue-700"
-                              : "bg-emerald-500/80 text-[#02140B]"
-                            }`}
-                        >
-                          {p.kind === "screen" ? "🖥️" : initials}
-                        </div>
-                      )}
-
-                      <div className="min-w-0">
-                        <div
-                          className={`text-[13px] font-medium truncate ${isLight ? "text-black/85" : "text-white/90"
-                            }`}
-                        >
-                          {p.label}
-                          {isPinned ? <span className="ml-2 opacity-70">📌</span> : null}
-                          {isHidden ? <span className="ml-2 opacity-70">🙈</span> : null}
-                        </div>
-                        <div
-                          className={`text-[11px] truncate ${isLight ? "text-black/45" : "text-white/45"
-                            }`}
-                        >
-                          {roleText}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      {p.kind !== "screen" && (
-                        <>
-                          <button
-                            onClick={() => togglePin(p.id)}
-                            className={`w-9 h-9 rounded-xl flex items-center justify-center border transition ${isLight
-                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70"
-                                : "border-white/10 bg-white/5 hover:bg-white/10 text-white/85"
-                              }`}
-                            title={isPinned ? "Unpin" : "Pin"}
-                          >
-                            📌
-                          </button>
-
-                          <button
-                            onClick={() => toggleHide(p.id)}
-                            className={`w-9 h-9 rounded-xl flex items-center justify-center border transition ${isLight
-                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70"
-                                : "border-white/10 bg-white/5 hover:bg-white/10 text-white/85"
-                              }`}
-                            title={isHidden ? "Unhide" : "Hide"}
-                          >
-                            🙈
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className={`p-4 border-t ${isLight ? "border-black/10" : "border-white/5"}`}>
-          <button
-            onClick={() => {
-              try {
-                const url = window.location.href;
-                void navigator.clipboard.writeText(url);
-                alert("Invite link copied ✅");
-              } catch {
-                alert("Could not copy link");
-              }
-            }}
-            className={`w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 ${isLight
-                ? "bg-blue-600 hover:bg-blue-700 text-white"
-                : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
-              }`}
-          >
-            <span className="text-lg">⎘</span>
-            <span>Copy invite link</span>
-          </button>
-        </div>
-      </div>
-    )}
-
-{
-  rightTab === "chat" && (
-    <div className="h-full min-h-0 flex flex-col">
-      <div
-        className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
-          }`}
-      >
-        <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>
-          Chat
-        </div>
-        <button
-          onClick={() => openRightTab(null)}
-          className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-              ? "bg-black/5 hover:bg-black/10 text-black/60"
-              : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
-            }`}
-          title="Close"
-        >
-          ✕
-        </button>
-      </div>
-
-      <div className="flex-1 min-h-0 p-4 overflow-hidden">
-        <div
-          className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight
-              ? "bg-white/70 border border-black/10"
-              : "bg-[#020617]/40 border border-white/10"
-            }`}
-        >
-          <div className="h-full min-h-0 flex flex-col overflow-hidden [&>*]:h-full [&>*]:min-h-0">
-            {session?.id ? (
-              <div
-                data-theme={theme}
-                style={{ colorScheme: theme }}
-                className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
-              >
-                <ChatPanelAny
-                  sessionId={session.id}
-                  theme={theme}
-                  showHeader={false}
-                  title="Chat"
-                  onClose={() => openRightTab(null)}
-                  embedded={true}
-                  hideHeader={true}
-                  authUserId={authUserId}
-                  displayName={displayName || userName}
-                  onAnyMessageSeen={() => markChatRead()}
-                />
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-{
-  rightTab === "intentions" && (
-    <div className="h-full min-h-0 flex flex-col">
-      <div
-        className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
-          }`}
-      >
-        <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>
-          Intentions
-        </div>
-        <button
-          onClick={() => openRightTab(null)}
-          className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-              ? "bg-black/5 hover:bg-black/10 text-black/60"
-              : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
-            }`}
-          title="Close"
-        >
-          ✕
-        </button>
-      </div>
-
-      <div className="flex-1 min-h-0 overflow-hidden p-4">
-        <div
-          className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight
-              ? "bg-white/70 border border-black/10"
-              : "bg-[#020617]/40 border border-white/10"
-            }`}
-        >
-          <div className="h-full min-h-0 overflow-y-auto [&>*]:min-h-0">
+          <div className="flex-1 min-h-0 p-4 overflow-hidden">
             <div
-              data-theme={theme}
-              style={{ colorScheme: theme }}
-              className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
+              className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight
+                  ? "bg-white/70 border border-black/10"
+                  : "bg-[#020617]/40 border border-white/10"
+                }`}
             >
-              {session?.id ? (
-                <IntentionsPanel
-                  key={`intentions-${session.id}-${theme}`}
-                  theme={theme}
-                  sessionId={session.id}
-                  timerText={remainingTime || "--:--"}
-                />
-              ) : null}
+              <div className="h-full min-h-0 flex flex-col overflow-hidden [&>*]:h-full [&>*]:min-h-0">
+                {session?.id ? (
+                  <div
+                    data-theme={theme}
+                    style={{ colorScheme: theme }}
+                    className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
+                  >
+                    <ChatPanelAny
+                      sessionId={session.id}
+                      theme={theme}
+                      showHeader={false}
+                      title="Chat"
+                      onClose={() => openRightTab(null)}
+                      embedded={true}
+                      hideHeader={true}
+                      authUserId={authUserId}
+                      displayName={displayName || userName}
+                      onAnyMessageSeen={() => markChatRead()}
+                    />
+                  </div>
+                ) : null}
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    </div>
-  )
-}
-    </div >
-  );
+      )}
 
+      {rightTab === "intentions" && (
+        <div className="h-full min-h-0 flex flex-col">
+          <div
+            className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
+              }`}
+          >
+            <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>
+              Intentions
+            </div>
+            <button
+              onClick={() => openRightTab(null)}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
+                  ? "bg-black/5 hover:bg-black/10 text-black/60"
+                  : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                }`}
+              title="Close"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-hidden p-4">
+            <div
+              className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight
+                  ? "bg-white/70 border border-black/10"
+                  : "bg-[#020617]/40 border border-white/10"
+                }`}
+            >
+              <div className="h-full min-h-0 overflow-y-auto [&>*]:min-h-0">
+                <div
+                  data-theme={theme}
+                  style={{ colorScheme: theme }}
+                  className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
+                >
+                  {session?.id ? (
+                    <IntentionsPanel
+                      key={`intentions-${session.id}-${theme}`}
+                      theme={theme}
+                      sessionId={session.id}
+                      timerText={remainingTime || "--:--"}
+                    />
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 if (loading) {
   return <div className={`flex h-screen items-center justify-center ${pageBg}`}>Loading session...</div>;
 }
