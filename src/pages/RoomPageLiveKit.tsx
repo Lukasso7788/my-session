@@ -38,6 +38,8 @@ import { PreJoinModal } from "./LiveKit/PreJoinModalLiveKit";
 import { RoomSettingsModalLiveKit } from "./LiveKit/RoomSettingsModalLiveKit";
 import { VideoTile } from "./LiveKit/VideoTileLiveKit";
 import { RemoteAudioRenderer } from "./LiveKit/RemoteAudioRendererLiveKit";
+import ReportParticipantModalLiveKit from "./LiveKit/ReportParticipantModalLiveKit";
+import { buildScreenShareTiles } from "./LiveKit/screenShareHelpers";
 
 import {
   useElementSize,
@@ -108,6 +110,7 @@ type PreJoinSettings = {
 
 type TileModel = {
   id: string; // local | rp.sid
+  kind?: "camera" | "screen";
   label: string;
   isLocal: boolean;
 
@@ -366,6 +369,16 @@ function getInitials(name: string) {
   const parts = s.split(/\s+/).filter(Boolean).slice(0, 2);
   const out = parts.map((p) => p[0]?.toUpperCase()).join("");
   return out || "U";
+}
+
+function getParticipantVolumeKey(tile: Pick<TileModel, "id" | "participantUserId" | "participantIdentity">) {
+  const userId = String(tile.participantUserId || "").toLowerCase();
+  if (userId && looksLikeUuid(userId)) return `user:${userId}`;
+
+  const identity = String(tile.participantIdentity || "").trim().toLowerCase();
+  if (identity) return `identity:${identity}`;
+
+  return `tile:${String(tile.id || "")}`;
 }
 
 // realtime cleanup safe
@@ -811,6 +824,11 @@ export function RoomPageLiveKit() {
   const [localAvatarUrl, setLocalAvatarUrl] = useState<string>("");
 
   const [selectedUser, setSelectedUser] = useState<HostProfile | null>(null);
+  const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [reportTarget, setReportTarget] = useState<TileModel | null>(null);
+  const [reportReason, setReportReason] = useState("");
+  const [reportBusy, setReportBusy] = useState(false);
+  const [reportError, setReportError] = useState("");
 
   // profile cache for remote
   const [profilesById, setProfilesById] = useState<Record<string, HostProfile>>({});
@@ -1855,6 +1873,7 @@ export function RoomPageLiveKit() {
   const [screenShareOn, setScreenShareOn] = useState(false);
 
   const [tiles, setTiles] = useState<TileModel[]>([]);
+  const [screenShareTiles, setScreenShareTiles] = useState<TileModel[]>([]);
   const [adminBusyKey, setAdminBusyKey] = useState<string>("");
   const [openTileAdminMenuId, setOpenTileAdminMenuId] = useState<string | null>(null);
 
@@ -1863,7 +1882,7 @@ export function RoomPageLiveKit() {
   const [pinnedTileId, setPinnedTileId] = useState<string | null>(null);
 
   // per participant volume
-  const [volumePctByTileId, setVolumePctByTileId] = useState<Record<string, number>>({});
+  const [volumePctByParticipantKey, setVolumePctByParticipantKey] = useState<Record<string, number>>({});
 
   // chat unread
   const [unreadChat, setUnreadChat] = useState<number>(0);
@@ -1910,6 +1929,32 @@ export function RoomPageLiveKit() {
     return 1 + r.remoteParticipants.size;
   }, [roomState, tiles]);
 
+  const volumeStorageKey = useMemo(() => {
+    return session?.id ? `mysession_lk_volume:${session.id}` : "";
+  }, [session?.id]);
+
+  useEffect(() => {
+    if (!volumeStorageKey) return;
+    try {
+      const raw = localStorage.getItem(volumeStorageKey);
+      if (!raw) {
+        setVolumePctByParticipantKey({});
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      setVolumePctByParticipantKey(parsed && typeof parsed === "object" ? parsed : {});
+    } catch {
+      setVolumePctByParticipantKey({});
+    }
+  }, [volumeStorageKey]);
+
+  useEffect(() => {
+    if (!volumeStorageKey) return;
+    try {
+      localStorage.setItem(volumeStorageKey, JSON.stringify(volumePctByParticipantKey));
+    } catch { }
+  }, [volumeStorageKey, volumePctByParticipantKey]);
+
   const roomNameForApi = useMemo(() => {
     if (!session) return "";
     return safeRoomName(`session-${session.id}`);
@@ -1930,19 +1975,24 @@ export function RoomPageLiveKit() {
 
   const handleKickedOut = async (payload?: KickBroadcastPayload | null) => {
     if (kickRedirecting) return;
+
     setKickRedirecting(true);
     kickedBySignalRef.current = true;
 
     const byName = String(payload?.kickedByName || "").trim();
     const body = byName
-      ? `You were removed from this room by ${byName}.`
-      : "You were removed from this room by a moderator.";
+      ? `You were disconnected by ${byName}.`
+      : "You were disconnected by a moderator.";
 
-    showSystemNotice({
+    await disconnectRoom({ skipNavigate: true, preserveKickNotice: true });
+
+    setSystemNotice({
+      open: true,
       kind: "kick",
-      title: "Disconnected from room",
+      title: "You were disconnected",
       body,
     });
+  };
 
     await disconnectRoom({ skipNavigate: true, preserveKickNotice: true });
 
@@ -2085,10 +2135,12 @@ export function RoomPageLiveKit() {
     } catch { }
   };
 
-  const setParticipantVolumePct = (tileId: string, pct: number) => {
+  const setParticipantVolumePct = (tile: TileModel, pct: number) => {
     const v = clamp(Math.round(pct), 0, 100);
-    setVolumePctByTileId((prev) => ({ ...prev, [tileId]: v }));
-    applyVolumeToRemoteParticipant(tileId, v);
+    const key = getParticipantVolumeKey(tile);
+
+    setVolumePctByParticipantKey((prev) => ({ ...prev, [key]: v }));
+    applyVolumeToRemoteParticipant(tile.id, v);
   };
 
   const getLocalCameraPublication = () => {
@@ -2155,6 +2207,7 @@ export function RoomPageLiveKit() {
 
     next.push({
       id: "local",
+      kind: "camera",
       label: (displayName || userName || "You").trim() || "You",
       isLocal: true,
       videoTrack: localCamTrack,
@@ -2192,6 +2245,7 @@ export function RoomPageLiveKit() {
 
       next.push({
         id: tileId,
+        kind: "camera",
         label: nm,
         isLocal: false,
         videoTrack: vt,
@@ -2206,20 +2260,28 @@ export function RoomPageLiveKit() {
         remoteMicPubSid: micPub?.trackSid ? String(micPub.trackSid) : undefined,
       });
 
-      const pct = Number(volumePctByTileId[tileId] ?? 100);
+      const volumeKey = getParticipantVolumeKey({
+        id: tileId,
+        participantUserId: baseUserId || undefined,
+        participantIdentity: exactIdentity || undefined,
+      });
+
+      const pct = Number(volumePctByParticipantKey[volumeKey] ?? 100);
       if (Number.isFinite(pct)) applyVolumeToRemoteParticipant(tileId, pct);
     });
 
     setTiles(next);
 
-    try {
-      const lpScreenPub = Array.from(lp.videoTrackPublications.values()).find(
-        (p: any) => p.source === Track.Source.ScreenShare
-      ) as any;
-      setScreenShareOn(!!lpScreenPub?.track && !lpScreenPub?.isMuted);
-    } catch {
-      setScreenShareOn(false);
-    }
+    const nextScreenShares = buildScreenShareTiles({
+      room,
+      authUserId,
+      displayName,
+      userName,
+      profilesById,
+    }) as TileModel[];
+
+    setScreenShareTiles(nextScreenShares);
+    setScreenShareOn(nextScreenShares.some((x) => x.isLocal));
   };
 
   const disconnectRoom = async (opts?: {
@@ -2979,36 +3041,57 @@ export function RoomPageLiveKit() {
   };
 
   // report participant
-  const reportParticipant = async (t: TileModel) => {
-    try {
-      const reason = window.prompt(`Report "${t.label}" — reason?`, "");
-      if (reason === null) return;
+const openReportParticipantModal = (t: TileModel) => {
+  setReportTarget(t);
+  setReportReason("");
+  setReportError("");
+  setReportModalOpen(true);
+};
 
-      const payload = {
-        session_id: session?.id || null,
-        reporter_user_id: authUserId || null,
-        target_identity: t.participantIdentity || null,
-        target_user_id: looksLikeUuid(String(t.participantUserId || ""))
-          ? String(t.participantUserId).toLowerCase()
-          : null,
-        target_name: String(t.label || "").trim() || null,
-        reason: String(reason || "").trim(),
-        created_at: new Date().toISOString(),
-      };
+const submitParticipantReport = async () => {
+  if (!reportTarget) return;
 
-      const { error } = await supabase.from(REPORTS_TABLE).insert(payload as any);
-      if (error) throw error;
+  const reason = String(reportReason || "").trim();
+  if (!reason) {
+    setReportError("Please describe the problem.");
+    return;
+  }
 
-      showSystemNotice({
-        kind: "info",
-        title: "Report submitted",
-        body: `Your report about ${t.label || "this participant"} has been saved.`,
-      });
-    } catch (e: any) {
-      console.error("report failed:", e);
-      alert(String(e?.message || e || "report_failed"));
-    }
-  };
+  setReportBusy(true);
+  setReportError("");
+
+  try {
+    const payload = {
+      session_id: session?.id || null,
+      reporter_user_id: authUserId || null,
+      target_identity: reportTarget.participantIdentity || null,
+      target_user_id: looksLikeUuid(String(reportTarget.participantUserId || ""))
+        ? String(reportTarget.participantUserId).toLowerCase()
+        : null,
+      target_name: String(reportTarget.label || "").trim() || null,
+      reason,
+      created_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabase.from(REPORTS_TABLE).insert(payload as any);
+    if (error) throw error;
+
+    setReportModalOpen(false);
+    setReportTarget(null);
+    setReportReason("");
+
+    showSystemNotice({
+      kind: "info",
+      title: "Report submitted",
+      body: `Your report about ${reportTarget.label || "this participant"} has been saved.`,
+    });
+  } catch (e: any) {
+    console.error("report failed:", e);
+    setReportError(String(e?.message || e || "report_failed"));
+  } finally {
+    setReportBusy(false);
+  }
+};
 
   // tiles with hide/pin
   const tilesBaseForUi = useMemo(() => {
@@ -3126,6 +3209,10 @@ export function RoomPageLiveKit() {
   };
 
   const isTileCamOff = (t: TileModel) => {
+    if (t.kind === "screen") {
+      return !t.videoTrack;
+    }
+
     const exists = !!t.camPubExists;
     const hasTrack = !!t.camPubHasTrack;
     const muted = t.camPubMuted !== false;
@@ -3140,10 +3227,7 @@ export function RoomPageLiveKit() {
     return (
       <div className="absolute inset-0 z-10 flex flex-col items-center justify-center pointer-events-none">
         <div
-          className={[
-            "w-[78px] h-[78px] rounded-full overflow-hidden flex items-center justify-center shadow-2xl border",
-            isLight ? "border-black/10" : "border-white/10",
-          ].join(" ")}
+          className="relative group w-full"
         >
           {avatar ? (
             <img
@@ -3206,7 +3290,8 @@ export function RoomPageLiveKit() {
     const nameText = t.label || "User";
     const micMuted = !!t.micMuted;
 
-    const volPct = !t.isLocal ? Number(volumePctByTileId[t.id] ?? 100) : 100;
+    const volumeKey = getParticipantVolumeKey(t);
+    const volPct = !t.isLocal ? Number(volumePctByParticipantKey[volumeKey] ?? 100) : 100;
 
     const namePlateBaseCls = [
       "group/name inline-flex items-center gap-2 rounded-2xl border backdrop-blur shadow-sm",
@@ -3387,7 +3472,7 @@ export function RoomPageLiveKit() {
                           min={0}
                           max={100}
                           value={Number.isFinite(volPct) ? volPct : 100}
-                          onChange={(e) => setParticipantVolumePct(t.id, Number(e.target.value))}
+                          onChange={(e) => setParticipantVolumePct(t, Number(e.target.value))}
                           className="w-full"
                         />
                         <div className={`text-[11px] ${isLight ? "text-black/55" : "text-white/55"} w-[40px] text-right`}>
@@ -3427,7 +3512,7 @@ export function RoomPageLiveKit() {
                       type="button"
                       onClick={async (e) => {
                         e.stopPropagation();
-                        await reportParticipant(t);
+                        openReportParticipantModal(t);
                         setOpenTileAdminMenuId(null);
                       }}
                       className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
@@ -3465,6 +3550,28 @@ export function RoomPageLiveKit() {
     );
   };
 
+  const activeScreenShareTile = useMemo(() => {
+    return screenShareTiles.length ? screenShareTiles[0] : null;
+  }, [screenShareTiles]);
+
+  const pinnedParticipantTile = useMemo(() => {
+    if (!pinnedTileId) return null;
+    return tilesForRender.find((t) => t.id === pinnedTileId) || null;
+  }, [pinnedTileId, tilesForRender]);
+
+  const featuredTile = activeScreenShareTile || pinnedParticipantTile || null;
+
+  const sidebarTiles = useMemo(() => {
+    if (activeScreenShareTile) return tilesForRender;
+    if (pinnedParticipantTile) return tilesForRender.filter((t) => t.id !== pinnedParticipantTile.id);
+    return tilesForRender;
+  }, [activeScreenShareTile, pinnedParticipantTile, tilesForRender]);
+
+  const useFeaturedLayout =
+    !!featuredTile &&
+    !useVeryNarrowMode &&
+    effectiveW >= 900;
+
   // Layout
   const tileCount = tilesForRender.length;
   const paddingBottomPx = 12;
@@ -3479,7 +3586,30 @@ export function RoomPageLiveKit() {
     !useVeryNarrowMode &&
     (isTabletQuery || (isMobileQuery && effectiveW < 640) || isCompact);
 
-  const videoLayout = (
+  const videoLayout = useFeaturedLayout ? (
+    <div className="h-full w-full grid grid-cols-[minmax(0,1fr),320px] gap-3 p-3">
+      <div className="min-w-0 min-h-0 flex items-center justify-center">
+        <div className="w-full">
+          {featuredTile ? renderTile(featuredTile) : null}
+        </div>
+      </div>
+
+      <div className="min-w-0 min-h-0 overflow-y-auto pr-1 flex flex-col gap-3">
+        {sidebarTiles.length === 0 ? (
+          <div
+            className={`min-h-[160px] rounded-2xl border flex items-center justify-center ${isLight ? "border-black/10 bg-black/5 text-black/50" : "border-white/10 bg-white/5 text-white/55"
+              }`}
+          >
+            No other participants
+          </div>
+        ) : (
+          sidebarTiles.map((t) => (
+            <div key={`sidebar-${t.id}`}>{renderTile(t)}</div>
+          ))
+        )}
+      </div>
+    </div>
+  ) : (
     <>
       {!tileCount && connected ? (
         <div className={`h-full w-full flex items-center justify-center px-4 ${isLight ? "text-black/60" : "text-white/60"}`}>
@@ -4171,15 +4301,17 @@ export function RoomPageLiveKit() {
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={closeSystemNotice}
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/70" : "bg-white/5 hover:bg-white/10 text-white/80"
-                    }`}
-                  title="Close"
-                >
-                  ✕
-                </button>
+                {systemNotice.kind !== "kick" && (
+                  <button
+                    type="button"
+                    onClick={closeSystemNotice}
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/70" : "bg-white/5 hover:bg-white/10 text-white/80"
+                      }`}
+                    title="Close"
+                  >
+                    ✕
+                  </button>
+                )}
               </div>
 
               <div className="mt-5 flex items-center justify-end gap-2">
@@ -4193,7 +4325,7 @@ export function RoomPageLiveKit() {
                     className={`px-4 h-10 rounded-xl font-semibold ${isLight ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
                       }`}
                   >
-                    Go to sessions
+                    OK
                   </button>
                 ) : (
                   <button
@@ -4209,6 +4341,26 @@ export function RoomPageLiveKit() {
             </div>
           </div>
         )}
+
+        <ReportParticipantModalLiveKit
+          open={reportModalOpen}
+          theme={theme}
+          participantName={reportTarget?.label || "Participant"}
+          value={reportReason}
+          busy={reportBusy}
+          error={reportError}
+          onChange={setReportReason}
+          onClose={() => {
+            if (reportBusy) return;
+            setReportModalOpen(false);
+            setReportTarget(null);
+            setReportReason("");
+            setReportError("");
+          }}
+          onSubmit={() => {
+            submitParticipantReport().catch(() => { });
+          }}
+        />
 
         {editNameOpen && (
           <div className="fixed inset-0 z-[80] flex items-center justify-center">
