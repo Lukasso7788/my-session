@@ -1,6 +1,6 @@
 // src/components/ChatPanel.tsx
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Picker from "@emoji-mart/react";
 import emojiData from "@emoji-mart/data";
@@ -155,11 +155,6 @@ type ReactionDetailsState = {
     error?: string | null;
 };
 
-/** -----------------------
- *  Full Emoji Picker (Emoji Mart) — lazy-loaded
- *  Requires deps:
- *    npm i emoji-mart @emoji-mart/data @emoji-mart/react
- *  ----------------------*/
 function EmojiPickerPopover({
     theme,
     onPick,
@@ -253,10 +248,8 @@ function MessageCard({
     }, []);
 
     useEffect(() => {
-        // если сообщение обновилось realtime — синхронизируем draft, если не в режиме редактирования
         if (!isEditing) setDraft(msg.body);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [msg.body]);
+    }, [msg.body, isEditing]);
 
     useEffect(() => {
         if (!openReactions) return;
@@ -389,7 +382,6 @@ function MessageCard({
                                 Reply
                             </button>
 
-                            {/* reactions button */}
                             <div className="relative">
                                 <button
                                     ref={reactionButtonRef}
@@ -447,7 +439,6 @@ function MessageCard({
                                     )}
                             </div>
 
-                            {/* edit/delete for mine */}
                             {canEdit && (
                                 <>
                                     <button
@@ -475,7 +466,6 @@ function MessageCard({
 
                 {!isEditing ? (
                     <div className={bubbleCls}>
-                        {/* quoted reply block */}
                         {quote && (
                             <div className={"mb-2 rounded-xl px-3 py-2 text-[12px] leading-snug " + quoteBoxCls}>
                                 <div className="text-[10px] opacity-75 mb-1">Reply</div>
@@ -533,7 +523,6 @@ function MessageCard({
                     </div>
                 )}
 
-                {/* reactions row */}
                 {hasReactions && !isEditing && (
                     <div className={"mt-2 flex flex-wrap gap-2 " + (mine ? "justify-end" : "justify-start")}>
                         {Object.entries(reactionsCounts!).map(([emoji, count]) => {
@@ -545,7 +534,6 @@ function MessageCard({
                                     className={reactionPillBase + " " + (isMine ? reactionPillMine : "")}
                                     onClick={() => onOpenReactionDetails(msg.id, emoji)}
                                     onContextMenu={(e) => {
-                                        // ✅ quick toggle without modal
                                         e.preventDefault();
                                         onToggleReaction(msg.id, emoji);
                                     }}
@@ -574,26 +562,19 @@ function MessageCard({
 export function ChatPanel({
     sessionId,
     theme = "dark",
-
-    // IMPORTANT: showHeader теперь управляет только сабтайтлом,
-    // а заголовок "Chat" мы показываем ВСЕГДА (чтобы он не пропадал).
     showHeader = true,
-
     title = "Chat",
     subtitle = "All messages for this session",
-
-    onClose, // NEW: если хочешь крестик сверху — прокинь сюда
-    onBecameVisible, // ✅ NEW
+    onClose,
+    onBecameVisible,
 }: {
     sessionId: string;
     theme?: RoomTheme;
     showHeader?: boolean;
-
     title?: string;
     subtitle?: string;
-
     onClose?: () => void;
-    onBecameVisible?: () => void; // ✅ NEW
+    onBecameVisible?: () => void;
 }) {
     const isLight = theme === "light";
 
@@ -617,11 +598,9 @@ export function ChatPanel({
         messagesRef.current = messages;
     }, [messages]);
 
-    // reactions: counts + mine
     const [reactions, setReactions] = useState<Record<string, Record<string, number>>>({});
     const [myReactions, setMyReactions] = useState<Record<string, Record<string, boolean>>>({});
 
-    // ✅ reactions details modal
     const [reactionDetails, setReactionDetails] = useState<ReactionDetailsState>({
         open: false,
         messageId: "",
@@ -641,7 +620,6 @@ export function ChatPanel({
 
     const pollingRef = useRef<number | null>(null);
 
-    // ✅ safety / lifecycle
     const aliveRef = useRef(true);
     useEffect(() => {
         aliveRef.current = true;
@@ -650,23 +628,19 @@ export function ChatPanel({
         };
     }, []);
 
-    // request ids (ignore stale results)
     const messagesReqIdRef = useRef(0);
     const reactionsReqIdRef = useRef(0);
 
-    // in-flight locks + queued reload flags
     const loadingMessagesRef = useRef(false);
     const loadingReactionsRef = useRef(false);
     const queuedMessagesReloadRef = useRef(false);
     const queuedReactionsReloadRef = useRef(false);
 
-    // autoscroll control
     const atBottomRef = useRef<boolean>(true);
     const [unseenNew, setUnseenNew] = useState<number>(0);
 
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
 
-    // emoji portal refs / state
     const composerEmojiWrapRef = useRef<HTMLDivElement | null>(null);
     const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
     const emojiPortalRef = useRef<HTMLDivElement | null>(null);
@@ -679,10 +653,8 @@ export function ChatPanel({
         maxHeight: number;
     } | null>(null);
 
-    // bootstrap timestamp (avoid noisy reloads)
     const bootTsRef = useRef<number>(0);
 
-    // pending reaction ops dedupe (avoid optimistic + realtime double-apply)
     const pendingReactionOpsRef = useRef<Map<string, number>>(new Map());
     const reactionKey = (ev: string, messageId: string, emoji: string, uid: string) =>
         `${ev}|${messageId}|${emoji}|${uid}`;
@@ -690,7 +662,7 @@ export function ChatPanel({
     const isAtBottom = () => {
         const el = listRef.current;
         if (!el) return true;
-        const threshold = 140; // px
+        const threshold = 140;
         const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
         return distance <= threshold;
     };
@@ -699,7 +671,6 @@ export function ChatPanel({
         bottomRef.current?.scrollIntoView({ behavior });
     };
 
-    // ✅ hydrate from cache on session change (instant UI on open/close)
     useEffect(() => {
         if (!sessionId) return;
 
@@ -726,10 +697,8 @@ export function ChatPanel({
             setUnseenNew(0);
             setLoading(true);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionId]);
 
-    // persist cache (lightweight)
     useEffect(() => {
         if (!sessionId) return;
         setChatCache(sessionId, {
@@ -740,16 +709,13 @@ export function ChatPanel({
             profilesById: profilesByIdRef.current,
             meProfile: meProfileRef.current,
         });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionId, messages, reactions, myReactions, profilesById, meProfile]);
 
-    // ✅ inform parent that chat became visible
     useEffect(() => {
         onBecameVisible?.();
         setUnseenNew(0);
     }, [onBecameVisible, sessionId]);
 
-    // ---------- theme tokens
     const headerBorder = isLight ? "border-black/10" : "border-white/5";
     const titleText = isLight ? "text-black/85" : "text-white/85";
     const subText = isLight ? "text-black/50" : "text-white/45";
@@ -783,7 +749,6 @@ export function ChatPanel({
         ? "rounded-2xl border border-black/10 bg-white shadow-2xl overflow-hidden"
         : "rounded-2xl border border-white/10 bg-[#020617] shadow-2xl overflow-hidden";
 
-    // ---------- auth user + my profile
     useEffect(() => {
         (async () => {
             const { data } = await supabase.auth.getUser();
@@ -808,7 +773,6 @@ export function ChatPanel({
         })();
     }, []);
 
-    // ---------- ensureProfiles
     const ensureProfiles = async (userIds: string[]) => {
         const unique = Array.from(new Set(userIds)).filter(Boolean);
         const missing = unique.filter((id) => !profilesByIdRef.current[id]);
@@ -844,7 +808,6 @@ export function ChatPanel({
         return normalizeMessageIds(ids);
     };
 
-    // ---------- reaction details modal helpers
     const closeReactionDetails = () => {
         setReactionDetails({
             open: false,
@@ -934,10 +897,8 @@ export function ChatPanel({
 
         document.addEventListener("keydown", onKey);
         return () => document.removeEventListener("keydown", onKey);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [reactionDetails.open]);
 
-    // ---------- load messages (initial + fallback)
     const loadMessages = async (opts?: { silent?: boolean }): Promise<Msg[] | null> => {
         if (!sessionId) return null;
 
@@ -949,7 +910,6 @@ export function ChatPanel({
         loadingMessagesRef.current = true;
         const reqId = ++messagesReqIdRef.current;
 
-        // IMPORTANT: если у нас уже есть сообщения (например из cache) — не показываем спиннер
         if (!opts?.silent && messagesRef.current.length === 0) setLoading(true);
 
         try {
@@ -966,7 +926,6 @@ export function ChatPanel({
             if (reqId !== messagesReqIdRef.current) return null;
 
             if (error) {
-                // ✅ FIX: не чистим чат на transient error (это и давало "пропадания")
                 console.error("chat load error:", error);
                 return null;
             }
@@ -979,7 +938,6 @@ export function ChatPanel({
 
             const attached = safeRows.map((r) => attachProfile(r));
 
-            // ✅ sync ref before setState
             messagesRef.current = attached;
             setMessages(attached);
 
@@ -988,7 +946,6 @@ export function ChatPanel({
             console.warn("loadMessages failed:", e);
             if (!aliveRef.current) return null;
             if (reqId !== messagesReqIdRef.current) return null;
-            // keep whatever we had
             return null;
         } finally {
             if (aliveRef.current && reqId === messagesReqIdRef.current && !opts?.silent) {
@@ -996,7 +953,6 @@ export function ChatPanel({
             }
             loadingMessagesRef.current = false;
 
-            // if someone asked while we were loading — run once more silently
             if (queuedMessagesReloadRef.current) {
                 queuedMessagesReloadRef.current = false;
                 void loadMessages({ silent: true });
@@ -1004,7 +960,6 @@ export function ChatPanel({
         }
     };
 
-    // ---------- load reactions (initial only + rare resync)
     const loadReactions = async (opts?: { silent?: boolean; messageIds?: string[] }) => {
         if (!sessionId) return;
 
@@ -1025,7 +980,6 @@ export function ChatPanel({
             if (msgIds.length === 0) {
                 if (!aliveRef.current) return;
                 if (reqId !== reactionsReqIdRef.current) return;
-                // leave as-is (no messages)
                 setReactions({});
                 setMyReactions({});
                 return;
@@ -1046,13 +1000,11 @@ export function ChatPanel({
 
             if (error) {
                 console.error("reactions load error:", error);
-                // ✅ don't wipe on error
                 return;
             }
 
             const rows = (data as any as ReactionRow[]) || [];
 
-            // full rebuild of counts + mine (but only on bootstrap/resync)
             const counts: Record<string, Record<string, number>> = {};
             const mine: Record<string, Record<string, boolean>> = {};
 
@@ -1072,7 +1024,6 @@ export function ChatPanel({
             console.warn("loadReactions failed:", e);
             if (!aliveRef.current) return;
             if (reqId !== reactionsReqIdRef.current) return;
-            // keep old reactions
         } finally {
             loadingReactionsRef.current = false;
 
@@ -1083,7 +1034,6 @@ export function ChatPanel({
         }
     };
 
-    // ✅ bootstrap: load messages once, then reactions once
     const bootstrap = async (opts?: { silent?: boolean; force?: boolean }) => {
         if (!sessionId) return;
 
@@ -1098,14 +1048,11 @@ export function ChatPanel({
         bootTsRef.current = now;
     };
 
-    // initial bootstrap on session change
     useEffect(() => {
         if (!sessionId) return;
         void bootstrap({ silent: false, force: true });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionId]);
 
-    // if userId becomes available later — refresh "mine" mapping once
     useEffect(() => {
         if (!sessionId) return;
         if (!userId) return;
@@ -1116,10 +1063,8 @@ export function ChatPanel({
             const ids = normalizeMessageIds(messagesRef.current.map((m) => m.id));
             void loadReactions({ silent: true, messageIds: ids });
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [sessionId, userId]);
+    }, [sessionId, userId, reactions, myReactions]);
 
-    // ---------- realtime messages: update state directly (sync messagesRef)
     useEffect(() => {
         if (!sessionId) return;
 
@@ -1254,10 +1199,8 @@ export function ChatPanel({
             }
             supabase.removeChannel(channel);
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionId, userId]);
 
-    // ---------- realtime reactions (incremental updates, no reload spam)
     useEffect(() => {
         if (!sessionId) return;
 
@@ -1400,10 +1343,8 @@ export function ChatPanel({
         return () => {
             supabase.removeChannel(ch);
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionId, userId]);
 
-    // autoscroll only if user is near bottom
     useEffect(() => {
         const shouldScroll = atBottomRef.current || isAtBottom();
         if (shouldScroll) {
@@ -1411,10 +1352,8 @@ export function ChatPanel({
             setUnseenNew(0);
             onBecameVisible?.();
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [messages.length]);
+    }, [messages.length, onBecameVisible]);
 
-    // auto-resize composer textarea
     useEffect(() => {
         const el = composerRef.current;
         if (!el) return;
@@ -1455,7 +1394,6 @@ export function ChatPanel({
         });
     };
 
-    // ---- Emoji Portal positioning (fix clipping by chat panel overflow)
     const computeEmojiPosition = () => {
         const btn = emojiButtonRef.current;
         if (!btn) return null;
@@ -1475,11 +1413,9 @@ export function ChatPanel({
 
         const desiredHeight = 420;
 
-        // align right with button
         let left = rect.right - width + offsetLeft;
         left = Math.max(margin + offsetLeft, Math.min(left, offsetLeft + vw - width - margin));
 
-        // prefer open upwards
         const spaceAbove = rect.top - margin;
         const spaceBelow = vh - rect.bottom - margin;
 
@@ -1492,7 +1428,6 @@ export function ChatPanel({
             ? rect.top - maxHeight - 8 + offsetTop
             : rect.bottom + 8 + offsetTop;
 
-        // clamp inside viewport
         top = Math.max(margin + offsetTop, Math.min(top, offsetTop + vh - maxHeight - margin));
 
         return { left, top, width, maxHeight };
@@ -1512,13 +1447,11 @@ export function ChatPanel({
             setEmojiPos(p);
         };
 
-        // scroll anywhere (capture) — remeasure
         const onScroll = () => onResize();
 
         window.addEventListener("resize", onResize);
         window.addEventListener("scroll", onScroll, true);
 
-        // close on outside click / Esc (must account portal)
         const onDown = (e: MouseEvent) => {
             const t = e.target as Node | null;
             if (!t) return;
@@ -1542,7 +1475,6 @@ export function ChatPanel({
             document.removeEventListener("mousedown", onDown);
             document.removeEventListener("keydown", onKey);
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [composerEmojiOpen]);
 
     const send = async () => {
@@ -1758,7 +1690,6 @@ export function ChatPanel({
 
     const uiMessages = useMemo(() => messages, [messages]);
 
-    // -------- modal rendering data
     const modalMessage = reactionDetails.open
         ? messagesRef.current.find((m) => m.id === reactionDetails.messageId) || null
         : null;
@@ -1787,7 +1718,6 @@ export function ChatPanel({
                 className="fixed inset-0 z-[99999]"
                 style={{ pointerEvents: "none" }}
             >
-                {/* click-outside catcher */}
                 <div
                     className="absolute inset-0"
                     style={{ pointerEvents: "auto", background: "transparent" }}
@@ -1803,7 +1733,6 @@ export function ChatPanel({
                         width: emojiPos.width,
                     }}
                     onMouseDown={(e) => {
-                        // не закрываем при клике по самому пикеру
                         e.stopPropagation();
                     }}
                 >
@@ -1821,7 +1750,6 @@ export function ChatPanel({
 
     return (
         <div className="h-full flex flex-col bg-transparent min-h-0 relative">
-            {/* ✅ Reaction Details Modal */}
             {reactionDetails.open && (
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center">
                     <div
@@ -1865,8 +1793,7 @@ export function ChatPanel({
                                 <div className={modalTextSecondary + " text-[12px]"}>
                                     {reactionDetails.loading
                                         ? "Loading…"
-                                        : `${reactionDetails.userIds.length} ${reactionDetails.userIds.length === 1 ? "person" : "people"
-                                        } reacted`}
+                                        : `${reactionDetails.userIds.length} ${reactionDetails.userIds.length === 1 ? "person" : "people"} reacted`}
                                 </div>
 
                                 {canToggleInModal && (
@@ -1958,7 +1885,6 @@ export function ChatPanel({
                 </div>
             )}
 
-            {/* HEADER */}
             {showHeader && (
                 <div className={"px-5 py-4 border-b " + headerBorder}>
                     <div className="flex items-center justify-between gap-3">
@@ -1982,7 +1908,6 @@ export function ChatPanel({
                 </div>
             )}
 
-            {/* LIST */}
             <div
                 ref={listRef}
                 className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-4 space-y-3 custom-scrollbar relative"
@@ -2032,7 +1957,6 @@ export function ChatPanel({
                 <div ref={bottomRef} />
             </div>
 
-            {/* "New messages" bubble */}
             {unseenNew > 0 && (
                 <div className="absolute left-0 right-0 bottom-[96px] flex items-center justify-center pointer-events-none">
                     <button
@@ -2056,7 +1980,6 @@ export function ChatPanel({
                 </div>
             )}
 
-            {/* COMPOSER */}
             <div className={"p-4 border-t " + headerBorder}>
                 {replyTo && (
                     <div className={"mb-2 flex items-center justify-between gap-2 rounded-xl border px-3 py-2 " + replyBoxCls}>
@@ -2079,7 +2002,6 @@ export function ChatPanel({
                     </div>
                 )}
 
-                {/* ROW: input + emoji + send button */}
                 <div className="flex items-end gap-2">
                     <textarea
                         ref={composerRef}
@@ -2100,7 +2022,6 @@ export function ChatPanel({
                         }}
                     />
 
-                    {/* Emoji picker button */}
                     <div className="relative" ref={composerEmojiWrapRef}>
                         <button
                             ref={emojiButtonRef}
@@ -2108,7 +2029,6 @@ export function ChatPanel({
                             title="Add emoji"
                             className={composerEmojiBtnCls}
                             onMouseDown={(e) => {
-                                // не даем textarea терять selection/cursor до вставки эмодзи
                                 e.preventDefault();
                             }}
                             onClick={() => {
@@ -2135,13 +2055,11 @@ export function ChatPanel({
                     </button>
                 </div>
 
-                {/* hint under row */}
                 <div className={"mt-2 text-[11px] " + hintText}>
                     Enter — send • Shift+Enter — new line
                 </div>
             </div>
 
-            {/* ✅ Portal emoji picker (prevents clipping by chat panel overflow) */}
             {emojiPortal}
         </div>
     );
