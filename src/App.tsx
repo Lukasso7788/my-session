@@ -1,5 +1,4 @@
-// src/App.tsx
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Link } from "react-router-dom";
 
 import { SessionsPage } from "./pages/SessionsPage";
 import LandingPage from "./pages/LandingPage";
@@ -36,13 +35,97 @@ import NotFoundPage from "./pages/NotFoundPage";
 // ✅ UI playground (local testing page)
 import SessionCardsPlayground from "./SessionCardsPlayground";
 
+/**
+ * TEMP blog pages to keep deploy green.
+ * Later you can replace these with:
+ * import BlogIndex from "./pages/BlogIndex";
+ * import BlogPost from "./pages/BlogPost";
+ */
+function BlogIndexPlaceholder() {
+  return (
+    <main className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
+      <div className="overflow-hidden rounded-[28px] border border-black/10 bg-white shadow-[0_12px_40px_rgba(0,0,0,0.08)]">
+        <div className="px-6 py-7 sm:px-8 sm:py-8">
+          <div className="inline-flex items-center rounded-full border border-black/10 bg-black/[0.03] px-3 py-1 text-[12px] font-medium text-[#606060]">
+            Blog
+          </div>
+
+          <h1 className="mt-4 text-[30px] font-semibold tracking-tight text-[#2F2F2F] sm:text-[38px]">
+            MySession Blog
+          </h1>
+
+          <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[#606060]">
+            Blog section is connected and route is working. You can now safely add
+            real SEO blog pages without crashing the app.
+          </p>
+
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Link
+              to="/updates"
+              className="rounded-xl border border-black/10 bg-black/[0.03] px-4 py-2 text-[14px] text-[#2F2F2F] transition hover:bg-black/[0.06]"
+            >
+              See updates
+            </Link>
+
+            <Link
+              to="/"
+              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-[14px] text-[#2F2F2F] transition hover:bg-black/[0.03]"
+            >
+              Back to home
+            </Link>
+          </div>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function BlogPostPlaceholder() {
+  return (
+    <main className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
+      <div className="overflow-hidden rounded-[28px] border border-black/10 bg-white shadow-[0_12px_40px_rgba(0,0,0,0.08)]">
+        <div className="px-6 py-7 sm:px-8 sm:py-8">
+          <div className="inline-flex items-center rounded-full border border-black/10 bg-black/[0.03] px-3 py-1 text-[12px] font-medium text-[#606060]">
+            Blog post
+          </div>
+
+          <h1 className="mt-4 text-[30px] font-semibold tracking-tight text-[#2F2F2F] sm:text-[38px]">
+            Blog post placeholder
+          </h1>
+
+          <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[#606060]">
+            This route works. Replace this placeholder with your real blog post page
+            when you are ready.
+          </p>
+
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Link
+              to="/blog"
+              className="rounded-xl border border-black/10 bg-black/[0.03] px-4 py-2 text-[14px] text-[#2F2F2F] transition hover:bg-black/[0.06]"
+            >
+              Back to blog
+            </Link>
+
+            <Link
+              to="/"
+              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-[14px] text-[#2F2F2F] transition hover:bg-black/[0.03]"
+            >
+              Back to home
+            </Link>
+          </div>
+        </div>
+      </div>
+    </main>
+  );
+}
+
 export default function App() {
   console.log("[ROUTER] App mounted");
 
   return (
     <CreateSessionModalProvider>
       <Routes>
-        {/* Routes WITH header */}
+        {/* Routes WITH header/footer */}
         <Route element={<AppLayout />}>
           {/* Root */}
           <Route path="/" element={<LandingPage />} />
@@ -63,6 +146,10 @@ export default function App() {
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/data-deletion" element={<DataDeletionPage />} />
 
+          {/* ✅ Blog routes — safe placeholders for now */}
+          <Route path="/blog" element={<BlogIndexPlaceholder />} />
+          <Route path="/blog/:slug" element={<BlogPostPlaceholder />} />
+
           {/* ✅ Canonical SEO pages */}
           <Route path="/body-doubling" element={<BodyDoublingPage />} />
           <Route path="/online-coworking" element={<OnlineCoworkingPage />} />
@@ -82,14 +169,12 @@ export default function App() {
           <Route path="*" element={<NotFoundPage />} />
         </Route>
 
-        {/* Routes WITHOUT header */}
+        {/* Routes WITHOUT header/footer */}
         <Route path="/room/:id" element={<RoomPage />} />
         <Route path="/room-iframe/:id" element={<RoomPageIFrame />} />
         <Route path="/room-livekit/:id" element={<RoomPageLiveKit />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
-        <Route path="/blog" element={<BlogIndex />} />
-        <Route path="/blog/:slug" element={<BlogPost />} />
 
         {/* OAuth */}
         <Route

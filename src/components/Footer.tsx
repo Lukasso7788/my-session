@@ -1,5 +1,9 @@
-// src/components/Footer.tsx
 import { Link } from "react-router-dom";
+
+const SUPPORT_EMAIL = "misha1915@live.ru"; // TODO: replace with your main support email
+const DISCORD_URL = "https://discord.com";
+const TELEGRAM_URL = "https://t.me";
+const TWITTER_URL = "https://twitter.com";
 
 export default function Footer() {
     return (
@@ -10,10 +14,14 @@ export default function Footer() {
                     <div className="flex flex-col gap-8 md:flex-row md:items-start md:justify-between">
                         {/* Brand */}
                         <div className="max-w-[420px]">
-                            <div className="text-[22px] font-semibold text-[#2F2F2F]">MySession</div>
+                            <div className="text-[22px] font-semibold text-[#2F2F2F]">
+                                MySession
+                            </div>
+
                             <p className="mt-3 text-[14px] leading-relaxed text-[#606060]">
-                                High-accountability focus sessions with structured check-ins, intentions tracking, and AI assistance —
-                                so you actually move your work forward.
+                                High-accountability focus sessions with structured check-ins,
+                                intentions tracking, and AI assistance — so you actually move
+                                your work forward.
                             </p>
 
                             <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -32,44 +40,90 @@ export default function Footer() {
                         {/* Links */}
                         <div className="grid grid-cols-2 gap-8 sm:grid-cols-3">
                             <div className="flex flex-col gap-3">
-                                <div className="text-[12px] font-semibold tracking-wide text-[#2F2F2F]">Product</div>
-                                <Link className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" to="/sessions">
+                                <div className="text-[12px] font-semibold tracking-wide text-[#2F2F2F]">
+                                    Product
+                                </div>
+
+                                <Link
+                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
+                                    to="/sessions"
+                                >
                                     Sessions
                                 </Link>
-                                <Link className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" to="/pricing">
+
+                                <Link
+                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
+                                    to="/pricing"
+                                >
                                     Pricing
                                 </Link>
-                                <Link className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" to="/updates">
+
+                                <Link
+                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
+                                    to="/updates"
+                                >
                                     Latest updates
                                 </Link>
-                                <Link to="/blog" className="hover:underline">
+
+                                <Link
+                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
+                                    to="/blog"
+                                >
                                     Blog
                                 </Link>
                             </div>
 
                             <div className="flex flex-col gap-3">
-                                <div className="text-[12px] font-semibold tracking-wide text-[#2F2F2F]">Rules & legal</div>
-                                <Link className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" to="/rules">
-                                    Platform rules
+                                <div className="text-[12px] font-semibold tracking-wide text-[#2F2F2F]">
+                                    Legal
+                                </div>
+
+                                <Link
+                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
+                                    to="/terms"
+                                >
+                                    Terms
                                 </Link>
-                                <Link className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" to="/privacy">
+
+                                <Link
+                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
+                                    to="/privacy"
+                                >
                                     Privacy
                                 </Link>
-                                <Link className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" to="/terms">
-                                    Terms
+
+                                <Link
+                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
+                                    to="/data-deletion"
+                                >
+                                    Data deletion
                                 </Link>
                             </div>
 
                             <div className="flex flex-col gap-3">
-                                <div className="text-[12px] font-semibold tracking-wide text-[#2F2F2F]">Support</div>
-                                <Link className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" to="/help">
-                                    Help center
-                                </Link>
-                                <Link className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" to="/contact">
+                                <div className="text-[12px] font-semibold tracking-wide text-[#2F2F2F]">
+                                    Support
+                                </div>
+
+                                <a
+                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
+                                    href={`mailto:${SUPPORT_EMAIL}`}
+                                >
                                     Contact
+                                </a>
+
+                                <Link
+                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
+                                    to="/updates"
+                                >
+                                    Updates
                                 </Link>
-                                <Link className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" to="/status">
-                                    Status
+
+                                <Link
+                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
+                                    to="/pricing"
+                                >
+                                    Billing info
                                 </Link>
                             </div>
                         </div>
@@ -82,14 +136,30 @@ export default function Footer() {
                         </div>
 
                         <div className="flex items-center gap-4">
-                            {/* Иконки можешь заменить на свои */}
-                            <a className="text-[13px] text-[#606060] hover:text-[#2F2F2F]" href="https://twitter.com" target="_blank" rel="noreferrer">
+                            <a
+                                className="text-[13px] text-[#606060] hover:text-[#2F2F2F]"
+                                href={TWITTER_URL}
+                                target="_blank"
+                                rel="noreferrer"
+                            >
                                 Twitter
                             </a>
-                            <a className="text-[13px] text-[#606060] hover:text-[#2F2F2F]" href="https://discord.com" target="_blank" rel="noreferrer">
+
+                            <a
+                                className="text-[13px] text-[#606060] hover:text-[#2F2F2F]"
+                                href={DISCORD_URL}
+                                target="_blank"
+                                rel="noreferrer"
+                            >
                                 Discord
                             </a>
-                            <a className="text-[13px] text-[#606060] hover:text-[#2F2F2F]" href="https://t.me" target="_blank" rel="noreferrer">
+
+                            <a
+                                className="text-[13px] text-[#606060] hover:text-[#2F2F2F]"
+                                href={TELEGRAM_URL}
+                                target="_blank"
+                                rel="noreferrer"
+                            >
                                 Telegram
                             </a>
                         </div>
