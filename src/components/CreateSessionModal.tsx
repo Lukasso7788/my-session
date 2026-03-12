@@ -3,6 +3,9 @@
 // ✅ Added session description field + save to sessions.description
 // ✅ Removed server region picker entirely (no auto/manual domain in modal)
 // ✅ All sessions created with fixed EU domain: jitsi.mysession.club
+// ✅ Added host auto-booking after session creation
+// ✅ Added Session Studio multi-select + Ctrl/Cmd+C + Ctrl/Cmd+V duplication
+// ✅ Added sticky timeline + sticky block library
 
 import {
   useState,
@@ -449,7 +452,9 @@ export function CreateSessionModal({
   // ---------- SESSION STUDIO ----------
   const [studioEnabled, setStudioEnabled] = useState(false);
   const [studioBlocks, setStudioBlocks] = useState<StudioBlock[]>([]);
-  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
+  const [selectedBlockIds, setSelectedBlockIds] = useState<string[]>([]);
+  const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
+  const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(null);
 
   // DnD state
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -473,6 +478,9 @@ export function CreateSessionModal({
   const flipPrevTopsRef = useRef<Record<string, number>>({});
   const flipArmedRef = useRef<boolean>(false);
 
+  // Clipboard for block duplication
+  const copiedBlocksRef = useRef<StudioBlock[]>([]);
+
   useEffect(() => {
     if (!isOpen) return;
     setTitle("");
@@ -493,10 +501,14 @@ export function CreateSessionModal({
 
     setStudioEnabled(false);
     setStudioBlocks([]);
-    setSelectedBlockId(null);
+    setSelectedBlockIds([]);
+    setActiveBlockId(null);
+    setSelectionAnchorId(null);
     setDraggingId(null);
     setDragOverId(null);
     setDropEdge("after");
+
+    copiedBlocksRef.current = [];
 
     autoScrollVelRef.current = 0;
     draggingRef.current = false;
@@ -567,117 +579,138 @@ export function CreateSessionModal({
 
   const importFromTemplate = useCallback(() => {
     const tpl = selectedTemplateObj;
-    const blocks = normalizeTemplateBlocks((tpl as any)?.blocks);
+    const blocks =
+      normalizeTemplateBlocks((tpl as any)?.blocks) ||
+      normalizeTemplateBlocks((tpl as any)?.schedule);
+
     if (blocks.length) {
       setStudioBlocks(blocks);
+      const firstId = blocks[0]?.id || null;
+      setSelectedBlockIds(firstId ? [firstId] : []);
+      setActiveBlockId(firstId);
+      setSelectionAnchorId(firstId);
     } else {
-      setStudioBlocks([
+      const fallback = [
         {
           id: uid(),
-          kind: "welcome",
+          kind: "welcome" as StudioBlockKind,
           title: "Welcome",
           note: "Quick intro / rules / vibe",
           minutes: 3,
         },
         {
           id: uid(),
-          kind: "intentions",
+          kind: "intentions" as StudioBlockKind,
           title: "Intentions",
           note: "Say what you’ll finish",
           minutes: 5,
         },
         {
           id: uid(),
-          kind: "focus",
+          kind: "focus" as StudioBlockKind,
           title: "Focus",
           note: "Deep work block",
           minutes: 50,
         },
         {
           id: uid(),
-          kind: "recap",
+          kind: "recap" as StudioBlockKind,
           title: "Recap",
           note: "What got done / what’s next",
           minutes: 5,
         },
         {
           id: uid(),
-          kind: "celebrate",
+          kind: "celebrate" as StudioBlockKind,
           title: "Celebrate",
           note: "Closure + positive finish",
           minutes: 3,
         },
-      ]);
+      ];
+      setStudioBlocks(fallback);
+      setSelectedBlockIds([fallback[0].id]);
+      setActiveBlockId(fallback[0].id);
+      setSelectionAnchorId(fallback[0].id);
     }
   }, [selectedTemplateObj]);
 
   const resetDefaultStudio = useCallback(() => {
-    setStudioBlocks([
+    const next = [
       {
         id: uid(),
-        kind: "welcome",
+        kind: "welcome" as StudioBlockKind,
         title: "Welcome",
         note: "Quick intro / rules / vibe",
         minutes: 3,
       },
       {
         id: uid(),
-        kind: "intentions",
+        kind: "intentions" as StudioBlockKind,
         title: "Intentions",
         note: "Say what you’ll finish",
         minutes: 5,
       },
       {
         id: uid(),
-        kind: "focus",
+        kind: "focus" as StudioBlockKind,
         title: "Focus",
         note: "Deep work block",
         minutes: 50,
       },
       {
         id: uid(),
-        kind: "break",
+        kind: "break" as StudioBlockKind,
         title: "Break",
         note: "Recharge / stretch",
         minutes: 10,
       },
       {
         id: uid(),
-        kind: "focus",
+        kind: "focus" as StudioBlockKind,
         title: "Focus",
         note: "Second focus block",
         minutes: 50,
       },
       {
         id: uid(),
-        kind: "recap",
+        kind: "recap" as StudioBlockKind,
         title: "Recap",
         note: "What got done / what’s next",
         minutes: 5,
       },
       {
         id: uid(),
-        kind: "celebrate",
+        kind: "celebrate" as StudioBlockKind,
         title: "Celebrate",
         note: "Closure + positive finish",
         minutes: 3,
       },
-    ]);
+    ];
+    setStudioBlocks(next);
+    setSelectedBlockIds([next[0].id]);
+    setActiveBlockId(next[0].id);
+    setSelectionAnchorId(next[0].id);
   }, []);
 
-  const clearStudio = useCallback(() => setStudioBlocks([]), []);
+  const clearStudio = useCallback(() => {
+    setStudioBlocks([]);
+    setSelectedBlockIds([]);
+    setActiveBlockId(null);
+    setSelectionAnchorId(null);
+  }, []);
 
   const addFromLibrary = useCallback((b: StudioBlock) => {
-    setStudioBlocks((prev) => [
-      ...prev,
-      {
-        id: uid(),
-        kind: b.kind,
-        title: b.title,
-        note: b.note,
-        minutes: b.minutes,
-      },
-    ]);
+    const nextBlock = {
+      id: uid(),
+      kind: b.kind,
+      title: b.title,
+      note: b.note,
+      minutes: b.minutes,
+    };
+    setStudioBlocks((prev) => [...prev, nextBlock]);
+    setSelectedBlockIds([nextBlock.id]);
+    setActiveBlockId(nextBlock.id);
+    setSelectionAnchorId(nextBlock.id);
   }, []);
 
   const focusBlock = useCallback((id: string) => {
@@ -720,6 +753,135 @@ export function CreateSessionModal({
       // ignore
     }
   };
+
+  const orderedSelectedIds = useMemo(() => {
+    const selectedSet = new Set(selectedBlockIds);
+    return studioBlocks
+      .map((b) => b.id)
+      .filter((id) => selectedSet.has(id));
+  }, [studioBlocks, selectedBlockIds]);
+
+  const orderedSelectedBlocks = useMemo(() => {
+    const selectedSet = new Set(selectedBlockIds);
+    return studioBlocks.filter((b) => selectedSet.has(b.id));
+  }, [studioBlocks, selectedBlockIds]);
+
+  const selectSingleBlock = useCallback((id: string) => {
+    setSelectedBlockIds([id]);
+    setActiveBlockId(id);
+    setSelectionAnchorId(id);
+  }, []);
+
+  const toggleBlockSelection = useCallback((id: string) => {
+    setSelectedBlockIds((prev) => {
+      const exists = prev.includes(id);
+      if (exists) {
+        const next = prev.filter((x) => x !== id);
+        return next;
+      }
+      return [...prev, id];
+    });
+    setActiveBlockId(id);
+    setSelectionAnchorId((prev) => prev || id);
+  }, []);
+
+  const selectRangeToBlock = useCallback(
+    (id: string) => {
+      const anchor = selectionAnchorId || activeBlockId || id;
+      const a = studioBlocks.findIndex((b) => b.id === anchor);
+      const z = studioBlocks.findIndex((b) => b.id === id);
+
+      if (a < 0 || z < 0) {
+        selectSingleBlock(id);
+        return;
+      }
+
+      const start = Math.min(a, z);
+      const end = Math.max(a, z);
+      const ids = studioBlocks.slice(start, end + 1).map((b) => b.id);
+
+      setSelectedBlockIds(ids);
+      setActiveBlockId(id);
+      setSelectionAnchorId(anchor);
+    },
+    [studioBlocks, selectionAnchorId, activeBlockId, selectSingleBlock]
+  );
+
+  const handleBlockSurfaceClick = useCallback(
+    (e: React.MouseEvent, id: string) => {
+      if (e.shiftKey) {
+        selectRangeToBlock(id);
+        focusBlock(id);
+        return;
+      }
+
+      if (e.metaKey || e.ctrlKey) {
+        toggleBlockSelection(id);
+        focusBlock(id);
+        return;
+      }
+
+      selectSingleBlock(id);
+      focusBlock(id);
+    },
+    [focusBlock, selectRangeToBlock, selectSingleBlock, toggleBlockSelection]
+  );
+
+  const copySelectedBlocks = useCallback(() => {
+    if (!orderedSelectedBlocks.length) return;
+    copiedBlocksRef.current = orderedSelectedBlocks.map((b) => ({
+      ...b,
+      id: "copy-placeholder",
+    }));
+  }, [orderedSelectedBlocks]);
+
+  const pasteCopiedBlocks = useCallback(() => {
+    const copied = copiedBlocksRef.current || [];
+    if (!copied.length) return;
+
+    const copies = copied.map((b) => ({
+      ...b,
+      id: uid(),
+    }));
+
+    setStudioBlocks((prev) => {
+      const currentSelectedSet = new Set(selectedBlockIds);
+      const orderedIds = prev
+        .map((b) => b.id)
+        .filter((id) => currentSelectedSet.has(id));
+
+      const lastSelectedId =
+        orderedIds[orderedIds.length - 1] || activeBlockId || null;
+
+      const insertIndex =
+        lastSelectedId != null
+          ? Math.max(
+            0,
+            prev.findIndex((b) => b.id === lastSelectedId) + 1
+          )
+          : prev.length;
+
+      const next = [...prev];
+      next.splice(insertIndex, 0, ...copies);
+      return next;
+    });
+
+    const nextIds = copies.map((b) => b.id);
+    setSelectedBlockIds(nextIds);
+    setActiveBlockId(nextIds[0] || null);
+    setSelectionAnchorId(nextIds[0] || null);
+
+    if (nextIds[0]) focusBlock(nextIds[0]);
+  }, [selectedBlockIds, activeBlockId, focusBlock]);
+
+  const deleteSelectedBlocks = useCallback(() => {
+    if (!selectedBlockIds.length) return;
+    const selectedSet = new Set(selectedBlockIds);
+    setStudioBlocks((prev) => prev.filter((b) => !selectedSet.has(b.id)));
+    setSelectedBlockIds([]);
+    setActiveBlockId(null);
+    setSelectionAnchorId(null);
+  }, [selectedBlockIds]);
 
   // ---------- Auto-scroll while dragging ----------
   const startAutoScrollLoop = useCallback(() => {
@@ -849,10 +1011,12 @@ export function CreateSessionModal({
         return copy;
       });
 
-      setSelectedBlockId(id);
+      setActiveBlockId(id);
+      setSelectionAnchorId(id);
+      if (!selectedBlockIds.includes(id)) setSelectedBlockIds([id]);
       focusBlock(id);
     },
-    [armFlip, focusBlock]
+    [armFlip, focusBlock, selectedBlockIds]
   );
 
   const moveBlockTo = useCallback(
@@ -888,10 +1052,12 @@ export function CreateSessionModal({
         return copy;
       });
 
-      setSelectedBlockId(dragId);
+      setActiveBlockId(dragId);
+      setSelectionAnchorId(dragId);
+      if (!selectedBlockIds.includes(dragId)) setSelectedBlockIds([dragId]);
       focusBlock(dragId);
     },
-    [armFlip, focusBlock]
+    [armFlip, focusBlock, selectedBlockIds]
   );
 
   const updateBlock = useCallback((id: string, patch: Partial<StudioBlock>) => {
@@ -900,10 +1066,23 @@ export function CreateSessionModal({
     );
   }, []);
 
-  const removeBlock = useCallback((id: string) => {
-    setStudioBlocks((prev) => prev.filter((b) => b.id !== id));
-    setSelectedBlockId((cur) => (cur === id ? null : cur));
-  }, []);
+  const removeBlock = useCallback(
+    (id: string) => {
+      const shouldDeleteSelection =
+        selectedBlockIds.length > 1 && selectedBlockIds.includes(id);
+
+      if (shouldDeleteSelection) {
+        deleteSelectedBlocks();
+        return;
+      }
+
+      setStudioBlocks((prev) => prev.filter((b) => b.id !== id));
+      setSelectedBlockIds((prev) => prev.filter((x) => x !== id));
+      setActiveBlockId((cur) => (cur === id ? null : cur));
+      setSelectionAnchorId((cur) => (cur === id ? null : cur));
+    },
+    [deleteSelectedBlocks, selectedBlockIds]
+  );
 
   useEffect(() => {
     if (!isOpen) return;
@@ -911,12 +1090,66 @@ export function CreateSessionModal({
 
     if (studioBlocks.length === 0) {
       const hasTplBlocks =
-        normalizeTemplateBlocks((selectedTemplateObj as any)?.blocks).length > 0;
+        normalizeTemplateBlocks((selectedTemplateObj as any)?.blocks).length > 0 ||
+        normalizeTemplateBlocks((selectedTemplateObj as any)?.schedule).length > 0;
       if (hasTplBlocks) importFromTemplate();
       else resetDefaultStudio();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [studioEnabled, isOpen]);
+
+  // ---------- Global shortcuts for Session Studio ----------
+  useEffect(() => {
+    if (!isOpen || !studioEnabled) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isInteractive = !!target?.closest?.(
+        "input,textarea,select,button,[contenteditable='true']"
+      );
+
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+
+      const key = e.key.toLowerCase();
+
+      if (key === "c") {
+        if (isInteractive) return;
+        if (!orderedSelectedBlocks.length) return;
+        e.preventDefault();
+        copySelectedBlocks();
+        return;
+      }
+
+      if (key === "v") {
+        if (isInteractive) return;
+        if (!copiedBlocksRef.current.length) return;
+        e.preventDefault();
+        pasteCopiedBlocks();
+        return;
+      }
+
+      if (key === "a") {
+        if (isInteractive) return;
+        if (!studioBlocks.length) return;
+        e.preventDefault();
+        const allIds = studioBlocks.map((b) => b.id);
+        setSelectedBlockIds(allIds);
+        setActiveBlockId(allIds[0] || null);
+        setSelectionAnchorId(allIds[0] || null);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    isOpen,
+    studioEnabled,
+    studioBlocks,
+    orderedSelectedBlocks,
+    copySelectedBlocks,
+    pasteCopiedBlocks,
+  ]);
 
   // ---------- LOAD TEMPLATES ----------
   useEffect(() => {
@@ -1119,7 +1352,7 @@ export function CreateSessionModal({
 
       const schedulePayload = studioEnabled
         ? exportStudioToSchedule(studioBlocks)
-        : (template as any)?.blocks || [];
+        : (template as any)?.blocks || (template as any)?.schedule || [];
 
       const formatLabel = studioEnabled
         ? template?.name
@@ -1208,9 +1441,51 @@ export function CreateSessionModal({
         };
       });
 
-      const { error: insertError } = await supabase.from("sessions").insert(rows);
+      const { data: insertedSessions, error: insertError } = await supabase
+        .from("sessions")
+        .insert(rows)
+        .select("id, host_id");
 
       if (insertError) throw insertError;
+
+      if (!insertedSessions || insertedSessions.length === 0) {
+        throw new Error("Sessions were created, but no rows were returned.");
+      }
+
+      // ✅ Auto-book host into every newly created session
+      const bookingRows = insertedSessions
+        .filter((s: any) => s?.id && (s?.host_id || profile.id))
+        .map((s: any) => ({
+          session_id: s.id,
+          user_id: s.host_id || profile.id,
+        }));
+
+      if (bookingRows.length > 0) {
+        const { error: bookingError } = await supabase
+          .from("session_bookings")
+          .insert(bookingRows);
+
+        if (bookingError) {
+          console.error("❌ Host auto-booking failed:", bookingError);
+
+          // Best-effort rollback so we do not leave broken sessions behind
+          try {
+            const insertedIds = insertedSessions
+              .map((s: any) => s?.id)
+              .filter(Boolean);
+
+            if (insertedIds.length > 0) {
+              await supabase.from("sessions").delete().in("id", insertedIds);
+            }
+          } catch (rollbackErr) {
+            console.error("❌ Rollback failed after auto-booking error:", rollbackErr);
+          }
+
+          throw new Error(
+            "Failed to auto-book the host into the created session(s). Creation was rolled back."
+          );
+        }
+      }
 
       setTitle("");
       setDescription("");
@@ -1218,13 +1493,15 @@ export function CreateSessionModal({
       setSelectedTemplate("");
       setStudioEnabled(false);
       setStudioBlocks([]);
+      setSelectedBlockIds([]);
+      setActiveBlockId(null);
+      setSelectionAnchorId(null);
       setMaxParticipants(DEFAULT_MAX_PARTICIPANTS);
       setCustomSlugInput("");
       setSlugStatus("idle");
       setScheduleMode("single");
       setDailyDays(7);
       setWeeklyCount(3);
-      setSelectedBlockId(null);
 
       onSessionCreated();
       onClose();
@@ -1806,7 +2083,26 @@ export function CreateSessionModal({
                   </div>
                 </div>
 
-                {studioEnabled && <SessionTimeline blocks={studioBlocks} />}
+                {studioEnabled && (
+                  <div className="sticky top-0 z-20 mt-4 -mx-1 px-1 py-2 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 border-b border-gray-100">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div className="text-[12px] text-gray-600 font-inter">
+                        {selectedBlockIds.length > 0 ? (
+                          <>
+                            Selected:{" "}
+                            <span className="font-semibold text-brandBlack">
+                              {selectedBlockIds.length}
+                            </span>
+                            {" · "}Ctrl/Cmd+C to copy, Ctrl/Cmd+V to duplicate
+                          </>
+                        ) : (
+                          <>Timeline stays pinned while you scroll.</>
+                        )}
+                      </div>
+                    </div>
+                    <SessionTimeline blocks={studioBlocks} />
+                  </div>
+                )}
 
                 {studioEnabled && (
                   <div className="mt-3">
@@ -1843,13 +2139,14 @@ export function CreateSessionModal({
                     </div>
 
                     <div className="mt-2 text-[12px] text-gray-500 font-inter">
-                      Tip: drag blocks to reorder (auto-scroll + insert line). Or
-                      click a block and use ↑ / ↓.
+                      Tip: Ctrl/Cmd-click for multi-select. Shift-click for range
+                      selection. Ctrl/Cmd+C and Ctrl/Cmd+V duplicate selected
+                      blocks.
                     </div>
 
-                    <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
+                    <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 items-start">
                       {/* Library */}
-                      <div className="border border-gray-200 rounded-[18px] p-3 sm:p-4">
+                      <div className="lg:sticky lg:top-4 self-start border border-gray-200 rounded-[18px] p-3 sm:p-4 bg-white">
                         <div>
                           <div className="font-inter font-semibold text-[13px] text-brandBlack">
                             Block Library
@@ -1885,7 +2182,7 @@ export function CreateSessionModal({
 
                       {/* Script */}
                       <div
-                        className="border border-gray-200 rounded-[18px] p-3 sm:p-4"
+                        className="border border-gray-200 rounded-[18px] p-3 sm:p-4 bg-white"
                         onDragOver={(e) => {
                           if (!draggingId) return;
                           updateAutoScrollFromClientY(e.clientY);
@@ -1922,7 +2219,7 @@ export function CreateSessionModal({
                         ) : (
                           <div className="mt-3 space-y-2 sm:space-y-3">
                             {studioBlocks.map((b, idx) => {
-                              const selected = selectedBlockId === b.id;
+                              const selected = selectedBlockIds.includes(b.id);
                               const isDragging = draggingId === b.id;
 
                               const isOverSelf =
@@ -1936,12 +2233,42 @@ export function CreateSessionModal({
                                   id={`studio-block-${b.id}`}
                                   tabIndex={0}
                                   draggable
-                                  onClick={() => {
-                                    setSelectedBlockId(b.id);
-                                    focusBlock(b.id);
+                                  onClick={(e) => handleBlockSurfaceClick(e, b.id)}
+                                  onFocus={() => {
+                                    setActiveBlockId(b.id);
+                                    if (!selectedBlockIds.includes(b.id)) {
+                                      setSelectedBlockIds([b.id]);
+                                      setSelectionAnchorId(b.id);
+                                    }
                                   }}
-                                  onFocus={() => setSelectedBlockId(b.id)}
                                   onKeyDown={(e) => {
+                                    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c") {
+                                      if (!isInteractiveEl(e.target)) {
+                                        e.preventDefault();
+                                        copySelectedBlocks();
+                                      }
+                                      return;
+                                    }
+
+                                    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v") {
+                                      if (!isInteractiveEl(e.target)) {
+                                        e.preventDefault();
+                                        pasteCopiedBlocks();
+                                      }
+                                      return;
+                                    }
+
+                                    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
+                                      if (!isInteractiveEl(e.target)) {
+                                        e.preventDefault();
+                                        const allIds = studioBlocks.map((x) => x.id);
+                                        setSelectedBlockIds(allIds);
+                                        setActiveBlockId(allIds[0] || null);
+                                        setSelectionAnchorId(allIds[0] || null);
+                                      }
+                                      return;
+                                    }
+
                                     if (e.key === "ArrowUp") {
                                       e.preventDefault();
                                       moveBlock(b.id, -1);
@@ -1954,7 +2281,11 @@ export function CreateSessionModal({
                                     ) {
                                       if (!isInteractiveEl(e.target)) {
                                         e.preventDefault();
-                                        removeBlock(b.id);
+                                        if (selectedBlockIds.length > 1 && selectedBlockIds.includes(b.id)) {
+                                          deleteSelectedBlocks();
+                                        } else {
+                                          removeBlock(b.id);
+                                        }
                                       }
                                     }
                                   }}
@@ -1963,6 +2294,13 @@ export function CreateSessionModal({
                                       e.preventDefault();
                                       return;
                                     }
+
+                                    if (!selectedBlockIds.includes(b.id)) {
+                                      setSelectedBlockIds([b.id]);
+                                      setActiveBlockId(b.id);
+                                      setSelectionAnchorId(b.id);
+                                    }
+
                                     setDraggingId(b.id);
                                     setDragOverId(null);
                                     setDropEdge("after");
@@ -2030,7 +2368,7 @@ export function CreateSessionModal({
                                     "relative border rounded-[16px] p-2.5 sm:p-3 outline-none transition " +
                                     "cursor-grab active:cursor-grabbing " +
                                     (selected
-                                      ? "border-brandBlack ring-2 ring-black/10"
+                                      ? "border-brandBlack ring-2 ring-black/10 bg-black/[0.03]"
                                       : "border-gray-200") +
                                     (isDragging ? " opacity-60" : "") +
                                     " hover:bg-gray-50"
@@ -2103,7 +2441,13 @@ export function CreateSessionModal({
                                       className="w-full px-3 py-2.5 border border-gray-200 rounded-[14px] text-[13px] font-inter"
                                       placeholder="Block title…"
                                       onClick={(e) => e.stopPropagation()}
-                                      onFocus={() => setSelectedBlockId(b.id)}
+                                      onFocus={() => {
+                                        setActiveBlockId(b.id);
+                                        if (!selectedBlockIds.includes(b.id)) {
+                                          setSelectedBlockIds([b.id]);
+                                          setSelectionAnchorId(b.id);
+                                        }
+                                      }}
                                     />
                                   </div>
 
@@ -2141,7 +2485,13 @@ export function CreateSessionModal({
                                           })
                                         }
                                         className="w-14 sm:w-16 h-8 sm:h-9 px-2 border border-gray-200 rounded-[12px] text-[13px] font-inter text-center"
-                                        onFocus={() => setSelectedBlockId(b.id)}
+                                        onFocus={() => {
+                                          setActiveBlockId(b.id);
+                                          if (!selectedBlockIds.includes(b.id)) {
+                                            setSelectedBlockIds([b.id]);
+                                            setSelectionAnchorId(b.id);
+                                          }
+                                        }}
                                       />
 
                                       <button
@@ -2222,9 +2572,9 @@ export function CreateSessionModal({
                     </div>
                   </div>
                 )}
-              </div>
 
-              {error && <p className="text-red-600 text-sm font-inter">{error}</p>}
+                {error && <p className="text-red-600 text-sm font-inter mt-4">{error}</p>}
+              </div>
             </div>
           )}
         </div>
