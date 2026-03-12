@@ -55,8 +55,9 @@ function BlogIndexPlaceholder() {
           </h1>
 
           <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[#606060]">
-            Blog section is connected and route is working. You can now safely add
-            real SEO blog pages without crashing the app.
+            Explore practical guides on body doubling, online coworking, deep work,
+            structured focus sessions, accountability, and ADHD-friendly productivity —
+            designed to help you work with more consistency and less friction.
           </p>
 
           <div className="mt-6 flex flex-wrap gap-3">
