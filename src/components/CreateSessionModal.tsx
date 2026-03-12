@@ -2084,7 +2084,7 @@ export function CreateSessionModal({
                 </div>
 
                 {studioEnabled && (
-                    <div className="sticky top-6 z-20 mt-4 mb-4 -mx-1 px-1 py-3 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 border-b border-gray-100">
+                    <div className="sticky top-0 z-20 mt-4 mb-4 -mx-1 px-1 py-3 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 border-b border-gray-100">
                     <div className="flex items-center justify-between gap-3 flex-wrap">
                       <div className="text-[12px] text-gray-600 font-inter">
                         {selectedBlockIds.length > 0 ? (
@@ -2144,7 +2144,7 @@ export function CreateSessionModal({
                       blocks.
                     </div>
 
-                      <div className="mt-5 grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 items-start">
+                      <div className="mt-12 grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
                       {/* Library */}
                       <div className="lg:sticky lg:top-4 self-start border border-gray-200 rounded-[18px] p-3 sm:p-4 bg-white">
                         <div>
