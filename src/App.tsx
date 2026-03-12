@@ -88,6 +88,8 @@ export default function App() {
         <Route path="/room-livekit/:id" element={<RoomPageLiveKit />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/blog" element={<BlogIndex />} />
+        <Route path="/blog/:slug" element={<BlogPost />} />
 
         {/* OAuth */}
         <Route

@@ -42,6 +42,9 @@ export default function Footer() {
                                 <Link className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" to="/updates">
                                     Latest updates
                                 </Link>
+                                <Link to="/blog" className="hover:underline">
+                                    Blog
+                                </Link>
                             </div>
 
                             <div className="flex flex-col gap-3">
