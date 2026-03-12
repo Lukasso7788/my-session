@@ -2084,7 +2084,7 @@ export function CreateSessionModal({
                 </div>
 
                 {studioEnabled && (
-                  <div className="sticky top-0 z-20 mt-4 -mx-1 px-1 py-2 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 border-b border-gray-100">
+                    <div className="sticky top-0 z-20 mt-4 mb-4 -mx-1 px-1 py-3 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 border-b border-gray-100">
                     <div className="flex items-center justify-between gap-3 flex-wrap">
                       <div className="text-[12px] text-gray-600 font-inter">
                         {selectedBlockIds.length > 0 ? (
