@@ -1765,7 +1765,7 @@ function EditSessionStudioModal(props: {
         setDragOverId(null);
         setDropEdge("after");
         setIsSaving(false);
-    }, [isOpen, session]);
+    }, [isOpen, session?.id]);
 
     useEffect(() => {
         if (!isOpen) return;
