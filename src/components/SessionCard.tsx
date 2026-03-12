@@ -1765,7 +1765,7 @@ function EditSessionStudioModal(props: {
         setDragOverId(null);
         setDropEdge("after");
         setIsSaving(false);
-    }, [isOpen, session?.id]);
+    }, [isOpen, session?.id, session?.description, session?.title, session?.start_time, session?.max_participants]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -3592,7 +3592,10 @@ export default function SessionCard({
                 <EditSessionStudioModal
                     isOpen={isEditModalOpen}
                     onClose={() => setIsEditModalOpen(false)}
-                    session={session}
+                    session={{
+                        ...session,
+                        description: resolvedDescription,
+                    }}
                     onSave={async (updates) => {
                         await onEditSession(session.id, updates);
 
