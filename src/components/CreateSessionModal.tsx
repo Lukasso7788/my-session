@@ -2146,7 +2146,7 @@ export function CreateSessionModal({
 
                       <div className="mt-24 grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
                       {/* Library */}
-                      <div className="lg:sticky lg:top-4 self-start border border-gray-200 rounded-[18px] p-3 sm:p-4 bg-white">
+                      <div className="lg:sticky lg:top-16 self-start border border-gray-200 rounded-[18px] p-3 sm:p-4 bg-white">
                         <div>
                           <div className="font-inter font-semibold text-[13px] text-brandBlack">
                             Block Library
