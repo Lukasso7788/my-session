@@ -1663,6 +1663,7 @@ export function RoomPageLiveKit() {
   const attendanceHbTimerRef = useRef<number | null>(null);
   const attendanceActiveRef = useRef(false);
   const leaveOnceRef = useRef(false);
+  const leavePromiseRef = useRef<Promise<void> | null>(null);
 
   const stopTabPresenceHeartbeat = () => {
     if (tabPresenceHeartbeatRef.current) {
@@ -1886,15 +1887,29 @@ export function RoomPageLiveKit() {
     } catch { }
   };
 
-  const leaveAttendanceOnce = async (opts: { keepalive?: boolean } = {}) => {
-    if (leaveOnceRef.current) return;
+  const leaveAttendanceOnce = (opts: { keepalive?: boolean } = {}) => {
+    if (opts.keepalive) {
+      keepaliveLeaveWrite();
+    }
+
+    if (leavePromiseRef.current) {
+      return leavePromiseRef.current;
+    }
+
+    if (leaveOnceRef.current) {
+      return Promise.resolve();
+    }
+
     leaveOnceRef.current = true;
 
-    if (opts.keepalive) keepaliveLeaveWrite();
+    const p = (async () => {
+      try {
+        await attendanceLeave();
+      } catch { }
+    })();
 
-    try {
-      await attendanceLeave();
-    } catch { }
+    leavePromiseRef.current = p;
+    return p;
   };
 
   const tryAcquireTabGate = (sessionId: string, baseUserId: string) => {
@@ -2603,8 +2618,9 @@ export function RoomPageLiveKit() {
       await r.connect(lkServerUrl, lkToken, { autoSubscribe: true });
 
       kickedBySignalRef.current = false;
-      
+
       leaveOnceRef.current = false;
+      leavePromiseRef.current = null;
       await attendanceJoin();
       startAttendanceHeartbeat();
 
