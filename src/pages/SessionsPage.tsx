@@ -32,6 +32,9 @@ type SessionWithRelations = Session & {
   format?: string;
   start_time?: string;
   status?: string;
+  created_at?: string;
+  description?: string | null;
+  custom_slug?: string | null;
 
   session_format_type?: "group" | "infinite" | "body" | string;
   is_silent?: boolean;
@@ -53,12 +56,67 @@ function toLocalYMDFromISO(iso: string) {
   return `${y}-${m}-${day}`;
 }
 
-function todayLocalYMD() {
-  const d = new Date();
+function ymdFromLocalDate(d: Date) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+function todayLocalYMD() {
+  return ymdFromLocalDate(new Date());
+}
+
+function tomorrowLocalYMD() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return ymdFromLocalDate(d);
+}
+
+function fromLocalYMD(ymd: string) {
+  const [y, m, d] = String(ymd || "")
+    .split("-")
+    .map((n) => Number(n));
+
+  if (!y || !m || !d) return null;
+  const date = new Date(y, m - 1, d);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
+
+function isAllDatesValue(value: string | null) {
+  return !value || value === "all";
+}
+
+function getDateGroupMeta(ymd: string) {
+  if (ymd === "__undated__") {
+    return {
+      label: "Scheduled",
+      pretty: "Date TBD",
+    };
+  }
+
+  const d = fromLocalYMD(ymd);
+  if (!d) {
+    return {
+      label: "Scheduled",
+      pretty: ymd,
+    };
+  }
+
+  const today = todayLocalYMD();
+  const tomorrow = tomorrowLocalYMD();
+
+  let label = d.toLocaleDateString(undefined, { weekday: "long" });
+  if (ymd === today) label = "Today";
+  if (ymd === tomorrow) label = "Tomorrow";
+
+  const pretty = d.toLocaleDateString(undefined, {
+    month: "long",
+    day: "numeric",
+  });
+
+  return { label, pretty };
 }
 
 function safeParseSchedule(raw: any) {
@@ -83,7 +141,9 @@ function isInfiniteBySchedule(s: SessionWithRelations) {
   return false;
 }
 
-function resolveSessionType(s: SessionWithRelations): "group" | "infinite" | "body" {
+function resolveSessionType(
+  s: SessionWithRelations
+): "group" | "infinite" | "body" {
   const t = String(s.session_format_type || "").toLowerCase();
 
   if (t === "infinite") return "infinite";
@@ -100,19 +160,58 @@ function resolveSessionType(s: SessionWithRelations): "group" | "infinite" | "bo
 // UI: Infinite intro card
 // =====================
 function InfinityIcon({ className = "w-5 h-5" }: { className?: string }) {
-  return <img src="/icons/infinite.svg" className={className} alt="" draggable={false} />;
+  return (
+    <img
+      src="/icons/infinite.svg"
+      className={className}
+      alt=""
+      draggable={false}
+    />
+  );
 }
 function ClockIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
-  return <img src="/icons/always-open.svg" className={className} alt="" draggable={false} />;
+  return (
+    <img
+      src="/icons/always-open.svg"
+      className={className}
+      alt=""
+      draggable={false}
+    />
+  );
 }
 function EyeIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
-  return <img src="/icons/stay-accountable.svg" className={className} alt="" draggable={false} />;
+  return (
+    <img
+      src="/icons/stay-accountable.svg"
+      className={className}
+      alt=""
+      draggable={false}
+    />
+  );
 }
-function WorkflowIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
-  return <img src="/icons/structured-flow.svg" className={className} alt="" draggable={false} />;
+function WorkflowIcon({
+  className = "w-[27px] h-[27px]",
+}: {
+  className?: string;
+}) {
+  return (
+    <img
+      src="/icons/structured-flow.svg"
+      className={className}
+      alt=""
+      draggable={false}
+    />
+  );
 }
 function RocketIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
-  return <img src="/icons/keep-momentum.svg" className={className} alt="" draggable={false} />;
+  return (
+    <img
+      src="/icons/keep-momentum.svg"
+      className={className}
+      alt=""
+      draggable={false}
+    />
+  );
 }
 
 type Feature = {
@@ -125,10 +224,34 @@ type Feature = {
 
 function InfiniteRoomsIntroCard() {
   const features: Feature[] = [
-    { title: "Always Open", subtitle: "24/7 Access", color: "#5286F6", bg20: "#5286F633", Icon: ClockIcon },
-    { title: "Stay accountable", subtitle: "With others", color: "#65D46C", bg20: "#65D46C33", Icon: EyeIcon },
-    { title: "Structured Flow", subtitle: "Built-in Workflow", color: "#F65252", bg20: "#F6525233", Icon: WorkflowIcon },
-    { title: "Keep momentum", subtitle: "Day & Night", color: "#5286F6", bg20: "#5286F633", Icon: RocketIcon },
+    {
+      title: "Always Open",
+      subtitle: "24/7 Access",
+      color: "#5286F6",
+      bg20: "#5286F633",
+      Icon: ClockIcon,
+    },
+    {
+      title: "Stay accountable",
+      subtitle: "With others",
+      color: "#65D46C",
+      bg20: "#65D46C33",
+      Icon: EyeIcon,
+    },
+    {
+      title: "Structured Flow",
+      subtitle: "Built-in Workflow",
+      color: "#F65252",
+      bg20: "#F6525233",
+      Icon: WorkflowIcon,
+    },
+    {
+      title: "Keep momentum",
+      subtitle: "Day & Night",
+      color: "#5286F6",
+      bg20: "#5286F633",
+      Icon: RocketIcon,
+    },
   ];
 
   return (
@@ -146,18 +269,25 @@ function InfiniteRoomsIntroCard() {
           </div>
 
           <p className="font-inter font-light text-[14px] sm:text-[16px] leading-[160%] text-brandBlack text-center max-w-[860px] mx-auto">
-            24/7 Focus Rooms are always open, giving you a structured space to focus whenever inspiration strikes.
-            Join at any time, follow the built-in workflow (Pomodoro or Deep Work), stay accountable with others,
-            and keep your momentum going — day or night.
+            24/7 Focus Rooms are always open, giving you a structured space to
+            focus whenever inspiration strikes. Join at any time, follow the
+            built-in workflow (Pomodoro or Deep Work), stay accountable with
+            others, and keep your momentum going — day or night.
           </p>
 
           <div className="w-full flex justify-center">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-5 sm:gap-8">
               {features.map((f) => (
-                <div key={f.title} className="flex items-center gap-3 sm:gap-4 min-w-0">
+                <div
+                  key={f.title}
+                  className="flex items-center gap-3 sm:gap-4 min-w-0"
+                >
                   <div
                     className="shrink-0 border rounded-[13.5px] inline-flex items-center justify-center w-[44px] h-[44px] sm:w-[54px] sm:h-[54px]"
-                    style={{ borderColor: f.color, backgroundColor: f.bg20 }}
+                    style={{
+                      borderColor: f.color,
+                      backgroundColor: f.bg20,
+                    }}
                   >
                     <f.Icon className="w-5 h-5 sm:w-[27px] sm:h-[27px]" />
                   </div>
@@ -177,6 +307,36 @@ function InfiniteRoomsIntroCard() {
         </div>
 
         <div className="h-12" />
+      </div>
+    </div>
+  );
+}
+
+function SessionsDateGroupHeader({
+  ymd,
+  count,
+}: {
+  ymd: string;
+  count: number;
+}) {
+  const meta = getDateGroupMeta(ymd);
+
+  return (
+    <div className="flex items-center gap-3 mb-4 md:mb-5">
+      <div className="inline-flex items-center gap-2 rounded-full border border-[#DBD8D8] bg-[#F8F8F8] px-4 py-2">
+        <span className="text-[11px] uppercase tracking-[0.12em] font-semibold text-[#606060]">
+          {meta.label}
+        </span>
+        <span className="text-[#BDBDBD]">•</span>
+        <span className="text-[13px] font-semibold text-brandBlack">
+          {meta.pretty}
+        </span>
+      </div>
+
+      <div className="hidden sm:block h-px flex-1 bg-[#EAEAEA]" />
+
+      <div className="hidden md:inline-flex items-center rounded-full border border-[#EAEAEA] bg-white px-3 py-1 text-[12px] text-[#606060]">
+        {count} {count === 1 ? "session" : "sessions"}
       </div>
     </div>
   );
@@ -208,10 +368,14 @@ export function SessionsPage() {
   const [sessions, setSessions] = useState<SessionWithRelations[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const [sessionTypeTab, setSessionTypeTab] = useState<"group" | "infinite" | "body">("group");
+  const [sessionTypeTab, setSessionTypeTab] = useState<
+    "group" | "infinite" | "body"
+  >("group");
   const [dateFilter, setDateFilter] = useState<string | null>(null);
 
-  const [currentProfile, setCurrentProfile] = useState<BookingProfile | null>(null);
+  const [currentProfile, setCurrentProfile] = useState<BookingProfile | null>(
+    null
+  );
 
   const [howItWorksOpen, setHowItWorksOpen] = useState(false);
 
@@ -264,13 +428,13 @@ export function SessionsPage() {
     run();
   }, [user?.id]);
 
-  // ONLINE NOW: fetch live counts from DB (cheap)
   const fetchLiveCounts = useCallback(async (sessionIds: string[]) => {
-    const ids = (sessionIds || []).filter((x): x is string => typeof x === "string" && x.length > 0);
+    const ids = (sessionIds || []).filter(
+      (x): x is string => typeof x === "string" && x.length > 0
+    );
     if (!ids.length) return;
 
     try {
-      // ✅ Always call the TTL overload to avoid Postgres overload ambiguity
       const { data, error } = await supabase.rpc("get_live_counts", {
         p_session_ids: ids,
         p_ttl_seconds: 90,
@@ -280,10 +444,16 @@ export function SessionsPage() {
 
       const map = new Map<string, number>();
       for (const row of (data || []) as any[]) {
-        if (row?.session_id) map.set(String(row.session_id), Number(row.live_count) || 0);
+        if (row?.session_id)
+          map.set(String(row.session_id), Number(row.live_count) || 0);
       }
 
-      if (DEBUG) console.log("[DEBUG Sessions] live_count map:", Object.fromEntries(map.entries()));
+      if (DEBUG) {
+        console.log(
+          "[DEBUG Sessions] live_count map:",
+          Object.fromEntries(map.entries())
+        );
+      }
 
       setSessions((prev) =>
         prev.map((s) => ({
@@ -314,6 +484,9 @@ export function SessionsPage() {
           format,
           start_time,
           status,
+          created_at,
+          description,
+          custom_slug,
           schedule,
           session_format_type,
           is_silent,
@@ -338,7 +511,10 @@ export function SessionsPage() {
 
       setSessions(rows);
 
-      const ids = rows.map((s) => String((s as any).id || "")).filter((x) => x.length > 0);
+      const ids = rows
+        .map((s) => String((s as any).id || ""))
+        .filter((x) => x.length > 0);
+
       await fetchLiveCounts(ids);
     } catch (err) {
       console.error("[DEBUG Sessions] FAILED LOADING:", err);
@@ -357,7 +533,10 @@ export function SessionsPage() {
   }, [modal, fetchSessions]);
 
   const sessionIds = useMemo(
-    () => sessions.map((s) => String((s as any).id || "")).filter((x) => x.length > 0),
+    () =>
+      sessions
+        .map((s) => String((s as any).id || ""))
+        .filter((x) => x.length > 0),
     [sessions]
   );
 
@@ -377,15 +556,23 @@ export function SessionsPage() {
     return Date.now() > new Date(s.start_time).getTime() + dur * 60_000;
   };
 
-  const activeSessions = useMemo(() => sessions.filter((s) => !isExpired(s)), [sessions]);
+  const activeSessions = useMemo(
+    () => sessions.filter((s) => !isExpired(s)),
+    [sessions]
+  );
 
   const typeFilteredSessions = useMemo(() => {
-    return activeSessions.filter((s) => resolveSessionType(s) === sessionTypeTab);
+    return activeSessions.filter(
+      (s) => resolveSessionType(s) === sessionTypeTab
+    );
   }, [sessionTypeTab, activeSessions]);
+
+  const isAllDatesMode =
+    sessionTypeTab === "group" && isAllDatesValue(dateFilter);
 
   const visibleSessions = useMemo(() => {
     if (sessionTypeTab === "infinite") return typeFilteredSessions;
-    if (!dateFilter) return typeFilteredSessions;
+    if (isAllDatesValue(dateFilter)) return typeFilteredSessions;
 
     return typeFilteredSessions.filter((s) => {
       if (!s.start_time) return false;
@@ -393,6 +580,27 @@ export function SessionsPage() {
       return ymd === dateFilter;
     });
   }, [typeFilteredSessions, dateFilter, sessionTypeTab]);
+
+  const groupedVisibleSessions = useMemo(() => {
+    if (!isAllDatesMode) return [];
+
+    const map = new Map<string, SessionWithRelations[]>();
+
+    for (const s of visibleSessions) {
+      const key = s.start_time
+        ? toLocalYMDFromISO(s.start_time) || "__undated__"
+        : "__undated__";
+
+      const prev = map.get(key) || [];
+      prev.push(s);
+      map.set(key, prev);
+    }
+
+    return Array.from(map.entries()).map(([ymd, items]) => ({
+      ymd,
+      sessions: items,
+    }));
+  }, [visibleSessions, isAllDatesMode]);
 
   const join = (id: string) => {
     if (!user) return navigate("/login");
@@ -442,13 +650,25 @@ export function SessionsPage() {
 
   const editSession = async (
     sessionId: string,
-    updates: { title?: string; start_time?: string; max_participants?: number | null }
+    updates: {
+      title?: string;
+      start_time?: string;
+      max_participants?: number | null;
+      description?: string | null;
+      schedule?: any;
+      stages_json?: any;
+      duration_minutes?: number | null;
+    }
   ) => {
     if (!user) return navigate("/login");
     if (!updates || Object.keys(updates).length === 0) return;
 
     try {
-      const { error } = await supabase.from("sessions").update(updates).eq("id", sessionId);
+      const { error } = await supabase
+        .from("sessions")
+        .update(updates)
+        .eq("id", sessionId);
+
       if (error) throw error;
       await fetchSessions();
     } catch (err) {
@@ -457,7 +677,10 @@ export function SessionsPage() {
     }
   };
 
-  const inviteToSession = async (sessionId: string, payload: { email: string; message?: string }) => {
+  const inviteToSession = async (
+    sessionId: string,
+    payload: { email: string; message?: string }
+  ) => {
     const email = (payload?.email || "").trim();
     if (!email) return;
 
@@ -474,7 +697,9 @@ export function SessionsPage() {
       `Link: ${link}\n`
     );
 
-    window.location.href = `mailto:${encodeURIComponent(email)}?subject=${subject}&body=${body}`;
+    window.location.href = `mailto:${encodeURIComponent(
+      email
+    )}?subject=${subject}&body=${body}`;
   };
 
   const openCreate = () => {
@@ -482,7 +707,11 @@ export function SessionsPage() {
     modal.open();
   };
 
-  const createBodySession = async (payload: { duration: 25 | 50; dateYMD: string; timeHHMM: string }) => {
+  const createBodySession = async (payload: {
+    duration: 25 | 50;
+    dateYMD: string;
+    timeHHMM: string;
+  }) => {
     if (!user?.id) return navigate("/login");
 
     const iso = combineLocalDateTimeToISO(payload.dateYMD, payload.timeHHMM);
@@ -518,7 +747,36 @@ export function SessionsPage() {
     await fetchSessions();
   };
 
-  const topPad = sessionTypeTab === "group" ? "pt-[100px] pb-[50px]" : "pt-[56px] pb-[18px]";
+  const topPad =
+    sessionTypeTab === "group"
+      ? "pt-[100px] pb-[50px]"
+      : "pt-[56px] pb-[18px]";
+
+  const renderSessionCard = (s: SessionWithRelations) => (
+    <SessionCard
+      key={s.id}
+      session={s}
+      userId={user?.id}
+      currentUser={
+        user?.id
+          ? {
+            id: user.id,
+            full_name: currentProfile?.full_name || undefined,
+            avatar_url: currentProfile?.avatar_url || undefined,
+            email: (currentProfile?.email ||
+              (user as any)?.email ||
+              undefined) as any,
+          }
+          : undefined
+      }
+      onJoin={join}
+      onBook={book}
+      onCancelBooking={cancel}
+      onDelete={remove}
+      onEditSession={editSession}
+      onInviteToSession={inviteToSession}
+    />
+  );
 
   return (
     <div className="min-h-screen bg-white text-brandBlack font-inter">
@@ -541,7 +799,8 @@ export function SessionsPage() {
               onChange={(v) => {
                 setSessionTypeTab(v);
                 if (v === "infinite") setDateFilter(null);
-                if (v === "body") setDateFilter((prev) => prev || todayLocalYMD());
+                if (v === "body")
+                  setDateFilter((prev) => prev || todayLocalYMD());
               }}
             />
           </div>
@@ -564,7 +823,11 @@ export function SessionsPage() {
             <>
               {sessionTypeTab === "group" && (
                 <div className="mb-6 w-full">
-                  <SessionsDateFilter value={dateFilter} onChange={setDateFilter} weeksAhead={3} />
+                  <SessionsDateFilter
+                    value={dateFilter}
+                    onChange={setDateFilter}
+                    weeksAhead={3}
+                  />
                 </div>
               )}
 
@@ -576,40 +839,39 @@ export function SessionsPage() {
                 ) : visibleSessions.length === 0 ? (
                   <div className="p-2 text-center">
                     <p className="text-sm text-slate-600 mb-4">
-                      No active sessions {dateFilter && sessionTypeTab === "group" ? "for this date" : "available"}
+                      No active sessions{" "}
+                      {dateFilter && !isAllDatesValue(dateFilter) && sessionTypeTab === "group"
+                        ? "for this date"
+                        : "available"}
                     </p>
 
                     {user && (
-                      <button onClick={openCreate} className="text-sm underline underline-offset-4">
+                      <button
+                        onClick={openCreate}
+                        className="text-sm underline underline-offset-4"
+                      >
                         Create the first session
                       </button>
                     )}
                   </div>
+                ) : isAllDatesMode ? (
+                  <div className="space-y-8 md:space-y-10">
+                    {groupedVisibleSessions.map((group) => (
+                      <section key={group.ymd}>
+                        <SessionsDateGroupHeader
+                          ymd={group.ymd}
+                          count={group.sessions.length}
+                        />
+
+                        <div className="space-y-3 md:space-y-6">
+                          {group.sessions.map(renderSessionCard)}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
                 ) : (
                   <div className="space-y-3 md:space-y-6">
-                    {visibleSessions.map((s) => (
-                      <SessionCard
-                        key={s.id}
-                        session={s}
-                        userId={user?.id}
-                        currentUser={
-                          user?.id
-                            ? {
-                              id: user.id,
-                              full_name: currentProfile?.full_name || undefined,
-                              avatar_url: currentProfile?.avatar_url || undefined,
-                              email: (currentProfile?.email || (user as any)?.email || undefined) as any,
-                            }
-                            : undefined
-                        }
-                        onJoin={join}
-                        onBook={book}
-                        onCancelBooking={cancel}
-                        onDelete={remove}
-                        onEditSession={editSession}
-                        onInviteToSession={inviteToSession}
-                      />
-                    ))}
+                    {visibleSessions.map(renderSessionCard)}
                   </div>
                 )}
               </div>
@@ -635,7 +897,12 @@ export function SessionsPage() {
         title="How it works"
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-          <path d="M12 18h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <path
+            d="M12 18h.01"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
           <path
             d="M9.09 9a3 3 0 1 1 4.82 2.33c-.66.49-1.41 1.08-1.41 2.17V14"
             stroke="currentColor"
@@ -654,7 +921,10 @@ export function SessionsPage() {
 
       {howItWorksOpen && (
         <div className="fixed inset-0 z-[70]">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setHowItWorksOpen(false)} />
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setHowItWorksOpen(false)}
+          />
           <div className="absolute inset-0 flex items-center justify-center p-4">
             <div
               className="
@@ -671,7 +941,9 @@ export function SessionsPage() {
             >
               <div className="px-6 py-5 sm:px-8 sm:py-6 flex items-start justify-between gap-4 border-b border-[#ECECEC]">
                 <div className="min-w-0">
-                  <h3 className="text-[18px] sm:text-[20px] font-semibold text-[#111827]">How MySession works</h3>
+                  <h3 className="text-[18px] sm:text-[20px] font-semibold text-[#111827]">
+                    How MySession works
+                  </h3>
                   <p className="text-[12px] sm:text-[13px] text-[#111827]/70 mt-1 leading-relaxed">
                     Step-by-step: create → join → follow stages → finish.
                   </p>
@@ -693,7 +965,12 @@ export function SessionsPage() {
                   title="Close"
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                    <path d="M18 6 6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    <path
+                      d="M18 6 6 18M6 6l12 12"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                    />
                   </svg>
                 </button>
               </div>
@@ -701,33 +978,53 @@ export function SessionsPage() {
               <div className="px-6 py-6 sm:px-8 sm:py-8 max-h-[75vh] overflow-auto">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827] mb-3">1) Choose a session</div>
+                    <div className="text-[13px] font-semibold text-[#111827] mb-3">
+                      1) Choose a session
+                    </div>
                     <ul className="text-[13px] text-[#111827]/80 leading-relaxed list-disc pl-5 space-y-2">
                       <li>
-                        Pick a tab: <b>Group</b>, <b>Infinite</b> (24/7), or <b>body</b>.
+                        Pick a tab: <b>Group</b>, <b>Infinite</b> (24/7), or{" "}
+                        <b>body</b>.
                       </li>
-                      <li>Group/body sessions are scheduled (date/time). Infinite rooms are always open.</li>
                       <li>
-                        You can <b>Book session</b> (optional) to save it — or just join.
+                        Group/body sessions are scheduled (date/time). Infinite
+                        rooms are always open.
+                      </li>
+                      <li>
+                        You can <b>Book session</b> (optional) to save it — or
+                        just join.
                       </li>
                     </ul>
                   </div>
 
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827] mb-3">2) Join & set up</div>
+                    <div className="text-[13px] font-semibold text-[#111827] mb-3">
+                      2) Join & set up
+                    </div>
                     <ul className="text-[13px] text-[#111827]/80 leading-relaxed list-disc pl-5 space-y-2">
                       <li>
                         Click <b>Join session</b>.
                       </li>
-                      <li>Turn mic/cam on/off as you prefer. Screen-share is optional.</li>
-                      <li>You’ll see the session flow: timer/stages (depending on room type).</li>
+                      <li>
+                        Turn mic/cam on/off as you prefer. Screen-share is
+                        optional.
+                      </li>
+                      <li>
+                        You’ll see the session flow: timer/stages (depending on
+                        room type).
+                      </li>
                     </ul>
                   </div>
 
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827] mb-3">3) Follow the workflow</div>
+                    <div className="text-[13px] font-semibold text-[#111827] mb-3">
+                      3) Follow the workflow
+                    </div>
                     <ul className="text-[13px] text-[#111827]/80 leading-relaxed list-disc pl-5 space-y-2">
-                      <li>Use stage prompts to stay aligned (check-in / intentions).</li>
+                      <li>
+                        Use stage prompts to stay aligned (check-in /
+                        intentions).
+                      </li>
                       <li>
                         During <b>Focus</b>, work silently or lightly co-work.
                       </li>
@@ -738,10 +1035,16 @@ export function SessionsPage() {
                   </div>
 
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827] mb-3">4) Finish & leave</div>
+                    <div className="text-[13px] font-semibold text-[#111827] mb-3">
+                      4) Finish & leave
+                    </div>
                     <ul className="text-[13px] text-[#111827]/80 leading-relaxed list-disc pl-5 space-y-2">
-                      <li>Wrap up at the end (or anytime in 24/7 focus rooms).</li>
-                      <li>Quick self-reflection: what you did / what’s next.</li>
+                      <li>
+                        Wrap up at the end (or anytime in 24/7 focus rooms).
+                      </li>
+                      <li>
+                        Quick self-reflection: what you did / what’s next.
+                      </li>
                       <li>Leave the session — your work is done.</li>
                     </ul>
                   </div>
@@ -753,60 +1056,80 @@ export function SessionsPage() {
                   <h4 className="text-[14px] sm:text-[15px] font-semibold text-[#111827]">
                     Stages glossary (what each block means)
                   </h4>
-                  <span className="text-[12px] text-[#111827]/60">(Some rooms may hide stages — e.g. silent rooms)</span>
+                  <span className="text-[12px] text-[#111827]/60">
+                    (Some rooms may hide stages — e.g. silent rooms)
+                  </span>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827]">Check-in</div>
+                    <div className="text-[13px] font-semibold text-[#111827]">
+                      Check-in
+                    </div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      Quick verbal sync: “What are you working on?” + “Any blockers?”. Short, supportive, no long
-                      stories.
+                      Quick verbal sync: “What are you working on?” + “Any
+                      blockers?”. Short, supportive, no long stories.
                     </p>
                   </div>
 
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827]">Intentions</div>
+                    <div className="text-[13px] font-semibold text-[#111827]">
+                      Intentions
+                    </div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      You state your goal for the next focus block. Keep it specific: 1–3 concrete outcomes.
+                      You state your goal for the next focus block. Keep it
+                      specific: 1–3 concrete outcomes.
                     </p>
                   </div>
 
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827]">Focus</div>
+                    <div className="text-[13px] font-semibold text-[#111827]">
+                      Focus
+                    </div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      The working block. Usually quiet. Your only job: do the task.
+                      The working block. Usually quiet. Your only job: do the
+                      task.
                     </p>
                   </div>
 
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827]">Break</div>
+                    <div className="text-[13px] font-semibold text-[#111827]">
+                      Break
+                    </div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      Rest/reset: stand up, water, stretch. Avoid doom-scrolling if you can.
+                      Rest/reset: stand up, water, stretch. Avoid doom-scrolling
+                      if you can.
                     </p>
                   </div>
 
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827]">Custom block</div>
+                    <div className="text-[13px] font-semibold text-[#111827]">
+                      Custom block
+                    </div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      A flexible stage you can name anything: “Reading”, “Planning”, “Admin”, etc. Use it however you
-                      want.
+                      A flexible stage you can name anything: “Reading”,
+                      “Planning”, “Admin”, etc. Use it however you want.
                     </p>
                   </div>
 
                   <div className="rounded-[18px] border border-[#E6E6E6] p-5">
-                    <div className="text-[13px] font-semibold text-[#111827]">Outro / Wrap-up</div>
+                    <div className="text-[13px] font-semibold text-[#111827]">
+                      Outro / Wrap-up
+                    </div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      Quick closure: what you finished, what’s next, and one takeaway.
+                      Quick closure: what you finished, what’s next, and one
+                      takeaway.
                     </p>
                   </div>
                 </div>
 
                 <div className="mt-7 rounded-[18px] border border-[#E6E6E6] bg-[#F7F7F7] p-5">
-                  <div className="text-[13px] font-semibold text-[#111827]">Pro tip</div>
+                  <div className="text-[13px] font-semibold text-[#111827]">
+                    Pro tip
+                  </div>
                   <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                    If you’re joining a <b>Silent</b> room: keep mic off, use the stage timer as guidance, and focus. No
-                    pressure to talk.
+                    If you’re joining a <b>Silent</b> room: keep mic off, use
+                    the stage timer as guidance, and focus. No pressure to talk.
                   </p>
                 </div>
 
