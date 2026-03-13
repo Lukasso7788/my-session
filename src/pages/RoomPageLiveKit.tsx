@@ -815,6 +815,7 @@ export function RoomPageLiveKit() {
   const [userName, setUserName] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [localAvatarUrl, setLocalAvatarUrl] = useState<string>("");
+  const accessTokenRef = useRef<string>("");
 
   const [selectedUser, setSelectedUser] = useState<HostProfile | null>(null);
   const [reportModalOpen, setReportModalOpen] = useState(false);
@@ -1301,6 +1302,12 @@ export function RoomPageLiveKit() {
         const { data } = await supabase.auth.getUser();
         const u = data.user;
         setAuthUserId(u?.id || null);
+        try {
+          const { data: sd } = await supabase.auth.getSession();
+          accessTokenRef.current = String(sd.session?.access_token || "");
+        } catch {
+          accessTokenRef.current = "";
+        }
 
         let name = "";
         let avatar = "";
@@ -1651,6 +1658,11 @@ export function RoomPageLiveKit() {
   const [kickRedirecting, setKickRedirecting] = useState(false);
   const kickEventChannelRef = useRef<any>(null);
   const kickedBySignalRef = useRef(false);
+  const ATT_HEARTBEAT_MS = 10_000;
+
+  const attendanceHbTimerRef = useRef<number | null>(null);
+  const attendanceActiveRef = useRef(false);
+  const leaveOnceRef = useRef(false);
 
   const stopTabPresenceHeartbeat = () => {
     if (tabPresenceHeartbeatRef.current) {
@@ -1701,6 +1713,24 @@ export function RoomPageLiveKit() {
     };
   }, []);
 
+  useEffect(() => {
+    const onBeforeUnload = () => {
+      void leaveAttendanceOnce({ keepalive: true });
+    };
+
+    const onPageHide = () => {
+      void leaveAttendanceOnce({ keepalive: true });
+    };
+
+    window.addEventListener("beforeunload", onBeforeUnload);
+    window.addEventListener("pagehide", onPageHide);
+
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      window.removeEventListener("pagehide", onPageHide);
+    };
+  }, [session?.id, authUserId]);
+
   const buildAuthHeaders = async (): Promise<Record<string, string>> => {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     try {
@@ -1709,6 +1739,162 @@ export function RoomPageLiveKit() {
       if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
     } catch { }
     return headers;
+  };
+
+  const startAttendanceHeartbeat = () => {
+    if (attendanceHbTimerRef.current) return;
+
+    attendanceHbTimerRef.current = window.setInterval(() => {
+      void attendanceHeartbeat();
+    }, ATT_HEARTBEAT_MS);
+  };
+
+  const stopAttendanceHeartbeat = () => {
+    if (!attendanceHbTimerRef.current) return;
+    window.clearInterval(attendanceHbTimerRef.current);
+    attendanceHbTimerRef.current = null;
+  };
+
+  const attendanceJoin = async () => {
+    if (!session?.id || !authUserId) return;
+
+    const nowIso = new Date().toISOString();
+
+    try {
+      const { error } = await supabase.rpc("attendance_join", {
+        p_session_id: session.id,
+      });
+
+      if (!error) {
+        attendanceActiveRef.current = true;
+        leaveOnceRef.current = false;
+        return;
+      }
+    } catch { }
+
+    try {
+      const { error } = await supabase
+        .from("session_attendance")
+        .upsert(
+          {
+            session_id: session.id,
+            user_id: authUserId,
+            joined_at: nowIso,
+            left_at: null,
+            last_seen_at: nowIso,
+          },
+          { onConflict: "session_id,user_id" }
+        );
+
+      if (!error) {
+        attendanceActiveRef.current = true;
+        leaveOnceRef.current = false;
+      }
+    } catch { }
+  };
+
+  const attendanceHeartbeat = async () => {
+    if (!session?.id || !authUserId) return;
+    if (!attendanceActiveRef.current) return;
+
+    const nowIso = new Date().toISOString();
+
+    try {
+      const { error } = await supabase.rpc("attendance_heartbeat", {
+        p_session_id: session.id,
+      });
+
+      if (!error) return;
+    } catch { }
+
+    try {
+      await supabase
+        .from("session_attendance")
+        .update({
+          last_seen_at: nowIso,
+          left_at: null,
+        })
+        .eq("session_id", session.id)
+        .eq("user_id", authUserId);
+    } catch { }
+  };
+
+  const attendanceLeave = async () => {
+    stopAttendanceHeartbeat();
+
+    if (!session?.id || !authUserId) return;
+    if (!attendanceActiveRef.current) return;
+
+    const nowIso = new Date().toISOString();
+
+    try {
+      const { error } = await supabase.rpc("attendance_leave", {
+        p_session_id: session.id,
+      });
+
+      if (!error) {
+        attendanceActiveRef.current = false;
+        return;
+      }
+    } catch { }
+
+    try {
+      await supabase
+        .from("session_attendance")
+        .update({
+          left_at: nowIso,
+          last_seen_at: nowIso,
+        })
+        .eq("session_id", session.id)
+        .eq("user_id", authUserId);
+    } catch { }
+
+    attendanceActiveRef.current = false;
+  };
+
+  const keepaliveLeaveWrite = () => {
+    try {
+      if (!session?.id || !authUserId) return;
+      if (!attendanceActiveRef.current) return;
+
+      const supabaseUrl = String((import.meta as any).env.VITE_SUPABASE_URL || "").trim();
+      const anonKey = String((import.meta as any).env.VITE_SUPABASE_ANON_KEY || "").trim();
+      const token = String(accessTokenRef.current || "").trim();
+
+      if (!supabaseUrl || !anonKey || !token) return;
+
+      const nowIso = new Date().toISOString();
+      const url =
+        `${supabaseUrl}/rest/v1/session_attendance` +
+        `?session_id=eq.${encodeURIComponent(session.id)}` +
+        `&user_id=eq.${encodeURIComponent(authUserId)}`;
+
+      void fetch(url, {
+        method: "PATCH",
+        headers: {
+          apikey: anonKey,
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          Prefer: "return=minimal",
+        },
+        body: JSON.stringify({
+          left_at: nowIso,
+          last_seen_at: nowIso,
+        }),
+        keepalive: true as any,
+      }).catch(() => { });
+    } catch { }
+  };
+
+  const leaveAttendanceOnce = async (opts: { keepalive?: boolean } = {}) => {
+    if (leaveOnceRef.current) return;
+    leaveOnceRef.current = true;
+
+    if (opts.keepalive) keepaliveLeaveWrite();
+
+    try {
+      await attendanceLeave();
+    } catch { }
   };
 
   const tryAcquireTabGate = (sessionId: string, baseUserId: string) => {
@@ -2277,6 +2463,7 @@ export function RoomPageLiveKit() {
         setSystemNotice((prev) => ({ ...prev, open: false }));
       }
 
+      await leaveAttendanceOnce({ keepalive: false });
       releaseTabPresence();
     }
   };
@@ -2380,6 +2567,8 @@ export function RoomPageLiveKit() {
         setScreenShareTiles([]);
         setOpenTileAdminMenuId(null);
 
+        void leaveAttendanceOnce({ keepalive: false });
+
         if (!kickedBySignalRef.current && !kickRedirecting) {
           showSystemNotice({
             kind: "info",
@@ -2414,6 +2603,10 @@ export function RoomPageLiveKit() {
       await r.connect(lkServerUrl, lkToken, { autoSubscribe: true });
 
       kickedBySignalRef.current = false;
+      
+      leaveOnceRef.current = false;
+      await attendanceJoin();
+      startAttendanceHeartbeat();
 
       // mic
       if (pj.audioEnabled) {
