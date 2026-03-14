@@ -18,6 +18,7 @@ import UpdatesPage from "./pages/UpdatesPage";
 import PrivacyPage from "./pages/PrivacyPage";
 import DataDeletionPage from "./pages/DataDeletionPage";
 import Terms from "./pages/Terms";
+import RulesPage from "./pages/RulesPage";
 
 import AppLayout from "./layouts/AppLayout";
 import { CreateSessionModalProvider } from "./context/CreateSessionModalContext";
@@ -146,6 +147,7 @@ export default function App() {
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/data-deletion" element={<DataDeletionPage />} />
+          <Route path="/rules" element={<RulesPage />} />
 
           {/* ✅ Blog routes — safe placeholders for now */}
           <Route path="/blog" element={<BlogIndexPlaceholder />} />

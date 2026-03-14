@@ -80,6 +80,13 @@ export default function Footer() {
 
                                 <Link
                                     className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
+                                    to="/rules"
+                                >
+                                    Rules
+                                </Link>
+
+                                <Link
+                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
                                     to="/terms"
                                 >
                                     Terms
