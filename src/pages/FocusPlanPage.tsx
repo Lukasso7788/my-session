@@ -1,4 +1,3 @@
-// src/pages/FocusPlanPage.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
@@ -113,6 +112,7 @@ export default function FocusPlanPage() {
     // library (recent unique intentions)
     const [library, setLibrary] = useState<IntentionRow[]>([]);
     const [loadingLibrary, setLoadingLibrary] = useState(false);
+    const [deletingLibraryText, setDeletingLibraryText] = useState<string | null>(null);
 
     // plans + items (Supabase)
     const [plans, setPlans] = useState<FocusPlan[]>([]);
@@ -520,7 +520,7 @@ export default function FocusPlanPage() {
         if (editingItemId === itemId) cancelEditItem();
     };
 
-    // ✅ NEW: sync intentions.completed when focus_plan_items.completed changes
+    // ✅ sync intentions.completed when focus_plan_items.completed changes
     const syncIntentionsCompletedFromItem = async (item: FocusPlanItem, nextCompleted: boolean) => {
         try {
             const sid = safeTrim(item.session_id);
@@ -617,7 +617,7 @@ export default function FocusPlanPage() {
 
             cancelEditItem();
 
-            // ✅ NEW: best-effort sync rename into intentions if item is linked to a session
+            // ✅ best-effort sync rename into intentions if item is linked to a session
             try {
                 if (sid && UUID_RE.test(String(sid)) && oldText && oldText !== text) {
                     await supabase
@@ -640,6 +640,60 @@ export default function FocusPlanPage() {
         const t = String(text || "").trim();
         if (!t) return;
         setNewItemText(t);
+    };
+
+    const deleteLibraryText = async (text: string) => {
+        if (!requireAuth()) return;
+
+        const normalized = safeTrim(text);
+        if (!normalized) return;
+
+        const key = normalized.toLowerCase();
+        const prev = library;
+
+        setDeletingLibraryText(key);
+
+        // optimistic remove from visible unique library
+        setLibrary((cur) => cur.filter((row) => safeTrim(row.text).toLowerCase() !== key));
+
+        try {
+            const { data, error } = await supabase
+                .from("intentions")
+                .select("id, text")
+                .eq("user_id", user.id)
+                .limit(300);
+
+            if (error) {
+                setLibrary(prev);
+                return;
+            }
+
+            const idsToDelete = (data || [])
+                .filter((row: any) => safeTrim(row?.text).toLowerCase() === key)
+                .map((row: any) => row.id)
+                .filter(Boolean);
+
+            if (idsToDelete.length === 0) {
+                return;
+            }
+
+            const { error: deleteError } = await supabase
+                .from("intentions")
+                .delete()
+                .in("id", idsToDelete)
+                .eq("user_id", user.id);
+
+            if (deleteError) {
+                setLibrary(prev);
+                return;
+            }
+
+            void loadLibrary();
+        } catch {
+            setLibrary(prev);
+        } finally {
+            setDeletingLibraryText(null);
+        }
     };
 
     // attach = create real intention row (so it appears in room panel)
@@ -1252,6 +1306,8 @@ export default function FocusPlanPage() {
                                             <div className="flex flex-col gap-2">
                                                 {library.map((it) => {
                                                     const text = String(it.text || "").trim();
+                                                    const deleting = deletingLibraryText === text.toLowerCase();
+
                                                     return (
                                                         <div key={it.id} className="rounded-[18px] border border-[#F0F0F0] hover:bg-[#F6F6F6] hover:border-[#E5E7EB] transition px-4 py-3 flex items-center gap-3">
                                                             <div className="flex-1 min-w-0">
@@ -1259,13 +1315,26 @@ export default function FocusPlanPage() {
                                                                 <div className="mt-1 text-[11px] text-[#606060]">{it.created_at ? `Last used: ${fmtWhen(it.created_at)}` : ""}</div>
                                                             </div>
 
-                                                            <button
-                                                                className="h-10 px-4 rounded-full border border-[#111827] text-[#111827] hover:bg-[#111827] hover:text-white transition text-[12px] font-semibold whitespace-nowrap"
-                                                                onClick={() => addLibraryTextToPlan(text)}
-                                                                type="button"
-                                                            >
-                                                                Use
-                                                            </button>
+                                                            <div className="flex items-center gap-2 shrink-0">
+                                                                <button
+                                                                    className="h-10 px-4 rounded-full border border-[#111827] text-[#111827] hover:bg-[#111827] hover:text-white transition text-[12px] font-semibold whitespace-nowrap"
+                                                                    onClick={() => addLibraryTextToPlan(text)}
+                                                                    type="button"
+                                                                >
+                                                                    Use
+                                                                </button>
+
+                                                                <button
+                                                                    className="h-10 w-10 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] transition flex items-center justify-center"
+                                                                    onClick={() => deleteLibraryText(text)}
+                                                                    type="button"
+                                                                    disabled={deleting}
+                                                                    title="Delete this intention from library"
+                                                                    style={{ opacity: deleting ? 0.6 : 1 }}
+                                                                >
+                                                                    <Trash2 size={16} />
+                                                                </button>
+                                                            </div>
                                                         </div>
                                                     );
                                                 })}
