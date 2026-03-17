@@ -1,5 +1,6 @@
 // src/pages/RoomPageLiveKit.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   Room,
@@ -707,6 +708,22 @@ const LK_CAPTURE_FPS = 24;
 const CHAT_MSG_TABLE = "session_chat_messages";
 const REACTION_TTL_MS = 2750;
 
+declare global {
+  interface Window {
+    documentPictureInPicture?: {
+      window?: Window | null;
+      requestWindow(options?: {
+        width?: number;
+        height?: number;
+        disallowReturnToOpener?: boolean;
+        preferInitialWindowPlacement?: boolean;
+      }): Promise<Window>;
+      addEventListener?: (type: string, listener: (event: any) => void) => void;
+      removeEventListener?: (type: string, listener: (event: any) => void) => void;
+    };
+  }
+}
+
 export function RoomPageLiveKit() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -936,6 +953,8 @@ export function RoomPageLiveKit() {
     }
   });
   const roomSoundsEnabledRef = useRef(roomSoundsEnabled);
+
+  
   useEffect(() => {
     roomSoundsEnabledRef.current = roomSoundsEnabled;
     try {
@@ -2076,6 +2095,13 @@ export function RoomPageLiveKit() {
   // edit name modal
   const [editNameOpen, setEditNameOpen] = useState(false);
   const [editNameValue, setEditNameValue] = useState("");
+  const pipWindowRef = useRef<Window | null>(null);
+  const [pipMountEl, setPipMountEl] = useState<HTMLElement | null>(null);
+  const [pipOpen, setPipOpen] = useState(false);
+
+  const pipSupported =
+    typeof window !== "undefined" &&
+    typeof window.documentPictureInPicture !== "undefined";
 
   useEffect(() => {
     setOpenTileAdminMenuId((prev) => (prev && tiles.some((t) => t.id === prev) ? prev : null));
@@ -2825,6 +2851,116 @@ export function RoomPageLiveKit() {
       window.setTimeout(() => URL.revokeObjectURL(url), 1200);
     }
   };
+
+  const copyStylesToPiPWindow = (pipWindow: Window) => {
+    Array.from(document.styleSheets).forEach((styleSheet) => {
+      try {
+        const cssRules = Array.from((styleSheet as CSSStyleSheet).cssRules)
+          .map((rule) => rule.cssText)
+          .join("\n");
+
+        const style = pipWindow.document.createElement("style");
+        style.textContent = cssRules;
+        pipWindow.document.head.appendChild(style);
+      } catch {
+        const href = (styleSheet as CSSStyleSheet).href;
+        if (!href) return;
+
+        const link = pipWindow.document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = href;
+        pipWindow.document.head.appendChild(link);
+      }
+    });
+  };
+
+  const closePictureInPicture = async () => {
+    const pipWindow = pipWindowRef.current;
+
+    pipWindowRef.current = null;
+    setPipMountEl(null);
+    setPipOpen(false);
+
+    try {
+      pipWindow?.close();
+    } catch { }
+  };
+
+  const openPictureInPicture = async () => {
+    if (!pipSupported) {
+      alert("Document Picture-in-Picture is not supported in this browser.");
+      return;
+    }
+
+    if (!connected) {
+      alert("Join the room first.");
+      return;
+    }
+
+    if (pipWindowRef.current && !pipWindowRef.current.closed) {
+      try {
+        pipWindowRef.current.focus();
+      } catch { }
+      return;
+    }
+
+    const pipWindow = await window.documentPictureInPicture!.requestWindow({
+      width: 480,
+      height: 320,
+      preferInitialWindowPlacement: true,
+    } as any);
+
+    copyStylesToPiPWindow(pipWindow);
+
+    pipWindow.document.title = `${String(session?.title || "Session")} · PiP`;
+    pipWindow.document.body.innerHTML = "";
+    pipWindow.document.documentElement.setAttribute("data-theme", theme);
+    pipWindow.document.body.className =
+      theme === "dark"
+        ? "m-0 bg-[#050F1A] text-white overflow-hidden"
+        : "m-0 bg-[#F6F7FB] text-[#0B1220] overflow-hidden";
+
+    const mount = pipWindow.document.createElement("div");
+    mount.id = "mysession-livekit-pip-root";
+    mount.style.width = "100vw";
+    mount.style.height = "100vh";
+    mount.style.overflow = "hidden";
+    pipWindow.document.body.appendChild(mount);
+
+    pipWindow.addEventListener(
+      "pagehide",
+      () => {
+        pipWindowRef.current = null;
+        setPipMountEl(null);
+        setPipOpen(false);
+      },
+      { once: true }
+    );
+
+    pipWindowRef.current = pipWindow;
+    setPipMountEl(mount);
+    setPipOpen(true);
+  };
+
+  useEffect(() => {
+    const pipWindow = pipWindowRef.current;
+    if (!pipWindow || !pipMountEl) return;
+
+    try {
+      pipWindow.document.documentElement.setAttribute("data-theme", theme);
+      pipWindow.document.body.className =
+        theme === "dark"
+          ? "m-0 bg-[#050F1A] text-white overflow-hidden"
+          : "m-0 bg-[#F6F7FB] text-[#0B1220] overflow-hidden";
+    } catch { }
+  }, [theme, pipMountEl]);
+
+  useEffect(() => {
+    if (connected) return;
+    if (!pipOpen) return;
+
+    closePictureInPicture().catch(() => { });
+  }, [connected, pipOpen]);
 
   const toggleScreenShare = async () => {
     const r = roomRef.current;
@@ -3923,6 +4059,126 @@ export function RoomPageLiveKit() {
     </div>
   );
 
+  const pipFeaturedTile = useMemo(() => {
+    if (activeScreenShareTile) return activeScreenShareTile;
+    if (pinnedParticipantTile) return pinnedParticipantTile;
+    return tilesForRender[0] || null;
+  }, [activeScreenShareTile, pinnedParticipantTile, tilesForRender]);
+
+  const pipStripTiles = useMemo(() => {
+    if (activeScreenShareTile) return tilesForRender.slice(0, 4);
+    if (pinnedParticipantTile) {
+      return tilesForRender.filter((t) => t.id !== pinnedParticipantTile.id).slice(0, 4);
+    }
+    return tilesForRender.slice(1, 5);
+  }, [activeScreenShareTile, pinnedParticipantTile, tilesForRender]);
+
+  const pipPortal = pipMountEl
+    ? createPortal(
+      <div className={`h-full w-full flex flex-col ${isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white"}`}>
+        <div
+          className={`h-11 px-3 flex items-center justify-between border-b ${isLight ? "border-black/10 bg-white/85" : "border-white/10 bg-[#020617]/80"
+            }`}
+        >
+          <div className="min-w-0">
+            <div className="text-[12px] font-semibold truncate">
+              {String(session?.title || "Session")}
+            </div>
+            <div className={`text-[10px] ${isLight ? "text-black/50" : "text-white/50"}`}>
+              {participantsCount} participants
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => closePictureInPicture()}
+            className={`w-8 h-8 rounded-lg flex items-center justify-center ${isLight ? "bg-black/5 hover:bg-black/10 text-black/70" : "bg-white/5 hover:bg-white/10 text-white/85"
+              }`}
+            title="Close PiP"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="flex-1 min-h-0 grid grid-cols-[minmax(0,1fr),110px] gap-2 p-2">
+          <div className="min-w-0 min-h-0 flex items-center justify-center">
+            <div className="w-full">
+              {pipFeaturedTile ? renderTile(pipFeaturedTile) : null}
+            </div>
+          </div>
+
+          <div className="min-w-0 min-h-0 overflow-y-auto flex flex-col gap-2 pr-1">
+            {pipStripTiles.map((t) => (
+              <div key={`pip-${t.id}`}>{renderTile(t)}</div>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-5 gap-2 px-2 pb-2">
+          <button
+            type="button"
+            onClick={() => toggleMic().catch(() => { })}
+            className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
+                ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
+                : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
+              }`}
+          >
+            {micOn ? "Mic on" : "Mic off"}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => toggleCam().catch(() => { })}
+            className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
+                ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
+                : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
+              }`}
+          >
+            {camOn ? "Cam on" : "Cam off"}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => toggleScreenShare().catch(() => { })}
+            className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
+                ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
+                : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
+              }`}
+          >
+            Share
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              try {
+                window.focus();
+              } catch { }
+            }}
+            className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
+                ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
+                : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
+              }`}
+          >
+            Main
+          </button>
+
+          <button
+            type="button"
+            onClick={() => leave().catch(() => { })}
+            className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
+                ? "border-red-200 bg-red-50 hover:bg-red-100 text-red-700"
+                : "border-red-400/20 bg-red-500/10 hover:bg-red-500/15 text-red-300"
+              }`}
+          >
+            Leave
+          </button>
+        </div>
+      </div>,
+      pipMountEl
+    )
+    : null;
+
   // UI colors
   const pageBg = isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white";
   const panelBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#0B1220]/55 border border-white/5";
@@ -4422,6 +4678,41 @@ return (
 
       <RemoteAudioRenderer room={roomState} audioOutputId={selectedAudioOutputId} />
 
+      {connected && (
+        <div className="fixed left-3 sm:left-4 bottom-[calc(92px+env(safe-area-inset-bottom))] z-[55]">
+          <button
+            type="button"
+            onClick={() => {
+              if (pipOpen) {
+                closePictureInPicture().catch(() => { });
+              } else {
+                openPictureInPicture().catch((e) => {
+                  console.error("openPictureInPicture failed", e);
+                  alert(String((e as any)?.message || e || "pip_open_failed"));
+                });
+              }
+            }}
+            disabled={!pipSupported}
+            className={[
+              "px-3 py-2 rounded-2xl shadow-xl text-[12px] font-semibold border backdrop-blur",
+              isLight
+                ? "bg-white/90 border-black/10 text-black/80 hover:bg-white"
+                : "bg-[#020617]/70 border-white/10 text-white/85 hover:bg-[#020617]/85",
+              !pipSupported ? "opacity-50 cursor-not-allowed" : "",
+            ].join(" ")}
+            title={
+              pipSupported
+                ? pipOpen
+                  ? "Close picture-in-picture"
+                  : "Open picture-in-picture"
+                : "Document PiP is not supported in this browser"
+            }
+          >
+            {pipOpen ? "Close PiP" : "Open PiP"}
+          </button>
+        </div>
+      )}
+
       <VideoControls
         theme={theme}
         tile={false}
@@ -4676,6 +4967,7 @@ return (
         <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
       )}
     </div>
+  {pipPortal}
   </>
 );
 }

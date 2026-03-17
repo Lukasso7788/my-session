@@ -93,7 +93,7 @@ export function VideoTile({
 
     // Container where LK will mount either <video> or <canvas>
     const mediaHostRef = useRef<HTMLDivElement | null>(null);
-    const attachedElRef = useRef<HTMLElement | null>(null);
+    const attachedElRef = useRef<HTMLMediaElement | null>(null);
 
     const isLight = theme === "light";
 
@@ -155,7 +155,7 @@ export function VideoTile({
 
         // Attach without passing an element:
         // LK may return <video> OR <canvas> when processors are active.
-        let el: any = null;
+        let el: HTMLMediaElement | null = null;
         try {
             if (typeof (videoTrack as any)?.attach === "function") {
                 el = (videoTrack as any).attach();
@@ -205,7 +205,7 @@ export function VideoTile({
             return cleanup;
         }
 
-        attachedElRef.current = el as HTMLElement;
+        attachedElRef.current = el;
 
         return cleanup;
         // IMPORTANT: re-run when track changes or locality changes (mute)
