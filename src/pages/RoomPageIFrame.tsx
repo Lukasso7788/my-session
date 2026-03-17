@@ -843,7 +843,7 @@ async function createJitsiApiWithFallback(args: {
                     enablePrejoinPage: true as any,
 
                     requireDisplayName: false,
-                    readOnlyName: true,
+                    readOnlyName: false,
 
                     disableDeepLinking: true,
                     disableInviteFunctions: true,
@@ -1037,6 +1037,15 @@ export default function RoomPageIFrame() {
     const [userName, setUserName] = useState<string>("");
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
     const [userAvatarUrl, setUserAvatarUrl] = useState<string>("");
+    const [roomDisplayName, setRoomDisplayName] = useState<string>("");
+
+    const effectiveDisplayName = useMemo(() => {
+        const v = String(roomDisplayName || userName || "").trim();
+        return v || "User";
+    }, [roomDisplayName, userName]);
+    useEffect(() => {
+        setRoomDisplayName("");
+    }, [sessionId]);
     const accessTokenRef = useRef<string>("");
 
     // theme
@@ -1383,7 +1392,7 @@ export default function RoomPageIFrame() {
         try {
             if (!sessionId || !currentUserId) return;
 
-            pushFloatingReaction(type, currentUserId, userName || "You");
+            pushFloatingReaction(type, currentUserId, effectiveDisplayName || "You");
 
             const ch = reactionsChannelRef.current;
             if (!ch) return;
@@ -1394,7 +1403,7 @@ export default function RoomPageIFrame() {
                 payload: {
                     type,
                     fromUserId: currentUserId,
-                    fromName: userName || "User",
+                    fromName: effectiveDisplayName || "User",
                     at: Date.now(),
                 },
             });
@@ -2386,7 +2395,7 @@ export default function RoomPageIFrame() {
         if (authStatus !== "authed") return;
         if (!sessionId) return;
         if (!iframeContainerRef.current) return;
-        if (!userName) return;
+        if (!effectiveDisplayName) return;
         if (!canJoinNow) return;
 
         let cancelled = false;
@@ -2425,7 +2434,7 @@ export default function RoomPageIFrame() {
                     domains,
                     roomName,
                     parentNode: parent,
-                    userName,
+                    userName: effectiveDisplayName,
                     userAvatarUrl: userAvatarUrl || "",
                     subject: sessionTitle,
                     cssPathOnJitsiDomain: JITSI_CUSTOM_CSS_PATH,
@@ -2474,7 +2483,7 @@ export default function RoomPageIFrame() {
                     setApiReady(true);
 
                     try {
-                        api.executeCommand?.("displayName", userName);
+                        api.executeCommand?.("displayName", effectiveDisplayName);
                     } catch { }
 
                     if (userAvatarUrl) {
@@ -2516,10 +2525,17 @@ export default function RoomPageIFrame() {
                     setIsScreenSharing(!!v);
                 };
 
-                const onTile = (e: any) => {
-                    tileEventSeenRef.current = true;
-                    const v = typeof e?.enabled === "boolean" ? e.enabled : typeof e?.on === "boolean" ? e.on : true;
-                    setTile(!!v);
+                const onDisplayNameChange = (e: any) => {
+                    const next = String(
+                        e?.displayname || e?.displayName || e?.name || ""
+                    ).trim();
+
+                    if (!next) return;
+
+                    setRoomDisplayName((prev) => {
+                        if (prev === next) return prev;
+                        return next;
+                    });
                 };
 
                 const onReadyToClose = async () => {
@@ -2535,6 +2551,7 @@ export default function RoomPageIFrame() {
                 api.addEventListener?.("screenSharingStatusChanged", onScreenShare);
                 api.addEventListener?.("tileViewChanged", onTile);
                 api.addEventListener?.("readyToClose", onReadyToClose);
+                api.addEventListener?.("displayNameChange", onDisplayNameChange);
 
                 void refreshParticipantsList(api);
 
@@ -2566,7 +2583,7 @@ export default function RoomPageIFrame() {
 
             clearVideoQualityTimer();
         };
-    }, [authStatus, sessionId, jitsiKey, roomName, userName, canJoinNow, preferredJitsiDomain, navigate, sessionTitle, userAvatarUrl]);
+    }, [authStatus, sessionId, jitsiKey, roomName, effectiveDisplayName, canJoinNow, preferredJitsiDomain, navigate, sessionTitle, userAvatarUrl]);
 
     // lightweight Jitsi updates that should NOT recreate the room
     useEffect(() => {
@@ -2584,12 +2601,12 @@ export default function RoomPageIFrame() {
         if (!apiReady) return;
         const api = apiRef.current;
         if (!api) return;
-        if (!userName) return;
+        if (!effectiveDisplayName) return;
 
         try {
-            api.executeCommand?.("displayName", String(userName));
+            api.executeCommand?.("displayName", String(effectiveDisplayName));
         } catch { }
-    }, [userName, apiReady]);
+    }, [effectiveDisplayName, apiReady]);
 
     useEffect(() => {
         if (!apiReady) return;
@@ -2829,7 +2846,7 @@ export default function RoomPageIFrame() {
                                             embedded={true}
                                             hideHeader={true}
                                             authUserId={currentUserId}
-                                            displayName={userName}
+                                            displayName={effectiveDisplayName}
                                             onAnyMessageSeen={() => markChatRead()}
                                         />
                                     </div>
