@@ -2525,6 +2525,18 @@ export default function RoomPageIFrame() {
                     setIsScreenSharing(!!v);
                 };
 
+                const onTile = (e: any) => {
+                    tileEventSeenRef.current = true;
+                    const v =
+                        typeof e?.enabled === "boolean"
+                            ? e.enabled
+                            : typeof e?.on === "boolean"
+                                ? e.on
+                                : true;
+
+                    setTile(!!v);
+                };
+
                 const onDisplayNameChange = (e: any) => {
                     const next = String(
                         e?.displayname || e?.displayName || e?.name || ""
