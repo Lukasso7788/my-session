@@ -14,6 +14,10 @@ export function LiveKitBottomBar(props: {
     screenShareOn: boolean;
     unreadChat?: number;
 
+    showPiP?: boolean;
+    pipActive?: boolean;
+    onTogglePiP?: () => void;
+
     onToggleMic: () => void;
     onToggleCam: () => void;
     onToggleScreenShare: () => void;
@@ -36,6 +40,11 @@ export function LiveKitBottomBar(props: {
         camOn,
         screenShareOn,
         unreadChat = 0,
+
+        showPiP = false,
+        pipActive = false,
+        onTogglePiP,
+
         onToggleMic,
         onToggleCam,
         onToggleScreenShare,
@@ -137,6 +146,25 @@ export function LiveKitBottomBar(props: {
         </button>
     );
 
+    const pipDesktopBtn =
+        showPiP && onTogglePiP ? (
+            <button
+                onClick={onTogglePiP}
+                className={
+                    "h-10 sm:h-11 min-w-[54px] px-3 rounded-2xl flex items-center justify-center transition text-[12px] font-semibold " +
+                    (pipActive
+                        ? isLight
+                            ? "bg-blue-600 hover:bg-blue-700 text-white"
+                            : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
+                        : ctlBtnBase)
+                }
+                title={pipActive ? "Close picture-in-picture" : "Open picture-in-picture"}
+                type="button"
+            >
+                PiP
+            </button>
+        ) : null;
+
     return (
         <>
             {localReactions.length > 0 && (
@@ -235,6 +263,27 @@ export function LiveKitBottomBar(props: {
                                                 <Icon name="settings" theme={theme} className="w-4 h-4 opacity-90" />
                                                 <span>Settings</span>
                                             </button>
+
+                                            {showPiP && onTogglePiP ? (
+                                                <button
+                                                    onClick={() => {
+                                                        onTogglePiP();
+                                                        setShowMoreMenu(false);
+                                                    }}
+                                                    className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${pipActive
+                                                        ? isLight
+                                                            ? "bg-blue-600 text-white"
+                                                            : "bg-emerald-500 text-[#02140B]"
+                                                        : isLight
+                                                            ? "text-black/75 hover:bg-black/5"
+                                                            : "text-white/85 hover:bg-white/5"
+                                                        }`}
+                                                    type="button"
+                                                >
+                                                    <span className="w-4 text-center font-bold">PiP</span>
+                                                    <span>{pipActive ? "Close PiP" : "Open PiP"}</span>
+                                                </button>
+                                            ) : null}
                                         </div>
                                     </div>
                                 )}
@@ -269,6 +318,8 @@ export function LiveKitBottomBar(props: {
                                 >
                                     <Icon name="settings" theme={theme} className="w-5 h-5" />
                                 </button>
+
+                                {pipDesktopBtn}
                             </div>
                         </div>
 

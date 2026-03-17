@@ -28,19 +28,20 @@ import ChatPanel from "../components/ChatPanel";
 import { IntentionsPanel } from "../components/IntentionsPanel";
 import { UserProfileModal } from "../components/UserProfileModal";
 import RoomTopBar from "../components/RoomTopBar";
-import VideoControls, {
+import { LiveKitBottomBar } from "./Livekit/LiveKitBottomBar";
+import {
   Icon,
-  REACTION_EMOJI,
+  reactionEmoji as REACTION_EMOJI,
   type ReactionType,
   type RoomTheme,
-} from "../components/VideoControls";
+} from "./Livekit/LiveKitUI";
 
-import { PreJoinModal } from "./LiveKit/PreJoinModalLiveKit";
-import { RoomSettingsModalLiveKit } from "./LiveKit/RoomSettingsModalLiveKit";
-import { VideoTile } from "./LiveKit/VideoTileLiveKit";
-import { RemoteAudioRenderer } from "./LiveKit/RemoteAudioRendererLiveKit";
-import ReportParticipantModalLiveKit from "./LiveKit/ReportParticipantModalLiveKit";
-import { buildScreenShareTiles } from "./LiveKit/screenShareHelpers";
+import { PreJoinModal } from "./Livekit/PreJoinModalLiveKit";
+import { RoomSettingsModalLiveKit } from "./Livekit/RoomSettingsModalLiveKit";
+import { VideoTile } from "./Livekit/VideoTileLiveKit";
+import { RemoteAudioRenderer } from "./Livekit/RemoteAudioRendererLiveKit";
+import ReportParticipantModalLiveKit from "./Livekit/ReportParticipantModalLiveKit";
+import { buildScreenShareTiles } from "./Livekit/screenShareHelpers";
 
 import {
   useElementSize,
@@ -48,7 +49,7 @@ import {
   P2PLayoutSizing,
   MobileFillLayoutSizing,
   MobileStackLayoutSizing,
-} from "./LiveKit/sizing";
+} from "./Livekit/sizing";
 
 type FxMode = "off" | "blur" | "bg";
 
@@ -708,21 +709,21 @@ const LK_CAPTURE_FPS = 24;
 const CHAT_MSG_TABLE = "session_chat_messages";
 const REACTION_TTL_MS = 2750;
 
-declare global {
-  interface Window {
-    documentPictureInPicture?: {
-      window?: Window | null;
-      requestWindow(options?: {
-        width?: number;
-        height?: number;
-        disallowReturnToOpener?: boolean;
-        preferInitialWindowPlacement?: boolean;
-      }): Promise<Window>;
-      addEventListener?: (type: string, listener: (event: any) => void) => void;
-      removeEventListener?: (type: string, listener: (event: any) => void) => void;
-    };
-  }
-}
+type DocumentPiPApi = {
+  window?: Window | null;
+  requestWindow(options?: {
+    width?: number;
+    height?: number;
+    disallowReturnToOpener?: boolean;
+    preferInitialWindowPlacement?: boolean;
+  }): Promise<Window>;
+  addEventListener?: (type: string, listener: (event: any) => void) => void;
+  removeEventListener?: (type: string, listener: (event: any) => void) => void;
+};
+
+type WindowWithDocumentPiP = Window & {
+  documentPictureInPicture?: DocumentPiPApi;
+};
 
 export function RoomPageLiveKit() {
   const { id } = useParams<{ id: string }>();
@@ -2101,7 +2102,7 @@ export function RoomPageLiveKit() {
 
   const pipSupported =
     typeof window !== "undefined" &&
-    typeof window.documentPictureInPicture !== "undefined";
+    typeof (window as WindowWithDocumentPiP).documentPictureInPicture !== "undefined";
 
   useEffect(() => {
     setOpenTileAdminMenuId((prev) => (prev && tiles.some((t) => t.id === prev) ? prev : null));
@@ -2506,6 +2507,7 @@ export function RoomPageLiveKit() {
 
       await leaveAttendanceOnce({ keepalive: false });
       releaseTabPresence();
+      await closePictureInPicture().catch(() => { });
     }
   };
 
@@ -2904,7 +2906,14 @@ export function RoomPageLiveKit() {
       return;
     }
 
-    const pipWindow = await window.documentPictureInPicture!.requestWindow({
+    const pipApi = (window as WindowWithDocumentPiP).documentPictureInPicture;
+
+    if (!pipApi) {
+      alert("Document Picture-in-Picture is not supported in this browser.");
+      return;
+    }
+
+    const pipWindow = await pipApi.requestWindow({
       width: 480,
       height: 320,
       preferInitialWindowPlacement: true,
@@ -4182,6 +4191,13 @@ export function RoomPageLiveKit() {
   // UI colors
   const pageBg = isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white";
   const panelBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#0B1220]/55 border border-white/5";
+  const bottomBarBg = isLight
+    ? "bg-white/85 border border-black/10"
+    : "bg-[#0B1220]/80 border border-white/10";
+
+  const ctlBtnBase = isLight
+    ? "bg-black/5 hover:bg-black/10 text-black/75"
+    : "bg-white/5 hover:bg-white/10 text-white/90";
 
   // participants list search
   const [participantsSearch, setParticipantsSearch] = useState("");
@@ -4678,61 +4694,37 @@ return (
 
       <RemoteAudioRenderer room={roomState} audioOutputId={selectedAudioOutputId} />
 
-      {connected && (
-        <div className="fixed left-3 sm:left-4 bottom-[calc(92px+env(safe-area-inset-bottom))] z-[55]">
-          <button
-            type="button"
-            onClick={() => {
-              if (pipOpen) {
-                closePictureInPicture().catch(() => { });
-              } else {
-                openPictureInPicture().catch((e) => {
-                  console.error("openPictureInPicture failed", e);
-                  alert(String((e as any)?.message || e || "pip_open_failed"));
-                });
-              }
-            }}
-            disabled={!pipSupported}
-            className={[
-              "px-3 py-2 rounded-2xl shadow-xl text-[12px] font-semibold border backdrop-blur",
-              isLight
-                ? "bg-white/90 border-black/10 text-black/80 hover:bg-white"
-                : "bg-[#020617]/70 border-white/10 text-white/85 hover:bg-[#020617]/85",
-              !pipSupported ? "opacity-50 cursor-not-allowed" : "",
-            ].join(" ")}
-            title={
-              pipSupported
-                ? pipOpen
-                  ? "Close picture-in-picture"
-                  : "Open picture-in-picture"
-                : "Document PiP is not supported in this browser"
-            }
-          >
-            {pipOpen ? "Close PiP" : "Open PiP"}
-          </button>
-        </div>
-      )}
-
-      <VideoControls
+      <LiveKitBottomBar
         theme={theme}
-        tile={false}
-        mutedAudio={!micOn}
-        mutedVideo={!camOn}
-        isScreenSharing={screenShareOn}
+        isLight={isLight}
+        bottomBarBg={bottomBarBg}
+        ctlBtnBase={ctlBtnBase}
+        connected={connected}
+        micOn={micOn}
+        camOn={camOn}
+        screenShareOn={screenShareOn}
         unreadChat={unreadChat}
-        onOpenTab={(tab) => openRightTab(tab)}
-        onToggleAudio={() => toggleMic().catch?.(() => { })}
-        onToggleVideo={() => toggleCam().catch?.(() => { })}
-        onToggleScreenShare={() => toggleScreenShare().catch?.(() => { })}
-        onToggleTile={() => setSettingsOpen(true)}
-        onReloadRoom={() => {
-          disconnectRoom().catch(() => { });
-          setLkToken("");
-          setJoinRequested(false);
-          setPrejoinOpen(true);
+        showPiP={connected && pipSupported}
+        pipActive={pipOpen}
+        onTogglePiP={() => {
+          if (pipOpen) {
+            closePictureInPicture().catch(() => { });
+          } else {
+            openPictureInPicture().catch((e) => {
+              console.error("openPictureInPicture failed", e);
+              alert(String((e as any)?.message || e || "pip_open_failed"));
+            });
+          }
         }}
+        onToggleMic={() => toggleMic().catch(() => { })}
+        onToggleCam={() => toggleCam().catch(() => { })}
+        onToggleScreenShare={() => toggleScreenShare().catch(() => { })}
+        onLeave={() => leave().catch(() => { })}
+        onOpenParticipants={() => openRightTab("participants")}
+        onOpenChat={() => openRightTab("chat")}
+        onOpenIntentions={() => openRightTab("intentions")}
+        onOpenSettings={() => setSettingsOpen(true)}
         onSendReaction={sendReaction}
-        onLeave={() => leave().catch?.(() => { })}
       />
 
       <RoomSettingsModalLiveKit
