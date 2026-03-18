@@ -66,7 +66,7 @@
 // - Jitsi init effect no longer depends on full `session` object or `sessionTitle`.
 // - Subject / displayName / avatar are updated via separate lightweight effects.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 
@@ -974,6 +974,17 @@ export default function RoomPageIFrame() {
         [session?.jitsi_domain]
     );
 
+    const applySessionSnapshot = useCallback((nextSession: any) => {
+        if (!nextSession) return;
+
+        setSession(nextSession);
+
+        const built = buildStageStateFromSession(nextSession);
+        setStages(built.stages);
+        setStagebarStartTime(built.stagebarStartTime);
+        setStagebarCycleSeconds(built.stagebarCycleSeconds);
+    }, []);
+
     // ===============================
     // Join gate logic (based on sessions.start_time)
     // ===============================
@@ -1577,12 +1588,7 @@ export default function RoomPageIFrame() {
                 const { data, error } = isUuid ? await q.eq("id", idOrSlug).single() : await q.eq("custom_slug", slug).single();
 
                 if (data && !error) {
-                    setSession(data);
-
-                    const built = buildStageStateFromSession(data);
-                    setStages(built.stages);
-                    setStagebarStartTime(built.stagebarStartTime);
-                    setStagebarCycleSeconds(built.stagebarCycleSeconds);
+                    applySessionSnapshot(data);
                 } else {
                     setSession(null);
                 }
@@ -1593,7 +1599,52 @@ export default function RoomPageIFrame() {
                 setLoading(false);
             }
         })();
-    }, [idOrSlug]);
+    }, [idOrSlug, applySessionSnapshot]);
+
+    useEffect(() => {
+        if (authStatus !== "authed") return;
+        if (!sessionId) return;
+
+        let cancelled = false;
+
+        const refetchSession = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from("sessions")
+                    .select(SESSION_SELECT_STR)
+                    .eq("id", sessionId)
+                    .single();
+
+                if (cancelled) return;
+                if (error || !data) return;
+
+                applySessionSnapshot(data);
+            } catch {
+                // no-op
+            }
+        };
+
+        const ch = supabase
+            .channel(`session-sync:${sessionId}`)
+            .on(
+                "postgres_changes",
+                {
+                    event: "UPDATE",
+                    schema: "public",
+                    table: "sessions",
+                    filter: `id=eq.${sessionId}`,
+                },
+                () => {
+                    void refetchSession();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            cancelled = true;
+            safeRemoveRealtimeChannel(ch);
+        };
+    }, [authStatus, sessionId, applySessionSnapshot]);
 
     // ============================================
     // STAGES TIMER + SOUND
@@ -2377,12 +2428,7 @@ export default function RoomPageIFrame() {
                 duration_minutes: nextDurationMinutes,
             };
 
-            setSession(nextSession);
-
-            const built = buildStageStateFromSession(nextSession);
-            setStages(built.stages);
-            setStagebarStartTime(built.stagebarStartTime);
-            setStagebarCycleSeconds(built.stagebarCycleSeconds);
+            applySessionSnapshot(nextSession);
 
             setTimelineEditorOpen(false);
             setUiMessage("Timeline updated ✅");
