@@ -7,6 +7,7 @@ import RoomPageIFrame from "./pages/RoomPageIFrame";
 import RoomPageLiveKit from "./pages/RoomPageLiveKit";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
+import UpdatePasswordPage from "./pages/UpdatePasswordPage";
 import ProfilePage from "./pages/ProfilePage";
 import FocusPlanPage from "./pages/FocusPlanPage";
 import PublicProfilePage from "./pages/PublicProfilePage";
@@ -178,6 +179,7 @@ export default function App() {
         <Route path="/room-livekit/:id" element={<RoomPageLiveKit />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/update-password" element={<UpdatePasswordPage />} />
 
         {/* OAuth */}
         <Route

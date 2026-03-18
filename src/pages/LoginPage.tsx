@@ -19,6 +19,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetSent, setResetSent] = useState("");
   const [oauthLoading, setOauthLoading] = useState<null | "google" | "facebook">(null);
 
   const inApp = useMemo(() => isInAppBrowser(), []);
@@ -57,6 +59,37 @@ export default function LoginPage() {
       alert(error?.message || "Failed to log in");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    const cleanEmail = email.trim();
+
+    if (!cleanEmail) {
+      alert("Enter your email first, then press Forgot Password.");
+      return;
+    }
+
+    try {
+      setResetLoading(true);
+      setResetSent("");
+
+      const redirectTo = `${window.location.origin}/update-password`;
+
+      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+        redirectTo,
+      });
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      setResetSent("Password reset email sent. Please check your inbox.");
+    } catch (error: any) {
+      alert(error?.message || "Failed to send password reset email");
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -150,17 +183,26 @@ export default function LoginPage() {
             placeholder="Enter your email"
             className="w-full border border-gray-300 rounded-[16px] px-4 py-3 mb-4 bg-white focus:ring-2 focus:ring-[#2F2F2F] outline-none"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              if (resetSent) setResetSent("");
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && password) handleLogin();
+            }}
           />
 
           <label className="block text-sm mb-1">Your password</label>
-          <div className="relative mb-6">
+          <div className="relative mb-3">
             <input
               type={showPass ? "text" : "password"}
               placeholder="Enter your password here"
               className="w-full border border-gray-300 rounded-[16px] px-4 py-3 bg-white focus:ring-2 focus:ring-[#2F2F2F] outline-none"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleLogin();
+              }}
             />
             <button
               type="button"
@@ -171,6 +213,23 @@ export default function LoginPage() {
             </button>
           </div>
 
+          <div className="mb-6 flex items-center justify-center">
+            <button
+              type="button"
+              onClick={handleForgotPassword}
+              disabled={resetLoading}
+              className="text-center text-sm text-gray-500 hover:text-gray-700 hover:underline disabled:opacity-60"
+            >
+              {resetLoading ? "Sending reset email…" : "Forgot Password?"}
+            </button>
+          </div>
+
+          {resetSent && (
+            <div className="mb-4 rounded-[16px] border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+              {resetSent}
+            </div>
+          )}
+
           <button
             onClick={handleLogin}
             disabled={loading}
@@ -178,10 +237,6 @@ export default function LoginPage() {
           >
             {loading ? "Loading…" : "Login"}
           </button>
-
-          <p className="text-center text-sm text-gray-500 mb-8 cursor-pointer">
-            Forgot Password?
-          </p>
 
           <button
             onClick={loginWithGoogle}
