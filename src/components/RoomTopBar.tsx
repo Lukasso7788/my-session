@@ -1,10 +1,6 @@
 import React from "react";
 import { SessionStageBar } from "./SessionStageBar";
-import {
-    Icon,
-    ParticipantsSmartIcon,
-    type RoomTheme,
-} from "../pages/livekit/LiveKitUI";
+import { Icon, ParticipantsSmartIcon, type RoomTheme } from "./VideoControls";
 
 type HostProfile = {
     id: string;

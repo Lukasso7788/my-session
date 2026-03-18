@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Icon, reactionEmoji, ReactionType, RoomTheme } from "./LiveKitUI";
+import { Icon, reactionEmoji, type ReactionType, type RoomTheme } from "./LiveKitUI";
 
 export function LiveKitBottomBar(props: {
     theme: RoomTheme;
@@ -125,6 +125,12 @@ export function LiveKitBottomBar(props: {
         }
     }, []);
 
+    const pipIconTheme: RoomTheme = pipActive
+        ? isLight
+            ? "dark"
+            : "light"
+        : theme;
+
     const chatBtn = (
         <button
             onClick={onOpenChat}
@@ -151,7 +157,7 @@ export function LiveKitBottomBar(props: {
             <button
                 onClick={onTogglePiP}
                 className={
-                    "h-10 sm:h-11 min-w-[54px] px-3 rounded-2xl flex items-center justify-center transition text-[12px] font-semibold " +
+                    "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
                     (pipActive
                         ? isLight
                             ? "bg-blue-600 hover:bg-blue-700 text-white"
@@ -161,7 +167,10 @@ export function LiveKitBottomBar(props: {
                 title={pipActive ? "Close picture-in-picture" : "Open picture-in-picture"}
                 type="button"
             >
-                PiP
+                <Icon name="pip" theme={pipIconTheme} className="w-5 h-5" />
+                <span className="sr-only">
+                    {pipActive ? "Close picture-in-picture" : "Open picture-in-picture"}
+                </span>
             </button>
         ) : null;
 
@@ -202,14 +211,16 @@ export function LiveKitBottomBar(props: {
                                 {showMoreMenu && (
                                     <div className="absolute bottom-[76px] sm:bottom-[86px] left-0">
                                         <div
-                                            className={`w-[240px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}
+                                            className={`w-[240px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
+                                                }`}
                                         >
                                             <button
                                                 onClick={() => {
                                                     onOpenParticipants();
                                                     setShowMoreMenu(false);
                                                 }}
-                                                className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
+                                                className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"
+                                                    }`}
                                                 type="button"
                                             >
                                                 <Icon name="participants" theme={theme} className="w-4 h-4 opacity-90" />
@@ -221,7 +232,8 @@ export function LiveKitBottomBar(props: {
                                                     onOpenChat();
                                                     setShowMoreMenu(false);
                                                 }}
-                                                className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
+                                                className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"
+                                                    }`}
                                                 type="button"
                                             >
                                                 <Icon name="chat" theme={theme} className="w-4 h-4 opacity-90" />
@@ -243,7 +255,8 @@ export function LiveKitBottomBar(props: {
                                                     onOpenIntentions();
                                                     setShowMoreMenu(false);
                                                 }}
-                                                className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
+                                                className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"
+                                                    }`}
                                                 type="button"
                                             >
                                                 <Icon name="intentions" theme={theme} className="w-4 h-4 opacity-90" />
@@ -257,7 +270,8 @@ export function LiveKitBottomBar(props: {
                                                     onOpenSettings();
                                                     setShowMoreMenu(false);
                                                 }}
-                                                className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"}`}
+                                                className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"
+                                                    }`}
                                                 type="button"
                                             >
                                                 <Icon name="settings" theme={theme} className="w-4 h-4 opacity-90" />
@@ -271,16 +285,16 @@ export function LiveKitBottomBar(props: {
                                                         setShowMoreMenu(false);
                                                     }}
                                                     className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${pipActive
-                                                        ? isLight
-                                                            ? "bg-blue-600 text-white"
-                                                            : "bg-emerald-500 text-[#02140B]"
-                                                        : isLight
-                                                            ? "text-black/75 hover:bg-black/5"
-                                                            : "text-white/85 hover:bg-white/5"
+                                                            ? isLight
+                                                                ? "bg-blue-600 text-white"
+                                                                : "bg-emerald-500 text-[#02140B]"
+                                                            : isLight
+                                                                ? "text-black/75 hover:bg-black/5"
+                                                                : "text-white/85 hover:bg-white/5"
                                                         }`}
                                                     type="button"
                                                 >
-                                                    <span className="w-4 text-center font-bold">PiP</span>
+                                                    <Icon name="pip" theme={pipIconTheme} className="w-4 h-4 opacity-90" />
                                                     <span>{pipActive ? "Close PiP" : "Open PiP"}</span>
                                                 </button>
                                             ) : null}
@@ -334,7 +348,11 @@ export function LiveKitBottomBar(props: {
                                 title="Toggle mic"
                                 type="button"
                             >
-                                <Icon name={!micOn ? "mic-off" : "mic-on"} theme={!micOn ? "dark" : theme} className="w-5 h-5" />
+                                <Icon
+                                    name={!micOn ? "mic-off" : "mic-on"}
+                                    theme={!micOn ? "dark" : theme}
+                                    className="w-5 h-5"
+                                />
                             </button>
 
                             <button
@@ -347,7 +365,11 @@ export function LiveKitBottomBar(props: {
                                 title="Toggle camera"
                                 type="button"
                             >
-                                <Icon name={!camOn ? "camera-off" : "camera-on"} theme={!camOn ? "dark" : theme} className="w-5 h-5" />
+                                <Icon
+                                    name={!camOn ? "camera-off" : "camera-on"}
+                                    theme={!camOn ? "dark" : theme}
+                                    className="w-5 h-5"
+                                />
                             </button>
 
                             <button
@@ -360,7 +382,11 @@ export function LiveKitBottomBar(props: {
                                 title="Share screen"
                                 type="button"
                             >
-                                <Icon name="screen-share" theme={screenShareOn ? "dark" : theme} className="w-5 h-5" />
+                                <Icon
+                                    name="screen-share"
+                                    theme={screenShareOn ? "dark" : theme}
+                                    className="w-5 h-5"
+                                />
                             </button>
 
                             <div className="relative" ref={reactionsMenuRef}>
@@ -375,22 +401,25 @@ export function LiveKitBottomBar(props: {
 
                                 {showReactionsMenu && (
                                     <div
-                                        className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}
+                                        className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
+                                            }`}
                                     >
-                                        {(["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown"] as ReactionType[]).map((t) => (
-                                            <button
-                                                key={t}
-                                                onClick={() => {
-                                                    emitReaction(t);
-                                                    setShowReactionsMenu(false);
-                                                }}
-                                                className="hover:scale-[1.06] transition"
-                                                title={t}
-                                                type="button"
-                                            >
-                                                {reactionEmoji[t]}
-                                            </button>
-                                        ))}
+                                        {(["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown"] as ReactionType[]).map(
+                                            (t) => (
+                                                <button
+                                                    key={t}
+                                                    onClick={() => {
+                                                        emitReaction(t);
+                                                        setShowReactionsMenu(false);
+                                                    }}
+                                                    className="hover:scale-[1.06] transition"
+                                                    title={t}
+                                                    type="button"
+                                                >
+                                                    {reactionEmoji[t]}
+                                                </button>
+                                            )
+                                        )}
                                     </div>
                                 )}
                             </div>
