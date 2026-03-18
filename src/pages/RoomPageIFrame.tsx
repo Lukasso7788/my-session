@@ -1043,6 +1043,11 @@ export default function RoomPageIFrame() {
         const v = String(roomDisplayName || userName || "").trim();
         return v || "User";
     }, [roomDisplayName, userName]);
+    const effectiveDisplayNameRef = useRef<string>("User");
+
+    useEffect(() => {
+        effectiveDisplayNameRef.current = effectiveDisplayName || "User";
+    }, [effectiveDisplayName]);
     useEffect(() => {
         setRoomDisplayName("");
     }, [sessionId]);
@@ -2395,7 +2400,6 @@ export default function RoomPageIFrame() {
         if (authStatus !== "authed") return;
         if (!sessionId) return;
         if (!iframeContainerRef.current) return;
-        if (!effectiveDisplayName) return;
         if (!canJoinNow) return;
 
         let cancelled = false;
@@ -2403,6 +2407,8 @@ export default function RoomPageIFrame() {
 
         (async () => {
             try {
+                const initialDisplayName = effectiveDisplayNameRef.current || "User";
+
                 setLastErr("");
                 setApiReady(false);
                 setInPrejoin(true);
@@ -2434,7 +2440,7 @@ export default function RoomPageIFrame() {
                     domains,
                     roomName,
                     parentNode: parent,
-                    userName: effectiveDisplayName,
+                    userName: initialDisplayName,
                     userAvatarUrl: userAvatarUrl || "",
                     subject: sessionTitle,
                     cssPathOnJitsiDomain: JITSI_CUSTOM_CSS_PATH,
@@ -2483,7 +2489,7 @@ export default function RoomPageIFrame() {
                     setApiReady(true);
 
                     try {
-                        api.executeCommand?.("displayName", effectiveDisplayName);
+                        api.executeCommand?.("displayName", effectiveDisplayNameRef.current || "User");
                     } catch { }
 
                     if (userAvatarUrl) {
@@ -2595,7 +2601,7 @@ export default function RoomPageIFrame() {
 
             clearVideoQualityTimer();
         };
-    }, [authStatus, sessionId, jitsiKey, roomName, effectiveDisplayName, canJoinNow, preferredJitsiDomain, navigate, sessionTitle, userAvatarUrl]);
+    }, [authStatus, sessionId, jitsiKey, roomName, canJoinNow, preferredJitsiDomain, navigate, sessionTitle, userAvatarUrl]);
 
     // lightweight Jitsi updates that should NOT recreate the room
     useEffect(() => {
