@@ -8,7 +8,6 @@ import {
   Track,
   RemoteParticipant,
   LocalVideoTrack,
-  RemoteAudioTrackPublication,
   LocalTrackPublication,
   RemoteTrackPublication,
   createLocalVideoTrack,
@@ -19,8 +18,13 @@ import {
   VirtualBackground,
   supportsBackgroundProcessors,
   supportsModernBackgroundProcessors,
-  type TrackProcessor,
 } from "@livekit/track-processors";
+
+const makeProcessorForMode = (mode: FxMode, blur: number, bgUrl: string) => {
+  if (mode === "off") return null;
+  if (mode === "blur") return BackgroundBlur(Math.max(1, Math.min(30, Math.round(blur || 12)))) as any;
+  return VirtualBackground(bgUrl || DEFAULT_BG_DATA_URL) as any;
+};
 
 import { supabase } from "../lib/supabase";
 
@@ -28,20 +32,20 @@ import ChatPanel from "../components/ChatPanel";
 import { IntentionsPanel } from "../components/IntentionsPanel";
 import { UserProfileModal } from "../components/UserProfileModal";
 import RoomTopBar from "../components/RoomTopBar";
-import { LiveKitBottomBar } from "./Livekit/LiveKitBottomBar";
+import { LiveKitBottomBar } from "./livekit/LiveKitBottomBar";
 import {
   Icon,
   reactionEmoji as REACTION_EMOJI,
   type ReactionType,
   type RoomTheme,
-} from "./Livekit/LiveKitUI";
+} from "./livekit/LiveKitUI";
 
-import { PreJoinModal } from "./Livekit/PreJoinModalLiveKit";
-import { RoomSettingsModalLiveKit } from "./Livekit/RoomSettingsModalLiveKit";
-import { VideoTile } from "./Livekit/VideoTileLiveKit";
-import { RemoteAudioRenderer } from "./Livekit/RemoteAudioRendererLiveKit";
-import ReportParticipantModalLiveKit from "./Livekit/ReportParticipantModalLiveKit";
-import { buildScreenShareTiles } from "./Livekit/screenShareHelpers";
+import { PreJoinModal } from "./livekit/PreJoinModalLiveKit";
+import { RoomSettingsModalLiveKit } from "./livekit/RoomSettingsModalLiveKit";
+import { VideoTile } from "./livekit/VideoTileLiveKit";
+import { RemoteAudioRenderer } from "./livekit/RemoteAudioRendererLiveKit";
+import ReportParticipantModalLiveKit from "./livekit/ReportParticipantModalLiveKit";
+import { buildScreenShareTiles } from "./livekit/screenShareHelpers";
 
 import {
   useElementSize,
@@ -49,7 +53,7 @@ import {
   P2PLayoutSizing,
   MobileFillLayoutSizing,
   MobileStackLayoutSizing,
-} from "./Livekit/sizing";
+} from "./livekit/sizing";
 
 type FxMode = "off" | "blur" | "bg";
 
@@ -2411,7 +2415,7 @@ export function RoomPageLiveKit() {
 
     room.remoteParticipants.forEach((rp: RemoteParticipant) => {
       const allVideoPubs = Array.from(rp.videoTrackPublications.values()) as RemoteTrackPublication[];
-      const allAudioPubs = Array.from(rp.audioTrackPublications.values()) as RemoteAudioTrackPublication[];
+      const allAudioPubs = Array.from(rp.audioTrackPublications.values()) as RemoteTrackPublication[];
 
       const camPub = allVideoPubs.find((p: any) => p.source === Track.Source.Camera) as any;
       const micPub = allAudioPubs.find((p: any) => p.source === Track.Source.Microphone) as any;

@@ -1,6 +1,10 @@
 import React from "react";
 import { SessionStageBar } from "./SessionStageBar";
-import { Icon, ParticipantsSmartIcon, type RoomTheme } from "./VideoControls";
+import {
+    Icon,
+    ParticipantsSmartIcon,
+    type RoomTheme,
+} from "../pages/livekit/LiveKitUI";
 
 type HostProfile = {
     id: string;
@@ -11,13 +15,13 @@ type HostProfile = {
 
 type Stage = {
     name: string;
-    duration: number; // minutes (display/legacy)
+    duration: number;
     color: string;
     type: string;
     durationSeconds?: number;
 };
 
-export default function RoomTopBar(props: {
+type RoomTopBarProps = {
     theme: RoomTheme;
 
     sessionTitle: string;
@@ -39,7 +43,9 @@ export default function RoomTopBar(props: {
 
     canEditTimeline?: boolean;
     onEditTimeline?: () => void;
-}) {
+};
+
+export default function RoomTopBar(props: RoomTopBarProps) {
     const {
         theme,
         sessionTitle,
@@ -63,29 +69,36 @@ export default function RoomTopBar(props: {
     const topBarBg = isLight
         ? "bg-white/85 border border-black/10"
         : "bg-[#111827]/40 border border-white/5";
+
     const chipBg = isLight
         ? "bg-black/5 border border-black/10"
-        : "bg-[#0B1220]/70 border border-white/5";
+        : "bg-[#0B1220]/70 border border-white/10";
+
     const strongText = isLight ? "text-black/85" : "text-[#F3F4F6]/90";
+
+    const mutedText = isLight ? "text-black/65" : "text-white/80";
 
     const switchTrack =
         "w-[84px] max-[480px]:w-[78px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
     const switchTrackCls = isLight
         ? "bg-black/5 border-black/10 hover:bg-black/10"
         : "bg-white/5 border-white/10 hover:bg-white/10";
+
     const switchThumb =
         "absolute top-[2px] w-[26px] h-[26px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center";
+
     const thumbTranslate = isLight ? "translateX(0px)" : "translateX(52px)";
 
     const showTimer = !isSilentRoom && stages.length > 0 && !!stagebarStartTime;
     const showStageBar = !isSilentRoom && stages.length > 0 && !!stagebarStartTime;
-    const showEditTimeline = showStageBar && !!canEditTimeline && typeof onEditTimeline === "function";
+    const showEditTimeline =
+        showStageBar && !!canEditTimeline && typeof onEditTimeline === "function";
 
     return (
         <div className={`flex w-full rounded-2xl overflow-visible ${topBarBg}`}>
             <div className="flex-1 px-4 sm:px-6 py-3 sm:py-4 overflow-visible">
                 <div className="flex flex-col gap-2 max-[480px]:gap-2 overflow-visible">
-                    {/* ROW 1: title + count */}
+                    {/* row 1 */}
                     <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0">
                             <div className="flex items-center gap-2 min-w-0">
@@ -99,7 +112,7 @@ export default function RoomTopBar(props: {
                                     className={[
                                         "shrink-0 px-2 py-[3px] rounded-lg border text-[12px] font-inter",
                                         chipBg,
-                                        isLight ? "text-black/65" : "text-white/80",
+                                        mutedText,
                                     ].join(" ")}
                                     title="Participants now / limit"
                                 >
@@ -108,7 +121,7 @@ export default function RoomTopBar(props: {
                             </div>
                         </div>
 
-                        {/* desktop+ */}
+                        {/* desktop */}
                         <div className="hidden min-[481px]:flex items-center gap-2 shrink-0">
                             {showTimer && (
                                 <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}>
@@ -118,10 +131,7 @@ export default function RoomTopBar(props: {
                                         className="w-4 h-4 opacity-80"
                                         alt="Timer"
                                     />
-                                    <span
-                                        className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"
-                                            }`}
-                                    >
+                                    <span className={`font-inter text-[13px] ${mutedText}`}>
                                         {remainingTime || "--:--"}
                                     </span>
                                 </div>
@@ -138,7 +148,7 @@ export default function RoomTopBar(props: {
                                     <Icon
                                         name={isLight ? "theme-sun" : "theme-moon"}
                                         theme={theme}
-                                        className="w-4 h-4"
+                                        className="w-4 h-4 text-black/80"
                                     />
                                 </div>
                             </button>
@@ -165,7 +175,7 @@ export default function RoomTopBar(props: {
                         </div>
                     </div>
 
-                    {/* ROW 2: mobile controls */}
+                    {/* row 2 mobile */}
                     <div className="min-[481px]:hidden flex items-center justify-start gap-2">
                         {showTimer && (
                             <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}>
@@ -175,10 +185,7 @@ export default function RoomTopBar(props: {
                                     className="w-4 h-4 opacity-80"
                                     alt="Timer"
                                 />
-                                <span
-                                    className={`font-inter text-[13px] ${isLight ? "text-black/75" : "text-white/90"
-                                        }`}
-                                >
+                                <span className={`font-inter text-[13px] ${mutedText}`}>
                                     {remainingTime || "--:--"}
                                 </span>
                             </div>
@@ -195,7 +202,7 @@ export default function RoomTopBar(props: {
                                 <Icon
                                     name={isLight ? "theme-sun" : "theme-moon"}
                                     theme={theme}
-                                    className="w-4 h-4"
+                                    className="w-4 h-4 text-black/80"
                                 />
                             </div>
                         </button>
@@ -216,7 +223,7 @@ export default function RoomTopBar(props: {
                         )}
                     </div>
 
-                    {/* ROW 3: stage bar */}
+                    {/* row 3 stage bar */}
                     {showStageBar && (
                         <div className="mt-1 max-[480px]:mt-1 w-full overflow-visible pt-1">
                             <div className="group relative">
