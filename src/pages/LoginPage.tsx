@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Eye, EyeOff, ExternalLink } from "lucide-react";
 import HeaderLite from "../components/HeaderLite";
 
@@ -12,8 +12,32 @@ function isInAppBrowser() {
   );
 }
 
+function getPasswordResetRedirectUrl() {
+  if (typeof window === "undefined") {
+    return "https://mysession.club/update-password";
+  }
+
+  const host = window.location.hostname.toLowerCase();
+  const isLocalhost = host === "localhost" || host === "127.0.0.1";
+
+  if (isLocalhost) {
+    return `${window.location.origin}/update-password`;
+  }
+
+  return "https://mysession.club/update-password";
+}
+
+function getOauthRedirectUrl() {
+  if (typeof window === "undefined") {
+    return "https://mysession.club/auth/callback";
+  }
+
+  return `${window.location.origin}/auth/callback`;
+}
+
 export default function LoginPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -25,18 +49,31 @@ export default function LoginPage() {
 
   const inApp = useMemo(() => isInAppBrowser(), []);
 
+  const redirectAfterLogin = useMemo(() => {
+    const raw = String(searchParams.get("redirect") || "").trim();
+
+    if (!raw) return "/sessions";
+    if (!raw.startsWith("/")) return "/sessions";
+    if (raw.startsWith("//")) return "/sessions";
+
+    return raw;
+  }, [searchParams]);
+
   useEffect(() => {
     (async () => {
       try {
         const { data } = await supabase.auth.getUser();
-        if (data.user) navigate("/sessions");
+        if (data.user) {
+          navigate(redirectAfterLogin, { replace: true });
+        }
       } catch { }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [navigate, redirectAfterLogin]);
 
   const handleLogin = async () => {
-    if (!email || !password) {
+    const cleanEmail = email.trim();
+
+    if (!cleanEmail || !password) {
       alert("Please enter email and password");
       return;
     }
@@ -45,7 +82,7 @@ export default function LoginPage() {
       setLoading(true);
 
       const { error } = await supabase.auth.signInWithPassword({
-        email,
+        email: cleanEmail,
         password,
       });
 
@@ -54,7 +91,7 @@ export default function LoginPage() {
         return;
       }
 
-      navigate("/sessions");
+      navigate(redirectAfterLogin, { replace: true });
     } catch (error: any) {
       alert(error?.message || "Failed to log in");
     } finally {
@@ -74,7 +111,7 @@ export default function LoginPage() {
       setResetLoading(true);
       setResetSent("");
 
-      const redirectTo = `${window.location.origin}/update-password`;
+      const redirectTo = getPasswordResetRedirectUrl();
 
       const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
         redirectTo,
@@ -85,7 +122,9 @@ export default function LoginPage() {
         return;
       }
 
-      setResetSent("Password reset email sent. Please check your inbox.");
+      setResetSent(
+        "Password reset email sent. Please check your inbox and use the newest email."
+      );
     } catch (error: any) {
       alert(error?.message || "Failed to send password reset email");
     } finally {
@@ -97,7 +136,7 @@ export default function LoginPage() {
     try {
       setOauthLoading("google");
 
-      const redirectTo = `${window.location.origin}/auth/callback`;
+      const redirectTo = getOauthRedirectUrl();
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
@@ -122,7 +161,7 @@ export default function LoginPage() {
     try {
       setOauthLoading("facebook");
 
-      const redirectTo = `${window.location.origin}/auth/callback`;
+      const redirectTo = getOauthRedirectUrl();
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "facebook",
