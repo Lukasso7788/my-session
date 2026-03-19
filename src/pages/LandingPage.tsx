@@ -1,5 +1,6 @@
 // src/pages/LandingPage.tsx
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 /**
@@ -72,6 +73,122 @@ const sessionCtaClass = `
   hover:before:animate-[gradMove_2.8s_ease-in-out_infinite]
 `;
 
+type UseRevealOptions = {
+    threshold?: number | number[];
+    rootMargin?: string;
+    once?: boolean;
+};
+
+function useReveal({
+    threshold = 0.18,
+    rootMargin = "0px 0px -12% 0px",
+    once = true,
+}: UseRevealOptions = {}) {
+    const ref = useRef<HTMLDivElement | null>(null);
+    const [visible, setVisible] = useState(false);
+
+    useEffect(() => {
+        const el = ref.current;
+        if (!el) return;
+
+        if (typeof window === "undefined" || !("IntersectionObserver" in window)) {
+            setVisible(true);
+            return;
+        }
+
+        const observer = new IntersectionObserver(
+            (entries) => {
+                const entry = entries[0];
+                if (!entry) return;
+
+                if (entry.isIntersecting) {
+                    setVisible(true);
+                    if (once) observer.unobserve(entry.target);
+                } else if (!once) {
+                    setVisible(false);
+                }
+            },
+            { threshold, rootMargin }
+        );
+
+        observer.observe(el);
+
+        return () => observer.disconnect();
+    }, [threshold, rootMargin, once]);
+
+    return { ref, visible };
+}
+
+function useRafScrollY() {
+    const [scrollY, setScrollY] = useState(0);
+
+    useEffect(() => {
+        let raf = 0;
+
+        const update = () => {
+            raf = 0;
+            setScrollY(window.scrollY || window.pageYOffset || 0);
+        };
+
+        const onScroll = () => {
+            if (raf) return;
+            raf = window.requestAnimationFrame(update);
+        };
+
+        update();
+        window.addEventListener("scroll", onScroll, { passive: true });
+
+        return () => {
+            if (raf) window.cancelAnimationFrame(raf);
+            window.removeEventListener("scroll", onScroll);
+        };
+    }, []);
+
+    return scrollY;
+}
+
+function Reveal({
+    children,
+    className = "",
+    delay = 0,
+    y = 24,
+    scale = 0.985,
+    blur = 8,
+    duration = 720,
+    once = true,
+    rootMargin = "0px 0px -12% 0px",
+}: {
+    children: ReactNode;
+    className?: string;
+    delay?: number;
+    y?: number;
+    scale?: number;
+    blur?: number;
+    duration?: number;
+    once?: boolean;
+    rootMargin?: string;
+}) {
+    const { ref, visible } = useReveal({ once, rootMargin });
+
+    return (
+        <div
+            ref={ref}
+            className={`reveal-block ${visible ? "is-visible" : ""} ${className}`}
+            style={
+                {
+                    ["--reveal-delay" as any]: `${delay}ms`,
+                    ["--reveal-y" as any]: `${y}px`,
+                    ["--reveal-scale" as any]: scale,
+                    ["--reveal-blur" as any]: `${blur}px`,
+                    ["--reveal-duration" as any]: `${duration}ms`,
+                } as any
+            }
+        >
+            {children}
+        </div>
+    );
+}
+
 function SectionTitle({
     kicker,
     title,
@@ -132,7 +249,7 @@ function AccentPill({
 
     return (
         <span
-            className="inline-flex items-center gap-2 text-[12px] px-3 py-1 rounded-full border"
+            className="inline-flex items-center gap-2 text-[12px] px-3 py-1 rounded-full border transition-transform duration-300 will-change-transform hover:-translate-y-[1px]"
             style={{
                 borderColor: cfg.border,
                 background: cfg.bg,
@@ -173,7 +290,7 @@ function FeatureCard({
 
     return (
         <div
-            className="border border-[#DBD8D8] rounded-[24px] p-6 bg-white hover:bg-[#FAFAFA] transition relative overflow-hidden"
+            className="h-full border border-[#DBD8D8] rounded-[24px] p-6 bg-white hover:bg-[#FAFAFA] transition relative overflow-hidden motion-safe:hover:-translate-y-[4px] motion-safe:hover:shadow-[0_18px_50px_rgba(17,24,39,0.08)]"
             style={{ backgroundImage: softWash }}
         >
             {accentColor && (
@@ -230,7 +347,7 @@ function FormatCard({
 
     return (
         <div
-            className="border border-[#DBD8D8] rounded-[24px] bg-white p-6 relative overflow-hidden"
+            className="h-full border border-[#DBD8D8] rounded-[24px] bg-white p-6 relative overflow-hidden motion-safe:hover:-translate-y-[5px] motion-safe:hover:shadow-[0_22px_60px_rgba(17,24,39,0.09)] transition"
             style={{ backgroundImage: wash }}
         >
             <div
@@ -245,7 +362,7 @@ function FormatCard({
                     </div>
 
                     <div
-                        className="shrink-0 border rounded-[16px] w-12 h-12 flex items-center justify-center bg-white/60"
+                        className="shrink-0 border rounded-[16px] w-12 h-12 flex items-center justify-center bg-white/60 transition-transform duration-300 motion-safe:group-hover:scale-105"
                         style={{ borderColor: accentColor }}
                     >
                         <div className="w-5 h-5 rounded-full" style={{ backgroundColor: accentColor }} />
@@ -293,7 +410,7 @@ function MiniSessionCard({
                 : { border: "#FFD0D0", bg: "rgba(246,82,82,0.12)", fg: "#B91C1C" };
 
     return (
-        <div className="border border-[#DBD8D8] rounded-[28px] bg-white p-5 flex flex-col gap-4">
+        <div className="h-full border border-[#DBD8D8] rounded-[28px] bg-white p-5 flex flex-col gap-4 transition motion-safe:hover:-translate-y-[4px] motion-safe:hover:shadow-[0_18px_50px_rgba(17,24,39,0.08)]">
             <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                     <div className="text-[18px] md:text-[20px] font-semibold text-[#2F2F2F] leading-snug">
@@ -311,7 +428,7 @@ function MiniSessionCard({
                         <span>Starts in {startsIn}</span>
 
                         <span
-                            className="ml-0 md:ml-2 inline-flex items-center px-3 py-1 rounded-full border"
+                            className="ml-0 md:ml-2 inline-flex items-center px-3 py-1 rounded-full border transition-transform duration-300 hover:-translate-y-[1px]"
                             style={{ borderColor: tagCfg.border, background: tagCfg.bg, color: tagCfg.fg }}
                         >
                             {tag}
@@ -328,7 +445,7 @@ function MiniSessionCard({
                 </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex flex-col sm:flex-row gap-3 mt-auto">
                 <Link
                     to="/sessions"
                     className="h-12 rounded-full px-6 text-[14px] font-semibold border border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition w-full sm:w-auto inline-flex items-center justify-center"
@@ -399,11 +516,8 @@ function FocusParticles({ count = 26 }: { count?: number }) {
         });
     }, [count]);
 
-    const rootRef = useRef<HTMLDivElement | null>(null);
-
     return (
         <div
-            ref={rootRef}
             aria-hidden="true"
             className="focus-particles pointer-events-none absolute -inset-x-24 -top-40 h-[520px] md:h-[580px] overflow-hidden"
         >
@@ -433,6 +547,12 @@ function FocusParticles({ count = 26 }: { count?: number }) {
 }
 
 export default function LandingPage() {
+    const scrollY = useRafScrollY();
+
+    const heroAmbientShift = Math.min(scrollY * 0.12, 56);
+    const heroMeshShift = Math.min(scrollY * 0.08, 34);
+    const heroCardShift = Math.min(scrollY * 0.055, 24);
+
     const coreConceptLinks = [
         { text: "Body doubling", tone: "green" as const, to: "/body-doubling" },
         { text: "Online coworking", tone: "blue" as const, to: "/online-coworking" },
@@ -458,7 +578,7 @@ export default function LandingPage() {
         },
         {
             q: "Do I need to talk during sessions?",
-            a: "No. Talking is optional. The default is quiet focus with a lightweight structure: intention → focus blocks → recap.",
+            a: 'No. Talking is optional. The default is quiet focus with a lightweight structure: intention → focus blocks → recap.',
         },
         {
             q: "Is MySession similar to Focusmate?",
@@ -498,396 +618,480 @@ export default function LandingPage() {
             <main className="relative w-full px-3 md:px-6 lg:px-10 pb-16">
                 {/* HERO */}
                 <section className="pt-[92px] md:pt-[110px] pb-10 relative">
-                    <FocusParticles count={28} />
-                    <div aria-hidden="true" className="hero-mesh pointer-events-none absolute -inset-x-24 -top-40 h-[520px] md:h-[580px]" />
+                    <div
+                        className="pointer-events-none absolute inset-0"
+                        style={{ transform: `translate3d(0, ${heroAmbientShift}px, 0)` }}
+                    >
+                        <FocusParticles count={28} />
+                    </div>
+
                     <div
                         aria-hidden="true"
-                        className="pointer-events-none absolute -inset-x-24 -top-40 h-[520px] md:h-[580px]"
-                        style={{
-                            background:
-                                "radial-gradient(900px 420px at 50% 30%, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.86) 45%, rgba(255,255,255,1) 70%)",
-                        }}
-                    />
+                        className="pointer-events-none absolute inset-0"
+                        style={{ transform: `translate3d(0, ${heroMeshShift}px, 0)` }}
+                    >
+                        <div className="hero-mesh absolute -inset-x-24 -top-40 h-[520px] md:h-[580px]" />
+                        <div
+                            className="absolute -inset-x-24 -top-40 h-[520px] md:h-[580px]"
+                            style={{
+                                background:
+                                    "radial-gradient(900px 420px at 50% 30%, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.86) 45%, rgba(255,255,255,1) 70%)",
+                            }}
+                        />
+                    </div>
 
                     <div className="max-w-[980px] mx-auto text-center relative">
-                        <div className="flex flex-wrap items-center justify-center gap-2 mb-5">
-                            <AccentPill text="Body doubling" tone="green" />
-                            <AccentPill text="Online coworking" tone="blue" />
-                            <AccentPill text="Group focus sessions" tone="red" />
-                            <AccentPill text="Real-time AI assistant" tone="red" />
-                            <AccentPill text="$10/month" tone="neutral" />
-                        </div>
+                        <Reveal delay={0} y={18} blur={6}>
+                            <div className="flex flex-wrap items-center justify-center gap-2 mb-5">
+                                <AccentPill text="Body doubling" tone="green" />
+                                <AccentPill text="Online coworking" tone="blue" />
+                                <AccentPill text="Group focus sessions" tone="red" />
+                                <AccentPill text="Real-time AI assistant" tone="red" />
+                                <AccentPill text="$10/month" tone="neutral" />
+                            </div>
+                        </Reveal>
 
-                        <h1 className="text-[30px] md:text-[40px] xl:text-[52px] font-normal leading-tight">
-                            Live online body doubling
-                            <br className="hidden md:block" />
-                            &amp; group focus sessions — with real-time AI support.
-                        </h1>
+                        <Reveal delay={90} y={24} blur={8}>
+                            <h1 className="text-[30px] md:text-[40px] xl:text-[52px] font-normal leading-tight">
+                                Live online body doubling
+                                <br className="hidden md:block" />
+                                &amp; group focus sessions — with real-time AI support.
+                            </h1>
+                        </Reveal>
 
-                        <p className="mt-5 text-[14px] md:text-[16px] text-[#606060] leading-relaxed max-w-[940px] mx-auto">
-                            <span className="text-[#2F2F2F]">MySession is a platform for live online body doubling and group focus sessions.</span>{" "}
-                            Join silent coworking rooms (video-based accountability sessions), set a simple intention, and follow a structured focus format.{" "}
-                            <span className="text-[#2F2F2F]">Built-in real-time AI assistant (screenshare included)</span>{" "}
-                            helps you unblock the next step mid-session — without leaving the focus container.
-                        </p>
+                        <Reveal delay={170} y={24} blur={8}>
+                            <p className="mt-5 text-[14px] md:text-[16px] text-[#606060] leading-relaxed max-w-[940px] mx-auto">
+                                <span className="text-[#2F2F2F]">MySession is a platform for live online body doubling and group focus sessions.</span>{" "}
+                                Join silent coworking rooms (video-based accountability sessions), set a simple intention, and follow a structured focus format.{" "}
+                                <span className="text-[#2F2F2F]">Built-in real-time AI assistant (screenshare included)</span>{" "}
+                                helps you unblock the next step mid-session — without leaving the focus container.
+                            </p>
+                        </Reveal>
 
-                        <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-                            <Link
-                                to="/sessions"
-                                className={`
-                  h-12 rounded-full px-7 text-[14px] font-semibold
-                  bg-[#111827] text-white hover:opacity-90 transition
-                  w-full sm:w-auto inline-flex items-center justify-center
-                  ${sessionCtaClass}
-                `}
-                                style={{ ["--cta-grad" as any]: GRADIENT }}
-                            >
-                                <span className="relative z-10">Join a focus session</span>
-                            </Link>
+                        <Reveal delay={240} y={20} blur={6}>
+                            <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
+                                <Link
+                                    to="/sessions"
+                                    className={`
+                    h-12 rounded-full px-7 text-[14px] font-semibold
+                    bg-[#111827] text-white hover:opacity-90 transition
+                    w-full sm:w-auto inline-flex items-center justify-center
+                    ${sessionCtaClass}
+                  `}
+                                    style={{ ["--cta-grad" as any]: GRADIENT }}
+                                >
+                                    <span className="relative z-10">Join a focus session</span>
+                                </Link>
 
-                            <Link
-                                to="/ai-assistant"
-                                className="h-12 rounded-full px-7 text-[14px] font-semibold border border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition w-full sm:w-auto inline-flex items-center justify-center"
-                            >
-                                See AI assistant
-                            </Link>
-                        </div>
+                                <Link
+                                    to="/ai-assistant"
+                                    className="h-12 rounded-full px-7 text-[14px] font-semibold border border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition w-full sm:w-auto inline-flex items-center justify-center"
+                                >
+                                    See AI assistant
+                                </Link>
+                            </div>
+                        </Reveal>
 
-                        <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-                            <AccentPill text="Silent coworking" tone="neutral" />
-                            <AccentPill text="Focus sessions with video" tone="neutral" />
-                            <AccentPill text="Virtual coworking sessions" tone="neutral" />
-                            <AccentPill text="24/7 rooms" tone="blue" />
-                            <AccentPill text="Buddy tripling (3 people)" tone="green" />
-                        </div>
+                        <Reveal delay={320} y={18} blur={6}>
+                            <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+                                <AccentPill text="Silent coworking" tone="neutral" />
+                                <AccentPill text="Focus sessions with video" tone="neutral" />
+                                <AccentPill text="Virtual coworking sessions" tone="neutral" />
+                                <AccentPill text="24/7 rooms" tone="blue" />
+                                <AccentPill text="Buddy tripling (3 people)" tone="green" />
+                            </div>
+                        </Reveal>
                     </div>
 
                     {/* HERO VISUAL */}
-                    <div className="mt-10 max-w-[1100px] mx-auto relative">
-                        <div className="border border-[#DBD8D8] rounded-[32px] bg-white/70 backdrop-blur-[6px] p-4 md:p-6 shadow-[0_10px_30px_rgba(0,0,0,0.05)]">
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                {/* Left */}
-                                <div className="bg-white border border-[#EAEAEA] rounded-[24px] p-5 relative overflow-hidden">
-                                    <div
-                                        aria-hidden="true"
-                                        className="absolute -top-20 -left-20 w-56 h-56 rounded-full blur-3xl opacity-40"
-                                        style={{ backgroundColor: MS_GREEN }}
-                                    />
-                                    <div
-                                        aria-hidden="true"
-                                        className="absolute -bottom-24 -right-24 w-64 h-64 rounded-full blur-3xl opacity-35"
-                                        style={{ backgroundColor: MS_BLUE }}
-                                    />
-                                    <div className="relative">
-                                        <div className="flex items-center justify-between">
-                                            <div className="text-[14px] font-semibold">Intention → focus → recap</div>
-                                            <div className="text-[12px] text-[#606060]">Structure that keeps you moving</div>
-                                        </div>
-
-                                        <div className="mt-4 space-y-3">
-                                            <div className="rounded-[16px] border border-[#DBD8D8] p-4 bg-white/70">
-                                                <div className="text-[13px] font-semibold">Current intention: “Ship sessions polish”</div>
-                                                <div className="mt-2 text-[12px] text-[#606060]">Intention → stages → recap • progress tracked</div>
-                                                <div className="mt-3 h-2 rounded-full bg-[#F1F1F1] overflow-hidden">
-                                                    <div className="h-2 w-[62%] bg-[#111827]" />
-                                                </div>
-                                                <div className="mt-2 text-[12px] text-[#606060]">62% complete</div>
-                                            </div>
-
-                                            <div className="rounded-[16px] border border-[#DBD8D8] p-4 bg-white/70">
-                                                <div className="text-[13px] font-semibold">Body doubling (live presence)</div>
-                                                <div className="mt-2 text-[12px] text-[#606060] leading-relaxed">
-                                                    Work alongside others — less friction to start, more follow-through — without chatter.
-                                                </div>
-                                            </div>
-
-                                            <div className="rounded-[16px] border border-[#DBD8D8] p-4 bg-white/70">
-                                                <div className="text-[13px] font-semibold">AI assistant inside the loop</div>
-                                                <div className="mt-2 text-[12px] text-[#606060] leading-relaxed">
-                                                    If stuck mid-session: ask for the next step, break down tasks, or use screenshare context.
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Right */}
-                                <div className="bg-white border border-[#EAEAEA] rounded-[24px] p-5 flex flex-col relative overflow-hidden">
-                                    <div
-                                        aria-hidden="true"
-                                        className="absolute -top-24 -right-24 w-72 h-72 rounded-full blur-3xl opacity-35"
-                                        style={{ backgroundColor: MS_RED }}
-                                    />
-                                    <div className="relative flex items-center justify-between">
-                                        <div className="text-[14px] font-semibold">Real-time AI assistant</div>
-                                        <div className="text-[12px] text-[#606060]">Screenshare included</div>
-                                    </div>
-
-                                    <div className="relative mt-4 flex-1 rounded-[20px] border border-[#DBD8D8] bg-[#F6F6F6]/70 p-4">
-                                        <div className="text-[12px] text-[#606060]">
-                                            Built into the session workflow — it helps you decide “what next” without leaving the focus container.
-                                        </div>
-
-                                        <div className="mt-4 rounded-[16px] bg-white border border-[#EAEAEA] p-4">
+                    <Reveal delay={380} y={32} blur={10}>
+                        <div
+                            className="mt-10 max-w-[1100px] mx-auto relative"
+                            style={{ transform: `translate3d(0, ${heroCardShift}px, 0)` }}
+                        >
+                            <div className="hero-shell border border-[#DBD8D8] rounded-[32px] bg-white/70 backdrop-blur-[6px] p-4 md:p-6 shadow-[0_10px_30px_rgba(0,0,0,0.05)]">
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                    {/* Left */}
+                                    <div className="bg-white border border-[#EAEAEA] rounded-[24px] p-5 relative overflow-hidden transition motion-safe:hover:-translate-y-[4px] motion-safe:hover:shadow-[0_24px_60px_rgba(17,24,39,0.07)]">
+                                        <div
+                                            aria-hidden="true"
+                                            className="absolute -top-20 -left-20 w-56 h-56 rounded-full blur-3xl opacity-40"
+                                            style={{ backgroundColor: MS_GREEN }}
+                                        />
+                                        <div
+                                            aria-hidden="true"
+                                            className="absolute -bottom-24 -right-24 w-64 h-64 rounded-full blur-3xl opacity-35"
+                                            style={{ backgroundColor: MS_BLUE }}
+                                        />
+                                        <div className="relative">
                                             <div className="flex items-center justify-between">
-                                                <div className="text-[13px] font-semibold">Current block</div>
-                                                <div className="text-[12px] text-[#606060]">Deep work</div>
+                                                <div className="text-[14px] font-semibold">Intention → focus → recap</div>
+                                                <div className="text-[12px] text-[#606060]">Structure that keeps you moving</div>
                                             </div>
-                                            <div className="mt-3 h-2 rounded-full bg-[#F1F1F1] overflow-hidden">
-                                                <div className="h-2 w-[35%] bg-[#111827]" />
-                                            </div>
-                                            <div className="mt-2 text-[12px] text-[#606060]">Stage 2/4 • Keep moving — minimal UI, maximum focus</div>
-                                        </div>
 
-                                        <div className="mt-4 rounded-[16px] bg-white border border-[#EAEAEA] p-4">
-                                            <div className="text-[13px] font-semibold">Screenshare unblock</div>
-                                            <div className="mt-2 text-[12px] text-[#606060]">
-                                                Share your screen → ask what to do next → get a concrete next step, then continue the session.
+                                            <div className="mt-4 space-y-3">
+                                                <div className="rounded-[16px] border border-[#DBD8D8] p-4 bg-white/70 transition motion-safe:hover:-translate-y-[2px]">
+                                                    <div className="text-[13px] font-semibold">Current intention: “Ship sessions polish”</div>
+                                                    <div className="mt-2 text-[12px] text-[#606060]">Intention → stages → recap • progress tracked</div>
+                                                    <div className="mt-3 h-2 rounded-full bg-[#F1F1F1] overflow-hidden">
+                                                        <div className="hero-progress-fill h-2 w-[62%] bg-[#111827]" />
+                                                    </div>
+                                                    <div className="mt-2 text-[12px] text-[#606060]">62% complete</div>
+                                                </div>
+
+                                                <div className="rounded-[16px] border border-[#DBD8D8] p-4 bg-white/70 transition motion-safe:hover:-translate-y-[2px]">
+                                                    <div className="text-[13px] font-semibold">Body doubling (live presence)</div>
+                                                    <div className="mt-2 text-[12px] text-[#606060] leading-relaxed">
+                                                        Work alongside others — less friction to start, more follow-through — without chatter.
+                                                    </div>
+                                                </div>
+
+                                                <div className="rounded-[16px] border border-[#DBD8D8] p-4 bg-white/70 transition motion-safe:hover:-translate-y-[2px]">
+                                                    <div className="text-[13px] font-semibold">AI assistant inside the loop</div>
+                                                    <div className="mt-2 text-[12px] text-[#606060] leading-relaxed">
+                                                        If stuck mid-session: ask for the next step, break down tasks, or use screenshare context.
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
 
-                                    <div className="mt-4 flex flex-col sm:flex-row gap-3 relative">
-                                        <Link
-                                            to="/sessions"
-                                            className={`
-                        h-12 rounded-full px-6 text-[14px] font-semibold
-                        bg-[#111827] text-white hover:opacity-90 transition
-                        w-full sm:w-auto inline-flex items-center justify-center
-                        ${sessionCtaClass}
-                      `}
-                                            style={{ ["--cta-grad" as any]: GRADIENT }}
-                                        >
-                                            <span className="relative z-10">Browse sessions</span>
-                                        </Link>
+                                    {/* Right */}
+                                    <div className="bg-white border border-[#EAEAEA] rounded-[24px] p-5 flex flex-col relative overflow-hidden transition motion-safe:hover:-translate-y-[4px] motion-safe:hover:shadow-[0_24px_60px_rgba(17,24,39,0.07)]">
+                                        <div
+                                            aria-hidden="true"
+                                            className="absolute -top-24 -right-24 w-72 h-72 rounded-full blur-3xl opacity-35"
+                                            style={{ backgroundColor: MS_RED }}
+                                        />
+                                        <div className="relative flex items-center justify-between">
+                                            <div className="text-[14px] font-semibold">Real-time AI assistant</div>
+                                            <div className="text-[12px] text-[#606060]">Screenshare included</div>
+                                        </div>
 
-                                        <Link
-                                            to="/ai-assistant"
-                                            className="h-12 rounded-full px-6 text-[14px] font-semibold border border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition w-full sm:w-auto inline-flex items-center justify-center"
-                                        >
-                                            Learn AI assistant
-                                        </Link>
+                                        <div className="relative mt-4 flex-1 rounded-[20px] border border-[#DBD8D8] bg-[#F6F6F6]/70 p-4">
+                                            <div className="text-[12px] text-[#606060]">
+                                                Built into the session workflow — it helps you decide “what next” without leaving the focus container.
+                                            </div>
+
+                                            <div className="mt-4 rounded-[16px] bg-white border border-[#EAEAEA] p-4 transition motion-safe:hover:-translate-y-[2px]">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="text-[13px] font-semibold">Current block</div>
+                                                    <div className="text-[12px] text-[#606060]">Deep work</div>
+                                                </div>
+                                                <div className="mt-3 h-2 rounded-full bg-[#F1F1F1] overflow-hidden">
+                                                    <div className="hero-progress-fill h-2 w-[35%] bg-[#111827]" />
+                                                </div>
+                                                <div className="mt-2 text-[12px] text-[#606060]">Stage 2/4 • Keep moving — minimal UI, maximum focus</div>
+                                            </div>
+
+                                            <div className="mt-4 rounded-[16px] bg-white border border-[#EAEAEA] p-4 transition motion-safe:hover:-translate-y-[2px]">
+                                                <div className="text-[13px] font-semibold">Screenshare unblock</div>
+                                                <div className="mt-2 text-[12px] text-[#606060]">
+                                                    Share your screen → ask what to do next → get a concrete next step, then continue the session.
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-4 flex flex-col sm:flex-row gap-3 relative">
+                                            <Link
+                                                to="/sessions"
+                                                className={`
+                          h-12 rounded-full px-6 text-[14px] font-semibold
+                          bg-[#111827] text-white hover:opacity-90 transition
+                          w-full sm:w-auto inline-flex items-center justify-center
+                          ${sessionCtaClass}
+                        `}
+                                                style={{ ["--cta-grad" as any]: GRADIENT }}
+                                            >
+                                                <span className="relative z-10">Browse sessions</span>
+                                            </Link>
+
+                                            <Link
+                                                to="/ai-assistant"
+                                                className="h-12 rounded-full px-6 text-[14px] font-semibold border border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition w-full sm:w-auto inline-flex items-center justify-center"
+                                            >
+                                                Learn AI assistant
+                                            </Link>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </Reveal>
                 </section>
 
-                {/* CONCEPTS + AI (clean, user-facing) */}
+                {/* CONCEPTS + AI */}
                 <section className="py-10">
-                    <SectionTitle
-                        kicker="Start here"
-                        title="Body doubling is the core. AI helps when you’re stuck."
-                        subtitle="Join a live focus container (silent by default). Start with an intention, work in focus blocks, recap — and use the built-in AI assistant when you need the next step."
-                    />
+                    <Reveal>
+                        <SectionTitle
+                            kicker="Start here"
+                            title="Body doubling is the core. AI helps when you’re stuck."
+                            subtitle="Join a live focus container (silent by default). Start with an intention, work in focus blocks, recap — and use the built-in AI assistant when you need the next step."
+                        />
+                    </Reveal>
 
-                    <div className="mt-7 max-w-[980px] mx-auto flex flex-wrap items-center justify-center gap-2">
-                        {coreConceptLinks.map((c) => (
-                            <Link
-                                key={c.to}
-                                to={c.to}
-                                className="focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#111827]/20 rounded-full"
-                                aria-label={`Open ${c.text}`}
-                            >
-                                <AccentPill text={c.text} tone={c.tone} />
-                            </Link>
-                        ))}
-                    </div>
-
-                    <div className="mt-5 max-w-[980px] mx-auto">
-                        <div className="border border-[#DBD8D8] rounded-[20px] bg-white/80 backdrop-blur-[4px] px-5 py-4 flex flex-col md:flex-row items-center justify-between gap-3">
-                            <div className="text-[13px] text-[#606060]">
-                                <span className="font-semibold text-[#2F2F2F]">Built-in AI assistant:</span>{" "}
-                                get a concrete next step mid-session (screenshare optional) — without leaving the focus container.
-                            </div>
-
-                            <Link
-                                to={aiPillar.to}
-                                className={`
-                  h-10 rounded-full px-5 text-[13px] font-semibold
-                  bg-[#111827] text-white hover:opacity-90 transition inline-flex items-center justify-center
-                  ${sessionCtaClass}
-                `}
-                                style={{ ["--cta-grad" as any]: GRADIENT }}
-                            >
-                                <span className="relative z-10">Try AI assistant</span>
-                            </Link>
+                    <Reveal delay={80} y={20}>
+                        <div className="mt-7 max-w-[980px] mx-auto flex flex-wrap items-center justify-center gap-2">
+                            {coreConceptLinks.map((c, idx) => (
+                                <Reveal key={c.to} delay={idx * 55} y={14} blur={4} className="inline-block">
+                                    <Link
+                                        to={c.to}
+                                        className="focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#111827]/20 rounded-full"
+                                        aria-label={`Open ${c.text}`}
+                                    >
+                                        <AccentPill text={c.text} tone={c.tone} />
+                                    </Link>
+                                </Reveal>
+                            ))}
                         </div>
-                    </div>
+                    </Reveal>
 
-                    <div className="mt-4 text-center text-[12px] text-[#606060]">
-                        If you’re new: start with <span className="underline underline-offset-2">Body doubling</span>. If you’re stuck: open the{" "}
-                        <span className="underline underline-offset-2">AI assistant</span>.
-                    </div>
+                    <Reveal delay={140} y={24}>
+                        <div className="mt-5 max-w-[980px] mx-auto">
+                            <div className="border border-[#DBD8D8] rounded-[20px] bg-white/80 backdrop-blur-[4px] px-5 py-4 flex flex-col md:flex-row items-center justify-between gap-3 transition motion-safe:hover:-translate-y-[3px] motion-safe:hover:shadow-[0_16px_40px_rgba(17,24,39,0.06)]">
+                                <div className="text-[13px] text-[#606060]">
+                                    <span className="font-semibold text-[#2F2F2F]">Built-in AI assistant:</span>{" "}
+                                    get a concrete next step mid-session (screenshare optional) — without leaving the focus container.
+                                </div>
+
+                                <Link
+                                    to={aiPillar.to}
+                                    className={`
+                    h-10 rounded-full px-5 text-[13px] font-semibold
+                    bg-[#111827] text-white hover:opacity-90 transition inline-flex items-center justify-center
+                    ${sessionCtaClass}
+                  `}
+                                    style={{ ["--cta-grad" as any]: GRADIENT }}
+                                >
+                                    <span className="relative z-10">Try AI assistant</span>
+                                </Link>
+                            </div>
+                        </div>
+                    </Reveal>
+
+                    <Reveal delay={180} y={16} blur={4}>
+                        <div className="mt-4 text-center text-[12px] text-[#606060]">
+                            If you’re new: start with <span className="underline underline-offset-2">Body doubling</span>. If you’re stuck: open the{" "}
+                            <span className="underline underline-offset-2">AI assistant</span>.
+                        </div>
+                    </Reveal>
                 </section>
 
                 {/* FORMATS */}
                 <section className="py-12">
-                    <SectionTitle
-                        kicker="Formats"
-                        title="Choose the accountability level that fits your day."
-                        subtitle="Group sessions for energy, 24/7 rooms for always-available focus, and Buddy Tripling for a cozy circle of 3."
-                    />
+                    <Reveal>
+                        <SectionTitle
+                            kicker="Formats"
+                            title="Choose the accountability level that fits your day."
+                            subtitle="Group sessions for energy, 24/7 rooms for always-available focus, and Buddy Tripling for a cozy circle of 3."
+                        />
+                    </Reveal>
 
                     <div className="mt-10 grid grid-cols-1 lg:grid-cols-3 gap-4">
-                        <FormatCard
-                            accent="blue"
-                            title="Group focus sessions"
-                            desc="Join structured sessions with multiple people and stay accountable through shared presence."
-                            bullets={["Best for energy + momentum", "Clear structure (Pomodoro / Deep Work / Sprints)", "Join in seconds — no setup"]}
-                        />
-                        <FormatCard
-                            accent="green"
-                            title="24/7 Infinite Rooms"
-                            desc="Always open. Drop in anytime and focus inside a structured room — day or night."
-                            bullets={["No scheduling — just join", "Great for spontaneous motivation", "Reliable “focus place” whenever you need it"]}
-                        />
-                        <FormatCard
-                            accent="red"
-                            title="Buddy Tripling (3 people)"
-                            desc="A small, cozy circle for accountability. Easier to fill than larger group sessions — less friction, faster start."
-                            bullets={["Higher comfort, still real accountability", "Easier to match than big group sessions", "Great for recurring sessions + habit building"]}
-                        />
+                        <Reveal delay={0} className="h-full">
+                            <FormatCard
+                                accent="blue"
+                                title="Group focus sessions"
+                                desc="Join structured sessions with multiple people and stay accountable through shared presence."
+                                bullets={["Best for energy + momentum", "Clear structure (Pomodoro / Deep Work / Sprints)", "Join in seconds — no setup"]}
+                            />
+                        </Reveal>
+
+                        <Reveal delay={100} className="h-full">
+                            <FormatCard
+                                accent="green"
+                                title="24/7 Infinite Rooms"
+                                desc="Always open. Drop in anytime and focus inside a structured room — day or night."
+                                bullets={["No scheduling — just join", "Great for spontaneous motivation", "Reliable “focus place” whenever you need it"]}
+                            />
+                        </Reveal>
+
+                        <Reveal delay={200} className="h-full">
+                            <FormatCard
+                                accent="red"
+                                title="Buddy Tripling (3 people)"
+                                desc="A small, cozy circle for accountability. Easier to fill than larger group sessions — less friction, faster start."
+                                bullets={["Higher comfort, still real accountability", "Easier to match than big group sessions", "Great for recurring sessions + habit building"]}
+                            />
+                        </Reveal>
                     </div>
                 </section>
 
                 {/* HOW IT WORKS */}
                 <section className="py-12">
-                    <SectionTitle kicker="How it works" title="A simple flow that forces momentum." subtitle="Join fast — then the structure keeps you honest." />
+                    <Reveal>
+                        <SectionTitle
+                            kicker="How it works"
+                            title="A simple flow that forces momentum."
+                            subtitle="Join fast — then the structure keeps you honest."
+                        />
+                    </Reveal>
 
                     <div className="mt-10 grid grid-cols-1 lg:grid-cols-3 gap-4">
-                        <FeatureCard
-                            accent="blue"
-                            title="1) Join a session"
-                            desc="Pick a format that matches your day: groups, 24/7 rooms, or Buddy Tripling."
-                            bullets={["Schedule + filters", "Join instantly", "Zero setup friction"]}
-                        />
-                        <FeatureCard
-                            accent="green"
-                            title="2) Set intentions"
-                            desc="Write what you will finish. Track progress. Make the goal real."
-                            bullets={["Clear intention", "Progress tracking", "AI can help break it down"]}
-                        />
-                        <FeatureCard
-                            accent="red"
-                            title="3) Execute with AI help"
-                            desc="Work through the session format. If stuck — use AI (including screenshare) to unblock the next step."
-                            bullets={["Structured stages", "Less context switching", "Stay focused until completion"]}
-                        />
+                        <Reveal delay={0} className="h-full">
+                            <FeatureCard
+                                accent="blue"
+                                title="1) Join a session"
+                                desc="Pick a format that matches your day: groups, 24/7 rooms, or Buddy Tripling."
+                                bullets={["Schedule + filters", "Join instantly", "Zero setup friction"]}
+                            />
+                        </Reveal>
+
+                        <Reveal delay={100} className="h-full">
+                            <FeatureCard
+                                accent="green"
+                                title="2) Set intentions"
+                                desc="Write what you will finish. Track progress. Make the goal real."
+                                bullets={["Clear intention", "Progress tracking", "AI can help break it down"]}
+                            />
+                        </Reveal>
+
+                        <Reveal delay={200} className="h-full">
+                            <FeatureCard
+                                accent="red"
+                                title="3) Execute with AI help"
+                                desc="Work through the session format. If stuck — use AI (including screenshare) to unblock the next step."
+                                bullets={["Structured stages", "Less context switching", "Stay focused until completion"]}
+                            />
+                        </Reveal>
                     </div>
                 </section>
 
                 {/* LIVE PREVIEW */}
                 <section className="py-12">
-                    <SectionTitle kicker="Explore" title="See sessions — join in seconds." subtitle="This is the core product. Simple, fast, and structured." />
+                    <Reveal>
+                        <SectionTitle
+                            kicker="Explore"
+                            title="See sessions — join in seconds."
+                            subtitle="This is the core product. Simple, fast, and structured."
+                        />
+                    </Reveal>
 
-                    <div className="mt-10 border border-[#DBD8D8] rounded-[32px] p-4 md:p-8 bg-white/70 backdrop-blur-[6px]">
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                            <MiniSessionCard
-                                title="50/5/5 Deep work — 2 hours"
-                                tag="Deep work"
-                                tagColor="blue"
-                                host="Yaro"
-                                minutes={120}
-                                startsIn="44 mins"
-                                people={6}
-                            />
-                            <MiniSessionCard
-                                title="25/5 Pomodoro — 2 hours"
-                                tag="Pomodoro 25/5"
-                                tagColor="red"
-                                host="Yaro"
-                                minutes={120}
-                                startsIn="1 hour"
-                                people={4}
-                            />
-                            <MiniSessionCard
-                                title="15/3 Short sprints — 2 hours"
-                                tag="Short sprints"
-                                tagColor="green"
-                                host="Yaro"
-                                minutes={120}
-                                startsIn="2 hours"
-                                people={5}
-                            />
-                        </div>
+                    <Reveal delay={80}>
+                        <div className="mt-10 border border-[#DBD8D8] rounded-[32px] p-4 md:p-8 bg-white/70 backdrop-blur-[6px] shadow-[0_8px_30px_rgba(17,24,39,0.04)]">
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                                <Reveal delay={0} className="h-full">
+                                    <MiniSessionCard
+                                        title="50/5/5 Deep work — 2 hours"
+                                        tag="Deep work"
+                                        tagColor="blue"
+                                        host="Yaro"
+                                        minutes={120}
+                                        startsIn="44 mins"
+                                        people={6}
+                                    />
+                                </Reveal>
 
-                        <div className="mt-6 flex justify-center">
-                            <Link
-                                to="/sessions"
-                                className={`
-                  h-12 rounded-full px-7 text-[14px] font-semibold
-                  bg-[#111827] text-white hover:opacity-90 transition
-                  w-full sm:w-auto inline-flex items-center justify-center
-                  ${sessionCtaClass}
-                `}
-                                style={{ ["--cta-grad" as any]: GRADIENT }}
-                            >
-                                <span className="relative z-10">Open full schedule</span>
-                            </Link>
+                                <Reveal delay={90} className="h-full">
+                                    <MiniSessionCard
+                                        title="25/5 Pomodoro — 2 hours"
+                                        tag="Pomodoro 25/5"
+                                        tagColor="red"
+                                        host="Yaro"
+                                        minutes={120}
+                                        startsIn="1 hour"
+                                        people={4}
+                                    />
+                                </Reveal>
+
+                                <Reveal delay={180} className="h-full">
+                                    <MiniSessionCard
+                                        title="15/3 Short sprints — 2 hours"
+                                        tag="Short sprints"
+                                        tagColor="green"
+                                        host="Yaro"
+                                        minutes={120}
+                                        startsIn="2 hours"
+                                        people={5}
+                                    />
+                                </Reveal>
+                            </div>
+
+                            <Reveal delay={220} y={18} blur={5}>
+                                <div className="mt-6 flex justify-center">
+                                    <Link
+                                        to="/sessions"
+                                        className={`
+                      h-12 rounded-full px-7 text-[14px] font-semibold
+                      bg-[#111827] text-white hover:opacity-90 transition
+                      w-full sm:w-auto inline-flex items-center justify-center
+                      ${sessionCtaClass}
+                    `}
+                                        style={{ ["--cta-grad" as any]: GRADIENT }}
+                                    >
+                                        <span className="relative z-10">Open full schedule</span>
+                                    </Link>
+                                </div>
+                            </Reveal>
                         </div>
-                    </div>
+                    </Reveal>
                 </section>
 
                 {/* FAQ */}
                 <section className="py-12">
-                    <SectionTitle kicker="FAQ" title="Quick answers." subtitle="If you still have doubts — start with one session. That’s the best demo." />
+                    <Reveal>
+                        <SectionTitle
+                            kicker="FAQ"
+                            title="Quick answers."
+                            subtitle="If you still have doubts — start with one session. That’s the best demo."
+                        />
+                    </Reveal>
 
                     <div className="mt-10 max-w-[980px] mx-auto grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {faqItems.map((item) => (
-                            <div
-                                key={item.q}
-                                className="border border-[#DBD8D8] rounded-[24px] p-6 bg-white/80 backdrop-blur-[4px]"
-                            >
-                                <div className="text-[14px] font-semibold">{item.q}</div>
-                                <div className="mt-2 text-[13px] text-[#606060] leading-relaxed">{item.a}</div>
-                            </div>
+                        {faqItems.map((item, idx) => (
+                            <Reveal key={item.q} delay={idx * 55} className="h-full">
+                                <div className="h-full border border-[#DBD8D8] rounded-[24px] p-6 bg-white/80 backdrop-blur-[4px] transition motion-safe:hover:-translate-y-[3px] motion-safe:hover:shadow-[0_16px_40px_rgba(17,24,39,0.06)]">
+                                    <div className="text-[14px] font-semibold">{item.q}</div>
+                                    <div className="mt-2 text-[13px] text-[#606060] leading-relaxed">{item.a}</div>
+                                </div>
+                            </Reveal>
                         ))}
                     </div>
                 </section>
 
                 {/* FINAL CTA */}
                 <section className="pt-6 pb-4">
-                    <div className="border border-[#DBD8D8] rounded-[32px] p-6 md:p-10 bg-[#111827] text-white relative overflow-hidden">
-                        <div
-                            aria-hidden="true"
-                            className="absolute -inset-20 opacity-70"
-                            style={{
-                                background: `radial-gradient(600px 260px at 20% 40%, rgba(101,212,108,0.35), rgba(101,212,108,0.00) 70%),
-                           radial-gradient(520px 240px at 55% 30%, rgba(82,134,246,0.32), rgba(82,134,246,0.00) 70%),
-                           radial-gradient(520px 240px at 80% 60%, rgba(246,82,82,0.28), rgba(246,82,82,0.00) 70%)`,
-                            }}
-                        />
-                        <div className="max-w-[980px] mx-auto text-center relative">
-                            <div className="text-[24px] md:text-[32px] font-normal leading-tight">Start with one session. Ship something today.</div>
-                            <div className="mt-3 text-[14px] md:text-[16px] text-white/80">
-                                Join a session, set intentions, stay accountable — and keep momentum going.
-                            </div>
+                    <Reveal y={30} blur={10}>
+                        <div className="border border-[#DBD8D8] rounded-[32px] p-6 md:p-10 bg-[#111827] text-white relative overflow-hidden shadow-[0_18px_60px_rgba(17,24,39,0.14)]">
+                            <div
+                                aria-hidden="true"
+                                className="absolute -inset-20 opacity-70"
+                                style={{
+                                    background: `radial-gradient(600px 260px at 20% 40%, rgba(101,212,108,0.35), rgba(101,212,108,0.00) 70%),
+                             radial-gradient(520px 240px at 55% 30%, rgba(82,134,246,0.32), rgba(82,134,246,0.00) 70%),
+                             radial-gradient(520px 240px at 80% 60%, rgba(246,82,82,0.28), rgba(246,82,82,0.00) 70%)`,
+                                }}
+                            />
+                            <div className="max-w-[980px] mx-auto text-center relative">
+                                <div className="text-[24px] md:text-[32px] font-normal leading-tight">Start with one session. Ship something today.</div>
+                                <div className="mt-3 text-[14px] md:text-[16px] text-white/80">
+                                    Join a session, set intentions, stay accountable — and keep momentum going.
+                                </div>
 
-                            <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
-                                <Link
-                                    to="/sessions"
-                                    className={`
-                    h-12 rounded-full px-7 text-[14px] font-semibold
-                    bg-white text-[#111827] hover:opacity-90 transition
-                    w-full sm:w-auto inline-flex items-center justify-center
-                    ${sessionCtaClass}
-                  `}
-                                    style={{ ["--cta-grad" as any]: GRADIENT }}
-                                >
-                                    <span className="relative z-10">Join now</span>
-                                </Link>
+                                <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
+                                    <Link
+                                        to="/sessions"
+                                        className={`
+                      h-12 rounded-full px-7 text-[14px] font-semibold
+                      bg-white text-[#111827] hover:opacity-90 transition
+                      w-full sm:w-auto inline-flex items-center justify-center
+                      ${sessionCtaClass}
+                    `}
+                                        style={{ ["--cta-grad" as any]: GRADIENT }}
+                                    >
+                                        <span className="relative z-10">Join now</span>
+                                    </Link>
 
-                                <Link
-                                    to="/pricing"
-                                    className="h-12 rounded-full px-7 text-[14px] font-semibold border border-white text-white hover:bg-white hover:text-[#111827] transition w-full sm:w-auto inline-flex items-center justify-center"
-                                >
-                                    Subscribe $10/mo
-                                </Link>
+                                    <Link
+                                        to="/pricing"
+                                        className="h-12 rounded-full px-7 text-[14px] font-semibold border border-white text-white hover:bg-white hover:text-[#111827] transition w-full sm:w-auto inline-flex items-center justify-center"
+                                    >
+                                        Subscribe $10/mo
+                                    </Link>
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    </Reveal>
                 </section>
 
                 {/* Local CSS */}
@@ -899,6 +1103,63 @@ export default function LandingPage() {
             0% { background-position: 0% 50%; }
             50% { background-position: 100% 50%; }
             100% { background-position: 0% 50%; }
+          }
+
+          /* Reveal-on-scroll */
+          .reveal-block {
+            opacity: 0;
+            transform: translate3d(0, var(--reveal-y, 24px), 0) scale(var(--reveal-scale, 0.985));
+            filter: blur(var(--reveal-blur, 8px));
+            transition:
+              opacity var(--reveal-duration, 720ms) cubic-bezier(0.22, 1, 0.36, 1),
+              transform var(--reveal-duration, 720ms) cubic-bezier(0.22, 1, 0.36, 1),
+              filter var(--reveal-duration, 720ms) cubic-bezier(0.22, 1, 0.36, 1);
+            transition-delay: var(--reveal-delay, 0ms);
+            will-change: transform, opacity, filter;
+          }
+
+          .reveal-block.is-visible {
+            opacity: 1;
+            transform: translate3d(0, 0, 0) scale(1);
+            filter: blur(0);
+          }
+
+          /* Hero shell subtle shine */
+          .hero-shell {
+            position: relative;
+          }
+
+          .hero-shell::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            border-radius: 32px;
+            pointer-events: none;
+            background:
+              linear-gradient(120deg,
+                rgba(255,255,255,0) 15%,
+                rgba(255,255,255,0.38) 32%,
+                rgba(255,255,255,0) 52%);
+            transform: translateX(-48%);
+            animation: heroShine 7.4s ease-in-out infinite;
+            opacity: 0.72;
+          }
+
+          @keyframes heroShine {
+            0%, 18% { transform: translateX(-52%); opacity: 0; }
+            26% { opacity: 0.58; }
+            42% { transform: translateX(46%); opacity: 0.0; }
+            100% { transform: translateX(46%); opacity: 0; }
+          }
+
+          .hero-progress-fill {
+            transform-origin: left center;
+            animation: progressPulse 4.5s ease-in-out infinite;
+          }
+
+          @keyframes progressPulse {
+            0%, 100% { opacity: 0.95; transform: scaleX(1); }
+            50% { opacity: 1; transform: scaleX(1.015); }
           }
 
           /* HERO animated mesh */
@@ -991,8 +1252,21 @@ export default function LandingPage() {
           /* Reduce motion */
           @media (prefers-reduced-motion: reduce) {
             .session-cta:hover::before { animation: none !important; }
-            .hero-mesh { animation: none !important; }
-            .focus-dot, .focus-sweep { animation: none !important; }
+            .hero-mesh,
+            .focus-dot,
+            .focus-sweep,
+            .hero-shell::after,
+            .hero-progress-fill {
+              animation: none !important;
+            }
+
+            .reveal-block,
+            .reveal-block.is-visible {
+              opacity: 1 !important;
+              transform: none !important;
+              filter: none !important;
+              transition: none !important;
+            }
           }
         `}</style>
             </main>
