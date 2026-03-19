@@ -1,6 +1,6 @@
 // src/pages/LandingPage.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 /**
@@ -119,15 +119,21 @@ function useReveal({
     return { ref, visible };
 }
 
-function useRafScrollY() {
-    const [scrollY, setScrollY] = useState(0);
+function useScrollMetrics() {
+    const [metrics, setMetrics] = useState({ scrollY: 0, progress: 0 });
 
     useEffect(() => {
         let raf = 0;
 
         const update = () => {
             raf = 0;
-            setScrollY(window.scrollY || window.pageYOffset || 0);
+
+            const y = window.scrollY || window.pageYOffset || 0;
+            const doc = document.documentElement;
+            const max = Math.max(1, doc.scrollHeight - window.innerHeight);
+            const progress = Math.max(0, Math.min(1, y / max));
+
+            setMetrics({ scrollY: y, progress });
         };
 
         const onScroll = () => {
@@ -135,16 +141,23 @@ function useRafScrollY() {
             raf = window.requestAnimationFrame(update);
         };
 
+        const onResize = () => {
+            if (raf) window.cancelAnimationFrame(raf);
+            raf = window.requestAnimationFrame(update);
+        };
+
         update();
         window.addEventListener("scroll", onScroll, { passive: true });
+        window.addEventListener("resize", onResize);
 
         return () => {
             if (raf) window.cancelAnimationFrame(raf);
             window.removeEventListener("scroll", onScroll);
+            window.removeEventListener("resize", onResize);
         };
     }, []);
 
-    return scrollY;
+    return metrics;
 }
 
 function Reveal({
@@ -185,6 +198,32 @@ function Reveal({
             }
         >
             {children}
+        </div>
+    );
+}
+
+function ScrollProgressBar({ progress }: { progress: number }) {
+    return (
+        <div className="pointer-events-none fixed left-0 right-0 top-0 z-[80] h-[3px] bg-transparent">
+            <div
+                className="h-full origin-left"
+                style={{
+                    width: `${Math.max(0, Math.min(100, progress * 100))}%`,
+                    background: GRADIENT,
+                    boxShadow:
+                        "0 0 14px rgba(82,134,246,0.22), 0 0 22px rgba(101,212,108,0.16), 0 0 28px rgba(246,82,82,0.14)",
+                }}
+            />
+        </div>
+    );
+}
+
+function SectionSweep({ className = "" }: { className?: string }) {
+    return (
+        <div className={`pointer-events-none relative h-10 overflow-hidden ${className}`} aria-hidden="true">
+            <div className="section-sweep-line absolute inset-x-[8%] top-1/2 -translate-y-1/2 h-px" />
+            <div className="section-sweep-glow absolute left-[18%] top-1/2 -translate-y-1/2 w-28 h-28 rounded-full blur-3xl opacity-40" />
+            <div className="section-sweep-glow-alt absolute right-[14%] top-1/2 -translate-y-1/2 w-24 h-24 rounded-full blur-3xl opacity-35" />
         </div>
     );
 }
@@ -249,7 +288,7 @@ function AccentPill({
 
     return (
         <span
-            className="inline-flex items-center gap-2 text-[12px] px-3 py-1 rounded-full border transition-transform duration-300 will-change-transform hover:-translate-y-[1px]"
+            className="inline-flex items-center gap-2 text-[12px] px-3 py-1 rounded-full border transition-all duration-300 will-change-transform hover:-translate-y-[1px] hover:shadow-[0_8px_20px_rgba(17,24,39,0.05)]"
             style={{
                 borderColor: cfg.border,
                 background: cfg.bg,
@@ -290,7 +329,7 @@ function FeatureCard({
 
     return (
         <div
-            className="h-full border border-[#DBD8D8] rounded-[24px] p-6 bg-white hover:bg-[#FAFAFA] transition relative overflow-hidden motion-safe:hover:-translate-y-[4px] motion-safe:hover:shadow-[0_18px_50px_rgba(17,24,39,0.08)]"
+            className="fancy-card h-full border border-[#DBD8D8] rounded-[24px] p-6 bg-white hover:bg-[#FAFAFA] transition relative overflow-hidden motion-safe:hover:-translate-y-[4px] motion-safe:hover:shadow-[0_18px_50px_rgba(17,24,39,0.08)]"
             style={{ backgroundImage: softWash }}
         >
             {accentColor && (
@@ -347,11 +386,11 @@ function FormatCard({
 
     return (
         <div
-            className="h-full border border-[#DBD8D8] rounded-[24px] bg-white p-6 relative overflow-hidden motion-safe:hover:-translate-y-[5px] motion-safe:hover:shadow-[0_22px_60px_rgba(17,24,39,0.09)] transition"
+            className="fancy-card h-full border border-[#DBD8D8] rounded-[24px] bg-white p-6 relative overflow-hidden motion-safe:hover:-translate-y-[5px] motion-safe:hover:shadow-[0_22px_60px_rgba(17,24,39,0.09)] transition"
             style={{ backgroundImage: wash }}
         >
             <div
-                className="absolute -top-12 -right-12 w-40 h-40 rounded-full blur-2xl opacity-60"
+                className="absolute -top-12 -right-12 w-40 h-40 rounded-full blur-2xl opacity-60 animate-ambient-drift"
                 style={{ backgroundColor: accentColor }}
             />
             <div className="relative">
@@ -410,7 +449,7 @@ function MiniSessionCard({
                 : { border: "#FFD0D0", bg: "rgba(246,82,82,0.12)", fg: "#B91C1C" };
 
     return (
-        <div className="h-full border border-[#DBD8D8] rounded-[28px] bg-white p-5 flex flex-col gap-4 transition motion-safe:hover:-translate-y-[4px] motion-safe:hover:shadow-[0_18px_50px_rgba(17,24,39,0.08)]">
+        <div className="mini-session-card h-full border border-[#DBD8D8] rounded-[28px] bg-white p-5 flex flex-col gap-4 transition motion-safe:hover:-translate-y-[4px] motion-safe:hover:shadow-[0_18px_50px_rgba(17,24,39,0.08)]">
             <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                     <div className="text-[18px] md:text-[20px] font-semibold text-[#2F2F2F] leading-snug">
@@ -439,13 +478,13 @@ function MiniSessionCard({
                 <div className="hidden md:flex items-center gap-5">
                     <div className="w-px h-10 bg-[#D9D9D9]" />
                     <div className="text-center">
-                        <div className="text-[28px] font-bold text-[#2F2F2F]">{people}</div>
+                        <div className="session-people-count text-[28px] font-bold text-[#2F2F2F]">{people}</div>
                         <div className="text-[10px] text-[#606060] font-light -mt-1">in session</div>
                     </div>
                 </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-3 mt-auto">
+            <div className="mt-auto flex flex-col sm:flex-row gap-3">
                 <Link
                     to="/sessions"
                     className="h-12 rounded-full px-6 text-[14px] font-semibold border border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition w-full sm:w-auto inline-flex items-center justify-center"
@@ -547,11 +586,37 @@ function FocusParticles({ count = 26 }: { count?: number }) {
 }
 
 export default function LandingPage() {
-    const scrollY = useRafScrollY();
+    const { scrollY, progress } = useScrollMetrics();
 
     const heroAmbientShift = Math.min(scrollY * 0.12, 56);
     const heroMeshShift = Math.min(scrollY * 0.08, 34);
     const heroCardShift = Math.min(scrollY * 0.055, 24);
+
+    const heroSpotlightRef = useRef<HTMLDivElement | null>(null);
+    const [spotlight, setSpotlight] = useState({
+        x: 50,
+        y: 34,
+        active: false,
+    });
+
+    const handleHeroPointerMove = (e: ReactMouseEvent<HTMLDivElement>) => {
+        const el = heroSpotlightRef.current;
+        if (!el) return;
+
+        const rect = el.getBoundingClientRect();
+        const x = ((e.clientX - rect.left) / rect.width) * 100;
+        const y = ((e.clientY - rect.top) / rect.height) * 100;
+
+        setSpotlight({
+            x: Math.max(0, Math.min(100, x)),
+            y: Math.max(0, Math.min(100, y)),
+            active: true,
+        });
+    };
+
+    const handleHeroPointerLeave = () => {
+        setSpotlight((prev) => ({ ...prev, active: false }));
+    };
 
     const coreConceptLinks = [
         { text: "Body doubling", tone: "green" as const, to: "/body-doubling" },
@@ -578,7 +643,7 @@ export default function LandingPage() {
         },
         {
             q: "Do I need to talk during sessions?",
-            a: 'No. Talking is optional. The default is quiet focus with a lightweight structure: intention → focus blocks → recap.',
+            a: "No. Talking is optional. The default is quiet focus with a lightweight structure: intention → focus blocks → recap.",
         },
         {
             q: "Is MySession similar to Focusmate?",
@@ -600,6 +665,8 @@ export default function LandingPage() {
 
     return (
         <div className="min-h-screen bg-white text-[#2F2F2F] font-inter relative overflow-hidden">
+            <ScrollProgressBar progress={progress} />
+
             {/* Background pattern that fades out toward the bottom */}
             <div
                 aria-hidden="true"
@@ -706,21 +773,33 @@ export default function LandingPage() {
                     {/* HERO VISUAL */}
                     <Reveal delay={380} y={32} blur={10}>
                         <div
+                            ref={heroSpotlightRef}
+                            onMouseMove={handleHeroPointerMove}
+                            onMouseLeave={handleHeroPointerLeave}
                             className="mt-10 max-w-[1100px] mx-auto relative"
                             style={{ transform: `translate3d(0, ${heroCardShift}px, 0)` }}
                         >
-                            <div className="hero-shell border border-[#DBD8D8] rounded-[32px] bg-white/70 backdrop-blur-[6px] p-4 md:p-6 shadow-[0_10px_30px_rgba(0,0,0,0.05)]">
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            <div className="hero-shell border border-[#DBD8D8] rounded-[32px] bg-white/70 backdrop-blur-[6px] p-4 md:p-6 shadow-[0_10px_30px_rgba(0,0,0,0.05)] relative overflow-hidden">
+                                <div
+                                    aria-hidden="true"
+                                    className="hero-spotlight pointer-events-none absolute inset-0 transition-opacity duration-300"
+                                    style={{
+                                        opacity: spotlight.active ? 1 : 0.55,
+                                        background: `radial-gradient(500px 240px at ${spotlight.x}% ${spotlight.y}%, rgba(255,255,255,0.65), rgba(255,255,255,0.18) 32%, rgba(255,255,255,0) 72%)`,
+                                    }}
+                                />
+
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 relative">
                                     {/* Left */}
                                     <div className="bg-white border border-[#EAEAEA] rounded-[24px] p-5 relative overflow-hidden transition motion-safe:hover:-translate-y-[4px] motion-safe:hover:shadow-[0_24px_60px_rgba(17,24,39,0.07)]">
                                         <div
                                             aria-hidden="true"
-                                            className="absolute -top-20 -left-20 w-56 h-56 rounded-full blur-3xl opacity-40"
+                                            className="absolute -top-20 -left-20 w-56 h-56 rounded-full blur-3xl opacity-40 animate-ambient-drift"
                                             style={{ backgroundColor: MS_GREEN }}
                                         />
                                         <div
                                             aria-hidden="true"
-                                            className="absolute -bottom-24 -right-24 w-64 h-64 rounded-full blur-3xl opacity-35"
+                                            className="absolute -bottom-24 -right-24 w-64 h-64 rounded-full blur-3xl opacity-35 animate-ambient-drift-delayed"
                                             style={{ backgroundColor: MS_BLUE }}
                                         />
                                         <div className="relative">
@@ -760,7 +839,7 @@ export default function LandingPage() {
                                     <div className="bg-white border border-[#EAEAEA] rounded-[24px] p-5 flex flex-col relative overflow-hidden transition motion-safe:hover:-translate-y-[4px] motion-safe:hover:shadow-[0_24px_60px_rgba(17,24,39,0.07)]">
                                         <div
                                             aria-hidden="true"
-                                            className="absolute -top-24 -right-24 w-72 h-72 rounded-full blur-3xl opacity-35"
+                                            className="absolute -top-24 -right-24 w-72 h-72 rounded-full blur-3xl opacity-35 animate-ambient-drift"
                                             style={{ backgroundColor: MS_RED }}
                                         />
                                         <div className="relative flex items-center justify-between">
@@ -820,8 +899,15 @@ export default function LandingPage() {
                     </Reveal>
                 </section>
 
+                <SectionSweep className="mb-2" />
+
                 {/* CONCEPTS + AI */}
-                <section className="py-10">
+                <section className="py-10 relative">
+                    <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute left-[8%] top-10 w-44 h-44 rounded-full blur-3xl opacity-25 animate-ambient-drift"
+                        style={{ backgroundColor: MS_BLUE }}
+                    />
                     <Reveal>
                         <SectionTitle
                             kicker="Start here"
@@ -848,7 +934,7 @@ export default function LandingPage() {
 
                     <Reveal delay={140} y={24}>
                         <div className="mt-5 max-w-[980px] mx-auto">
-                            <div className="border border-[#DBD8D8] rounded-[20px] bg-white/80 backdrop-blur-[4px] px-5 py-4 flex flex-col md:flex-row items-center justify-between gap-3 transition motion-safe:hover:-translate-y-[3px] motion-safe:hover:shadow-[0_16px_40px_rgba(17,24,39,0.06)]">
+                            <div className="fancy-card border border-[#DBD8D8] rounded-[20px] bg-white/80 backdrop-blur-[4px] px-5 py-4 flex flex-col md:flex-row items-center justify-between gap-3 transition motion-safe:hover:-translate-y-[3px] motion-safe:hover:shadow-[0_16px_40px_rgba(17,24,39,0.06)]">
                                 <div className="text-[13px] text-[#606060]">
                                     <span className="font-semibold text-[#2F2F2F]">Built-in AI assistant:</span>{" "}
                                     get a concrete next step mid-session (screenshare optional) — without leaving the focus container.
@@ -877,8 +963,15 @@ export default function LandingPage() {
                     </Reveal>
                 </section>
 
+                <SectionSweep className="mb-2" />
+
                 {/* FORMATS */}
-                <section className="py-12">
+                <section className="py-12 relative">
+                    <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute right-[7%] top-[15%] w-52 h-52 rounded-full blur-3xl opacity-20 animate-ambient-drift-delayed"
+                        style={{ backgroundColor: MS_GREEN }}
+                    />
                     <Reveal>
                         <SectionTitle
                             kicker="Formats"
@@ -916,6 +1009,8 @@ export default function LandingPage() {
                         </Reveal>
                     </div>
                 </section>
+
+                <SectionSweep className="mb-2" />
 
                 {/* HOW IT WORKS */}
                 <section className="py-12">
@@ -957,8 +1052,15 @@ export default function LandingPage() {
                     </div>
                 </section>
 
+                <SectionSweep className="mb-2" />
+
                 {/* LIVE PREVIEW */}
-                <section className="py-12">
+                <section className="py-12 relative">
+                    <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute left-[10%] bottom-[12%] w-56 h-56 rounded-full blur-3xl opacity-18 animate-ambient-drift"
+                        style={{ backgroundColor: MS_RED }}
+                    />
                     <Reveal>
                         <SectionTitle
                             kicker="Explore"
@@ -968,8 +1070,14 @@ export default function LandingPage() {
                     </Reveal>
 
                     <Reveal delay={80}>
-                        <div className="mt-10 border border-[#DBD8D8] rounded-[32px] p-4 md:p-8 bg-white/70 backdrop-blur-[6px] shadow-[0_8px_30px_rgba(17,24,39,0.04)]">
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                        <div className="mt-10 border border-[#DBD8D8] rounded-[32px] p-4 md:p-8 bg-white/70 backdrop-blur-[6px] shadow-[0_8px_30px_rgba(17,24,39,0.04)] relative overflow-hidden">
+                            <div
+                                aria-hidden="true"
+                                className="absolute inset-x-[10%] top-0 h-px opacity-70"
+                                style={{ background: GRADIENT }}
+                            />
+
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 relative">
                                 <Reveal delay={0} className="h-full">
                                     <MiniSessionCard
                                         title="50/5/5 Deep work — 2 hours"
@@ -1027,8 +1135,15 @@ export default function LandingPage() {
                     </Reveal>
                 </section>
 
+                <SectionSweep className="mb-2" />
+
                 {/* FAQ */}
-                <section className="py-12">
+                <section className="py-12 relative">
+                    <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute right-[8%] top-[8%] w-52 h-52 rounded-full blur-3xl opacity-18 animate-ambient-drift-delayed"
+                        style={{ backgroundColor: MS_BLUE }}
+                    />
                     <Reveal>
                         <SectionTitle
                             kicker="FAQ"
@@ -1040,7 +1155,7 @@ export default function LandingPage() {
                     <div className="mt-10 max-w-[980px] mx-auto grid grid-cols-1 md:grid-cols-2 gap-4">
                         {faqItems.map((item, idx) => (
                             <Reveal key={item.q} delay={idx * 55} className="h-full">
-                                <div className="h-full border border-[#DBD8D8] rounded-[24px] p-6 bg-white/80 backdrop-blur-[4px] transition motion-safe:hover:-translate-y-[3px] motion-safe:hover:shadow-[0_16px_40px_rgba(17,24,39,0.06)]">
+                                <div className="faq-card h-full border border-[#DBD8D8] rounded-[24px] p-6 bg-white/80 backdrop-blur-[4px] transition motion-safe:hover:-translate-y-[3px] motion-safe:hover:shadow-[0_16px_40px_rgba(17,24,39,0.06)]">
                                     <div className="text-[14px] font-semibold">{item.q}</div>
                                     <div className="mt-2 text-[13px] text-[#606060] leading-relaxed">{item.a}</div>
                                 </div>
@@ -1062,6 +1177,7 @@ export default function LandingPage() {
                              radial-gradient(520px 240px at 80% 60%, rgba(246,82,82,0.28), rgba(246,82,82,0.00) 70%)`,
                                 }}
                             />
+                            <div className="final-cta-outline absolute inset-[1px] rounded-[31px] pointer-events-none" />
                             <div className="max-w-[980px] mx-auto text-center relative">
                                 <div className="text-[24px] md:text-[32px] font-normal leading-tight">Start with one session. Ship something today.</div>
                                 <div className="mt-3 text-[14px] md:text-[16px] text-white/80">
@@ -1136,13 +1252,19 @@ export default function LandingPage() {
             border-radius: 32px;
             pointer-events: none;
             background:
-              linear-gradient(120deg,
+              linear-gradient(
+                120deg,
                 rgba(255,255,255,0) 15%,
                 rgba(255,255,255,0.38) 32%,
-                rgba(255,255,255,0) 52%);
+                rgba(255,255,255,0) 52%
+              );
             transform: translateX(-48%);
             animation: heroShine 7.4s ease-in-out infinite;
             opacity: 0.72;
+          }
+
+          .hero-spotlight {
+            mix-blend-mode: screen;
           }
 
           @keyframes heroShine {
@@ -1160,6 +1282,131 @@ export default function LandingPage() {
           @keyframes progressPulse {
             0%, 100% { opacity: 0.95; transform: scaleX(1); }
             50% { opacity: 1; transform: scaleX(1.015); }
+          }
+
+          /* Decorative section sweep */
+          .section-sweep-line {
+            background: linear-gradient(
+              90deg,
+              rgba(101,212,108,0.00) 0%,
+              rgba(101,212,108,0.35) 16%,
+              rgba(82,134,246,0.28) 48%,
+              rgba(246,82,82,0.30) 78%,
+              rgba(246,82,82,0.00) 100%
+            );
+            opacity: 0.55;
+          }
+
+          .section-sweep-glow {
+            background: ${MS_BLUE};
+            animation: sweepGlow 10s ease-in-out infinite;
+          }
+
+          .section-sweep-glow-alt {
+            background: ${MS_GREEN};
+            animation: sweepGlowAlt 12s ease-in-out infinite;
+          }
+
+          @keyframes sweepGlow {
+            0%, 100% { transform: translate3d(-20px, -50%, 0) scale(0.92); opacity: 0.22; }
+            50% { transform: translate3d(28px, -50%, 0) scale(1.05); opacity: 0.42; }
+          }
+
+          @keyframes sweepGlowAlt {
+            0%, 100% { transform: translate3d(20px, -50%, 0) scale(0.9); opacity: 0.18; }
+            50% { transform: translate3d(-22px, -50%, 0) scale(1.06); opacity: 0.36; }
+          }
+
+          /* Fancy cards */
+          .fancy-card,
+          .faq-card,
+          .mini-session-card {
+            position: relative;
+          }
+
+          .fancy-card::after,
+          .faq-card::after,
+          .mini-session-card::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 260ms ease;
+            background:
+              linear-gradient(
+                135deg,
+                rgba(101,212,108,0.10),
+                rgba(82,134,246,0.06) 45%,
+                rgba(246,82,82,0.08)
+              );
+          }
+
+          .fancy-card:hover::after,
+          .faq-card:hover::after,
+          .mini-session-card:hover::after {
+            opacity: 1;
+          }
+
+          .faq-card::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 260ms ease;
+            background:
+              linear-gradient(
+                180deg,
+                rgba(82,134,246,0.05),
+                rgba(255,255,255,0)
+              );
+          }
+
+          .faq-card:hover::before {
+            opacity: 1;
+          }
+
+          /* Session count subtle pulse */
+          .session-people-count {
+            animation: peopleCountPulse 5.6s ease-in-out infinite;
+          }
+
+          @keyframes peopleCountPulse {
+            0%, 100% { transform: translate3d(0,0,0) scale(1); }
+            50% { transform: translate3d(0,-1px,0) scale(1.03); }
+          }
+
+          /* Final CTA inner animated outline */
+          .final-cta-outline {
+            box-shadow:
+              inset 0 0 0 1px rgba(255,255,255,0.06),
+              inset 0 0 30px rgba(255,255,255,0.03);
+          }
+
+          .final-cta-outline::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            background:
+              linear-gradient(
+                120deg,
+                rgba(255,255,255,0) 18%,
+                rgba(255,255,255,0.10) 34%,
+                rgba(255,255,255,0) 52%
+              );
+            transform: translateX(-55%);
+            animation: ctaSweep 8.6s ease-in-out infinite;
+          }
+
+          @keyframes ctaSweep {
+            0%, 20% { transform: translateX(-55%); opacity: 0; }
+            28% { opacity: 1; }
+            46% { transform: translateX(48%); opacity: 0; }
+            100% { transform: translateX(48%); opacity: 0; }
           }
 
           /* HERO animated mesh */
@@ -1249,14 +1496,36 @@ export default function LandingPage() {
             100% { transform: translateX(-8%) rotate(-8deg); opacity: 0.0; }
           }
 
+          /* Ambient drift */
+          .animate-ambient-drift {
+            animation: ambientDrift 14s ease-in-out infinite;
+          }
+
+          .animate-ambient-drift-delayed {
+            animation: ambientDrift 18s ease-in-out infinite reverse;
+          }
+
+          @keyframes ambientDrift {
+            0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+            25% { transform: translate3d(12px, -8px, 0) scale(1.03); }
+            50% { transform: translate3d(-8px, 10px, 0) scale(1.07); }
+            75% { transform: translate3d(6px, 6px, 0) scale(1.02); }
+          }
+
           /* Reduce motion */
           @media (prefers-reduced-motion: reduce) {
-            .session-cta:hover::before { animation: none !important; }
+            .session-cta:hover::before,
             .hero-mesh,
             .focus-dot,
             .focus-sweep,
             .hero-shell::after,
-            .hero-progress-fill {
+            .hero-progress-fill,
+            .section-sweep-glow,
+            .section-sweep-glow-alt,
+            .animate-ambient-drift,
+            .animate-ambient-drift-delayed,
+            .session-people-count,
+            .final-cta-outline::after {
               animation: none !important;
             }
 
