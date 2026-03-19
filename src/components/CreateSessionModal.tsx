@@ -6,6 +6,9 @@
 // ✅ Added host auto-booking after session creation
 // ✅ Added Session Studio multi-select + Ctrl/Cmd+C + Ctrl/Cmd+V duplication
 // ✅ Added sticky timeline + sticky block library
+// ✅ NEW: Save current Session Studio script into "My templates"
+// ✅ NEW: Load and apply "My templates" inside modal
+// ✅ NEW: Load and apply "My previous sessions" inside modal
 
 import {
   useState,
@@ -28,6 +31,9 @@ import {
   Users,
   CalendarDays,
   Repeat,
+  Bookmark,
+  Save,
+  History,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import type { SessionTemplate } from "../types/session";
@@ -40,7 +46,6 @@ interface CreateSessionModalProps {
 }
 
 // ✅ Fixed EU domain (no picker in UI)
-// If you later move domain selection to other sources / DB default, you can remove this field from insert.
 const FIXED_JITSI_DOMAIN = "jitsi.mysession.club";
 
 function nowLocalForDatetimeInput(): string {
@@ -70,7 +75,7 @@ function advanceLimitDate(now: Date) {
 function stepDaysForMode(mode: ScheduleMode) {
   if (mode === "daily") return 1;
   if (mode === "weekly") return 7;
-  return 0; // single
+  return 0;
 }
 
 function toLocalPreview(d: Date) {
@@ -93,7 +98,6 @@ function toLocalPreview(d: Date) {
 const SLUG_MIN = 3;
 const SLUG_MAX = 40;
 
-// allowed: a-z 0-9 - _
 function sanitizeSlug(input: string) {
   const raw = String(input || "").trim().toLowerCase();
   const spaced = raw.replace(/\s+/g, "-");
@@ -102,7 +106,7 @@ function sanitizeSlug(input: string) {
 }
 
 function isValidSlug(slug: string) {
-  if (!slug) return true; // empty = not used
+  if (!slug) return true;
   if (slug.length < SLUG_MIN || slug.length > SLUG_MAX) return false;
   return /^[a-z0-9][a-z0-9-_]*$/.test(slug);
 }
@@ -116,8 +120,8 @@ function ymdLocal(d: Date) {
 
 function makeDatedSlug(baseSlug: string, dateLocal: Date) {
   if (!baseSlug) return "";
-  const suffix = ymdLocal(dateLocal); // yyyy-mm-dd
-  const extra = 1 + suffix.length; // "-" + suffix
+  const suffix = ymdLocal(dateLocal);
+  const extra = 1 + suffix.length;
   const maxBase = Math.max(1, SLUG_MAX - extra);
   const trimmedBase =
     baseSlug.length > maxBase ? baseSlug.slice(0, maxBase) : baseSlug;
@@ -155,6 +159,34 @@ type StudioBlock = {
   title: string;
   note?: string;
   minutes: number;
+};
+
+type UserSessionTemplateRow = {
+  id: string;
+  user_id: string;
+  name: string;
+  description: string | null;
+  base_template_id: string | null;
+  source_session_id: string | null;
+  blocks: any;
+  default_title: string | null;
+  default_description: string | null;
+  default_max_participants: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type PreviousSessionRow = {
+  id: string;
+  title: string;
+  description: string | null;
+  template_id: string | null;
+  format: string | null;
+  schedule: any;
+  duration_minutes: number | null;
+  max_participants: number | null;
+  created_at: string | null;
+  start_time: string | null;
 };
 
 function uid() {
@@ -329,6 +361,20 @@ function formatMinutes(min: number) {
   return `${h}h ${mm}m`;
 }
 
+function formatShortDate(raw?: string | null) {
+  if (!raw) return "";
+  try {
+    return new Date(raw).toLocaleString(undefined, {
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return String(raw);
+  }
+}
+
 function SessionTimeline({ blocks }: { blocks: StudioBlock[] }) {
   const total = blocks.reduce((s, b) => s + (Number(b.minutes) || 0), 0);
 
@@ -431,7 +477,9 @@ export function CreateSessionModal({
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
   const [templates, setTemplates] = useState<SessionTemplate[]>([]);
   const [isCreating, setIsCreating] = useState(false);
+  const [isSavingUserTemplate, setIsSavingUserTemplate] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   // ---------- Scheduling in advance ----------
   const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("single");
@@ -456,6 +504,14 @@ export function CreateSessionModal({
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
   const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(null);
 
+  // ---------- My templates / previous sessions ----------
+  const [userTemplates, setUserTemplates] = useState<UserSessionTemplateRow[]>([]);
+  const [previousSessions, setPreviousSessions] = useState<PreviousSessionRow[]>([]);
+  const [selectedUserTemplateId, setSelectedUserTemplateId] = useState<string>("");
+  const [selectedPreviousSessionId, setSelectedPreviousSessionId] = useState<string>("");
+  const [saveTemplateName, setSaveTemplateName] = useState("");
+  const [saveTemplateDescription, setSaveTemplateDescription] = useState("");
+
   // DnD state
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
@@ -469,12 +525,12 @@ export function CreateSessionModal({
   // Scroll container ref (modal body)
   const modalScrollRef = useRef<HTMLDivElement | null>(null);
 
-  // Auto-scroll while dragging (refs to avoid re-render spam)
+  // Auto-scroll while dragging
   const autoScrollRafRef = useRef<number | null>(null);
   const autoScrollVelRef = useRef<number>(0);
   const draggingRef = useRef<boolean>(false);
 
-  // FLIP animation bookkeeping (only when we reorder)
+  // FLIP animation bookkeeping
   const flipPrevTopsRef = useRef<Record<string, number>>({});
   const flipArmedRef = useRef<boolean>(false);
 
@@ -488,8 +544,16 @@ export function CreateSessionModal({
     setScheduledAt("");
     setSelectedTemplate("");
     setTemplates([]);
+    setUserTemplates([]);
+    setPreviousSessions([]);
+    setSelectedUserTemplateId("");
+    setSelectedPreviousSessionId("");
+    setSaveTemplateName("");
+    setSaveTemplateDescription("");
     setIsCreating(false);
+    setIsSavingUserTemplate(false);
     setError(null);
+    setNotice(null);
 
     setMaxParticipants(DEFAULT_MAX_PARTICIPANTS);
     setCustomSlugInput("");
@@ -521,6 +585,13 @@ export function CreateSessionModal({
   useEffect(() => {
     if (!studioEnabled) setMaxParticipants(DEFAULT_MAX_PARTICIPANTS);
   }, [studioEnabled]);
+
+  useEffect(() => {
+    if (!studioEnabled) return;
+    if (!saveTemplateName.trim() && title.trim()) {
+      setSaveTemplateName(title.trim());
+    }
+  }, [studioEnabled, title, saveTemplateName]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -577,6 +648,23 @@ export function CreateSessionModal({
     [templates, selectedTemplate]
   );
 
+  const templateNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    templates.forEach((t) => {
+      if (t?.id) map.set(String(t.id), String((t as any).name || "Template"));
+    });
+    return map;
+  }, [templates]);
+
+  const applyStudioBlocks = useCallback((blocks: StudioBlock[]) => {
+    setStudioEnabled(true);
+    setStudioBlocks(blocks);
+    const firstId = blocks[0]?.id || null;
+    setSelectedBlockIds(firstId ? [firstId] : []);
+    setActiveBlockId(firstId);
+    setSelectionAnchorId(firstId);
+  }, []);
+
   const importFromTemplate = useCallback(() => {
     const tpl = selectedTemplateObj;
     const blocks =
@@ -584,11 +672,7 @@ export function CreateSessionModal({
       normalizeTemplateBlocks((tpl as any)?.schedule);
 
     if (blocks.length) {
-      setStudioBlocks(blocks);
-      const firstId = blocks[0]?.id || null;
-      setSelectedBlockIds(firstId ? [firstId] : []);
-      setActiveBlockId(firstId);
-      setSelectionAnchorId(firstId);
+      applyStudioBlocks(blocks);
     } else {
       const fallback = [
         {
@@ -627,12 +711,9 @@ export function CreateSessionModal({
           minutes: 3,
         },
       ];
-      setStudioBlocks(fallback);
-      setSelectedBlockIds([fallback[0].id]);
-      setActiveBlockId(fallback[0].id);
-      setSelectionAnchorId(fallback[0].id);
+      applyStudioBlocks(fallback);
     }
-  }, [selectedTemplateObj]);
+  }, [applyStudioBlocks, selectedTemplateObj]);
 
   const resetDefaultStudio = useCallback(() => {
     const next = [
@@ -686,11 +767,8 @@ export function CreateSessionModal({
         minutes: 3,
       },
     ];
-    setStudioBlocks(next);
-    setSelectedBlockIds([next[0].id]);
-    setActiveBlockId(next[0].id);
-    setSelectionAnchorId(next[0].id);
-  }, []);
+    applyStudioBlocks(next);
+  }, [applyStudioBlocks]);
 
   const clearStudio = useCallback(() => {
     setStudioBlocks([]);
@@ -729,7 +807,223 @@ export function CreateSessionModal({
     });
   }, []);
 
-  // DnD helpers (avoid dragging from inputs/buttons)
+  const loadModalData = useCallback(async () => {
+    if (!isOpen) return;
+
+    setError(null);
+
+    try {
+      const globalTemplatesPromise = supabase
+        .from("session_templates")
+        .select("*")
+        .order("total_duration", { ascending: true });
+
+      const userTemplatesPromise = profile?.id
+        ? supabase
+            .from("user_session_templates")
+            .select("*")
+            .eq("user_id", profile.id)
+            .order("updated_at", { ascending: false })
+        : Promise.resolve({ data: [], error: null } as any);
+
+      const previousSessionsPromise = profile?.id
+        ? supabase
+            .from("sessions")
+            .select(
+              "id,title,description,template_id,format,schedule,duration_minutes,max_participants,created_at,start_time"
+            )
+            .eq("host_id", profile.id)
+            .order("created_at", { ascending: false })
+            .limit(24)
+        : Promise.resolve({ data: [], error: null } as any);
+
+      const [globalTemplatesRes, userTemplatesRes, previousSessionsRes] =
+        await Promise.all([
+          globalTemplatesPromise,
+          userTemplatesPromise,
+          previousSessionsPromise,
+        ]);
+
+      if (globalTemplatesRes.error) {
+        console.error("❌ Error loading templates:", globalTemplatesRes.error);
+        setError("Failed to load templates.");
+      } else {
+        setTemplates(globalTemplatesRes.data || []);
+      }
+
+      if (userTemplatesRes?.error) {
+        console.error("❌ Error loading user templates:", userTemplatesRes.error);
+      } else {
+        setUserTemplates((userTemplatesRes?.data || []) as UserSessionTemplateRow[]);
+      }
+
+      if (previousSessionsRes?.error) {
+        console.error("❌ Error loading previous sessions:", previousSessionsRes.error);
+      } else {
+        setPreviousSessions(
+          (previousSessionsRes?.data || []) as PreviousSessionRow[]
+        );
+      }
+    } catch (e) {
+      console.error("❌ Error loading modal data:", e);
+      setError("Failed to load session data.");
+    }
+  }, [isOpen, profile?.id]);
+
+  const applyUserTemplate = useCallback(
+    (tpl: UserSessionTemplateRow) => {
+      const blocks = normalizeTemplateBlocks(tpl.blocks);
+
+      setSelectedUserTemplateId(tpl.id);
+      setSelectedPreviousSessionId("");
+
+      setTitle(String(tpl.default_title || tpl.name || "").trim());
+      setDescription(String(tpl.default_description || "").trim());
+      setSaveTemplateName(String(tpl.name || "").trim());
+      setSaveTemplateDescription(String(tpl.description || "").trim());
+
+      const nextBaseTemplateId =
+        String(tpl.base_template_id || "").trim() ||
+        String(templates[0]?.id || "").trim();
+
+      setSelectedTemplate(nextBaseTemplateId);
+
+      const nextMax = clamp(
+        Number(tpl.default_max_participants) || DEFAULT_MAX_PARTICIPANTS,
+        MIN_PARTICIPANTS,
+        MAX_PARTICIPANTS
+      );
+      setMaxParticipants(nextMax);
+
+      setCustomSlugInput("");
+      setSlugStatus("idle");
+
+      if (blocks.length) {
+        applyStudioBlocks(blocks);
+      } else {
+        setStudioEnabled(false);
+        clearStudio();
+      }
+
+      setNotice(`Loaded template: ${tpl.name}`);
+      window.setTimeout(() => setNotice(null), 1600);
+    },
+    [applyStudioBlocks, clearStudio, templates]
+  );
+
+  const applyPreviousSession = useCallback(
+    (row: PreviousSessionRow) => {
+      const blocks = normalizeTemplateBlocks(row.schedule);
+
+      setSelectedPreviousSessionId(row.id);
+      setSelectedUserTemplateId("");
+
+      setTitle(String(row.title || "").trim());
+      setDescription(String(row.description || "").trim());
+
+      const nextBaseTemplateId =
+        String(row.template_id || "").trim() ||
+        String(templates[0]?.id || "").trim();
+
+      setSelectedTemplate(nextBaseTemplateId);
+
+      const nextMax = clamp(
+        Number(row.max_participants) || DEFAULT_MAX_PARTICIPANTS,
+        MIN_PARTICIPANTS,
+        MAX_PARTICIPANTS
+      );
+      setMaxParticipants(nextMax);
+
+      setSaveTemplateName(String(row.title || "").trim());
+      setSaveTemplateDescription("");
+
+      setCustomSlugInput("");
+      setSlugStatus("idle");
+
+      if (blocks.length) {
+        applyStudioBlocks(blocks);
+      } else if (nextBaseTemplateId) {
+        setStudioEnabled(false);
+        clearStudio();
+      }
+
+      setNotice("Loaded previous session");
+      window.setTimeout(() => setNotice(null), 1600);
+    },
+    [applyStudioBlocks, clearStudio, templates]
+  );
+
+  const handleSaveCurrentAsUserTemplate = useCallback(async () => {
+    if (!user || !profile?.id) {
+      setError("You must be logged in to save your template.");
+      return;
+    }
+
+    if (!studioEnabled || studioBlocks.length === 0) {
+      setError("Turn on Session Studio and add at least one block first.");
+      return;
+    }
+
+    const templateName = String(saveTemplateName || title || "").trim();
+    if (!templateName) {
+      setError("Give your template a name first.");
+      return;
+    }
+
+    setError(null);
+    setNotice(null);
+    setIsSavingUserTemplate(true);
+
+    try {
+      const payload = {
+        user_id: profile.id,
+        name: templateName,
+        description: String(saveTemplateDescription || "").trim() || null,
+        base_template_id: String(selectedTemplate || "").trim() || null,
+        source_session_id: null,
+        blocks: exportStudioToSchedule(studioBlocks),
+        default_title: String(title || "").trim() || null,
+        default_description: String(description || "").trim() || null,
+        default_max_participants: clamp(
+          Number(maxParticipants) || DEFAULT_MAX_PARTICIPANTS,
+          MIN_PARTICIPANTS,
+          MAX_PARTICIPANTS
+        ),
+      };
+
+      const { data, error } = await supabase
+        .from("user_session_templates")
+        .insert(payload)
+        .select("*")
+        .single();
+
+      if (error) throw error;
+
+      const nextRow = data as UserSessionTemplateRow;
+      setUserTemplates((prev) => [nextRow, ...prev]);
+      setSelectedUserTemplateId(nextRow.id);
+      setNotice("Saved to My templates ✅");
+      window.setTimeout(() => setNotice(null), 1800);
+    } catch (err: any) {
+      console.error("❌ Error saving user template:", err);
+      setError(err?.message || "Failed to save your template.");
+    } finally {
+      setIsSavingUserTemplate(false);
+    }
+  }, [
+    user,
+    profile?.id,
+    studioEnabled,
+    studioBlocks,
+    saveTemplateName,
+    title,
+    saveTemplateDescription,
+    selectedTemplate,
+    description,
+    maxParticipants,
+  ]);
+
+  // DnD helpers
   const isInteractiveEl = (el: EventTarget | null) => {
     const t = el as HTMLElement | null;
     if (!t) return false;
@@ -856,9 +1150,9 @@ export function CreateSessionModal({
       const insertIndex =
         lastSelectedId != null
           ? Math.max(
-            0,
-            prev.findIndex((b) => b.id === lastSelectedId) + 1
-          )
+              0,
+              prev.findIndex((b) => b.id === lastSelectedId) + 1
+            )
           : prev.length;
 
       const next = [...prev];
@@ -1038,7 +1332,6 @@ export function CreateSessionModal({
 
         const to = prev.findIndex((b) => b.id === overId);
         if (to < 0) return prev;
-
         if (dragId === overId) return prev;
 
         const copy = [...prev];
@@ -1046,8 +1339,8 @@ export function CreateSessionModal({
 
         const toAfterRemoval = from < to ? to - 1 : to;
         const insertIndex = toAfterRemoval + (edge === "after" ? 1 : 0);
-
         const finalIndex = clamp(insertIndex, 0, copy.length);
+
         copy.splice(finalIndex, 0, item);
         return copy;
       });
@@ -1083,6 +1376,11 @@ export function CreateSessionModal({
     },
     [deleteSelectedBlocks, selectedBlockIds]
   );
+
+  useEffect(() => {
+    if (!isOpen) return;
+    void loadModalData();
+  }, [isOpen, loadModalData]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -1150,30 +1448,6 @@ export function CreateSessionModal({
     copySelectedBlocks,
     pasteCopiedBlocks,
   ]);
-
-  // ---------- LOAD TEMPLATES ----------
-  useEffect(() => {
-    if (!isOpen) return;
-
-    async function loadTemplates() {
-      setError(null);
-
-      const { data, error } = await supabase
-        .from("session_templates")
-        .select("*")
-        .order("total_duration", { ascending: true });
-
-      if (error) {
-        console.error("❌ Error loading templates:", error);
-        setError("Failed to load templates.");
-        return;
-      }
-
-      setTemplates(data || []);
-    }
-
-    loadTemplates();
-  }, [isOpen]);
 
   // ---------- Prevent background scroll when modal open ----------
   useEffect(() => {
@@ -1327,14 +1601,15 @@ export function CreateSessionModal({
 
     const effectiveMaxParticipants = studioEnabled
       ? clamp(
-        Number(maxParticipants) || DEFAULT_MAX_PARTICIPANTS,
-        MIN_PARTICIPANTS,
-        MAX_PARTICIPANTS
-      )
+          Number(maxParticipants) || DEFAULT_MAX_PARTICIPANTS,
+          MIN_PARTICIPANTS,
+          MAX_PARTICIPANTS
+        )
       : DEFAULT_MAX_PARTICIPANTS;
 
     setIsCreating(true);
     setError(null);
+    setNotice(null);
 
     try {
       const baseDateLocal = new Date(scheduledAt);
@@ -1433,7 +1708,6 @@ export function CreateSessionModal({
           status: "planned",
           created_at: new Date().toISOString(),
 
-          // ✅ fixed / no UI selection
           jitsi_domain: FIXED_JITSI_DOMAIN,
 
           max_participants: effectiveMaxParticipants,
@@ -1452,7 +1726,6 @@ export function CreateSessionModal({
         throw new Error("Sessions were created, but no rows were returned.");
       }
 
-      // ✅ Auto-book host into every newly created session
       const bookingRows = insertedSessions
         .filter((s: any) => s?.id && (s?.host_id || profile.id))
         .map((s: any) => ({
@@ -1468,7 +1741,6 @@ export function CreateSessionModal({
         if (bookingError) {
           console.error("❌ Host auto-booking failed:", bookingError);
 
-          // Best-effort rollback so we do not leave broken sessions behind
           try {
             const insertedIds = insertedSessions
               .map((s: any) => s?.id)
@@ -1502,6 +1774,11 @@ export function CreateSessionModal({
       setScheduleMode("single");
       setDailyDays(7);
       setWeeklyCount(3);
+      setSelectedUserTemplateId("");
+      setSelectedPreviousSessionId("");
+      setSaveTemplateName("");
+      setSaveTemplateDescription("");
+      setNotice(null);
 
       onSessionCreated();
       onClose();
@@ -1537,9 +1814,9 @@ export function CreateSessionModal({
   const linkPreview = sanitizedSlug
     ? isSeries
       ? `${origin}/room/${makeDatedSlug(
-        sanitizedSlug,
-        new Date(scheduledAt || Date.now())
-      )} …`
+          sanitizedSlug,
+          new Date(scheduledAt || Date.now())
+        )} …`
       : `${origin}/room/${sanitizedSlug}`
     : `${origin}/room/<your-link>`;
 
@@ -1603,7 +1880,7 @@ export function CreateSessionModal({
           </div>
         </div>
 
-        {/* BODY (scrolls) */}
+        {/* BODY */}
         <div
           ref={modalScrollRef}
           className="px-3 sm:px-6 pb-3 sm:pb-4 pt-3 sm:pt-4 flex-1 overflow-y-auto"
@@ -1616,6 +1893,13 @@ export function CreateSessionModal({
             </p>
           ) : (
             <div className="space-y-4 sm:space-y-5">
+              {/* Notices */}
+              {notice && (
+                <div className="rounded-[16px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-[13px] text-emerald-700 font-inter">
+                  {notice}
+                </div>
+              )}
+
               {/* Row 1: Title + Start time */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
                 <div>
@@ -1925,7 +2209,7 @@ export function CreateSessionModal({
                 </div>
               </div>
 
-              {/* Templates */}
+              {/* Global templates */}
               <div>
                 <label className="block text-[14px] font-medium text-brandBlack mb-2 font-inter">
                   Session format
@@ -1939,7 +2223,9 @@ export function CreateSessionModal({
                         className="flex items-center gap-3 cursor-pointer"
                         onClick={() => {
                           setSelectedTemplate(t.id);
-                          if (!title) setTitle(t.name);
+                          if (!title) setTitle((t as any).name || "");
+                          setSelectedUserTemplateId("");
+                          setSelectedPreviousSessionId("");
                         }}
                       >
                         <input
@@ -1947,7 +2233,7 @@ export function CreateSessionModal({
                           name="session-template"
                           value={t.id}
                           checked={selectedTemplate === t.id}
-                          onChange={() => { }}
+                          onChange={() => {}}
                           className="w-4 h-4 text-brandBlack"
                         />
 
@@ -1973,9 +2259,173 @@ export function CreateSessionModal({
                 {studioEnabled && (
                   <p className="mt-2 text-[12px] text-gray-500 font-inter">
                     Tip: when Session Studio is enabled, selecting a format is
-                    optional.
+                    optional, but keeping a base format is still useful.
                   </p>
                 )}
+              </div>
+
+              {/* My templates + previous sessions */}
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-4">
+                {/* My templates */}
+                <div className="border border-gray-200 rounded-[18px] bg-white p-3 sm:p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 p-2 rounded-[14px] bg-[#111827] text-white flex items-center justify-center shrink-0">
+                      <Bookmark size={18} />
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="font-inter font-semibold text-[14px] text-brandBlack">
+                        My saved templates
+                      </div>
+                      <div className="font-inter text-[12px] text-gray-500">
+                        Reuse your own custom Session Studio scripts.
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 space-y-2 max-h-72 overflow-y-auto pr-1">
+                    {userTemplates.length > 0 ? (
+                      userTemplates.map((tpl) => {
+                        const blocksCount = normalizeTemplateBlocks(tpl.blocks).length;
+                        const isActive = selectedUserTemplateId === tpl.id;
+
+                        return (
+                          <button
+                            key={tpl.id}
+                            type="button"
+                            onClick={() => applyUserTemplate(tpl)}
+                            className={
+                              "w-full text-left border rounded-[16px] p-3 transition " +
+                              (isActive
+                                ? "border-brandBlack bg-black/[0.03]"
+                                : "border-gray-200 hover:bg-gray-50")
+                            }
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="font-inter font-semibold text-[13px] text-brandBlack truncate">
+                                  {tpl.name}
+                                </div>
+                                <div className="mt-1 font-inter text-[12px] text-gray-500 line-clamp-2">
+                                  {tpl.description || tpl.default_description || "No description"}
+                                </div>
+                              </div>
+
+                              <div className="text-right shrink-0">
+                                <div className="text-[11px] font-inter text-gray-500">
+                                  {blocksCount} blocks
+                                </div>
+                                <div className="text-[11px] font-inter text-gray-500">
+                                  {formatMinutes(
+                                    normalizeTemplateBlocks(tpl.blocks).reduce(
+                                      (sum, b) => sum + (Number(b.minutes) || 0),
+                                      0
+                                    )
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="mt-2 flex items-center justify-between gap-3 flex-wrap">
+                              <div className="text-[11px] font-inter text-gray-500">
+                                Base format:{" "}
+                                <span className="text-brandBlack font-medium">
+                                  {tpl.base_template_id
+                                    ? templateNameById.get(tpl.base_template_id) || "Unknown"
+                                    : "None"}
+                                </span>
+                              </div>
+
+                              <div className="text-[11px] font-inter text-gray-500">
+                                Updated {formatShortDate(tpl.updated_at)}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <div className="text-[12px] text-gray-500 font-inter">
+                        No saved templates yet. Build a Session Studio script and save it below.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Previous sessions */}
+                <div className="border border-gray-200 rounded-[18px] bg-white p-3 sm:p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 p-2 rounded-[14px] bg-[#111827] text-white flex items-center justify-center shrink-0">
+                      <History size={18} />
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="font-inter font-semibold text-[14px] text-brandBlack">
+                        My previous sessions
+                      </div>
+                      <div className="font-inter text-[12px] text-gray-500">
+                        Reuse a session you already created before.
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 space-y-2 max-h-72 overflow-y-auto pr-1">
+                    {previousSessions.length > 0 ? (
+                      previousSessions.map((row) => {
+                        const isActive = selectedPreviousSessionId === row.id;
+                        const blocksCount = normalizeTemplateBlocks(row.schedule).length;
+
+                        return (
+                          <button
+                            key={row.id}
+                            type="button"
+                            onClick={() => applyPreviousSession(row)}
+                            className={
+                              "w-full text-left border rounded-[16px] p-3 transition " +
+                              (isActive
+                                ? "border-brandBlack bg-black/[0.03]"
+                                : "border-gray-200 hover:bg-gray-50")
+                            }
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="font-inter font-semibold text-[13px] text-brandBlack truncate">
+                                  {row.title}
+                                </div>
+                                <div className="mt-1 font-inter text-[12px] text-gray-500 line-clamp-2">
+                                  {row.description || row.format || "Previous session"}
+                                </div>
+                              </div>
+
+                              <div className="text-right shrink-0">
+                                <div className="text-[11px] font-inter text-gray-500">
+                                  {Number(row.duration_minutes) || 0}m
+                                </div>
+                                <div className="text-[11px] font-inter text-gray-500">
+                                  {blocksCount > 0 ? `${blocksCount} blocks` : "No blocks"}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="mt-2 flex items-center justify-between gap-3 flex-wrap">
+                              <div className="text-[11px] font-inter text-gray-500">
+                                {row.template_id
+                                  ? `Format: ${templateNameById.get(row.template_id) || "Unknown"}`
+                                  : row.format || "Custom"}
+                              </div>
+                              <div className="text-[11px] font-inter text-gray-500">
+                                {formatShortDate(row.start_time || row.created_at)}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <div className="text-[12px] text-gray-500 font-inter">
+                        No previous sessions found yet.
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* SESSION STUDIO */}
@@ -2031,6 +2481,73 @@ export function CreateSessionModal({
                   <span className="font-medium">sessions.schedule</span>
                 </div>
 
+                {/* Save current studio as my template */}
+                {studioEnabled && (
+                  <div className="mt-4 border border-gray-200 rounded-[16px] p-3 sm:p-4 bg-gray-50">
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-[12px] bg-black/5 flex items-center justify-center shrink-0">
+                        <Save size={16} />
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="font-inter font-semibold text-[13px] text-brandBlack">
+                          Save current Studio to My templates
+                        </div>
+                        <div className="font-inter text-[12px] text-gray-500">
+                          Save this custom script and reuse it later.
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[12px] font-inter text-gray-600 mb-1">
+                          Template name
+                        </label>
+                        <input
+                          value={saveTemplateName}
+                          onChange={(e) => setSaveTemplateName(e.target.value)}
+                          placeholder="e.g., My deep work ladder"
+                          className="w-full px-3 py-3 border border-gray-300 rounded-[14px] font-inter"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[12px] font-inter text-gray-600 mb-1">
+                          Template description
+                        </label>
+                        <input
+                          value={saveTemplateDescription}
+                          onChange={(e) => setSaveTemplateDescription(e.target.value)}
+                          placeholder="Optional"
+                          className="w-full px-3 py-3 border border-gray-300 rounded-[14px] font-inter"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
+                      <div className="text-[12px] font-inter text-gray-500">
+                        This saves blocks + default title + description + participant limit.
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleSaveCurrentAsUserTemplate}
+                        disabled={
+                          isSavingUserTemplate ||
+                          !studioEnabled ||
+                          studioBlocks.length === 0 ||
+                          !String(saveTemplateName || title || "").trim()
+                        }
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brandBlack text-white text-[12px] font-inter hover:bg-black disabled:bg-gray-300 transition"
+                      >
+                        <Save size={14} />
+                        {isSavingUserTemplate ? "Saving..." : "Save to My templates"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Participant limit */}
                 <div className="mt-4 border border-gray-200 rounded-[16px] p-3">
                   <div className="flex items-center gap-2">
@@ -2084,7 +2601,7 @@ export function CreateSessionModal({
                 </div>
 
                 {studioEnabled && (
-                    <div className="sticky top-0 z-20 mt-4 mb-4 -mx-1 px-1 py-3 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 border-b border-gray-100">
+                  <div className="sticky top-0 z-20 mt-4 mb-4 -mx-1 px-1 py-3 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 border-b border-gray-100">
                     <div className="flex items-center justify-between gap-3 flex-wrap">
                       <div className="text-[12px] text-gray-600 font-inter">
                         {selectedBlockIds.length > 0 ? (
@@ -2144,7 +2661,7 @@ export function CreateSessionModal({
                       blocks.
                     </div>
 
-                      <div className="mt-24 grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
+                    <div className="mt-24 grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
                       {/* Library */}
                       <div className="lg:sticky lg:top-16 self-start border border-gray-200 rounded-[18px] p-3 sm:p-4 bg-white">
                         <div>
