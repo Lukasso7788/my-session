@@ -372,25 +372,24 @@ export function LiveKitBottomBar(props: {
 
                             {showReactionsMenu && (
                                 <div
-                                    className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
+                                    className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex items-center gap-2 text-[26px] shadow-xl whitespace-nowrap ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
                                         }`}
                                 >
-                                    {(["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown"] as ReactionType[]).map(
-                                        (t) => (
-                                            <button
-                                                key={t}
-                                                onClick={() => {
-                                                    emitReaction(t);
-                                                    setShowReactionsMenu(false);
-                                                }}
-                                                className="hover:scale-[1.06] transition"
-                                                title={t}
-                                                type="button"
-                                            >
-                                                {reactionEmoji[t]}
-                                            </button>
-                                        )
-                                    )}
+                                    {(
+                                        ["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown", "ok", "party"] as ReactionType[]
+                                    ).map((t) => (
+                                        <button
+                                            key={t}
+                                            onClick={() => {
+                                                emitReaction(t);
+                                            }}
+                                            className="hover:scale-[1.06] transition"
+                                            title={t}
+                                            type="button"
+                                        >
+                                            {reactionEmoji[t]}
+                                        </button>
+                                    ))}
                                 </div>
                             )}
                         </div>
