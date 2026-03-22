@@ -2396,7 +2396,7 @@ export function RoomPageLiveKit() {
       (p) => p.source === Track.Source.Microphone
     ) as any;
 
-    const localCamTrack = (localCamPub?.track as any) || undefined;
+    const localCamTrackRaw = (localCamPub?.track as any) || undefined;
 
     const localIdentity = String(lp.identity || livekitIdentityRef.current || "");
     const localUserId =
@@ -2409,6 +2409,11 @@ export function RoomPageLiveKit() {
     const localCamPubExists = !!localCamPub;
     const localCamPubHasTrack = !!localCamPub?.track;
     const localCamPubMuted = localCamPub ? !!localCamPub.isMuted : true;
+
+    const localCamActuallyVisible =
+      localCamPubExists && localCamPubHasTrack && !localCamPubMuted;
+
+    const localCamTrack = localCamActuallyVisible ? localCamTrackRaw : undefined;
 
     setMicOn((prev) => {
       const nextOn = !localMicMuted;
@@ -2440,7 +2445,14 @@ export function RoomPageLiveKit() {
       const camPub = allVideoPubs.find((p: any) => p.source === Track.Source.Camera) as any;
       const micPub = allAudioPubs.find((p: any) => p.source === Track.Source.Microphone) as any;
 
-      const vt = (camPub?.track as any) || undefined;
+      const remoteCamPubExists = !!camPub;
+      const remoteCamPubHasTrack = !!camPub?.track;
+      const remoteCamPubMuted = camPub ? !!camPub.isMuted : true;
+
+      const remoteCamActuallyVisible =
+        remoteCamPubExists && remoteCamPubHasTrack && !remoteCamPubMuted;
+
+      const vt = remoteCamActuallyVisible ? ((camPub?.track as any) || undefined) : undefined;
 
       const exactIdentity = String(rp.identity || "");
       const baseUserId = extractBaseUserIdFromIdentity(exactIdentity);
@@ -2453,9 +2465,6 @@ export function RoomPageLiveKit() {
 
       const tileId = rp.sid;
       const remoteMicMuted = micPub ? !!(micPub as any).isMuted : true;
-      const remoteCamPubExists = !!camPub;
-      const remoteCamPubHasTrack = !!camPub?.track;
-      const remoteCamPubMuted = camPub ? !!camPub.isMuted : true;
 
       next.push({
         id: tileId,
@@ -2814,8 +2823,42 @@ export function RoomPageLiveKit() {
 
       if (pub) {
         const nextOn = !!pub.isMuted;
-        if (nextOn) await pub.unmute?.();
-        else await pub.mute?.();
+
+        if (nextOn) {
+          const currentTrack = getLocalCameraTrack();
+
+          setTiles((prev) =>
+            prev.map((t) => {
+              if (!t.isLocal) return t;
+              return {
+                ...t,
+                camPubExists: true,
+                camPubHasTrack: true,
+                camPubMuted: false,
+                videoTrack: currentTrack || t.videoTrack,
+              };
+            })
+          );
+
+          setCamOn(true);
+          await pub.unmute?.();
+        } else {
+          setTiles((prev) =>
+            prev.map((t) => {
+              if (!t.isLocal) return t;
+              return {
+                ...t,
+                camPubMuted: true,
+                camPubHasTrack: false,
+                videoTrack: undefined,
+              };
+            })
+          );
+
+          setCamOn(false);
+          await pub.mute?.();
+        }
+
         scheduleRebuildTiles();
         return;
       }
@@ -3128,7 +3171,7 @@ export function RoomPageLiveKit() {
       setAdminBusyKey("");
     }
   };
-  
+
   const adminKickParticipant = async (
     participantIdentity: string,
     targetUserId?: string,

@@ -28,6 +28,14 @@ function getQueryBool(name: string, def = false) {
     }
 }
 
+function getInitials(name: string) {
+    const s = String(name || "").trim();
+    if (!s) return "U";
+    const parts = s.split(/\s+/).filter(Boolean).slice(0, 2);
+    const out = parts.map((p) => p[0]?.toUpperCase()).join("");
+    return out || "U";
+}
+
 function Icon({
     name,
     theme,
@@ -91,7 +99,7 @@ export function VideoTile({
 }) {
     const wrapRef = useRef<HTMLDivElement | null>(null);
 
-    // Container where LiveKit will mount either <video> or <canvas>
+    // Container where LiveKit mounts either <video> or <canvas>
     const mediaHostRef = useRef<HTMLDivElement | null>(null);
     const attachedElRef = useRef<HTMLElement | null>(null);
 
@@ -103,8 +111,15 @@ export function VideoTile({
         ? "text-black/60 bg-[#F6F7FB]"
         : "text-white/70 bg-[#071427]";
 
-    // Debug sizing overlay for solo grid testing:
-    // add ?devTileDebug=1 in URL
+    const offPlateClass = isLight
+        ? "bg-white/80 border-black/10 text-black/80"
+        : "bg-black/35 border-white/10 text-white/90";
+
+    const initialsBgClass = isLight
+        ? "bg-blue-500/15 text-blue-700 border-black/10"
+        : "bg-emerald-500/80 text-[#02140B] border-white/10";
+
+    // Debug sizing overlay for solo grid testing: add ?devTileDebug=1 in URL
     const debugSizing = useMemo(() => getQueryBool("devTileDebug", false), []);
     const [sizeText, setSizeText] = useState<string>("");
 
@@ -215,6 +230,8 @@ export function VideoTile({
             (!!hostActions.canMuteMic && !!hostActions.onToggleMuteMic) ||
             (!!hostActions.canMuteCam && !!hostActions.onToggleMuteCam));
 
+    const initials = getInitials(label);
+
     return (
         <div
             ref={wrapRef}
@@ -233,9 +250,24 @@ export function VideoTile({
                         style={{ backgroundColor: mediaBgColor }}
                     />
                 ) : (
-                    <div className={`w-full h-full flex flex-col items-center justify-center text-sm ${offStateClass}`}>
-                        <div className="font-medium">Camera off</div>
-                        {debugSizing && sizeText ? <div className="text-[11px] opacity-70 mt-1">{sizeText}</div> : null}
+                    <div className={`absolute inset-0 w-full h-full flex flex-col items-center justify-center text-sm ${offStateClass}`}>
+                        <div
+                            className={`w-[78px] h-[78px] rounded-full border flex items-center justify-center font-bold text-xl shadow-2xl ${initialsBgClass}`}
+                        >
+                            {initials}
+                        </div>
+
+                        <div className={`mt-3 px-3 py-1.5 rounded-xl border backdrop-blur ${offPlateClass}`}>
+                            <div className="text-[13px] font-semibold max-w-[260px] truncate text-center">
+                                {label || "User"}
+                            </div>
+                        </div>
+
+                        <div className="mt-2 text-[12px] opacity-75">Camera off</div>
+
+                        {debugSizing && sizeText ? (
+                            <div className="text-[11px] opacity-70 mt-1">{sizeText}</div>
+                        ) : null}
                     </div>
                 )}
 
@@ -243,7 +275,9 @@ export function VideoTile({
                     <div
                         className={
                             "absolute left-2 top-2 px-2 py-1 rounded-lg text-[11px] border " +
-                            (isLight ? "bg-white/80 text-black border-black/10" : "bg-black/50 text-white border-white/10")
+                            (isLight
+                                ? "bg-white/80 text-black border-black/10"
+                                : "bg-black/50 text-white border-white/10")
                         }
                         title="Tile size (debug)"
                     >
@@ -266,7 +300,9 @@ export function VideoTile({
                 <div
                     className={
                         "absolute right-2 top-2 px-2 py-1 rounded-lg text-[11px] font-semibold " +
-                        (isLight ? "bg-amber-200/80 text-amber-900" : "bg-amber-400/20 text-amber-200 border border-amber-300/20")
+                        (isLight
+                            ? "bg-amber-200/80 text-amber-900"
+                            : "bg-amber-400/20 text-amber-200 border border-amber-300/20")
                     }
                 >
                     {showBadge}
@@ -287,7 +323,11 @@ export function VideoTile({
                             }
                             title="Mute / unmute remote microphone (host action)"
                         >
-                            <Icon name={hostActions.micMuted ? "mic-off" : "mic-on"} theme={theme} className="w-4 h-4 opacity-80" />
+                            <Icon
+                                name={hostActions.micMuted ? "mic-off" : "mic-on"}
+                                theme={theme}
+                                className="w-4 h-4 opacity-80"
+                            />
                             <span>{hostActions.micMuted ? "Unmute mic" : "Mute mic"}</span>
                         </button>
                     ) : null}
