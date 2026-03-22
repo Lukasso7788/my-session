@@ -2,16 +2,26 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { RoomServiceClient } from "livekit-server-sdk";
 import { createClient } from "@supabase/supabase-js";
 
-type AdminAction = "mute_track" | "unmute_track" | "remove_participant";
+type AdminAction =
+  | "mute_track"
+  | "unmute_track"
+  | "remove_participant"
+  | "mute_camera"
+  | "unmute_camera"
+  | "turn_off_camera"
+  | "turn_on_camera"
+  | "mute_microphone"
+  | "unmute_microphone";
 
 type Body = {
-  action?: AdminAction;
+  action?: AdminAction | string;
   roomName?: string;
   sessionId?: string;
   participantIdentity?: string;
   trackSid?: string;
+  trackKind?: "camera" | "microphone" | "video" | "audio";
 
-  // DEPRECATED (не используем для авторизации)
+  // deprecated
   isHost?: boolean;
 };
 
@@ -73,6 +83,29 @@ function deriveSessionId(roomName?: string): string {
   return "";
 }
 
+function normalizeAction(raw: string): AdminAction | "" {
+  const a = String(raw || "").trim().toLowerCase();
+
+  if (a === "mute_track") return "mute_track";
+  if (a === "unmute_track") return "unmute_track";
+  if (a === "remove_participant") return "remove_participant";
+
+  if (a === "mute_camera" || a === "turn_off_camera") return "turn_off_camera";
+  if (a === "unmute_camera" || a === "turn_on_camera") return "turn_on_camera";
+
+  if (a === "mute_microphone") return "mute_microphone";
+  if (a === "unmute_microphone") return "unmute_microphone";
+
+  return "";
+}
+
+function normalizeTrackKind(raw: unknown): "camera" | "microphone" | "" {
+  const s = String(raw || "").trim().toLowerCase();
+  if (s === "camera" || s === "video") return "camera";
+  if (s === "microphone" || s === "audio" || s === "mic") return "microphone";
+  return "";
+}
+
 async function getActorRole(params: {
   supabaseUrl: string;
   serviceKey: string;
@@ -118,6 +151,81 @@ async function getActorRole(params: {
   return { userId, hostId, isHost, isModerator };
 }
 
+function sourceToKind(raw: unknown): string {
+  const s = String(raw ?? "").trim().toLowerCase();
+
+  if (s === "1" || s.includes("camera")) return "camera";
+  if (s === "2" || s.includes("microphone")) return "microphone";
+  if (s === "3" || s.includes("screen_share")) return "screen_share";
+  if (s === "4" || s.includes("screen_share_audio")) return "screen_share_audio";
+
+  return s;
+}
+
+function typeToKind(raw: unknown): string {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (s.includes("audio")) return "audio";
+  if (s.includes("video")) return "video";
+  return s;
+}
+
+function isTrackMatchKind(track: any, wanted: "camera" | "microphone") {
+  const sourceKind = sourceToKind(track?.source);
+  const typeKind = typeToKind(track?.type);
+  const name = String(track?.name || "").toLowerCase();
+  const mimeType = String(track?.mimeType || "").toLowerCase();
+  const width = Number(track?.width || 0);
+  const height = Number(track?.height || 0);
+
+  if (wanted === "camera") {
+    if (sourceKind === "camera") return true;
+    if (sourceKind === "screen_share") return false;
+    if (sourceKind === "screen_share_audio") return false;
+    if (typeKind === "video") return true;
+    if (width > 0 || height > 0) return true;
+    if (mimeType.startsWith("video/")) return true;
+    if (name.includes("camera") || name.includes("cam")) return true;
+    return false;
+  }
+
+  if (wanted === "microphone") {
+    if (sourceKind === "microphone") return true;
+    if (sourceKind === "screen_share_audio") return false;
+    if (typeKind === "audio") return true;
+    if (mimeType.startsWith("audio/")) return true;
+    if (name.includes("microphone") || name.includes("mic")) return true;
+    return false;
+  }
+
+  return false;
+}
+
+async function resolveTrackSidForKind(args: {
+  svc: RoomServiceClient;
+  roomName: string;
+  participantIdentity: string;
+  wantedKind: "camera" | "microphone";
+}): Promise<string> {
+  const participants = await args.svc.listParticipants(args.roomName);
+  const participant = (participants || []).find(
+    (p: any) => String(p?.identity || "").trim() === args.participantIdentity
+  );
+
+  if (!participant) {
+    throw new Error("participant_not_found");
+  }
+
+  const tracks = Array.isArray((participant as any)?.tracks) ? (participant as any).tracks : [];
+  const exact = tracks.find((t: any) => isTrackMatchKind(t, args.wantedKind));
+
+  const sid = String(exact?.sid || "").trim();
+  if (!sid) {
+    throw new Error(`${args.wantedKind}_track_not_found`);
+  }
+
+  return sid;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     res.setHeader("Cache-Control", "no-store, max-age=0");
@@ -138,10 +246,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const body = parseBody(req);
-    const action = String(body.action || "") as AdminAction;
+    const action = normalizeAction(String(body.action || ""));
     const roomName = String(body.roomName || "").trim();
     const participantIdentity = String(body.participantIdentity || "").trim();
-    const trackSid = String(body.trackSid || "").trim();
+    let trackSid = String(body.trackSid || "").trim();
 
     if (!action || !roomName) {
       return res.status(400).json({ error: "action_and_roomName_required" });
@@ -216,33 +324,79 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    if (action === "mute_track" || action === "unmute_track") {
-      if (!participantIdentity || !trackSid) {
-        return res.status(400).json({ error: "participantIdentity_and_trackSid_required" });
-      }
+    const explicitTrackKind = normalizeTrackKind(body.trackKind);
 
-      const muted = action === "mute_track";
+    let wantedKind: "camera" | "microphone" | "" = explicitTrackKind;
+    let muted: boolean | null = null;
 
-      await svc.mutePublishedTrack(roomName, participantIdentity, trackSid, muted);
+    if (action === "mute_track") muted = true;
+    if (action === "unmute_track") muted = false;
 
-      return res.status(200).json({
-        ok: true,
-        action,
+    if (action === "turn_off_camera" || action === "mute_camera") {
+      wantedKind = "camera";
+      muted = true;
+    }
+
+    if (action === "turn_on_camera" || action === "unmute_camera") {
+      wantedKind = "camera";
+      muted = false;
+    }
+
+    if (action === "mute_microphone") {
+      wantedKind = "microphone";
+      muted = true;
+    }
+
+    if (action === "unmute_microphone") {
+      wantedKind = "microphone";
+      muted = false;
+    }
+
+    if (!participantIdentity) {
+      return res.status(400).json({ error: "participantIdentity_required" });
+    }
+
+    if (muted === null) {
+      return res.status(400).json({ error: "unsupported_action" });
+    }
+
+    if (!trackSid && wantedKind) {
+      trackSid = await resolveTrackSidForKind({
+        svc,
         roomName,
         participantIdentity,
-        trackSid,
-        muted,
-        actor: { userId: actor.userId, isHost: actor.isHost, isModerator: actor.isModerator },
+        wantedKind,
       });
     }
 
-    return res.status(400).json({ error: "unsupported_action" });
+    if (!trackSid) {
+      return res.status(400).json({
+        error: "trackSid_required",
+        hint: "Pass trackSid, or use a camera/microphone action so the server can resolve it",
+      });
+    }
+
+    await svc.mutePublishedTrack(roomName, participantIdentity, trackSid, muted);
+
+    return res.status(200).json({
+      ok: true,
+      action,
+      roomName,
+      participantIdentity,
+      trackSid,
+      muted,
+      trackKind: wantedKind || null,
+      actor: { userId: actor.userId, isHost: actor.isHost, isModerator: actor.isModerator },
+    });
   } catch (e: any) {
     const msg = String(e?.message || e || "unknown_error");
     console.error("livekit admin error:", e);
 
     if (msg === "unauthorized") return res.status(401).json({ error: "unauthorized" });
     if (msg === "session_not_found") return res.status(404).json({ error: "session_not_found" });
+    if (msg === "participant_not_found") return res.status(404).json({ error: "participant_not_found" });
+    if (msg === "camera_track_not_found") return res.status(404).json({ error: "camera_track_not_found" });
+    if (msg === "microphone_track_not_found") return res.status(404).json({ error: "microphone_track_not_found" });
 
     return res.status(500).json({ error: "livekit_admin_failed", message: msg });
   }

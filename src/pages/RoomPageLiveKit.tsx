@@ -3024,6 +3024,7 @@ export function RoomPageLiveKit() {
   };
 
   // admin endpoint
+  // admin endpoint
   const callAdmin = async (body: Record<string, unknown>) => {
     const res = await fetch(adminEndpoint, {
       method: "POST",
@@ -3071,36 +3072,6 @@ export function RoomPageLiveKit() {
     participantIdentity: string,
     trackSid: string
   ) => {
-    const adminTurnOffRemoteCamera = async (
-      tileId: string,
-      participantIdentity: string,
-      trackSid: string
-    ) => {
-      const roomName = roomNameForApi;
-      if (!roomName) return;
-
-      const busyKey = `${participantIdentity}:${trackSid}:camera-off`;
-      setAdminBusyKey(busyKey);
-
-      optimisticCameraOff(tileId);
-
-      try {
-        await callAdmin({
-          action: "mute_track",
-          roomName,
-          participantIdentity,
-          trackSid,
-        });
-
-        scheduleRebuildTiles();
-      } catch (e: any) {
-        console.error("turn camera off failed:", e);
-        alert(String(e?.message || e || "camera_off_failed"));
-        scheduleRebuildTiles();
-      } finally {
-        setAdminBusyKey("");
-      }
-    };
     const roomName = roomNameForApi;
     if (!roomName) return;
 
@@ -3127,6 +3098,37 @@ export function RoomPageLiveKit() {
     }
   };
 
+  const adminTurnOffRemoteCamera = async (
+    tileId: string,
+    participantIdentity: string,
+    trackSid: string
+  ) => {
+    const roomName = roomNameForApi;
+    if (!roomName) return;
+
+    const busyKey = `${participantIdentity}:${trackSid}:camera-off`;
+    setAdminBusyKey(busyKey);
+
+    optimisticCameraOff(tileId);
+
+    try {
+      await callAdmin({
+        action: "mute_track",
+        roomName,
+        participantIdentity,
+        trackSid,
+      });
+
+      scheduleRebuildTiles();
+    } catch (e: any) {
+      console.error("turn camera off failed:", e);
+      alert(String(e?.message || e || "camera_off_failed"));
+      scheduleRebuildTiles();
+    } finally {
+      setAdminBusyKey("");
+    }
+  };
+  
   const adminKickParticipant = async (
     participantIdentity: string,
     targetUserId?: string,
@@ -3700,6 +3702,10 @@ export function RoomPageLiveKit() {
     const isHidden = !!hiddenTileIds[t.id];
     const isPinned = pinnedTileId === t.id;
 
+    const isFeaturedTile = featuredTile?.id === t.id;
+    const shouldForceMenuVisible = isMenuOpen || isPinned || isFeaturedTile || tileCount <= 1;
+    const showLocalEditButton = t.isLocal && t.kind !== "screen";
+
     const busyMuteMic =
       !!t.participantIdentity &&
       !!t.micTrackSid &&
@@ -3773,27 +3779,31 @@ export function RoomPageLiveKit() {
                 </div>
               )}
             </div>
-
-            {t.isLocal && t.kind !== "screen" && (
-              <button
-                type="button"
-                title="Edit name"
-                aria-label="Edit name"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  openEditName();
-                }}
-                className={[
-                  "ml-0 w-0 h-7 overflow-hidden rounded-xl flex items-center justify-center transition-all duration-150 shrink-0",
-                  "opacity-0 group-hover/name:opacity-100 group-hover/name:w-7 group-hover/name:ml-2",
-                  isLight ? "bg-black/5 hover:bg-black/10 text-black/70" : "bg-white/5 hover:bg-white/10 text-white/85",
-                ].join(" ")}
-              >
-                ✎
-              </button>
-            )}
           </div>
         </div>
+
+        {showLocalEditButton && (
+          <div className="absolute top-2 left-2 z-30">
+            <button
+              type="button"
+              title="Edit name"
+              aria-label="Edit name"
+              onClick={(e) => {
+                e.stopPropagation();
+                openEditName();
+              }}
+              className={[
+                "w-9 h-9 rounded-xl flex items-center justify-center transition shadow-sm",
+                shouldForceMenuVisible ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                isLight
+                  ? "bg-white/90 border border-black/10 text-black/75 hover:bg-white"
+                  : "bg-black/55 border border-white/10 text-white/90 hover:bg-black/70",
+              ].join(" ")}
+            >
+              <span className="text-[15px] leading-none">✎</span>
+            </button>
+          </div>
+        )}
 
         {/* menu */}
         <div
@@ -3815,7 +3825,7 @@ export function RoomPageLiveKit() {
                 isLight
                   ? "bg-white/90 border border-black/10 text-black/75 hover:bg-white"
                   : "bg-black/55 border border-white/10 text-white/90 hover:bg-black/70",
-                isMenuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                shouldForceMenuVisible ? "opacity-100" : "opacity-0 group-hover:opacity-100",
               ].join(" ")}
             >
               <span className="text-lg leading-none -mt-[2px]">⋯</span>

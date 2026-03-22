@@ -91,11 +91,17 @@ export function VideoTile({
 }) {
     const wrapRef = useRef<HTMLDivElement | null>(null);
 
-    // Container where LK will mount either <video> or <canvas>
+    // Container where LiveKit will mount either <video> or <canvas>
     const mediaHostRef = useRef<HTMLDivElement | null>(null);
-    const attachedElRef = useRef<HTMLMediaElement | null>(null);
+    const attachedElRef = useRef<HTMLElement | null>(null);
 
     const isLight = theme === "light";
+
+    const tileBgClass = isLight ? "bg-white/80" : "bg-[#071427]";
+    const mediaBgColor = isLight ? "#FFFFFF" : "#071427";
+    const offStateClass = isLight
+        ? "text-black/60 bg-[#F6F7FB]"
+        : "text-white/70 bg-[#071427]";
 
     // Debug sizing overlay for solo grid testing:
     // add ?devTileDebug=1 in URL
@@ -111,6 +117,7 @@ export function VideoTile({
         const ro = new ResizeObserver((entries) => {
             const r = entries?.[0]?.contentRect;
             if (!r) return;
+
             window.cancelAnimationFrame(raf);
             raf = window.requestAnimationFrame(() => {
                 setSizeText(`${Math.round(r.width)}×${Math.round(r.height)}`);
@@ -132,7 +139,7 @@ export function VideoTile({
         const cleanup = () => {
             try {
                 if (videoTrack && attachedElRef.current && typeof (videoTrack as any)?.detach === "function") {
-                    (videoTrack as any).detach(attachedElRef.current);
+                    (videoTrack as any).detach(attachedElRef.current as any);
                 }
             } catch { }
 
@@ -142,23 +149,19 @@ export function VideoTile({
 
             attachedElRef.current = null;
 
-            // Ensure host is empty (defensive)
             try {
                 while (host.firstChild) host.removeChild(host.firstChild);
             } catch { }
         };
 
-        // Always cleanup before (re)attach
         cleanup();
 
         if (!videoTrack) return cleanup;
 
-        // Attach without passing an element:
-        // LK may return <video> OR <canvas> when processors are active.
-        let el: HTMLMediaElement | null = null;
+        let el: HTMLElement | null = null;
         try {
             if (typeof (videoTrack as any)?.attach === "function") {
-                el = (videoTrack as any).attach();
+                el = (videoTrack as any).attach() as HTMLElement;
             } else {
                 console.warn("videoTrack.attach is not a function", videoTrack);
                 return cleanup;
@@ -170,19 +173,17 @@ export function VideoTile({
 
         if (!el) return cleanup;
 
-        // Standard styling for both <video> and <canvas>
         try {
             el.style.width = "100%";
             el.style.height = "100%";
-            el.style.objectFit = "cover";
-            el.style.backgroundColor = "#000";
+            (el.style as any).objectFit = "cover";
+            el.style.backgroundColor = mediaBgColor;
             el.style.display = "block";
             el.style.transform = "translateZ(0)";
-            el.style.backfaceVisibility = "hidden";
+            (el.style as any).backfaceVisibility = "hidden";
             el.style.willChange = "transform";
         } catch { }
 
-        // If LK returned a <video>, set local-mute and playback hints
         if (el instanceof HTMLVideoElement) {
             try {
                 el.muted = !!isLocal;
@@ -190,26 +191,22 @@ export function VideoTile({
                 el.autoplay = true;
             } catch { }
 
-            // Safari sometimes wants an explicit play attempt
             Promise.resolve()
                 .then(() => el.play())
                 .catch(() => { });
         }
 
-        // Mount into host
         try {
             host.appendChild(el);
         } catch (e) {
             console.error("append child failed", e);
-            // If append fails, try cleanup
             return cleanup;
         }
 
         attachedElRef.current = el;
 
         return cleanup;
-        // IMPORTANT: re-run when track changes or locality changes (mute)
-    }, [videoTrack, isLocal]);
+    }, [videoTrack, isLocal, mediaBgColor]);
 
     const showActions =
         !isLocal &&
@@ -223,19 +220,20 @@ export function VideoTile({
             ref={wrapRef}
             className={
                 "relative rounded-2xl overflow-hidden border " +
-                (isLight ? "border-black/10 bg-white/70" : "border-white/10 bg-black/20")
+                (isLight ? "border-black/10" : "border-white/10") +
+                " " +
+                tileBgClass
             }
         >
             <div className="w-full aspect-video relative">
                 {videoTrack ? (
-                    <div ref={mediaHostRef} className="absolute inset-0 w-full h-full" />
-                ) : (
                     <div
-                        className={
-                            "w-full h-full flex flex-col items-center justify-center text-sm " +
-                            (isLight ? "text-black/60 bg-black/5" : "text-white/60 bg-white/5")
-                        }
-                    >
+                        ref={mediaHostRef}
+                        className="absolute inset-0 w-full h-full"
+                        style={{ backgroundColor: mediaBgColor }}
+                    />
+                ) : (
+                    <div className={`w-full h-full flex flex-col items-center justify-center text-sm ${offStateClass}`}>
                         <div className="font-medium">Camera off</div>
                         {debugSizing && sizeText ? <div className="text-[11px] opacity-70 mt-1">{sizeText}</div> : null}
                     </div>
