@@ -248,6 +248,7 @@ export function VideoTile({
             (!!hostActions.canMuteCam && !!hostActions.onToggleMuteCam));
 
     const normalizedAvatarUrl = String(avatarUrl || "").trim();
+    const initials = getInitials(label || "User");
 
     return (
         <div
