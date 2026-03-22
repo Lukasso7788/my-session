@@ -151,21 +151,31 @@ export function VideoTile({
         const host = mediaHostRef.current;
         if (!host) return;
 
+        let mountedEl: HTMLElement | null = null;
+
         const cleanup = () => {
+            const current = attachedElRef.current;
+
             try {
-                if (videoTrack && attachedElRef.current && typeof (videoTrack as any)?.detach === "function") {
-                    (videoTrack as any).detach(attachedElRef.current as any);
+                if (videoTrack && current && typeof (videoTrack as any)?.detach === "function") {
+                    (videoTrack as any).detach(current as any);
                 }
             } catch { }
 
             try {
-                attachedElRef.current?.remove();
+                if (current && host.contains(current)) {
+                    host.removeChild(current);
+                }
             } catch { }
 
-            attachedElRef.current = null;
+            if (attachedElRef.current === current) {
+                attachedElRef.current = null;
+            }
 
             try {
-                while (host.firstChild) host.removeChild(host.firstChild);
+                if (mountedEl && mountedEl !== current && host.contains(mountedEl)) {
+                    host.removeChild(mountedEl);
+                }
             } catch { }
         };
 
@@ -174,6 +184,7 @@ export function VideoTile({
         if (!videoTrack) return cleanup;
 
         let el: HTMLElement | null = null;
+
         try {
             if (typeof (videoTrack as any)?.attach === "function") {
                 el = (videoTrack as any).attach() as HTMLElement;
@@ -187,6 +198,8 @@ export function VideoTile({
         }
 
         if (!el) return cleanup;
+
+        mountedEl = el;
 
         try {
             el.style.width = "100%";
@@ -212,7 +225,9 @@ export function VideoTile({
         }
 
         try {
-            host.appendChild(el);
+            if (!host.contains(el)) {
+                host.appendChild(el);
+            }
         } catch (e) {
             console.error("append child failed", e);
             return cleanup;

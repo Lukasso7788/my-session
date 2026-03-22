@@ -2840,6 +2840,10 @@ export function RoomPageLiveKit() {
           scheduleRebuildTiles();
         }, 120);
 
+        window.setTimeout(() => {
+          scheduleRebuildTiles();
+        }, 260);
+
         return;
       }
 
