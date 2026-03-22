@@ -2824,42 +2824,22 @@ export function RoomPageLiveKit() {
       if (pub) {
         const nextOn = !!pub.isMuted;
 
+        setCamOn(nextOn);
+
         if (nextOn) {
-          const currentTrack = getLocalCameraTrack();
-
-          setTiles((prev) =>
-            prev.map((t) => {
-              if (!t.isLocal) return t;
-              return {
-                ...t,
-                camPubExists: true,
-                camPubHasTrack: true,
-                camPubMuted: false,
-                videoTrack: currentTrack || t.videoTrack,
-              };
-            })
-          );
-
-          setCamOn(true);
           await pub.unmute?.();
         } else {
-          setTiles((prev) =>
-            prev.map((t) => {
-              if (!t.isLocal) return t;
-              return {
-                ...t,
-                camPubMuted: true,
-                camPubHasTrack: false,
-                videoTrack: undefined,
-              };
-            })
-          );
-
-          setCamOn(false);
           await pub.mute?.();
         }
 
-        scheduleRebuildTiles();
+        window.setTimeout(() => {
+          scheduleRebuildTiles();
+        }, 30);
+
+        window.setTimeout(() => {
+          scheduleRebuildTiles();
+        }, 120);
+
         return;
       }
 
