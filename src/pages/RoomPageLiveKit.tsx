@@ -20,12 +20,6 @@ import {
   supportsModernBackgroundProcessors,
 } from "@livekit/track-processors";
 
-const makeProcessorForMode = (mode: FxMode, blur: number, bgUrl: string) => {
-  if (mode === "off") return null;
-  if (mode === "blur") return BackgroundBlur(Math.max(1, Math.min(30, Math.round(blur || 12)))) as any;
-  return VirtualBackground(bgUrl || DEFAULT_BG_DATA_URL) as any;
-};
-
 import { supabase } from "../lib/supabase";
 
 import ChatPanel from "../components/ChatPanel";
@@ -959,7 +953,7 @@ export function RoomPageLiveKit() {
   });
   const roomSoundsEnabledRef = useRef(roomSoundsEnabled);
 
-  
+
   useEffect(() => {
     roomSoundsEnabledRef.current = roomSoundsEnabled;
     try {
@@ -1422,7 +1416,7 @@ export function RoomPageLiveKit() {
     } catch { }
   };
 
-  const makeProcessorForMode = (mode: FxMode, blur: number, bgUrl: string): TrackProcessor<"video"> | null => {
+  const makeProcessorForMode = (mode: FxMode, blur: number, bgUrl: string): any | null => {
     if (mode === "off") return null;
     if (mode === "blur") return BackgroundBlur(Math.max(1, Math.min(30, Math.round(blur || 12)))) as any;
     return VirtualBackground(bgUrl || DEFAULT_BG_DATA_URL) as any;
@@ -1598,6 +1592,30 @@ export function RoomPageLiveKit() {
   useEffect(() => {
     if (!session?.id) return;
     loadModerators(session.id).catch(() => { });
+  }, [session?.id]);
+
+  useEffect(() => {
+    if (!session?.id) return;
+
+    const ch = supabase
+      .channel(`session-role-assignments:${session.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "session_role_assignments",
+          filter: `session_id=eq.${session.id}`,
+        },
+        () => {
+          void loadModerators(session.id);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      safeRemoveRealtimeChannel(ch);
+    };
   }, [session?.id]);
 
   const grantModerator = async (userId: string) => {
@@ -1976,7 +1994,7 @@ export function RoomPageLiveKit() {
     return { ok: true, max: res.max, count: res.count };
   };
 
-// ---- continue in chunk 2 ----
+  // ---- continue in chunk 2 ----
   const requestToken = async () => {
     if (!session) return;
     setTokenError("");
@@ -2104,9 +2122,11 @@ export function RoomPageLiveKit() {
   const [pipMountEl, setPipMountEl] = useState<HTMLElement | null>(null);
   const [pipOpen, setPipOpen] = useState(false);
 
-  const pipSupported =
+  const documentPipSupported =
     typeof window !== "undefined" &&
     typeof (window as WindowWithDocumentPiP).documentPictureInPicture !== "undefined";
+
+  const pipSupported = typeof window !== "undefined";
 
   useEffect(() => {
     setOpenTileAdminMenuId((prev) => (prev && tiles.some((t) => t.id === prev) ? prev : null));
@@ -2912,16 +2932,26 @@ export function RoomPageLiveKit() {
 
     const pipApi = (window as WindowWithDocumentPiP).documentPictureInPicture;
 
-    if (!pipApi) {
-      alert("Document Picture-in-Picture is not supported in this browser.");
-      return;
-    }
+    let pipWindow: Window | null = null;
 
-    const pipWindow = await pipApi.requestWindow({
-      width: 480,
-      height: 320,
-      preferInitialWindowPlacement: true,
-    } as any);
+    if (pipApi) {
+      pipWindow = await pipApi.requestWindow({
+        width: 480,
+        height: 320,
+        preferInitialWindowPlacement: true,
+      } as any);
+    } else {
+      pipWindow = window.open(
+        "",
+        "mysession-livekit-pip",
+        "popup=yes,width=480,height=320,resizable=yes,scrollbars=no"
+      );
+
+      if (!pipWindow) {
+        alert("Pop-up blocked. Allow pop-ups for this site.");
+        return;
+      }
+    }
 
     copyStylesToPiPWindow(pipWindow);
 
@@ -3023,11 +3053,54 @@ export function RoomPageLiveKit() {
     );
   };
 
+  const optimisticCameraOff = (tileId: string) => {
+    setTiles((prev) =>
+      prev.map((t) => {
+        if (t.id !== tileId) return t;
+        return {
+          ...t,
+          camPubMuted: true,
+          camPubHasTrack: false,
+        };
+      })
+    );
+  };
+
   const adminMuteRemoteTrack = async (
     tileId: string,
     participantIdentity: string,
     trackSid: string
   ) => {
+    const adminTurnOffRemoteCamera = async (
+      tileId: string,
+      participantIdentity: string,
+      trackSid: string
+    ) => {
+      const roomName = roomNameForApi;
+      if (!roomName) return;
+
+      const busyKey = `${participantIdentity}:${trackSid}:camera-off`;
+      setAdminBusyKey(busyKey);
+
+      optimisticCameraOff(tileId);
+
+      try {
+        await callAdmin({
+          action: "mute_track",
+          roomName,
+          participantIdentity,
+          trackSid,
+        });
+
+        scheduleRebuildTiles();
+      } catch (e: any) {
+        console.error("turn camera off failed:", e);
+        alert(String(e?.message || e || "camera_off_failed"));
+        scheduleRebuildTiles();
+      } finally {
+        setAdminBusyKey("");
+      }
+    };
     const roomName = roomNameForApi;
     if (!roomName) return;
 
@@ -3093,11 +3166,18 @@ export function RoomPageLiveKit() {
         }
       }
 
-      await callAdmin({
-        action: "remove_participant",
-        roomName,
-        participantIdentity,
-      });
+      try {
+        await callAdmin({
+          action: "remove_participant",
+          roomName,
+          participantIdentity,
+        });
+      } catch (e: any) {
+        const msg = String(e?.message || e || "");
+        if (!/participant not found/i.test(msg)) {
+          throw e;
+        }
+      }
 
       showSystemNotice({
         kind: "info",
@@ -3456,13 +3536,15 @@ export function RoomPageLiveKit() {
 
   const tilesForRender = useMemo(() => {
     const list = tilesBaseForUi.filter((t) => !hiddenTileIds[t.id]);
-    const local = list.find((t) => t.isLocal);
-    const remotes = list.filter((t) => !t.isLocal);
 
-    const pinned = pinnedTileId ? remotes.find((t) => t.id === pinnedTileId) : undefined;
-    const remRest = remotes.filter((t) => t.id !== pinnedTileId);
+    const pinned = pinnedTileId
+      ? list.find((t) => t.id === pinnedTileId) || null
+      : null;
 
-    return [...(local ? [local] : []), ...(pinned ? [pinned] : []), ...remRest];
+    if (!pinned) return list;
+
+    const rest = list.filter((t) => t.id !== pinned.id);
+    return [pinned, ...rest];
   }, [tilesBaseForUi, hiddenTileIds, pinnedTileId]);
 
   // sizing
@@ -3609,7 +3691,10 @@ export function RoomPageLiveKit() {
     const roleBusy = roleBusyKey === `mod:${pidBase}:grant` || roleBusyKey === `mod:${pidBase}:revoke`;
 
     const hasMicTrack = !!t.micTrackSid && !!t.participantIdentity;
+    const hasCamTrack = !!t.camTrackSid && !!t.participantIdentity;
+
     const muteMicDisabled = !canAdminTarget || !hasMicTrack || !!t.micMuted;
+    const turnCameraOffDisabled = !canAdminTarget || !hasCamTrack || isTileCamOff(t);
     const kickDisabled = !canAdminTarget || !t.participantIdentity;
 
     const isHidden = !!hiddenTileIds[t.id];
@@ -3619,6 +3704,11 @@ export function RoomPageLiveKit() {
       !!t.participantIdentity &&
       !!t.micTrackSid &&
       adminBusyKey === `${t.participantIdentity}:${t.micTrackSid}:mute`;
+
+    const busyCameraOff =
+      !!t.participantIdentity &&
+      !!t.camTrackSid &&
+      adminBusyKey === `${t.participantIdentity}:${t.camTrackSid}:camera-off`;
 
     const busyKick =
       !!t.participantIdentity &&
@@ -3632,7 +3722,7 @@ export function RoomPageLiveKit() {
     const volPct = !t.isLocal ? Number(volumePctByParticipantKey[volumeKey] ?? 100) : 100;
 
     const namePlateBaseCls = [
-      "group/name inline-flex items-center gap-2 rounded-2xl border backdrop-blur shadow-sm",
+      "group/name inline-flex items-center rounded-2xl border backdrop-blur shadow-sm",
       "px-3 py-2",
       isLight ? "bg-white/70 border-black/10 text-black/85" : "bg-black/30 border-white/10 text-white/90",
     ].join(" ");
@@ -3668,19 +3758,21 @@ export function RoomPageLiveKit() {
         {/* nameplate */}
         <div className="absolute bottom-2 left-2 z-20 max-w-[78%]">
           <div className={namePlateBaseCls}>
-            <div className="max-w-[340px] truncate text-[13px] font-semibold leading-none">
-              {nameText}
-            </div>
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="max-w-[340px] truncate text-[13px] font-semibold leading-none">
+                {nameText}
+              </div>
 
-            {t.kind === "screen" ? (
-              <div className="flex items-center gap-1 opacity-90 shrink-0">
-                <span className="text-[11px]">🖥️</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1 opacity-90 shrink-0">
-                <Icon name={micMuted ? "mic-off" : "mic-on"} theme={theme} className="w-4 h-4" />
-              </div>
-            )}
+              {t.kind === "screen" ? (
+                <div className="flex items-center gap-1 opacity-90 shrink-0">
+                  <span className="text-[11px]">🖥️</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1 opacity-90 shrink-0">
+                  <Icon name={micMuted ? "mic-off" : "mic-on"} theme={theme} className="w-4 h-4" />
+                </div>
+              )}
+            </div>
 
             {t.isLocal && t.kind !== "screen" && (
               <button
@@ -3692,8 +3784,8 @@ export function RoomPageLiveKit() {
                   openEditName();
                 }}
                 className={[
-                  "ml-0 w-0 h-7 overflow-hidden rounded-xl flex items-center justify-center transition-all duration-150",
-                  "opacity-0 group-hover/name:opacity-100 group-hover/name:w-7 group-hover/name:ml-1",
+                  "ml-0 w-0 h-7 overflow-hidden rounded-xl flex items-center justify-center transition-all duration-150 shrink-0",
+                  "opacity-0 group-hover/name:opacity-100 group-hover/name:w-7 group-hover/name:ml-2",
                   isLight ? "bg-black/5 hover:bg-black/10 text-black/70" : "bg-white/5 hover:bg-white/10 text-white/85",
                 ].join(" ")}
               >
@@ -3701,198 +3793,213 @@ export function RoomPageLiveKit() {
               </button>
             )}
           </div>
-        </div>
 
-        {/* menu */}
-        <div
-          className="absolute top-2 right-2 z-30"
-          data-lk-admin-menu-anchor="true"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="relative">
-            <button
-              type="button"
-              title="Participant actions"
-              aria-label="Participant actions"
-              onClick={(e) => {
-                e.stopPropagation();
-                setOpenTileAdminMenuId((prev) => (prev === t.id ? null : t.id));
-              }}
-              className={[
-                "w-9 h-9 rounded-xl flex items-center justify-center transition shadow-sm",
-                isLight
-                  ? "bg-white/90 border border-black/10 text-black/75 hover:bg-white"
-                  : "bg-black/55 border border-white/10 text-white/90 hover:bg-black/70",
-                isMenuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-              ].join(" ")}
-            >
-              <span className="text-lg leading-none -mt-[2px]">⋯</span>
-            </button>
-
-            {isMenuOpen && (
-              <div
-                className={`absolute right-0 top-[calc(100%+8px)] w-[260px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}
+          {/* menu */}
+          <div
+            className="absolute top-2 right-2 z-30"
+            data-lk-admin-menu-anchor="true"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="relative">
+              <button
+                type="button"
+                title="Participant actions"
+                aria-label="Participant actions"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpenTileAdminMenuId((prev) => (prev === t.id ? null : t.id));
+                }}
+                className={[
+                  "w-9 h-9 rounded-xl flex items-center justify-center transition shadow-sm",
+                  isLight
+                    ? "bg-white/90 border border-black/10 text-black/75 hover:bg-white"
+                    : "bg-black/55 border border-white/10 text-white/90 hover:bg-black/70",
+                  isMenuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                ].join(" ")}
               >
-                {canRoleManageTarget && (
-                  <>
-                    <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>
-                      Roles
-                    </div>
+                <span className="text-lg leading-none -mt-[2px]">⋯</span>
+              </button>
 
-                    {!isTargetModerator ? (
+              {isMenuOpen && (
+                <div
+                  className={`absolute right-0 top-[calc(100%+8px)] w-[260px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}
+                >
+                  {canRoleManageTarget && (
+                    <>
+                      <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>
+                        Roles
+                      </div>
+
+                      {!isTargetModerator ? (
+                        <button
+                          type="button"
+                          disabled={roleBusy || rolesLoading}
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            if (!pidBase) return;
+                            await grantModerator(pidBase);
+                            setOpenTileAdminMenuId(null);
+                          }}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
+                        >
+                          Make moderator
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={roleBusy || rolesLoading}
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            if (!pidBase) return;
+                            await revokeModerator(pidBase);
+                            setOpenTileAdminMenuId(null);
+                          }}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
+                        >
+                          Remove moderator
+                        </button>
+                      )}
+
+                      <div className={isLight ? "h-px bg-black/10" : "h-px bg-white/10"} />
+                    </>
+                  )}
+
+                  {!t.isLocal && t.kind !== "screen" && (
+                    <>
+                      <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>
+                        Moderation
+                      </div>
+
                       <button
                         type="button"
-                        disabled={roleBusy || rolesLoading}
+                        disabled={muteMicDisabled || busyMuteMic}
                         onClick={async (e) => {
                           e.stopPropagation();
-                          if (!pidBase) return;
-                          await grantModerator(pidBase);
+                          if (!t.participantIdentity || !t.micTrackSid) return;
+                          if (muteMicDisabled) return;
+                          await adminMuteRemoteTrack(t.id, t.participantIdentity, t.micTrackSid);
                           setOpenTileAdminMenuId(null);
                         }}
                         className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
                       >
-                        Make moderator
+                        Mute Mic
                       </button>
-                    ) : (
+
                       <button
                         type="button"
-                        disabled={roleBusy || rolesLoading}
+                        disabled={turnCameraOffDisabled || busyCameraOff}
                         onClick={async (e) => {
                           e.stopPropagation();
-                          if (!pidBase) return;
-                          await revokeModerator(pidBase);
+                          if (!t.participantIdentity || !t.camTrackSid) return;
+                          if (turnCameraOffDisabled) return;
+                          await adminTurnOffRemoteCamera(t.id, t.participantIdentity, t.camTrackSid);
                           setOpenTileAdminMenuId(null);
                         }}
-                        className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
+                        className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                          }`}
                       >
-                        Remove moderator
+                        Turn camera off
                       </button>
-                    )}
 
-                    <div className={isLight ? "h-px bg-black/10" : "h-px bg-white/10"} />
-                  </>
-                )}
+                      <div className={isLight ? "h-px bg-black/10" : "h-px bg-white/10"} />
+                    </>
+                  )}
 
-                {!t.isLocal && t.kind !== "screen" && (
-                  <>
-                    <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>
-                      Moderation
-                    </div>
-
-                    <button
-                      type="button"
-                      disabled={muteMicDisabled || busyMuteMic}
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        if (!t.participantIdentity || !t.micTrackSid) return;
-                        if (muteMicDisabled) return;
-                        await adminMuteRemoteTrack(t.id, t.participantIdentity, t.micTrackSid);
-                        setOpenTileAdminMenuId(null);
-                      }}
-                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
-                    >
-                      Mute Mic
-                    </button>
-
-                    <div className={isLight ? "h-px bg-black/10" : "h-px bg-white/10"} />
-                  </>
-                )}
-
-                {!t.isLocal && t.kind !== "screen" && (
-                  <>
-                    <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>
-                      Audio
-                    </div>
-                    <div className="px-4 pb-3">
-                      <div className="flex items-center gap-3">
-                        <div className={`text-[11px] ${isLight ? "text-black/55" : "text-white/55"} w-[46px]`}>
-                          Vol
-                        </div>
-                        <input
-                          type="range"
-                          min={0}
-                          max={100}
-                          value={Number.isFinite(volPct) ? volPct : 100}
-                          onChange={(e) => setParticipantVolumePct(t, Number(e.target.value))}
-                          className="w-full"
-                        />
-                        <div className={`text-[11px] ${isLight ? "text-black/55" : "text-white/55"} w-[40px] text-right`}>
-                          {Number.isFinite(volPct) ? volPct : 100}%
+                  {!t.isLocal && t.kind !== "screen" && (
+                    <>
+                      <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>
+                        Audio
+                      </div>
+                      <div className="px-4 pb-3">
+                        <div className="flex items-center gap-3">
+                          <div className={`text-[11px] ${isLight ? "text-black/55" : "text-white/55"} w-[46px]`}>
+                            Vol
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            value={Number.isFinite(volPct) ? volPct : 100}
+                            onChange={(e) => setParticipantVolumePct(t, Number(e.target.value))}
+                            className="w-full"
+                          />
+                          <div className={`text-[11px] ${isLight ? "text-black/55" : "text-white/55"} w-[40px] text-right`}>
+                            {Number.isFinite(volPct) ? volPct : 100}%
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <div className={isLight ? "h-px bg-black/10" : "h-px bg-white/10"} />
-                  </>
-                )}
+                      <div className={isLight ? "h-px bg-black/10" : "h-px bg-white/10"} />
+                    </>
+                  )}
 
-                {!t.isLocal && t.kind !== "screen" && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        togglePin(t.id);
-                      }}
-                      className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
-                    >
-                      {isPinned ? "Unpin participant" : "Pin participant"}
-                    </button>
+                  {t.kind !== "screen" && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          togglePin(t.id);
+                        }}
+                        className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
+                      >
+                        {isPinned ? "Unpin participant" : "Pin participant"}
+                      </button>
 
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleHide(t.id);
-                      }}
-                      className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
-                    >
-                      {isHidden ? "Unhide participant" : "Hide participant"}
-                    </button>
-                  </>
-                )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleHide(t.id);
+                        }}
+                        className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
+                      >
+                        {isHidden ? "Unhide participant" : "Hide participant"}
+                      </button>
+                    </>
+                  )}
 
-                {!t.isLocal && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openReportParticipantModal(t);
-                        setOpenTileAdminMenuId(null);
-                      }}
-                      className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
-                    >
-                      Report participant
-                    </button>
+                  {!t.isLocal && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openReportParticipantModal(t);
+                          setOpenTileAdminMenuId(null);
+                        }}
+                        className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
+                      >
+                        Report participant
+                      </button>
 
-                    <div className={isLight ? "h-px bg-black/10" : "h-px bg-white/10"} />
+                      <div className={isLight ? "h-px bg-black/10" : "h-px bg-white/10"} />
 
-                    <button
-                      type="button"
-                      disabled={kickDisabled || busyKick}
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        if (!t.participantIdentity) return;
-                        if (!confirm(`Kick "${t.label}"?`)) return;
-                        await adminKickParticipant(
-                          t.participantIdentity,
-                          looksLikeUuid(pidBase) ? pidBase : undefined,
-                          t.label
-                        );
-                        setOpenTileAdminMenuId(null);
-                      }}
-                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-red-700 hover:bg-red-50" : "text-red-300 hover:bg-red-500/10"}`}
-                    >
-                      Kick participant
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
+                      <button
+                        type="button"
+                        disabled={kickDisabled || busyKick}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!t.participantIdentity) return;
+                          if (!confirm(`Kick "${t.label}"?`)) return;
+                          await adminKickParticipant(
+                            t.participantIdentity,
+                            looksLikeUuid(pidBase) ? pidBase : undefined,
+                            t.label
+                          );
+                          setOpenTileAdminMenuId(null);
+                        }}
+                        className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-red-700 hover:bg-red-50" : "text-red-300 hover:bg-red-500/10"}`}
+                      >
+                        Kick participant
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
-    );
+        );
   };
 
   const activeScreenShareTile = useMemo(() => {
@@ -3904,679 +4011,694 @@ export function RoomPageLiveKit() {
     return tilesForRender.find((t) => t.id === pinnedTileId) || null;
   }, [pinnedTileId, tilesForRender]);
 
-  const featuredTile = activeScreenShareTile || pinnedParticipantTile || null;
+        const featuredTile = activeScreenShareTile || pinnedParticipantTile || null;
 
   const sidebarTiles = useMemo(() => {
     if (activeScreenShareTile) return tilesForRender;
     if (pinnedParticipantTile) return tilesForRender.filter((t) => t.id !== pinnedParticipantTile.id);
-    return tilesForRender;
+        return tilesForRender;
   }, [activeScreenShareTile, pinnedParticipantTile, tilesForRender]);
 
-  // Layout
-  const tileCount = tilesForRender.length;
-  const paddingBottomPx = 12;
+        // Layout
+        const tileCount = tilesForRender.length;
+        const paddingBottomPx = 12;
 
-  const isVeryNarrow = effectiveW < 430;
-  const isNarrowForColumns = effectiveW < 520;
-  const isCompact = effectiveW < 900;
+        const isVeryNarrow = effectiveW < 430;
+        const isNarrowForColumns = effectiveW < 520;
+        const isCompact = effectiveW < 900;
 
-  const useVeryNarrowMode = isVeryNarrow || (isMobileQuery && isNarrowForColumns);
-  const stackTwoOnThisViewport =
-    tileCount === 2 &&
-    !useVeryNarrowMode &&
-    (isTabletQuery || (isMobileQuery && effectiveW < 640) || isCompact);
+        const useVeryNarrowMode = isVeryNarrow || (isMobileQuery && isNarrowForColumns);
+        const stackTwoOnThisViewport =
+        tileCount === 2 &&
+        !useVeryNarrowMode &&
+        (isTabletQuery || (isMobileQuery && effectiveW < 640) || isCompact);
 
-  const useFeaturedLayout =
-    !!featuredTile &&
-    !useVeryNarrowMode &&
+        const useFeaturedLayout =
+        !!featuredTile &&
+        !useVeryNarrowMode &&
     effectiveW >= 900;
 
-  const videoLayout = useFeaturedLayout ? (
-    <div className="h-full w-full grid grid-cols-[minmax(0,1fr),320px] gap-3 p-3">
-      <div className="min-w-0 min-h-0 flex items-center justify-center">
-        <div className="w-full">
-          {featuredTile ? renderTile(featuredTile) : null}
-        </div>
-      </div>
-
-      <div className="min-w-0 min-h-0 overflow-y-auto pr-1 flex flex-col gap-3">
-        {sidebarTiles.length === 0 ? (
-          <div
-            className={`min-h-[160px] rounded-2xl border flex items-center justify-center ${isLight ? "border-black/10 bg-black/5 text-black/50" : "border-white/10 bg-white/5 text-white/55"
-              }`}
-          >
-            No other participants
-          </div>
-        ) : (
-          sidebarTiles.map((t) => (
-            <div key={`sidebar-${t.id}`}>{renderTile(t)}</div>
-          ))
-        )}
-      </div>
-    </div>
-  ) : (
-    <>
-      {!tileCount && connected ? (
-        <div className={`h-full w-full flex items-center justify-center px-4 ${isLight ? "text-black/60" : "text-white/60"}`}>
-          <div className={`min-h-[240px] w-full max-w-[680px] rounded-2xl border flex items-center justify-center ${isLight ? "border-black/10 bg-black/5" : "border-white/10 bg-white/5"}`}>
-            No participants yet
-          </div>
-        </div>
-      ) : tileCount ? (
-        useVeryNarrowMode ? (
-          tileCount <= 2 ? (
-            <MobileFillLayoutSizing<TileModel>
-              items={tilesForRender}
-              containerWidth={effectiveW}
-              containerHeight={effectiveH}
-              paddingBottomPx={paddingBottomPx}
-              renderItem={(t) => renderTile(t)}
-            />
-          ) : (
-            <MobileStackLayoutSizing<TileModel>
-              items={tilesForRender}
-              paddingBottomPx={paddingBottomPx}
-              renderItem={(t) => renderTile(t)}
-            />
-          )
-        ) : tileCount <= 2 ? (
-          <P2PLayoutSizing<TileModel>
-            items={tilesForRender}
-            containerWidth={effectiveW}
-            containerHeight={effectiveH}
-            stack={stackTwoOnThisViewport}
-            renderItem={(t) => renderTile(t)}
-          />
-        ) : (
-          <GridLayoutSizing<TileModel>
-            items={tilesForRender}
-            containerWidth={effectiveW}
-            containerHeight={effectiveH}
-            forceThreeAsTwoPlusOne={rightPanelOpen}
-            renderItem={(t) => renderTile(t)}
-          />
-        )
-      ) : null}
-    </>
-  );
-
-  const videoContent = (
-    <div className="w-full h-full min-h-0 relative">
-      {roomReadyText ? (
-        <div className={`absolute inset-0 flex items-center justify-center z-10 ${isLight ? "text-black/60" : "text-white/70"}`}>
-          <div className={`px-4 py-2 rounded-xl ${isLight ? "bg-white/70" : "bg-black/30"}`}>
-            {roomReadyText}
-          </div>
-        </div>
-      ) : null}
-
-      {hiddenTiles.length > 0 && (
-        <div className="absolute top-3 left-3 z-30 max-w-[80%]">
-          <div
-            className={[
-              "inline-flex items-center gap-2 px-3 py-2 rounded-2xl border backdrop-blur shadow",
-              isLight ? "bg-white/80 border-black/10 text-black/75" : "bg-black/35 border-white/10 text-white/85",
-            ].join(" ")}
-          >
-            <span className="text-[12px] font-semibold">Hidden:</span>
-            <div className="flex flex-wrap gap-2">
-              {hiddenTiles.slice(0, 8).map((t) => (
-                <button
-                  key={`unhide-${t.id}`}
-                  type="button"
-                  onClick={() => toggleHide(t.id)}
-                  className={[
-                    "px-2 py-1 rounded-xl text-[12px] font-semibold border transition",
-                    isLight ? "bg-black/5 border-black/10 hover:bg-black/10 text-black/70" : "bg-white/5 border-white/10 hover:bg-white/10 text-white/85",
-                  ].join(" ")}
-                  title="Unhide participant"
-                >
-                  {String(t.label || "User").slice(0, 18)} ✕
-                </button>
-              ))}
-              {hiddenTiles.length > 8 ? (
-                <span className={`text-[12px] opacity-70 ${isLight ? "text-black/60" : "text-white/70"}`}>
-                  +{hiddenTiles.length - 8}
-                </span>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {videoLayout}
-
-      {floatingReactions.length > 0 && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-6 z-30 flex items-end justify-center">
-          <div className="relative flex flex-col items-center gap-2">
-            {floatingReactions.slice(-3).map((r, idx) => (
-              <div
-                key={r.id}
-                className={[
-                  "ms-reaction-float select-none",
-                  "px-4 py-3 rounded-3xl shadow-2xl border backdrop-blur",
-                  "flex flex-col items-center justify-center",
-                  isLight ? "bg-white/90 border-black/10 text-black/80" : "bg-[#020617]/70 border-white/10 text-white/90",
-                ].join(" ")}
-                style={{ animationDelay: `${idx * 0.05}s` }}
-              >
-                <div className="text-[44px] leading-none">{REACTION_EMOJI[r.type]}</div>
-                <div className="mt-1 text-[12px] leading-tight opacity-80 max-w-[260px] truncate">
-                  {r.fromName}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
-  const pipFeaturedTile = useMemo(() => {
-    if (activeScreenShareTile) return activeScreenShareTile;
-    if (pinnedParticipantTile) return pinnedParticipantTile;
-    return tilesForRender[0] || null;
-  }, [activeScreenShareTile, pinnedParticipantTile, tilesForRender]);
-
-  const pipStripTiles = useMemo(() => {
-    if (activeScreenShareTile) return tilesForRender.slice(0, 4);
-    if (pinnedParticipantTile) {
-      return tilesForRender.filter((t) => t.id !== pinnedParticipantTile.id).slice(0, 4);
-    }
-    return tilesForRender.slice(1, 5);
-  }, [activeScreenShareTile, pinnedParticipantTile, tilesForRender]);
-
-  const pipPortal = pipMountEl
-    ? createPortal(
-      <div className={`h-full w-full flex flex-col ${isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white"}`}>
-        <div
-          className={`h-11 px-3 flex items-center justify-between border-b ${isLight ? "border-black/10 bg-white/85" : "border-white/10 bg-[#020617]/80"
-            }`}
-        >
-          <div className="min-w-0">
-            <div className="text-[12px] font-semibold truncate">
-              {String(session?.title || "Session")}
-            </div>
-            <div className={`text-[10px] ${isLight ? "text-black/50" : "text-white/50"}`}>
-              {participantsCount} participants
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => closePictureInPicture()}
-            className={`w-8 h-8 rounded-lg flex items-center justify-center ${isLight ? "bg-black/5 hover:bg-black/10 text-black/70" : "bg-white/5 hover:bg-white/10 text-white/85"
-              }`}
-            title="Close PiP"
-          >
-            ✕
-          </button>
-        </div>
-
-        <div className="flex-1 min-h-0 grid grid-cols-[minmax(0,1fr),110px] gap-2 p-2">
+        const videoLayout = useFeaturedLayout ? (
+        <div className="h-full w-full grid grid-cols-[minmax(0,1fr),320px] gap-3 p-3">
           <div className="min-w-0 min-h-0 flex items-center justify-center">
             <div className="w-full">
-              {pipFeaturedTile ? renderTile(pipFeaturedTile) : null}
+              {featuredTile ? renderTile(featuredTile) : null}
             </div>
           </div>
 
-          <div className="min-w-0 min-h-0 overflow-y-auto flex flex-col gap-2 pr-1">
-            {pipStripTiles.map((t) => (
-              <div key={`pip-${t.id}`}>{renderTile(t)}</div>
-            ))}
+          <div className="min-w-0 min-h-0 overflow-y-auto pr-1 flex flex-col gap-3">
+            {sidebarTiles.length === 0 ? (
+              <div
+                className={`min-h-[160px] rounded-2xl border flex items-center justify-center ${isLight ? "border-black/10 bg-black/5 text-black/50" : "border-white/10 bg-white/5 text-white/55"
+                  }`}
+              >
+                No other participants
+              </div>
+            ) : (
+              sidebarTiles.map((t) => (
+                <div key={`sidebar-${t.id}`}>{renderTile(t)}</div>
+              ))
+            )}
           </div>
         </div>
-
-        <div className="grid grid-cols-5 gap-2 px-2 pb-2">
-          <button
-            type="button"
-            onClick={() => toggleMic().catch(() => { })}
-            className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
-                ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
-                : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
-              }`}
-          >
-            {micOn ? "Mic on" : "Mic off"}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => toggleCam().catch(() => { })}
-            className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
-                ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
-                : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
-              }`}
-          >
-            {camOn ? "Cam on" : "Cam off"}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => toggleScreenShare().catch(() => { })}
-            className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
-                ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
-                : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
-              }`}
-          >
-            Share
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              try {
-                window.focus();
-              } catch { }
-            }}
-            className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
-                ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
-                : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
-              }`}
-          >
-            Main
-          </button>
-
-          <button
-            type="button"
-            onClick={() => leave().catch(() => { })}
-            className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
-                ? "border-red-200 bg-red-50 hover:bg-red-100 text-red-700"
-                : "border-red-400/20 bg-red-500/10 hover:bg-red-500/15 text-red-300"
-              }`}
-          >
-            Leave
-          </button>
-        </div>
-      </div>,
-      pipMountEl
-    )
-    : null;
-
-  // UI colors
-  const pageBg = isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white";
-  const panelBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#0B1220]/55 border border-white/5";
-  const bottomBarBg = isLight
-    ? "bg-white/85 border border-black/10"
-    : "bg-[#0B1220]/80 border border-white/10";
-
-  const ctlBtnBase = isLight
-    ? "bg-black/5 hover:bg-black/10 text-black/75"
-    : "bg-white/5 hover:bg-white/10 text-white/90";
-
-  // participants list search
-  const [participantsSearch, setParticipantsSearch] = useState("");
-
-  const participantsForPanel = useMemo(() => {
-    const q = participantsSearch.trim().toLowerCase();
-    const base = tilesBaseForUi;
-    if (!q) return base;
-    return base.filter((t) => (t.label || "").toLowerCase().includes(q));
-  }, [tilesBaseForUi, participantsSearch]);
-
-  const ChatPanelAny = ChatPanel as any;
-
-  const RightPanelBody = (
-    <div
-      className={`rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col ${panelBg} ${theme === "dark" ? "dark" : ""}`}
-      data-theme={theme}
-      style={{ colorScheme: theme }}
-    >
-      {rightTab === "participants" && (
-        <div className="h-full min-h-0 flex flex-col">
-          <div
-            className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
-              }`}
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              <span
-                className={`${isLight ? "text-black/80" : "text-white/85"
-                  } font-inter font-semibold truncate`}
-              >
-                Participants
-              </span>
-              <span className={`${isLight ? "text-black/50" : "text-white/55"} text-sm`}>
-                ({participantsCount})
-              </span>
+        ) : (
+        <>
+          {!tileCount && connected ? (
+            <div className={`h-full w-full flex items-center justify-center px-4 ${isLight ? "text-black/60" : "text-white/60"}`}>
+              <div className={`min-h-[240px] w-full max-w-[680px] rounded-2xl border flex items-center justify-center ${isLight ? "border-black/10 bg-black/5" : "border-white/10 bg-white/5"}`}>
+                No participants yet
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={openEditName}
-                className={`px-3 h-9 rounded-xl text-[12px] font-semibold border transition ${isLight
-                    ? "bg-black/5 border-black/10 hover:bg-black/10 text-black/70"
-                    : "bg-white/5 border-white/10 hover:bg-white/10 text-white/85"
-                  }`}
-                title="Edit my name"
-              >
-                Edit my name
-              </button>
-
-              <button
-                onClick={() => openRightTab(null)}
-                className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                    ? "bg-black/5 hover:bg-black/10 text-black/60"
-                    : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
-                  }`}
-                title="Close"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-
-          <div className="p-4">
-            <div
-              className={`rounded-xl px-3 py-2 ${isLight ? "bg-black/5 border border-black/10" : "bg-[#0B1220]/70 border border-white/10"
-                }`}
-            >
-              <input
-                value={participantsSearch}
-                onChange={(e) => setParticipantsSearch(e.target.value)}
-                placeholder="Search participants..."
-                className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${isLight
-                    ? "text-black/80 placeholder:text-black/40"
-                    : "text-white/85 placeholder:text-white/35"
-                  }`}
+          ) : tileCount ? (
+            useVeryNarrowMode ? (
+              tileCount <= 2 ? (
+                <MobileFillLayoutSizing<TileModel>
+                  items={tilesForRender}
+                  containerWidth={effectiveW}
+                  containerHeight={effectiveH}
+                  paddingBottomPx={paddingBottomPx}
+                  renderItem={(t) => renderTile(t)}
+                />
+              ) : (
+                <MobileStackLayoutSizing<TileModel>
+                  items={tilesForRender}
+                  paddingBottomPx={paddingBottomPx}
+                  renderItem={(t) => renderTile(t)}
+                />
+              )
+            ) : tileCount <= 2 ? (
+              <P2PLayoutSizing<TileModel>
+                items={tilesForRender}
+                containerWidth={effectiveW}
+                containerHeight={effectiveH}
+                stack={stackTwoOnThisViewport}
+                renderItem={(t) => renderTile(t)}
               />
-            </div>
+            ) : (
+              <GridLayoutSizing<TileModel>
+                items={tilesForRender}
+                containerWidth={effectiveW}
+                containerHeight={effectiveH}
+                forceThreeAsTwoPlusOne={rightPanelOpen}
+                renderItem={(t) => renderTile(t)}
+              />
+            )
+          ) : null}
+        </>
+        );
 
-            {rolesError ? (
-              <div className={`mt-2 text-[12px] ${isLight ? "text-red-600" : "text-red-300"}`}>
-                {rolesError}
-              </div>
-            ) : null}
-          </div>
-
-          <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
-            <div className="flex flex-col gap-2">
-              {participantsForPanel.map((p) => {
-                const isHidden = !!hiddenTileIds[p.id];
-                const isPinned = pinnedTileId === p.id;
-
-                const avatar = getAvatarForTile(p);
-                const initials = getInitials(p.label);
-
-                const pidBase = String(p.participantUserId || "").toLowerCase();
-                const isMod = !p.isLocal && looksLikeUuid(pidBase)
-                  ? moderatorUserIds.includes(pidBase)
-                  : p.isLocal
-                    ? isSelfModerator && !isHost
-                    : false;
-
-                const roleText =
-                  p.kind === "screen"
-                    ? p.isLocal
-                      ? "Your screen"
-                      : "Screen share"
-                    : p.isLocal
-                      ? isHost
-                        ? "Host"
-                        : isMod
-                          ? "Moderator"
-                          : "You"
-                      : isMod
-                        ? "Moderator"
-                        : "Participant";
-
-                return (
-                  <div
-                    key={p.id}
-                    className={`px-3 py-2 rounded-xl transition ${isLight ? "hover:bg-black/5" : "hover:bg-white/5"
-                      }`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        {avatar ? (
-                          <img
-                            src={avatar}
-                            alt={p.label}
-                            className="w-10 h-10 rounded-full object-cover"
-                            referrerPolicy="no-referrer"
-                            onError={(e) => {
-                              try {
-                                (e.currentTarget as any).style.display = "none";
-                              } catch { }
-                            }}
-                          />
-                        ) : (
-                          <div
-                            className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${isLight
-                                ? "bg-blue-500/15 text-blue-700"
-                                : "bg-emerald-500/80 text-[#02140B]"
-                              }`}
-                          >
-                            {p.kind === "screen" ? "🖥️" : initials}
-                          </div>
-                        )}
-
-                        <div className="min-w-0">
-                          <div
-                            className={`text-[13px] font-medium truncate ${isLight ? "text-black/85" : "text-white/90"
-                              }`}
-                          >
-                            {p.label}
-                            {isPinned ? <span className="ml-2 opacity-70">📌</span> : null}
-                            {isHidden ? <span className="ml-2 opacity-70">🙈</span> : null}
-                          </div>
-                          <div
-                            className={`text-[11px] truncate ${isLight ? "text-black/45" : "text-white/45"
-                              }`}
-                          >
-                            {roleText}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        {p.kind !== "screen" && (
-                          <>
-                            <button
-                              onClick={() => togglePin(p.id)}
-                              className={`w-9 h-9 rounded-xl flex items-center justify-center border transition ${isLight
-                                  ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70"
-                                  : "border-white/10 bg-white/5 hover:bg-white/10 text-white/85"
-                                }`}
-                              title={isPinned ? "Unpin" : "Pin"}
-                            >
-                              📌
-                            </button>
-
-                            <button
-                              onClick={() => toggleHide(p.id)}
-                              className={`w-9 h-9 rounded-xl flex items-center justify-center border transition ${isLight
-                                  ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70"
-                                  : "border-white/10 bg-white/5 hover:bg-white/10 text-white/85"
-                                }`}
-                              title={isHidden ? "Unhide" : "Hide"}
-                            >
-                              🙈
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className={`p-4 border-t ${isLight ? "border-black/10" : "border-white/5"}`}>
-            <button
-              onClick={() => {
-                try {
-                  const url = window.location.href;
-                  void navigator.clipboard.writeText(url);
-                  alert("Invite link copied ✅");
-                } catch {
-                  alert("Could not copy link");
-                }
-              }}
-              className={`w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 ${isLight
-                  ? "bg-blue-600 hover:bg-blue-700 text-white"
-                  : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
-                }`}
-            >
-              <span className="text-lg">⎘</span>
-              <span>Copy invite link</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {rightTab === "chat" && (
-        <div className="h-full min-h-0 flex flex-col">
-          <div
-            className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
-              }`}
-          >
-            <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>
-              Chat
-            </div>
-            <button
-              onClick={() => openRightTab(null)}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                  ? "bg-black/5 hover:bg-black/10 text-black/60"
-                  : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
-                }`}
-              title="Close"
-            >
-              ✕
-            </button>
-          </div>
-
-          <div className="flex-1 min-h-0 p-4 overflow-hidden">
-            <div
-              className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight
-                  ? "bg-white/70 border border-black/10"
-                  : "bg-[#020617]/40 border border-white/10"
-                }`}
-            >
-              <div className="h-full min-h-0 flex flex-col overflow-hidden [&>*]:h-full [&>*]:min-h-0">
-                {session?.id ? (
-                  <div
-                    data-theme={theme}
-                    style={{ colorScheme: theme }}
-                    className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
-                  >
-                    <ChatPanelAny
-                      sessionId={session.id}
-                      theme={theme}
-                      showHeader={false}
-                      title="Chat"
-                      onClose={() => openRightTab(null)}
-                      embedded={true}
-                      hideHeader={true}
-                      authUserId={authUserId}
-                      displayName={displayName || userName}
-                      onAnyMessageSeen={() => markChatRead()}
-                    />
-                  </div>
-                ) : null}
+        const videoContent = (
+        <div className="w-full h-full min-h-0 relative">
+          {roomReadyText ? (
+            <div className={`absolute inset-0 flex items-center justify-center z-10 ${isLight ? "text-black/60" : "text-white/70"}`}>
+              <div className={`px-4 py-2 rounded-xl ${isLight ? "bg-white/70" : "bg-black/30"}`}>
+                {roomReadyText}
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          ) : null}
 
-      {rightTab === "intentions" && (
-        <div className="h-full min-h-0 flex flex-col">
-          <div
-            className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
-              }`}
-          >
-            <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>
-              Intentions
-            </div>
-            <button
-              onClick={() => openRightTab(null)}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                  ? "bg-black/5 hover:bg-black/10 text-black/60"
-                  : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
-                }`}
-              title="Close"
-            >
-              ✕
-            </button>
-          </div>
-
-          <div className="flex-1 min-h-0 overflow-hidden p-4">
-            <div
-              className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight
-                  ? "bg-white/70 border border-black/10"
-                  : "bg-[#020617]/40 border border-white/10"
-                }`}
-            >
-              <div className="h-full min-h-0 overflow-y-auto [&>*]:min-h-0">
-                <div
-                  data-theme={theme}
-                  style={{ colorScheme: theme }}
-                  className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
-                >
-                  {session?.id ? (
-                    <IntentionsPanel
-                      key={`intentions-${session.id}-${theme}`}
-                      theme={theme}
-                      sessionId={session.id}
-                      timerText={remainingTime || "--:--"}
-                    />
+          {hiddenTiles.length > 0 && (
+            <div className="absolute top-3 left-3 z-30 max-w-[80%]">
+              <div
+                className={[
+                  "inline-flex items-center gap-2 px-3 py-2 rounded-2xl border backdrop-blur shadow",
+                  isLight ? "bg-white/80 border-black/10 text-black/75" : "bg-black/35 border-white/10 text-white/85",
+                ].join(" ")}
+              >
+                <span className="text-[12px] font-semibold">Hidden:</span>
+                <div className="flex flex-wrap gap-2">
+                  {hiddenTiles.slice(0, 8).map((t) => (
+                    <button
+                      key={`unhide-${t.id}`}
+                      type="button"
+                      onClick={() => toggleHide(t.id)}
+                      className={[
+                        "px-2 py-1 rounded-xl text-[12px] font-semibold border transition",
+                        isLight ? "bg-black/5 border-black/10 hover:bg-black/10 text-black/70" : "bg-white/5 border-white/10 hover:bg-white/10 text-white/85",
+                      ].join(" ")}
+                      title="Unhide participant"
+                    >
+                      {String(t.label || "User").slice(0, 18)} ✕
+                    </button>
+                  ))}
+                  {hiddenTiles.length > 8 ? (
+                    <span className={`text-[12px] opacity-70 ${isLight ? "text-black/60" : "text-white/70"}`}>
+                      +{hiddenTiles.length - 8}
+                    </span>
                   ) : null}
                 </div>
               </div>
             </div>
-          </div>
+          )}
+
+          {videoLayout}
+
+          {floatingReactions.length > 0 && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-6 z-30 flex items-end justify-center">
+              <div className="relative flex flex-col items-center gap-2">
+                {floatingReactions.slice(-3).map((r, idx) => (
+                  <div
+                    key={r.id}
+                    className={[
+                      "ms-reaction-float select-none",
+                      "px-4 py-3 rounded-3xl shadow-2xl border backdrop-blur",
+                      "flex flex-col items-center justify-center",
+                      isLight ? "bg-white/90 border-black/10 text-black/80" : "bg-[#020617]/70 border-white/10 text-white/90",
+                    ].join(" ")}
+                    style={{ animationDelay: `${idx * 0.05}s` }}
+                  >
+                    <div className="text-[44px] leading-none">{REACTION_EMOJI[r.type]}</div>
+                    <div className="mt-1 text-[12px] leading-tight opacity-80 max-w-[260px] truncate">
+                      {r.fromName}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-      )}
-    </div>
-  );
-if (loading) {
+        );
+
+  const pipFeaturedTile = useMemo(() => {
+    if (activeScreenShareTile) return activeScreenShareTile;
+        if (pinnedParticipantTile) return pinnedParticipantTile;
+        return tilesForRender[0] || null;
+  }, [activeScreenShareTile, pinnedParticipantTile, tilesForRender]);
+
+  const pipStripTiles = useMemo(() => {
+    if (activeScreenShareTile) return tilesForRender.slice(0, 4);
+        if (pinnedParticipantTile) {
+      return tilesForRender.filter((t) => t.id !== pinnedParticipantTile.id).slice(0, 4);
+    }
+        return tilesForRender.slice(1, 5);
+  }, [activeScreenShareTile, pinnedParticipantTile, tilesForRender]);
+
+        const pipPortal = pipMountEl
+        ? createPortal(
+        <div className={`h-full w-full flex flex-col ${isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white"}`}>
+          <div
+            className={`h-11 px-3 flex items-center justify-between border-b ${isLight ? "border-black/10 bg-white/85" : "border-white/10 bg-[#020617]/80"
+              }`}
+          >
+            <div className="min-w-0">
+              <div className="text-[12px] font-semibold truncate">
+                {String(session?.title || "Session")}
+              </div>
+              <div className={`text-[10px] ${isLight ? "text-black/50" : "text-white/50"}`}>
+                {participantsCount} participants
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => closePictureInPicture()}
+              className={`w-8 h-8 rounded-lg flex items-center justify-center ${isLight ? "bg-black/5 hover:bg-black/10 text-black/70" : "bg-white/5 hover:bg-white/10 text-white/85"
+                }`}
+              title="Close PiP"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="flex-1 min-h-0 grid grid-cols-[minmax(0,1fr),110px] gap-2 p-2">
+            <div className="min-w-0 min-h-0 flex items-center justify-center">
+              <div className="w-full">
+                {pipFeaturedTile ? renderTile(pipFeaturedTile) : null}
+              </div>
+            </div>
+
+            <div className="min-w-0 min-h-0 overflow-y-auto flex flex-col gap-2 pr-1">
+              {pipStripTiles.map((t) => (
+                <div key={`pip-${t.id}`}>{renderTile(t)}</div>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-5 gap-2 px-2 pb-2">
+            <button
+              type="button"
+              onClick={() => toggleMic().catch(() => { })}
+              className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
+                ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
+                : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
+                }`}
+            >
+              <div className="flex flex-col items-center justify-center gap-1">
+                <Icon name={micOn ? "mic-on" : "mic-off"} theme={theme} className="w-4 h-4" />
+                <span>Mic</span>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => toggleCam().catch(() => { })}
+              className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
+                ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
+                : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
+                }`}
+            >
+              <div className="flex flex-col items-center justify-center gap-1">
+                <Icon name={camOn ? "camera-on" : "camera-off"} theme={theme} className="w-4 h-4" />
+                <span>Cam</span>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => toggleScreenShare().catch(() => { })}
+              className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
+                ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
+                : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
+                }`}
+            >
+              <div className="flex flex-col items-center justify-center gap-1">
+                <span className="text-[14px]">🖥️</span>
+                <span>Share</span>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  window.focus();
+                } catch { }
+              }}
+              className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
+                ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
+                : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
+                }`}
+            >
+              <div className="flex flex-col items-center justify-center gap-1">
+                <span className="text-[14px]">↗</span>
+                <span>Main</span>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => leave().catch(() => { })}
+              className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
+                ? "border-red-200 bg-red-50 hover:bg-red-100 text-red-700"
+                : "border-red-400/20 bg-red-500/10 hover:bg-red-500/15 text-red-300"
+                }`}
+            >
+              <div className="flex flex-col items-center justify-center gap-1">
+                <span className="text-[14px]">⎋</span>
+                <span>Leave</span>
+              </div>
+            </button>
+          </div>
+        </div>,
+        pipMountEl
+        )
+        : null;
+
+        // UI colors
+        const pageBg = isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white";
+        const panelBg = isLight ? "bg-white/85 border border-black/10" : "bg-[#0B1220]/55 border border-white/5";
+        const bottomBarBg = isLight
+        ? "bg-white/85 border border-black/10"
+        : "bg-[#0B1220]/80 border border-white/10";
+
+        const ctlBtnBase = isLight
+        ? "bg-black/5 hover:bg-black/10 text-black/75"
+        : "bg-white/5 hover:bg-white/10 text-white/90";
+
+        // participants list search
+        const [participantsSearch, setParticipantsSearch] = useState("");
+
+  const participantsForPanel = useMemo(() => {
+    const q = participantsSearch.trim().toLowerCase();
+        const base = tilesBaseForUi;
+        if (!q) return base;
+    return base.filter((t) => (t.label || "").toLowerCase().includes(q));
+  }, [tilesBaseForUi, participantsSearch]);
+
+        const ChatPanelAny = ChatPanel as any;
+
+        const RightPanelBody = (
+        <div
+          className={`rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col ${panelBg} ${theme === "dark" ? "dark" : ""}`}
+          data-theme={theme}
+          style={{ colorScheme: theme }}
+        >
+          {rightTab === "participants" && (
+            <div className="h-full min-h-0 flex flex-col">
+              <div
+                className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
+                  }`}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    className={`${isLight ? "text-black/80" : "text-white/85"
+                      } font-inter font-semibold truncate`}
+                  >
+                    Participants
+                  </span>
+                  <span className={`${isLight ? "text-black/50" : "text-white/55"} text-sm`}>
+                    ({participantsCount})
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={openEditName}
+                    className={`px-3 h-9 rounded-xl text-[12px] font-semibold border transition ${isLight
+                      ? "bg-black/5 border-black/10 hover:bg-black/10 text-black/70"
+                      : "bg-white/5 border-white/10 hover:bg-white/10 text-white/85"
+                      }`}
+                    title="Edit my name"
+                  >
+                    Edit my name
+                  </button>
+
+                  <button
+                    onClick={() => openRightTab(null)}
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
+                      ? "bg-black/5 hover:bg-black/10 text-black/60"
+                      : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                      }`}
+                    title="Close"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-4">
+                <div
+                  className={`rounded-xl px-3 py-2 ${isLight ? "bg-black/5 border border-black/10" : "bg-[#0B1220]/70 border border-white/10"
+                    }`}
+                >
+                  <input
+                    value={participantsSearch}
+                    onChange={(e) => setParticipantsSearch(e.target.value)}
+                    placeholder="Search participants..."
+                    className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${isLight
+                      ? "text-black/80 placeholder:text-black/40"
+                      : "text-white/85 placeholder:text-white/35"
+                      }`}
+                  />
+                </div>
+
+                {rolesError ? (
+                  <div className={`mt-2 text-[12px] ${isLight ? "text-red-600" : "text-red-300"}`}>
+                    {rolesError}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
+                <div className="flex flex-col gap-2">
+                  {participantsForPanel.map((p) => {
+                    const isHidden = !!hiddenTileIds[p.id];
+                    const isPinned = pinnedTileId === p.id;
+
+                    const avatar = getAvatarForTile(p);
+                    const initials = getInitials(p.label);
+
+                    const pidBase = String(p.participantUserId || "").toLowerCase();
+                    const isMod = !p.isLocal && looksLikeUuid(pidBase)
+                      ? moderatorUserIds.includes(pidBase)
+                      : p.isLocal
+                        ? isSelfModerator && !isHost
+                        : false;
+
+                    const roleText =
+                      p.kind === "screen"
+                        ? p.isLocal
+                          ? "Your screen"
+                          : "Screen share"
+                        : p.isLocal
+                          ? isHost
+                            ? "Host"
+                            : isMod
+                              ? "Moderator"
+                              : "You"
+                          : isMod
+                            ? "Moderator"
+                            : "Participant";
+
+                    return (
+                      <div
+                        key={p.id}
+                        className={`px-3 py-2 rounded-xl transition ${isLight ? "hover:bg-black/5" : "hover:bg-white/5"
+                          }`}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            {avatar ? (
+                              <img
+                                src={avatar}
+                                alt={p.label}
+                                className="w-10 h-10 rounded-full object-cover"
+                                referrerPolicy="no-referrer"
+                                onError={(e) => {
+                                  try {
+                                    (e.currentTarget as any).style.display = "none";
+                                  } catch { }
+                                }}
+                              />
+                            ) : (
+                              <div
+                                className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${isLight
+                                  ? "bg-blue-500/15 text-blue-700"
+                                  : "bg-emerald-500/80 text-[#02140B]"
+                                  }`}
+                              >
+                                {p.kind === "screen" ? "🖥️" : initials}
+                              </div>
+                            )}
+
+                            <div className="min-w-0">
+                              <div
+                                className={`text-[13px] font-medium truncate ${isLight ? "text-black/85" : "text-white/90"
+                                  }`}
+                              >
+                                {p.label}
+                                {isPinned ? <span className="ml-2 opacity-70">📌</span> : null}
+                                {isHidden ? <span className="ml-2 opacity-70">🙈</span> : null}
+                              </div>
+                              <div
+                                className={`text-[11px] truncate ${isLight ? "text-black/45" : "text-white/45"
+                                  }`}
+                              >
+                                {roleText}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            {p.kind !== "screen" && (
+                              <>
+                                <button
+                                  onClick={() => togglePin(p.id)}
+                                  className={`w-9 h-9 rounded-xl flex items-center justify-center border transition ${isLight
+                                    ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70"
+                                    : "border-white/10 bg-white/5 hover:bg-white/10 text-white/85"
+                                    }`}
+                                  title={isPinned ? "Unpin" : "Pin"}
+                                >
+                                  📌
+                                </button>
+
+                                <button
+                                  onClick={() => toggleHide(p.id)}
+                                  className={`w-9 h-9 rounded-xl flex items-center justify-center border transition ${isLight
+                                    ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70"
+                                    : "border-white/10 bg-white/5 hover:bg-white/10 text-white/85"
+                                    }`}
+                                  title={isHidden ? "Unhide" : "Hide"}
+                                >
+                                  🙈
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className={`p-4 border-t ${isLight ? "border-black/10" : "border-white/5"}`}>
+                <button
+                  onClick={() => {
+                    try {
+                      const url = window.location.href;
+                      void navigator.clipboard.writeText(url);
+                      alert("Invite link copied ✅");
+                    } catch {
+                      alert("Could not copy link");
+                    }
+                  }}
+                  className={`w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 ${isLight
+                    ? "bg-blue-600 hover:bg-blue-700 text-white"
+                    : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
+                    }`}
+                >
+                  <span className="text-lg">⎘</span>
+                  <span>Copy invite link</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {rightTab === "chat" && (
+            <div className="h-full min-h-0 flex flex-col">
+              <div
+                className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
+                  }`}
+              >
+                <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>
+                  Chat
+                </div>
+                <button
+                  onClick={() => openRightTab(null)}
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
+                    ? "bg-black/5 hover:bg-black/10 text-black/60"
+                    : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                    }`}
+                  title="Close"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="flex-1 min-h-0 p-4 overflow-hidden">
+                <div
+                  className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight
+                    ? "bg-white/70 border border-black/10"
+                    : "bg-[#020617]/40 border border-white/10"
+                    }`}
+                >
+                  <div className="h-full min-h-0 flex flex-col overflow-hidden [&>*]:h-full [&>*]:min-h-0">
+                    {session?.id ? (
+                      <div
+                        data-theme={theme}
+                        style={{ colorScheme: theme }}
+                        className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
+                      >
+                        <ChatPanelAny
+                          sessionId={session.id}
+                          theme={theme}
+                          showHeader={false}
+                          title="Chat"
+                          onClose={() => openRightTab(null)}
+                          embedded={true}
+                          hideHeader={true}
+                          authUserId={authUserId}
+                          displayName={displayName || userName}
+                          onAnyMessageSeen={() => markChatRead()}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {rightTab === "intentions" && (
+            <div className="h-full min-h-0 flex flex-col">
+              <div
+                className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
+                  }`}
+              >
+                <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>
+                  Intentions
+                </div>
+                <button
+                  onClick={() => openRightTab(null)}
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
+                    ? "bg-black/5 hover:bg-black/10 text-black/60"
+                    : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                    }`}
+                  title="Close"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="flex-1 min-h-0 overflow-hidden p-4">
+                <div
+                  className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight
+                    ? "bg-white/70 border border-black/10"
+                    : "bg-[#020617]/40 border border-white/10"
+                    }`}
+                >
+                  <div className="h-full min-h-0 overflow-y-auto [&>*]:min-h-0">
+                    <div
+                      data-theme={theme}
+                      style={{ colorScheme: theme }}
+                      className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
+                    >
+                      {session?.id ? (
+                        <IntentionsPanel
+                          key={`intentions-${session.id}-${theme}`}
+                          theme={theme}
+                          sessionId={session.id}
+                          timerText={remainingTime || "--:--"}
+                        />
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+        );
+        if (loading) {
   return <div className={`flex h-screen items-center justify-center ${pageBg}`}>Loading session...</div>;
 }
 
-if (!session) {
+        if (!session) {
   return (
-    <div className={`flex h-screen items-center justify-center ${pageBg}`}>
-      <button onClick={() => navigate("/sessions")}>Back</button>
-    </div>
-  );
+        <div className={`flex h-screen items-center justify-center ${pageBg}`}>
+          <button onClick={() => navigate("/sessions")}>Back</button>
+        </div>
+        );
 }
 
 const onJoinGate = () => {
   const pj = prejoinRef.current;
-  const nm = (pj.displayName || displayName || userName || "User").trim() || "User";
+        const nm = (pj.displayName || displayName || userName || "User").trim() || "User";
 
-  const baseUser = safeIdentity(
-    (authUserId && looksLikeUuid(authUserId) ? authUserId : authUserId || nm) as any
-  );
+        const baseUser = safeIdentity(
+        (authUserId && looksLikeUuid(authUserId) ? authUserId : authUserId || nm) as any
+        );
 
-  if (session?.id && !tabPresenceAcquiredRef.current) {
+        if (session?.id && !tabPresenceAcquiredRef.current) {
     const g = tryAcquireTabGate(session.id, baseUser);
-    if (!g.ok) {
+        if (!g.ok) {
       const msg = `Too many tabs open for this room (${g.count}/${g.max}). Close another tab and try again.`;
-      setTokenError(msg);
-      try {
-        alert(msg);
+        setTokenError(msg);
+        try {
+          alert(msg);
       } catch { }
-      setPrejoinOpen(true);
-      setJoinRequested(false);
-      return;
+        setPrejoinOpen(true);
+        setJoinRequested(false);
+        return;
     }
   }
 
-  setDisplayName(nm);
-  setSelectedAudioOutputId(pj.audioOutputId || "default");
-  setSelectedAudioInputId(pj.audioInputId || "");
-  setSelectedVideoInputId(pj.videoInputId || "");
-  setEchoCancellationEnabled(!!pj.echoCancellation);
-  setNoiseSuppressionEnabled(!!pj.noiseSuppression);
-  setAutoGainControlEnabled(!!pj.autoGainControl);
+        setDisplayName(nm);
+        setSelectedAudioOutputId(pj.audioOutputId || "default");
+        setSelectedAudioInputId(pj.audioInputId || "");
+        setSelectedVideoInputId(pj.videoInputId || "");
+        setEchoCancellationEnabled(!!pj.echoCancellation);
+        setNoiseSuppressionEnabled(!!pj.noiseSuppression);
+        setAutoGainControlEnabled(!!pj.autoGainControl);
 
-  setPrejoinOpen(false);
-  setJoinRequested(true);
+        setPrejoinOpen(false);
+        setJoinRequested(true);
 };
 
-return (
-  <>
-    <style>{`
+        return (
+        <>
+          <style>{`
         @keyframes msReactionFloatUp {
           0%   { opacity: 0; transform: translate3d(0, 14px, 0) scale(0.92); }
           12%  { opacity: 1; transform: translate3d(0, 0px, 0) scale(1); }
@@ -4592,380 +4714,380 @@ return (
         }
       `}</style>
 
-    <PreJoinModal
-      open={prejoinOpen}
-      theme={theme}
-      devices={devices}
-      value={prejoin}
-      onChange={setPrejoin}
-      onRefreshDevices={() => loadBrowserDevices().catch(() => { })}
-      onCancel={() => {
-        cleanupPrejoinPreparedVideoTrack().catch(() => { });
-        releaseTabPresence();
-        navigate("/sessions", { replace: true });
-      }}
-      onJoin={onJoinGate}
-      previewVideoTrack={prejoinPreparedVideoTrackRef.current}
-      previewVersion={prejoinPreviewVersion}
-      videoFxMode={videoFxMode}
-      blurStrength={blurStrength}
-      bgImageUrl={bgImageUrl}
-      fxApplying={fxApplying}
-      fxError={fxError}
-      fxStatusText={fxStatusText}
-      fxBgPresets={FX_BG_PRESETS}
-      onApplyVideoFx={applyPrejoinVideoFx}
-      onBlurStrengthChange={setBlurStrength}
-      onSetBgImageUrl={setBgImageUrl}
-      onUploadBg={(file: File) => {
-        try {
-          if (uploadedBgUrlRef.current) {
-            URL.revokeObjectURL(uploadedBgUrlRef.current);
-            uploadedBgUrlRef.current = null;
-          }
-          const url = URL.createObjectURL(file);
-          uploadedBgUrlRef.current = url;
-          setBgImageUrl(url);
-        } catch (e) {
-          console.error("upload bg failed", e);
-          setFxError("Failed to load selected image");
-        }
-      }}
-      onResetBg={() => {
-        if (uploadedBgUrlRef.current) {
-          try {
-            URL.revokeObjectURL(uploadedBgUrlRef.current);
-          } catch { }
-          uploadedBgUrlRef.current = null;
-        }
-        setBgImageUrl(DEFAULT_BG_DATA_URL);
-      }}
-    />
-
-    <div className={`h-[100dvh] overflow-hidden ${pageBg}`}>
-      <div className="h-full w-full px-2 sm:px-3 pt-2 pb-[calc(80px+env(safe-area-inset-bottom))] sm:pb-[calc(90px+env(safe-area-inset-bottom))] flex flex-col gap-2 min-h-0">
-        <RoomTopBar
-          theme={theme}
-          sessionTitle={String(session?.title || "Session")}
-          participantsCount={participantsCount}
-          maxParticipants={maxParticipants}
-          isSilentRoom={isSilentRoom}
-          stages={stages as any}
-          stagebarStartTime={stagebarStartTime}
-          stagebarCycleSeconds={stagebarCycleSeconds}
-          remainingTime={remainingTime}
-          hostProfile={session?.host_profile || null}
-          onHoverStage={setHoveredStage as any}
-          onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-          onOpenHostProfile={() => setSelectedUser((session?.host_profile as any) || null)}
-        />
-
-        <div
-          className={
-            "relative grid grid-rows-1 gap-2 sm:gap-3 flex-1 min-h-0 h-full " +
-            (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
-          }
-        >
-          <div
-            ref={(el) => {
-              videoWrapRef.current = el;
-              videoSizerRef(el);
+          <PreJoinModal
+            open={prejoinOpen}
+            theme={theme}
+            devices={devices}
+            value={prejoin}
+            onChange={setPrejoin}
+            onRefreshDevices={() => loadBrowserDevices().catch(() => { })}
+            onCancel={() => {
+              cleanupPrejoinPreparedVideoTrack().catch(() => { });
+              releaseTabPresence();
+              navigate("/sessions", { replace: true });
             }}
-            className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
-              }`}
-          >
-            {videoContent}
-
-            {lastErr && (
-              <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow z-30 max-w-[80%] break-words">
-                {lastErr}
-              </div>
-            )}
-          </div>
-
-          {rightPanelOpen && isLgUp && (
-            <div className="min-h-0 h-full overflow-hidden">{RightPanelBody}</div>
-          )}
-
-          {rightPanelOpen && !isLgUp && (
-            <div className="absolute inset-0 z-40 min-h-0">
-              <div className="absolute inset-0 bg-black/40" onClick={() => openRightTab(null)} />
-              <div className="absolute inset-x-0 top-0 bottom-0 p-2 min-h-0">{RightPanelBody}</div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <RemoteAudioRenderer room={roomState} audioOutputId={selectedAudioOutputId} />
-
-      <LiveKitBottomBar
-        theme={theme}
-        isLight={isLight}
-        bottomBarBg={bottomBarBg}
-        ctlBtnBase={ctlBtnBase}
-        connected={connected}
-        micOn={micOn}
-        camOn={camOn}
-        screenShareOn={screenShareOn}
-        unreadChat={unreadChat}
-        showPiP={connected && pipSupported}
-        pipActive={pipOpen}
-        onTogglePiP={() => {
-          if (pipOpen) {
-            closePictureInPicture().catch(() => { });
-          } else {
-            openPictureInPicture().catch((e) => {
-              console.error("openPictureInPicture failed", e);
-              alert(String((e as any)?.message || e || "pip_open_failed"));
-            });
-          }
-        }}
-        onToggleMic={() => toggleMic().catch(() => { })}
-        onToggleCam={() => toggleCam().catch(() => { })}
-        onToggleScreenShare={() => toggleScreenShare().catch(() => { })}
-        onLeave={() => leave().catch(() => { })}
-        onOpenParticipants={() => openRightTab("participants")}
-        onOpenChat={() => openRightTab("chat")}
-        onOpenIntentions={() => openRightTab("intentions")}
-        onOpenSettings={() => setSettingsOpen(true)}
-        onSendReaction={sendReaction}
-      />
-
-      <RoomSettingsModalLiveKit
-        open={settingsOpen}
-        theme={theme}
-        mode={videoFxMode}
-        blurStrength={blurStrength}
-        onBlurStrengthChange={setBlurStrength}
-        bgImageUrl={bgImageUrl}
-        onSetBgImageUrl={setBgImageUrl}
-        onApplyMode={async (m) => {
-          await applyVideoFx(m);
-        }}
-        onClose={() => setSettingsOpen(false)}
-        fxError={fxError}
-        fxApplying={fxApplying}
-        fxStatusText={fxStatusText}
-        onUploadBg={(file) => {
-          try {
-            if (uploadedBgUrlRef.current) {
-              URL.revokeObjectURL(uploadedBgUrlRef.current);
-              uploadedBgUrlRef.current = null;
-            }
-            const url = URL.createObjectURL(file);
-            uploadedBgUrlRef.current = url;
-            setBgImageUrl(url);
-          } catch (e) {
-            console.error("upload bg failed", e);
-            setFxError("Failed to load selected image");
-          }
-        }}
-        onResetBg={() => {
-          if (uploadedBgUrlRef.current) {
-            try {
-              URL.revokeObjectURL(uploadedBgUrlRef.current);
-            } catch { }
-            uploadedBgUrlRef.current = null;
-          }
-          setBgImageUrl(DEFAULT_BG_DATA_URL);
-        }}
-        devices={devices}
-        selectedAudioInputId={selectedAudioInputId}
-        selectedVideoInputId={selectedVideoInputId}
-        selectedAudioOutputId={selectedAudioOutputId}
-        onChangeAudioInput={async (deviceId: string) => {
-          setSelectedAudioInputId(deviceId);
-          setPrejoin((prev) => ({ ...prev, audioInputId: deviceId }));
-          await syncLiveAudioInput(deviceId);
-        }}
-        onChangeVideoInput={async (deviceId: string) => {
-          setSelectedVideoInputId(deviceId);
-          setPrejoin((prev) => ({ ...prev, videoInputId: deviceId }));
-          await syncLiveVideoInput(deviceId);
-        }}
-        onChangeAudioOutput={(deviceId: string) => {
-          setSelectedAudioOutputId(deviceId || "default");
-          setPrejoin((prev) => ({ ...prev, audioOutputId: deviceId || "default" }));
-        }}
-        echoCancellationEnabled={echoCancellationEnabled}
-        noiseSuppressionEnabled={noiseSuppressionEnabled}
-        autoGainControlEnabled={autoGainControlEnabled}
-        onChangeEchoCancellation={async (v: boolean) => {
-          setEchoCancellationEnabled(v);
-          setPrejoin((prev) => ({ ...prev, echoCancellation: v }));
-          await syncLiveAudioProcessing({
-            echoCancellation: v,
-            noiseSuppression: noiseSuppressionEnabled,
-            autoGainControl: autoGainControlEnabled,
-          });
-        }}
-        onChangeNoiseSuppression={async (v: boolean) => {
-          setNoiseSuppressionEnabled(v);
-          setPrejoin((prev) => ({ ...prev, noiseSuppression: v }));
-          await syncLiveAudioProcessing({
-            echoCancellation: echoCancellationEnabled,
-            noiseSuppression: v,
-            autoGainControl: autoGainControlEnabled,
-          });
-        }}
-        onChangeAutoGainControl={async (v: boolean) => {
-          setAutoGainControlEnabled(v);
-          setPrejoin((prev) => ({ ...prev, autoGainControl: v }));
-          await syncLiveAudioProcessing({
-            echoCancellation: echoCancellationEnabled,
-            noiseSuppression: noiseSuppressionEnabled,
-            autoGainControl: v,
-          });
-        }}
-        roomSoundsEnabled={roomSoundsEnabled}
-        onToggleRoomSounds={() => setRoomSoundsEnabled((prev) => !prev)}
-        colorCorrectionEnabled={true}
-        brightness={colorCorrection.brightness}
-        contrast={colorCorrection.contrast}
-        saturate={colorCorrection.saturation}
-        onToggleColorCorrection={() => { }}
-        onChangeBrightness={(v: number) =>
-          setColorCorrection((p) => ({ ...p, brightness: v }))
-        }
-        onChangeContrast={(v: number) =>
-          setColorCorrection((p) => ({ ...p, contrast: v }))
-        }
-        onChangeSaturate={(v: number) =>
-          setColorCorrection((p) => ({ ...p, saturation: v }))
-        }
-        onCaptureScreenshot={async () => {
-          await createRoomScreenshot();
-        }}
-      />
-
-      {systemNotice.open && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/45 backdrop-blur-[2px]"
-            onClick={systemNotice.kind === "kick" ? undefined : closeSystemNotice}
+            onJoin={onJoinGate}
+            previewVideoTrack={prejoinPreparedVideoTrackRef.current}
+            previewVersion={prejoinPreviewVersion}
+            videoFxMode={videoFxMode}
+            blurStrength={blurStrength}
+            bgImageUrl={bgImageUrl}
+            fxApplying={fxApplying}
+            fxError={fxError}
+            fxStatusText={fxStatusText}
+            fxBgPresets={FX_BG_PRESETS}
+            onApplyVideoFx={applyPrejoinVideoFx}
+            onBlurStrengthChange={setBlurStrength}
+            onSetBgImageUrl={setBgImageUrl}
+            onUploadBg={(file: File) => {
+              try {
+                if (uploadedBgUrlRef.current) {
+                  URL.revokeObjectURL(uploadedBgUrlRef.current);
+                  uploadedBgUrlRef.current = null;
+                }
+                const url = URL.createObjectURL(file);
+                uploadedBgUrlRef.current = url;
+                setBgImageUrl(url);
+              } catch (e) {
+                console.error("upload bg failed", e);
+                setFxError("Failed to load selected image");
+              }
+            }}
+            onResetBg={() => {
+              if (uploadedBgUrlRef.current) {
+                try {
+                  URL.revokeObjectURL(uploadedBgUrlRef.current);
+                } catch { }
+                uploadedBgUrlRef.current = null;
+              }
+              setBgImageUrl(DEFAULT_BG_DATA_URL);
+            }}
           />
-          <div
-            className={`relative w-[92%] max-w-[520px] rounded-2xl border shadow-2xl p-5 ${isLight ? "bg-white border-black/10 text-black/85" : "bg-[#020617] border-white/10 text-white/90"
-              }`}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-[18px] font-semibold">{systemNotice.title}</div>
-                <div className={`mt-1 text-[13px] leading-relaxed ${isLight ? "text-black/65" : "text-white/70"}`}>
-                  {systemNotice.body}
-                </div>
-              </div>
 
-              {systemNotice.kind !== "kick" && (
-                <button
-                  type="button"
-                  onClick={closeSystemNotice}
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                      ? "bg-black/5 hover:bg-black/10 text-black/70"
-                      : "bg-white/5 hover:bg-white/10 text-white/80"
-                    }`}
-                  title="Close"
-                >
-                  ✕
-                </button>
-              )}
-            </div>
+          <div className={`h-[100dvh] overflow-hidden ${pageBg}`}>
+            <div className="h-full w-full px-2 sm:px-3 pt-2 pb-[calc(80px+env(safe-area-inset-bottom))] sm:pb-[calc(90px+env(safe-area-inset-bottom))] flex flex-col gap-2 min-h-0">
+              <RoomTopBar
+                theme={theme}
+                sessionTitle={String(session?.title || "Session")}
+                participantsCount={participantsCount}
+                maxParticipants={maxParticipants}
+                isSilentRoom={isSilentRoom}
+                stages={stages as any}
+                stagebarStartTime={stagebarStartTime}
+                stagebarCycleSeconds={stagebarCycleSeconds}
+                remainingTime={remainingTime}
+                hostProfile={session?.host_profile || null}
+                onHoverStage={setHoveredStage as any}
+                onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+                onOpenHostProfile={() => setSelectedUser((session?.host_profile as any) || null)}
+              />
 
-            <div className="mt-5 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  closeSystemNotice();
-                  if (systemNotice.kind === "kick") {
-                    navigate("/sessions", { replace: true });
-                    return;
-                  }
-                }}
-                className={`px-4 h-10 rounded-xl font-semibold ${isLight
-                    ? "bg-blue-600 hover:bg-blue-700 text-white"
-                    : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
-                  }`}
+              <div
+                className={
+                  "relative grid grid-rows-1 gap-2 sm:gap-3 flex-1 min-h-0 h-full " +
+                  (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
+                }
               >
-                OK
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+                <div
+                  ref={(el) => {
+                    videoWrapRef.current = el;
+                    videoSizerRef(el);
+                  }}
+                  className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
+                    }`}
+                >
+                  {videoContent}
 
-      <ReportParticipantModalLiveKit
-        open={reportModalOpen}
-        theme={theme}
-        participantName={reportTarget?.label || "Participant"}
-        value={reportReason}
-        busy={reportBusy}
-        error={reportError}
-        onChange={setReportReason}
-        onClose={() => {
-          if (reportBusy) return;
-          setReportModalOpen(false);
-          setReportTarget(null);
-          setReportReason("");
-          setReportError("");
-        }}
-        onSubmit={() => {
-          submitParticipantReport().catch(() => { });
-        }}
-      />
+                  {lastErr && (
+                    <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow z-30 max-w-[80%] break-words">
+                      {lastErr}
+                    </div>
+                  )}
+                </div>
 
-      {editNameOpen && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setEditNameOpen(false)} />
-          <div
-            className={`relative w-[92%] max-w-[480px] rounded-2xl border shadow-2xl p-5 ${isLight ? "bg-white border-black/10" : "bg-[#020617] border-white/10"
-              }`}
-          >
-            <div className={`text-[16px] font-semibold ${isLight ? "text-black/85" : "text-white/90"}`}>
-              Edit your name
-            </div>
-            <div className={`mt-1 text-[12px] ${isLight ? "text-black/50" : "text-white/50"}`}>
-              Saved into Supabase profiles (full_name).
+                {rightPanelOpen && isLgUp && (
+                  <div className="min-h-0 h-full overflow-hidden">{RightPanelBody}</div>
+                )}
+
+                {rightPanelOpen && !isLgUp && (
+                  <div className="absolute inset-0 z-40 min-h-0">
+                    <div className="absolute inset-0 bg-black/40" onClick={() => openRightTab(null)} />
+                    <div className="absolute inset-x-0 top-0 bottom-0 p-2 min-h-0">{RightPanelBody}</div>
+                  </div>
+                )}
+              </div>
             </div>
 
-            <input
-              value={editNameValue}
-              onChange={(e) => setEditNameValue(e.target.value)}
-              placeholder="Your name"
-              className={`mt-4 w-full rounded-xl px-3 py-2 outline-none border ${isLight ? "bg-white border-black/10 text-black/85" : "bg-black/20 border-white/10 text-white/90"
-                }`}
+            <RemoteAudioRenderer room={roomState} audioOutputId={selectedAudioOutputId} />
+
+            <LiveKitBottomBar
+              theme={theme}
+              isLight={isLight}
+              bottomBarBg={bottomBarBg}
+              ctlBtnBase={ctlBtnBase}
+              connected={connected}
+              micOn={micOn}
+              camOn={camOn}
+              screenShareOn={screenShareOn}
+              unreadChat={unreadChat}
+              showPiP={connected && pipSupported}
+              pipActive={pipOpen}
+              onTogglePiP={() => {
+                if (pipOpen) {
+                  closePictureInPicture().catch(() => { });
+                } else {
+                  openPictureInPicture().catch((e) => {
+                    console.error("openPictureInPicture failed", e);
+                    alert(String((e as any)?.message || e || "pip_open_failed"));
+                  });
+                }
+              }}
+              onToggleMic={() => toggleMic().catch(() => { })}
+              onToggleCam={() => toggleCam().catch(() => { })}
+              onToggleScreenShare={() => toggleScreenShare().catch(() => { })}
+              onLeave={() => leave().catch(() => { })}
+              onOpenParticipants={() => openRightTab("participants")}
+              onOpenChat={() => openRightTab("chat")}
+              onOpenIntentions={() => openRightTab("intentions")}
+              onOpenSettings={() => setSettingsOpen(true)}
+              onSendReaction={sendReaction}
             />
 
-            <div className="mt-4 flex items-center justify-end gap-2">
-              <button
-                onClick={() => setEditNameOpen(false)}
-                className={`px-4 h-10 rounded-xl font-semibold ${isLight
-                    ? "bg-black/5 hover:bg-black/10 text-black/75"
-                    : "bg-white/5 hover:bg-white/10 text-white/85"
-                  }`}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => saveEditName().catch(() => { })}
-                className={`px-4 h-10 rounded-xl font-semibold ${isLight
-                    ? "bg-blue-600 hover:bg-blue-700 text-white"
-                    : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
-                  }`}
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            <RoomSettingsModalLiveKit
+              open={settingsOpen}
+              theme={theme}
+              mode={videoFxMode}
+              blurStrength={blurStrength}
+              onBlurStrengthChange={setBlurStrength}
+              bgImageUrl={bgImageUrl}
+              onSetBgImageUrl={setBgImageUrl}
+              onApplyMode={async (m) => {
+                await applyVideoFx(m);
+              }}
+              onClose={() => setSettingsOpen(false)}
+              fxError={fxError}
+              fxApplying={fxApplying}
+              fxStatusText={fxStatusText}
+              onUploadBg={(file) => {
+                try {
+                  if (uploadedBgUrlRef.current) {
+                    URL.revokeObjectURL(uploadedBgUrlRef.current);
+                    uploadedBgUrlRef.current = null;
+                  }
+                  const url = URL.createObjectURL(file);
+                  uploadedBgUrlRef.current = url;
+                  setBgImageUrl(url);
+                } catch (e) {
+                  console.error("upload bg failed", e);
+                  setFxError("Failed to load selected image");
+                }
+              }}
+              onResetBg={() => {
+                if (uploadedBgUrlRef.current) {
+                  try {
+                    URL.revokeObjectURL(uploadedBgUrlRef.current);
+                  } catch { }
+                  uploadedBgUrlRef.current = null;
+                }
+                setBgImageUrl(DEFAULT_BG_DATA_URL);
+              }}
+              devices={devices}
+              selectedAudioInputId={selectedAudioInputId}
+              selectedVideoInputId={selectedVideoInputId}
+              selectedAudioOutputId={selectedAudioOutputId}
+              onChangeAudioInput={async (deviceId: string) => {
+                setSelectedAudioInputId(deviceId);
+                setPrejoin((prev) => ({ ...prev, audioInputId: deviceId }));
+                await syncLiveAudioInput(deviceId);
+              }}
+              onChangeVideoInput={async (deviceId: string) => {
+                setSelectedVideoInputId(deviceId);
+                setPrejoin((prev) => ({ ...prev, videoInputId: deviceId }));
+                await syncLiveVideoInput(deviceId);
+              }}
+              onChangeAudioOutput={(deviceId: string) => {
+                setSelectedAudioOutputId(deviceId || "default");
+                setPrejoin((prev) => ({ ...prev, audioOutputId: deviceId || "default" }));
+              }}
+              echoCancellationEnabled={echoCancellationEnabled}
+              noiseSuppressionEnabled={noiseSuppressionEnabled}
+              autoGainControlEnabled={autoGainControlEnabled}
+              onChangeEchoCancellation={async (v: boolean) => {
+                setEchoCancellationEnabled(v);
+                setPrejoin((prev) => ({ ...prev, echoCancellation: v }));
+                await syncLiveAudioProcessing({
+                  echoCancellation: v,
+                  noiseSuppression: noiseSuppressionEnabled,
+                  autoGainControl: autoGainControlEnabled,
+                });
+              }}
+              onChangeNoiseSuppression={async (v: boolean) => {
+                setNoiseSuppressionEnabled(v);
+                setPrejoin((prev) => ({ ...prev, noiseSuppression: v }));
+                await syncLiveAudioProcessing({
+                  echoCancellation: echoCancellationEnabled,
+                  noiseSuppression: v,
+                  autoGainControl: autoGainControlEnabled,
+                });
+              }}
+              onChangeAutoGainControl={async (v: boolean) => {
+                setAutoGainControlEnabled(v);
+                setPrejoin((prev) => ({ ...prev, autoGainControl: v }));
+                await syncLiveAudioProcessing({
+                  echoCancellation: echoCancellationEnabled,
+                  noiseSuppression: noiseSuppressionEnabled,
+                  autoGainControl: v,
+                });
+              }}
+              roomSoundsEnabled={roomSoundsEnabled}
+              onToggleRoomSounds={() => setRoomSoundsEnabled((prev) => !prev)}
+              colorCorrectionEnabled={true}
+              brightness={colorCorrection.brightness}
+              contrast={colorCorrection.contrast}
+              saturate={colorCorrection.saturation}
+              onToggleColorCorrection={() => { }}
+              onChangeBrightness={(v: number) =>
+                setColorCorrection((p) => ({ ...p, brightness: v }))
+              }
+              onChangeContrast={(v: number) =>
+                setColorCorrection((p) => ({ ...p, contrast: v }))
+              }
+              onChangeSaturate={(v: number) =>
+                setColorCorrection((p) => ({ ...p, saturation: v }))
+              }
+              onCaptureScreenshot={async () => {
+                await createRoomScreenshot();
+              }}
+            />
 
-      {selectedUser && (
-        <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
-      )}
-    </div>
-  {pipPortal}
-  </>
-);
+            {systemNotice.open && (
+              <div className="fixed inset-0 z-[90] flex items-center justify-center">
+                <div
+                  className="absolute inset-0 bg-black/45 backdrop-blur-[2px]"
+                  onClick={systemNotice.kind === "kick" ? undefined : closeSystemNotice}
+                />
+                <div
+                  className={`relative w-[92%] max-w-[520px] rounded-2xl border shadow-2xl p-5 ${isLight ? "bg-white border-black/10 text-black/85" : "bg-[#020617] border-white/10 text-white/90"
+                    }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-[18px] font-semibold">{systemNotice.title}</div>
+                      <div className={`mt-1 text-[13px] leading-relaxed ${isLight ? "text-black/65" : "text-white/70"}`}>
+                        {systemNotice.body}
+                      </div>
+                    </div>
+
+                    {systemNotice.kind !== "kick" && (
+                      <button
+                        type="button"
+                        onClick={closeSystemNotice}
+                        className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
+                          ? "bg-black/5 hover:bg-black/10 text-black/70"
+                          : "bg-white/5 hover:bg-white/10 text-white/80"
+                          }`}
+                        title="Close"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="mt-5 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        closeSystemNotice();
+                        if (systemNotice.kind === "kick") {
+                          navigate("/sessions", { replace: true });
+                          return;
+                        }
+                      }}
+                      className={`px-4 h-10 rounded-xl font-semibold ${isLight
+                        ? "bg-blue-600 hover:bg-blue-700 text-white"
+                        : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
+                        }`}
+                    >
+                      OK
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <ReportParticipantModalLiveKit
+              open={reportModalOpen}
+              theme={theme}
+              participantName={reportTarget?.label || "Participant"}
+              value={reportReason}
+              busy={reportBusy}
+              error={reportError}
+              onChange={setReportReason}
+              onClose={() => {
+                if (reportBusy) return;
+                setReportModalOpen(false);
+                setReportTarget(null);
+                setReportReason("");
+                setReportError("");
+              }}
+              onSubmit={() => {
+                submitParticipantReport().catch(() => { });
+              }}
+            />
+
+            {editNameOpen && (
+              <div className="fixed inset-0 z-[80] flex items-center justify-center">
+                <div className="absolute inset-0 bg-black/40" onClick={() => setEditNameOpen(false)} />
+                <div
+                  className={`relative w-[92%] max-w-[480px] rounded-2xl border shadow-2xl p-5 ${isLight ? "bg-white border-black/10" : "bg-[#020617] border-white/10"
+                    }`}
+                >
+                  <div className={`text-[16px] font-semibold ${isLight ? "text-black/85" : "text-white/90"}`}>
+                    Edit your name
+                  </div>
+                  <div className={`mt-1 text-[12px] ${isLight ? "text-black/50" : "text-white/50"}`}>
+                    Saved into Supabase profiles (full_name).
+                  </div>
+
+                  <input
+                    value={editNameValue}
+                    onChange={(e) => setEditNameValue(e.target.value)}
+                    placeholder="Your name"
+                    className={`mt-4 w-full rounded-xl px-3 py-2 outline-none border ${isLight ? "bg-white border-black/10 text-black/85" : "bg-black/20 border-white/10 text-white/90"
+                      }`}
+                  />
+
+                  <div className="mt-4 flex items-center justify-end gap-2">
+                    <button
+                      onClick={() => setEditNameOpen(false)}
+                      className={`px-4 h-10 rounded-xl font-semibold ${isLight
+                        ? "bg-black/5 hover:bg-black/10 text-black/75"
+                        : "bg-white/5 hover:bg-white/10 text-white/85"
+                        }`}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => saveEditName().catch(() => { })}
+                      className={`px-4 h-10 rounded-xl font-semibold ${isLight
+                        ? "bg-blue-600 hover:bg-blue-700 text-white"
+                        : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
+                        }`}
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {selectedUser && (
+              <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
+            )}
+          </div>
+          {pipPortal}
+        </>
+        );
 }
 
-export default RoomPageLiveKit;
+        export default RoomPageLiveKit;
