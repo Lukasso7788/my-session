@@ -89,6 +89,7 @@ export function VideoTile({
     theme,
     showBadge,
     hostActions,
+    avatarUrl,
 }: {
     label: string;
     videoTrack?: Track;
@@ -96,6 +97,7 @@ export function VideoTile({
     theme: RoomTheme;
     showBadge?: string | null;
     hostActions?: HostTileActions;
+    avatarUrl?: string;
 }) {
     const wrapRef = useRef<HTMLDivElement | null>(null);
 
@@ -245,7 +247,7 @@ export function VideoTile({
             (!!hostActions.canMuteMic && !!hostActions.onToggleMuteMic) ||
             (!!hostActions.canMuteCam && !!hostActions.onToggleMuteCam));
 
-    const initials = getInitials(label);
+    const normalizedAvatarUrl = String(avatarUrl || "").trim();
 
     return (
         <div

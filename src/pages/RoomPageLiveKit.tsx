@@ -3750,6 +3750,7 @@ export function RoomPageLiveKit() {
     const camOff = isTileCamOff(t);
     const nameText = t.label || "User";
     const micMuted = !!t.micMuted;
+    const tileAvatarUrl = getAvatarForTile(t);
 
     const volumeKey = getParticipantVolumeKey(t);
     const volPct = !t.isLocal ? Number(volumePctByParticipantKey[volumeKey] ?? 100) : 100;
@@ -3777,37 +3778,38 @@ export function RoomPageLiveKit() {
           }
         >
           <VideoTile
-            label={""}
+            label={nameText}
             videoTrack={t.videoTrack}
             isLocal={t.isLocal}
             theme={theme}
             showBadge={getBadgeForTile(t)}
             hostActions={undefined}
+            avatarUrl={tileAvatarUrl}
           />
         </div>
 
-        {camOff && renderAvatarFallback(t)}
-
         {/* nameplate */}
-        <div className="absolute bottom-2 left-2 z-20 max-w-[78%]">
-          <div className={namePlateBaseCls}>
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="max-w-[340px] truncate text-[13px] font-semibold leading-none">
-                {nameText}
-              </div>
+        {!(camOff && t.kind !== "screen") && (
+          <div className="absolute bottom-2 left-2 z-20 max-w-[78%]">
+            <div className={namePlateBaseCls}>
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="max-w-[340px] truncate text-[13px] font-semibold leading-none">
+                  {nameText}
+                </div>
 
-              {t.kind === "screen" ? (
-                <div className="flex items-center gap-1 opacity-90 shrink-0">
-                  <span className="text-[11px]">🖥️</span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-1 opacity-90 shrink-0">
-                  <Icon name={micMuted ? "mic-off" : "mic-on"} theme={theme} className="w-4 h-4" />
-                </div>
-              )}
+                {t.kind === "screen" ? (
+                  <div className="flex items-center gap-1 opacity-90 shrink-0">
+                    <span className="text-[11px]">🖥️</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1 opacity-90 shrink-0">
+                    <Icon name={micMuted ? "mic-off" : "mic-on"} theme={theme} className="w-4 h-4" />
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {showLocalEditButton && (
           <div className="absolute top-2 left-2 z-30">
