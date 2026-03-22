@@ -250,6 +250,14 @@ export function VideoTile({
     const normalizedAvatarUrl = String(avatarUrl || "").trim();
     const initials = getInitials(label || "User");
 
+    const [avatarBroken, setAvatarBroken] = useState(false);
+
+    useEffect(() => {
+        setAvatarBroken(false);
+    }, [normalizedAvatarUrl]);
+
+    const shouldShowAvatar = !!normalizedAvatarUrl && !avatarBroken;
+
     return (
         <div
             ref={wrapRef}
@@ -269,11 +277,23 @@ export function VideoTile({
                     />
                 ) : (
                     <div className={`absolute inset-0 w-full h-full flex flex-col items-center justify-center text-sm ${offStateClass}`}>
-                        <div
-                            className={`w-[78px] h-[78px] rounded-full border flex items-center justify-center font-bold text-xl shadow-2xl ${initialsBgClass}`}
-                        >
-                            {initials}
-                        </div>
+                        {shouldShowAvatar ? (
+                            <img
+                                src={normalizedAvatarUrl}
+                                alt={label || "User"}
+                                className={`w-[78px] h-[78px] rounded-full object-cover border shadow-2xl ${isLight ? "border-black/10" : "border-white/10"
+                                    }`}
+                                referrerPolicy="no-referrer"
+                                onError={() => setAvatarBroken(true)}
+                                draggable={false}
+                            />
+                        ) : (
+                            <div
+                                className={`w-[78px] h-[78px] rounded-full border flex items-center justify-center font-bold text-xl shadow-2xl ${initialsBgClass}`}
+                            >
+                                {initials}
+                            </div>
+                        )}
 
                         <div className={`mt-3 px-3 py-1.5 rounded-xl border backdrop-blur ${offPlateClass}`}>
                             <div className="text-[13px] font-semibold max-w-[260px] truncate text-center">
