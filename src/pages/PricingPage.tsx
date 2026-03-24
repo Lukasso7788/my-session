@@ -1,8 +1,124 @@
-import React from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { PricingPlanCard } from "../components/PricingPlanCard";
+import { supabase } from "../lib/supabase";
+
+type BillingMode = "unknown" | "test" | "live";
 
 export default function PricingPage() {
     const KOFI_URL = "https://ko-fi.com/mysession";
+
+    const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+    const [checkingAuth, setCheckingAuth] = useState<boolean>(true);
+
+    const [isUpgrading, setIsUpgrading] = useState<boolean>(false);
+    const [billingMode, setBillingMode] = useState<BillingMode>("unknown");
+    const [statusMessage, setStatusMessage] = useState<string>("");
+    const [errorMessage, setErrorMessage] = useState<string>("");
+
+    useEffect(() => {
+        let isMounted = true;
+
+        async function loadAuth() {
+            try {
+                const {
+                    data: { user },
+                } = await supabase.auth.getUser();
+
+                if (!isMounted) return;
+                setIsLoggedIn(Boolean(user));
+            } catch (err) {
+                console.error("Failed to check auth:", err);
+                if (!isMounted) return;
+                setIsLoggedIn(false);
+            } finally {
+                if (!isMounted) return;
+                setCheckingAuth(false);
+            }
+        }
+
+        void loadAuth();
+
+        const {
+            data: { subscription },
+        } = supabase.auth.onAuthStateChange((_event, session) => {
+            setIsLoggedIn(Boolean(session?.user));
+            setCheckingAuth(false);
+        });
+
+        return () => {
+            isMounted = false;
+            subscription.unsubscribe();
+        };
+    }, []);
+
+    const supportText = useMemo(() => {
+        if (billingMode === "test") {
+            return "Test mode is enabled right now. Clicking Pro should activate access without charging money.";
+        }
+        if (billingMode === "live") {
+            return "Live billing is enabled. Pro will open the secure payment flow.";
+        }
+        return "Billing is being wired up. If anything fails, you can still support via Ko-fi for now.";
+    }, [billingMode]);
+
+    const handleStartFree = useCallback(() => {
+        window.location.href = "/sessions";
+    }, []);
+
+    const handleUpgradeToPro = useCallback(async () => {
+        setErrorMessage("");
+        setStatusMessage("");
+
+        if (checkingAuth) {
+            setErrorMessage("Still checking your account. Try again in a second.");
+            return;
+        }
+
+        if (!isLoggedIn) {
+            window.location.href = "/login?redirect=/pricing";
+            return;
+        }
+
+        setIsUpgrading(true);
+
+        try {
+            const { data, error } = await supabase.functions.invoke("create-payment-session", {
+                body: { planId: "monthly_10" },
+            });
+
+            if (error) {
+                console.error("create-payment-session error:", error);
+                setErrorMessage(
+                    error.message || "Could not start payment. Please try again."
+                );
+                return;
+            }
+
+            console.log("create-payment-session response:", data);
+
+            if (data?.mode === "test") {
+                setBillingMode("test");
+                setStatusMessage(
+                    "Test payment succeeded. Your Pro subscription should now be activated."
+                );
+                return;
+            }
+
+            if (data?.mode === "live" && data?.checkoutUrl) {
+                setBillingMode("live");
+                setStatusMessage("Redirecting you to secure payment...");
+                window.location.href = data.checkoutUrl;
+                return;
+            }
+
+            setErrorMessage("Unexpected payment response. Check the function logs.");
+        } catch (err) {
+            console.error("Unexpected upgrade error:", err);
+            setErrorMessage("Unexpected error while starting payment.");
+        } finally {
+            setIsUpgrading(false);
+        }
+    }, [checkingAuth, isLoggedIn]);
 
     return (
         <div className="mx-auto w-full max-w-[1100px] px-6 pb-20">
@@ -17,10 +133,16 @@ export default function PricingPage() {
 
             <div className="mx-auto mt-8 w-full max-w-[560px] rounded-full border border-black/10 bg-white p-1">
                 <div className="grid grid-cols-2 gap-1">
-                    <button className="h-10 rounded-full bg-black text-sm font-medium text-white">
+                    <button
+                        type="button"
+                        className="h-10 rounded-full bg-black text-sm font-medium text-white"
+                    >
                         Monthly
                     </button>
-                    <button className="h-10 rounded-full text-sm font-medium text-black/70 hover:bg-black/5">
+                    <button
+                        type="button"
+                        className="h-10 rounded-full text-sm font-medium text-black/70 hover:bg-black/5"
+                    >
                         Yearly (soon)
                     </button>
                 </div>
@@ -42,9 +164,7 @@ export default function PricingPage() {
                     ctaLabel="Start free"
                     ctaVariant="secondary"
                     footnote="No credit card"
-                    onCta={() => {
-                        window.location.href = "/sessions";
-                    }}
+                    onCta={handleStartFree}
                 />
 
                 <PricingPlanCard
@@ -59,17 +179,45 @@ export default function PricingPage() {
                         "Priority access to new features (AI layer, backgrounds)",
                         "Support the project ❤️",
                     ]}
-                    ctaLabel="Upgrade to Pro"
+                    ctaLabel={
+                        checkingAuth
+                            ? "Checking account..."
+                            : isUpgrading
+                                ? "Starting payment..."
+                                : "Upgrade to Pro"
+                    }
                     ctaVariant="primary"
                     footnote="Cancel anytime"
-                    onCta={() => {
-                        // Ko-fi supporter / membership page
-                        window.open(KOFI_URL, "_blank", "noopener,noreferrer");
-                    }}
+                    onCta={handleUpgradeToPro}
                 />
             </div>
 
-            {/* Optional supporter note */}
+            {(statusMessage || errorMessage || supportText) && (
+                <div className="mt-8 rounded-[24px] border border-black/10 bg-white p-5">
+                    <div className="text-sm font-medium">Billing status</div>
+
+                    <p className="mt-2 text-sm text-black/60">{supportText}</p>
+
+                    {statusMessage ? (
+                        <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                            {statusMessage}
+                        </div>
+                    ) : null}
+
+                    {errorMessage ? (
+                        <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                            {errorMessage}
+                        </div>
+                    ) : null}
+
+                    {!isLoggedIn && !checkingAuth ? (
+                        <div className="mt-3 text-sm text-black/60">
+                            You’ll be asked to log in before starting the upgrade flow.
+                        </div>
+                    ) : null}
+                </div>
+            )}
+
             <div className="mt-8 text-center text-sm text-black/60">
                 Prefer supporting via Ko-fi?{" "}
                 <a
@@ -85,17 +233,33 @@ export default function PricingPage() {
 
             <div className="mt-10 rounded-[28px] border border-black/10 bg-white p-6">
                 <h2 className="text-[18px] font-semibold tracking-[-0.01em]">FAQ</h2>
+
                 <div className="mt-4 grid gap-4 md:grid-cols-2">
                     <div>
                         <div className="text-sm font-medium">Why weekly limits on Free?</div>
                         <p className="mt-1 text-sm text-black/60">
-                            Video calls are expensive to run (bandwidth + server load). Limits keep Free sustainable.
+                            Video calls are expensive to run. Limits keep Free sustainable while Pro supports the infrastructure.
                         </p>
                     </div>
+
                     <div>
-                        <div className="text-sm font-medium">Can I change plans later?</div>
+                        <div className="text-sm font-medium">How does Pro billing work right now?</div>
                         <p className="mt-1 text-sm text-black/60">
-                            Yes — upgrade/downgrade anytime (Ko-fi supporter for now, Stripe flow soon).
+                            The Pro button now calls the new billing function. In test mode it activates access without charging money. In live mode it will redirect to the payment link.
+                        </p>
+                    </div>
+
+                    <div>
+                        <div className="text-sm font-medium">What should happen during testing?</div>
+                        <p className="mt-1 text-sm text-black/60">
+                            Clicking “Upgrade to Pro” while logged in should create a payment row and activate your subscription immediately if PAYMENTS_MODE is set to test.
+                        </p>
+                    </div>
+
+                    <div>
+                        <div className="text-sm font-medium">What if the upgrade fails?</div>
+                        <p className="mt-1 text-sm text-black/60">
+                            Check the browser console, then open the Supabase function logs for create-payment-session. That will usually show whether the issue is auth, missing tables, or the SQL activation function.
                         </p>
                     </div>
                 </div>
