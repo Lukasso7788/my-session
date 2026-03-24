@@ -92,9 +92,7 @@ function ToggleRow(props: {
                 title={label}
             >
                 <span
-                    className={[
-                        "absolute top-[2px] left-[2px] w-[24px] h-[24px] rounded-full bg-white shadow-md transition-transform",
-                    ].join(" ")}
+                    className="absolute top-[2px] left-[2px] w-[24px] h-[24px] rounded-full bg-white shadow-md transition-transform"
                     style={{
                         transform: checked ? "translateX(20px)" : "translateX(0px)",
                     }}
@@ -225,8 +223,6 @@ export function RoomSettingsModalLiveKit({
     onChangeBrightness,
     onChangeContrast,
     onChangeSaturate,
-
-    onCaptureScreenshot,
 }: {
     open: boolean;
     theme: RoomTheme;
@@ -273,12 +269,11 @@ export function RoomSettingsModalLiveKit({
     onChangeBrightness: (v: number) => void;
     onChangeContrast: (v: number) => void;
     onChangeSaturate: (v: number) => void;
-
-    onCaptureScreenshot: () => void | Promise<void>;
 }) {
     if (!open) return null;
 
     const isLight = theme === "light";
+    const isCustomBackground = !!bgImageUrl && !FX_BG_PRESETS.some((p) => p.url === bgImageUrl);
 
     const overlay = "fixed inset-0 z-[1001] flex items-center justify-center px-3 py-4";
     const backdrop = "absolute inset-0 bg-black/60";
@@ -298,7 +293,6 @@ export function RoomSettingsModalLiveKit({
         : "bg-white/5 hover:bg-white/10 text-white/85";
 
     const activeBtn = isLight ? "bg-blue-600 text-white" : "bg-emerald-500 text-[#03110a]";
-
     const subtleText = isLight ? "text-black/60" : "text-white/60";
 
     const audioInputOptions = [
@@ -334,7 +328,7 @@ export function RoomSettingsModalLiveKit({
                         <div>
                             <div className="font-semibold text-[16px]">Settings</div>
                             <div className={`text-[12px] mt-1 ${subtleText}`}>
-                                Camera, mic, speakers, FX, room sounds, screenshot and color tuning.
+                                Camera, mic, speakers, FX, room sounds and color tuning.
                             </div>
                         </div>
 
@@ -479,22 +473,13 @@ export function RoomSettingsModalLiveKit({
                     <div className={`rounded-2xl p-4 ${sectionCls}`}>
                         <div className="flex items-center justify-between gap-3 mb-3">
                             <div>
-                                <div className="text-[13px] font-semibold">Background presets</div>
+                                <div className="text-[13px] font-semibold">Custom background</div>
                                 <div className={`text-[12px] mt-1 ${subtleText}`}>
-                                    Used when Background image mode is active.
+                                    Upload your own image and use it in Background image mode.
                                 </div>
                             </div>
 
                             <div className="flex items-center gap-2">
-                                <button
-                                    onClick={onResetBg}
-                                    className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn}`}
-                                    disabled={fxApplying}
-                                    type="button"
-                                >
-                                    Reset
-                                </button>
-
                                 <label
                                     className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn} cursor-pointer flex items-center`}
                                 >
@@ -511,12 +496,68 @@ export function RoomSettingsModalLiveKit({
                                         }}
                                     />
                                 </label>
+
+                                <button
+                                    onClick={onResetBg}
+                                    className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn}`}
+                                    disabled={fxApplying || !bgImageUrl}
+                                    type="button"
+                                >
+                                    Clear
+                                </button>
+                            </div>
+                        </div>
+
+                        <div
+                            className={[
+                                "rounded-2xl overflow-hidden border",
+                                isLight ? "border-black/10 bg-white" : "border-white/10 bg-[#0b1220]",
+                            ].join(" ")}
+                        >
+                            <div className="aspect-video w-full">
+                                {bgImageUrl ? (
+                                    <img
+                                        src={bgImageUrl}
+                                        alt="Custom background preview"
+                                        className="w-full h-full object-cover"
+                                    />
+                                ) : (
+                                    <div
+                                        className={`w-full h-full flex items-center justify-center text-[12px] ${subtleText}`}
+                                    >
+                                        No custom background selected
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className={`px-3 py-2 text-[12px] ${subtleText}`}>
+                                {bgImageUrl
+                                    ? isCustomBackground
+                                        ? "Custom uploaded background selected"
+                                        : "Preset background selected"
+                                    : "Upload an image to use your own background"}
+                            </div>
+                        </div>
+
+                        <div className={`mt-3 text-[12px] ${subtleText}`}>
+                            Tip: after upload, switch to <span className="font-semibold">Background image</span> mode if it is not active already.
+                        </div>
+                    </div>
+
+                    <div className={`rounded-2xl p-4 ${sectionCls}`}>
+                        <div className="flex items-center justify-between gap-3 mb-3">
+                            <div>
+                                <div className="text-[13px] font-semibold">Background presets</div>
+                                <div className={`text-[12px] mt-1 ${subtleText}`}>
+                                    Quick built-in backgrounds for Background image mode.
+                                </div>
                             </div>
                         </div>
 
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                             {FX_BG_PRESETS.map((p) => {
                                 const selected = bgImageUrl === p.url;
+
                                 return (
                                     <button
                                         key={p.id}
@@ -605,25 +646,6 @@ export function RoomSettingsModalLiveKit({
                                 onChange={() => onToggleRoomSounds()}
                                 isLight={isLight}
                             />
-
-                            <div className="flex items-center justify-between gap-4">
-                                <div>
-                                    <div className={`text-[13px] font-semibold ${isLight ? "text-black/85" : "text-white/90"}`}>
-                                        Screenshot
-                                    </div>
-                                    <div className={`mt-1 text-[12px] ${subtleText}`}>
-                                        Capture current room view to an image file.
-                                    </div>
-                                </div>
-
-                                <button
-                                    type="button"
-                                    onClick={() => void onCaptureScreenshot()}
-                                    className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${activeBtn}`}
-                                >
-                                    Capture
-                                </button>
-                            </div>
                         </div>
                     </div>
                 </div>
