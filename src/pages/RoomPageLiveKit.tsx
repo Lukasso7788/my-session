@@ -26,6 +26,13 @@ import ChatPanel from "../components/ChatPanel";
 import { IntentionsPanel } from "../components/IntentionsPanel";
 import { UserProfileModal } from "../components/UserProfileModal";
 import RoomTopBar from "../components/RoomTopBar";
+import RoomTimelineEditor, {
+  type RoomTimelineBlock,
+  timelineBlocksFromSchedule,
+  timelineBlocksToSchedulePayload,
+  getTimelineTotalMinutes,
+  makeDefaultTimelineBlocks,
+} from "../components/RoomTimelineEditor";
 import { LiveKitBottomBar } from "./livekit/LiveKitBottomBar";
 import {
   Icon,
@@ -706,6 +713,8 @@ const LK_CAPTURE_FPS = 24;
 
 const CHAT_MSG_TABLE = "session_chat_messages";
 const REACTION_TTL_MS = 2750;
+const SESSION_SELECT_STR =
+  "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)";
 
 type DocumentPiPApi = {
   window?: Window | null;
@@ -834,6 +843,9 @@ export function RoomPageLiveKit() {
   const accessTokenRef = useRef<string>("");
 
   const [selectedUser, setSelectedUser] = useState<HostProfile | null>(null);
+  const [timelineEditorOpen, setTimelineEditorOpen] = useState(false);
+  const [timelineDraftBlocks, setTimelineDraftBlocks] = useState<RoomTimelineBlock[]>([]);
+  const [timelineSaving, setTimelineSaving] = useState(false);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [reportTarget, setReportTarget] = useState<TileModel | null>(null);
   const [reportReason, setReportReason] = useState("");
@@ -1051,6 +1063,9 @@ export function RoomPageLiveKit() {
     return hay.includes("silent");
   }, [session]);
 
+  const sessionId = useMemo(() => String(session?.id || ""), [session?.id]);
+  const sessionTitle = useMemo(() => String(session?.title || "Session"), [session?.title]);
+
   useEffect(() => {
     (async () => {
       if (!id) return;
@@ -1216,6 +1231,178 @@ export function RoomPageLiveKit() {
     if (!parsed) setStagebarStartTime(fallbackStart);
   }, [session]);
 
+  const applySessionSnapshot = React.useCallback((nextSession: SessionRow | any) => {
+    if (!nextSession) return;
+
+    setSession(nextSession);
+
+    let parsed: unknown = safeParseJson(nextSession.schedule);
+
+    if (!parsed) {
+      const t = parse50505(nextSession.schedule);
+      if (t) {
+        parsed = {
+          kind: "infinite_room",
+          timer: { phases: { focus: t.focus, break: t.break, intentions: t.intentions } },
+          anchor_ts: nextSession?.start_time || nextSession?.created_at || new Date().toISOString(),
+        };
+      }
+    }
+
+    setStages([]);
+    setStagebarCycleSeconds(undefined);
+    setStagebarStartTime("");
+
+    const fallbackStart = String(
+      nextSession?.start_time || nextSession?.created_at || new Date().toISOString()
+    );
+
+    if (isRecord(parsed)) {
+      const maybeBlocks =
+        (parsed as any).blocks ||
+        (parsed as any).script ||
+        (parsed as any).agenda ||
+        (parsed as any).items ||
+        (parsed as any).stages;
+
+      if (Array.isArray(maybeBlocks)) parsed = maybeBlocks;
+    }
+
+    if (Array.isArray(parsed)) {
+      const formatted: Stage[] = parsed
+        .map((b): Stage | null => {
+          const blk = isRecord(b) ? b : null;
+          if (!blk) return null;
+
+          const rawName =
+            str((blk as any).name) ||
+            str((blk as any).title) ||
+            str((blk as any).label) ||
+            str((blk as any).text) ||
+            str((blk as any).key) ||
+            "Stage";
+
+          const rawType = str((blk as any).type) || str((blk as any).category);
+          const inferredType: Stage["type"] = rawType
+            ? inferStageTypeFromLabel(rawType)
+            : inferStageTypeFromLabel(rawName);
+
+          const minutes =
+            num((blk as any).minutes) ||
+            num((blk as any).mins) ||
+            num((blk as any).duration_minutes) ||
+            num((blk as any).durationMinutes) ||
+            num((blk as any).durationMin) ||
+            num((blk as any).duration) ||
+            0;
+
+          const seconds =
+            num((blk as any).seconds) ||
+            num((blk as any).durationSeconds) ||
+            num((blk as any).duration_seconds) ||
+            0;
+
+          const durationSeconds = seconds > 0 ? seconds : minutes > 0 ? minutes * 60 : 0;
+          const displayMinutes =
+            minutes > 0 ? minutes : seconds > 0 ? Math.max(1, Math.round(seconds / 60)) : 0;
+
+          if (durationSeconds <= 0 || displayMinutes <= 0) return null;
+
+          const color = str((blk as any).color) || STAGE_COLORS[inferredType] || "#F63135";
+          return {
+            name: rawName,
+            duration: displayMinutes,
+            color,
+            type: inferredType,
+            durationSeconds,
+          };
+        })
+        .filter((x): x is Stage => !!x);
+
+      setStages(formatted);
+      setStagebarStartTime(String(nextSession.start_time || fallbackStart));
+      setStagebarCycleSeconds(undefined);
+      return;
+    }
+
+    const isInfiniteScheduleObject =
+      isRecord(parsed) &&
+      (str((parsed as any).kind).toLowerCase().includes("infinite") ||
+        (isRecord((parsed as any).timer) &&
+          (((parsed as any).timer as any).phases || ((parsed as any).timer as any).segments)) ||
+        !!(parsed as any).phases ||
+        !!(parsed as any).segments);
+
+    if (isInfiniteScheduleObject && isRecord(parsed)) {
+      const timer = isRecord((parsed as any).timer) ? ((parsed as any).timer as any) : null;
+
+      const phasesRaw =
+        (timer?.phases ?? timer?.segments ?? (parsed as any).phases ?? (parsed as any).segments) ?? null;
+      const phases = normalizeInfinitePhases(phasesRaw);
+
+      const formatted: Stage[] = phases.map((p) => {
+        const rawPhaseName = String(p.name || "");
+        const type = phaseToStageType(rawPhaseName);
+
+        const displayName2 =
+          type === "focus"
+            ? "Focus"
+            : type === "intentions"
+              ? isCheckInLikeLabel(rawPhaseName)
+                ? "Check-in"
+                : "Intentions"
+              : type === "break"
+                ? "Break"
+                : type === "intro"
+                  ? "Intro"
+                  : type === "outro"
+                    ? "Outro"
+                    : rawPhaseName || "Stage";
+
+        const seconds = Number(p.seconds) || 0;
+        const minutes = Math.max(1, Math.round(seconds / 60));
+
+        return {
+          name: displayName2,
+          duration: minutes,
+          color: STAGE_COLORS[type] || "#F63135",
+          type,
+          durationSeconds: seconds,
+        };
+      });
+
+      setStages(formatted);
+
+      const anchor = String(
+        str((parsed as any).anchor_ts) ||
+        str((parsed as any).anchorTs) ||
+        str(nextSession?.start_time) ||
+        fallbackStart
+      );
+      setStagebarStartTime(anchor);
+
+      const sumSeconds = phases.reduce((acc, p) => acc + (Number(p.seconds) || 0), 0);
+      const timerCycle =
+        timer && isRecord(timer)
+          ? num((timer as any).cycle_seconds) || num((timer as any).cycleSeconds)
+          : 0;
+
+      let cycleSeconds =
+        timerCycle ||
+        num((parsed as any).cycle_seconds) ||
+        num((parsed as any).cycleSeconds) ||
+        0;
+
+      if (!cycleSeconds || cycleSeconds <= 0) cycleSeconds = sumSeconds;
+      if (cycleSeconds < sumSeconds) cycleSeconds = sumSeconds;
+
+      setStagebarCycleSeconds(Math.max(1, cycleSeconds));
+      return;
+    }
+
+    if (!parsed) setStagebarStartTime(fallbackStart);
+  }, []);
+
   useEffect(() => {
     if (isSilentRoom) {
       setRemainingTime("");
@@ -1356,6 +1543,72 @@ export function RoomPageLiveKit() {
       }
     })();
   }, []);
+
+  const openTimelineEditor = () => {
+    if (!isHost) return;
+
+    const parsedBlocks = timelineBlocksFromSchedule(session?.schedule);
+    setTimelineDraftBlocks(parsedBlocks.length ? parsedBlocks : makeDefaultTimelineBlocks());
+    setTimelineEditorOpen(true);
+  };
+
+  const closeTimelineEditor = () => {
+    if (timelineSaving) return;
+    setTimelineEditorOpen(false);
+  };
+
+  const saveTimelineEditor = async () => {
+    if (!isHost) return;
+    if (!sessionId) return;
+
+    if (!timelineDraftBlocks.length) {
+      alert("Add at least one block before saving");
+      return;
+    }
+
+    setTimelineSaving(true);
+
+    try {
+      const nextSchedule = timelineBlocksToSchedulePayload(timelineDraftBlocks, {
+        preserveInfinite: isInfiniteRoom,
+        anchorTs:
+          stagebarStartTime ||
+          session?.start_time ||
+          session?.created_at ||
+          new Date().toISOString(),
+      });
+
+      const nextDurationMinutes = getTimelineTotalMinutes(timelineDraftBlocks);
+
+      const { data: updated, error } = await supabase
+        .from("sessions")
+        .update({
+          schedule: nextSchedule,
+          duration_minutes: nextDurationMinutes,
+        })
+        .eq("id", sessionId)
+        .select(SESSION_SELECT_STR)
+        .single();
+
+      if (error) throw error;
+
+      const nextSession =
+        updated ||
+        ({
+          ...session,
+          schedule: nextSchedule,
+          duration_minutes: nextDurationMinutes,
+        } as SessionRow);
+
+      applySessionSnapshot(nextSession);
+      setTimelineEditorOpen(false);
+    } catch (e: any) {
+      console.error("Timeline save error:", e);
+      alert(String(e?.message || e || "Failed to save timeline"));
+    } finally {
+      setTimelineSaving(false);
+    }
+  };
 
   const loadBrowserDevices = async () => {
     try {
@@ -4809,6 +5062,7 @@ return (
         <RoomTopBar
           theme={theme}
           sessionTitle={String(session?.title || "Session")}
+          onEditTimeline={isHost ? openTimelineEditor : undefined}
           participantsCount={participantsCount}
           maxParticipants={maxParticipants}
           isSilentRoom={isSilentRoom}
@@ -4995,9 +5249,6 @@ return (
         onChangeSaturate={(v: number) =>
           setColorCorrection((p) => ({ ...p, saturation: v }))
         }
-        onCaptureScreenshot={async () => {
-          await createRoomScreenshot();
-        }}
       />
 
       {systemNotice.open && (
@@ -5119,6 +5370,20 @@ return (
             </div>
           </div>
         </div>
+      )}
+
+      {timelineEditorOpen && (
+        <RoomTimelineEditor
+          open={timelineEditorOpen}
+          theme={theme}
+          title={sessionTitle}
+          blocks={timelineDraftBlocks}
+          onChange={setTimelineDraftBlocks}
+          onClose={closeTimelineEditor}
+          onSave={saveTimelineEditor}
+          saving={timelineSaving}
+          preserveInfinite={isInfiniteRoom}
+        />
       )}
 
       {selectedUser && (
