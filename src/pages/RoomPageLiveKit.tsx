@@ -5062,6 +5062,7 @@ return (
         <RoomTopBar
           theme={theme}
           sessionTitle={String(session?.title || "Session")}
+          canEditTimeline={isHost}
           onEditTimeline={isHost ? openTimelineEditor : undefined}
           participantsCount={participantsCount}
           maxParticipants={maxParticipants}
