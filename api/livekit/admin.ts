@@ -13,21 +13,40 @@ type AdminAction =
   | "mute_microphone"
   | "unmute_microphone";
 
+type TrackKind = "camera" | "microphone" | "";
+
 type Body = {
   action?: AdminAction | string;
   roomName?: string;
   sessionId?: string;
   participantIdentity?: string;
   trackSid?: string;
-  trackKind?: "camera" | "microphone" | "video" | "audio";
+  trackKind?: "camera" | "microphone" | "video" | "audio" | string;
 
-  // deprecated
+  // deprecated / ignored for auth decisions
   isHost?: boolean;
+  isModerator?: boolean;
 };
+
+type ActorRole = {
+  userId: string;
+  hostId: string;
+  isHost: boolean;
+  isModerator: boolean;
+};
+
+function nowMs() {
+  return Date.now();
+}
+
+function elapsedMs(start: number) {
+  return Math.max(0, Date.now() - start);
+}
 
 function parseBody(req: VercelRequest): Body {
   const raw = req.body as any;
   if (!raw) return {};
+
   if (typeof raw === "string") {
     try {
       return JSON.parse(raw) as Body;
@@ -35,18 +54,18 @@ function parseBody(req: VercelRequest): Body {
       return {};
     }
   }
+
   return raw as Body;
 }
 
 function normalizeLiveKitHost(raw: string): string {
-  let host = (raw || "").trim();
+  let host = String(raw || "").trim();
   if (!host) return "";
 
   if (host.startsWith("wss://")) host = "https://" + host.slice("wss://".length);
   if (host.startsWith("ws://")) host = "http://" + host.slice("ws://".length);
 
-  host = host.replace(/\/+$/, "");
-  return host;
+  return host.replace(/\/+$/, "");
 }
 
 function getLiveKitHttpHost(): string {
@@ -60,6 +79,7 @@ function getLiveKitHttpHost(): string {
     const norm = normalizeLiveKitHost(String(c || ""));
     if (norm) return norm;
   }
+
   return "";
 }
 
@@ -69,7 +89,7 @@ function getBearerToken(req: VercelRequest): string {
   return "";
 }
 
-function looksLikeUuid(v: string) {
+function looksLikeUuid(v: string): boolean {
   const s = String(v || "").trim().toLowerCase();
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(s);
 }
@@ -83,7 +103,7 @@ function deriveSessionId(roomName?: string): string {
   return "";
 }
 
-function normalizeAction(raw: string): AdminAction | "" {
+function normalizeAction(raw: unknown): AdminAction | "" {
   const a = String(raw || "").trim().toLowerCase();
 
   if (a === "mute_track") return "mute_track";
@@ -99,56 +119,11 @@ function normalizeAction(raw: string): AdminAction | "" {
   return "";
 }
 
-function normalizeTrackKind(raw: unknown): "camera" | "microphone" | "" {
+function normalizeTrackKind(raw: unknown): TrackKind {
   const s = String(raw || "").trim().toLowerCase();
   if (s === "camera" || s === "video") return "camera";
   if (s === "microphone" || s === "audio" || s === "mic") return "microphone";
   return "";
-}
-
-async function getActorRole(params: {
-  supabaseUrl: string;
-  serviceKey: string;
-  accessToken: string;
-  sessionId: string;
-}): Promise<{ userId: string; hostId: string; isHost: boolean; isModerator: boolean }> {
-  const { supabaseUrl, serviceKey, accessToken, sessionId } = params;
-
-  const sb = createClient(supabaseUrl, serviceKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-
-  const { data: uData, error: uErr } = await sb.auth.getUser(accessToken);
-  if (uErr || !uData?.user) throw new Error("unauthorized");
-
-  const userId = String(uData.user.id || "").toLowerCase();
-  if (!looksLikeUuid(userId)) throw new Error("unauthorized");
-
-  const { data: sData, error: sErr } = await sb
-    .from("sessions")
-    .select("id, host_id")
-    .eq("id", sessionId)
-    .single();
-
-  if (sErr || !sData?.id) throw new Error("session_not_found");
-
-  const hostId = String((sData as any).host_id || "").toLowerCase();
-  const isHost = !!hostId && hostId === userId;
-
-  let isModerator = false;
-  if (!isHost) {
-    const { data: rData, error: rErr } = await sb
-      .from("session_role_assignments")
-      .select("id")
-      .eq("session_id", sessionId)
-      .eq("user_id", userId)
-      .eq("role", "moderator")
-      .limit(1);
-
-    if (!rErr && Array.isArray(rData) && rData.length > 0) isModerator = true;
-  }
-
-  return { userId, hostId, isHost, isModerator };
 }
 
 function sourceToKind(raw: unknown): string {
@@ -179,18 +154,14 @@ function isTrackMatchKind(track: any, wanted: "camera" | "microphone") {
 
   if (wanted === "camera") {
     if (sourceKind === "camera") return true;
-    if (sourceKind === "screen_share") return false;
-    if (sourceKind === "screen_share_audio") return false;
-    if (typeKind === "video") return true;
-    if (width > 0 || height > 0) return true;
+    if (typeKind === "video" && (width > 0 || height > 0)) return true;
     if (mimeType.startsWith("video/")) return true;
-    if (name.includes("camera") || name.includes("cam")) return true;
+    if (name.includes("camera") || name.includes("cam") || name.includes("video")) return true;
     return false;
   }
 
   if (wanted === "microphone") {
     if (sourceKind === "microphone") return true;
-    if (sourceKind === "screen_share_audio") return false;
     if (typeKind === "audio") return true;
     if (mimeType.startsWith("audio/")) return true;
     if (name.includes("microphone") || name.includes("mic")) return true;
@@ -226,15 +197,93 @@ async function resolveTrackSidForKind(args: {
   return sid;
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  try {
-    res.setHeader("Cache-Control", "no-store, max-age=0");
+async function getActorRole(params: {
+  supabaseUrl: string;
+  serviceKey: string;
+  accessToken: string;
+  sessionId: string;
+}): Promise<ActorRole> {
+  const { supabaseUrl, serviceKey, accessToken, sessionId } = params;
 
-    const origin = String(req.headers.origin || "*");
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Vary", "Origin");
-    res.setHeader("Access-Control-Allow-Methods", "POST,OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  const sb = createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const { data: uData, error: uErr } = await sb.auth.getUser(accessToken);
+  if (uErr || !uData?.user) throw new Error("unauthorized");
+
+  const userId = String(uData.user.id || "").toLowerCase();
+  if (!looksLikeUuid(userId)) throw new Error("unauthorized");
+
+  const { data: sData, error: sErr } = await sb
+    .from("sessions")
+    .select("id, host_id")
+    .eq("id", sessionId)
+    .single();
+
+  if (sErr || !sData?.id) throw new Error("session_not_found");
+
+  const hostId = String((sData as any).host_id || "").toLowerCase();
+  const isHost = !!hostId && hostId === userId;
+
+  let isModerator = false;
+  if (!isHost) {
+    const { data: rData, error: rErr } = await sb
+      .from("session_role_assignments")
+      .select("id")
+      .eq("session_id", sessionId)
+      .eq("user_id", userId)
+      .eq("role", "moderator")
+      .limit(1);
+
+    if (!rErr && Array.isArray(rData) && rData.length > 0) {
+      isModerator = true;
+    }
+  }
+
+  return { userId, hostId, isHost, isModerator };
+}
+
+function setCors(res: VercelResponse, req: VercelRequest) {
+  const origin = String(req.headers.origin || "*");
+  res.setHeader("Cache-Control", "no-store, max-age=0");
+  res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Vary", "Origin");
+  res.setHeader("Access-Control-Allow-Methods", "POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+}
+
+function writeTimingHeaders(
+  res: VercelResponse,
+  timings: {
+    totalMs?: number;
+    authMs?: number;
+    livekitMs?: number;
+    resolvedTrackMs?: number;
+  }
+) {
+  if (typeof timings.totalMs === "number") {
+    res.setHeader("X-Admin-Total-Ms", String(timings.totalMs));
+  }
+  if (typeof timings.authMs === "number") {
+    res.setHeader("X-Admin-Auth-Ms", String(timings.authMs));
+  }
+  if (typeof timings.livekitMs === "number") {
+    res.setHeader("X-Admin-LiveKit-Ms", String(timings.livekitMs));
+  }
+  if (typeof timings.resolvedTrackMs === "number") {
+    res.setHeader("X-Admin-Resolve-Track-Ms", String(timings.resolvedTrackMs));
+  }
+}
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  const totalStartedAt = nowMs();
+  let authMs = 0;
+  let livekitMs = 0;
+  let resolvedTrackMs = 0;
+
+  try {
+    setCors(res, req);
 
     if (req.method === "OPTIONS") {
       return res.status(204).end();
@@ -246,7 +295,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const body = parseBody(req);
-    const action = normalizeAction(String(body.action || ""));
+    const action = normalizeAction(body.action);
     const roomName = String(body.roomName || "").trim();
     const participantIdentity = String(body.participantIdentity || "").trim();
     let trackSid = String(body.trackSid || "").trim();
@@ -255,7 +304,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: "action_and_roomName_required" });
     }
 
-    const sessionId = String(body.sessionId || deriveSessionId(roomName)).toLowerCase();
+    const sessionId = String(body.sessionId || deriveSessionId(roomName))
+      .trim()
+      .toLowerCase();
+
     if (!looksLikeUuid(sessionId)) {
       return res.status(400).json({
         error: "sessionId_required",
@@ -271,7 +323,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const supabaseUrl = String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "").trim();
+    const supabaseUrl = String(
+      process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ""
+    ).trim();
     const serviceKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
 
     if (!supabaseUrl || !serviceKey) {
@@ -281,14 +335,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const actor = await getActorRole({ supabaseUrl, serviceKey, accessToken, sessionId });
+    const authStartedAt = nowMs();
+    const actor = await getActorRole({
+      supabaseUrl,
+      serviceKey,
+      accessToken,
+      sessionId,
+    });
+    authMs = elapsedMs(authStartedAt);
+
     if (!actor.isHost && !actor.isModerator) {
-      return res.status(403).json({ error: "forbidden", reason: "host_or_moderator_required" });
+      writeTimingHeaders(res, {
+        totalMs: elapsedMs(totalStartedAt),
+        authMs,
+      });
+      return res.status(403).json({
+        error: "forbidden",
+        reason: "host_or_moderator_required",
+      });
     }
 
     const targetId = participantIdentity.toLowerCase();
     if (!actor.isHost && looksLikeUuid(targetId) && actor.hostId && targetId === actor.hostId) {
-      return res.status(403).json({ error: "forbidden", reason: "moderator_cannot_target_host" });
+      writeTimingHeaders(res, {
+        totalMs: elapsedMs(totalStartedAt),
+        authMs,
+      });
+      return res.status(403).json({
+        error: "forbidden",
+        reason: "moderator_cannot_target_host",
+      });
     }
 
     const apiKey = String(process.env.LIVEKIT_API_KEY || "").trim();
@@ -313,20 +389,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ error: "participantIdentity_required" });
       }
 
+      const livekitStartedAt = nowMs();
       await svc.removeParticipant(roomName, participantIdentity);
+      livekitMs = elapsedMs(livekitStartedAt);
+
+      const totalMs = elapsedMs(totalStartedAt);
+      writeTimingHeaders(res, { totalMs, authMs, livekitMs });
 
       return res.status(200).json({
         ok: true,
         action,
         roomName,
         participantIdentity,
-        actor: { userId: actor.userId, isHost: actor.isHost, isModerator: actor.isModerator },
+        actor: {
+          userId: actor.userId,
+          isHost: actor.isHost,
+          isModerator: actor.isModerator,
+        },
+        timings: {
+          authMs,
+          livekitMs,
+          totalMs,
+        },
       });
     }
 
     const explicitTrackKind = normalizeTrackKind(body.trackKind);
 
-    let wantedKind: "camera" | "microphone" | "" = explicitTrackKind;
+    let wantedKind: TrackKind = explicitTrackKind;
     let muted: boolean | null = null;
 
     if (action === "mute_track") muted = true;
@@ -360,13 +450,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: "unsupported_action" });
     }
 
+    let trackWasResolvedServerSide = false;
+
     if (!trackSid && wantedKind) {
+      const resolveStartedAt = nowMs();
       trackSid = await resolveTrackSidForKind({
         svc,
         roomName,
         participantIdentity,
         wantedKind,
       });
+      resolvedTrackMs = elapsedMs(resolveStartedAt);
+      trackWasResolvedServerSide = true;
     }
 
     if (!trackSid) {
@@ -376,7 +471,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    const livekitStartedAt = nowMs();
     await svc.mutePublishedTrack(roomName, participantIdentity, trackSid, muted);
+    livekitMs = elapsedMs(livekitStartedAt);
+
+    const totalMs = elapsedMs(totalStartedAt);
+    writeTimingHeaders(res, {
+      totalMs,
+      authMs,
+      livekitMs,
+      resolvedTrackMs: trackWasResolvedServerSide ? resolvedTrackMs : 0,
+    });
 
     return res.status(200).json({
       ok: true,
@@ -384,20 +489,65 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       roomName,
       participantIdentity,
       trackSid,
-      muted,
       trackKind: wantedKind || null,
-      actor: { userId: actor.userId, isHost: actor.isHost, isModerator: actor.isModerator },
+      muted,
+      actor: {
+        userId: actor.userId,
+        isHost: actor.isHost,
+        isModerator: actor.isModerator,
+      },
+      meta: {
+        trackWasResolvedServerSide,
+      },
+      timings: {
+        authMs,
+        resolvedTrackMs: trackWasResolvedServerSide ? resolvedTrackMs : 0,
+        livekitMs,
+        totalMs,
+      },
     });
   } catch (e: any) {
-    const msg = String(e?.message || e || "unknown_error");
-    console.error("livekit admin error:", e);
+    const totalMs = elapsedMs(totalStartedAt);
+    writeTimingHeaders(res, { totalMs, authMs, livekitMs, resolvedTrackMs });
 
-    if (msg === "unauthorized") return res.status(401).json({ error: "unauthorized" });
-    if (msg === "session_not_found") return res.status(404).json({ error: "session_not_found" });
-    if (msg === "participant_not_found") return res.status(404).json({ error: "participant_not_found" });
-    if (msg === "camera_track_not_found") return res.status(404).json({ error: "camera_track_not_found" });
-    if (msg === "microphone_track_not_found") return res.status(404).json({ error: "microphone_track_not_found" });
+    const message = String(e?.message || e || "admin_request_failed");
+    console.error("[livekit-admin] request failed", {
+      message,
+      authMs,
+      resolvedTrackMs,
+      livekitMs,
+      totalMs,
+    });
 
-    return res.status(500).json({ error: "livekit_admin_failed", message: msg });
+    if (message === "unauthorized") {
+      return res.status(401).json({
+        error: "unauthorized",
+        timings: { authMs, resolvedTrackMs, livekitMs, totalMs },
+      });
+    }
+
+    if (message === "session_not_found") {
+      return res.status(404).json({
+        error: "session_not_found",
+        timings: { authMs, resolvedTrackMs, livekitMs, totalMs },
+      });
+    }
+
+    if (
+      message === "participant_not_found" ||
+      message === "camera_track_not_found" ||
+      message === "microphone_track_not_found"
+    ) {
+      return res.status(404).json({
+        error: message,
+        timings: { authMs, resolvedTrackMs, livekitMs, totalMs },
+      });
+    }
+
+    return res.status(500).json({
+      error: "admin_request_failed",
+      details: message,
+      timings: { authMs, resolvedTrackMs, livekitMs, totalMs },
+    });
   }
 }
