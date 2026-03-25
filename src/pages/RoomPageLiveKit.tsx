@@ -1,7 +1,7 @@
 // src/pages/RoomPageLiveKit.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   Room,
   RoomEvent,
@@ -716,6 +716,35 @@ const REACTION_TTL_MS = 2750;
 const SESSION_SELECT_STR =
   "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)";
 
+const JOIN_EARLY_WINDOW_MINUTES = 10;
+
+function formatLocalDateTime(ms: number) {
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      weekday: "short",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(ms));
+  } catch {
+    return new Date(ms).toLocaleString();
+  }
+}
+
+function formatCountdown(msUntil: number) {
+  const ms = Math.max(0, Number(msUntil) || 0);
+  const totalSec = Math.max(0, Math.ceil(ms / 1000));
+  const s = totalSec % 60;
+  const totalMin = Math.floor(totalSec / 60);
+  const m = totalMin % 60;
+  const h = Math.floor(totalMin / 60);
+
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
 type DocumentPiPApi = {
   window?: Window | null;
   requestWindow(options?: {
@@ -735,6 +764,7 @@ type WindowWithDocumentPiP = Window & {
 export function RoomPageLiveKit() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const tabId = useMemo(() => getOrCreateTabId("mysession_lk_tab_id"), []);
   const devClones = useMemo(() => Math.max(0, Math.min(24, getQueryInt("devClones", 0))), []);
@@ -837,6 +867,7 @@ export function RoomPageLiveKit() {
   // auth + profile
   const [authUserId, setAuthUserId] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [authGateStatus, setAuthGateStatus] = useState<"checking" | "authed" | "redirecting">("checking");
   const [userName, setUserName] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [localAvatarUrl, setLocalAvatarUrl] = useState<string>("");
@@ -1065,6 +1096,41 @@ export function RoomPageLiveKit() {
 
   const sessionId = useMemo(() => String(session?.id || ""), [session?.id]);
   const sessionTitle = useMemo(() => String(session?.title || "Session"), [session?.title]);
+
+  const [joinNowTickMs, setJoinNowTickMs] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    const startIso = String(session?.start_time || "").trim();
+    if (!startIso) return;
+
+    const startMs = new Date(startIso).getTime();
+    if (!Number.isFinite(startMs) || startMs <= 0) return;
+
+    const allowMs = startMs - JOIN_EARLY_WINDOW_MINUTES * 60 * 1000;
+
+    if (Date.now() >= allowMs) return;
+
+    const t = window.setInterval(() => setJoinNowTickMs(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, [session?.start_time]);
+
+  const joinGateInfo = useMemo(() => {
+    const startIso = String(session?.start_time || "").trim();
+    if (!startIso) return { enabled: false, canJoinNow: true, startMs: 0, msUntilAllowed: 0 };
+
+    const startMs = new Date(startIso).getTime();
+    const allowMs = startMs - JOIN_EARLY_WINDOW_MINUTES * 60 * 1000;
+
+    return {
+      enabled: true,
+      canJoinNow: joinNowTickMs >= allowMs,
+      startMs,
+      msUntilAllowed: Math.max(0, allowMs - joinNowTickMs),
+    };
+  }, [session?.start_time, joinNowTickMs]);
+
+  const canJoinNow = joinGateInfo.canJoinNow;
+  const joinBlocked = joinGateInfo.enabled && !joinGateInfo.canJoinNow;
 
   useEffect(() => {
     (async () => {
@@ -1503,46 +1569,46 @@ export function RoomPageLiveKit() {
 
   useEffect(() => {
     (async () => {
+      setAuthGateStatus("checking");
+      setAuthReady(false);
+
       try {
-        const { data } = await supabase.auth.getUser();
-        const u = data.user;
-        setAuthUserId(u?.id || null);
+        const { data: ud } = await supabase.auth.getUser();
+        const u = ud.user;
+
+        if (!u) {
+          setAuthUserId(null);
+          accessTokenRef.current = "";
+          setAuthGateStatus("redirecting");
+          setAuthReady(true);
+
+          const redirect = encodeURIComponent(location.pathname + location.search);
+          navigate(`/login?redirect=${redirect}`, { replace: true });
+          return;
+        }
+
+        setAuthUserId(u.id || null);
+
         try {
           const { data: sd } = await supabase.auth.getSession();
-          accessTokenRef.current = String(sd.session?.access_token || "");
+          accessTokenRef.current = String(sd.session?.access_token || "").trim();
         } catch {
           accessTokenRef.current = "";
         }
 
-        let name = "";
-        let avatar = "";
-
-        if (u?.id) {
-          try {
-            const { data: p } = await supabase
-              .from("profiles")
-              .select("id, full_name, avatar_url")
-              .eq("id", u.id)
-              .single();
-            name = String((p as any)?.full_name || "").trim();
-            avatar = await resolveAvatarUrlFromProfilesField(String((p as any)?.avatar_url || ""));
-          } catch { }
-        }
-
-        if (!name) name = u?.email ? String(u.email.split("@")[0] || "").trim() : "";
-
-        setUserName(name || "User");
-        setDisplayName((prev) => prev || name || "User");
-        setPrejoin((prev) => ({ ...prev, displayName: prev.displayName || name || "User" }));
-        setLocalAvatarUrl(avatar || "");
-
-        setSelectedAudioInputId((prev) => prev || prejoinRef.current.audioInputId || "");
-        setSelectedVideoInputId((prev) => prev || prejoinRef.current.videoInputId || "");
-      } finally {
+        setAuthGateStatus("authed");
         setAuthReady(true);
+      } catch {
+        setAuthUserId(null);
+        accessTokenRef.current = "";
+        setAuthGateStatus("redirecting");
+        setAuthReady(true);
+
+        const redirect = encodeURIComponent(location.pathname + location.search);
+        navigate(`/login?redirect=${redirect}`, { replace: true });
       }
     })();
-  }, []);
+  }, [navigate, location.pathname, location.search]);
 
   const openTimelineEditor = () => {
     if (!isHost) return;
@@ -2327,6 +2393,8 @@ export function RoomPageLiveKit() {
 
   useEffect(() => {
     (async () => {
+      if (joinBlocked) return;
+      if (!canJoinNow) return;
       if (!session) return;
       if (!joinRequested) return;
       if (!authReady) return;
@@ -4471,6 +4539,68 @@ export function RoomPageLiveKit() {
       )}
     </div>
   );
+
+  if (authGateStatus === "checking" || authGateStatus === "redirecting") {
+    return (
+      <>
+        <div className={`min-h-screen w-full flex items-center justify-center ${isLight ? "bg-[#f6f8fb]" : "bg-[#020617]"}`}>
+          <div className={`w-[92%] max-w-[520px] rounded-3xl border shadow-2xl p-6 ${isLight ? "bg-white border-black/10" : "bg-[#0b1220] border-white/10"}`}>
+            <div className={`text-[18px] font-semibold ${isLight ? "text-black/85" : "text-white/90"}`}>
+              Checking access…
+            </div>
+            <div className={`mt-2 text-[14px] ${isLight ? "text-black/55" : "text-white/55"}`}>
+              Please wait a moment.
+            </div>
+          </div>
+        </div>
+        {pipPortal}
+      </>
+    );
+  }
+
+  if (joinBlocked) {
+    return (
+      <>
+        <div className={`min-h-screen w-full flex items-center justify-center px-4 ${isLight ? "bg-[#f6f8fb]" : "bg-[#020617]"}`}>
+          <div className={`w-full max-w-[620px] rounded-3xl border shadow-2xl p-6 md:p-8 ${isLight ? "bg-white border-black/10" : "bg-[#0b1220] border-white/10"}`}>
+            <div className={`text-[22px] font-semibold ${isLight ? "text-black/90" : "text-white/95"}`}>
+              You can’t join yet
+            </div>
+
+            <div className={`mt-3 text-[14px] leading-6 ${isLight ? "text-black/60" : "text-white/65"}`}>
+              You can enter this room only within {JOIN_EARLY_WINDOW_MINUTES} minutes before the session starts.
+            </div>
+
+            <div className={`mt-5 rounded-2xl px-4 py-4 ${isLight ? "bg-black/[0.04]" : "bg-white/[0.05]"}`}>
+              <div className={`text-[12px] uppercase tracking-[0.12em] ${isLight ? "text-black/45" : "text-white/45"}`}>
+                Session starts
+              </div>
+              <div className={`mt-1 text-[18px] font-semibold ${isLight ? "text-black/90" : "text-white/92"}`}>
+                {formatLocalDateTime(joinGateInfo.startMs)}
+              </div>
+
+              <div className={`mt-4 text-[12px] uppercase tracking-[0.12em] ${isLight ? "text-black/45" : "text-white/45"}`}>
+                You can join in
+              </div>
+              <div className={`mt-1 text-[28px] font-semibold ${isLight ? "text-blue-700" : "text-emerald-400"}`}>
+                {formatCountdown(joinGateInfo.msUntilAllowed)}
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center gap-3">
+              <button
+                onClick={() => navigate("/sessions")}
+                className={`h-11 px-4 rounded-xl font-semibold ${isLight ? "bg-black/5 hover:bg-black/10 text-black/80" : "bg-white/5 hover:bg-white/10 text-white/85"}`}
+              >
+                Back to sessions
+              </button>
+            </div>
+          </div>
+        </div>
+        {pipPortal}
+      </>
+    );
+  }
 
   const pipFeaturedTile = useMemo(() => {
     if (activeScreenShareTile) return activeScreenShareTile;
