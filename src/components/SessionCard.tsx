@@ -2966,7 +2966,7 @@ export default function SessionCard({
         const roomParam = getRoomParam(session);
         if (!roomParam) return;
 
-        const nextPath = `/room-iframe/${roomParam}`;
+        const nextPath = `/room-livekit/${roomParam}`;
 
         if (!userId) {
             navigate(buildLoginNext(nextPath));
