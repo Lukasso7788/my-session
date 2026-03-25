@@ -4540,68 +4540,6 @@ export function RoomPageLiveKit() {
     </div>
   );
 
-  if (authGateStatus === "checking" || authGateStatus === "redirecting") {
-    return (
-      <>
-        <div className={`min-h-screen w-full flex items-center justify-center ${isLight ? "bg-[#f6f8fb]" : "bg-[#020617]"}`}>
-          <div className={`w-[92%] max-w-[520px] rounded-3xl border shadow-2xl p-6 ${isLight ? "bg-white border-black/10" : "bg-[#0b1220] border-white/10"}`}>
-            <div className={`text-[18px] font-semibold ${isLight ? "text-black/85" : "text-white/90"}`}>
-              Checking access…
-            </div>
-            <div className={`mt-2 text-[14px] ${isLight ? "text-black/55" : "text-white/55"}`}>
-              Please wait a moment.
-            </div>
-          </div>
-        </div>
-        {pipPortal}
-      </>
-    );
-  }
-
-  if (joinBlocked) {
-    return (
-      <>
-        <div className={`min-h-screen w-full flex items-center justify-center px-4 ${isLight ? "bg-[#f6f8fb]" : "bg-[#020617]"}`}>
-          <div className={`w-full max-w-[620px] rounded-3xl border shadow-2xl p-6 md:p-8 ${isLight ? "bg-white border-black/10" : "bg-[#0b1220] border-white/10"}`}>
-            <div className={`text-[22px] font-semibold ${isLight ? "text-black/90" : "text-white/95"}`}>
-              You can’t join yet
-            </div>
-
-            <div className={`mt-3 text-[14px] leading-6 ${isLight ? "text-black/60" : "text-white/65"}`}>
-              You can enter this room only within {JOIN_EARLY_WINDOW_MINUTES} minutes before the session starts.
-            </div>
-
-            <div className={`mt-5 rounded-2xl px-4 py-4 ${isLight ? "bg-black/[0.04]" : "bg-white/[0.05]"}`}>
-              <div className={`text-[12px] uppercase tracking-[0.12em] ${isLight ? "text-black/45" : "text-white/45"}`}>
-                Session starts
-              </div>
-              <div className={`mt-1 text-[18px] font-semibold ${isLight ? "text-black/90" : "text-white/92"}`}>
-                {formatLocalDateTime(joinGateInfo.startMs)}
-              </div>
-
-              <div className={`mt-4 text-[12px] uppercase tracking-[0.12em] ${isLight ? "text-black/45" : "text-white/45"}`}>
-                You can join in
-              </div>
-              <div className={`mt-1 text-[28px] font-semibold ${isLight ? "text-blue-700" : "text-emerald-400"}`}>
-                {formatCountdown(joinGateInfo.msUntilAllowed)}
-              </div>
-            </div>
-
-            <div className="mt-6 flex items-center gap-3">
-              <button
-                onClick={() => navigate("/sessions")}
-                className={`h-11 px-4 rounded-xl font-semibold ${isLight ? "bg-black/5 hover:bg-black/10 text-black/80" : "bg-white/5 hover:bg-white/10 text-white/85"}`}
-              >
-                Back to sessions
-              </button>
-            </div>
-          </div>
-        </div>
-        {pipPortal}
-      </>
-    );
-  }
-
   const pipFeaturedTile = useMemo(() => {
     if (activeScreenShareTile) return activeScreenShareTile;
     if (pinnedParticipantTile) return pinnedParticipantTile;
@@ -5076,6 +5014,68 @@ export function RoomPageLiveKit() {
 if (loading) {
   return <div className={`flex h-screen items-center justify-center ${pageBg}`}>Loading session...</div>;
 }
+
+  if (authGateStatus === "checking" || authGateStatus === "redirecting") {
+    return (
+      <>
+        <div className={`min-h-screen w-full flex items-center justify-center ${isLight ? "bg-[#f6f8fb]" : "bg-[#020617]"}`}>
+          <div className={`w-[92%] max-w-[520px] rounded-3xl border shadow-2xl p-6 ${isLight ? "bg-white border-black/10" : "bg-[#0b1220] border-white/10"}`}>
+            <div className={`text-[18px] font-semibold ${isLight ? "text-black/85" : "text-white/90"}`}>
+              Checking access…
+            </div>
+            <div className={`mt-2 text-[14px] ${isLight ? "text-black/55" : "text-white/55"}`}>
+              Please wait a moment.
+            </div>
+          </div>
+        </div>
+        {pipPortal}
+      </>
+    );
+  }
+
+  if (joinBlocked) {
+    return (
+      <>
+        <div className={`min-h-screen w-full flex items-center justify-center px-4 ${isLight ? "bg-[#f6f8fb]" : "bg-[#020617]"}`}>
+          <div className={`w-full max-w-[620px] rounded-3xl border shadow-2xl p-6 md:p-8 ${isLight ? "bg-white border-black/10" : "bg-[#0b1220] border-white/10"}`}>
+            <div className={`text-[22px] font-semibold ${isLight ? "text-black/90" : "text-white/95"}`}>
+              You can’t join yet
+            </div>
+
+            <div className={`mt-3 text-[14px] leading-6 ${isLight ? "text-black/60" : "text-white/65"}`}>
+              You can enter this room only within {JOIN_EARLY_WINDOW_MINUTES} minutes before the session starts.
+            </div>
+
+            <div className={`mt-5 rounded-2xl px-4 py-4 ${isLight ? "bg-black/[0.04]" : "bg-white/[0.05]"}`}>
+              <div className={`text-[12px] uppercase tracking-[0.12em] ${isLight ? "text-black/45" : "text-white/45"}`}>
+                Session starts
+              </div>
+              <div className={`mt-1 text-[18px] font-semibold ${isLight ? "text-black/90" : "text-white/92"}`}>
+                {formatLocalDateTime(joinGateInfo.startMs)}
+              </div>
+
+              <div className={`mt-4 text-[12px] uppercase tracking-[0.12em] ${isLight ? "text-black/45" : "text-white/45"}`}>
+                You can join in
+              </div>
+              <div className={`mt-1 text-[28px] font-semibold ${isLight ? "text-blue-700" : "text-emerald-400"}`}>
+                {formatCountdown(joinGateInfo.msUntilAllowed)}
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center gap-3">
+              <button
+                onClick={() => navigate("/sessions")}
+                className={`h-11 px-4 rounded-xl font-semibold ${isLight ? "bg-black/5 hover:bg-black/10 text-black/80" : "bg-white/5 hover:bg-white/10 text-white/85"}`}
+              >
+                Back to sessions
+              </button>
+            </div>
+          </div>
+        </div>
+        {pipPortal}
+      </>
+    );
+  }
 
 if (!session) {
   return (
