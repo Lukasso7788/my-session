@@ -384,6 +384,73 @@ function buildStageStateFromSession(data: any): {
 
     parsed = unwrapScheduleBlocks(parsed);
 
+    const timelineBlocks = timelineBlocksFromSchedule(data?.schedule);
+
+    if (Array.isArray(timelineBlocks) && timelineBlocks.length > 0) {
+        nextStages = timelineBlocks
+            .map((b: any) => {
+                const rawType = String(b?.type || "custom").toLowerCase().trim();
+                const type: Stage["type"] =
+                    rawType === "intro" ||
+                        rawType === "intentions" ||
+                        rawType === "focus" ||
+                        rawType === "break" ||
+                        rawType === "outro" ||
+                        rawType === "checkin" ||
+                        rawType === "recap" ||
+                        rawType === "celebrate" ||
+                        rawType === "custom"
+                        ? rawType
+                        : "custom";
+
+                const rawName = String(b?.label || b?.name || "").trim();
+
+                const durationMinutes = Number(b?.minutes || 0);
+                const durationSeconds = durationMinutes > 0 ? durationMinutes * 60 : 0;
+
+                if (!durationSeconds) return null;
+
+                const defaultLabel =
+                    type === "focus"
+                        ? "Focus"
+                        : type === "intentions"
+                            ? "Intentions (spoken)"
+                            : type === "checkin"
+                                ? "Check-in"
+                                : type === "break"
+                                    ? "Break"
+                                    : type === "intro"
+                                        ? "Welcome"
+                                        : type === "outro"
+                                            ? "Outro"
+                                            : type === "recap"
+                                                ? "Recap"
+                                                : type === "celebrate"
+                                                    ? "Celebrate"
+                                                    : type === "custom"
+                                                        ? "Custom"
+                                                        : "Stage";
+
+                return {
+                    name: rawName || defaultLabel,
+                    duration: durationMinutes,
+                    durationSeconds,
+                    color: STAGE_COLORS[type] || "#F63135",
+                    type,
+                } as Stage;
+            })
+            .filter(Boolean) as Stage[];
+
+        nextStart = String(data?.start_time || fallbackStart);
+        nextCycle = undefined;
+
+        return {
+            stages: nextStages,
+            stagebarStartTime: nextStart,
+            stagebarCycleSeconds: nextCycle,
+        };
+    }
+
     let nextStages: Stage[] = [];
     let nextStart = fallbackStart;
     let nextCycle: number | undefined = undefined;
@@ -2604,6 +2671,15 @@ export default function RoomPageIFrame() {
                 };
 
                 const onDisplayNameChange = (e: any) => {
+                    const participantId = String(
+                        e?.participantId || e?.id || e?.userId || ""
+                    ).trim();
+
+                    // если это событие явно от НЕ локального участника — игнорируем
+                    if (participantId && currentUserId && participantId !== currentUserId) {
+                        return;
+                    }
+
                     const next = String(
                         e?.displayname || e?.displayName || e?.name || ""
                     ).trim();
@@ -2674,15 +2750,6 @@ export default function RoomPageIFrame() {
             api.executeCommand?.("subject", String(sessionTitle));
         } catch { }
     }, [sessionTitle, apiReady]);
-
-    useEffect(() => {
-        if (!apiReady) return;
-        const api = apiRef.current;
-        if (!api) return;
-
-        // твоя логика
-        api.executeCommand?.("...");
-    }, [/* deps */]);
 
     useEffect(() => {
         if (!apiReady) return;
@@ -2814,7 +2881,7 @@ export default function RoomPageIFrame() {
                     <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
                         <div className="flex flex-col gap-2">
                             {filteredParticipants.map((p) => {
-                                const name = p.isLocal ? "You" : p.displayName || "Guest";
+                                const name = p.displayName || (p.isLocal ? "You" : "Guest");
                                 const initials =
                                     name
                                         .split(" ")
