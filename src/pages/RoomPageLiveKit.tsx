@@ -862,6 +862,17 @@ export function RoomPageLiveKit() {
 
   const isFxDisabledOnMobile = isMobileQuery;
 
+  useEffect(() => {
+    if (!isMobileQuery) return;
+
+    setColorCorrection({
+      brightness: 100,
+      contrast: 100,
+      saturation: 100,
+      warmth: 0,
+    });
+  }, [isMobileQuery]);
+
   // session
   const [session, setSession] = useState<SessionRow | null>(null);
   const [loading, setLoading] = useState(true);
@@ -915,6 +926,23 @@ export function RoomPageLiveKit() {
   useEffect(() => {
     prejoinRef.current = prejoin;
   }, [prejoin]);
+
+  useEffect(() => {
+    const nm = String(displayName || userName || "").trim();
+    if (!nm) return;
+
+    setPrejoin((prev) => {
+      if (String(prev.displayName || "").trim()) return prev;
+      return { ...prev, displayName: nm };
+    });
+
+    if (!String(prejoinRef.current.displayName || "").trim()) {
+      prejoinRef.current = {
+        ...prejoinRef.current,
+        displayName: nm,
+      };
+    }
+  }, [displayName, userName]);
 
   const [selectedAudioOutputId, setSelectedAudioOutputId] = useState<string>("default");
   const [selectedAudioInputId, setSelectedAudioInputId] = useState<string>("");
@@ -1808,18 +1836,24 @@ export function RoomPageLiveKit() {
   };
 
   useEffect(() => {
-    if (!isFxDisabledOnMobile) return;
+    if (isFxDisabledOnMobile) {
+      if (videoFxMode !== "off") {
+        setVideoFxMode("off");
+      }
 
-    if (videoFxMode !== "off") {
-      setVideoFxMode("off");
+      setFxError("Blur and virtual background are disabled on mobile devices");
+
+      const track = prejoinPreparedVideoTrackRef.current;
+      if (track) {
+        stopAnyProcessor(track).catch(() => { });
+      }
+      return;
     }
 
-    setFxError("Blur and virtual background are disabled on mobile devices");
-
-    const track = prejoinPreparedVideoTrackRef.current;
-    if (track) {
-      stopAnyProcessor(track).catch(() => { });
-    }
+    // если это уже не mobile, не держим старую mobile-ошибку
+    setFxError((prev) =>
+      prev === "Blur and virtual background are disabled on mobile devices" ? "" : prev
+    );
   }, [isFxDisabledOnMobile, videoFxMode]);
 
   const applyPrejoinVideoFx = async (mode: FxMode) => {
@@ -2441,6 +2475,9 @@ export function RoomPageLiveKit() {
   const [connected, setConnected] = useState(false);
   const [clientError, setClientError] = useState<string>("");
 
+  const connectInFlightRef = useRef(false);
+  const connectAttemptIdRef = useRef(0);
+
   const [micOn, setMicOn] = useState(false);
   const [camOn, setCamOn] = useState(false);
   const [screenShareOn, setScreenShareOn] = useState(false);
@@ -2886,6 +2923,9 @@ export function RoomPageLiveKit() {
       setFxApplying(false);
       setOpenTileAdminMenuId(null);
 
+      setJoinRequested(false);
+      connectInFlightRef.current = false;
+
       if (!opts?.preserveKickNotice) {
         setSystemNotice((prev) => ({ ...prev, open: false }));
       }
@@ -2897,13 +2937,28 @@ export function RoomPageLiveKit() {
   };
 
   const syncLiveAudioInput = async (deviceId: string) => {
+    const useId = String(deviceId || "");
+
+    setSelectedAudioInputId(useId);
+    setPrejoin((prev) => ({ ...prev, audioInputId: useId }));
+    prejoinRef.current = { ...prejoinRef.current, audioInputId: useId };
+
     const r = roomRef.current;
     if (!r) return;
+
     try {
-      const useId = String(deviceId || "");
+      if (!micOn) {
+        // если микрофон сейчас выключен, просто запоминаем выбор
+        return;
+      }
+
       await r.localParticipant.setMicrophoneEnabled(true, {
         deviceId: useId || undefined,
+        echoCancellation: prejoinRef.current.echoCancellation,
+        noiseSuppression: prejoinRef.current.noiseSuppression,
+        autoGainControl: prejoinRef.current.autoGainControl,
       } as any);
+
       scheduleRebuildTiles();
     } catch (e) {
       console.error("syncLiveAudioInput failed:", e);
@@ -2912,26 +2967,45 @@ export function RoomPageLiveKit() {
   };
 
   const syncLiveVideoInput = async (deviceId: string) => {
+    const useId = String(deviceId || "");
+
+    setSelectedVideoInputId(useId);
+    setPrejoin((prev) => ({ ...prev, videoInputId: useId }));
+    prejoinRef.current = { ...prejoinRef.current, videoInputId: useId };
+
     const r = roomRef.current;
-    if (!r) return;
+
     try {
+      // если мы ещё в prejoin или room ещё не подключена,
+      // просто пересоздаём preview-трек
+      if (!r) {
+        if (prejoinOpen && prejoinRef.current.videoEnabled) {
+          await createPrejoinPreparedVideoTrack();
+          if (videoFxMode !== "off" && !isFxDisabledOnMobile) {
+            await applyPrejoinVideoFx(videoFxMode);
+          }
+        }
+        return;
+      }
+
       const wasCamOn = camOn;
       if (!wasCamOn) {
-        setSelectedVideoInputId(deviceId);
         return;
       }
 
       await r.localParticipant.setCameraEnabled(true, {
-        deviceId: deviceId || undefined,
+        deviceId: useId || undefined,
         resolution: { width: LK_CAPTURE_WIDTH, height: LK_CAPTURE_HEIGHT },
         frameRate: LK_CAPTURE_FPS,
       } as any);
 
-      await delay(60);
+      await delay(120);
 
-      if (videoFxMode !== "off") {
+      if (videoFxMode !== "off" && !isFxDisabledOnMobile) {
         const tr = getLocalCameraTrack();
-        if (tr) await safeApplyProcessor(tr, videoFxMode, blurStrength, bgImageUrl);
+        if (tr) {
+          await safeApplyProcessor(tr, videoFxMode, blurStrength, bgImageUrl);
+        }
       }
 
       scheduleRebuildTiles();
@@ -2965,6 +3039,20 @@ export function RoomPageLiveKit() {
 
   const connectRoom = async () => {
     if (!lkServerUrl || !lkToken) return;
+    if (connectInFlightRef.current) return;
+
+    connectInFlightRef.current = true;
+    const attemptId = connectAttemptIdRef.current + 1;
+    connectAttemptIdRef.current = attemptId;
+
+    const failAfter = window.setTimeout(() => {
+      if (connectAttemptIdRef.current !== attemptId) return;
+
+      setClientError("Connecting to LiveKit timed out. Please try again.");
+      void disconnectRoom();
+      setPrejoinOpen(true);
+      setJoinRequested(false);
+    }, 15000);
 
     setClientError("");
     setFxError("");
@@ -3106,6 +3194,12 @@ export function RoomPageLiveKit() {
       console.error("LiveKit connect failed:", e);
       setClientError(String(e?.message || e || "connect_failed"));
       await disconnectRoom();
+    } finally {
+      window.clearTimeout(failAfter);
+
+      if (connectAttemptIdRef.current === attemptId) {
+        connectInFlightRef.current = false;
+      }
     }
   };
 
@@ -3809,11 +3903,16 @@ export function RoomPageLiveKit() {
     const nm = String(editNameValue || "").trim();
     if (!nm) return;
 
-    // Только локально внутри комнаты. В Supabase не пишем.
+    // 1) Сразу обновляем и state, и ref для prejoin
     setDisplayName(nm);
     setUserName(nm);
     setPrejoin((prev) => ({ ...prev, displayName: nm }));
+    prejoinRef.current = { ...prejoinRef.current, displayName: nm };
 
+    // 2) Сразу перестраиваем тайлы на следующем кадре
+    scheduleRebuildTiles();
+
+    // 3) Пытаемся обновить имя в самой LiveKit-комнате
     try {
       const r = roomRef.current;
       const lp: any = r?.localParticipant as any;
@@ -3824,16 +3923,12 @@ export function RoomPageLiveKit() {
       console.warn("localParticipant.setName failed", e);
     }
 
-    scheduleRebuildTiles();
-    setEditNameOpen(false);
-  };
+    // 4) Ещё один rebuild после setName, чтобы UI точно догнался
+    requestAnimationFrame(() => {
+      scheduleRebuildTiles();
+    });
 
-  // report participant
-  const openReportParticipantModal = (t: TileModel) => {
-    setReportTarget(t);
-    setReportReason("");
-    setReportError("");
-    setReportModalOpen(true);
+    setEditNameOpen(false);
   };
 
   const submitParticipantReport = async () => {
@@ -5425,7 +5520,7 @@ return (
         }}
         roomSoundsEnabled={roomSoundsEnabled}
         onToggleRoomSounds={() => setRoomSoundsEnabled((prev) => !prev)}
-        colorCorrectionEnabled={true}
+        colorCorrectionEnabled={!isMobileQuery}
         brightness={colorCorrection.brightness}
         contrast={colorCorrection.contrast}
         saturate={colorCorrection.saturation}
@@ -5527,7 +5622,7 @@ return (
               Edit your name
             </div>
             <div className={`mt-1 text-[12px] ${isLight ? "text-black/50" : "text-white/50"}`}>
-              Saved into Supabase profiles (full_name).
+              This only changes your name inside the current room.
             </div>
 
             <input
