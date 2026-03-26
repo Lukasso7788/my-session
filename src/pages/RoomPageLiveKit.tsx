@@ -860,19 +860,6 @@ export function RoomPageLiveKit() {
     }
   }, []);
 
-  const isFxDisabledOnMobile = isMobileQuery;
-
-  useEffect(() => {
-    if (!isMobileQuery) return;
-
-    setColorCorrection({
-      brightness: 100,
-      contrast: 100,
-      saturation: 100,
-      warmth: 0,
-    });
-  }, [isMobileQuery]);
-
   // session
   const [session, setSession] = useState<SessionRow | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1026,7 +1013,7 @@ export function RoomPageLiveKit() {
   });
   const roomSoundsEnabledRef = useRef(roomSoundsEnabled);
 
-  
+
   useEffect(() => {
     roomSoundsEnabledRef.current = roomSoundsEnabled;
     try {
@@ -1640,6 +1627,42 @@ export function RoomPageLiveKit() {
     })();
   }, [navigate, location.pathname, location.search]);
 
+  useEffect(() => {
+    (async () => {
+      if (!authUserId) return;
+
+      try {
+        const { data } = await supabase
+          .from("profiles")
+          .select("id, full_name, avatar_url")
+          .eq("id", authUserId)
+          .maybeSingle();
+
+        const nm = String((data as any)?.full_name || "").trim();
+        const avatar = await resolveAvatarUrlFromProfilesField(String((data as any)?.avatar_url || ""));
+
+        if (nm) {
+          setUserName(nm);
+          setDisplayName((prev) => String(prev || "").trim() || nm);
+          setPrejoin((prev) => {
+            if (String(prev.displayName || "").trim()) return prev;
+            return { ...prev, displayName: nm };
+          });
+          prejoinRef.current = {
+            ...prejoinRef.current,
+            displayName: String(prejoinRef.current.displayName || "").trim() || nm,
+          };
+        }
+
+        if (avatar) {
+          setLocalAvatarUrl(avatar);
+        }
+      } catch (e) {
+        console.warn("self profile fetch failed", e);
+      }
+    })();
+  }, [authUserId]);
+
   const openTimelineEditor = () => {
     if (!isHost) return;
 
@@ -1759,14 +1782,7 @@ export function RoomPageLiveKit() {
   const fxOpIdRef = useRef<number>(0);
 
   const ensureFxSupportedOrThrow = () => {
-    if (isFxDisabledOnMobile) {
-      throw new Error("Blur and virtual background are disabled on mobile devices");
-    }
-
-    if (!supportsBackgroundProcessors()) {
-      throw new Error("Background processors are not supported in this browser/device");
-    }
-
+    if (!supportsBackgroundProcessors()) throw new Error("Background processors are not supported in this browser/device");
     try {
       supportsModernBackgroundProcessors();
     } catch { }
@@ -1835,35 +1851,7 @@ export function RoomPageLiveKit() {
     return track;
   };
 
-  useEffect(() => {
-    if (isFxDisabledOnMobile) {
-      if (videoFxMode !== "off") {
-        setVideoFxMode("off");
-      }
-
-      setFxError("Blur and virtual background are disabled on mobile devices");
-
-      const track = prejoinPreparedVideoTrackRef.current;
-      if (track) {
-        stopAnyProcessor(track).catch(() => { });
-      }
-      return;
-    }
-
-    // если это уже не mobile, не держим старую mobile-ошибку
-    setFxError((prev) =>
-      prev === "Blur and virtual background are disabled on mobile devices" ? "" : prev
-    );
-  }, [isFxDisabledOnMobile, videoFxMode]);
-
   const applyPrejoinVideoFx = async (mode: FxMode) => {
-    if (isFxDisabledOnMobile) {
-      setVideoFxMode("off");
-      setFxError("Blur and virtual background are disabled on mobile devices");
-      setFxStatusText("FX disabled on mobile");
-      return;
-    }
-
     setFxError("");
     setFxApplying(true);
     setFxStatusText("");
@@ -2378,7 +2366,7 @@ export function RoomPageLiveKit() {
     return { ok: true, max: res.max, count: res.count };
   };
 
-// ---- continue in chunk 2 ----
+  // ---- continue in chunk 2 ----
   const requestToken = async () => {
     if (!session) return;
     setTokenError("");
@@ -2474,7 +2462,6 @@ export function RoomPageLiveKit() {
   const [roomState, setRoomState] = useState<Room | null>(null);
   const [connected, setConnected] = useState(false);
   const [clientError, setClientError] = useState<string>("");
-
   const connectInFlightRef = useRef(false);
   const connectAttemptIdRef = useRef(0);
 
@@ -2922,7 +2909,6 @@ export function RoomPageLiveKit() {
       setFxError("");
       setFxApplying(false);
       setOpenTileAdminMenuId(null);
-
       setJoinRequested(false);
       connectInFlightRef.current = false;
 
@@ -2947,10 +2933,7 @@ export function RoomPageLiveKit() {
     if (!r) return;
 
     try {
-      if (!micOn) {
-        // если микрофон сейчас выключен, просто запоминаем выбор
-        return;
-      }
+      if (!micOn) return;
 
       await r.localParticipant.setMicrophoneEnabled(true, {
         deviceId: useId || undefined,
@@ -2976,22 +2959,17 @@ export function RoomPageLiveKit() {
     const r = roomRef.current;
 
     try {
-      // если мы ещё в prejoin или room ещё не подключена,
-      // просто пересоздаём preview-трек
       if (!r) {
         if (prejoinOpen && prejoinRef.current.videoEnabled) {
           await createPrejoinPreparedVideoTrack();
-          if (videoFxMode !== "off" && !isFxDisabledOnMobile) {
+          if (videoFxMode !== "off") {
             await applyPrejoinVideoFx(videoFxMode);
           }
         }
         return;
       }
 
-      const wasCamOn = camOn;
-      if (!wasCamOn) {
-        return;
-      }
+      if (!camOn) return;
 
       await r.localParticipant.setCameraEnabled(true, {
         deviceId: useId || undefined,
@@ -3001,11 +2979,9 @@ export function RoomPageLiveKit() {
 
       await delay(120);
 
-      if (videoFxMode !== "off" && !isFxDisabledOnMobile) {
+      if (videoFxMode !== "off") {
         const tr = getLocalCameraTrack();
-        if (tr) {
-          await safeApplyProcessor(tr, videoFxMode, blurStrength, bgImageUrl);
-        }
+        if (tr) await safeApplyProcessor(tr, videoFxMode, blurStrength, bgImageUrl);
       }
 
       scheduleRebuildTiles();
@@ -3047,7 +3023,6 @@ export function RoomPageLiveKit() {
 
     const failAfter = window.setTimeout(() => {
       if (connectAttemptIdRef.current !== attemptId) return;
-
       setClientError("Connecting to LiveKit timed out. Please try again.");
       void disconnectRoom();
       setPrejoinOpen(true);
@@ -3174,7 +3149,7 @@ export function RoomPageLiveKit() {
       setPrejoinOpen(false);
       setPrejoinPreviewVersion((v) => v + 1);
 
-      if (!usedPrepared && pj.videoEnabled && videoFxMode !== "off" && !isFxDisabledOnMobile) {
+      if (!usedPrepared && pj.videoEnabled && videoFxMode !== "off") {
         await delay(80);
         const tr = getLocalCameraTrack();
         if (tr) {
@@ -3196,7 +3171,6 @@ export function RoomPageLiveKit() {
       await disconnectRoom();
     } finally {
       window.clearTimeout(failAfter);
-
       if (connectAttemptIdRef.current === attemptId) {
         connectInFlightRef.current = false;
       }
@@ -3903,16 +3877,22 @@ export function RoomPageLiveKit() {
     const nm = String(editNameValue || "").trim();
     if (!nm) return;
 
-    // 1) Сразу обновляем и state, и ref для prejoin
     setDisplayName(nm);
     setUserName(nm);
     setPrejoin((prev) => ({ ...prev, displayName: nm }));
     prejoinRef.current = { ...prejoinRef.current, displayName: nm };
 
-    // 2) Сразу перестраиваем тайлы на следующем кадре
-    scheduleRebuildTiles();
+    setTiles((prev) =>
+      prev.map((t) =>
+        t.isLocal
+          ? {
+            ...t,
+            label: nm,
+          }
+          : t
+      )
+    );
 
-    // 3) Пытаемся обновить имя в самой LiveKit-комнате
     try {
       const r = roomRef.current;
       const lp: any = r?.localParticipant as any;
@@ -3923,12 +3903,23 @@ export function RoomPageLiveKit() {
       console.warn("localParticipant.setName failed", e);
     }
 
-    // 4) Ещё один rebuild после setName, чтобы UI точно догнался
-    requestAnimationFrame(() => {
+    window.setTimeout(() => {
       scheduleRebuildTiles();
-    });
+    }, 0);
+
+    window.setTimeout(() => {
+      scheduleRebuildTiles();
+    }, 120);
 
     setEditNameOpen(false);
+  };
+
+  // report participant
+  const openReportParticipantModal = (t: TileModel) => {
+    setReportTarget(t);
+    setReportReason("");
+    setReportError("");
+    setReportModalOpen(true);
   };
 
   const submitParticipantReport = async () => {
@@ -4371,21 +4362,21 @@ export function RoomPageLiveKit() {
                       Mute Mic
                     </button>
 
-                      <button
-                        type="button"
-                        disabled={turnCameraOffDisabled || busyCameraOff}
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          if (!t.participantIdentity || !t.camTrackSid) return;
-                          if (turnCameraOffDisabled) return;
-                          await adminTurnOffRemoteCamera(t.id, t.participantIdentity, t.camTrackSid);
-                          setOpenTileAdminMenuId(null);
-                        }}
-                        className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
-                          }`}
-                      >
-                        Turn camera off
-                      </button>
+                    <button
+                      type="button"
+                      disabled={turnCameraOffDisabled || busyCameraOff}
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (!t.participantIdentity || !t.camTrackSid) return;
+                        if (turnCameraOffDisabled) return;
+                        await adminTurnOffRemoteCamera(t.id, t.participantIdentity, t.camTrackSid);
+                        setOpenTileAdminMenuId(null);
+                      }}
+                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                        }`}
+                    >
+                      Turn camera off
+                    </button>
 
                     <div className={isLight ? "h-px bg-black/10" : "h-px bg-white/10"} />
                   </>
@@ -4725,42 +4716,42 @@ export function RoomPageLiveKit() {
             type="button"
             onClick={() => toggleMic().catch(() => { })}
             className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
-                ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
-                : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
+              ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
+              : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
               }`}
           >
-              <div className="flex flex-col items-center justify-center gap-1">
-                <Icon name={micOn ? "mic-on" : "mic-off"} theme={theme} className="w-4 h-4" />
-                <span>Mic</span>
-              </div>
+            <div className="flex flex-col items-center justify-center gap-1">
+              <Icon name={micOn ? "mic-on" : "mic-off"} theme={theme} className="w-4 h-4" />
+              <span>Mic</span>
+            </div>
           </button>
 
           <button
             type="button"
             onClick={() => toggleCam().catch(() => { })}
             className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
-                ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
-                : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
+              ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
+              : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
               }`}
           >
-              <div className="flex flex-col items-center justify-center gap-1">
-                <Icon name={camOn ? "camera-on" : "camera-off"} theme={theme} className="w-4 h-4" />
-                <span>Cam</span>
-              </div>
+            <div className="flex flex-col items-center justify-center gap-1">
+              <Icon name={camOn ? "camera-on" : "camera-off"} theme={theme} className="w-4 h-4" />
+              <span>Cam</span>
+            </div>
           </button>
 
           <button
             type="button"
             onClick={() => toggleScreenShare().catch(() => { })}
             className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
-                ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
-                : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
+              ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
+              : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
               }`}
           >
-              <div className="flex flex-col items-center justify-center gap-1">
-                <span className="text-[14px]">🖥️</span>
-                <span>Share</span>
-              </div>
+            <div className="flex flex-col items-center justify-center gap-1">
+              <span className="text-[14px]">🖥️</span>
+              <span>Share</span>
+            </div>
           </button>
 
           <button
@@ -4771,28 +4762,28 @@ export function RoomPageLiveKit() {
               } catch { }
             }}
             className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
-                ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
-                : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
+              ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
+              : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
               }`}
           >
-              <div className="flex flex-col items-center justify-center gap-1">
-                <span className="text-[14px]">↗</span>
-                <span>Main</span>
-              </div>
+            <div className="flex flex-col items-center justify-center gap-1">
+              <span className="text-[14px]">↗</span>
+              <span>Main</span>
+            </div>
           </button>
 
           <button
             type="button"
             onClick={() => leave().catch(() => { })}
             className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
-                ? "border-red-200 bg-red-50 hover:bg-red-100 text-red-700"
-                : "border-red-400/20 bg-red-500/10 hover:bg-red-500/15 text-red-300"
+              ? "border-red-200 bg-red-50 hover:bg-red-100 text-red-700"
+              : "border-red-400/20 bg-red-500/10 hover:bg-red-500/15 text-red-300"
               }`}
           >
-              <div className="flex flex-col items-center justify-center gap-1">
-                <span className="text-[14px]">⎋</span>
-                <span>Leave</span>
-              </div>
+            <div className="flex flex-col items-center justify-center gap-1">
+              <span className="text-[14px]">⎋</span>
+              <span>Leave</span>
+            </div>
           </button>
         </div>
       </div>,
@@ -4850,8 +4841,8 @@ export function RoomPageLiveKit() {
               <button
                 onClick={openEditName}
                 className={`px-3 h-9 rounded-xl text-[12px] font-semibold border transition ${isLight
-                    ? "bg-black/5 border-black/10 hover:bg-black/10 text-black/70"
-                    : "bg-white/5 border-white/10 hover:bg-white/10 text-white/85"
+                  ? "bg-black/5 border-black/10 hover:bg-black/10 text-black/70"
+                  : "bg-white/5 border-white/10 hover:bg-white/10 text-white/85"
                   }`}
                 title="Edit my name"
               >
@@ -4861,8 +4852,8 @@ export function RoomPageLiveKit() {
               <button
                 onClick={() => openRightTab(null)}
                 className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                    ? "bg-black/5 hover:bg-black/10 text-black/60"
-                    : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                  ? "bg-black/5 hover:bg-black/10 text-black/60"
+                  : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
                   }`}
                 title="Close"
               >
@@ -4881,8 +4872,8 @@ export function RoomPageLiveKit() {
                 onChange={(e) => setParticipantsSearch(e.target.value)}
                 placeholder="Search participants..."
                 className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${isLight
-                    ? "text-black/80 placeholder:text-black/40"
-                    : "text-white/85 placeholder:text-white/35"
+                  ? "text-black/80 placeholder:text-black/40"
+                  : "text-white/85 placeholder:text-white/35"
                   }`}
               />
             </div>
@@ -4948,8 +4939,8 @@ export function RoomPageLiveKit() {
                         ) : (
                           <div
                             className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${isLight
-                                ? "bg-blue-500/15 text-blue-700"
-                                : "bg-emerald-500/80 text-[#02140B]"
+                              ? "bg-blue-500/15 text-blue-700"
+                              : "bg-emerald-500/80 text-[#02140B]"
                               }`}
                           >
                             {p.kind === "screen" ? "🖥️" : initials}
@@ -4980,8 +4971,8 @@ export function RoomPageLiveKit() {
                             <button
                               onClick={() => togglePin(p.id)}
                               className={`w-9 h-9 rounded-xl flex items-center justify-center border transition ${isLight
-                                  ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70"
-                                  : "border-white/10 bg-white/5 hover:bg-white/10 text-white/85"
+                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70"
+                                : "border-white/10 bg-white/5 hover:bg-white/10 text-white/85"
                                 }`}
                               title={isPinned ? "Unpin" : "Pin"}
                             >
@@ -4991,8 +4982,8 @@ export function RoomPageLiveKit() {
                             <button
                               onClick={() => toggleHide(p.id)}
                               className={`w-9 h-9 rounded-xl flex items-center justify-center border transition ${isLight
-                                  ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70"
-                                  : "border-white/10 bg-white/5 hover:bg-white/10 text-white/85"
+                                ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70"
+                                : "border-white/10 bg-white/5 hover:bg-white/10 text-white/85"
                                 }`}
                               title={isHidden ? "Unhide" : "Hide"}
                             >
@@ -5020,8 +5011,8 @@ export function RoomPageLiveKit() {
                 }
               }}
               className={`w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 ${isLight
-                  ? "bg-blue-600 hover:bg-blue-700 text-white"
-                  : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
+                ? "bg-blue-600 hover:bg-blue-700 text-white"
+                : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
                 }`}
             >
               <span className="text-lg">⎘</span>
@@ -5043,8 +5034,8 @@ export function RoomPageLiveKit() {
             <button
               onClick={() => openRightTab(null)}
               className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                  ? "bg-black/5 hover:bg-black/10 text-black/60"
-                  : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                ? "bg-black/5 hover:bg-black/10 text-black/60"
+                : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
                 }`}
               title="Close"
             >
@@ -5055,8 +5046,8 @@ export function RoomPageLiveKit() {
           <div className="flex-1 min-h-0 p-4 overflow-hidden">
             <div
               className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight
-                  ? "bg-white/70 border border-black/10"
-                  : "bg-[#020617]/40 border border-white/10"
+                ? "bg-white/70 border border-black/10"
+                : "bg-[#020617]/40 border border-white/10"
                 }`}
             >
               <div className="h-full min-h-0 flex flex-col overflow-hidden [&>*]:h-full [&>*]:min-h-0">
@@ -5098,8 +5089,8 @@ export function RoomPageLiveKit() {
             <button
               onClick={() => openRightTab(null)}
               className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                  ? "bg-black/5 hover:bg-black/10 text-black/60"
-                  : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                ? "bg-black/5 hover:bg-black/10 text-black/60"
+                : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
                 }`}
               title="Close"
             >
@@ -5110,8 +5101,8 @@ export function RoomPageLiveKit() {
           <div className="flex-1 min-h-0 overflow-hidden p-4">
             <div
               className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight
-                  ? "bg-white/70 border border-black/10"
-                  : "bg-[#020617]/40 border border-white/10"
+                ? "bg-white/70 border border-black/10"
+                : "bg-[#020617]/40 border border-white/10"
                 }`}
             >
               <div className="h-full min-h-0 overflow-y-auto [&>*]:min-h-0">
@@ -5136,9 +5127,9 @@ export function RoomPageLiveKit() {
       )}
     </div>
   );
-if (loading) {
-  return <div className={`flex h-screen items-center justify-center ${pageBg}`}>Loading session...</div>;
-}
+  if (loading) {
+    return <div className={`flex h-screen items-center justify-center ${pageBg}`}>Loading session...</div>;
+  }
 
   if (authGateStatus === "checking" || authGateStatus === "redirecting") {
     return (
@@ -5202,51 +5193,51 @@ if (loading) {
     );
   }
 
-if (!session) {
-  return (
-    <div className={`flex h-screen items-center justify-center ${pageBg}`}>
-      <button onClick={() => navigate("/sessions")}>Back</button>
-    </div>
-  );
-}
-
-const onJoinGate = () => {
-  const pj = prejoinRef.current;
-  const nm = (pj.displayName || displayName || userName || "User").trim() || "User";
-
-  const baseUser = safeIdentity(
-    (authUserId && looksLikeUuid(authUserId) ? authUserId : authUserId || nm) as any
-  );
-
-  if (session?.id && !tabPresenceAcquiredRef.current) {
-    const g = tryAcquireTabGate(session.id, baseUser);
-    if (!g.ok) {
-      const msg = `Too many tabs open for this room (${g.count}/${g.max}). Close another tab and try again.`;
-      setTokenError(msg);
-      try {
-        alert(msg);
-      } catch { }
-      setPrejoinOpen(true);
-      setJoinRequested(false);
-      return;
-    }
+  if (!session) {
+    return (
+      <div className={`flex h-screen items-center justify-center ${pageBg}`}>
+        <button onClick={() => navigate("/sessions")}>Back</button>
+      </div>
+    );
   }
 
-  setDisplayName(nm);
-  setSelectedAudioOutputId(pj.audioOutputId || "default");
-  setSelectedAudioInputId(pj.audioInputId || "");
-  setSelectedVideoInputId(pj.videoInputId || "");
-  setEchoCancellationEnabled(!!pj.echoCancellation);
-  setNoiseSuppressionEnabled(!!pj.noiseSuppression);
-  setAutoGainControlEnabled(!!pj.autoGainControl);
+  const onJoinGate = () => {
+    const pj = prejoinRef.current;
+    const nm = (pj.displayName || displayName || userName || "User").trim() || "User";
 
-  setPrejoinOpen(false);
-  setJoinRequested(true);
-};
+    const baseUser = safeIdentity(
+      (authUserId && looksLikeUuid(authUserId) ? authUserId : authUserId || nm) as any
+    );
 
-return (
-  <>
-    <style>{`
+    if (session?.id && !tabPresenceAcquiredRef.current) {
+      const g = tryAcquireTabGate(session.id, baseUser);
+      if (!g.ok) {
+        const msg = `Too many tabs open for this room (${g.count}/${g.max}). Close another tab and try again.`;
+        setTokenError(msg);
+        try {
+          alert(msg);
+        } catch { }
+        setPrejoinOpen(true);
+        setJoinRequested(false);
+        return;
+      }
+    }
+
+    setDisplayName(nm);
+    setSelectedAudioOutputId(pj.audioOutputId || "default");
+    setSelectedAudioInputId(pj.audioInputId || "");
+    setSelectedVideoInputId(pj.videoInputId || "");
+    setEchoCancellationEnabled(!!pj.echoCancellation);
+    setNoiseSuppressionEnabled(!!pj.noiseSuppression);
+    setAutoGainControlEnabled(!!pj.autoGainControl);
+
+    setPrejoinOpen(false);
+    setJoinRequested(true);
+  };
+
+  return (
+    <>
+      <style>{`
         @keyframes msReactionFloatUp {
           0%   { opacity: 0; transform: translate3d(0, 14px, 0) scale(0.92); }
           12%  { opacity: 1; transform: translate3d(0, 0px, 0) scale(1); }
@@ -5260,194 +5251,40 @@ return (
         @media (prefers-reduced-motion: reduce) {
           .ms-reaction-float { animation: none; }
         }
+
+        @media (max-width: 1023px) {
+          .ms-desktop-only-fx {
+            display: none !important;
+          }
+        }
       `}</style>
 
-    <PreJoinModal
-      open={prejoinOpen}
-      theme={theme}
-      devices={devices}
-      value={prejoin}
-      onChange={setPrejoin}
-      onRefreshDevices={() => loadBrowserDevices().catch(() => { })}
-      onCancel={() => {
-        cleanupPrejoinPreparedVideoTrack().catch(() => { });
-        releaseTabPresence();
-        navigate("/sessions", { replace: true });
-      }}
-      onJoin={onJoinGate}
-      previewVideoTrack={prejoinPreparedVideoTrackRef.current}
-      previewVersion={prejoinPreviewVersion}
-      videoFxMode={isFxDisabledOnMobile ? "off" : videoFxMode}
-      blurStrength={blurStrength}
-      bgImageUrl={bgImageUrl}
-      fxApplying={fxApplying}
-      fxError={isFxDisabledOnMobile ? "Blur and virtual background are disabled on mobile devices" : fxError}
-      fxStatusText={isFxDisabledOnMobile ? "FX disabled on mobile" : fxStatusText}
-      fxBgPresets={FX_BG_PRESETS}
-      onApplyVideoFx={async (m) => {
-        if (isFxDisabledOnMobile) {
-          setVideoFxMode("off");
-          setFxError("Blur and virtual background are disabled on mobile devices");
-          setFxStatusText("FX disabled on mobile");
-          return;
-        }
-
-        await applyPrejoinVideoFx(m);
-      }}
-      onBlurStrengthChange={setBlurStrength}
-      onSetBgImageUrl={(url) => {
-        if (isFxDisabledOnMobile) {
-          setFxError("Blur and virtual background are disabled on mobile devices");
-          setFxStatusText("FX disabled on mobile");
-          return;
-        }
-        setBgImageUrl(url);
-      }}
-      onUploadBg={(file: File) => {
-        if (isFxDisabledOnMobile) {
-          setFxError("Blur and virtual background are disabled on mobile devices");
-          setFxStatusText("FX disabled on mobile");
-          return;
-        }
-
-        try {
-          if (uploadedBgUrlRef.current) {
-            URL.revokeObjectURL(uploadedBgUrlRef.current);
-            uploadedBgUrlRef.current = null;
-          }
-          const url = URL.createObjectURL(file);
-          uploadedBgUrlRef.current = url;
-          setBgImageUrl(url);
-        } catch (e) {
-          console.error("upload bg failed", e);
-          setFxError("Failed to load selected image");
-        }
-      }}
-      onResetBg={() => {
-        if (uploadedBgUrlRef.current) {
-          try {
-            URL.revokeObjectURL(uploadedBgUrlRef.current);
-          } catch { }
-          uploadedBgUrlRef.current = null;
-        }
-        setBgImageUrl(DEFAULT_BG_DATA_URL);
-      }}
-    />
-
-    <div className={`h-[100dvh] overflow-hidden ${pageBg}`}>
-      <div className="h-full w-full px-2 sm:px-3 pt-2 pb-[calc(80px+env(safe-area-inset-bottom))] sm:pb-[calc(90px+env(safe-area-inset-bottom))] flex flex-col gap-2 min-h-0">
-        <RoomTopBar
-          theme={theme}
-          sessionTitle={String(session?.title || "Session")}
-          canEditTimeline={isHost}
-          onEditTimeline={isHost ? openTimelineEditor : undefined}
-          participantsCount={participantsCount}
-          maxParticipants={maxParticipants}
-          isSilentRoom={isSilentRoom}
-          stages={stages as any}
-          stagebarStartTime={stagebarStartTime}
-          stagebarCycleSeconds={stagebarCycleSeconds}
-          remainingTime={remainingTime}
-          hostProfile={session?.host_profile || null}
-          onHoverStage={setHoveredStage as any}
-          onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-          onOpenHostProfile={() => setSelectedUser((session?.host_profile as any) || null)}
-        />
-
-        <div
-          className={
-            "relative grid grid-rows-1 gap-2 sm:gap-3 flex-1 min-h-0 h-full " +
-            (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
-          }
-        >
-          <div
-            ref={(el) => {
-              videoWrapRef.current = el;
-              videoSizerRef(el);
-            }}
-            className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
-              }`}
-          >
-            {videoContent}
-
-            {lastErr && (
-              <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow z-30 max-w-[80%] break-words">
-                {lastErr}
-              </div>
-            )}
-          </div>
-
-          {rightPanelOpen && isLgUp && (
-            <div className="min-h-0 h-full overflow-hidden">{RightPanelBody}</div>
-          )}
-
-          {rightPanelOpen && !isLgUp && (
-            <div className="absolute inset-0 z-40 min-h-0">
-              <div className="absolute inset-0 bg-black/40" onClick={() => openRightTab(null)} />
-              <div className="absolute inset-x-0 top-0 bottom-0 p-2 min-h-0">{RightPanelBody}</div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <RemoteAudioRenderer room={roomState} audioOutputId={selectedAudioOutputId} />
-
-      <LiveKitBottomBar
+      <PreJoinModal
+        open={prejoinOpen}
         theme={theme}
-        isLight={isLight}
-        bottomBarBg={bottomBarBg}
-        ctlBtnBase={ctlBtnBase}
-        connected={connected}
-        micOn={micOn}
-        camOn={camOn}
-        screenShareOn={screenShareOn}
-        unreadChat={unreadChat}
-        showPiP={connected && pipSupported}
-        pipActive={pipOpen}
-        onTogglePiP={() => {
-          if (pipOpen) {
-            closePictureInPicture().catch(() => { });
-          } else {
-            openPictureInPicture().catch((e) => {
-              console.error("openPictureInPicture failed", e);
-              alert(String((e as any)?.message || e || "pip_open_failed"));
-            });
-          }
+        devices={devices}
+        value={prejoin}
+        onChange={setPrejoin}
+        onRefreshDevices={() => loadBrowserDevices().catch(() => { })}
+        onCancel={() => {
+          cleanupPrejoinPreparedVideoTrack().catch(() => { });
+          releaseTabPresence();
+          navigate("/sessions", { replace: true });
         }}
-        onToggleMic={() => toggleMic().catch(() => { })}
-        onToggleCam={() => toggleCam().catch(() => { })}
-        onToggleScreenShare={() => toggleScreenShare().catch(() => { })}
-        onLeave={() => leave().catch(() => { })}
-        onOpenParticipants={() => openRightTab("participants")}
-        onOpenChat={() => openRightTab("chat")}
-        onOpenIntentions={() => openRightTab("intentions")}
-        onOpenSettings={() => setSettingsOpen(true)}
-        onSendReaction={sendReaction}
-      />
-
-      <RoomSettingsModalLiveKit
-        open={settingsOpen}
-        theme={theme}
-        mode={isFxDisabledOnMobile ? "off" : videoFxMode}
+        onJoin={onJoinGate}
+        previewVideoTrack={prejoinPreparedVideoTrackRef.current}
+        previewVersion={prejoinPreviewVersion}
+        videoFxMode={videoFxMode}
         blurStrength={blurStrength}
-        onBlurStrengthChange={setBlurStrength}
         bgImageUrl={bgImageUrl}
-        onSetBgImageUrl={setBgImageUrl}
-        onApplyMode={async (m) => {
-          if (isFxDisabledOnMobile) {
-            setVideoFxMode("off");
-            setFxError("Blur and virtual background are disabled on mobile devices");
-            setFxStatusText("FX disabled on mobile");
-            return;
-          }
-
-          await applyVideoFx(m);
-        }}
-        onClose={() => setSettingsOpen(false)}
-        fxError={isFxDisabledOnMobile ? "Blur and virtual background are disabled on mobile devices" : fxError}
         fxApplying={fxApplying}
+        fxError={fxError}
         fxStatusText={fxStatusText}
-        onUploadBg={(file) => {
+        fxBgPresets={FX_BG_PRESETS}
+        onApplyVideoFx={applyPrejoinVideoFx}
+        onBlurStrengthChange={setBlurStrength}
+        onSetBgImageUrl={setBgImageUrl}
+        onUploadBg={(file: File) => {
           try {
             if (uploadedBgUrlRef.current) {
               URL.revokeObjectURL(uploadedBgUrlRef.current);
@@ -5470,214 +5307,348 @@ return (
           }
           setBgImageUrl(DEFAULT_BG_DATA_URL);
         }}
-        devices={devices}
-        selectedAudioInputId={selectedAudioInputId}
-        selectedVideoInputId={selectedVideoInputId}
-        selectedAudioOutputId={selectedAudioOutputId}
-        onChangeAudioInput={async (deviceId: string) => {
-          setSelectedAudioInputId(deviceId);
-          setPrejoin((prev) => ({ ...prev, audioInputId: deviceId }));
-          await syncLiveAudioInput(deviceId);
-        }}
-        onChangeVideoInput={async (deviceId: string) => {
-          setSelectedVideoInputId(deviceId);
-          setPrejoin((prev) => ({ ...prev, videoInputId: deviceId }));
-          await syncLiveVideoInput(deviceId);
-        }}
-        onChangeAudioOutput={(deviceId: string) => {
-          setSelectedAudioOutputId(deviceId || "default");
-          setPrejoin((prev) => ({ ...prev, audioOutputId: deviceId || "default" }));
-        }}
-        echoCancellationEnabled={echoCancellationEnabled}
-        noiseSuppressionEnabled={noiseSuppressionEnabled}
-        autoGainControlEnabled={autoGainControlEnabled}
-        onChangeEchoCancellation={async (v: boolean) => {
-          setEchoCancellationEnabled(v);
-          setPrejoin((prev) => ({ ...prev, echoCancellation: v }));
-          await syncLiveAudioProcessing({
-            echoCancellation: v,
-            noiseSuppression: noiseSuppressionEnabled,
-            autoGainControl: autoGainControlEnabled,
-          });
-        }}
-        onChangeNoiseSuppression={async (v: boolean) => {
-          setNoiseSuppressionEnabled(v);
-          setPrejoin((prev) => ({ ...prev, noiseSuppression: v }));
-          await syncLiveAudioProcessing({
-            echoCancellation: echoCancellationEnabled,
-            noiseSuppression: v,
-            autoGainControl: autoGainControlEnabled,
-          });
-        }}
-        onChangeAutoGainControl={async (v: boolean) => {
-          setAutoGainControlEnabled(v);
-          setPrejoin((prev) => ({ ...prev, autoGainControl: v }));
-          await syncLiveAudioProcessing({
-            echoCancellation: echoCancellationEnabled,
-            noiseSuppression: noiseSuppressionEnabled,
-            autoGainControl: v,
-          });
-        }}
-        roomSoundsEnabled={roomSoundsEnabled}
-        onToggleRoomSounds={() => setRoomSoundsEnabled((prev) => !prev)}
-        colorCorrectionEnabled={!isMobileQuery}
-        brightness={colorCorrection.brightness}
-        contrast={colorCorrection.contrast}
-        saturate={colorCorrection.saturation}
-        onToggleColorCorrection={() => { }}
-        onChangeBrightness={(v: number) =>
-          setColorCorrection((p) => ({ ...p, brightness: v }))
-        }
-        onChangeContrast={(v: number) =>
-          setColorCorrection((p) => ({ ...p, contrast: v }))
-        }
-        onChangeSaturate={(v: number) =>
-          setColorCorrection((p) => ({ ...p, saturation: v }))
-        }
       />
 
-      {systemNotice.open && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/45 backdrop-blur-[2px]"
-            onClick={systemNotice.kind === "kick" ? undefined : closeSystemNotice}
+      <div className={`h-[100dvh] overflow-hidden ${pageBg}`}>
+        <div className="h-full w-full px-2 sm:px-3 pt-2 pb-[calc(80px+env(safe-area-inset-bottom))] sm:pb-[calc(90px+env(safe-area-inset-bottom))] flex flex-col gap-2 min-h-0">
+          <RoomTopBar
+            theme={theme}
+            sessionTitle={String(session?.title || "Session")}
+            canEditTimeline={isHost}
+            onEditTimeline={isHost ? openTimelineEditor : undefined}
+            participantsCount={participantsCount}
+            maxParticipants={maxParticipants}
+            isSilentRoom={isSilentRoom}
+            stages={stages as any}
+            stagebarStartTime={stagebarStartTime}
+            stagebarCycleSeconds={stagebarCycleSeconds}
+            remainingTime={remainingTime}
+            hostProfile={session?.host_profile || null}
+            onHoverStage={setHoveredStage as any}
+            onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+            onOpenHostProfile={() => setSelectedUser((session?.host_profile as any) || null)}
           />
-          <div
-            className={`relative w-[92%] max-w-[520px] rounded-2xl border shadow-2xl p-5 ${isLight ? "bg-white border-black/10 text-black/85" : "bg-[#020617] border-white/10 text-white/90"
-              }`}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-[18px] font-semibold">{systemNotice.title}</div>
-                <div className={`mt-1 text-[13px] leading-relaxed ${isLight ? "text-black/65" : "text-white/70"}`}>
-                  {systemNotice.body}
-                </div>
-              </div>
 
-              {systemNotice.kind !== "kick" && (
-                <button
-                  type="button"
-                  onClick={closeSystemNotice}
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                      ? "bg-black/5 hover:bg-black/10 text-black/70"
-                      : "bg-white/5 hover:bg-white/10 text-white/80"
-                    }`}
-                  title="Close"
-                >
-                  ✕
-                </button>
+          <div
+            className={
+              "relative grid grid-rows-1 gap-2 sm:gap-3 flex-1 min-h-0 h-full " +
+              (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
+            }
+          >
+            <div
+              ref={(el) => {
+                videoWrapRef.current = el;
+                videoSizerRef(el);
+              }}
+              className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
+                }`}
+            >
+              {videoContent}
+
+              {lastErr && (
+                <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow z-30 max-w-[80%] break-words">
+                  {lastErr}
+                </div>
               )}
             </div>
 
-            <div className="mt-5 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  closeSystemNotice();
-                  if (systemNotice.kind === "kick") {
-                    navigate("/sessions", { replace: true });
-                    return;
-                  }
-                }}
-                className={`px-4 h-10 rounded-xl font-semibold ${isLight
-                    ? "bg-blue-600 hover:bg-blue-700 text-white"
-                    : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
-                  }`}
-              >
-                OK
-              </button>
-            </div>
+            {rightPanelOpen && isLgUp && (
+              <div className="min-h-0 h-full overflow-hidden">{RightPanelBody}</div>
+            )}
+
+            {rightPanelOpen && !isLgUp && (
+              <div className="absolute inset-0 z-40 min-h-0">
+                <div className="absolute inset-0 bg-black/40" onClick={() => openRightTab(null)} />
+                <div className="absolute inset-x-0 top-0 bottom-0 p-2 min-h-0">{RightPanelBody}</div>
+              </div>
+            )}
           </div>
         </div>
-      )}
 
-      <ReportParticipantModalLiveKit
-        open={reportModalOpen}
-        theme={theme}
-        participantName={reportTarget?.label || "Participant"}
-        value={reportReason}
-        busy={reportBusy}
-        error={reportError}
-        onChange={setReportReason}
-        onClose={() => {
-          if (reportBusy) return;
-          setReportModalOpen(false);
-          setReportTarget(null);
-          setReportReason("");
-          setReportError("");
-        }}
-        onSubmit={() => {
-          submitParticipantReport().catch(() => { });
-        }}
-      />
+        <RemoteAudioRenderer room={roomState} audioOutputId={selectedAudioOutputId} />
 
-      {editNameOpen && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setEditNameOpen(false)} />
-          <div
-            className={`relative w-[92%] max-w-[480px] rounded-2xl border shadow-2xl p-5 ${isLight ? "bg-white border-black/10" : "bg-[#020617] border-white/10"
-              }`}
-          >
-            <div className={`text-[16px] font-semibold ${isLight ? "text-black/85" : "text-white/90"}`}>
-              Edit your name
-            </div>
-            <div className={`mt-1 text-[12px] ${isLight ? "text-black/50" : "text-white/50"}`}>
-              This only changes your name inside the current room.
-            </div>
+        <LiveKitBottomBar
+          theme={theme}
+          isLight={isLight}
+          bottomBarBg={bottomBarBg}
+          ctlBtnBase={ctlBtnBase}
+          connected={connected}
+          micOn={micOn}
+          camOn={camOn}
+          screenShareOn={screenShareOn}
+          unreadChat={unreadChat}
+          showPiP={connected && pipSupported}
+          pipActive={pipOpen}
+          onTogglePiP={() => {
+            if (pipOpen) {
+              closePictureInPicture().catch(() => { });
+            } else {
+              openPictureInPicture().catch((e) => {
+                console.error("openPictureInPicture failed", e);
+                alert(String((e as any)?.message || e || "pip_open_failed"));
+              });
+            }
+          }}
+          onToggleMic={() => toggleMic().catch(() => { })}
+          onToggleCam={() => toggleCam().catch(() => { })}
+          onToggleScreenShare={() => toggleScreenShare().catch(() => { })}
+          onLeave={() => leave().catch(() => { })}
+          onOpenParticipants={() => openRightTab("participants")}
+          onOpenChat={() => openRightTab("chat")}
+          onOpenIntentions={() => openRightTab("intentions")}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onSendReaction={sendReaction}
+        />
 
-            <input
-              value={editNameValue}
-              onChange={(e) => setEditNameValue(e.target.value)}
-              placeholder="Your name"
-              className={`mt-4 w-full rounded-xl px-3 py-2 outline-none border ${isLight ? "bg-white border-black/10 text-black/85" : "bg-black/20 border-white/10 text-white/90"
-                }`}
+        <RoomSettingsModalLiveKit
+          open={settingsOpen}
+          theme={theme}
+          mode={videoFxMode}
+          blurStrength={blurStrength}
+          onBlurStrengthChange={setBlurStrength}
+          bgImageUrl={bgImageUrl}
+          onSetBgImageUrl={setBgImageUrl}
+          onApplyMode={async (m) => {
+            await applyVideoFx(m);
+          }}
+          onClose={() => setSettingsOpen(false)}
+          fxError={fxError}
+          fxApplying={fxApplying}
+          fxStatusText={fxStatusText}
+          onUploadBg={(file) => {
+            try {
+              if (uploadedBgUrlRef.current) {
+                URL.revokeObjectURL(uploadedBgUrlRef.current);
+                uploadedBgUrlRef.current = null;
+              }
+              const url = URL.createObjectURL(file);
+              uploadedBgUrlRef.current = url;
+              setBgImageUrl(url);
+            } catch (e) {
+              console.error("upload bg failed", e);
+              setFxError("Failed to load selected image");
+            }
+          }}
+          onResetBg={() => {
+            if (uploadedBgUrlRef.current) {
+              try {
+                URL.revokeObjectURL(uploadedBgUrlRef.current);
+              } catch { }
+              uploadedBgUrlRef.current = null;
+            }
+            setBgImageUrl(DEFAULT_BG_DATA_URL);
+          }}
+          devices={devices}
+          selectedAudioInputId={selectedAudioInputId}
+          selectedVideoInputId={selectedVideoInputId}
+          selectedAudioOutputId={selectedAudioOutputId}
+          onChangeAudioInput={async (deviceId: string) => {
+            setSelectedAudioInputId(deviceId);
+            setPrejoin((prev) => ({ ...prev, audioInputId: deviceId }));
+            await syncLiveAudioInput(deviceId);
+          }}
+          onChangeVideoInput={async (deviceId: string) => {
+            setSelectedVideoInputId(deviceId);
+            setPrejoin((prev) => ({ ...prev, videoInputId: deviceId }));
+            await syncLiveVideoInput(deviceId);
+          }}
+          onChangeAudioOutput={(deviceId: string) => {
+            setSelectedAudioOutputId(deviceId || "default");
+            setPrejoin((prev) => ({ ...prev, audioOutputId: deviceId || "default" }));
+          }}
+          echoCancellationEnabled={echoCancellationEnabled}
+          noiseSuppressionEnabled={noiseSuppressionEnabled}
+          autoGainControlEnabled={autoGainControlEnabled}
+          onChangeEchoCancellation={async (v: boolean) => {
+            setEchoCancellationEnabled(v);
+            setPrejoin((prev) => ({ ...prev, echoCancellation: v }));
+            await syncLiveAudioProcessing({
+              echoCancellation: v,
+              noiseSuppression: noiseSuppressionEnabled,
+              autoGainControl: autoGainControlEnabled,
+            });
+          }}
+          onChangeNoiseSuppression={async (v: boolean) => {
+            setNoiseSuppressionEnabled(v);
+            setPrejoin((prev) => ({ ...prev, noiseSuppression: v }));
+            await syncLiveAudioProcessing({
+              echoCancellation: echoCancellationEnabled,
+              noiseSuppression: v,
+              autoGainControl: autoGainControlEnabled,
+            });
+          }}
+          onChangeAutoGainControl={async (v: boolean) => {
+            setAutoGainControlEnabled(v);
+            setPrejoin((prev) => ({ ...prev, autoGainControl: v }));
+            await syncLiveAudioProcessing({
+              echoCancellation: echoCancellationEnabled,
+              noiseSuppression: noiseSuppressionEnabled,
+              autoGainControl: v,
+            });
+          }}
+          roomSoundsEnabled={roomSoundsEnabled}
+          onToggleRoomSounds={() => setRoomSoundsEnabled((prev) => !prev)}
+          colorCorrectionEnabled={isLgUp}
+          brightness={colorCorrection.brightness}
+          contrast={colorCorrection.contrast}
+          saturate={colorCorrection.saturation}
+          onToggleColorCorrection={() => { }}
+          onChangeBrightness={(v: number) => {
+            if (!isLgUp) return;
+            setColorCorrection((p) => ({ ...p, brightness: v }));
+          }}
+          onChangeContrast={(v: number) => {
+            if (!isLgUp) return;
+            setColorCorrection((p) => ({ ...p, contrast: v }));
+          }}
+          onChangeSaturate={(v: number) => {
+            if (!isLgUp) return;
+            setColorCorrection((p) => ({ ...p, saturation: v }));
+          }}
+        />
+
+        {systemNotice.open && (
+          <div className="fixed inset-0 z-[90] flex items-center justify-center">
+            <div
+              className="absolute inset-0 bg-black/45 backdrop-blur-[2px]"
+              onClick={systemNotice.kind === "kick" ? undefined : closeSystemNotice}
             />
+            <div
+              className={`relative w-[92%] max-w-[520px] rounded-2xl border shadow-2xl p-5 ${isLight ? "bg-white border-black/10 text-black/85" : "bg-[#020617] border-white/10 text-white/90"
+                }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-[18px] font-semibold">{systemNotice.title}</div>
+                  <div className={`mt-1 text-[13px] leading-relaxed ${isLight ? "text-black/65" : "text-white/70"}`}>
+                    {systemNotice.body}
+                  </div>
+                </div>
 
-            <div className="mt-4 flex items-center justify-end gap-2">
-              <button
-                onClick={() => setEditNameOpen(false)}
-                className={`px-4 h-10 rounded-xl font-semibold ${isLight
+                {systemNotice.kind !== "kick" && (
+                  <button
+                    type="button"
+                    onClick={closeSystemNotice}
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
+                      ? "bg-black/5 hover:bg-black/10 text-black/70"
+                      : "bg-white/5 hover:bg-white/10 text-white/80"
+                      }`}
+                    title="Close"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              <div className="mt-5 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    closeSystemNotice();
+                    if (systemNotice.kind === "kick") {
+                      navigate("/sessions", { replace: true });
+                      return;
+                    }
+                  }}
+                  className={`px-4 h-10 rounded-xl font-semibold ${isLight
+                    ? "bg-blue-600 hover:bg-blue-700 text-white"
+                    : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
+                    }`}
+                >
+                  OK
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <ReportParticipantModalLiveKit
+          open={reportModalOpen}
+          theme={theme}
+          participantName={reportTarget?.label || "Participant"}
+          value={reportReason}
+          busy={reportBusy}
+          error={reportError}
+          onChange={setReportReason}
+          onClose={() => {
+            if (reportBusy) return;
+            setReportModalOpen(false);
+            setReportTarget(null);
+            setReportReason("");
+            setReportError("");
+          }}
+          onSubmit={() => {
+            submitParticipantReport().catch(() => { });
+          }}
+        />
+
+        {editNameOpen && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/40" onClick={() => setEditNameOpen(false)} />
+            <div
+              className={`relative w-[92%] max-w-[480px] rounded-2xl border shadow-2xl p-5 ${isLight ? "bg-white border-black/10" : "bg-[#020617] border-white/10"
+                }`}
+            >
+              <div className={`text-[16px] font-semibold ${isLight ? "text-black/85" : "text-white/90"}`}>
+                Edit your name
+              </div>
+              <div className={`mt-1 text-[12px] ${isLight ? "text-black/50" : "text-white/50"}`}>
+                This only changes your name inside the current room.
+              </div>
+
+              <input
+                value={editNameValue}
+                onChange={(e) => setEditNameValue(e.target.value)}
+                placeholder="Your name"
+                className={`mt-4 w-full rounded-xl px-3 py-2 outline-none border ${isLight ? "bg-white border-black/10 text-black/85" : "bg-black/20 border-white/10 text-white/90"
+                  }`}
+              />
+
+              <div className="mt-4 flex items-center justify-end gap-2">
+                <button
+                  onClick={() => setEditNameOpen(false)}
+                  className={`px-4 h-10 rounded-xl font-semibold ${isLight
                     ? "bg-black/5 hover:bg-black/10 text-black/75"
                     : "bg-white/5 hover:bg-white/10 text-white/85"
-                  }`}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => saveEditName().catch(() => { })}
-                className={`px-4 h-10 rounded-xl font-semibold ${isLight
+                    }`}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => saveEditName().catch(() => { })}
+                  className={`px-4 h-10 rounded-xl font-semibold ${isLight
                     ? "bg-blue-600 hover:bg-blue-700 text-white"
                     : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
-                  }`}
-              >
-                Save
-              </button>
+                    }`}
+                >
+                  Save
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {timelineEditorOpen && (
-        <RoomTimelineEditor
-          open={timelineEditorOpen}
-          theme={theme}
-          title={sessionTitle}
-          blocks={timelineDraftBlocks}
-          onChange={setTimelineDraftBlocks}
-          onClose={closeTimelineEditor}
-          onSave={saveTimelineEditor}
-          saving={timelineSaving}
-          preserveInfinite={isInfiniteRoom}
-        />
-      )}
+        {timelineEditorOpen && (
+          <RoomTimelineEditor
+            open={timelineEditorOpen}
+            theme={theme}
+            title={sessionTitle}
+            blocks={timelineDraftBlocks}
+            onChange={setTimelineDraftBlocks}
+            onClose={closeTimelineEditor}
+            onSave={saveTimelineEditor}
+            saving={timelineSaving}
+            preserveInfinite={isInfiniteRoom}
+          />
+        )}
 
-      {selectedUser && (
-        <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
-      )}
-    </div>
-  {pipPortal}
-  </>
-);
+        {selectedUser && (
+          <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
+        )}
+      </div>
+      {pipPortal}
+    </>
+  );
 }
 
 export default RoomPageLiveKit;
