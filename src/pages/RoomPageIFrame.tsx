@@ -392,7 +392,13 @@ function buildStageStateFromSession(data: any): {
         nextStages = parsed
             .map((b: any) => {
                 const rawName = String(
-                    b?.name || b?.title || b?.label || b?.text || b?.key || ""
+                    b?.name ||
+                    b?.title ||
+                    b?.label ||
+                    b?.text ||
+                    b?.key ||
+                    b?.displayName ||
+                    ""
                 ).trim();
 
                 const labelLower = rawName.toLowerCase();
@@ -437,6 +443,7 @@ function buildStageStateFromSession(data: any): {
                     Number(b?.mins) ||
                     Number(b?.duration_minutes) ||
                     Number(b?.durationMinutes) ||
+                    Number(b?.durationMin) ||
                     0;
 
                 const n = typeof b === "number" ? b : Number(b?.duration ?? b?.value ?? 0);
@@ -2304,7 +2311,7 @@ export default function RoomPageIFrame() {
     const refreshParticipantsList = async (api: any) => {
         try {
             const localId = String(currentUserId || "local");
-            const localName = "You";
+            const localName = effectiveDisplayNameRef.current || "You";
 
             let remote: any[] = [];
             try {
@@ -2368,7 +2375,14 @@ export default function RoomPageIFrame() {
         const api = apiRef.current;
         if (!api) return;
         void refreshParticipantsList(api);
-    }, [rightPanelOpen, rightTab, apiReady, mutedAudio, mutedVideo]);
+    }, [
+        rightPanelOpen,
+        rightTab,
+        apiReady,
+        mutedAudio,
+        mutedVideo,
+        effectiveDisplayName, // ✅ ДОБАВЬ ЭТО
+    ]);
 
     const filteredParticipants = useMemo(() => {
         const q = participantsSearch.trim().toLowerCase();
@@ -2660,6 +2674,15 @@ export default function RoomPageIFrame() {
             api.executeCommand?.("subject", String(sessionTitle));
         } catch { }
     }, [sessionTitle, apiReady]);
+
+    useEffect(() => {
+        if (!apiReady) return;
+        const api = apiRef.current;
+        if (!api) return;
+
+        // твоя логика
+        api.executeCommand?.("...");
+    }, [/* deps */]);
 
     useEffect(() => {
         if (!apiReady) return;
