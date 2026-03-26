@@ -1056,11 +1056,17 @@ export default function RoomPageIFrame() {
     }, [roomDisplayName, userName]);
     const effectiveDisplayNameRef = useRef<string>("User");
 
+    const localJitsiParticipantIdRef = useRef<string>("");
+    const suppressNextLocalDisplayNameEventRef = useRef<boolean>(false);
+
     useEffect(() => {
         effectiveDisplayNameRef.current = effectiveDisplayName || "User";
     }, [effectiveDisplayName]);
+
     useEffect(() => {
         setRoomDisplayName("");
+        localJitsiParticipantIdRef.current = "";
+        suppressNextLocalDisplayNameEventRef.current = false;
     }, [sessionId]);
     const accessTokenRef = useRef<string>("");
 
@@ -2303,8 +2309,8 @@ export default function RoomPageIFrame() {
 
     const refreshParticipantsList = async (api: any) => {
         try {
-            const localId = String(currentUserId || "local");
-            const localName = "You";
+            const localId = `local:${String(currentUserId || "me")}`;
+            const localName = String(effectiveDisplayNameRef.current || userName || "You").trim() || "You";
 
             let remote: any[] = [];
             try {
@@ -2374,7 +2380,11 @@ export default function RoomPageIFrame() {
         const q = participantsSearch.trim().toLowerCase();
         const base = participantRows || [];
         if (!q) return base;
-        return base.filter((p) => (p.isLocal ? "you" : p.displayName || "guest").toLowerCase().includes(q));
+        return base.filter((p) =>
+            String(p.displayName || (p.isLocal ? "you" : "guest"))
+                .toLowerCase()
+                .includes(q)
+        );
     }, [participantRows, participantsSearch]);
 
     const openTimelineEditor = () => {
@@ -2528,13 +2538,22 @@ export default function RoomPageIFrame() {
                     } catch { }
                 }, 700);
 
-                const onJoined = () => {
+                const onJoined = (e: any) => {
                     localJoinedRef.current = true;
+
+                    const localPid = String(
+                        e?.id || e?.participantId || e?.userId || ""
+                    ).trim();
+
+                    if (localPid) {
+                        localJitsiParticipantIdRef.current = localPid;
+                    }
 
                     setInPrejoin(false);
                     setApiReady(true);
 
                     try {
+                        suppressNextLocalDisplayNameEventRef.current = true;
                         api.executeCommand?.("displayName", effectiveDisplayNameRef.current || "User");
                     } catch { }
 
@@ -2595,6 +2614,26 @@ export default function RoomPageIFrame() {
                     ).trim();
 
                     if (!next) return;
+
+                    const eventParticipantId = String(
+                        e?.id || e?.participantId || e?.userId || ""
+                    ).trim();
+
+                    const localParticipantId = String(localJitsiParticipantIdRef.current || "").trim();
+
+                    // Если Jitsi уже дал нам local participant id,
+                    // то принимаем изменение имени ТОЛЬКО от локального участника.
+                    if (localParticipantId) {
+                        if (!eventParticipantId || eventParticipantId !== localParticipantId) {
+                            return;
+                        }
+                    }
+
+                    // Это наш собственный set displayName -> не надо лишний раз гонять state.
+                    if (suppressNextLocalDisplayNameEventRef.current) {
+                        suppressNextLocalDisplayNameEventRef.current = false;
+                        if (next === (effectiveDisplayNameRef.current || "")) return;
+                    }
 
                     setRoomDisplayName((prev) => {
                         if (prev === next) return prev;
@@ -2668,6 +2707,7 @@ export default function RoomPageIFrame() {
         if (!effectiveDisplayName) return;
 
         try {
+            suppressNextLocalDisplayNameEventRef.current = true;
             api.executeCommand?.("displayName", String(effectiveDisplayName));
         } catch { }
     }, [effectiveDisplayName, apiReady]);
@@ -2791,7 +2831,7 @@ export default function RoomPageIFrame() {
                     <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
                         <div className="flex flex-col gap-2">
                             {filteredParticipants.map((p) => {
-                                const name = p.isLocal ? "You" : p.displayName || "Guest";
+                                const name = String(p.displayName || (p.isLocal ? "You" : "Guest")).trim() || (p.isLocal ? "You" : "Guest");
                                 const initials =
                                     name
                                         .split(" ")
@@ -2831,7 +2871,7 @@ export default function RoomPageIFrame() {
                                             <div className="min-w-0">
                                                 <div className={`text-[13px] font-medium truncate ${isLight ? "text-black/85" : "text-white/90"}`}>{name}</div>
                                                 <div className={`text-[11px] truncate ${isLight ? "text-black/45" : "text-white/45"}`}>
-                                                    {p.isLocal ? "Team member" : "Participant"}
+                                                    {p.isLocal ? "You" : "Participant"}
                                                 </div>
                                             </div>
                                         </div>
