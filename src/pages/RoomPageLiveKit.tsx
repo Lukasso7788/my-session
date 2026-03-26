@@ -860,6 +860,8 @@ export function RoomPageLiveKit() {
     }
   }, []);
 
+  const isFxDisabledOnMobile = isMobileQuery;
+
   // session
   const [session, setSession] = useState<SessionRow | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1729,7 +1731,14 @@ export function RoomPageLiveKit() {
   const fxOpIdRef = useRef<number>(0);
 
   const ensureFxSupportedOrThrow = () => {
-    if (!supportsBackgroundProcessors()) throw new Error("Background processors are not supported in this browser/device");
+    if (isFxDisabledOnMobile) {
+      throw new Error("Blur and virtual background are disabled on mobile devices");
+    }
+
+    if (!supportsBackgroundProcessors()) {
+      throw new Error("Background processors are not supported in this browser/device");
+    }
+
     try {
       supportsModernBackgroundProcessors();
     } catch { }
@@ -1798,7 +1807,29 @@ export function RoomPageLiveKit() {
     return track;
   };
 
+  useEffect(() => {
+    if (!isFxDisabledOnMobile) return;
+
+    if (videoFxMode !== "off") {
+      setVideoFxMode("off");
+    }
+
+    setFxError("Blur and virtual background are disabled on mobile devices");
+
+    const track = prejoinPreparedVideoTrackRef.current;
+    if (track) {
+      stopAnyProcessor(track).catch(() => { });
+    }
+  }, [isFxDisabledOnMobile, videoFxMode]);
+
   const applyPrejoinVideoFx = async (mode: FxMode) => {
+    if (isFxDisabledOnMobile) {
+      setVideoFxMode("off");
+      setFxError("Blur and virtual background are disabled on mobile devices");
+      setFxStatusText("FX disabled on mobile");
+      return;
+    }
+
     setFxError("");
     setFxApplying(true);
     setFxStatusText("");
@@ -3055,7 +3086,7 @@ export function RoomPageLiveKit() {
       setPrejoinOpen(false);
       setPrejoinPreviewVersion((v) => v + 1);
 
-      if (!usedPrepared && pj.videoEnabled && videoFxMode !== "off") {
+      if (!usedPrepared && pj.videoEnabled && videoFxMode !== "off" && !isFxDisabledOnMobile) {
         await delay(80);
         const tr = getLocalCameraTrack();
         if (tr) {
@@ -3778,12 +3809,7 @@ export function RoomPageLiveKit() {
     const nm = String(editNameValue || "").trim();
     if (!nm) return;
 
-    if (authUserId) {
-      try {
-        await supabase.from("profiles").update({ full_name: nm }).eq("id", authUserId);
-      } catch { }
-    }
-
+    // Только локально внутри комнаты. В Supabase не пишем.
     setDisplayName(nm);
     setUserName(nm);
     setPrejoin((prev) => ({ ...prev, displayName: nm }));
@@ -3791,8 +3817,12 @@ export function RoomPageLiveKit() {
     try {
       const r = roomRef.current;
       const lp: any = r?.localParticipant as any;
-      if (lp?.setName) await lp.setName(nm);
-    } catch { }
+      if (lp?.setName) {
+        await lp.setName(nm);
+      }
+    } catch (e) {
+      console.warn("localParticipant.setName failed", e);
+    }
 
     scheduleRebuildTiles();
     setEditNameOpen(false);
@@ -5152,17 +5182,39 @@ return (
       onJoin={onJoinGate}
       previewVideoTrack={prejoinPreparedVideoTrackRef.current}
       previewVersion={prejoinPreviewVersion}
-      videoFxMode={videoFxMode}
+      videoFxMode={isFxDisabledOnMobile ? "off" : videoFxMode}
       blurStrength={blurStrength}
       bgImageUrl={bgImageUrl}
       fxApplying={fxApplying}
-      fxError={fxError}
-      fxStatusText={fxStatusText}
+      fxError={isFxDisabledOnMobile ? "Blur and virtual background are disabled on mobile devices" : fxError}
+      fxStatusText={isFxDisabledOnMobile ? "FX disabled on mobile" : fxStatusText}
       fxBgPresets={FX_BG_PRESETS}
-      onApplyVideoFx={applyPrejoinVideoFx}
+      onApplyVideoFx={async (m) => {
+        if (isFxDisabledOnMobile) {
+          setVideoFxMode("off");
+          setFxError("Blur and virtual background are disabled on mobile devices");
+          setFxStatusText("FX disabled on mobile");
+          return;
+        }
+
+        await applyPrejoinVideoFx(m);
+      }}
       onBlurStrengthChange={setBlurStrength}
-      onSetBgImageUrl={setBgImageUrl}
+      onSetBgImageUrl={(url) => {
+        if (isFxDisabledOnMobile) {
+          setFxError("Blur and virtual background are disabled on mobile devices");
+          setFxStatusText("FX disabled on mobile");
+          return;
+        }
+        setBgImageUrl(url);
+      }}
       onUploadBg={(file: File) => {
+        if (isFxDisabledOnMobile) {
+          setFxError("Blur and virtual background are disabled on mobile devices");
+          setFxStatusText("FX disabled on mobile");
+          return;
+        }
+
         try {
           if (uploadedBgUrlRef.current) {
             URL.revokeObjectURL(uploadedBgUrlRef.current);
@@ -5281,16 +5333,23 @@ return (
       <RoomSettingsModalLiveKit
         open={settingsOpen}
         theme={theme}
-        mode={videoFxMode}
+        mode={isFxDisabledOnMobile ? "off" : videoFxMode}
         blurStrength={blurStrength}
         onBlurStrengthChange={setBlurStrength}
         bgImageUrl={bgImageUrl}
         onSetBgImageUrl={setBgImageUrl}
         onApplyMode={async (m) => {
+          if (isFxDisabledOnMobile) {
+            setVideoFxMode("off");
+            setFxError("Blur and virtual background are disabled on mobile devices");
+            setFxStatusText("FX disabled on mobile");
+            return;
+          }
+
           await applyVideoFx(m);
         }}
         onClose={() => setSettingsOpen(false)}
-        fxError={fxError}
+        fxError={isFxDisabledOnMobile ? "Blur and virtual background are disabled on mobile devices" : fxError}
         fxApplying={fxApplying}
         fxStatusText={fxStatusText}
         onUploadBg={(file) => {
