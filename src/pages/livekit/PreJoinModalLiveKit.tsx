@@ -1,4 +1,3 @@
-// src/pages/LiveKit/PreJoinModalLiveKit.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { LocalVideoTrack } from "livekit-client";
 
@@ -61,6 +60,8 @@ export function PreJoinModal({
   onSetBgImageUrl,
   onUploadBg,
   onResetBg,
+
+  hideBackgroundFx = false,
 }: {
   open: boolean;
   theme: RoomTheme;
@@ -89,15 +90,13 @@ export function PreJoinModal({
   onSetBgImageUrl: (url: string) => void;
   onUploadBg: (file: File) => void;
   onResetBg: () => void;
+
+  hideBackgroundFx?: boolean;
 }) {
   if (!open) return null;
 
   const isLight = theme === "light";
 
-  // ✅ mobile-safe modal layout:
-  // - overlay uses safe-area padding
-  // - card is max-height constrained and becomes a flex column
-  // - BODY scrolls (header/footer stay fixed)
   const overlay =
     "fixed inset-0 z-[999] flex items-stretch sm:items-center justify-center " +
     "px-0 sm:px-3 py-0 sm:py-6 " +
@@ -131,7 +130,9 @@ export function PreJoinModal({
 
   const labelCls = isLight ? "text-black/70" : "text-white/70";
 
-  const btnPrimary = isLight ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]";
+  const btnPrimary = isLight
+    ? "bg-blue-600 hover:bg-blue-700 text-white"
+    : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]";
 
   const btnGhost = isLight ? "bg-black/5 hover:bg-black/10 text-black/70" : "bg-white/5 hover:bg-white/10 text-white/80";
 
@@ -142,18 +143,20 @@ export function PreJoinModal({
 
   const fxBtnIdle = btnGhost;
 
-  // Container for LK preview element (<video> or <canvas>)
   const previewHostRef = useRef<HTMLDivElement | null>(null);
   const attachedPreviewElRef = useRef<HTMLElement | null>(null);
 
-  // attach livekit track to container (re-run on previewVersion)
   useEffect(() => {
     const host = previewHostRef.current;
     if (!host) return;
 
     const cleanup = () => {
       try {
-        if (previewVideoTrack && attachedPreviewElRef.current && typeof (previewVideoTrack as any)?.detach === "function") {
+        if (
+          previewVideoTrack &&
+          attachedPreviewElRef.current &&
+          typeof (previewVideoTrack as any)?.detach === "function"
+        ) {
           (previewVideoTrack as any).detach(attachedPreviewElRef.current);
         }
       } catch { }
@@ -212,10 +215,8 @@ export function PreJoinModal({
     }
 
     return cleanup;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, value.videoEnabled, previewVideoTrack, previewVersion]);
 
-  // Debounced auto-reapply while in prejoin (blur slider / bg change)
   const [blurDraft, setBlurDraft] = useState<number>(blurStrength);
   useEffect(() => setBlurDraft(blurStrength), [blurStrength]);
 
@@ -224,28 +225,28 @@ export function PreJoinModal({
     if (!value.videoEnabled) return;
     if (videoFxMode !== "blur") return;
     if (fxApplying) return;
+    if (hideBackgroundFx) return;
 
     const t = window.setTimeout(() => {
       onApplyVideoFx("blur");
     }, 280);
 
     return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [blurStrength, open, value.videoEnabled, videoFxMode]);
+  }, [blurStrength, open, value.videoEnabled, videoFxMode, fxApplying, hideBackgroundFx, onApplyVideoFx]);
 
   useEffect(() => {
     if (!open) return;
     if (!value.videoEnabled) return;
     if (videoFxMode !== "bg") return;
     if (fxApplying) return;
+    if (hideBackgroundFx) return;
 
     const t = window.setTimeout(() => {
       onApplyVideoFx("bg");
     }, 220);
 
     return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bgImageUrl, open, value.videoEnabled, videoFxMode]);
+  }, [bgImageUrl, open, value.videoEnabled, videoFxMode, fxApplying, hideBackgroundFx, onApplyVideoFx]);
 
   const previewHint = useMemo(() => {
     if (!value.videoEnabled) return "Video is disabled";
@@ -253,11 +254,14 @@ export function PreJoinModal({
     return "Preview";
   }, [value.videoEnabled, previewVideoTrack]);
 
-  const fxBlockedReason = !value.videoEnabled ? "Turn video on to use FX" : "";
+  const fxBlockedReason = hideBackgroundFx
+    ? "Background effects are not available on this device"
+    : !value.videoEnabled
+      ? "Turn video on to use FX"
+      : "";
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // ✅ mobile: stop background scroll + allow ESC close on desktop
   useEffect(() => {
     if (!open) return;
 
@@ -275,12 +279,11 @@ export function PreJoinModal({
     };
   }, [open, onCancel]);
 
-  // ✅ mobile: keep the active control visible when keyboard opens
   const cardRef = useRef<HTMLDivElement | null>(null);
   const onFocusAny = (e: React.FocusEvent) => {
     const target = e.target as HTMLElement | null;
     if (!target) return;
-    // Delay so layout settles (esp. iOS)
+
     window.setTimeout(() => {
       try {
         target.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
@@ -293,12 +296,13 @@ export function PreJoinModal({
       <div className={backdrop} onClick={onCancel} />
 
       <div ref={cardRef} className={card} onClick={(e) => e.stopPropagation()} onFocusCapture={onFocusAny}>
-        {/* Header (sticky-ish via layout; footer/body scroll handles rest) */}
         <div className={headerCls}>
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="font-inter font-semibold text-[16px]">Before you join</div>
-              <div className={`mt-1 text-[12px] ${labelCls}`}>Preview + devices + background effects — then join.</div>
+              <div className={`mt-1 text-[12px] ${labelCls}`}>
+                Preview + devices + background effects — then join.
+              </div>
             </div>
 
             <button onClick={onCancel} className={`w-9 h-9 rounded-2xl flex items-center justify-center ${btnGhost}`} title="Close">
@@ -307,21 +311,25 @@ export function PreJoinModal({
           </div>
         </div>
 
-        {/* Body (SCROLL) */}
         <div className={bodyCls}>
           <div className="grid grid-cols-1 lg:grid-cols-[380px,1fr] gap-5">
-            {/* LEFT: Preview + FX */}
             <div className="flex flex-col gap-4">
-              {/* Preview card */}
               <div className={`rounded-3xl overflow-hidden border ${isLight ? "border-black/10 bg-black/5" : "border-white/10 bg-white/5"}`}>
                 <div className="px-4 py-3 flex items-center justify-between">
                   <div className={`text-[12px] font-semibold ${labelCls}`}>{previewHint}</div>
                   <div className={`text-[11px] ${labelCls}`}>
-                    {value.videoEnabled ? (videoFxMode === "blur" ? "Blur" : videoFxMode === "bg" ? "Background" : "Clean") : "Off"}
+                    {value.videoEnabled
+                      ? hideBackgroundFx
+                        ? "Clean"
+                        : videoFxMode === "blur"
+                          ? "Blur"
+                          : videoFxMode === "bg"
+                            ? "Background"
+                            : "Clean"
+                      : "Off"}
                   </div>
                 </div>
 
-                {/* ✅ keep aspect-video on desktop; slightly taller on mobile */}
                 <div className="relative aspect-video sm:aspect-video">
                   {value.videoEnabled ? (
                     <>
@@ -333,169 +341,171 @@ export function PreJoinModal({
                       )}
                     </>
                   ) : (
-                    <div className={`absolute inset-0 flex items-center justify-center text-[12px] ${labelCls}`}>Video disabled</div>
+                    <div className={`absolute inset-0 flex items-center justify-center text-[12px] ${labelCls}`}>
+                      Video disabled
+                    </div>
                   )}
                 </div>
               </div>
 
-              {/* FX panel */}
-              <div className={`rounded-3xl p-4 ${inputWrap}`}>
-                <div className="flex items-center justify-between gap-3">
-                  <div className={`text-[12px] font-semibold ${labelCls}`}>Background effects</div>
-                  {fxApplying ? (
-                    <div className={`text-[11px] ${labelCls}`}>Applying…</div>
-                  ) : fxStatusText ? (
-                    <div className={`text-[11px] ${labelCls}`}>{fxStatusText}</div>
-                  ) : (
-                    <div className={`text-[11px] ${labelCls}`}></div>
-                  )}
-                </div>
-
-                {/* ✅ mobile: wrap buttons */}
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    disabled={!!fxBlockedReason || fxApplying}
-                    onClick={() => onApplyVideoFx("off")}
-                    className={`${fxBtnBase} ${videoFxMode === "off" ? fxBtnSelected : fxBtnIdle}`}
-                    title={fxBlockedReason || "Disable FX"}
-                  >
-                    Off
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={!!fxBlockedReason || fxApplying}
-                    onClick={() => onApplyVideoFx("blur")}
-                    className={`${fxBtnBase} ${videoFxMode === "blur" ? fxBtnSelected : fxBtnIdle}`}
-                    title={fxBlockedReason || "Apply blur"}
-                  >
-                    Blur
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={!!fxBlockedReason || fxApplying}
-                    onClick={() => onApplyVideoFx("bg")}
-                    className={`${fxBtnBase} ${videoFxMode === "bg" ? fxBtnSelected : fxBtnIdle}`}
-                    title={fxBlockedReason || "Apply background"}
-                  >
-                    Background
-                  </button>
-                </div>
-
-                {!!fxBlockedReason && <div className={`mt-2 text-[11px] ${labelCls}`}>{fxBlockedReason}</div>}
-
-                {fxError ? <div className={`mt-3 text-[12px] ${isLight ? "text-red-700" : "text-red-300"}`}>{fxError}</div> : null}
-
-                {/* Blur controls */}
-                {videoFxMode === "blur" && (
-                  <div className="mt-4">
-                    <div className="flex items-center justify-between">
-                      <div className={`text-[12px] ${labelCls}`}>Blur strength</div>
-                      <div className={`text-[12px] ${labelCls}`}>{blurDraft}</div>
-                    </div>
-
-                    <input
-                      type="range"
-                      min={2}
-                      max={22}
-                      step={1}
-                      value={blurDraft}
-                      onChange={(e) => {
-                        const v = Number(e.target.value) || 0;
-                        setBlurDraft(v);
-                        onBlurStrengthChange(v);
-                      }}
-                      className="mt-2 w-full"
-                      disabled={!value.videoEnabled}
-                    />
-                    <div className={`mt-2 text-[11px] ${labelCls}`}>Tip: Blur is CPU-heavy. If it stutters, lower strength.</div>
+              {!hideBackgroundFx && (
+                <div className={`ms-desktop-only-fx rounded-3xl p-4 ${inputWrap}`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className={`text-[12px] font-semibold ${labelCls}`}>Background effects</div>
+                    {fxApplying ? (
+                      <div className={`text-[11px] ${labelCls}`}>Applying…</div>
+                    ) : fxStatusText ? (
+                      <div className={`text-[11px] ${labelCls}`}>{fxStatusText}</div>
+                    ) : (
+                      <div className={`text-[11px] ${labelCls}`}></div>
+                    )}
                   </div>
-                )}
 
-                {/* Background controls */}
-                {videoFxMode === "bg" && (
-                  <div className="mt-4">
-                    <div className={`text-[12px] ${labelCls}`}>Presets</div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={!!fxBlockedReason || fxApplying}
+                      onClick={() => onApplyVideoFx("off")}
+                      className={`${fxBtnBase} ${videoFxMode === "off" ? fxBtnSelected : fxBtnIdle}`}
+                      title={fxBlockedReason || "Disable FX"}
+                    >
+                      Off
+                    </button>
 
-                    {/* ✅ mobile: 1 col; desktop: 2 cols */}
-                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {fxBgPresets?.map((p) => (
+                    <button
+                      type="button"
+                      disabled={!!fxBlockedReason || fxApplying}
+                      onClick={() => onApplyVideoFx("blur")}
+                      className={`${fxBtnBase} ${videoFxMode === "blur" ? fxBtnSelected : fxBtnIdle}`}
+                      title={fxBlockedReason || "Apply blur"}
+                    >
+                      Blur
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={!!fxBlockedReason || fxApplying}
+                      onClick={() => onApplyVideoFx("bg")}
+                      className={`${fxBtnBase} ${videoFxMode === "bg" ? fxBtnSelected : fxBtnIdle}`}
+                      title={fxBlockedReason || "Apply background"}
+                    >
+                      Background
+                    </button>
+                  </div>
+
+                  {!!fxBlockedReason && <div className={`mt-2 text-[11px] ${labelCls}`}>{fxBlockedReason}</div>}
+
+                  {fxError ? <div className={`mt-3 text-[12px] ${isLight ? "text-red-700" : "text-red-300"}`}>{fxError}</div> : null}
+
+                  {videoFxMode === "blur" && (
+                    <div className="mt-4">
+                      <div className="flex items-center justify-between">
+                        <div className={`text-[12px] ${labelCls}`}>Blur strength</div>
+                        <div className={`text-[12px] ${labelCls}`}>{blurDraft}</div>
+                      </div>
+
+                      <input
+                        type="range"
+                        min={2}
+                        max={22}
+                        step={1}
+                        value={blurDraft}
+                        onChange={(e) => {
+                          const v = Number(e.target.value) || 0;
+                          setBlurDraft(v);
+                          onBlurStrengthChange(v);
+                        }}
+                        className="mt-2 w-full"
+                        disabled={!value.videoEnabled}
+                      />
+                      <div className={`mt-2 text-[11px] ${labelCls}`}>
+                        Tip: Blur is CPU-heavy. If it stutters, lower strength.
+                      </div>
+                    </div>
+                  )}
+
+                  {videoFxMode === "bg" && (
+                    <div className="mt-4">
+                      <div className={`text-[12px] ${labelCls}`}>Presets</div>
+
+                      <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {fxBgPresets?.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            disabled={!value.videoEnabled || fxApplying}
+                            onClick={() => onSetBgImageUrl(p.url)}
+                            className={`rounded-2xl overflow-hidden border text-left transition ${isLight ? "border-black/10 hover:border-black/20" : "border-white/10 hover:border-white/20"
+                              }`}
+                            title={p.label}
+                          >
+                            <div
+                              className="h-[72px] sm:h-[56px] w-full"
+                              style={{
+                                backgroundImage: `url(${p.url})`,
+                                backgroundSize: "cover",
+                                backgroundPosition: "center",
+                              }}
+                            />
+                            <div className={`px-3 py-2 text-[12px] ${labelCls}`}>{p.label}</div>
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (!f) return;
+                            onUploadBg(f);
+                            try {
+                              e.currentTarget.value = "";
+                            } catch { }
+                          }}
+                        />
+
                         <button
-                          key={p.id}
                           type="button"
                           disabled={!value.videoEnabled || fxApplying}
-                          onClick={() => onSetBgImageUrl(p.url)}
-                          className={`rounded-2xl overflow-hidden border text-left transition ${isLight ? "border-black/10 hover:border-black/20" : "border-white/10 hover:border-white/20"
-                            }`}
-                          title={p.label}
+                          onClick={() => fileInputRef.current?.click()}
+                          className={`h-10 px-4 rounded-2xl text-[13px] font-semibold ${btnGhost}`}
                         >
-                          <div
-                            className="h-[72px] sm:h-[56px] w-full"
-                            style={{
-                              backgroundImage: `url(${p.url})`,
-                              backgroundSize: "cover",
-                              backgroundPosition: "center",
-                            }}
-                          />
-                          <div className={`px-3 py-2 text-[12px] ${labelCls}`}>{p.label}</div>
+                          Upload image
                         </button>
-                      ))}
+
+                        <button
+                          type="button"
+                          disabled={!value.videoEnabled || fxApplying}
+                          onClick={onResetBg}
+                          className={`h-10 px-4 rounded-2xl text-[13px] font-semibold ${btnGhost}`}
+                        >
+                          Reset
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={!value.videoEnabled || fxApplying}
+                          onClick={() => onApplyVideoFx("bg")}
+                          className={`h-10 px-4 rounded-2xl text-[13px] font-semibold ${btnGhost}`}
+                          title="Re-apply background now"
+                        >
+                          Re-apply
+                        </button>
+                      </div>
+
+                      <div className={`mt-2 text-[11px] ${labelCls}`}>
+                        Use presets for best performance. Large images can be heavier.
+                      </div>
                     </div>
-
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (!f) return;
-                          onUploadBg(f);
-                          try {
-                            e.currentTarget.value = "";
-                          } catch { }
-                        }}
-                      />
-
-                      <button
-                        type="button"
-                        disabled={!value.videoEnabled || fxApplying}
-                        onClick={() => fileInputRef.current?.click()}
-                        className={`h-10 px-4 rounded-2xl text-[13px] font-semibold ${btnGhost}`}
-                      >
-                        Upload image
-                      </button>
-
-                      <button
-                        type="button"
-                        disabled={!value.videoEnabled || fxApplying}
-                        onClick={onResetBg}
-                        className={`h-10 px-4 rounded-2xl text-[13px] font-semibold ${btnGhost}`}
-                      >
-                        Reset
-                      </button>
-
-                      <button
-                        type="button"
-                        disabled={!value.videoEnabled || fxApplying}
-                        onClick={() => onApplyVideoFx("bg")}
-                        className={`h-10 px-4 rounded-2xl text-[13px] font-semibold ${btnGhost}`}
-                        title="Re-apply background now"
-                      >
-                        Re-apply
-                      </button>
-                    </div>
-
-                    <div className={`mt-2 text-[11px] ${labelCls}`}>Use presets for best performance. Large images can be heavier.</div>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
             </div>
 
-            {/* RIGHT: Devices + toggles */}
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
                 <div className={`text-[12px] ${labelCls}`}>Display name</div>
@@ -623,7 +633,9 @@ export function PreJoinModal({
               </div>
 
               <div className={`rounded-2xl p-4 ${isLight ? "bg-blue-50 border border-blue-100" : "bg-white/5 border border-white/10"}`}>
-                <div className={`text-[12px] font-semibold ${isLight ? "text-blue-900/80" : "text-white/80"}`}>Quick sanity check</div>
+                <div className={`text-[12px] font-semibold ${isLight ? "text-blue-900/80" : "text-white/80"}`}>
+                  Quick sanity check
+                </div>
                 <div className={`mt-1 text-[12px] ${isLight ? "text-blue-900/70" : "text-white/65"}`}>
                   If preview is blank — allow camera permissions in the browser.
                 </div>
@@ -632,7 +644,6 @@ export function PreJoinModal({
           </div>
         </div>
 
-        {/* Footer (sticky by layout; body scrolls) */}
         <div className={footerCls}>
           <button onClick={onCancel} className={`h-11 px-5 rounded-2xl text-[13px] font-semibold ${btnGhost}`}>
             Cancel

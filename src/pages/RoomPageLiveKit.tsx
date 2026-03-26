@@ -870,6 +870,22 @@ export function RoomPageLiveKit() {
   const [authGateStatus, setAuthGateStatus] = useState<"checking" | "authed" | "redirecting">("checking");
   const [userName, setUserName] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const applyRoomDisplayNameLocally = (nextRaw: string) => {
+    const next = String(nextRaw || "").trim();
+    if (!next) return;
+
+    setDisplayName(next);
+
+    setPrejoin((prev) => ({
+      ...prev,
+      displayName: next,
+    }));
+
+    prejoinRef.current = {
+      ...prejoinRef.current,
+      displayName: next,
+    };
+  };
   const [localAvatarUrl, setLocalAvatarUrl] = useState<string>("");
   const accessTokenRef = useRef<string>("");
 
@@ -3874,43 +3890,23 @@ export function RoomPageLiveKit() {
   };
 
   const saveEditName = async () => {
-    const nm = String(editNameValue || "").trim();
-    if (!nm) return;
+    const next = String(editNameValue || "").trim();
+    if (!next) return;
 
-    setDisplayName(nm);
-    setUserName(nm);
-    setPrejoin((prev) => ({ ...prev, displayName: nm }));
-    prejoinRef.current = { ...prejoinRef.current, displayName: nm };
-
-    setTiles((prev) =>
-      prev.map((t) =>
-        t.isLocal
-          ? {
-            ...t,
-            label: nm,
-          }
-          : t
-      )
-    );
+    applyRoomDisplayNameLocally(next);
 
     try {
-      const r = roomRef.current;
-      const lp: any = r?.localParticipant as any;
+      const room = roomRef.current as any;
+      const lp = room?.localParticipant as any;
+
       if (lp?.setName) {
-        await lp.setName(nm);
+        await lp.setName(next);
       }
     } catch (e) {
-      console.warn("localParticipant.setName failed", e);
+      console.error("saveEditName setName failed:", e);
     }
 
-    window.setTimeout(() => {
-      scheduleRebuildTiles();
-    }, 0);
-
-    window.setTimeout(() => {
-      scheduleRebuildTiles();
-    }, 120);
-
+    scheduleRebuildTiles?.();
     setEditNameOpen(false);
   };
 
@@ -4043,13 +4039,15 @@ export function RoomPageLiveKit() {
     };
   }, []);
 
-  const roomReadyText = !joinRequested
-    ? "Waiting to join…"
-    : tokenLoading
-      ? "Preparing token…"
-      : !connected
-        ? "Connecting to LiveKit…"
-        : "";
+  const roomReadyText = connected
+    ? ""
+    : prejoinOpen
+      ? ""
+      : !joinRequested
+        ? "Waiting to join…"
+        : tokenLoading
+          ? "Preparing token…"
+          : "Connecting to LiveKit…";
   const lastErr = tokenError || clientError;
 
   // hide/pin helpers
@@ -5265,6 +5263,7 @@ export function RoomPageLiveKit() {
         devices={devices}
         value={prejoin}
         onChange={setPrejoin}
+        hideBackgroundFx={isMobileQuery}
         onRefreshDevices={() => loadBrowserDevices().catch(() => { })}
         onCancel={() => {
           cleanupPrejoinPreparedVideoTrack().catch(() => { });
