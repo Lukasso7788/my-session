@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { PricingPlanCard } from "../components/PricingPlanCard";
 import { supabase } from "../lib/supabase";
 
-type BillingMode = "unknown" | "test" | "live";
+type BillingCycle = "monthly" | "yearly";
 
 export default function PricingPage() {
     const KOFI_URL = "https://ko-fi.com/mysession";
@@ -11,7 +11,8 @@ export default function PricingPage() {
     const [checkingAuth, setCheckingAuth] = useState<boolean>(true);
 
     const [isUpgrading, setIsUpgrading] = useState<boolean>(false);
-    const [billingMode, setBillingMode] = useState<BillingMode>("unknown");
+    const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
+
     const [statusMessage, setStatusMessage] = useState<string>("");
     const [errorMessage, setErrorMessage] = useState<string>("");
 
@@ -51,19 +52,34 @@ export default function PricingPage() {
         };
     }, []);
 
-    const supportText = useMemo(() => {
-        if (billingMode === "test") {
-            return "Test mode is enabled right now. Clicking Pro should activate access without charging money.";
-        }
-        if (billingMode === "live") {
-            return "Live billing is enabled. Pro will open the secure payment flow.";
-        }
-        return "Billing is being wired up. If anything fails, you can still support via Ko-fi for now.";
-    }, [billingMode]);
-
     const handleStartFree = useCallback(() => {
         window.location.href = "/sessions";
     }, []);
+
+    const createCheckoutRequest = useCallback(
+        async (planCode: "pro_monthly" | "pro_yearly") => {
+            const {
+                data: { user },
+                error: userError,
+            } = await supabase.auth.getUser();
+
+            if (userError || !user) {
+                throw new Error("You must be logged in to request a checkout link.");
+            }
+
+            const { error } = await supabase.from("checkout_requests").insert({
+                user_id: user.id,
+                plan_code: planCode,
+                source: "pricing_page",
+                note: "Invoice link missing on pricing page.",
+            });
+
+            if (error) {
+                throw error;
+            }
+        },
+        []
+    );
 
     const handleUpgradeToPro = useCallback(async () => {
         setErrorMessage("");
@@ -82,43 +98,65 @@ export default function PricingPage() {
         setIsUpgrading(true);
 
         try {
-            const { data, error } = await supabase.functions.invoke("create-payment-session", {
-                body: { planId: "monthly_10" },
-            });
+            const {
+                data: { user },
+                error: userError,
+            } = await supabase.auth.getUser();
 
-            if (error) {
-                console.error("create-payment-session error:", error);
-                setErrorMessage(
-                    error.message || "Could not start payment. Please try again."
-                );
+            if (userError || !user) {
+                setErrorMessage("Could not verify your account. Please log in again.");
                 return;
             }
 
-            console.log("create-payment-session response:", data);
+            const { data: profile, error: profileError } = await supabase
+                .from("profiles")
+                .select(
+                    "pro_monthly_invoice_url, pro_yearly_invoice_url, plan_code, plan_status, pro_expires_at"
+                )
+                .eq("id", user.id)
+                .single();
 
-            if (data?.mode === "test") {
-                setBillingMode("test");
-                setStatusMessage(
-                    "Test payment succeeded. Your Pro subscription should now be activated."
-                );
+            if (profileError) {
+                console.error("Failed to load billing links:", profileError);
+                setErrorMessage("Could not load your billing link.");
                 return;
             }
 
-            if (data?.mode === "live" && data?.checkoutUrl) {
-                setBillingMode("live");
+            const isAlreadyActive =
+                profile?.plan_status === "active" &&
+                (profile?.plan_code === "pro_monthly" || profile?.plan_code === "pro_yearly");
+
+            if (isAlreadyActive) {
+                setStatusMessage("Your Pro plan is already active.");
+                return;
+            }
+
+            const planCode = billingCycle === "monthly" ? "pro_monthly" : "pro_yearly";
+            const checkoutUrl =
+                billingCycle === "monthly"
+                    ? profile?.pro_monthly_invoice_url
+                    : profile?.pro_yearly_invoice_url;
+
+            if (checkoutUrl) {
                 setStatusMessage("Redirecting you to secure payment...");
-                window.location.href = data.checkoutUrl;
+                window.location.href = checkoutUrl;
                 return;
             }
 
-            setErrorMessage("Unexpected payment response. Check the function logs.");
+            await createCheckoutRequest(planCode);
+
+            setStatusMessage(
+                billingCycle === "monthly"
+                    ? "Your monthly checkout request has been sent. We’re preparing your payment link."
+                    : "Your yearly checkout request has been sent. We’re preparing your payment link."
+            );
         } catch (err) {
             console.error("Unexpected upgrade error:", err);
-            setErrorMessage("Unexpected error while starting payment.");
+            setErrorMessage("Unexpected error while starting the upgrade.");
         } finally {
             setIsUpgrading(false);
         }
-    }, [checkingAuth, isLoggedIn]);
+    }, [billingCycle, checkingAuth, createCheckoutRequest, isLoggedIn]);
 
     return (
         <div className="mx-auto w-full max-w-[1100px] px-6 pb-20">
@@ -135,15 +173,23 @@ export default function PricingPage() {
                 <div className="grid grid-cols-2 gap-1">
                     <button
                         type="button"
-                        className="h-10 rounded-full bg-black text-sm font-medium text-white"
+                        className={`h-10 rounded-full text-sm font-medium transition ${billingCycle === "monthly"
+                                ? "bg-black text-white"
+                                : "text-black/70 hover:bg-black/5"
+                            }`}
+                        onClick={() => setBillingCycle("monthly")}
                     >
                         Monthly
                     </button>
                     <button
                         type="button"
-                        className="h-10 rounded-full text-sm font-medium text-black/70 hover:bg-black/5"
+                        className={`h-10 rounded-full text-sm font-medium transition ${billingCycle === "yearly"
+                                ? "bg-black text-white"
+                                : "text-black/70 hover:bg-black/5"
+                            }`}
+                        onClick={() => setBillingCycle("yearly")}
                     >
-                        Yearly (soon)
+                        Yearly (save 20%)
                     </button>
                 </div>
             </div>
@@ -169,34 +215,49 @@ export default function PricingPage() {
 
                 <PricingPlanCard
                     title="Pro"
-                    price="$10"
-                    subtitle="Full access to all formats"
-                    badge="Best value"
+                    price={billingCycle === "monthly" ? "$10" : "$96"}
+                    subtitle={
+                        billingCycle === "monthly"
+                            ? "Full access to all formats"
+                            : "Full access to all formats • billed yearly"
+                    }
+                    badge={billingCycle === "yearly" ? "Save 20%" : "Best value"}
                     highlights={[
                         "Unlimited sessions per week",
                         "All formats: Group sessions, Infinite rooms, Body tripling",
                         "Create & host sessions",
                         "Priority access to new features (AI layer, backgrounds)",
-                        "Support the project ❤️",
+                        billingCycle === "yearly"
+                            ? "Yearly plan: $120 → $96 with 20% discount"
+                            : "Support the project ❤️",
                     ]}
                     ctaLabel={
                         checkingAuth
                             ? "Checking account..."
                             : isUpgrading
-                                ? "Starting payment..."
-                                : "Upgrade to Pro"
+                                ? "Opening payment..."
+                                : billingCycle === "monthly"
+                                    ? "Upgrade to Pro Monthly"
+                                    : "Upgrade to Pro Yearly"
                     }
                     ctaVariant="primary"
-                    footnote="Cancel anytime"
+                    footnote={
+                        billingCycle === "monthly"
+                            ? "Cancel anytime"
+                            : "Pay $96/year instead of $120"
+                    }
                     onCta={handleUpgradeToPro}
                 />
             </div>
 
-            {(statusMessage || errorMessage || supportText) && (
+            {(statusMessage || errorMessage) && (
                 <div className="mt-8 rounded-[24px] border border-black/10 bg-white p-5">
                     <div className="text-sm font-medium">Billing status</div>
 
-                    <p className="mt-2 text-sm text-black/60">{supportText}</p>
+                    <p className="mt-2 text-sm text-black/60">
+                        If your personal invoice link is ready, the Pro button will open it directly.
+                        If not, we’ll save a checkout request and prepare one for you.
+                    </p>
 
                     {statusMessage ? (
                         <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
@@ -245,21 +306,23 @@ export default function PricingPage() {
                     <div>
                         <div className="text-sm font-medium">How does Pro billing work right now?</div>
                         <p className="mt-1 text-sm text-black/60">
-                            The Pro button now calls the new billing function. In test mode it activates access without charging money. In live mode it will redirect to the payment link.
+                            Each account can have its own personal payment link. If your link is ready,
+                            clicking Pro will open it directly. If not, we’ll save a checkout request.
                         </p>
                     </div>
 
                     <div>
-                        <div className="text-sm font-medium">What should happen during testing?</div>
+                        <div className="text-sm font-medium">What if my payment link is not ready yet?</div>
                         <p className="mt-1 text-sm text-black/60">
-                            Clicking “Upgrade to Pro” while logged in should create a payment row and activate your subscription immediately if PAYMENTS_MODE is set to test.
+                            We’ll save a checkout request for your account so your payment link can be prepared manually.
                         </p>
                     </div>
 
                     <div>
-                        <div className="text-sm font-medium">What if the upgrade fails?</div>
+                        <div className="text-sm font-medium">How should this be tested?</div>
                         <p className="mt-1 text-sm text-black/60">
-                            Check the browser console, then open the Supabase function logs for create-payment-session. That will usually show whether the issue is auth, missing tables, or the SQL activation function.
+                            First test the MySession flow with mock invoice links and checkout requests.
+                            Then run one real low-risk payment test to confirm the live payment flow.
                         </p>
                     </div>
                 </div>
