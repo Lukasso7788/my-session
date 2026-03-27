@@ -870,17 +870,28 @@ export function RoomPageLiveKit() {
   const [authGateStatus, setAuthGateStatus] = useState<"checking" | "authed" | "redirecting">("checking");
   const [userName, setUserName] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const roomRef = useRef<Room | null>(null);
+  const localRoomDisplayNameOverrideRef = useRef<string>("");
+  const [localRoomDisplayNameVersion, setLocalRoomDisplayNameVersion] = useState(0);
+
   const applyRoomDisplayNameLocally = (nextRaw: string) => {
     const next = String(nextRaw || "").trim();
     if (!next) return;
 
+    // 1) главный локальный source of truth для local tile
+    localRoomDisplayNameOverrideRef.current = next;
+    setLocalRoomDisplayNameVersion((v) => v + 1);
+
+    // 2) обычный state
     setDisplayName(next);
 
+    // 3) prejoin state
     setPrejoin((prev) => ({
       ...prev,
       displayName: next,
     }));
 
+    // 4) prejoin ref
     prejoinRef.current = {
       ...prejoinRef.current,
       displayName: next,
@@ -2474,7 +2485,6 @@ export function RoomPageLiveKit() {
   }, [session, joinRequested, authReady, isHost, moderatorUserIds.join("|")]);
 
   // ---- livekit room
-  const roomRef = useRef<Room | null>(null);
   const [roomState, setRoomState] = useState<Room | null>(null);
   const [connected, setConnected] = useState(false);
   const [clientError, setClientError] = useState<string>("");
@@ -2794,7 +2804,7 @@ export function RoomPageLiveKit() {
     const localUserId =
       authUserId && looksLikeUuid(authUserId)
         ? String(authUserId).toLowerCase()
-        : extractBaseUserIdFromIdentity(localIdentity);
+        : extractBaseUserIdFromIdentity(localIdentity); 
 
     const localMicMuted = localMicPub ? !!(localMicPub as any).isMuted : true;
 
@@ -2806,6 +2816,18 @@ export function RoomPageLiveKit() {
       localCamPubExists && localCamPubHasTrack && !localCamPubMuted;
 
     const localCamTrack = localCamActuallyVisible ? localCamTrackRaw : undefined;
+
+    // ✅ берём имя из LiveKit metadata (истина)
+    let localDisplayName = "You";
+
+    try {
+      const metadata = lp.metadata ? JSON.parse(lp.metadata) : null;
+      if (metadata?.displayName) {
+        localDisplayName = metadata.displayName;
+      }
+    } catch (e) {
+      console.warn("metadata parse failed", e);
+    }
 
     setMicOn((prev) => {
       const nextOn = !localMicMuted;
@@ -2819,7 +2841,7 @@ export function RoomPageLiveKit() {
     next.push({
       id: "local",
       kind: "camera",
-      label: (displayName || userName || "You").trim() || "You",
+      label: localDisplayName,
       isLocal: true,
       videoTrack: localCamTrack,
       participantIdentity: localIdentity || undefined,
@@ -2853,7 +2875,18 @@ export function RoomPageLiveKit() {
         : undefined;
 
       const nameFromProfile = String(prof?.full_name || "").trim();
-      const nm = (nameFromProfile || rp.name || rp.identity || "Guest").trim() || "Guest";
+      let nm = "Guest";
+
+      try {
+        const metadata = rp.metadata ? JSON.parse(rp.metadata) : null;
+        if (metadata?.displayName) {
+          nm = metadata.displayName;
+        } else {
+          nm = (nameFromProfile || rp.name || rp.identity || "Guest").trim() || "Guest";
+        }
+      } catch (e) {
+        nm = (nameFromProfile || rp.name || rp.identity || "Guest").trim() || "Guest";
+      }
 
       const tileId = rp.sid;
       const remoteMicMuted = micPub ? !!(micPub as any).isMuted : true;
@@ -3890,23 +3923,35 @@ export function RoomPageLiveKit() {
   };
 
   const saveEditName = async () => {
-    const next = String(editNameValue || "").trim();
-    if (!next) return;
+    const nm = String(editNameValue || "").trim();
+    if (!nm) return;
 
-    applyRoomDisplayNameLocally(next);
+    // 1) сразу обновляем локальный source of truth
+    applyRoomDisplayNameLocally(nm);
+
+    // 2) сразу перестраиваем тайлы уже с новым локальным именем
+    scheduleRebuildTiles();
 
     try {
-      const room = roomRef.current as any;
-      const lp = room?.localParticipant as any;
+      const r = roomRef.current;
+      const lp: any = r?.localParticipant as any;
 
-      if (lp?.setName) {
-        await lp.setName(next);
+      if (lp?.setMetadata) {
+        await lp.setMetadata(
+          JSON.stringify({
+            displayName: nm,
+          })
+        );
       }
     } catch (e) {
-      console.error("saveEditName setName failed:", e);
+      console.warn("localParticipant.setName failed", e);
     }
 
-    scheduleRebuildTiles?.();
+    // 3) ещё один rebuild после sync с LiveKit
+    requestAnimationFrame(() => {
+      scheduleRebuildTiles();
+    });
+
     setEditNameOpen(false);
   };
 
