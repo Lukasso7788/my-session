@@ -1920,7 +1920,14 @@ export function RoomPageLiveKit() {
       await loadBrowserDevices().catch(() => { });
       const pj = prejoinRef.current;
       if (pj.videoEnabled) {
-        await createPrejoinPreparedVideoTrack().catch((e) => console.warn("prejoin preview init failed", e));
+        try {
+          await createPrejoinPreparedVideoTrack();
+          if (videoFxMode !== "off") {
+            await applyPrejoinVideoFx(videoFxMode);
+          }
+        } catch (e) {
+          console.warn("prejoin preview init failed", e);
+        }
       }
     })();
   }, [loading, session, joinRequested]);
@@ -1951,7 +1958,16 @@ export function RoomPageLiveKit() {
       return;
     }
 
-    createPrejoinPreparedVideoTrack().catch(() => { });
+    (async () => {
+      try {
+        await createPrejoinPreparedVideoTrack();
+        if (videoFxMode !== "off") {
+          await applyPrejoinVideoFx(videoFxMode);
+        }
+      } catch (e) {
+        console.warn("prejoin video enable failed", e);
+      }
+    })();
   }, [prejoin.videoEnabled, prejoinOpen]);
 
   const isHost = useMemo(() => {
@@ -3901,13 +3917,7 @@ export function RoomPageLiveKit() {
 
   // edit name
   const openEditName = () => {
-    const current = String(
-      localRoomDisplayNameOverrideRef.current ||
-      displayName ||
-      prejoinRef.current.displayName ||
-      userName ||
-      ""
-    ).trim();
+    const current = (displayName || userName || "").trim();
     setEditNameValue(current);
     setEditNameOpen(true);
   };
@@ -3916,34 +3926,24 @@ export function RoomPageLiveKit() {
     const nm = String(editNameValue || "").trim();
     if (!nm) return;
 
-    // 1) update local UI immediately
+    // 1) сразу обновляем локальный source of truth
     applyRoomDisplayNameLocally(nm);
+
+    // 2) сразу перестраиваем тайлы уже с новым локальным именем
+    scheduleRebuildTiles();
 
     try {
       const r = roomRef.current;
       const lp: any = r?.localParticipant as any;
 
-      if (lp?.setMetadata) {
-        let prevMetadata: any = {};
-        try {
-          prevMetadata = lp.metadata ? JSON.parse(lp.metadata) : {};
-        } catch {
-          prevMetadata = {};
-        }
-
-        await lp.setMetadata(
-          JSON.stringify({
-            ...prevMetadata,
-            displayName: nm,
-          })
-        );
+      if (lp?.setName) {
+        await lp.setName(nm);
       }
     } catch (e) {
-      console.warn("localParticipant.setMetadata failed", e);
+      console.warn("localParticipant.setName failed", e);
     }
 
-    // 2) immediate rebuild, then one deferred rebuild after LiveKit settles
-    rebuildTiles();
+    // 3) ещё один rebuild после sync с LiveKit
     requestAnimationFrame(() => {
       scheduleRebuildTiles();
     });

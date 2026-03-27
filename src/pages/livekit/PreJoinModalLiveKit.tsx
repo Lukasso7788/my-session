@@ -113,8 +113,7 @@ export function PreJoinModal({
     isLight ? "border-black/10" : "border-white/10",
   ].join(" ");
 
-  const headerCls = `px-5 sm:px-6 py-4 sm:py-5 border-b ${isLight ? "border-black/10" : "border-white/10"
-    }`;
+  const headerCls = `px-5 sm:px-6 py-4 sm:py-5 border-b ${isLight ? "border-black/10" : "border-white/10"}`;
 
   const bodyCls =
     "flex-1 min-h-0 overflow-y-auto overscroll-contain " +
@@ -125,22 +124,14 @@ export function PreJoinModal({
     }`;
 
   const inputWrap = isLight ? "bg-black/5 border border-black/10" : "bg-white/5 border border-white/10";
-
   const inputCls = isLight ? "text-black placeholder:text-black/40" : "text-white placeholder:text-white/40";
-
   const labelCls = isLight ? "text-black/70" : "text-white/70";
-
-  const btnPrimary = isLight
-    ? "bg-blue-600 hover:bg-blue-700 text-white"
-    : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]";
-
+  const btnPrimary = isLight ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]";
   const btnGhost = isLight ? "bg-black/5 hover:bg-black/10 text-black/70" : "bg-white/5 hover:bg-white/10 text-white/80";
 
   const fxBtnBase =
     "h-10 px-4 rounded-2xl text-[13px] font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed";
-
   const fxBtnSelected = isLight ? "bg-black/80 text-white hover:bg-black" : "bg-white text-black hover:bg-white";
-
   const fxBtnIdle = btnGhost;
 
   const previewHostRef = useRef<HTMLDivElement | null>(null);
@@ -220,33 +211,53 @@ export function PreJoinModal({
   const [blurDraft, setBlurDraft] = useState<number>(blurStrength);
   useEffect(() => setBlurDraft(blurStrength), [blurStrength]);
 
+  // Prevent endless blur/bg auto-reapply loops in prejoin.
+  // The previous version depended on fxApplying, so every apply ended by toggling
+  // fxApplying back to false and re-triggered another auto-apply.
+  const lastAutoBlurKeyRef = useRef<string>("");
+  const lastAutoBgKeyRef = useRef<string>("");
+
   useEffect(() => {
-    if (!open) return;
-    if (!value.videoEnabled) return;
-    if (videoFxMode !== "blur") return;
-    if (fxApplying) return;
-    if (hideBackgroundFx) return;
+    if (!open || !value.videoEnabled || hideBackgroundFx) {
+      lastAutoBlurKeyRef.current = "";
+      return;
+    }
+    if (videoFxMode !== "blur") {
+      lastAutoBlurKeyRef.current = "";
+      return;
+    }
+
+    const key = `blur:${blurStrength}`;
+    if (lastAutoBlurKeyRef.current === key) return;
+    lastAutoBlurKeyRef.current = key;
 
     const t = window.setTimeout(() => {
-      onApplyVideoFx("blur");
+      Promise.resolve(onApplyVideoFx("blur")).catch(() => { });
     }, 280);
 
     return () => window.clearTimeout(t);
-  }, [blurStrength, open, value.videoEnabled, videoFxMode, fxApplying, hideBackgroundFx, onApplyVideoFx]);
+  }, [blurStrength, open, value.videoEnabled, videoFxMode, hideBackgroundFx, onApplyVideoFx]);
 
   useEffect(() => {
-    if (!open) return;
-    if (!value.videoEnabled) return;
-    if (videoFxMode !== "bg") return;
-    if (fxApplying) return;
-    if (hideBackgroundFx) return;
+    if (!open || !value.videoEnabled || hideBackgroundFx) {
+      lastAutoBgKeyRef.current = "";
+      return;
+    }
+    if (videoFxMode !== "bg") {
+      lastAutoBgKeyRef.current = "";
+      return;
+    }
+
+    const key = `bg:${bgImageUrl}`;
+    if (lastAutoBgKeyRef.current === key) return;
+    lastAutoBgKeyRef.current = key;
 
     const t = window.setTimeout(() => {
-      onApplyVideoFx("bg");
+      Promise.resolve(onApplyVideoFx("bg")).catch(() => { });
     }, 220);
 
     return () => window.clearTimeout(t);
-  }, [bgImageUrl, open, value.videoEnabled, videoFxMode, fxApplying, hideBackgroundFx, onApplyVideoFx]);
+  }, [bgImageUrl, open, value.videoEnabled, videoFxMode, hideBackgroundFx, onApplyVideoFx]);
 
   const previewHint = useMemo(() => {
     if (!value.videoEnabled) return "Video is disabled";
