@@ -208,14 +208,107 @@ function safeJson(raw: any) {
   return raw;
 }
 
+function inferStudioBlockKind(raw: any): StudioBlockKind {
+  const candidates = [
+    raw?.kind,
+    raw?.type,
+    raw?.stage_type,
+    raw?.block_type,
+    raw?.title,
+    raw?.name,
+    raw?.label,
+  ]
+    .map((v) => String(v || "").trim().toLowerCase())
+    .filter(Boolean);
+
+  const joined = candidates.join(" | ");
+
+  if (
+    joined.includes("welcome") ||
+    joined.includes("intro") ||
+    joined.includes("opening")
+  ) {
+    return "welcome";
+  }
+
+  if (
+    joined.includes("intentions") ||
+    joined.includes("intention") ||
+    joined.includes("plan")
+  ) {
+    return "intentions";
+  }
+
+  if (
+    joined.includes("focus") ||
+    joined.includes("deep work") ||
+    joined.includes("work block") ||
+    joined.includes("pomodoro")
+  ) {
+    return "focus";
+  }
+
+  if (
+    joined.includes("break") ||
+    joined.includes("rest")
+  ) {
+    return "break";
+  }
+
+  if (
+    joined.includes("check-in") ||
+    joined.includes("checkin") ||
+    joined.includes("checkpoint")
+  ) {
+    return "checkin";
+  }
+
+  if (
+    joined.includes("recap") ||
+    joined.includes("reflection") ||
+    joined.includes("review") ||
+    joined.includes("wrap up") ||
+    joined.includes("wrap-up")
+  ) {
+    return "recap";
+  }
+
+  if (
+    joined.includes("celebrate") ||
+    joined.includes("closing") ||
+    joined.includes("closure")
+  ) {
+    return "celebrate";
+  }
+
+  return "custom";
+}
+
 function normalizeTemplateBlocks(rawBlocks: any): StudioBlock[] {
   const parsed = safeJson(rawBlocks);
   if (!parsed) return [];
 
-  const arr = Array.isArray(parsed) ? parsed : [];
+  const arr = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(parsed?.blocks)
+      ? parsed.blocks
+      : Array.isArray(parsed?.schedule)
+        ? parsed.schedule
+        : Array.isArray(parsed?.stages)
+          ? parsed.stages
+          : Array.isArray(parsed?.items)
+            ? parsed.items
+            : [];
+
   return arr.map((b: any) => {
     const title = String(
-      b?.title || b?.name || b?.label || b?.kind || b?.type || "Block"
+      b?.title ||
+      b?.name ||
+      b?.label ||
+      b?.stage_name ||
+      b?.kind ||
+      b?.type ||
+      "Block"
     ).trim();
 
     const minutesRaw =
@@ -224,33 +317,23 @@ function normalizeTemplateBlocks(rawBlocks: any): StudioBlock[] {
       b?.duration ??
       b?.len ??
       b?.time ??
+      b?.length ??
       5;
 
     const minutes = clamp(Number(minutesRaw) || 5, 1, 24 * 60);
 
-    const k = String(b?.kind || b?.type || "").toLowerCase();
-    const kind: StudioBlockKind =
-      k === "welcome"
-        ? "welcome"
-        : k === "intentions"
-          ? "intentions"
-          : k === "focus"
-            ? "focus"
-            : k === "break"
-              ? "break"
-              : k === "checkin"
-                ? "checkin"
-                : k === "recap"
-                  ? "recap"
-                  : k === "celebrate"
-                    ? "celebrate"
-                    : "custom";
+    const kind = inferStudioBlockKind(b);
 
     return {
       id: uid(),
       kind,
       title,
-      note: String(b?.note || b?.description || "").trim() || undefined,
+      note: String(
+        b?.note ||
+        b?.description ||
+        b?.details ||
+        ""
+      ).trim() || undefined,
       minutes,
     };
   });
@@ -667,9 +750,10 @@ export function CreateSessionModal({
 
   const importFromTemplate = useCallback(() => {
     const tpl = selectedTemplateObj;
-    const blocks =
-      normalizeTemplateBlocks((tpl as any)?.blocks) ||
-      normalizeTemplateBlocks((tpl as any)?.schedule);
+
+    const fromBlocks = normalizeTemplateBlocks((tpl as any)?.blocks);
+    const fromSchedule = normalizeTemplateBlocks((tpl as any)?.schedule);
+    const blocks = fromBlocks.length ? fromBlocks : fromSchedule;
 
     if (blocks.length) {
       applyStudioBlocks(blocks);
@@ -820,21 +904,21 @@ export function CreateSessionModal({
 
       const userTemplatesPromise = profile?.id
         ? supabase
-            .from("user_session_templates")
-            .select("*")
-            .eq("user_id", profile.id)
-            .order("updated_at", { ascending: false })
+          .from("user_session_templates")
+          .select("*")
+          .eq("user_id", profile.id)
+          .order("updated_at", { ascending: false })
         : Promise.resolve({ data: [], error: null } as any);
 
       const previousSessionsPromise = profile?.id
         ? supabase
-            .from("sessions")
-            .select(
-              "id,title,description,template_id,format,schedule,duration_minutes,max_participants,created_at,start_time"
-            )
-            .eq("host_id", profile.id)
-            .order("created_at", { ascending: false })
-            .limit(24)
+          .from("sessions")
+          .select(
+            "id,title,description,template_id,format,schedule,duration_minutes,max_participants,created_at,start_time"
+          )
+          .eq("host_id", profile.id)
+          .order("created_at", { ascending: false })
+          .limit(24)
         : Promise.resolve({ data: [], error: null } as any);
 
       const [globalTemplatesRes, userTemplatesRes, previousSessionsRes] =
@@ -1150,9 +1234,9 @@ export function CreateSessionModal({
       const insertIndex =
         lastSelectedId != null
           ? Math.max(
-              0,
-              prev.findIndex((b) => b.id === lastSelectedId) + 1
-            )
+            0,
+            prev.findIndex((b) => b.id === lastSelectedId) + 1
+          )
           : prev.length;
 
       const next = [...prev];
@@ -1601,10 +1685,10 @@ export function CreateSessionModal({
 
     const effectiveMaxParticipants = studioEnabled
       ? clamp(
-          Number(maxParticipants) || DEFAULT_MAX_PARTICIPANTS,
-          MIN_PARTICIPANTS,
-          MAX_PARTICIPANTS
-        )
+        Number(maxParticipants) || DEFAULT_MAX_PARTICIPANTS,
+        MIN_PARTICIPANTS,
+        MAX_PARTICIPANTS
+      )
       : DEFAULT_MAX_PARTICIPANTS;
 
     setIsCreating(true);
@@ -1814,9 +1898,9 @@ export function CreateSessionModal({
   const linkPreview = sanitizedSlug
     ? isSeries
       ? `${origin}/room/${makeDatedSlug(
-          sanitizedSlug,
-          new Date(scheduledAt || Date.now())
-        )} …`
+        sanitizedSlug,
+        new Date(scheduledAt || Date.now())
+      )} …`
       : `${origin}/room/${sanitizedSlug}`
     : `${origin}/room/<your-link>`;
 
@@ -2233,7 +2317,7 @@ export function CreateSessionModal({
                           name="session-template"
                           value={t.id}
                           checked={selectedTemplate === t.id}
-                          onChange={() => {}}
+                          onChange={() => { }}
                           className="w-4 h-4 text-brandBlack"
                         />
 
