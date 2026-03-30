@@ -126,13 +126,6 @@ export default function Footer() {
                                     Contact page
                                 </Link>
 
-                                <a
-                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
-                                    href={`mailto:${SUPPORT_EMAIL}`}
-                                >
-                                    {SUPPORT_EMAIL}
-                                </a>
-
                                 <Link
                                     className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
                                     to="/updates"
