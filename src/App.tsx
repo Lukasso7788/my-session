@@ -20,6 +20,8 @@ import PrivacyPage from "./pages/PrivacyPage";
 import DataDeletionPage from "./pages/DataDeletionPage";
 import Terms from "./pages/Terms";
 import RulesPage from "./pages/RulesPage";
+import RefundPolicyPage from "./pages/RefundPolicyPage";
+import ContactPage from "./pages/ContactPage";
 
 import AppLayout from "./layouts/AppLayout";
 import { CreateSessionModalProvider } from "./context/CreateSessionModalContext";
@@ -147,6 +149,8 @@ export default function App() {
           {/* Legal */}
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/refund-policy" element={<RefundPolicyPage />} />
+          <Route path="/contact" element={<ContactPage />} />
           <Route path="/data-deletion" element={<DataDeletionPage />} />
           <Route path="/rules" element={<RulesPage />} />
 

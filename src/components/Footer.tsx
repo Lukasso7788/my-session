@@ -101,6 +101,13 @@ export default function Footer() {
 
                                 <Link
                                     className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
+                                    to="/refund-policy"
+                                >
+                                    Refund Policy
+                                </Link>
+
+                                <Link
+                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
                                     to="/data-deletion"
                                 >
                                     Data deletion
@@ -112,11 +119,18 @@ export default function Footer() {
                                     Support
                                 </div>
 
+                                <Link
+                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
+                                    to="/contact"
+                                >
+                                    Contact page
+                                </Link>
+
                                 <a
                                     className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
                                     href={`mailto:${SUPPORT_EMAIL}`}
                                 >
-                                    Contact
+                                    {SUPPORT_EMAIL}
                                 </a>
 
                                 <Link
