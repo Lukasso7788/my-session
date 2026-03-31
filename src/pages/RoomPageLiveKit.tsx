@@ -1,5 +1,5 @@
 // src/pages/RoomPageLiveKit.tsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
@@ -368,6 +368,78 @@ function getQueryInt(name: string, def = 0) {
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
 }
+
+function canUseSetSinkId() {
+  if (typeof window === "undefined") return false;
+  try {
+    const audio = document.createElement("audio") as HTMLAudioElement & {
+      setSinkId?: (id: string) => Promise<void>;
+    };
+    return typeof audio.setSinkId === "function";
+  } catch {
+    return false;
+  }
+}
+
+function pickExistingDeviceId(
+  wantedId: string,
+  list: MediaDeviceInfo[],
+  fallback = ""
+) {
+  const wanted = String(wantedId || "").trim();
+  if (wanted && list.some((d) => d.deviceId === wanted)) return wanted;
+  if (fallback && list.some((d) => d.deviceId === fallback)) return fallback;
+  return list[0]?.deviceId || "";
+}
+
+type DeviceTier = "weak" | "normal" | "strong";
+
+function detectDeviceTier(args: {
+  isMobile: boolean;
+  isTablet: boolean;
+}): DeviceTier {
+  if (typeof window === "undefined") return "normal";
+
+  const nav = navigator as Navigator & {
+    deviceMemory?: number;
+    hardwareConcurrency?: number;
+  };
+
+  const mem = Number(nav.deviceMemory || 0);
+  const cores = Number(nav.hardwareConcurrency || 0);
+
+  if (args.isMobile) return "weak";
+  if (args.isTablet && (mem <= 4 || cores <= 4)) return "weak";
+  if ((mem > 0 && mem <= 4) || (cores > 0 && cores <= 4)) return "weak";
+  if (mem >= 8 && cores >= 8 && !args.isMobile) return "strong";
+
+  return "normal";
+}
+
+function getCapturePresetForTier(tier: DeviceTier) {
+  if (tier === "weak") {
+    return {
+      width: 640,
+      height: 360,
+      fps: 15,
+    };
+  }
+
+  if (tier === "strong") {
+    return {
+      width: 1280,
+      height: 720,
+      fps: 24,
+    };
+  }
+
+  return {
+    width: 960,
+    height: 540,
+    fps: 24,
+  };
+}
+
 function getInitials(name: string) {
   const s = String(name || "").trim();
   if (!s) return "U";
@@ -921,6 +993,20 @@ export function RoomPageLiveKit() {
     audioInputs: [],
     audioOutputs: [],
   });
+
+  const [deviceError, setDeviceError] = useState<string>("");
+  const [audioOutputSupported, setAudioOutputSupported] = useState<boolean>(() => canUseSetSinkId());
+
+  const deviceTier = useMemo(
+    () =>
+      detectDeviceTier({
+        isMobile: isMobileQuery,
+        isTablet: isTabletQuery,
+      }),
+    [isMobileQuery, isTabletQuery]
+  );
+
+  const capturePreset = useMemo(() => getCapturePresetForTier(deviceTier), [deviceTier]);
 
   const [prejoin, setPrejoin] = useState<PreJoinSettings>(() => ({
     displayName: "",
@@ -1755,14 +1841,22 @@ export function RoomPageLiveKit() {
     }
   };
 
-  const loadBrowserDevices = async () => {
+  const loadBrowserDevices = useCallback(async (opts?: { preserveSelection?: boolean }) => {
     try {
-      if (!navigator.mediaDevices?.enumerateDevices) return;
+      setDeviceError("");
+      setAudioOutputSupported(canUseSetSinkId());
+
+      if (!navigator.mediaDevices?.enumerateDevices) {
+        setDeviceError("This browser does not support media device enumeration.");
+        return;
+      }
 
       try {
         const s = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
         s.getTracks().forEach((t) => t.stop());
-      } catch { }
+      } catch {
+        // labels may stay empty, but device list can still be available
+      }
 
       const list = await navigator.mediaDevices.enumerateDevices();
       const videoInputs = list.filter((d) => d.kind === "videoinput");
@@ -1771,20 +1865,76 @@ export function RoomPageLiveKit() {
 
       setDevices({ videoInputs, audioInputs, audioOutputs });
 
+      const nextVideoInputId = pickExistingDeviceId(
+        opts?.preserveSelection
+          ? selectedVideoInputId || prejoinRef.current.videoInputId
+          : prejoinRef.current.videoInputId,
+        videoInputs
+      );
+
+      const nextAudioInputId = pickExistingDeviceId(
+        opts?.preserveSelection
+          ? selectedAudioInputId || prejoinRef.current.audioInputId
+          : prejoinRef.current.audioInputId,
+        audioInputs
+      );
+
+      const nextAudioOutputId = canUseSetSinkId()
+        ? pickExistingDeviceId(
+          opts?.preserveSelection
+            ? selectedAudioOutputId || prejoinRef.current.audioOutputId
+            : prejoinRef.current.audioOutputId,
+          audioOutputs,
+          "default"
+        ) || "default"
+        : "default";
+
       setPrejoin((prev) => ({
         ...prev,
-        videoInputId: prev.videoInputId || videoInputs?.[0]?.deviceId || "",
-        audioInputId: prev.audioInputId || audioInputs?.[0]?.deviceId || "",
-        audioOutputId: prev.audioOutputId || "default",
+        videoInputId: nextVideoInputId,
+        audioInputId: nextAudioInputId,
+        audioOutputId: nextAudioOutputId,
       }));
 
-      setSelectedVideoInputId((prev) => prev || videoInputs?.[0]?.deviceId || "");
-      setSelectedAudioInputId((prev) => prev || audioInputs?.[0]?.deviceId || "");
-      setSelectedAudioOutputId((prev) => prev || "default");
-    } catch (e) {
+      prejoinRef.current = {
+        ...prejoinRef.current,
+        videoInputId: nextVideoInputId,
+        audioInputId: nextAudioInputId,
+        audioOutputId: nextAudioOutputId,
+      };
+
+      setSelectedVideoInputId(nextVideoInputId);
+      setSelectedAudioInputId(nextAudioInputId);
+      setSelectedAudioOutputId(nextAudioOutputId);
+    } catch (e: any) {
       console.error("loadBrowserDevices error:", e);
+      setDeviceError(String(e?.message || e || "device_enumeration_failed"));
     }
-  };
+  }, [
+    selectedVideoInputId,
+    selectedAudioInputId,
+    selectedAudioOutputId,
+  ]);
+
+  useEffect(() => {
+    if (!navigator.mediaDevices?.addEventListener) return;
+
+    let timer: number | null = null;
+
+    const onDeviceChange = () => {
+      if (timer) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        loadBrowserDevices({ preserveSelection: true }).catch(() => { });
+      }, 250);
+    };
+
+    navigator.mediaDevices.addEventListener("devicechange", onDeviceChange);
+
+    return () => {
+      if (timer) window.clearTimeout(timer);
+      navigator.mediaDevices.removeEventListener("devicechange", onDeviceChange);
+    };
+  }, [loadBrowserDevices]);
 
   // FX
   const [videoFxMode, setVideoFxMode] = useState<FxMode>("off");
@@ -1868,8 +2018,8 @@ export function RoomPageLiveKit() {
 
     const track = await createLocalVideoTrack({
       deviceId: pj.videoInputId || undefined,
-      resolution: { width: LK_CAPTURE_WIDTH, height: LK_CAPTURE_HEIGHT },
-      frameRate: LK_CAPTURE_FPS,
+      resolution: { width: capturePreset.width, height: capturePreset.height },
+      frameRate: capturePreset.fps,
     } as any);
 
     prejoinPreparedVideoTrackRef.current = track;
@@ -1884,6 +2034,9 @@ export function RoomPageLiveKit() {
 
     try {
       const pj = prejoinRef.current;
+      if (deviceTier === "weak") {
+        throw new Error("Background FX are disabled on weak/mobile devices for stability");
+      }
       if (!pj.videoEnabled) throw new Error("Turn camera on in pre-join first");
 
       let track = prejoinPreparedVideoTrackRef.current;
@@ -1915,9 +2068,10 @@ export function RoomPageLiveKit() {
     if (joinRequested) return;
 
     setPrejoinOpen(true);
+    setDeviceError("");
 
     (async () => {
-      await loadBrowserDevices().catch(() => { });
+      await loadBrowserDevices({ preserveSelection: true }).catch(() => { });
       const pj = prejoinRef.current;
       if (pj.videoEnabled) {
         try {
@@ -1969,6 +2123,14 @@ export function RoomPageLiveKit() {
       }
     })();
   }, [prejoin.videoEnabled, prejoinOpen]);
+
+  useEffect(() => {
+    if (deviceTier !== "weak") return;
+    if (videoFxMode === "off") return;
+
+    setVideoFxMode("off");
+    setFxStatusText("FX disabled automatically on weak/mobile device");
+  }, [deviceTier, videoFxMode]);
 
   const isHost = useMemo(() => {
     if (!authUserId) return false;
@@ -2972,7 +3134,7 @@ export function RoomPageLiveKit() {
   };
 
   const syncLiveAudioInput = async (deviceId: string) => {
-    const useId = String(deviceId || "");
+    const useId = pickExistingDeviceId(String(deviceId || ""), devices.audioInputs);
 
     setSelectedAudioInputId(useId);
     setPrejoin((prev) => ({ ...prev, audioInputId: useId }));
@@ -2999,7 +3161,7 @@ export function RoomPageLiveKit() {
   };
 
   const syncLiveVideoInput = async (deviceId: string) => {
-    const useId = String(deviceId || "");
+    const useId = pickExistingDeviceId(String(deviceId || ""), devices.videoInputs);
 
     setSelectedVideoInputId(useId);
     setPrejoin((prev) => ({ ...prev, videoInputId: useId }));
@@ -3022,8 +3184,8 @@ export function RoomPageLiveKit() {
 
       await r.localParticipant.setCameraEnabled(true, {
         deviceId: useId || undefined,
-        resolution: { width: LK_CAPTURE_WIDTH, height: LK_CAPTURE_HEIGHT },
-        frameRate: LK_CAPTURE_FPS,
+        resolution: { width: capturePreset.width, height: capturePreset.height },
+        frameRate: capturePreset.fps,
       } as any);
 
       await delay(120);
@@ -3176,8 +3338,8 @@ export function RoomPageLiveKit() {
             true,
             {
               deviceId: pj.videoInputId || selectedVideoInputId || undefined,
-              resolution: { width: LK_CAPTURE_WIDTH, height: LK_CAPTURE_HEIGHT },
-              frameRate: LK_CAPTURE_FPS,
+              resolution: { width: capturePreset.width, height: capturePreset.height },
+              frameRate: capturePreset.fps,
             } as any
           );
         }
@@ -3320,8 +3482,8 @@ export function RoomPageLiveKit() {
 
       await r.localParticipant.setCameraEnabled(true, {
         deviceId: selectedVideoInputId || prejoinRef.current.videoInputId || undefined,
-        resolution: { width: LK_CAPTURE_WIDTH, height: LK_CAPTURE_HEIGHT },
-        frameRate: LK_CAPTURE_FPS,
+        resolution: { width: capturePreset.width, height: capturePreset.height },
+        frameRate: capturePreset.fps,
       } as any);
 
       await delay(60);
@@ -5493,8 +5655,13 @@ export function RoomPageLiveKit() {
             await syncLiveVideoInput(deviceId);
           }}
           onChangeAudioOutput={(deviceId: string) => {
-            setSelectedAudioOutputId(deviceId || "default");
-            setPrejoin((prev) => ({ ...prev, audioOutputId: deviceId || "default" }));
+            const nextId = audioOutputSupported ? (deviceId || "default") : "default";
+            setSelectedAudioOutputId(nextId);
+            setPrejoin((prev) => ({ ...prev, audioOutputId: nextId }));
+            prejoinRef.current = {
+              ...prejoinRef.current,
+              audioOutputId: nextId,
+            };
           }}
           echoCancellationEnabled={echoCancellationEnabled}
           noiseSuppressionEnabled={noiseSuppressionEnabled}
@@ -5546,6 +5713,17 @@ export function RoomPageLiveKit() {
             setColorCorrection((p) => ({ ...p, saturation: v }));
           }}
         />
+
+        {settingsOpen && deviceError ? (
+          <div
+            className={`fixed left-1/2 top-[88px] z-[91] -translate-x-1/2 rounded-xl px-3 py-2 text-[12px] shadow-lg ${isLight
+                ? "bg-red-50 border border-red-200 text-red-700"
+                : "bg-red-500/10 border border-red-500/20 text-red-200"
+              }`}
+          >
+            {deviceError}
+          </div>
+        ) : null}
 
         {systemNotice.open && (
           <div className="fixed inset-0 z-[90] flex items-center justify-center">
