@@ -35,7 +35,13 @@
 
     /* ====== TILE LAYOUT TUNING ====== */
     --mysession-gap: 14px;
-    --mysession-cols: 2;
+
+    /* preferred visual ratio */
+    --mysession-tile-ratio: 16 / 9;
+
+    /* safe width caps for small rooms */
+    --mysession-small-room-maxw: 48%;
+    --mysession-medium-room-maxw: 48%;
 }
 
 html,
@@ -291,125 +297,181 @@ div[class*="header" i] {
 }
 
 /* =========================================================
-   ✅ MYSESSION TILE LAYOUT (THE FIX YOU ASKED FOR)
-   - Force tiles to wrap into a grid (NOT a single line)
-   - Columns logic:
-       1 tile  -> 1 col
-       2-4     -> 2 cols
-       5-6     -> 3 cols
-       7-8     -> 4 cols
-       9-10    -> 5 cols
-       11-12   -> 6 cols
-       13-14   -> 7 cols
-       15-16   -> 8 cols
-   Works best in Chromium (supports :has()).
+   ✅ MYSESSION TILE SHAPE TUNING (NO FIXED COLUMNS)
+   Goal:
+   - do NOT hard-force columns
+   - let Jitsi keep dynamic layout
+   - but push tiles to look more horizontal / 16:9-like
+   - especially for 2–4 participants
    ========================================================= */
 
-/* Target most common tile containers across Jitsi builds */
+/* Common tile/grid roots across Jitsi builds */
+#tileViewContainer,
+.tile-view-container,
+div[id*="tileViewContainer" i],
+div[class*="tileViewContainer" i],
+#tile-stage,
+.tile-stage,
+div[class*="tile-stage" i] {
+    box-sizing: border-box !important;
+    width: 100% !important;
+    height: 100% !important;
+    padding: var(--mysession-gap) !important;
+    gap: var(--mysession-gap) !important;
+    align-content: center !important;
+    justify-content: center !important;
+}
+
+/* Tile wrappers / cards / video containers
+   Keep selector net wide because Jitsi DOM changes by version */
+#tileViewContainer>*,
+.tile-view-container>*,
+div[id*="tileViewContainer" i]>*,
+div[class*="tileViewContainer" i]>*,
+#tile-stage>*,
+.tile-stage>*,
+div[class*="tile-stage" i]>*,
+.videocontainer,
+.video-container,
+.tile-view-tile,
+[class*="tileViewTile" i],
+[class*="videocontainer" i],
+[class*="video-container" i] {
+    box-sizing: border-box !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+}
+
+/* Actual visible tile frame:
+   force a cinematic ratio instead of giant vertical slabs */
+.videocontainer,
+.video-container,
+.tile-view-tile,
+[class*="tileViewTile" i],
+[class*="videocontainer" i],
+[class*="video-container" i] {
+    aspect-ratio: var(--mysession-tile-ratio) !important;
+    height: auto !important;
+    max-height: none !important;
+    align-self: center !important;
+    justify-self: center !important;
+    overflow: hidden !important;
+    border-radius: 18px !important;
+}
+
+/* Inner wrappers also should respect available width */
+.videocontainer>*,
+.video-container>*,
+.tile-view-tile>*,
+[class*="tileViewTile" i]>*,
+[class*="videocontainer" i]>*,
+[class*="video-container" i]>* {
+    width: 100% !important;
+    height: 100% !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+}
+
+/* Video/media itself */
+video,
+.videocontainer video,
+.video-container video,
+.tile-view-tile video,
+[class*="tileViewTile" i] video,
+[class*="videocontainer" i] video,
+[class*="video-container" i] video {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+    background: transparent !important;
+}
+
+/* Avatar / no-video state should also fill the same horizontal frame */
+.videocontainer [class*="avatar" i],
+.video-container [class*="avatar" i],
+.tile-view-tile [class*="avatar" i],
+[class*="tileViewTile" i] [class*="avatar" i] {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* =========================================================
+   2 participants:
+   encourage side-by-side, horizontal tiles, avoid giant portrait slabs
+   ========================================================= */
+#tileViewContainer:has(> :nth-child(2)):not(:has(> :nth-child(3)))>*,
+.tile-view-container:has(> :nth-child(2)):not(:has(> :nth-child(3)))>*,
+div[id*="tileViewContainer" i]:has(> :nth-child(2)):not(:has(> :nth-child(3)))>*,
+div[class*="tileViewContainer" i]:has(> :nth-child(2)):not(:has(> :nth-child(3)))>* {
+    max-width: min(48%, 960px) !important;
+}
+
+/* =========================================================
+   3 participants:
+   keep them from turning into huge vertical cards
+   let Jitsi choose arrangement, but cap width sanely
+   ========================================================= */
+#tileViewContainer:has(> :nth-child(3)):not(:has(> :nth-child(4)))>*,
+.tile-view-container:has(> :nth-child(3)):not(:has(> :nth-child(4)))>*,
+div[id*="tileViewContainer" i]:has(> :nth-child(3)):not(:has(> :nth-child(4)))>*,
+div[class*="tileViewContainer" i]:has(> :nth-child(3)):not(:has(> :nth-child(4)))>* {
+    max-width: min(48%, 860px) !important;
+}
+
+/* =========================================================
+   4 participants:
+   keep 2x2-ish feel without hard-coding columns
+   ========================================================= */
+#tileViewContainer:has(> :nth-child(4)):not(:has(> :nth-child(5)))>*,
+.tile-view-container:has(> :nth-child(4)):not(:has(> :nth-child(5)))>*,
+div[id*="tileViewContainer" i]:has(> :nth-child(4)):not(:has(> :nth-child(5)))>*,
+div[class*="tileViewContainer" i]:has(> :nth-child(4)):not(:has(> :nth-child(5)))>* {
+    max-width: min(48%, 760px) !important;
+}
+
+/* Keep labels/pills from forcing awkward vertical growth */
+.videocontainer [class*="display-name" i],
+.video-container [class*="display-name" i],
+.tile-view-tile [class*="display-name" i],
+[class*="tileViewTile" i] [class*="display-name" i],
+.videocontainer [class*="video-info" i],
+.video-container [class*="video-info" i],
+.tile-view-tile [class*="video-info" i],
+[class*="tileViewTile" i] [class*="video-info" i] {
+    max-width: 100% !important;
+}
+
+/* Mobile / narrow windows: don’t over-force 16:9 if it becomes impossible */
+@media (max-width: 900px) {
+
+    .videocontainer,
+    .video-container,
+    .tile-view-tile,
+    [class*="tileViewTile" i],
+    [class*="videocontainer" i],
+    [class*="video-container" i] {
+        aspect-ratio: 4 / 3 !important;
+    }
+}
+
+@media (max-width: 640px) {
+
+    .videocontainer,
+    .video-container,
+    .tile-view-tile,
+    [class*="tileViewTile" i],
+    [class*="videocontainer" i],
+    [class*="video-container" i] {
+        aspect-ratio: auto !important;
+    }
+}
+
+/* Make sure tile-stage doesn’t stretch children weirdly */
 #tileViewContainer,
 .tile-view-container,
 div[id*="tileViewContainer" i],
 div[class*="tileViewContainer" i] {
-    /* defaults */
-    --mysession-cols: 2;
-
-    display: flex !important;
-    flex-wrap: wrap !important;
-
-    /* centers last row automatically */
-    justify-content: center !important;
-    align-content: center !important;
-
-    gap: var(--mysession-gap) !important;
-    padding: var(--mysession-gap) !important;
-
-    box-sizing: border-box !important;
-    width: 100% !important;
-    height: 100% !important;
-
-    /* just in case */
-    overflow: hidden !important;
-}
-
-/* If only 1 tile -> 1 column */
-#tileViewContainer:not(:has(> :nth-child(2))),
-.tile-view-container:not(:has(> :nth-child(2))),
-div[id*="tileViewContainer" i]:not(:has(> :nth-child(2))),
-div[class*="tileViewContainer" i]:not(:has(> :nth-child(2))) {
-    --mysession-cols: 1;
-}
-
-/* 5-6 tiles -> 3 columns */
-#tileViewContainer:has(> :nth-child(5)):not(:has(> :nth-child(7))),
-.tile-view-container:has(> :nth-child(5)):not(:has(> :nth-child(7))),
-div[id*="tileViewContainer" i]:has(> :nth-child(5)):not(:has(> :nth-child(7))),
-div[class*="tileViewContainer" i]:has(> :nth-child(5)):not(:has(> :nth-child(7))) {
-    --mysession-cols: 3;
-}
-
-/* 7-8 tiles -> 4 columns */
-#tileViewContainer:has(> :nth-child(7)):not(:has(> :nth-child(9))),
-.tile-view-container:has(> :nth-child(7)):not(:has(> :nth-child(9))),
-div[id*="tileViewContainer" i]:has(> :nth-child(7)):not(:has(> :nth-child(9))),
-div[class*="tileViewContainer" i]:has(> :nth-child(7)):not(:has(> :nth-child(9))) {
-    --mysession-cols: 4;
-}
-
-/* 9-10 tiles -> 5 columns */
-#tileViewContainer:has(> :nth-child(9)):not(:has(> :nth-child(11))),
-.tile-view-container:has(> :nth-child(9)):not(:has(> :nth-child(11))),
-div[id*="tileViewContainer" i]:has(> :nth-child(9)):not(:has(> :nth-child(11))),
-div[class*="tileViewContainer" i]:has(> :nth-child(9)):not(:has(> :nth-child(11))) {
-    --mysession-cols: 5;
-}
-
-/* 11-12 tiles -> 6 columns */
-#tileViewContainer:has(> :nth-child(11)):not(:has(> :nth-child(13))),
-.tile-view-container:has(> :nth-child(11)):not(:has(> :nth-child(13))),
-div[id*="tileViewContainer" i]:has(> :nth-child(11)):not(:has(> :nth-child(13))),
-div[class*="tileViewContainer" i]:has(> :nth-child(11)):not(:has(> :nth-child(13))) {
-    --mysession-cols: 6;
-}
-
-/* 13-14 tiles -> 7 columns */
-#tileViewContainer:has(> :nth-child(13)):not(:has(> :nth-child(15))),
-.tile-view-container:has(> :nth-child(13)):not(:has(> :nth-child(15))),
-div[id*="tileViewContainer" i]:has(> :nth-child(13)):not(:has(> :nth-child(15))),
-div[class*="tileViewContainer" i]:has(> :nth-child(13)):not(:has(> :nth-child(15))) {
-    --mysession-cols: 7;
-}
-
-/* 15-16+ tiles -> 8 columns (for your max 16 default) */
-#tileViewContainer:has(> :nth-child(15)),
-.tile-view-container:has(> :nth-child(15)),
-div[id*="tileViewContainer" i]:has(> :nth-child(15)),
-div[class*="tileViewContainer" i]:has(> :nth-child(15)) {
-    --mysession-cols: 8;
-}
-
-/* The tiles themselves: force width by columns */
-#tileViewContainer>*,
-.tile-view-container>*,
-div[id*="tileViewContainer" i]>*,
-div[class*="tileViewContainer" i]>* {
-    box-sizing: border-box !important;
-
-    /* width per column; gap already accounted for */
-    flex: 0 0 calc((100% - (var(--mysession-cols) - 1) * var(--mysession-gap)) / var(--mysession-cols)) !important;
-    max-width: calc((100% - (var(--mysession-cols) - 1) * var(--mysession-gap)) / var(--mysession-cols)) !important;
-
-    min-width: 0 !important;
-}
-
-/* Some Jitsi builds nest the tile one level deeper; try to apply too */
-#tileViewContainer>*>*,
-.tile-view-container>*>* {
-    max-width: 100% !important;
-}
-
-/* Make sure videos don’t overflow weirdly */
-video {
-    object-fit: cover !important;
+    align-items: center !important;
 }
 
 /* IMPORTANT:
