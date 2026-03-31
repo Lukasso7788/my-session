@@ -35,13 +35,6 @@
 
     /* ====== TILE LAYOUT TUNING ====== */
     --mysession-gap: 14px;
-
-    /* preferred visual ratio */
-    --mysession-tile-ratio: 16 / 9;
-
-    /* safe width caps for small rooms */
-    --mysession-small-room-maxw: 48%;
-    --mysession-medium-room-maxw: 48%;
 }
 
 html,
@@ -297,7 +290,7 @@ div[class*="header" i] {
 }
 
 /* =========================================================
-   ✅ MYSESSION TILE SHAPE TUNING (NO FIXED COLUMNS)
+   ✅ MYSESSION TILE SHAPE TUNING v2 (TARGET REAL JITSI TILE VIEW)
    Goal:
    - do NOT hard-force columns
    - let Jitsi keep dynamic layout
@@ -305,173 +298,182 @@ div[class*="header" i] {
    - especially for 2–4 participants
    ========================================================= */
 
-/* Common tile/grid roots across Jitsi builds */
-#tileViewContainer,
-.tile-view-container,
-div[id*="tileViewContainer" i],
-div[class*="tileViewContainer" i],
-#tile-stage,
-.tile-stage,
-div[class*="tile-stage" i] {
-    box-sizing: border-box !important;
+/* Let tile view occupy the full area cleanly */
+.tile-view,
+.tile-view #remoteVideos,
+.tile-view .filmstrip,
+.tile-view .filmstrip__videos,
+.tile-view .remote-videos {
     width: 100% !important;
     height: 100% !important;
-    padding: var(--mysession-gap) !important;
-    gap: var(--mysession-gap) !important;
-    align-content: center !important;
-    justify-content: center !important;
-}
-
-/* Tile wrappers / cards / video containers
-   Keep selector net wide because Jitsi DOM changes by version */
-#tileViewContainer>*,
-.tile-view-container>*,
-div[id*="tileViewContainer" i]>*,
-div[class*="tileViewContainer" i]>*,
-#tile-stage>*,
-.tile-stage>*,
-div[class*="tile-stage" i]>*,
-.videocontainer,
-.video-container,
-.tile-view-tile,
-[class*="tileViewTile" i],
-[class*="videocontainer" i],
-[class*="video-container" i] {
-    box-sizing: border-box !important;
     min-width: 0 !important;
     min-height: 0 !important;
+    box-sizing: border-box !important;
 }
 
-/* Actual visible tile frame:
-   force a cinematic ratio instead of giant vertical slabs */
-.videocontainer,
-.video-container,
-.tile-view-tile,
-[class*="tileViewTile" i],
-[class*="videocontainer" i],
-[class*="video-container" i] {
-    aspect-ratio: var(--mysession-tile-ratio) !important;
+/* Jitsi itself uses inline height on #remoteVideos; override hard */
+.tile-view #remoteVideos {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    height: 100% !important;
+    width: 100% !important;
+    overflow: hidden !important;
+}
+
+/* Center the wrapping rows */
+.tile-view .remote-videos {
+    width: 100% !important;
+    height: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-sizing: border-box !important;
+    overflow: hidden auto !important;
+}
+
+/* This is the real wrapper row Jitsi uses for wrapped thumbnails */
+.tile-view .remote-videos>div {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    justify-content: center !important;
+    align-content: center !important;
+    gap: 12px !important;
+    margin: auto !important;
+    box-sizing: border-box !important;
+}
+
+/* ACTUAL TILES */
+.tile-view .filmstrip__videos .videocontainer,
+.tile-view .remote-videos .videocontainer,
+.tile-view #remoteVideos .videocontainer {
+    box-sizing: border-box !important;
+    display: block !important;
+    overflow: hidden !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    border-radius: 18px !important;
+
+    /* important: force horizontal tile shape */
+    aspect-ratio: 16 / 9 !important;
     height: auto !important;
     max-height: none !important;
-    align-self: center !important;
-    justify-self: center !important;
-    overflow: hidden !important;
-    border-radius: 18px !important;
+    min-height: 0 !important;
 }
 
-/* Inner wrappers also should respect available width */
-.videocontainer>*,
-.video-container>*,
-.tile-view-tile>*,
-[class*="tileViewTile" i]>*,
-[class*="videocontainer" i]>*,
-[class*="video-container" i]>* {
+/* Make inner tile wrappers obey the full tile frame */
+.tile-view .videocontainer>*,
+.tile-view .videocontainer>div,
+.tile-view .videocontainer>span {
     width: 100% !important;
     height: 100% !important;
     min-width: 0 !important;
     min-height: 0 !important;
+    box-sizing: border-box !important;
 }
 
-/* Video/media itself */
-video,
-.videocontainer video,
-.video-container video,
-.tile-view-tile video,
-[class*="tileViewTile" i] video,
-[class*="videocontainer" i] video,
-[class*="video-container" i] video {
+/* Real video element */
+.tile-view .videocontainer video,
+.tile-view video {
     width: 100% !important;
     height: 100% !important;
     object-fit: cover !important;
     background: transparent !important;
 }
 
-/* Avatar / no-video state should also fill the same horizontal frame */
-.videocontainer [class*="avatar" i],
-.video-container [class*="avatar" i],
-.tile-view-tile [class*="avatar" i],
-[class*="tileViewTile" i] [class*="avatar" i] {
-    width: 100% !important;
-    height: 100% !important;
+/* Local tile too */
+.tile-view #localVideoContainer,
+.tile-view .filmstrip__videos #localVideoContainer {
+    aspect-ratio: 16 / 9 !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: hidden !important;
+    border-radius: 18px !important;
 }
 
-/* =========================================================
-   2 participants:
-   encourage side-by-side, horizontal tiles, avoid giant portrait slabs
-   ========================================================= */
-#tileViewContainer:has(> :nth-child(2)):not(:has(> :nth-child(3)))>*,
-.tile-view-container:has(> :nth-child(2)):not(:has(> :nth-child(3)))>*,
-div[id*="tileViewContainer" i]:has(> :nth-child(2)):not(:has(> :nth-child(3)))>*,
-div[class*="tileViewContainer" i]:has(> :nth-child(2)):not(:has(> :nth-child(3)))>* {
-    max-width: min(48%, 960px) !important;
+/* =========================================
+   1 participant
+   ========================================= */
+.tile-view .remote-videos>div:not(:has(.videocontainer:nth-of-type(2))) .videocontainer,
+.tile-view .remote-videos>div:not(:has(#localVideoContainer:nth-of-type(2))) #localVideoContainer {
+    width: min(92vw, 1280px) !important;
+    max-width: min(92vw, 1280px) !important;
+    flex: 0 0 min(92vw, 1280px) !important;
 }
 
-/* =========================================================
-   3 participants:
-   keep them from turning into huge vertical cards
-   let Jitsi choose arrangement, but cap width sanely
-   ========================================================= */
-#tileViewContainer:has(> :nth-child(3)):not(:has(> :nth-child(4)))>*,
-.tile-view-container:has(> :nth-child(3)):not(:has(> :nth-child(4)))>*,
-div[id*="tileViewContainer" i]:has(> :nth-child(3)):not(:has(> :nth-child(4)))>*,
-div[class*="tileViewContainer" i]:has(> :nth-child(3)):not(:has(> :nth-child(4)))>* {
-    max-width: min(48%, 860px) !important;
+/* =========================================
+   2 participants
+   Keep side-by-side-ish without hard columns
+   ========================================= */
+.tile-view .remote-videos>div:has(.videocontainer:nth-of-type(2)):not(:has(.videocontainer:nth-of-type(3))) .videocontainer,
+.tile-view .remote-videos>div:has(#localVideoContainer:nth-of-type(2)):not(:has(#localVideoContainer:nth-of-type(3)))>* {
+    width: min(46vw, 920px) !important;
+    max-width: min(46vw, 920px) !important;
+    flex: 0 1 min(46vw, 920px) !important;
 }
 
-/* =========================================================
-   4 participants:
-   keep 2x2-ish feel without hard-coding columns
-   ========================================================= */
-#tileViewContainer:has(> :nth-child(4)):not(:has(> :nth-child(5)))>*,
-.tile-view-container:has(> :nth-child(4)):not(:has(> :nth-child(5)))>*,
-div[id*="tileViewContainer" i]:has(> :nth-child(4)):not(:has(> :nth-child(5)))>*,
-div[class*="tileViewContainer" i]:has(> :nth-child(4)):not(:has(> :nth-child(5)))>* {
-    max-width: min(48%, 760px) !important;
+/* =========================================
+   3 participants
+   Prevent giant portrait slabs
+   ========================================= */
+.tile-view .remote-videos>div:has(.videocontainer:nth-of-type(3)):not(:has(.videocontainer:nth-of-type(4))) .videocontainer,
+.tile-view .remote-videos>div:has(#localVideoContainer:nth-of-type(3)):not(:has(#localVideoContainer:nth-of-type(4)))>* {
+    width: min(44vw, 760px) !important;
+    max-width: min(44vw, 760px) !important;
+    flex: 0 1 min(44vw, 760px) !important;
 }
 
-/* Keep labels/pills from forcing awkward vertical growth */
-.videocontainer [class*="display-name" i],
-.video-container [class*="display-name" i],
-.tile-view-tile [class*="display-name" i],
-[class*="tileViewTile" i] [class*="display-name" i],
-.videocontainer [class*="video-info" i],
-.video-container [class*="video-info" i],
-.tile-view-tile [class*="video-info" i],
-[class*="tileViewTile" i] [class*="video-info" i] {
+/* =========================================
+   4 participants
+   Encourage nice 2x2-like shape
+   ========================================= */
+.tile-view .remote-videos>div:has(.videocontainer:nth-of-type(4)):not(:has(.videocontainer:nth-of-type(5))) .videocontainer,
+.tile-view .remote-videos>div:has(#localVideoContainer:nth-of-type(4)):not(:has(#localVideoContainer:nth-of-type(5)))>* {
+    width: min(44vw, 680px) !important;
+    max-width: min(44vw, 680px) !important;
+    flex: 0 1 min(44vw, 680px) !important;
+}
+
+/* 5+ participants: back off a bit and let Jitsi do more of its thing */
+.tile-view .remote-videos>div:has(.videocontainer:nth-of-type(5)) .videocontainer,
+.tile-view .remote-videos>div:has(#localVideoContainer:nth-of-type(5))>* {
+    aspect-ratio: 16 / 9 !important;
+    min-width: 220px !important;
+}
+
+/* Don’t let name labels create awkward vertical stretching */
+.tile-view .videocontainer [class*="display-name" i],
+.tile-view .videocontainer [class*="video-info" i],
+.tile-view .videocontainer [class*="indicator" i] {
     max-width: 100% !important;
 }
 
-/* Mobile / narrow windows: don’t over-force 16:9 if it becomes impossible */
+/* Mobile fallback: reduce pressure */
 @media (max-width: 900px) {
 
-    .videocontainer,
-    .video-container,
-    .tile-view-tile,
-    [class*="tileViewTile" i],
-    [class*="videocontainer" i],
-    [class*="video-container" i] {
+    .tile-view .filmstrip__videos .videocontainer,
+    .tile-view .remote-videos .videocontainer,
+    .tile-view #remoteVideos .videocontainer,
+    .tile-view #localVideoContainer {
         aspect-ratio: 4 / 3 !important;
     }
 }
 
 @media (max-width: 640px) {
 
-    .videocontainer,
-    .video-container,
-    .tile-view-tile,
-    [class*="tileViewTile" i],
-    [class*="videocontainer" i],
-    [class*="video-container" i] {
+    .tile-view .filmstrip__videos .videocontainer,
+    .tile-view .remote-videos .videocontainer,
+    .tile-view #remoteVideos .videocontainer,
+    .tile-view #localVideoContainer {
         aspect-ratio: auto !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        flex-basis: auto !important;
     }
-}
-
-/* Make sure tile-stage doesn’t stretch children weirdly */
-#tileViewContainer,
-.tile-view-container,
-div[id*="tileViewContainer" i],
-div[class*="tileViewContainer" i] {
-    align-items: center !important;
 }
 
 /* IMPORTANT:
