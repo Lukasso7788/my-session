@@ -1059,11 +1059,15 @@ export default function RoomTimelineEditor({
                                                 id={`room-timeline-block-${b.id}`}
                                                 tabIndex={0}
                                                 draggable
-                                                onClick={() => {
+                                                onClick={(e) => {
+                                                    if (isInteractiveElement(e.target)) return;
                                                     setSelectedBlockId(b.id);
                                                     focusBlock(b.id);
                                                 }}
-                                                onFocus={() => setSelectedBlockId(b.id)}
+                                                onFocus={(e) => {
+                                                    if (e.target !== e.currentTarget) return;
+                                                    setSelectedBlockId(b.id);
+                                                }}
                                                 onKeyDown={(e) => {
                                                     if (e.key === "ArrowUp") {
                                                         e.preventDefault();
@@ -1209,6 +1213,9 @@ export default function RoomTimelineEditor({
                                                 <div className="mt-3 grid grid-cols-1 sm:grid-cols-[160px,minmax(0,1fr),110px] gap-2">
                                                     <select
                                                         value={b.kind}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        onMouseDown={(e) => e.stopPropagation()}
+                                                        onFocus={(e) => e.stopPropagation()}
                                                         onChange={(e) => {
                                                             const nextKind = normalizeBlockKind(e.target.value);
                                                             updateBlock(b.id, {
@@ -1229,19 +1236,27 @@ export default function RoomTimelineEditor({
 
                                                     <input
                                                         value={b.title}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        onMouseDown={(e) => e.stopPropagation()}
+                                                        onFocus={(e) => e.stopPropagation()}
                                                         onChange={(e) => updateBlock(b.id, { title: e.target.value })}
                                                         className={`w-full px-3 py-2.5 rounded-[14px] border font-inter text-[13px] ${inputCls}`}
                                                         placeholder="Block title…"
                                                     />
 
-                                                    <div className="flex items-center gap-2">
+                                                    <div
+                                                        className="flex items-center gap-2"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        onMouseDown={(e) => e.stopPropagation()}
+                                                    >
                                                         <button
                                                             type="button"
-                                                            onClick={() =>
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
                                                                 updateBlock(b.id, {
                                                                     minutes: clamp((Number(b.minutes) || 1) - 1, 1, 24 * 60),
-                                                                })
-                                                            }
+                                                                });
+                                                            }}
                                                             className={`w-9 h-9 rounded-[12px] border ${subtleBorder} ${softBg}`}
                                                         >
                                                             –
@@ -1252,6 +1267,9 @@ export default function RoomTimelineEditor({
                                                             min={1}
                                                             max={24 * 60}
                                                             value={b.minutes}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            onMouseDown={(e) => e.stopPropagation()}
+                                                            onFocus={(e) => e.stopPropagation()}
                                                             onChange={(e) =>
                                                                 updateBlock(b.id, {
                                                                     minutes: clamp(Number(e.target.value) || 1, 1, 24 * 60),
@@ -1262,11 +1280,12 @@ export default function RoomTimelineEditor({
 
                                                         <button
                                                             type="button"
-                                                            onClick={() =>
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
                                                                 updateBlock(b.id, {
                                                                     minutes: clamp((Number(b.minutes) || 1) + 1, 1, 24 * 60),
-                                                                })
-                                                            }
+                                                                });
+                                                            }}
                                                             className={`w-9 h-9 rounded-[12px] border ${subtleBorder} ${softBg}`}
                                                         >
                                                             +
@@ -1274,12 +1293,19 @@ export default function RoomTimelineEditor({
                                                     </div>
                                                 </div>
 
-                                                <div className="mt-2 flex items-center gap-2 flex-wrap">
+                                                <div
+                                                    className="mt-2 flex items-center gap-2 flex-wrap"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    onMouseDown={(e) => e.stopPropagation()}
+                                                >
                                                     {QUICK_MINUTES.map((m) => (
                                                         <button
                                                             key={m}
                                                             type="button"
-                                                            onClick={() => updateBlock(b.id, { minutes: m })}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                updateBlock(b.id, { minutes: m });
+                                                            }}
                                                             className={`px-2.5 py-1.5 rounded-full border ${subtleBorder} text-[11px] font-inter ${softBg}`}
                                                         >
                                                             {m}m
@@ -1355,8 +1381,8 @@ export default function RoomTimelineEditor({
                             onClick={onSave}
                             disabled={saving || blocks.length === 0}
                             className={`px-4 py-2.5 rounded-xl text-[13px] font-semibold disabled:opacity-50 ${isLight
-                                    ? "bg-blue-600 hover:bg-blue-700 text-white"
-                                    : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
+                                ? "bg-blue-600 hover:bg-blue-700 text-white"
+                                : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
                                 }`}
                         >
                             {saving ? "Saving..." : "Save timeline"}

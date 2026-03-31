@@ -3,13 +3,15 @@ import { Link } from "react-router-dom";
 
 const APP_NAME = "MySession";
 
-// TODO: replace placeholders with your actual seller details
-const SUPPORT_EMAIL = "misha1915@live.ru";
-const SUPPORT_PHONE = "+000000000000";
-const BUSINESS_NAME = "Your full business / seller name";
-const TAX_ID = "Your tax ID / ІПН";
-const LEGAL_ADDRESS = "Your legal address";
-const ACTUAL_ADDRESS = "Your actual address";
+const SUPPORT_EMAIL = "yaroslav@mysession.club";
+const SUPPORT_PHONE = "+380678882238";
+const BUSINESS_NAME = "MySession - Sydorenko Andriy Valeriyovich";
+const TAX_ID = "2781307173";
+const LEGAL_ADDRESS =
+    "vul. Petra Sagaidachnogo 20, city of Zaporizhzhia, Ukraine, 69096";
+const ACTUAL_ADDRESS =
+    "vul. Petra Sagaidachnogo 20, city of Zaporizhzhia, Ukraine, 69096";
+const SUPPORT_HOURS = "24/7 support";
 
 export default function ContactPage() {
     return (
@@ -84,6 +86,13 @@ export default function ContactPage() {
                                             {SUPPORT_EMAIL}
                                         </a>
                                     </div>
+                                </div>
+
+                                <div>
+                                    <div className="text-[13px] font-medium text-black/60">
+                                        Support availability
+                                    </div>
+                                    <div className="mt-1">{SUPPORT_HOURS}</div>
                                 </div>
                             </div>
                         </section>

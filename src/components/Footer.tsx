@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 
-const SUPPORT_EMAIL = "misha1915@live.ru"; // TODO: replace with your main support email
+const SUPPORT_EMAIL = "yaroslav@mysession.club"; // TODO: replace with your main support email
 const DISCORD_URL = "https://discord.com";
 const TELEGRAM_URL = "https://t.me";
 const TWITTER_URL = "https://twitter.com";
