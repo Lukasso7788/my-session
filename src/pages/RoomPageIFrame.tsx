@@ -2551,6 +2551,8 @@ export default function RoomPageIFrame() {
 
                     setInPrejoin(false);
                     setApiReady(true);
+                    setRightTab("intentions");
+                    setRightPanelOpen(true);
 
                     try {
                         suppressNextLocalDisplayNameEventRef.current = true;
