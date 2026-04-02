@@ -1001,6 +1001,9 @@ export function RoomPageLiveKit() {
   // prejoin
   const [prejoinOpen, setPrejoinOpen] = useState(false);
   const [joinRequested, setJoinRequested] = useState(false);
+  const prejoinBootstrappedSessionIdRef = useRef<string>("");
+  const joinFlowStartedRef = useRef(false);
+  const connectingFromPrejoinRef = useRef(false);
 
   const [devices, setDevices] = useState<MediaDevicesResult>({
     videoInputs: [],
@@ -1239,6 +1242,14 @@ export function RoomPageLiveKit() {
 
   const sessionId = useMemo(() => String(session?.id || ""), [session?.id]);
   const sessionTitle = useMemo(() => String(session?.title || "Session"), [session?.title]);
+  useEffect(() => {
+    prejoinBootstrappedSessionIdRef.current = "";
+    joinFlowStartedRef.current = false;
+    connectingFromPrejoinRef.current = false;
+    setPrejoinOpen(false);
+    setJoinRequested(false);
+    setLkToken("");
+  }, [sessionId]);
 
   const [joinNowTickMs, setJoinNowTickMs] = useState<number>(() => Date.now());
 
@@ -1979,6 +1990,7 @@ export function RoomPageLiveKit() {
   const [fxStatusText, setFxStatusText] = useState<string>("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [blurStrength, setBlurStrength] = useState<number>(12);
+  const [connected, setConnected] = useState(false);
 
   const [colorCorrection, setColorCorrection] = useState<ColorCorrectionState>({
     brightness: 100,
@@ -2100,26 +2112,32 @@ export function RoomPageLiveKit() {
   useEffect(() => {
     if (loading) return;
     if (!session) return;
+    if (!sessionId) return;
     if (joinRequested) return;
+    if (joinFlowStartedRef.current) return;
+    if (prejoinBootstrappedSessionIdRef.current === sessionId) return;
 
+    prejoinBootstrappedSessionIdRef.current = sessionId;
     setPrejoinOpen(true);
     setDeviceError("");
 
     (async () => {
       await loadBrowserDevices({ preserveSelection: true }).catch(() => { });
+
       const pj = prejoinRef.current;
-      if (pj.videoEnabled) {
-        try {
-          await createPrejoinPreparedVideoTrack();
-          if (videoFxMode !== "off") {
-            await applyPrejoinVideoFx(videoFxMode);
-          }
-        } catch (e) {
-          console.warn("prejoin preview init failed", e);
+      if (!pj.videoEnabled) return;
+
+      try {
+        await createPrejoinPreparedVideoTrack();
+
+        if (videoFxMode !== "off") {
+          await applyPrejoinVideoFx(videoFxMode);
         }
+      } catch (e) {
+        console.warn("prejoin preview init failed", e);
       }
     })();
-  }, [loading, session, joinRequested]);
+  }, [loading, session, sessionId, joinRequested, connected, loadBrowserDevices, videoFxMode]);
 
   useEffect(() => {
     if (!prejoinOpen) return;
@@ -2630,9 +2648,14 @@ export function RoomPageLiveKit() {
           const msg = `Too many tabs open for this room (${g.count}/${g.max}). Close another tab and try again.`;
           setTokenError(msg);
           setTokenLoading(false);
+
+          joinFlowStartedRef.current = false;
+          connectingFromPrejoinRef.current = false;
+
           try {
             alert(msg);
           } catch { }
+
           setPrejoinOpen(true);
           setJoinRequested(false);
           return;
@@ -2680,6 +2703,11 @@ export function RoomPageLiveKit() {
       console.error("requestToken exception:", e);
       setTokenError(String(e?.message || e || "token_request_failed"));
       setTokenLoading(false);
+
+      joinFlowStartedRef.current = false;
+      connectingFromPrejoinRef.current = false;
+      setJoinRequested(false);
+      setPrejoinOpen(true);
     }
   };
 
@@ -2695,12 +2723,16 @@ export function RoomPageLiveKit() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, joinRequested, authReady, isHost, moderatorUserIds.join("|")]);
+  useEffect(() => {
+    if (!lkToken) return;
+    setPrejoinOpen(false);
+  }, [lkToken]);
 
   // ---- livekit room
   const roomRef = useRef<Room | null>(null);
   const [roomState, setRoomState] = useState<Room | null>(null);
-  const [connected, setConnected] = useState(false);
   const [clientError, setClientError] = useState<string>("");
+  
   const connectInFlightRef = useRef(false);
   const connectAttemptIdRef = useRef(0);
 
@@ -5475,6 +5507,9 @@ export function RoomPageLiveKit() {
   }
 
   const onJoinGate = () => {
+    joinFlowStartedRef.current = true;
+    connectingFromPrejoinRef.current = true;
+
     const pj = prejoinRef.current;
     const nm = (pj.displayName || displayName || userName || "User").trim() || "User";
 
@@ -5506,6 +5541,8 @@ export function RoomPageLiveKit() {
 
     setPrejoinOpen(false);
     setJoinRequested(true);
+
+    void cleanupPrejoinPreparedVideoTrack();
   };
 
   return (
