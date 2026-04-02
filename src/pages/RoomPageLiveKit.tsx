@@ -2003,6 +2003,7 @@ export function RoomPageLiveKit() {
 
   const uploadedBgUrlRef = useRef<string | null>(null);
   const fxOpIdRef = useRef<number>(0);
+  const lastPrejoinFxSignatureRef = useRef<string>("");
 
   const ensureFxSupportedOrThrow = () => {
     if (!supportsBackgroundProcessors()) throw new Error("Background processors are not supported in this browser/device");
@@ -2042,6 +2043,7 @@ export function RoomPageLiveKit() {
   const cleanupPrejoinPreparedVideoTrack = async () => {
     const t = prejoinPreparedVideoTrackRef.current as any;
     prejoinPreparedVideoTrackRef.current = null;
+    lastPrejoinFxSignatureRef.current = "";
 
     if (!t) return;
 
@@ -2056,12 +2058,26 @@ export function RoomPageLiveKit() {
     setPrejoinPreviewVersion((v) => v + 1);
   };
 
-  const createPrejoinPreparedVideoTrack = async () => {
+  const createPrejoinPreparedVideoTrack = async (opts?: { force?: boolean }) => {
     const pj = prejoinRef.current;
+    const current = prejoinPreparedVideoTrackRef.current as any;
+
+    if (!pj.videoEnabled) {
+      await cleanupPrejoinPreparedVideoTrack();
+      return null;
+    }
+
+    if (!opts?.force && current) {
+      const currentDeviceId =
+        String(current?.mediaStreamTrack?.getSettings?.().deviceId || "").trim();
+      const wantedDeviceId = String(pj.videoInputId || "").trim();
+
+      if (!wantedDeviceId || currentDeviceId === wantedDeviceId) {
+        return current;
+      }
+    }
 
     await cleanupPrejoinPreparedVideoTrack();
-
-    if (!pj.videoEnabled) return null;
 
     const track = await createLocalVideoTrack({
       deviceId: pj.videoInputId || undefined,
@@ -2090,7 +2106,17 @@ export function RoomPageLiveKit() {
       if (!track) track = await createPrejoinPreparedVideoTrack();
       if (!track) throw new Error("Pre-join camera track is not ready");
 
+      const sig = `${mode}|${blurStrength}|${bgImageUrl}|${String(
+        (track as any)?.mediaStreamTrack?.id || ""
+      )}`;
+
+      if (lastPrejoinFxSignatureRef.current === sig) {
+        setFxApplying(false);
+        return;
+      }
+
       await safeApplyProcessor(track, mode, blurStrength, bgImageUrl);
+      lastPrejoinFxSignatureRef.current = sig;
 
       setVideoFxMode(mode);
       setFxStatusText(
@@ -2130,14 +2156,14 @@ export function RoomPageLiveKit() {
       try {
         await createPrejoinPreparedVideoTrack();
 
-        if (videoFxMode !== "off") {
+        if (deviceTier !== "weak" && videoFxMode !== "off") {
           await applyPrejoinVideoFx(videoFxMode);
         }
       } catch (e) {
         console.warn("prejoin preview init failed", e);
       }
     })();
-  }, [loading, session, sessionId, joinRequested, connected, loadBrowserDevices, videoFxMode]);
+  }, [loading, session, sessionId, joinRequested, connected, loadBrowserDevices, videoFxMode, deviceTier]);
 
   useEffect(() => {
     if (!prejoinOpen) return;
@@ -2148,14 +2174,16 @@ export function RoomPageLiveKit() {
     const t = window.setTimeout(async () => {
       try {
         await createPrejoinPreparedVideoTrack();
-        if (videoFxMode !== "off") await applyPrejoinVideoFx(videoFxMode);
+        if (deviceTier !== "weak" && videoFxMode !== "off") {
+          await applyPrejoinVideoFx(videoFxMode);
+        }
       } catch (e) {
         console.warn("prejoin camera switch failed", e);
       }
     }, 180);
 
     return () => window.clearTimeout(t);
-  }, [prejoin.videoInputId, prejoinOpen]);
+  }, [prejoin.videoInputId, prejoinOpen, videoFxMode, deviceTier]);
 
   useEffect(() => {
     if (!prejoinOpen) return;
@@ -2168,14 +2196,14 @@ export function RoomPageLiveKit() {
     (async () => {
       try {
         await createPrejoinPreparedVideoTrack();
-        if (videoFxMode !== "off") {
+        if (deviceTier !== "weak" && videoFxMode !== "off") {
           await applyPrejoinVideoFx(videoFxMode);
         }
       } catch (e) {
         console.warn("prejoin video enable failed", e);
       }
     })();
-  }, [prejoin.videoEnabled, prejoinOpen]);
+  }, [prejoin.videoEnabled, prejoinOpen, videoFxMode, deviceTier]);
 
   useEffect(() => {
     if (deviceTier !== "weak") return;
@@ -3394,21 +3422,31 @@ export function RoomPageLiveKit() {
       let usedPrepared = false;
 
       if (pj.videoEnabled) {
-        const prepared = prejoinPreparedVideoTrackRef.current;
+        const fxAllowed = deviceTier !== "weak" && videoFxMode !== "off";
+        let prepared = prejoinPreparedVideoTrackRef.current;
+
+        if (!prepared) {
+          prepared = await createLocalVideoTrack({
+            deviceId: pj.videoInputId || selectedVideoInputId || undefined,
+            resolution: { width: capturePreset.width, height: capturePreset.height },
+            frameRate: capturePreset.fps,
+          } as any);
+
+          if (prepared && fxAllowed) {
+            try {
+              await safeApplyProcessor(prepared, videoFxMode, blurStrength, bgImageUrl);
+            } catch (e) {
+              console.warn("apply fx before publish failed:", e);
+            }
+          }
+        }
 
         if (prepared) {
           await r.localParticipant.publishTrack(prepared, { source: Track.Source.Camera } as any);
           usedPrepared = true;
           prejoinPreparedVideoTrackRef.current = null;
         } else {
-          await r.localParticipant.setCameraEnabled(
-            true,
-            {
-              deviceId: pj.videoInputId || selectedVideoInputId || undefined,
-              resolution: { width: capturePreset.width, height: capturePreset.height },
-              frameRate: capturePreset.fps,
-            } as any
-          );
+          await r.localParticipant.setCameraEnabled(false);
         }
       } else {
         await r.localParticipant.setCameraEnabled(false);
@@ -3427,22 +3465,6 @@ export function RoomPageLiveKit() {
       setPrejoinOpen(false);
       setPrejoinPreviewVersion((v) => v + 1);
 
-      if (!usedPrepared && pj.videoEnabled && videoFxMode !== "off") {
-        await delay(80);
-        const tr = getLocalCameraTrack();
-        if (tr) {
-          try {
-            await safeApplyProcessor(tr, videoFxMode, blurStrength, bgImageUrl);
-            setFxStatusText(
-              videoFxMode === "blur"
-                ? `Blur applied (strength ${blurStrength})`
-                : "Virtual background applied"
-            );
-          } catch (e: any) {
-            console.warn("auto-apply fx after connect failed:", e);
-          }
-        }
-      }
     } catch (e: any) {
       console.error("LiveKit connect failed:", e);
       setClientError(String(e?.message || e || "connect_failed"));
@@ -5509,6 +5531,10 @@ export function RoomPageLiveKit() {
   const onJoinGate = () => {
     joinFlowStartedRef.current = true;
     connectingFromPrejoinRef.current = true;
+    if (deviceTier === "weak" && videoFxMode !== "off") {
+      setVideoFxMode("off");
+      setFxStatusText("FX disabled automatically on weak/mobile device");
+    }
 
     const pj = prejoinRef.current;
     const nm = (pj.displayName || displayName || userName || "User").trim() || "User";
