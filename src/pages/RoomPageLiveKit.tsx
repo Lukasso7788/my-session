@@ -420,9 +420,9 @@ function detectDeviceTier(args: {
 function getCapturePresetForTier(tier: DeviceTier) {
   if (tier === "weak") {
     return {
-      width: 640,
-      height: 360,
-      fps: 15,
+      width: 480,
+      height: 270,
+      fps: 12,
     };
   }
 
@@ -790,6 +790,7 @@ const SESSION_SELECT_STR =
   "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*), session_bookings(user_id)";
 
 const JOIN_EARLY_WINDOW_MINUTES = 10;
+const WEAK_DEVICE_PREVIEW_INIT_DELAY_MS = 450;
 
 function formatLocalDateTime(ms: number) {
   try {
@@ -1897,14 +1898,29 @@ export function RoomPageLiveKit() {
         return;
       }
 
-      try {
-        const s = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-        s.getTracks().forEach((t) => t.stop());
-      } catch {
-        // labels may stay empty, but device list can still be available
+      let list = await navigator.mediaDevices.enumerateDevices();
+
+      const labelsMissing = list.some((d) => {
+        if (d.kind !== "videoinput" && d.kind !== "audioinput") return false;
+        return !String(d.label || "").trim();
+      });
+
+      if (labelsMissing) {
+        try {
+          const wantVideo = !!prejoinRef.current.videoEnabled;
+          const warmupStream = await navigator.mediaDevices.getUserMedia({
+            video: wantVideo,
+            audio: false,
+          });
+
+          warmupStream.getTracks().forEach((t) => t.stop());
+
+          list = await navigator.mediaDevices.enumerateDevices();
+        } catch {
+          // labels may stay empty, but device list can still be available
+        }
       }
 
-      const list = await navigator.mediaDevices.enumerateDevices();
       const videoInputs = list.filter((d) => d.kind === "videoinput");
       const audioInputs = list.filter((d) => d.kind === "audioinput");
       const audioOutputs = list.filter((d) => d.kind === "audiooutput");
@@ -2135,6 +2151,25 @@ export function RoomPageLiveKit() {
     }
   };
 
+  const initPrejoinPreview = async (opts?: { delayedForWeak?: boolean; forceTrack?: boolean }) => {
+    const pj = prejoinRef.current;
+
+    if (!pj.videoEnabled) return;
+
+    if (opts?.delayedForWeak && deviceTier === "weak") {
+      await delay(WEAK_DEVICE_PREVIEW_INIT_DELAY_MS);
+
+      if (!prejoinOpen) return;
+      if (!prejoinRef.current.videoEnabled) return;
+    }
+
+    await createPrejoinPreparedVideoTrack({ force: !!opts?.forceTrack });
+
+    if (deviceTier !== "weak" && videoFxMode !== "off") {
+      await applyPrejoinVideoFx(videoFxMode);
+    }
+  };
+
   useEffect(() => {
     if (loading) return;
     if (!session) return;
@@ -2147,23 +2182,27 @@ export function RoomPageLiveKit() {
     setPrejoinOpen(true);
     setDeviceError("");
 
+    let cancelled = false;
+
     (async () => {
       await loadBrowserDevices({ preserveSelection: true }).catch(() => { });
 
-      const pj = prejoinRef.current;
-      if (!pj.videoEnabled) return;
+      if (cancelled) return;
 
       try {
-        await createPrejoinPreparedVideoTrack();
-
-        if (deviceTier !== "weak" && videoFxMode !== "off") {
-          await applyPrejoinVideoFx(videoFxMode);
-        }
+        await initPrejoinPreview({
+          delayedForWeak: true,
+          forceTrack: false,
+        });
       } catch (e) {
         console.warn("prejoin preview init failed", e);
       }
     })();
-  }, [loading, session, sessionId, joinRequested, connected, loadBrowserDevices, videoFxMode, deviceTier]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, session, sessionId, joinRequested, loadBrowserDevices, deviceTier, videoFxMode]);
 
   useEffect(() => {
     if (!prejoinOpen) return;
@@ -2173,17 +2212,17 @@ export function RoomPageLiveKit() {
 
     const t = window.setTimeout(async () => {
       try {
-        await createPrejoinPreparedVideoTrack();
-        if (deviceTier !== "weak" && videoFxMode !== "off") {
-          await applyPrejoinVideoFx(videoFxMode);
-        }
+        await initPrejoinPreview({
+          delayedForWeak: false,
+          forceTrack: true,
+        });
       } catch (e) {
         console.warn("prejoin camera switch failed", e);
       }
     }, 180);
 
     return () => window.clearTimeout(t);
-  }, [prejoin.videoInputId, prejoinOpen, videoFxMode, deviceTier]);
+  }, [prejoin.videoInputId, prejoinOpen, deviceTier, videoFxMode]);
 
   useEffect(() => {
     if (!prejoinOpen) return;
@@ -2195,15 +2234,15 @@ export function RoomPageLiveKit() {
 
     (async () => {
       try {
-        await createPrejoinPreparedVideoTrack();
-        if (deviceTier !== "weak" && videoFxMode !== "off") {
-          await applyPrejoinVideoFx(videoFxMode);
-        }
+        await initPrejoinPreview({
+          delayedForWeak: false,
+          forceTrack: false,
+        });
       } catch (e) {
         console.warn("prejoin video enable failed", e);
       }
     })();
-  }, [prejoin.videoEnabled, prejoinOpen, videoFxMode, deviceTier]);
+  }, [prejoin.videoEnabled, prejoinOpen, deviceTier, videoFxMode]);
 
   useEffect(() => {
     if (deviceTier !== "weak") return;
@@ -2211,6 +2250,14 @@ export function RoomPageLiveKit() {
 
     setVideoFxMode("off");
     setFxStatusText("FX disabled automatically on weak/mobile device");
+
+    const track = prejoinPreparedVideoTrackRef.current;
+    if (track) {
+      stopAnyProcessor(track).catch(() => { });
+    }
+
+    lastPrejoinFxSignatureRef.current = "";
+    setPrejoinPreviewVersion((v) => v + 1);
   }, [deviceTier, videoFxMode]);
 
   const isHost = useMemo(() => {
