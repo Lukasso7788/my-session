@@ -24,6 +24,7 @@ import { supabase } from "../lib/supabase";
 
 import ChatPanel from "../components/ChatPanel";
 import { IntentionsPanel } from "../components/IntentionsPanel";
+import JoinGateModal from "../components/JoinGateModal";
 import { UserProfileModal } from "../components/UserProfileModal";
 import RoomTopBar from "../components/RoomTopBar";
 import RoomTimelineEditor, {
@@ -786,7 +787,7 @@ const LK_CAPTURE_FPS = 24;
 const CHAT_MSG_TABLE = "session_chat_messages";
 const REACTION_TTL_MS = 2750;
 const SESSION_SELECT_STR =
-  "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)";
+  "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*), session_bookings(user_id)";
 
 const JOIN_EARLY_WINDOW_MINUTES = 10;
 
@@ -936,14 +937,27 @@ export function RoomPageLiveKit() {
   const [session, setSession] = useState<SessionRow | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [joinGateBookingBusy, setJoinGateBookingBusy] = useState(false);
+  const [joinGateBooked, setJoinGateBooked] = useState(false);
+
   // auth + profile
   const [authUserId, setAuthUserId] = useState<string | null>(null);
+  useEffect(() => {
+    const booked =
+      !!authUserId &&
+      !!(session as any)?.session_bookings?.some(
+        (b: any) => String(b?.user_id || "") === String(authUserId)
+      );
+
+    setJoinGateBooked(booked);
+  }, [(session as any)?.session_bookings, authUserId]);
   const [authReady, setAuthReady] = useState(false);
   const [authGateStatus, setAuthGateStatus] = useState<"checking" | "authed" | "redirecting">("checking");
   const [userName, setUserName] = useState("");
   const [displayName, setDisplayName] = useState("");
   const localRoomDisplayNameOverrideRef = useRef<string>("");
   const [localRoomDisplayNameVersion, setLocalRoomDisplayNameVersion] = useState(0);
+  
 
   const applyRoomDisplayNameLocally = (nextRaw: string) => {
     const next = String(nextRaw || "").trim();
@@ -1245,15 +1259,36 @@ export function RoomPageLiveKit() {
 
   const joinGateInfo = useMemo(() => {
     const startIso = String(session?.start_time || "").trim();
-    if (!startIso) return { enabled: false, canJoinNow: true, startMs: 0, msUntilAllowed: 0 };
+
+    if (!startIso) {
+      return {
+        enabled: false,
+        canJoinNow: true,
+        startMs: 0,
+        allowMs: 0,
+        msUntilAllowed: 0,
+      };
+    }
 
     const startMs = new Date(startIso).getTime();
+
+    if (!Number.isFinite(startMs) || startMs <= 0) {
+      return {
+        enabled: false,
+        canJoinNow: true,
+        startMs: 0,
+        allowMs: 0,
+        msUntilAllowed: 0,
+      };
+    }
+
     const allowMs = startMs - JOIN_EARLY_WINDOW_MINUTES * 60 * 1000;
 
     return {
       enabled: true,
       canJoinNow: joinNowTickMs >= allowMs,
       startMs,
+      allowMs,
       msUntilAllowed: Math.max(0, allowMs - joinNowTickMs),
     };
   }, [session?.start_time, joinNowTickMs]);
@@ -5350,47 +5385,84 @@ export function RoomPageLiveKit() {
     );
   }
 
+  const handleBookFromJoinGate = async () => {
+    const sessionId = String(session?.id || "").trim();
+    if (!sessionId) return;
+
+    if (!authUserId) {
+      const redirect = encodeURIComponent(location.pathname + location.search);
+      navigate(`/login?redirect=${redirect}`, { replace: true });
+      return;
+    }
+
+    if (joinGateBooked || joinGateBookingBusy) return;
+
+    setJoinGateBookingBusy(true);
+
+    try {
+      const { error } = await supabase.from("session_bookings").insert({
+        session_id: sessionId,
+        user_id: authUserId,
+      });
+
+      if (error) {
+        const msg = String(error.message || "").toLowerCase();
+        if (
+          msg.includes("duplicate") ||
+          msg.includes("unique") ||
+          msg.includes("already")
+        ) {
+          setJoinGateBooked(true);
+        } else {
+          throw error;
+        }
+      } else {
+        setJoinGateBooked(true);
+      }
+
+      setSession((prev: any) => {
+        if (!prev || !authUserId) return prev;
+
+        const existing = Array.isArray(prev.session_bookings)
+          ? prev.session_bookings
+          : [];
+        const alreadyThere = existing.some(
+          (b: any) => String(b?.user_id || "") === String(authUserId)
+        );
+        if (alreadyThere) return prev;
+
+        return {
+          ...prev,
+          session_bookings: [
+            ...existing,
+            { session_id: sessionId, user_id: authUserId },
+          ],
+        };
+      });
+    } catch (e) {
+      console.error("LiveKit join gate booking error:", e);
+    } finally {
+      setJoinGateBookingBusy(false);
+    }
+  };
+
   if (joinBlocked) {
     return (
-      <>
-        <div className={`min-h-screen w-full flex items-center justify-center px-4 ${isLight ? "bg-[#f6f8fb]" : "bg-[#020617]"}`}>
-          <div className={`w-full max-w-[620px] rounded-3xl border shadow-2xl p-6 md:p-8 ${isLight ? "bg-white border-black/10" : "bg-[#0b1220] border-white/10"}`}>
-            <div className={`text-[22px] font-semibold ${isLight ? "text-black/90" : "text-white/95"}`}>
-              You can’t join yet
-            </div>
-
-            <div className={`mt-3 text-[14px] leading-6 ${isLight ? "text-black/60" : "text-white/65"}`}>
-              You can enter this room only within {JOIN_EARLY_WINDOW_MINUTES} minutes before the session starts.
-            </div>
-
-            <div className={`mt-5 rounded-2xl px-4 py-4 ${isLight ? "bg-black/[0.04]" : "bg-white/[0.05]"}`}>
-              <div className={`text-[12px] uppercase tracking-[0.12em] ${isLight ? "text-black/45" : "text-white/45"}`}>
-                Session starts
-              </div>
-              <div className={`mt-1 text-[18px] font-semibold ${isLight ? "text-black/90" : "text-white/92"}`}>
-                {formatLocalDateTime(joinGateInfo.startMs)}
-              </div>
-
-              <div className={`mt-4 text-[12px] uppercase tracking-[0.12em] ${isLight ? "text-black/45" : "text-white/45"}`}>
-                You can join in
-              </div>
-              <div className={`mt-1 text-[28px] font-semibold ${isLight ? "text-blue-700" : "text-emerald-400"}`}>
-                {formatCountdown(joinGateInfo.msUntilAllowed)}
-              </div>
-            </div>
-
-            <div className="mt-6 flex items-center gap-3">
-              <button
-                onClick={() => navigate("/sessions")}
-                className={`h-11 px-4 rounded-xl font-semibold ${isLight ? "bg-black/5 hover:bg-black/10 text-black/80" : "bg-white/5 hover:bg-white/10 text-white/85"}`}
-              >
-                Back to sessions
-              </button>
-            </div>
-          </div>
-        </div>
-        {pipPortal}
-      </>
+      <JoinGateModal
+        open={true}
+        theme={theme}
+        sessionTitle={String(session?.title || "Session")}
+        joinEarlyWindowMinutes={JOIN_EARLY_WINDOW_MINUTES}
+        startMs={joinGateInfo.startMs}
+        allowMs={joinGateInfo.allowMs}
+        msUntilAllowed={joinGateInfo.msUntilAllowed}
+        bookingCtaLabel="Book this session right now"
+        bookingBusy={joinGateBookingBusy}
+        bookingDone={joinGateBooked}
+        onBook={handleBookFromJoinGate}
+        onBack={() => navigate("/sessions", { replace: true })}
+        onReload={() => window.location.reload()}
+      />
     );
   }
 

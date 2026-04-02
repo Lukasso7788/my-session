@@ -82,6 +82,7 @@ import RoomTimelineEditor, {
     getTimelineTotalMinutes,
     makeDefaultTimelineBlocks,
 } from "../components/RoomTimelineEditor";
+import JoinGateModal from "../components/JoinGateModal";
 import VideoControls, {
     Icon,
     REACTION_EMOJI,
@@ -145,7 +146,7 @@ declare global {
 }
 
 const SESSION_SELECT_STR =
-    "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)";
+    "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*), session_bookings(user_id)";
 
 // ===============================
 // helpers: uuid / slug
@@ -966,6 +967,8 @@ export default function RoomPageIFrame() {
     const [session, setSession] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [selectedUser, setSelectedUser] = useState<HostProfile | null>(null);
+    const [joinGateBookingBusy, setJoinGateBookingBusy] = useState(false);
+    const [joinGateBooked, setJoinGateBooked] = useState(false);
 
     const sessionId = useMemo(() => String(session?.id || ""), [session?.id]);
     const sessionTitle = useMemo(() => String(session?.title || "Session"), [session?.title]);
@@ -1047,6 +1050,15 @@ export default function RoomPageIFrame() {
     const [authStatus, setAuthStatus] = useState<"checking" | "authed" | "redirecting">("checking");
     const [userName, setUserName] = useState<string>("");
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+    useEffect(() => {
+        const booked =
+            !!currentUserId &&
+            !!session?.session_bookings?.some(
+                (b: any) => String(b?.user_id || "") === String(currentUserId)
+            );
+
+        setJoinGateBooked(booked);
+    }, [session?.session_bookings, currentUserId]);
     const [userAvatarUrl, setUserAvatarUrl] = useState<string>("");
     const [roomDisplayName, setRoomDisplayName] = useState<string>("");
 
@@ -1508,6 +1520,13 @@ export default function RoomPageIFrame() {
             }
         })();
     }, [navigate, location.pathname, location.search]);
+
+    useEffect(() => {
+        const booked =
+            !!currentUserId &&
+            !!session?.session_bookings?.some((b: any) => String(b?.user_id || "") === String(currentUserId));
+        setJoinGateBooked(booked);
+    }, [session?.session_bookings, currentUserId]);
 
     const maxParticipants = useMemo(() => {
         const n = Number(session?.max_participants);
@@ -2785,6 +2804,73 @@ export default function RoomPageIFrame() {
         }
     };
 
+    const handleBookFromJoinGate = async () => {
+        if (!sessionId) return;
+
+        if (!currentUserId) {
+            const redirect = encodeURIComponent(location.pathname + location.search);
+            navigate(`/login?redirect=${redirect}`, { replace: true });
+            return;
+        }
+
+        if (joinGateBooked || joinGateBookingBusy) return;
+
+        setJoinGateBookingBusy(true);
+        setLastErr("");
+        setUiMessage(null);
+
+        try {
+            const { error } = await supabase
+                .from("session_bookings")
+                .insert({
+                    session_id: sessionId,
+                    user_id: currentUserId,
+                });
+
+            if (error) {
+                const msg = String(error.message || "").toLowerCase();
+
+                // если уже booked — не считаем это провалом
+                if (
+                    msg.includes("duplicate") ||
+                    msg.includes("unique") ||
+                    msg.includes("already")
+                ) {
+                    setJoinGateBooked(true);
+                    setUiMessage("Session already booked ✅");
+                    window.setTimeout(() => setUiMessage(null), 1400);
+                } else {
+                    throw error;
+                }
+            } else {
+                setJoinGateBooked(true);
+                setUiMessage("Session booked ✅");
+                window.setTimeout(() => setUiMessage(null), 1400);
+            }
+
+            setSession((prev: any) => {
+                if (!prev || !currentUserId) return prev;
+
+                const existing = Array.isArray(prev.session_bookings) ? prev.session_bookings : [];
+                const alreadyThere = existing.some((b: any) => String(b?.user_id || "") === String(currentUserId));
+                if (alreadyThere) return prev;
+
+                return {
+                    ...prev,
+                    session_bookings: [
+                        ...existing,
+                        { session_id: sessionId, user_id: currentUserId },
+                    ],
+                };
+            });
+        } catch (e: any) {
+            console.error("join gate booking error:", e);
+            setLastErr(String(e?.message || e || "Failed to book session"));
+        } finally {
+            setJoinGateBookingBusy(false);
+        }
+    };
+
     // ============================================
     // Page states
     // ============================================
@@ -3012,63 +3098,21 @@ export default function RoomPageIFrame() {
 
     if (joinBlocked) {
         return (
-            <div className={`h-[100dvh] w-full flex items-center justify-center ${pageBg}`}>
-                <div
-                    className={[
-                        "w-[92%] max-w-[560px] rounded-2xl border shadow-2xl p-6",
-                        isLight ? "bg-white/90 border-black/10 text-black/85" : "bg-[#020617]/70 border-white/10 text-white/90",
-                    ].join(" ")}
-                >
-                    <div className="text-[22px] font-extrabold tracking-tight">MySession</div>
-                    <div className={`mt-1 text-[14px] font-semibold ${isLight ? "text-black/70" : "text-white/75"}`}>{sessionTitle}</div>
-
-                    <div className="mt-5 text-[14px] leading-relaxed">
-                        <div className="font-semibold">You can’t join this session yet.</div>
-                        <div className={`mt-1 ${isLight ? "text-black/65" : "text-white/70"}`}>
-                            You’ll be able to join <b>{JOIN_EARLY_WINDOW_MINUTES} minutes</b> before the start.
-                        </div>
-                    </div>
-
-                    <div className={`mt-5 rounded-xl border p-4 ${isLight ? "border-black/10 bg-black/5" : "border-white/10 bg-white/5"}`}>
-                        <div className="flex items-center justify-between gap-3">
-                            <div className={`${isLight ? "text-black/60" : "text-white/65"} text-[12px]`}>Starts at</div>
-                            <div className="text-[13px] font-semibold">{formatLocalDateTime(joinGateInfo.startMs)}</div>
-                        </div>
-                        <div className="mt-2 flex items-center justify-between gap-3">
-                            <div className={`${isLight ? "text-black/60" : "text-white/65"} text-[12px]`}>Join opens</div>
-                            <div className="text-[13px] font-semibold">{formatLocalDateTime(joinGateInfo.allowMs)}</div>
-                        </div>
-                        <div className="mt-2 flex items-center justify-between gap-3">
-                            <div className={`${isLight ? "text-black/60" : "text-white/65"} text-[12px]`}>Available in</div>
-                            <div className="text-[13px] font-semibold">{formatCountdown(joinGateInfo.msUntilAllowed)}</div>
-                        </div>
-                    </div>
-
-                    <div className="mt-6 flex items-center gap-2">
-                        <button
-                            type="button"
-                            onClick={() => navigate("/sessions", { replace: true })}
-                            className={[
-                                "h-11 px-4 rounded-xl font-semibold border transition",
-                                isLight ? "bg-black/5 border-black/10 hover:bg-black/10 text-black/75" : "bg-white/5 border-white/10 hover:bg-white/10 text-white/85",
-                            ].join(" ")}
-                        >
-                            Back to sessions
-                        </button>
-
-                        <button
-                            type="button"
-                            onClick={() => window.location.reload()}
-                            className={[
-                                "h-11 px-4 rounded-xl font-semibold transition",
-                                isLight ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]",
-                            ].join(" ")}
-                        >
-                            Reload
-                        </button>
-                    </div>
-                </div>
-            </div>
+            <JoinGateModal
+                open={true}
+                theme={theme}
+                sessionTitle={sessionTitle}
+                joinEarlyWindowMinutes={JOIN_EARLY_WINDOW_MINUTES}
+                startMs={joinGateInfo.startMs}
+                allowMs={joinGateInfo.allowMs}
+                msUntilAllowed={joinGateInfo.msUntilAllowed}
+                bookingCtaLabel="Book this session right now"
+                bookingBusy={joinGateBookingBusy}
+                bookingDone={joinGateBooked}
+                onBook={handleBookFromJoinGate}
+                onBack={() => navigate("/sessions", { replace: true })}
+                onReload={() => window.location.reload()}
+            />
         );
     }
 
