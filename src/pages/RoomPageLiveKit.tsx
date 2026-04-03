@@ -1072,6 +1072,7 @@ export function RoomPageLiveKit() {
   // pre-join prepared preview track
   const prejoinPreparedVideoTrackRef = useRef<LocalVideoTrack | null>(null);
   const [prejoinPreviewVersion, setPrejoinPreviewVersion] = useState(0);
+  const prejoinPreviewInitInFlightRef = useRef(false);
 
   // roles
   const [moderatorUserIds, setModeratorUserIds] = useState<string[]>([]);
@@ -1909,7 +1910,13 @@ export function RoomPageLiveKit() {
         try {
           const wantVideo = !!prejoinRef.current.videoEnabled;
           const warmupStream = await navigator.mediaDevices.getUserMedia({
-            video: wantVideo,
+            video: wantVideo
+              ? {
+                width: { ideal: 160 },
+                height: { ideal: 120 },
+                frameRate: { ideal: 5, max: 5 },
+              }
+              : false,
             audio: false,
           });
 
@@ -2079,7 +2086,9 @@ export function RoomPageLiveKit() {
     const current = prejoinPreparedVideoTrackRef.current as any;
 
     if (!pj.videoEnabled) {
-      await cleanupPrejoinPreparedVideoTrack();
+      if (current) {
+        await cleanupPrejoinPreparedVideoTrack();
+      }
       return null;
     }
 
@@ -2121,6 +2130,10 @@ export function RoomPageLiveKit() {
       let track = prejoinPreparedVideoTrackRef.current;
       if (!track) track = await createPrejoinPreparedVideoTrack();
       if (!track) throw new Error("Pre-join camera track is not ready");
+      const currentTrackId = String((track as any)?.mediaStreamTrack?.id || "").trim();
+      if (!currentTrackId) {
+        throw new Error("Pre-join camera track id is missing");
+      }
 
       const sig = `${mode}|${blurStrength}|${bgImageUrl}|${String(
         (track as any)?.mediaStreamTrack?.id || ""
@@ -2152,21 +2165,28 @@ export function RoomPageLiveKit() {
   };
 
   const initPrejoinPreview = async (opts?: { delayedForWeak?: boolean; forceTrack?: boolean }) => {
-    const pj = prejoinRef.current;
+    if (prejoinPreviewInitInFlightRef.current) return;
+    prejoinPreviewInitInFlightRef.current = true;
 
-    if (!pj.videoEnabled) return;
+    try {
+      const pj = prejoinRef.current;
 
-    if (opts?.delayedForWeak && deviceTier === "weak") {
-      await delay(WEAK_DEVICE_PREVIEW_INIT_DELAY_MS);
+      if (!pj.videoEnabled) return;
 
-      if (!prejoinOpen) return;
-      if (!prejoinRef.current.videoEnabled) return;
-    }
+      if (opts?.delayedForWeak && deviceTier === "weak") {
+        await delay(WEAK_DEVICE_PREVIEW_INIT_DELAY_MS);
 
-    await createPrejoinPreparedVideoTrack({ force: !!opts?.forceTrack });
+        if (!prejoinOpen) return;
+        if (!prejoinRef.current.videoEnabled) return;
+      }
 
-    if (deviceTier !== "weak" && videoFxMode !== "off") {
-      await applyPrejoinVideoFx(videoFxMode);
+      await createPrejoinPreparedVideoTrack({ force: !!opts?.forceTrack });
+
+      if (deviceTier !== "weak" && videoFxMode !== "off") {
+        await applyPrejoinVideoFx(videoFxMode);
+      }
+    } finally {
+      prejoinPreviewInitInFlightRef.current = false;
     }
   };
 
@@ -2190,8 +2210,10 @@ export function RoomPageLiveKit() {
       if (cancelled) return;
 
       try {
+        if (deviceTier === "weak") return;
+
         await initPrejoinPreview({
-          delayedForWeak: true,
+          delayedForWeak: false,
           forceTrack: false,
         });
       } catch (e) {
@@ -3314,29 +3336,41 @@ export function RoomPageLiveKit() {
     try {
       if (!r) {
         if (prejoinOpen && prejoinRef.current.videoEnabled) {
-          await createPrejoinPreparedVideoTrack();
-          if (videoFxMode !== "off") {
-            await applyPrejoinVideoFx(videoFxMode);
-          }
+          await initPrejoinPreview({
+            delayedForWeak: false,
+            forceTrack: true,
+          });
         }
         return;
       }
 
       if (!camOn) return;
 
-      await r.localParticipant.setCameraEnabled(true, {
+      const existingPub: any = getLocalCameraPublication();
+      if (existingPub?.track) {
+        try {
+          await existingPub.track.stop?.();
+        } catch { }
+        try {
+          await r.localParticipant.unpublishTrack(existingPub.track, true);
+        } catch { }
+      }
+
+      const nextTrack = await createLocalVideoTrack({
         deviceId: useId || undefined,
         resolution: { width: capturePreset.width, height: capturePreset.height },
         frameRate: capturePreset.fps,
       } as any);
 
-      await delay(120);
-
-      if (videoFxMode !== "off") {
-        const tr = getLocalCameraTrack();
-        if (tr) await safeApplyProcessor(tr, videoFxMode, blurStrength, bgImageUrl);
+      if (deviceTier !== "weak" && videoFxMode !== "off") {
+        try {
+          await safeApplyProcessor(nextTrack, videoFxMode, blurStrength, bgImageUrl);
+        } catch (e) {
+          console.warn("syncLiveVideoInput fx apply failed:", e);
+        }
       }
 
+      await r.localParticipant.publishTrack(nextTrack, { source: Track.Source.Camera } as any);
       scheduleRebuildTiles();
     } catch (e) {
       console.error("syncLiveVideoInput failed:", e);
@@ -3616,18 +3650,34 @@ export function RoomPageLiveKit() {
 
       if (camOn) return;
 
-      await r.localParticipant.setCameraEnabled(true, {
+      const nextTrack = await createLocalVideoTrack({
         deviceId: selectedVideoInputId || prejoinRef.current.videoInputId || undefined,
         resolution: { width: capturePreset.width, height: capturePreset.height },
         frameRate: capturePreset.fps,
       } as any);
 
-      await delay(60);
-
-      if (videoFxMode !== "off") {
-        const tr = getLocalCameraTrack();
-        if (tr) await safeApplyProcessor(tr, videoFxMode, blurStrength, bgImageUrl);
+      if (deviceTier !== "weak" && videoFxMode !== "off") {
+        try {
+          await safeApplyProcessor(nextTrack, videoFxMode, blurStrength, bgImageUrl);
+        } catch (e) {
+          console.warn("toggleCam fx apply failed:", e);
+        }
       }
+
+      await r.localParticipant.publishTrack(nextTrack, { source: Track.Source.Camera } as any);
+      setCamOn(true);
+
+      window.setTimeout(() => {
+        scheduleRebuildTiles();
+      }, 30);
+
+      window.setTimeout(() => {
+        scheduleRebuildTiles();
+      }, 120);
+
+      window.setTimeout(() => {
+        scheduleRebuildTiles();
+      }, 260);
 
       scheduleRebuildTiles();
     } catch (e) {
