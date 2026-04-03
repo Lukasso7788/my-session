@@ -1957,6 +1957,7 @@ export function CreateSessionModal({
       setScheduleMode("single");
       setDailyDays(7);
       setWeeklyCount(3);
+      setDailyWeekdaysOnly(false);
       setSelectedUserTemplateId("");
       setSelectedPreviousSessionId("");
       setSaveTemplateName("");
@@ -2195,60 +2196,121 @@ export function CreateSessionModal({
                         </div>
                       </div>
 
-                      {scheduleMode === "weekly" && (
-                        <div className="mt-3">
-                          <div className="flex items-center justify-between gap-2 flex-wrap">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <button
-                                type="button"
-                                onClick={() => setWeeklyCount(2)}
-                                className="px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
-                                disabled={dynamicMaxOccurrences < 2}
-                              >
-                                2 sessions
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setWeeklyCount(3)}
-                                className="px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
-                                disabled={dynamicMaxOccurrences < 3}
-                              >
-                                3 sessions
-                              </button>
+                        {scheduleMode === "weekly" && (
+                          <div className="mt-3">
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={() => setWeeklyCount(2)}
+                                  className="px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
+                                  disabled={dynamicMaxOccurrences < 2}
+                                >
+                                  2 sessions
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setWeeklyCount(3)}
+                                  className="px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
+                                  disabled={dynamicMaxOccurrences < 3}
+                                >
+                                  3 sessions
+                                </button>
+                              </div>
+
+                              <div className="font-inter text-[12px] text-gray-600">
+                                Sessions:{" "}
+                                <span className="font-semibold text-brandBlack">
+                                  {clamp(
+                                    Number(weeklyCount) || 1,
+                                    1,
+                                    dynamicMaxOccurrences
+                                  )}
+                                </span>
+                              </div>
                             </div>
 
-                            <div className="font-inter text-[12px] text-gray-600">
-                              Sessions:{" "}
-                              <span className="font-semibold text-brandBlack">
-                                {clamp(
-                                  Number(weeklyCount) || 1,
-                                  1,
-                                  dynamicMaxOccurrences
-                                )}
-                              </span>
+                            <input
+                              type="range"
+                              min={1}
+                              max={dynamicMaxOccurrences}
+                              value={clamp(
+                                Number(weeklyCount) || 1,
+                                1,
+                                dynamicMaxOccurrences
+                              )}
+                              onChange={(e) =>
+                                setWeeklyCount(
+                                  clamp(
+                                    Number(e.target.value) || 1,
+                                    1,
+                                    dynamicMaxOccurrences
+                                  )
+                                )
+                              }
+                              className="mt-3 w-full"
+                            />
+
+                            <div className="mt-2 text-[12px] font-inter text-gray-500">
+                              Same weekday and time every week.
                             </div>
                           </div>
+                        )}
 
-                          <input
-                            type="range"
-                            min={1}
-                            max={dynamicMaxOccurrences}
-                            value={clamp(
-                              Number(weeklyCount) || 1,
-                              1,
-                              dynamicMaxOccurrences
-                            )}
-                            onChange={(e) =>
-                              setWeeklyCount(
-                                clamp(
-                                  Number(e.target.value) || 1,
-                                  1,
-                                  dynamicMaxOccurrences
+                        {scheduleMode === "daily" && (
+                          <div className="mt-3">
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={() => setDailyDays(7)}
+                                  className="px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
+                                  disabled={dynamicMaxOccurrences < 7}
+                                >
+                                  7 days
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDailyDays(14)}
+                                  className="px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
+                                  disabled={dynamicMaxOccurrences < 14}
+                                >
+                                  14 days
+                                </button>
+                              </div>
+
+                              <div className="font-inter text-[12px] text-gray-600">
+                                Days:{" "}
+                                <span className="font-semibold text-brandBlack">
+                                  {clamp(
+                                    Number(dailyDays) || 1,
+                                    1,
+                                    dynamicMaxOccurrences
+                                  )}
+                                </span>
+                              </div>
+                            </div>
+
+                            <input
+                              type="range"
+                              min={1}
+                              max={dynamicMaxOccurrences}
+                              value={clamp(
+                                Number(dailyDays) || 1,
+                                1,
+                                dynamicMaxOccurrences
+                              )}
+                              onChange={(e) =>
+                                setDailyDays(
+                                  clamp(
+                                    Number(e.target.value) || 1,
+                                    1,
+                                    dynamicMaxOccurrences
+                                  )
                                 )
-                              )
-                            }
-                            className="mt-3 w-full"
-                          />
+                              }
+                              className="mt-3 w-full"
+                            />
 
                             <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
                               <label className="inline-flex items-center gap-2 cursor-pointer select-none">
@@ -2267,69 +2329,8 @@ export function CreateSessionModal({
                                 {dailyWeekdaysOnly ? "Skips Saturday and Sunday." : "Same time each day."}
                               </div>
                             </div>
-                        </div>
-                      )}
-
-                      {scheduleMode === "daily" && (
-                        <div className="mt-3">
-                          <div className="flex items-center justify-between gap-2 flex-wrap">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <button
-                                type="button"
-                                onClick={() => setDailyDays(7)}
-                                className="px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
-                                disabled={dynamicMaxOccurrences < 7}
-                              >
-                                7 days
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setDailyDays(14)}
-                                className="px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
-                                disabled={dynamicMaxOccurrences < 14}
-                              >
-                                14 days
-                              </button>
-                            </div>
-
-                            <div className="font-inter text-[12px] text-gray-600">
-                              Days:{" "}
-                              <span className="font-semibold text-brandBlack">
-                                {clamp(
-                                  Number(dailyDays) || 1,
-                                  1,
-                                  dynamicMaxOccurrences
-                                )}
-                              </span>
-                            </div>
                           </div>
-
-                          <input
-                            type="range"
-                            min={1}
-                            max={dynamicMaxOccurrences}
-                            value={clamp(
-                              Number(dailyDays) || 1,
-                              1,
-                              dynamicMaxOccurrences
-                            )}
-                            onChange={(e) =>
-                              setDailyDays(
-                                clamp(
-                                  Number(e.target.value) || 1,
-                                  1,
-                                  dynamicMaxOccurrences
-                                )
-                              )
-                            }
-                            className="mt-3 w-full"
-                          />
-
-                          <div className="mt-2 text-[12px] font-inter text-gray-500">
-                            Same time each day.
-                          </div>
-                        </div>
-                      )}
+                        )}
 
                       {occurrencesPreview.length > 1 && (
                         <div className="mt-3 border border-gray-200 rounded-[14px] p-3 bg-gray-50">
