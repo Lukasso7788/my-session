@@ -92,6 +92,83 @@ function toLocalPreview(d: Date) {
   }
 }
 
+function isWeekdayLocal(d: Date) {
+  const day = d.getDay();
+  return day !== 0 && day !== 6;
+}
+
+function moveToNextWeekdayLocal(base: Date) {
+  const d = new Date(base);
+  while (!isWeekdayLocal(d)) {
+    d.setDate(d.getDate() + 1);
+  }
+  return d;
+}
+
+function buildScheduledDates(args: {
+  base: Date;
+  mode: ScheduleMode;
+  count: number;
+  maxDate: Date;
+  weekdaysOnly?: boolean;
+}) {
+  const { base, mode, count, maxDate, weekdaysOnly = false } = args;
+
+  if (!Number.isFinite(base.getTime()) || !Number.isFinite(maxDate.getTime())) {
+    return [];
+  }
+
+  if (count <= 0) return [];
+
+  if (mode === "single") {
+    return base.getTime() <= maxDate.getTime() ? [new Date(base)] : [];
+  }
+
+  if (mode === "weekly") {
+    const out: Date[] = [];
+    for (let i = 0; i < count; i++) {
+      const d = addDaysLocal(base, i * 7);
+      if (d.getTime() > maxDate.getTime()) break;
+      out.push(d);
+    }
+    return out;
+  }
+
+  const out: Date[] = [];
+  let cursor = new Date(base);
+
+  if (weekdaysOnly) {
+    cursor = moveToNextWeekdayLocal(cursor);
+  }
+
+  while (out.length < count && cursor.getTime() <= maxDate.getTime()) {
+    if (!weekdaysOnly || isWeekdayLocal(cursor)) {
+      out.push(new Date(cursor));
+    }
+    cursor = addDaysLocal(cursor, 1);
+  }
+
+  return out;
+}
+
+function countAvailableOccurrences(args: {
+  base: Date;
+  mode: ScheduleMode;
+  maxDate: Date;
+  weekdaysOnly?: boolean;
+  hardCap: number;
+}) {
+  const dates = buildScheduledDates({
+    base: args.base,
+    mode: args.mode,
+    count: args.hardCap,
+    maxDate: args.maxDate,
+    weekdaysOnly: args.weekdaysOnly,
+  });
+
+  return dates.length;
+}
+
 // ===============================
 // Custom slug helpers
 // ===============================
@@ -568,6 +645,7 @@ export function CreateSessionModal({
   const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("single");
   const [dailyDays, setDailyDays] = useState<number>(7);
   const [weeklyCount, setWeeklyCount] = useState<number>(3);
+  const [dailyWeekdaysOnly, setDailyWeekdaysOnly] = useState<boolean>(false);
 
   // ---------- Custom link slug ----------
   const [customSlugInput, setCustomSlugInput] = useState("");
@@ -645,6 +723,7 @@ export function CreateSessionModal({
     setScheduleMode("single");
     setDailyDays(7);
     setWeeklyCount(3);
+    setDailyWeekdaysOnly(false);
 
     setStudioEnabled(false);
     setStudioBlocks([]);
@@ -1556,17 +1635,18 @@ export function CreateSessionModal({
     const now = new Date();
     const max = advanceLimitDate(now);
 
-    const step = stepDaysForMode(scheduleMode);
-    if (step <= 0) return 1;
+    if (base.getTime() > max.getTime()) return 1;
 
-    const diffMs = max.getTime() - base.getTime();
-    if (diffMs < 0) return 1;
+    const available = countAvailableOccurrences({
+      base,
+      mode: scheduleMode,
+      maxDate: max,
+      weekdaysOnly: scheduleMode === "daily" ? dailyWeekdaysOnly : false,
+      hardCap,
+    });
 
-    const stepMs = step * 24 * 60 * 60 * 1000;
-    const maxOcc = Math.floor(diffMs / stepMs) + 1;
-
-    return clamp(maxOcc, 1, hardCap);
-  }, [scheduleMode, scheduledAt]);
+    return clamp(available || 1, 1, hardCap);
+  }, [scheduleMode, scheduledAt, dailyWeekdaysOnly]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -1601,29 +1681,40 @@ export function CreateSessionModal({
       return "Start time must be in the future.";
     }
 
-    const step = stepDaysForMode(scheduleMode);
-    const last =
-      scheduleMode === "single"
-        ? base
-        : addDaysLocal(base, step * (occurrencesCount - 1));
+    const dates = buildScheduledDates({
+      base,
+      mode: scheduleMode,
+      count: occurrencesCount,
+      maxDate: max,
+      weekdaysOnly: scheduleMode === "daily" ? dailyWeekdaysOnly : false,
+    });
 
-    if (last.getTime() > max.getTime()) {
-      return `Max scheduling window is ${MAX_ADVANCE_DAYS} days ahead (last occurrence too far).`;
+    if (dates.length !== occurrencesCount) {
+      return `Max scheduling window is ${MAX_ADVANCE_DAYS} days ahead (not enough valid occurrences fit in range).`;
     }
 
     return null;
-  }, [scheduledAt, occurrencesCount, scheduleMode]);
+  }, [scheduledAt, occurrencesCount, scheduleMode, dailyWeekdaysOnly]);
 
   const occurrencesPreview = useMemo(() => {
     if (!scheduledAt) return [];
+
     const base = new Date(scheduledAt);
     if (Number.isNaN(base.getTime())) return [];
-    const step = stepDaysForMode(scheduleMode);
-    const ds = Array.from({ length: occurrencesCount }, (_, i) =>
-      scheduleMode === "single" ? base : addDaysLocal(base, step * i)
-    );
+
+    const now = new Date();
+    const max = advanceLimitDate(now);
+
+    const ds = buildScheduledDates({
+      base,
+      mode: scheduleMode,
+      count: occurrencesCount,
+      maxDate: max,
+      weekdaysOnly: scheduleMode === "daily" ? dailyWeekdaysOnly : false,
+    });
+
     return ds.map(toLocalPreview);
-  }, [scheduledAt, scheduleMode, occurrencesCount]);
+  }, [scheduledAt, scheduleMode, occurrencesCount, dailyWeekdaysOnly]);
 
   // ---------- CREATE SESSION(S) ----------
   const handleCreate = async () => {
@@ -1721,12 +1812,20 @@ export function CreateSessionModal({
 
       const normalizedDescription = String(description || "").trim() || null;
 
-      const step = stepDaysForMode(scheduleMode);
-      const datesLocal = Array.from({ length: occurrencesCount }, (_, i) =>
-        scheduleMode === "single"
-          ? baseDateLocal
-          : addDaysLocal(baseDateLocal, step * i)
-      );
+      const maxAdvanceDate = advanceLimitDate(new Date());
+      const datesLocal = buildScheduledDates({
+        base: baseDateLocal,
+        mode: scheduleMode,
+        count: occurrencesCount,
+        maxDate: maxAdvanceDate,
+        weekdaysOnly: scheduleMode === "daily" ? dailyWeekdaysOnly : false,
+      });
+
+      if (datesLocal.length !== occurrencesCount) {
+        throw new Error(
+          `Unable to create ${occurrencesCount} occurrence(s) inside the ${MAX_ADVANCE_DAYS}-day scheduling window.`
+        );
+      }
 
       const isSeries = scheduleMode !== "single";
       const slugsForInsert =
@@ -2151,9 +2250,23 @@ export function CreateSessionModal({
                             className="mt-3 w-full"
                           />
 
-                          <div className="mt-2 text-[12px] font-inter text-gray-500">
-                            Same weekday and time every week.
-                          </div>
+                            <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
+                              <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={dailyWeekdaysOnly}
+                                  onChange={(e) => setDailyWeekdaysOnly(e.target.checked)}
+                                  className="w-4 h-4"
+                                />
+                                <span className="text-[12px] font-inter text-brandBlack">
+                                  Only weekdays (Mon–Fri)
+                                </span>
+                              </label>
+
+                              <div className="text-[12px] font-inter text-gray-500">
+                                {dailyWeekdaysOnly ? "Skips Saturday and Sunday." : "Same time each day."}
+                              </div>
+                            </div>
                         </div>
                       )}
 
@@ -2220,9 +2333,9 @@ export function CreateSessionModal({
 
                       {occurrencesPreview.length > 1 && (
                         <div className="mt-3 border border-gray-200 rounded-[14px] p-3 bg-gray-50">
-                          <div className="text-[12px] font-inter text-gray-600">
-                            Will create:
-                          </div>
+                            <div className="text-[12px] font-inter text-gray-600">
+                              Will create{scheduleMode === "daily" && dailyWeekdaysOnly ? " (weekdays only)" : ""}:
+                            </div>
                           <div className="mt-1 text-[12px] font-inter text-gray-800 space-y-1">
                             {occurrencesPreview.slice(0, 5).map((p, i) => (
                               <div key={i}>• {p}</div>
