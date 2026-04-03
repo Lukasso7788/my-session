@@ -2016,6 +2016,7 @@ export function RoomPageLiveKit() {
   const [fxApplying, setFxApplying] = useState(false);
   const [fxStatusText, setFxStatusText] = useState<string>("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsPreviewVersion, setSettingsPreviewVersion] = useState(0);
   const [blurStrength, setBlurStrength] = useState<number>(12);
   const [connected, setConnected] = useState(false);
 
@@ -2269,6 +2270,38 @@ export function RoomPageLiveKit() {
       }
     })();
   }, [prejoin.videoEnabled, prejoinOpen, deviceTier, videoFxMode]);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+    if (!prejoinOpen) return;
+    if (!prejoinRef.current.videoEnabled) return;
+
+    if (prejoinPreparedVideoTrackRef.current) {
+      setSettingsPreviewVersion((v) => v + 1);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        await initPrejoinPreview({
+          delayedForWeak: false,
+          forceTrack: false,
+        });
+
+        if (!cancelled) {
+          setSettingsPreviewVersion((v) => v + 1);
+        }
+      } catch (e) {
+        console.warn("settings preview init failed", e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [settingsOpen, prejoinOpen, prejoin.videoEnabled, deviceTier, videoFxMode]);
 
   useEffect(() => {
     if (deviceTier !== "weak") return;
@@ -5852,7 +5885,10 @@ export function RoomPageLiveKit() {
           onOpenParticipants={() => openRightTab("participants")}
           onOpenChat={() => openRightTab("chat")}
           onOpenIntentions={() => openRightTab("intentions")}
-          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenSettings={() => {
+            setSettingsOpen(true);
+            setSettingsPreviewVersion((v) => v + 1);
+          }}
           onSendReaction={sendReaction}
         />
 
@@ -5867,11 +5903,25 @@ export function RoomPageLiveKit() {
           onApplyMode={async (m) => {
             await applyVideoFx(m);
           }}
-          onClose={() => setSettingsOpen(false)}
+          onClose={() => {
+            setSettingsOpen(false);
+            setSettingsPreviewVersion((v) => v + 1);
+          }}
           fxError={fxError}
           fxApplying={fxApplying}
           fxStatusText={fxStatusText}
-          previewTrack={prejoinPreparedVideoTrackRef.current}
+          previewTrack={
+            prejoinPreparedVideoTrackRef.current ||
+            (() => {
+              try {
+                const pubs = Array.from(roomState?.localParticipant?.videoTrackPublications?.values?.() || []);
+                const camPub = pubs.find((p: any) => p?.source === Track.Source.Camera);
+                return (camPub?.track as LocalVideoTrack | null) || null;
+              } catch {
+                return null;
+              }
+            })()
+          }
           previewVideoFilterCss={localVideoFilterCss}
           onUploadBg={(file) => {
             try {

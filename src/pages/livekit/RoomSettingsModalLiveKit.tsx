@@ -363,15 +363,13 @@ export function RoomSettingsModalLiveKit({
     const backdrop = "absolute inset-0 bg-black/60";
 
     const card = [
-        "relative w-full sm:max-w-[760px] rounded-none sm:rounded-3xl shadow-2xl overflow-hidden",
+        "relative w-full sm:max-w-[1100px] rounded-none sm:rounded-3xl shadow-2xl overflow-hidden",
         "max-h-[100dvh] sm:max-h-[92vh] flex flex-col",
         isLight ? "bg-white text-black border border-black/10" : "bg-[#020617] text-white border border-white/10",
     ].join(" ");
 
     const sectionCls = isLight ? "bg-black/5 border border-black/10" : "bg-white/5 border border-white/10";
-
     const ghostBtn = isLight ? "bg-black/5 hover:bg-black/10 text-black/80" : "bg-white/5 hover:bg-white/10 text-white/85";
-
     const activeBtn = isLight ? "bg-blue-600 text-white" : "bg-emerald-500 text-[#03110a]";
     const subtleText = isLight ? "text-black/60" : "text-white/60";
 
@@ -424,310 +422,316 @@ export function RoomSettingsModalLiveKit({
                     </div>
                 </div>
 
-                <div className="px-5 sm:px-6 py-4 sm:py-5 flex-1 overflow-y-auto overscroll-contain flex flex-col gap-5">
-                    <div className={`rounded-2xl p-4 ${sectionCls}`}>
-                        <VideoPreviewBox
-                            track={previewTrack}
-                            filterCss={previewVideoFilterCss}
-                            isLight={isLight}
-                            label="Live preview"
-                        />
-                    </div>
+                <div className="px-5 sm:px-6 py-4 sm:py-5 flex-1 overflow-y-auto overscroll-contain">
+                    <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-5 items-start">
+                        <div className="flex flex-col gap-5 min-w-0">
+                            <div className={`rounded-2xl p-4 ${sectionCls}`}>
+                                <div className="text-[13px] font-semibold mb-4">Devices</div>
 
-                    <div className={`rounded-2xl p-4 ${sectionCls}`}>
-                        <div className="text-[13px] font-semibold mb-4">Devices</div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <SelectField
+                                        label="Microphone"
+                                        value={selectedAudioInputId}
+                                        onChange={(v) => {
+                                            void onChangeAudioInput(v);
+                                        }}
+                                        options={audioInputOptions}
+                                        isLight={isLight}
+                                    />
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <SelectField
-                                label="Microphone"
-                                value={selectedAudioInputId}
-                                onChange={(v) => {
-                                    void onChangeAudioInput(v);
-                                }}
-                                options={audioInputOptions}
-                                isLight={isLight}
-                            />
+                                    <SelectField
+                                        label="Camera"
+                                        value={selectedVideoInputId}
+                                        onChange={(v) => {
+                                            void onChangeVideoInput(v);
+                                        }}
+                                        options={videoInputOptions}
+                                        isLight={isLight}
+                                    />
 
-                            <SelectField
-                                label="Camera"
-                                value={selectedVideoInputId}
-                                onChange={(v) => {
-                                    void onChangeVideoInput(v);
-                                }}
-                                options={videoInputOptions}
-                                isLight={isLight}
-                            />
-
-                            <div className="md:col-span-2">
-                                <SelectField
-                                    label="Speakers / output"
-                                    value={selectedAudioOutputId}
-                                    onChange={onChangeAudioOutput}
-                                    options={audioOutputOptions}
-                                    isLight={isLight}
-                                />
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className={`rounded-2xl p-4 ${sectionCls}`}>
-                        <div className="text-[13px] font-semibold mb-4">Microphone processing</div>
-
-                        <div className="flex flex-col gap-4">
-                            <ToggleRow
-                                label="Echo cancellation"
-                                description="Reduce echo from speakers going back into the mic."
-                                checked={echoCancellationEnabled}
-                                onChange={(v) => {
-                                    void onChangeEchoCancellation(v);
-                                }}
-                                isLight={isLight}
-                            />
-
-                            <ToggleRow
-                                label="Noise suppression"
-                                description="Reduce keyboard noise, fan noise and room hum."
-                                checked={noiseSuppressionEnabled}
-                                onChange={(v) => {
-                                    void onChangeNoiseSuppression(v);
-                                }}
-                                isLight={isLight}
-                            />
-
-                            <ToggleRow
-                                label="Auto gain control"
-                                description="Automatically normalize mic loudness."
-                                checked={autoGainControlEnabled}
-                                onChange={(v) => {
-                                    void onChangeAutoGainControl(v);
-                                }}
-                                isLight={isLight}
-                            />
-                        </div>
-                    </div>
-
-                    {!hideBackgroundFx && (
-                        <>
-                            <div className={`ms-desktop-only-fx rounded-2xl p-4 ${sectionCls}`}>
-                                <div className="text-[13px] font-semibold mb-3">Video effect mode</div>
-
-                                <div className="flex flex-wrap gap-2">
-                                    <button
-                                        onClick={() => void onApplyMode("off")}
-                                        className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "off" ? activeBtn : ghostBtn}`}
-                                        disabled={fxApplying}
-                                        type="button"
-                                    >
-                                        FX off
-                                    </button>
-
-                                    <button
-                                        onClick={() => void onApplyMode("blur")}
-                                        className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "blur" ? activeBtn : ghostBtn}`}
-                                        disabled={fxApplying}
-                                        type="button"
-                                    >
-                                        Blur
-                                    </button>
-
-                                    <button
-                                        onClick={() => void onApplyMode("bg")}
-                                        className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "bg" ? activeBtn : ghostBtn}`}
-                                        disabled={fxApplying}
-                                        type="button"
-                                    >
-                                        Background image
-                                    </button>
+                                    <div className="md:col-span-2">
+                                        <SelectField
+                                            label="Speakers / output"
+                                            value={selectedAudioOutputId}
+                                            onChange={onChangeAudioOutput}
+                                            options={audioOutputOptions}
+                                            isLight={isLight}
+                                        />
+                                    </div>
                                 </div>
-
-                                <div className={`mt-3 text-[12px] ${subtleText}`}>
-                                    {fxApplying ? "Applying effect…" : fxStatusText || "Ready"}
-                                </div>
-
-                                {fxError ? <div className="mt-2 text-[12px] text-red-500 break-words">{fxError}</div> : null}
                             </div>
 
-                            <div className={`ms-desktop-only-fx rounded-2xl p-4 ${sectionCls}`}>
-                                <SliderField
-                                    label="Blur strength"
-                                    description="Used when Blur mode is active."
-                                    min={4}
-                                    max={30}
-                                    step={1}
-                                    value={blurStrength}
-                                    onChange={onBlurStrengthChange}
+                            <div className={`rounded-2xl p-4 ${sectionCls}`}>
+                                <div className="text-[13px] font-semibold mb-4">Microphone processing</div>
+
+                                <div className="flex flex-col gap-4">
+                                    <ToggleRow
+                                        label="Echo cancellation"
+                                        description="Reduce echo from speakers going back into the mic."
+                                        checked={echoCancellationEnabled}
+                                        onChange={(v) => {
+                                            void onChangeEchoCancellation(v);
+                                        }}
+                                        isLight={isLight}
+                                    />
+
+                                    <ToggleRow
+                                        label="Noise suppression"
+                                        description="Reduce keyboard noise, fan noise and room hum."
+                                        checked={noiseSuppressionEnabled}
+                                        onChange={(v) => {
+                                            void onChangeNoiseSuppression(v);
+                                        }}
+                                        isLight={isLight}
+                                    />
+
+                                    <ToggleRow
+                                        label="Auto gain control"
+                                        description="Automatically normalize mic loudness."
+                                        checked={autoGainControlEnabled}
+                                        onChange={(v) => {
+                                            void onChangeAutoGainControl(v);
+                                        }}
+                                        isLight={isLight}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className={`rounded-2xl p-4 ${sectionCls}`}>
+                                <div className="text-[13px] font-semibold mb-4">Room tools</div>
+
+                                <div className="flex flex-col gap-4">
+                                    <ToggleRow
+                                        label="Room sounds"
+                                        description="Enable join / leave and other room UI sounds."
+                                        checked={roomSoundsEnabled}
+                                        onChange={() => onToggleRoomSounds()}
+                                        isLight={isLight}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex flex-col gap-5 min-w-0 xl:sticky xl:top-0">
+                            <div className={`rounded-2xl p-4 ${sectionCls}`}>
+                                <VideoPreviewBox
+                                    track={previewTrack}
+                                    filterCss={previewVideoFilterCss}
                                     isLight={isLight}
+                                    label="Live preview"
                                 />
                             </div>
 
-                            <div className={`ms-desktop-only-fx rounded-2xl p-4 ${sectionCls}`}>
-                                <div className="flex items-center justify-between gap-3 mb-3">
-                                    <div>
-                                        <div className="text-[13px] font-semibold">Custom background</div>
-                                        <div className={`text-[12px] mt-1 ${subtleText}`}>
-                                            Upload your own image and use it in Background image mode.
-                                        </div>
-                                    </div>
+                            {!hideBackgroundFx && (
+                                <>
+                                    <div className={`rounded-2xl p-4 ${sectionCls}`}>
+                                        <div className="text-[13px] font-semibold mb-3">Video effect mode</div>
 
-                                    <div className="flex items-center gap-2">
-                                        <label className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn} cursor-pointer flex items-center`}>
-                                            Upload
-                                            <input
-                                                type="file"
-                                                accept="image/*"
-                                                className="hidden"
-                                                onChange={(e) => {
-                                                    const f = e.target.files?.[0];
-                                                    if (!f) return;
-                                                    onUploadBg(f);
-                                                    e.currentTarget.value = "";
-                                                }}
-                                            />
-                                        </label>
-
-                                        <button
-                                            onClick={onResetBg}
-                                            className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn}`}
-                                            disabled={fxApplying || !bgImageUrl}
-                                            type="button"
-                                        >
-                                            Clear
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <div
-                                    className={[
-                                        "rounded-2xl overflow-hidden border",
-                                        isLight ? "border-black/10 bg-white" : "border-white/10 bg-[#0b1220]",
-                                    ].join(" ")}
-                                >
-                                    <div className="aspect-video w-full">
-                                        {bgImageUrl ? (
-                                            <img src={bgImageUrl} alt="Custom background preview" className="w-full h-full object-cover" />
-                                        ) : (
-                                            <div className={`w-full h-full flex items-center justify-center text-[12px] ${subtleText}`}>
-                                                No custom background selected
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div className={`px-3 py-2 text-[12px] ${subtleText}`}>
-                                        {bgImageUrl
-                                            ? isCustomBackground
-                                                ? "Custom uploaded background selected"
-                                                : "Preset background selected"
-                                            : "Upload an image to use your own background"}
-                                    </div>
-                                </div>
-
-                                <div className={`mt-3 text-[12px] ${subtleText}`}>
-                                    Tip: after upload, switch to <span className="font-semibold">Background image</span> mode if it is not active already.
-                                </div>
-                            </div>
-
-                            <div className={`ms-desktop-only-fx rounded-2xl p-4 ${sectionCls}`}>
-                                <div className="flex items-center justify-between gap-3 mb-3">
-                                    <div>
-                                        <div className="text-[13px] font-semibold">Background presets</div>
-                                        <div className={`text-[12px] mt-1 ${subtleText}`}>
-                                            Quick built-in backgrounds for Background image mode.
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                                    {FX_BG_PRESETS.map((p) => {
-                                        const selected = bgImageUrl === p.url;
-
-                                        return (
+                                        <div className="flex flex-wrap gap-2">
                                             <button
-                                                key={p.id}
-                                                onClick={() => onSetBgImageUrl(p.url)}
-                                                className={
-                                                    "rounded-2xl overflow-hidden border text-left " +
-                                                    (selected
-                                                        ? isLight
-                                                            ? "border-blue-500 ring-2 ring-blue-300"
-                                                            : "border-emerald-400 ring-2 ring-emerald-300/25"
-                                                        : isLight
-                                                            ? "border-black/10"
-                                                            : "border-white/10")
-                                                }
-                                                title={p.label}
+                                                onClick={() => void onApplyMode("off")}
+                                                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "off" ? activeBtn : ghostBtn}`}
                                                 disabled={fxApplying}
                                                 type="button"
                                             >
-                                                <div className="aspect-video w-full">
-                                                    <img src={p.url} alt={p.label} className="w-full h-full object-cover" />
-                                                </div>
-                                                <div className={`px-2 py-2 text-[12px] ${isLight ? "bg-white" : "bg-[#0b1220]"}`}>{p.label}</div>
+                                                FX off
                                             </button>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        </>
-                    )}
 
-                    <div className={`rounded-2xl p-4 ${sectionCls}`}>
-                        <div className="text-[13px] font-semibold mb-4">Color correction</div>
+                                            <button
+                                                onClick={() => void onApplyMode("blur")}
+                                                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "blur" ? activeBtn : ghostBtn}`}
+                                                disabled={fxApplying}
+                                                type="button"
+                                            >
+                                                Blur
+                                            </button>
 
-                        <div className="flex flex-col gap-4">
-                            <ToggleRow
-                                label="Enable color correction"
-                                description="Applies CSS video correction in the room UI. This is visual and local."
-                                checked={colorCorrectionEnabled}
-                                onChange={onToggleColorCorrection}
-                                isLight={isLight}
-                            />
+                                            <button
+                                                onClick={() => void onApplyMode("bg")}
+                                                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "bg" ? activeBtn : ghostBtn}`}
+                                                disabled={fxApplying}
+                                                type="button"
+                                            >
+                                                Background image
+                                            </button>
+                                        </div>
 
-                            <SliderField
-                                label="Brightness"
-                                min={50}
-                                max={150}
-                                step={1}
-                                value={brightness}
-                                onChange={onChangeBrightness}
-                                disabled={!colorCorrectionEnabled}
-                                isLight={isLight}
-                            />
+                                        <div className={`mt-3 text-[12px] ${subtleText}`}>
+                                            {fxApplying ? "Applying effect…" : fxStatusText || "Ready"}
+                                        </div>
 
-                            <SliderField
-                                label="Contrast"
-                                min={50}
-                                max={150}
-                                step={1}
-                                value={contrast}
-                                onChange={onChangeContrast}
-                                disabled={!colorCorrectionEnabled}
-                                isLight={isLight}
-                            />
+                                        {fxError ? <div className="mt-2 text-[12px] text-red-500 break-words">{fxError}</div> : null}
+                                    </div>
 
-                            <SliderField
-                                label="Saturation"
-                                min={50}
-                                max={180}
-                                step={1}
-                                value={saturate}
-                                onChange={onChangeSaturate}
-                                disabled={!colorCorrectionEnabled}
-                                isLight={isLight}
-                            />
-                        </div>
-                    </div>
+                                    <div className={`rounded-2xl p-4 ${sectionCls}`}>
+                                        <SliderField
+                                            label="Blur strength"
+                                            description="Used when Blur mode is active."
+                                            min={4}
+                                            max={30}
+                                            step={1}
+                                            value={blurStrength}
+                                            onChange={onBlurStrengthChange}
+                                            isLight={isLight}
+                                        />
+                                    </div>
 
-                    <div className={`rounded-2xl p-4 ${sectionCls}`}>
-                        <div className="text-[13px] font-semibold mb-4">Room tools</div>
+                                    <div className={`rounded-2xl p-4 ${sectionCls}`}>
+                                        <div className="flex items-center justify-between gap-3 mb-3">
+                                            <div>
+                                                <div className="text-[13px] font-semibold">Custom background</div>
+                                                <div className={`text-[12px] mt-1 ${subtleText}`}>
+                                                    Upload your own image and use it in Background image mode.
+                                                </div>
+                                            </div>
 
-                        <div className="flex flex-col gap-4">
-                            <ToggleRow
-                                label="Room sounds"
-                                description="Enable join / leave and other room UI sounds."
-                                checked={roomSoundsEnabled}
-                                onChange={() => onToggleRoomSounds()}
-                                isLight={isLight}
-                            />
+                                            <div className="flex items-center gap-2">
+                                                <label className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn} cursor-pointer flex items-center`}>
+                                                    Upload
+                                                    <input
+                                                        type="file"
+                                                        accept="image/*"
+                                                        className="hidden"
+                                                        onChange={(e) => {
+                                                            const f = e.target.files?.[0];
+                                                            if (!f) return;
+                                                            onUploadBg(f);
+                                                            e.currentTarget.value = "";
+                                                        }}
+                                                    />
+                                                </label>
+
+                                                <button
+                                                    onClick={onResetBg}
+                                                    className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn}`}
+                                                    disabled={fxApplying || !bgImageUrl}
+                                                    type="button"
+                                                >
+                                                    Clear
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div
+                                            className={[
+                                                "rounded-2xl overflow-hidden border",
+                                                isLight ? "border-black/10 bg-white" : "border-white/10 bg-[#0b1220]",
+                                            ].join(" ")}
+                                        >
+                                            <div className="aspect-video w-full">
+                                                {bgImageUrl ? (
+                                                    <img src={bgImageUrl} alt="Custom background preview" className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <div className={`w-full h-full flex items-center justify-center text-[12px] ${subtleText}`}>
+                                                        No custom background selected
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className={`px-3 py-2 text-[12px] ${subtleText}`}>
+                                                {bgImageUrl
+                                                    ? isCustomBackground
+                                                        ? "Custom uploaded background selected"
+                                                        : "Preset background selected"
+                                                    : "Upload an image to use your own background"}
+                                            </div>
+                                        </div>
+
+                                        <div className={`mt-3 text-[12px] ${subtleText}`}>
+                                            Tip: after upload, switch to <span className="font-semibold">Background image</span> mode if it is not active already.
+                                        </div>
+                                    </div>
+
+                                    <div className={`rounded-2xl p-4 ${sectionCls}`}>
+                                        <div className="flex items-center justify-between gap-3 mb-3">
+                                            <div>
+                                                <div className="text-[13px] font-semibold">Background presets</div>
+                                                <div className={`text-[12px] mt-1 ${subtleText}`}>
+                                                    Quick built-in backgrounds for Background image mode.
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-3">
+                                            {FX_BG_PRESETS.map((p) => {
+                                                const selected = bgImageUrl === p.url;
+
+                                                return (
+                                                    <button
+                                                        key={p.id}
+                                                        onClick={() => onSetBgImageUrl(p.url)}
+                                                        className={
+                                                            "rounded-2xl overflow-hidden border text-left " +
+                                                            (selected
+                                                                ? isLight
+                                                                    ? "border-blue-500 ring-2 ring-blue-300"
+                                                                    : "border-emerald-400 ring-2 ring-emerald-300/25"
+                                                                : isLight
+                                                                    ? "border-black/10"
+                                                                    : "border-white/10")
+                                                        }
+                                                        title={p.label}
+                                                        disabled={fxApplying}
+                                                        type="button"
+                                                    >
+                                                        <div className="aspect-video w-full">
+                                                            <img src={p.url} alt={p.label} className="w-full h-full object-cover" />
+                                                        </div>
+                                                        <div className={`px-2 py-2 text-[12px] ${isLight ? "bg-white" : "bg-[#0b1220]"}`}>{p.label}</div>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    <div className={`rounded-2xl p-4 ${sectionCls}`}>
+                                        <div className="text-[13px] font-semibold mb-4">Color correction</div>
+
+                                        <div className="flex flex-col gap-4">
+                                            <ToggleRow
+                                                label="Enable color correction"
+                                                description="Applies CSS video correction in the room UI. This is visual and local."
+                                                checked={colorCorrectionEnabled}
+                                                onChange={onToggleColorCorrection}
+                                                isLight={isLight}
+                                            />
+
+                                            <SliderField
+                                                label="Brightness"
+                                                min={50}
+                                                max={150}
+                                                step={1}
+                                                value={brightness}
+                                                onChange={onChangeBrightness}
+                                                disabled={!colorCorrectionEnabled}
+                                                isLight={isLight}
+                                            />
+
+                                            <SliderField
+                                                label="Contrast"
+                                                min={50}
+                                                max={150}
+                                                step={1}
+                                                value={contrast}
+                                                onChange={onChangeContrast}
+                                                disabled={!colorCorrectionEnabled}
+                                                isLight={isLight}
+                                            />
+
+                                            <SliderField
+                                                label="Saturation"
+                                                min={50}
+                                                max={180}
+                                                step={1}
+                                                value={saturate}
+                                                onChange={onChangeSaturate}
+                                                disabled={!colorCorrectionEnabled}
+                                                isLight={isLight}
+                                            />
+                                        </div>
+                                    </div>
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>
