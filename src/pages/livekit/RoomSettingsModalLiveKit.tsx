@@ -167,6 +167,90 @@ function SliderField(props: {
     );
 }
 
+function VideoPreviewBox(props: {
+    track?: {
+        attach?: () => HTMLMediaElement;
+        detach?: (element?: HTMLMediaElement) => void;
+    } | null;
+    filterCss?: string;
+    isLight: boolean;
+    label?: string;
+}) {
+    const { track, filterCss, isLight, label = "Camera preview" } = props;
+    const hostRef = React.useRef<HTMLDivElement | null>(null);
+    const mediaElRef = React.useRef<HTMLMediaElement | null>(null);
+
+    React.useEffect(() => {
+        const host = hostRef.current;
+        if (!host) return;
+
+        host.innerHTML = "";
+
+        if (!track || typeof track.attach !== "function") return;
+
+        const attached = track.attach();
+        if (!attached) return;
+
+        const media = attached as HTMLMediaElement & {
+            playsInline?: boolean;
+        };
+
+        media.muted = true;
+        media.autoplay = true;
+        media.playsInline = true;
+        media.style.width = "100%";
+        media.style.height = "100%";
+        media.style.objectFit = "cover";
+        media.style.transform = "scaleX(-1)";
+        media.style.filter = filterCss || "";
+
+        host.appendChild(media);
+        mediaElRef.current = media;
+
+        return () => {
+            try {
+                if (track && typeof track.detach === "function" && mediaElRef.current) {
+                    track.detach(mediaElRef.current);
+                }
+            } catch { }
+
+            try {
+                if (mediaElRef.current && mediaElRef.current.parentNode) {
+                    mediaElRef.current.parentNode.removeChild(mediaElRef.current);
+                }
+            } catch { }
+
+            mediaElRef.current = null;
+        };
+    }, [track, filterCss]);
+
+    return (
+        <div>
+            <div className={`text-[13px] font-semibold mb-3 ${isLight ? "text-black/85" : "text-white/90"}`}>
+                {label}
+            </div>
+
+            <div
+                className={[
+                    "rounded-2xl overflow-hidden border aspect-video w-full",
+                    isLight ? "border-black/10 bg-black/5" : "border-white/10 bg-[#0b1220]",
+                ].join(" ")}
+            >
+                {track ? (
+                    <div ref={hostRef} className="w-full h-full" />
+                ) : (
+                    <div
+                        className={`w-full h-full flex items-center justify-center text-[12px] ${isLight ? "text-black/55" : "text-white/55"
+                            }`}
+                    >
+                        Camera preview is not available
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 export function RoomSettingsModalLiveKit({
     open,
     theme,
@@ -180,6 +264,8 @@ export function RoomSettingsModalLiveKit({
     fxError,
     fxApplying,
     fxStatusText,
+    previewTrack,
+    previewVideoFilterCss,
     onUploadBg,
     onResetBg,
 
@@ -224,6 +310,11 @@ export function RoomSettingsModalLiveKit({
     fxError: string;
     fxApplying: boolean;
     fxStatusText: string;
+    previewTrack?: {
+        attach?: () => HTMLMediaElement;
+        detach?: (element?: HTMLMediaElement) => void;
+    } | null;
+    previewVideoFilterCss?: string;
     onUploadBg: (file: File) => void;
     onResetBg: () => void;
 
@@ -334,6 +425,15 @@ export function RoomSettingsModalLiveKit({
                 </div>
 
                 <div className="px-5 sm:px-6 py-4 sm:py-5 flex-1 overflow-y-auto overscroll-contain flex flex-col gap-5">
+                    <div className={`rounded-2xl p-4 ${sectionCls}`}>
+                        <VideoPreviewBox
+                            track={previewTrack}
+                            filterCss={previewVideoFilterCss}
+                            isLight={isLight}
+                            label="Live preview"
+                        />
+                    </div>
+
                     <div className={`rounded-2xl p-4 ${sectionCls}`}>
                         <div className="text-[13px] font-semibold mb-4">Devices</div>
 

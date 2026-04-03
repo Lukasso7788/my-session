@@ -1081,8 +1081,12 @@ export function RoomPageLiveKit() {
   const [roleBusyKey, setRoleBusyKey] = useState<string>("");
 
   // right panel
-  const [rightPanelOpen, setRightPanelOpen] = useState(false);
-  const [rightTab, setRightTab] = useState<RightPanelTab>(null);
+  const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return true;
+    return window.matchMedia("(min-width: 1024px)").matches;
+  });
+
+  const [rightTab, setRightTab] = useState<RightPanelTab>("intentions");
   const openRightTab = (tab: RightPanelTab) => {
     if (!tab) {
       setRightPanelOpen(false);
@@ -2836,6 +2840,24 @@ export function RoomPageLiveKit() {
   const [micOn, setMicOn] = useState(false);
   const [camOn, setCamOn] = useState(false);
   const [screenShareOn, setScreenShareOn] = useState(false);
+
+  function getSettingsPreviewTrack(): LocalVideoTrack | null {
+    if (prejoinPreparedVideoTrackRef.current) {
+      return prejoinPreparedVideoTrackRef.current;
+    }
+
+    try {
+      const r = roomRef.current;
+      if (!r) return null;
+
+      const pubs = Array.from(r.localParticipant.videoTrackPublications.values());
+      const camPub = pubs.find((p: any) => p?.source === Track.Source.Camera);
+
+      return (camPub?.track as LocalVideoTrack | null) || null;
+    } catch {
+      return null;
+    }
+  }
 
   const [tiles, setTiles] = useState<TileModel[]>([]);
   const [screenShareTiles, setScreenShareTiles] = useState<TileModel[]>([]);
@@ -5849,6 +5871,8 @@ export function RoomPageLiveKit() {
           fxError={fxError}
           fxApplying={fxApplying}
           fxStatusText={fxStatusText}
+          previewTrack={prejoinPreparedVideoTrackRef.current}
+          previewVideoFilterCss={localVideoFilterCss}
           onUploadBg={(file) => {
             try {
               if (uploadedBgUrlRef.current) {
