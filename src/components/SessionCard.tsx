@@ -1296,7 +1296,7 @@ function buildLoginNext(urlPath: string): string {
 
 function buildSessionInvitePath(session: any): string {
     const roomParam = getRoomParam(session);
-    return roomParam ? `/room-iframe/${roomParam}` : "/sessions";
+    return roomParam ? `/room-livekit/${roomParam}` : "/sessions";
 }
 
 async function copyTextToClipboard(text: string): Promise<boolean> {
@@ -2930,7 +2930,7 @@ export default function SessionCard({
 
     const handleCopyInviteLink = async () => {
         const roomParam = getRoomParam(session);
-        const path = roomParam ? `/room-iframe/${roomParam}` : "/sessions";
+        const path = roomParam ? `/room-livekit/${roomParam}` : "/sessions";
         const origin =
             typeof window !== "undefined" && window.location?.origin
                 ? window.location.origin
@@ -2966,7 +2966,7 @@ export default function SessionCard({
         const roomParam = getRoomParam(session);
         if (!roomParam) return;
 
-        const nextPath = `/room-iframe/${roomParam}`;
+        const nextPath = `/room-livekit/${roomParam}`;
 
         if (!userId) {
             navigate(buildLoginNext(nextPath));
