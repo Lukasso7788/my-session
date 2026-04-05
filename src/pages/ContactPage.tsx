@@ -5,10 +5,9 @@ const APP_NAME = "MySession";
 
 const SUPPORT_EMAIL = "yaroslav@mysession.club";
 const SUPPORT_PHONE = "+380678882238";
-const BUSINESS_NAME = "MySession - Sydorenko Andriy Valeriyovich";
-const TAX_ID = "2781307173";
+const BUSINESS_NAME = "MySession - Sydorenko Yaroslav";
 const LEGAL_ADDRESS =
-    "vul. Petra Sagaidachnogo 20, city of Zaporizhzhia, Ukraine, 69096";
+    "254 Chapman Rd, Ste 208 #26981, Newark, Delaware 19702 Us";
 const ACTUAL_ADDRESS =
     "vul. Petra Sagaidachnogo 20, city of Zaporizhzhia, Ukraine, 69096";
 const SUPPORT_HOURS = "24/7 support";
@@ -37,13 +36,6 @@ export default function ContactPage() {
                                         Full business / seller name
                                     </div>
                                     <div className="mt-1">{BUSINESS_NAME}</div>
-                                </div>
-
-                                <div>
-                                    <div className="text-[13px] font-medium text-black/60">
-                                        Tax ID / ІПН
-                                    </div>
-                                    <div className="mt-1">{TAX_ID}</div>
                                 </div>
 
                                 <div>
