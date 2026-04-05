@@ -4692,7 +4692,7 @@ export function RoomPageLiveKit() {
         ? "bg-white/8"
         : "bg-emerald-400/18";
 
-    const nameTextCls = "truncate max-w-[220px]";
+    const nameTextCls = "truncate max-w-[220px] font-inter text-[13px] font-semibold";
 
     return (
       <div
