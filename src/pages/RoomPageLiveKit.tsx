@@ -2016,7 +2016,7 @@ export function RoomPageLiveKit() {
       if (timer) window.clearTimeout(timer);
       timer = window.setTimeout(() => {
         loadBrowserDevices({ preserveSelection: true }).catch(() => { });
-      }, 250);
+      }, 450);
     };
 
     navigator.mediaDevices.addEventListener("devicechange", onDeviceChange);
@@ -2127,8 +2127,13 @@ export function RoomPageLiveKit() {
 
     await cleanupPrejoinPreparedVideoTrack();
 
+    const shouldForceVideoDeviceId =
+      !isMobileQuery &&
+      !isTabletQuery &&
+      !!String(pj.videoInputId || "").trim();
+
     const track = await createLocalVideoTrack({
-      deviceId: pj.videoInputId || undefined,
+      deviceId: shouldForceVideoDeviceId ? pj.videoInputId || undefined : undefined,
       resolution: { width: capturePreset.width, height: capturePreset.height },
       frameRate: capturePreset.fps,
     } as any);
@@ -2247,7 +2252,7 @@ export function RoomPageLiveKit() {
     return () => {
       cancelled = true;
     };
-  }, [loading, session, sessionId, joinRequested, loadBrowserDevices, deviceTier, videoFxMode]);
+  }, [loading, session, sessionId, joinRequested, loadBrowserDevices, deviceTier]);
 
   useEffect(() => {
     if (!prejoinOpen) return;
@@ -2267,7 +2272,7 @@ export function RoomPageLiveKit() {
     }, 180);
 
     return () => window.clearTimeout(t);
-  }, [prejoin.videoInputId, prejoinOpen, deviceTier, videoFxMode]);
+  }, [prejoin.videoInputId, prejoinOpen, deviceTier]);
 
   useEffect(() => {
     if (!prejoinOpen) return;
@@ -2287,7 +2292,7 @@ export function RoomPageLiveKit() {
         console.warn("prejoin video enable failed", e);
       }
     })();
-  }, [prejoin.videoEnabled, prejoinOpen, deviceTier, videoFxMode]);
+  }, [prejoin.videoEnabled, prejoinOpen, deviceTier]);
 
   useEffect(() => {
     if (!settingsOpen) return;
@@ -2319,7 +2324,7 @@ export function RoomPageLiveKit() {
     return () => {
       cancelled = true;
     };
-  }, [settingsOpen, prejoinOpen, prejoin.videoEnabled, deviceTier, videoFxMode]);
+  }, [settingsOpen, prejoinOpen, prejoin.videoEnabled, deviceTier]);
 
   useEffect(() => {
     if (deviceTier !== "weak") return;
@@ -2336,6 +2341,25 @@ export function RoomPageLiveKit() {
     lastPrejoinFxSignatureRef.current = "";
     setPrejoinPreviewVersion((v) => v + 1);
   }, [deviceTier, videoFxMode]);
+
+  useEffect(() => {
+    if (!prejoinOpen) return;
+    if (!prejoin.videoEnabled) return;
+    if (deviceTier === "weak") return;
+    if (videoFxMode === "off") return;
+    if (!prejoinPreparedVideoTrackRef.current) return;
+
+    applyPrejoinVideoFx(videoFxMode).catch((e) => {
+      console.warn("prejoin fx refresh failed", e);
+    });
+  }, [
+    videoFxMode,
+    blurStrength,
+    bgImageUrl,
+    prejoinOpen,
+    prejoin.videoEnabled,
+    deviceTier,
+  ]);
 
   const isHost = useMemo(() => {
     if (!authUserId) return false;
