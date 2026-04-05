@@ -432,16 +432,16 @@ function getCapturePresetForTier(tier: DeviceTier) {
 
   if (tier === "strong") {
     return {
-      width: 1280,
-      height: 720,
+      width: 960,
+      height: 540,
       fps: 24,
     };
   }
 
   return {
-    width: 960,
-    height: 540,
-    fps: 24,
+    width: 640,
+    height: 360,
+    fps: 15,
   };
 }
 
@@ -1077,6 +1077,7 @@ export function RoomPageLiveKit() {
   const prejoinPreparedVideoTrackRef = useRef<LocalVideoTrack | null>(null);
   const [prejoinPreviewVersion, setPrejoinPreviewVersion] = useState(0);
   const prejoinPreviewInitInFlightRef = useRef(false);
+  const deviceLabelsWarmupAttemptedRef = useRef(false);
 
   // roles
   const [moderatorUserIds, setModeratorUserIds] = useState<string[]>([]);
@@ -1898,6 +1899,8 @@ export function RoomPageLiveKit() {
   };
 
   const loadBrowserDevices = useCallback(async (opts?: { preserveSelection?: boolean }) => {
+    console.time("lk:loadBrowserDevices");
+
     try {
       setDeviceError("");
       setAudioOutputSupported(canUseSetSinkId());
@@ -1914,11 +1917,18 @@ export function RoomPageLiveKit() {
         return !String(d.label || "").trim();
       });
 
-      if (labelsMissing) {
+      const shouldWarmupLabels =
+        labelsMissing &&
+        !deviceLabelsWarmupAttemptedRef.current &&
+        !isMobileQuery &&
+        !isTabletQuery;
+
+      if (shouldWarmupLabels) {
+        deviceLabelsWarmupAttemptedRef.current = true;
+
         try {
-          const wantVideo = !!prejoinRef.current.videoEnabled;
           const warmupStream = await navigator.mediaDevices.getUserMedia({
-            video: wantVideo
+            video: prejoinRef.current.videoEnabled
               ? {
                 width: { ideal: 160 },
                 height: { ideal: 120 },
@@ -1986,11 +1996,15 @@ export function RoomPageLiveKit() {
     } catch (e: any) {
       console.error("loadBrowserDevices error:", e);
       setDeviceError(String(e?.message || e || "device_enumeration_failed"));
+    } finally {
+      console.timeEnd("lk:loadBrowserDevices");
     }
   }, [
     selectedVideoInputId,
     selectedAudioInputId,
     selectedAudioOutputId,
+    isMobileQuery,
+    isTabletQuery,
   ]);
 
   useEffect(() => {
