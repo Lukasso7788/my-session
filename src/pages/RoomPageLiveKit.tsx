@@ -4725,8 +4725,8 @@ export function RoomPageLiveKit() {
         {t.kind !== "screen" && (
           <div className="absolute bottom-2 left-2 z-20 max-w-[78%]">
             <div className={namePlateBaseCls}>
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="truncate max-w-[220px] font-inter text-[13px] font-semibold">
+              <div className="flex items-center gap-1 min-w-0">
+                <span className={nameTextCls}>
                   {nameText}
                   {t.isLocal ? " (you)" : ""}
                 </span>
