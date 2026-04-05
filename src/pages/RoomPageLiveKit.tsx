@@ -3730,25 +3730,26 @@ export function RoomPageLiveKit() {
           await pub.mute?.();
         }
 
-        window.setTimeout(() => {
-          scheduleRebuildTiles();
-        }, 30);
+        scheduleRebuildTiles();
 
         window.setTimeout(() => {
           scheduleRebuildTiles();
         }, 120);
-
-        window.setTimeout(() => {
-          scheduleRebuildTiles();
-        }, 260);
 
         return;
       }
 
       if (camOn) return;
 
+      const shouldForceVideoDeviceId =
+        !isMobileQuery &&
+        !isTabletQuery &&
+        !!String(selectedVideoInputId || prejoinRef.current.videoInputId || "").trim();
+
       const nextTrack = await createLocalVideoTrack({
-        deviceId: selectedVideoInputId || prejoinRef.current.videoInputId || undefined,
+        deviceId: shouldForceVideoDeviceId
+          ? selectedVideoInputId || prejoinRef.current.videoInputId || undefined
+          : undefined,
         resolution: { width: capturePreset.width, height: capturePreset.height },
         frameRate: capturePreset.fps,
       } as any);
@@ -3764,19 +3765,11 @@ export function RoomPageLiveKit() {
       await r.localParticipant.publishTrack(nextTrack, { source: Track.Source.Camera } as any);
       setCamOn(true);
 
-      window.setTimeout(() => {
-        scheduleRebuildTiles();
-      }, 30);
+      scheduleRebuildTiles();
 
       window.setTimeout(() => {
         scheduleRebuildTiles();
       }, 120);
-
-      window.setTimeout(() => {
-        scheduleRebuildTiles();
-      }, 260);
-
-      scheduleRebuildTiles();
     } catch (e) {
       console.error("toggleCam error:", e);
     }
@@ -4508,18 +4501,25 @@ export function RoomPageLiveKit() {
     if (!el || typeof ResizeObserver === "undefined") return;
 
     let raf = 0;
+    let timer: number | null = null;
+
     const ro = new ResizeObserver(() => {
-      window.cancelAnimationFrame(raf);
-      raf = window.requestAnimationFrame(() => {
-        try {
-          window.dispatchEvent(new Event("resize"));
-        } catch { }
-      });
+      if (timer) window.clearTimeout(timer);
+
+      timer = window.setTimeout(() => {
+        window.cancelAnimationFrame(raf);
+        raf = window.requestAnimationFrame(() => {
+          try {
+            window.dispatchEvent(new Event("resize"));
+          } catch { }
+        });
+      }, 120);
     });
 
     ro.observe(el);
 
     return () => {
+      if (timer) window.clearTimeout(timer);
       window.cancelAnimationFrame(raf);
       ro.disconnect();
     };
