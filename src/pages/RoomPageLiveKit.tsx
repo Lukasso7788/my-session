@@ -4692,7 +4692,7 @@ export function RoomPageLiveKit() {
         ? "bg-white/8"
         : "bg-emerald-400/18";
 
-    const nameTextCls = "truncate max-w-[220px] font-inter text-[13px] font-semibold";
+    const nameTextCls = "truncate max-w-[220px] font-inter text-[14px] font-semibold";
 
     return (
       <div
@@ -4728,7 +4728,7 @@ export function RoomPageLiveKit() {
               <div className="flex items-center gap-1 min-w-0">
                 <span className={nameTextCls}>
                   {nameText}
-                  {t.isLocal ? " (you)" : ""}
+                  {t.isLocal ? " (you)": ""}
                 </span>
 
                 <span
