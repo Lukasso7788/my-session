@@ -4722,7 +4722,7 @@ export function RoomPageLiveKit() {
         </div>
 
         {/* nameplate */}
-        {!(camOff && t.kind !== "screen") && (
+        {t.kind !== "screen" && (
           <div className="absolute bottom-2 left-2 z-20 max-w-[78%]">
             <div className={namePlateBaseCls}>
               <div className="flex items-center gap-2 min-w-0">
