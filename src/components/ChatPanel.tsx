@@ -1,6 +1,4 @@
-// src/components/ChatPanel.tsx
-
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Picker from "@emoji-mart/react";
 import emojiData from "@emoji-mart/data";
@@ -33,10 +31,10 @@ type ReactionRow = {
 const MSG_TABLE = "session_chat_messages";
 const REACTIONS_TABLE = "session_chat_message_reactions";
 
-const MESSAGE_BOOTSTRAP_LIMIT = 300;
-const REACTIONS_BOOTSTRAP_LIMIT = 300;
+const MESSAGE_BOOTSTRAP_LIMIT = 120;
+const REACTIONS_BOOTSTRAP_LIMIT = 180;
+const VISIBLE_MESSAGE_LIMIT = 120;
 
-// базовый набор эмодзи (можешь расширить)
 const REACTION_EMOJIS = ["🔥", "😂", "👏", "❤️", "👍", "👎", "👌", "👋", "🙌", "🎉"] as const;
 
 function avatarFromProfile(profile?: Profile | null) {
@@ -52,18 +50,13 @@ function formatTime(iso?: string) {
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-// --- Reply parsing: вытягиваем цитату из тела сообщения, чтобы красиво отрендерить
 function parseReplyBody(body: string): { quote: string | null; main: string } {
     if (!body) return { quote: null, main: "" };
 
-    // Форматы:
-    // 1) "↪ Reply: ...\n\nmain"
-    // 2) "↪ <something>\n\nmain"
-    // 3) "↪ Reply to: ...\n\nmain"
     const trimmed = body.trimStart();
     if (!trimmed.startsWith("↪")) return { quote: null, main: body };
 
-    const parts = trimmed.split(/\n\s*\n/); // first block + rest
+    const parts = trimmed.split(/\n\s*\n/);
     if (parts.length <= 1) {
         const firstLine = trimmed.split("\n")[0] || trimmed;
         const q = firstLine.replace(/^↪\s*/, "").replace(/^Reply:\s*/i, "").replace(/^Reply to:\s*/i, "");
@@ -77,12 +70,9 @@ function parseReplyBody(body: string): { quote: string | null; main: string } {
 }
 
 function collapseWs(s: string) {
-    return String(s || "")
-        .replace(/\s+/g, " ")
-        .trim();
+    return String(s || "").replace(/\s+/g, " ").trim();
 }
 
-// ✅ reply header should quote only the "main" (not nested quotes)
 function quotePreviewForReply(body: string, maxLen = 220) {
     const { main } = parseReplyBody(body || "");
     const oneLine = collapseWs(main);
@@ -100,7 +90,6 @@ function withTimeout<T>(p: Promise<T>, ms: number, label = "timeout"): Promise<T
 }
 
 function normalizeMessageIds(ids: string[]) {
-    // keep order, unique, no optimistic, and last MESSAGE_BOOTSTRAP_LIMIT
     const seen = new Set<string>();
     const out: string[] = [];
 
@@ -115,9 +104,6 @@ function normalizeMessageIds(ids: string[]) {
     return out.length > MESSAGE_BOOTSTRAP_LIMIT ? out.slice(out.length - MESSAGE_BOOTSTRAP_LIMIT) : out;
 }
 
-/** -----------------------
- *  In-memory cache (fix "messages disappear" on open/close)
- *  ----------------------*/
 type ChatCacheEntry = {
     ts: number;
     messages: Msg[];
@@ -132,7 +118,6 @@ const CACHE_MAX = 8;
 function setChatCache(sessionId: string, entry: ChatCacheEntry) {
     CHAT_CACHE.set(sessionId, entry);
 
-    // simple cap (drop oldest)
     if (CHAT_CACHE.size > CACHE_MAX) {
         let oldestKey: string | null = null;
         let oldestTs = Infinity;
@@ -188,7 +173,21 @@ function EmojiPickerPopover({
     );
 }
 
-function MessageCard({
+type MessageCardProps = {
+    msg: Msg;
+    mine: boolean;
+    onReply: (m: Msg) => void;
+    reactionsCounts: Record<string, number> | undefined;
+    myReactions: Record<string, boolean> | undefined;
+    onToggleReaction: (messageId: string, emoji: string) => void;
+    onOpenReactionDetails: (messageId: string, emoji: string) => void;
+    isLight: boolean;
+    canEdit: boolean;
+    onUpdateMessage: (messageId: string, newBody: string) => Promise<void>;
+    onDeleteMessage: (messageId: string) => Promise<void>;
+};
+
+function MessageCardInner({
     msg,
     mine,
     onReply,
@@ -200,20 +199,7 @@ function MessageCard({
     canEdit,
     onUpdateMessage,
     onDeleteMessage,
-}: {
-    msg: Msg;
-    mine: boolean;
-    onReply: (m: Msg) => void;
-    reactionsCounts: Record<string, number> | undefined;
-    myReactions: Record<string, boolean> | undefined;
-    onToggleReaction: (messageId: string, emoji: string) => void;
-    onOpenReactionDetails: (messageId: string, emoji: string) => void;
-    isLight: boolean;
-
-    canEdit: boolean;
-    onUpdateMessage: (messageId: string, newBody: string) => Promise<void>;
-    onDeleteMessage: (messageId: string) => Promise<void>;
-}) {
+}: MessageCardProps) {
     const name = mine ? "You" : msg.profile?.full_name || "Participant";
     const time = formatTime(msg.created_at);
 
@@ -222,7 +208,6 @@ function MessageCard({
     const reactionMenuRef = useRef<HTMLDivElement | null>(null);
     const [reactionMenuPos, setReactionMenuPos] = useState<{ top: number; left: number } | null>(null);
 
-    // edit state
     const [isEditing, setIsEditing] = useState(false);
     const [draft, setDraft] = useState(msg.body);
     const [savingEdit, setSavingEdit] = useState(false);
@@ -287,17 +272,9 @@ function MessageCard({
 
     const metaNameCls = isLight ? "text-black/55" : "text-white/55";
     const metaTimeCls = isLight ? "text-black/35" : "text-white/35";
-    const actionBtnCls = isLight
-        ? "text-black/45 hover:text-emerald-700"
-        : "text-white/45 hover:text-emerald-300";
-
-    const dangerBtnCls = isLight
-        ? "text-black/40 hover:text-red-700"
-        : "text-white/40 hover:text-red-300";
-
-    const menuCls = isLight
-        ? "bg-white border border-black/10"
-        : "bg-[#020617] border border-white/10";
+    const actionBtnCls = isLight ? "text-black/45 hover:text-emerald-700" : "text-white/45 hover:text-emerald-300";
+    const dangerBtnCls = isLight ? "text-black/40 hover:text-red-700" : "text-white/40 hover:text-red-300";
+    const menuCls = isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10";
 
     const bubbleCls =
         "rounded-2xl px-3 py-2 text-[13px] leading-snug border whitespace-pre-wrap break-words " +
@@ -422,9 +399,9 @@ function MessageCard({
                                                         className={
                                                             "hover:scale-[1.06] transition " +
                                                             (isMine
-                                                                ? (isLight
+                                                                ? isLight
                                                                     ? "drop-shadow-[0_0_0.6rem_rgba(16,185,129,0.35)]"
-                                                                    : "drop-shadow-[0_0_0.7rem_rgba(16,185,129,0.25)]")
+                                                                    : "drop-shadow-[0_0_0.7rem_rgba(16,185,129,0.25)]"
                                                                 : "")
                                                         }
                                                         title={isMine ? `Remove ${e}` : e}
@@ -483,7 +460,7 @@ function MessageCard({
                             onKeyDown={(e) => {
                                 if (e.key === "Enter" && !e.shiftKey) {
                                     e.preventDefault();
-                                    saveEdit();
+                                    void saveEdit();
                                 }
                                 if (e.key === "Escape") {
                                     setIsEditing(false);
@@ -499,7 +476,11 @@ function MessageCard({
                                     setIsEditing(false);
                                     setDraft(msg.body);
                                 }}
-                                className={isLight ? "px-3 h-9 rounded-xl bg-black/5 hover:bg-black/10 border border-black/10 text-black/70 text-sm" : "px-3 h-9 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/75 text-sm"}
+                                className={
+                                    isLight
+                                        ? "px-3 h-9 rounded-xl bg-black/5 hover:bg-black/10 border border-black/10 text-black/70 text-sm"
+                                        : "px-3 h-9 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/75 text-sm"
+                                }
                                 disabled={savingEdit}
                                 title="Cancel"
                             >
@@ -508,8 +489,12 @@ function MessageCard({
 
                             <button
                                 type="button"
-                                onClick={saveEdit}
-                                className={"px-3 h-9 rounded-xl text-sm font-semibold inline-flex items-center gap-2 " + (savingEdit ? "opacity-70 cursor-not-allowed" : "") + " " + (isLight ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-emerald-600 hover:bg-emerald-700 text-white")}
+                                onClick={() => void saveEdit()}
+                                className={
+                                    "px-3 h-9 rounded-xl text-sm font-semibold inline-flex items-center gap-2 " +
+                                    (savingEdit ? "opacity-70 cursor-not-allowed " : "") +
+                                    "bg-emerald-600 hover:bg-emerald-700 text-white"
+                                }
                                 disabled={savingEdit || !draft.trim()}
                                 title="Save"
                             >
@@ -558,6 +543,24 @@ function MessageCard({
         </div>
     );
 }
+
+const areMessageCardPropsEqual = (prev: MessageCardProps, next: MessageCardProps) => {
+    return (
+        prev.msg === next.msg &&
+        prev.mine === next.mine &&
+        prev.reactionsCounts === next.reactionsCounts &&
+        prev.myReactions === next.myReactions &&
+        prev.isLight === next.isLight &&
+        prev.canEdit === next.canEdit &&
+        prev.onReply === next.onReply &&
+        prev.onToggleReaction === next.onToggleReaction &&
+        prev.onOpenReactionDetails === next.onOpenReactionDetails &&
+        prev.onUpdateMessage === next.onUpdateMessage &&
+        prev.onDeleteMessage === next.onDeleteMessage
+    );
+};
+
+const MessageCard = React.memo(MessageCardInner, areMessageCardPropsEqual);
 
 export function ChatPanel({
     sessionId,
@@ -612,12 +615,10 @@ export function ChatPanel({
 
     const [text, setText] = useState("");
     const [loading, setLoading] = useState(true);
-
     const [replyTo, setReplyTo] = useState<Msg | null>(null);
 
     const bottomRef = useRef<HTMLDivElement | null>(null);
     const listRef = useRef<HTMLDivElement | null>(null);
-
     const pollingRef = useRef<number | null>(null);
 
     const aliveRef = useRef(true);
@@ -640,7 +641,6 @@ export function ChatPanel({
     const [unseenNew, setUnseenNew] = useState<number>(0);
 
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
-
     const composerEmojiWrapRef = useRef<HTMLDivElement | null>(null);
     const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
     const emojiPortalRef = useRef<HTMLDivElement | null>(null);
@@ -685,7 +685,6 @@ export function ChatPanel({
             setMyReactions(cached.myReactions || {});
             setProfilesById(cached.profilesById || {});
             setMeProfile(cached.meProfile || null);
-
             setLoading(false);
         } else {
             messagesRef.current = [];
@@ -733,7 +732,6 @@ export function ChatPanel({
         : "bg-[#111827] hover:bg-[#1f2937] text-white/70";
 
     const hintText = isLight ? "text-black/40" : "text-white/35";
-
     const sendBtnActive = "bg-emerald-600 hover:bg-emerald-700 text-white";
     const sendBtnDisabled = isLight ? "bg-black/10 text-black/35" : "bg-white/10 text-white/35";
 
@@ -789,7 +787,10 @@ export function ChatPanel({
         }
 
         const map: Record<string, Profile> = {};
-        (profs || []).forEach((p: any) => (map[p.id] = p));
+        (profs || []).forEach((p: any) => {
+            map[p.id] = p;
+        });
+
         if (!aliveRef.current) return;
         setProfilesById((prev) => ({ ...prev, ...map }));
     };
@@ -937,7 +938,6 @@ export function ChatPanel({
             if (reqId !== messagesReqIdRef.current) return null;
 
             const attached = safeRows.map((r) => attachProfile(r));
-
             messagesRef.current = attached;
             setMessages(attached);
 
@@ -1152,6 +1152,7 @@ export function ChatPanel({
                     delete next[deletedId];
                     return next;
                 });
+
                 setMyReactions((prev) => {
                     if (!prev[deletedId]) return prev;
                     const next = { ...prev };
@@ -1407,10 +1408,8 @@ export function ChatPanel({
         const offsetTop = Math.floor(vv?.offsetTop || 0);
 
         const margin = 10;
-
         const desiredWidth = vw < 420 ? 280 : vw < 560 ? 300 : 360;
         const width = Math.max(240, Math.min(desiredWidth, vw - margin * 2));
-
         const desiredHeight = 420;
 
         let left = rect.right - width + offsetLeft;
@@ -1418,7 +1417,6 @@ export function ChatPanel({
 
         const spaceAbove = rect.top - margin;
         const spaceBelow = vh - rect.bottom - margin;
-
         const preferAbove = spaceAbove >= 260 || spaceAbove >= spaceBelow;
 
         let maxHeight = Math.max(240, Math.min(desiredHeight, (preferAbove ? spaceAbove : spaceBelow) - 8));
@@ -1688,7 +1686,7 @@ export function ChatPanel({
         }
     };
 
-    const uiMessages = useMemo(() => messages, [messages]);
+    const visibleMessages = useMemo(() => messages.slice(-VISIBLE_MESSAGE_LIMIT), [messages]);
 
     const modalMessage = reactionDetails.open
         ? messagesRef.current.find((m) => m.id === reactionDetails.messageId) || null
@@ -1703,59 +1701,51 @@ export function ChatPanel({
         ? "bg-black/5 hover:bg-black/10 border border-black/10 text-black/70"
         : "bg-white/5 hover:bg-white/10 border border-white/10 text-white/75";
 
-    const modalPrimaryBtn = isLight
-        ? "bg-emerald-600 hover:bg-emerald-700 text-white"
-        : "bg-emerald-600 hover:bg-emerald-700 text-white";
+    const modalPrimaryBtn = "bg-emerald-600 hover:bg-emerald-700 text-white";
 
     const canToggleInModal = !!reactionDetails.open && !!reactionDetails.messageId && !!reactionDetails.emoji;
-
     const myReactedInModal =
         canToggleInModal && !!myReactions?.[reactionDetails.messageId]?.[reactionDetails.emoji];
 
-    const emojiPortal = composerEmojiOpen && emojiPos && typeof document !== "undefined"
-        ? createPortal(
-            <div
-                className="fixed inset-0 z-[99999]"
-                style={{ pointerEvents: "none" }}
-            >
-                <div
-                    className="absolute inset-0"
-                    style={{ pointerEvents: "auto", background: "transparent" }}
-                    onMouseDown={() => setComposerEmojiOpen(false)}
-                />
-                <div
-                    ref={emojiPortalRef}
-                    className={"absolute " + portalBoxCls}
-                    style={{
-                        pointerEvents: "auto",
-                        left: emojiPos.left,
-                        top: emojiPos.top,
-                        width: emojiPos.width,
-                    }}
-                    onMouseDown={(e) => {
-                        e.stopPropagation();
-                    }}
-                >
-                    <EmojiPickerPopover
-                        theme={theme}
-                        maxHeight={emojiPos.maxHeight}
-                        onPick={(emoji) => insertEmojiToComposer(emoji)}
-                        onClose={() => setComposerEmojiOpen(false)}
+    const emojiPortal =
+        composerEmojiOpen && emojiPos && typeof document !== "undefined"
+            ? createPortal(
+                <div className="fixed inset-0 z-[99999]" style={{ pointerEvents: "none" }}>
+                    <div
+                        className="absolute inset-0"
+                        style={{ pointerEvents: "auto", background: "transparent" }}
+                        onMouseDown={() => setComposerEmojiOpen(false)}
                     />
-                </div>
-            </div>,
-            document.body
-        )
-        : null;
+                    <div
+                        ref={emojiPortalRef}
+                        className={"absolute " + portalBoxCls}
+                        style={{
+                            pointerEvents: "auto",
+                            left: emojiPos.left,
+                            top: emojiPos.top,
+                            width: emojiPos.width,
+                        }}
+                        onMouseDown={(e) => {
+                            e.stopPropagation();
+                        }}
+                    >
+                        <EmojiPickerPopover
+                            theme={theme}
+                            maxHeight={emojiPos.maxHeight}
+                            onPick={(emoji) => insertEmojiToComposer(emoji)}
+                            onClose={() => setComposerEmojiOpen(false)}
+                        />
+                    </div>
+                </div>,
+                document.body
+            )
+            : null;
 
     return (
         <div className="h-full flex flex-col bg-transparent min-h-0 relative">
             {reactionDetails.open && (
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center">
-                    <div
-                        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-                        onClick={closeReactionDetails}
-                    />
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeReactionDetails} />
                     <div className={"relative w-[92vw] max-w-[520px] rounded-2xl shadow-2xl " + modalBg}>
                         <div className={"px-5 py-4 border-b " + (isLight ? "border-black/10" : "border-white/10")}>
                             <div className="flex items-start justify-between gap-3">
@@ -1779,10 +1769,16 @@ export function ChatPanel({
                             </div>
 
                             {modalMessage && (
-                                <div className={"mt-3 rounded-xl px-3 py-2 text-[12px] " + (isLight ? "bg-black/5 border border-black/10" : "bg-white/5 border border-white/10")}>
+                                <div
+                                    className={
+                                        "mt-3 rounded-xl px-3 py-2 text-[12px] " +
+                                        (isLight ? "bg-black/5 border border-black/10" : "bg-white/5 border border-white/10")
+                                    }
+                                >
                                     <div className={"text-[11px] mb-1 " + modalTextSecondary}>Message</div>
                                     <div className={modalTextPrimary + " whitespace-pre-wrap break-words"}>
-                                        {collapseWs(modalMessageMain).slice(0, 260) + (collapseWs(modalMessageMain).length > 260 ? "…" : "")}
+                                        {collapseWs(modalMessageMain).slice(0, 260) +
+                                            (collapseWs(modalMessageMain).length > 260 ? "…" : "")}
                                     </div>
                                 </div>
                             )}
@@ -1793,7 +1789,8 @@ export function ChatPanel({
                                 <div className={modalTextSecondary + " text-[12px]"}>
                                     {reactionDetails.loading
                                         ? "Loading…"
-                                        : `${reactionDetails.userIds.length} ${reactionDetails.userIds.length === 1 ? "person" : "people"} reacted`}
+                                        : `${reactionDetails.userIds.length} ${reactionDetails.userIds.length === 1 ? "person" : "people"
+                                        } reacted`}
                                 </div>
 
                                 {canToggleInModal && (
@@ -1846,19 +1843,14 @@ export function ChatPanel({
                                                 (uid === userId ? meProfileRef.current : null) ||
                                                 ({ id: uid, full_name: "Participant", avatar_url: null } as Profile);
 
-                                            const displayName =
-                                                uid === userId
-                                                    ? "You"
-                                                    : prof?.full_name || "Participant";
+                                            const displayName = uid === userId ? "You" : prof?.full_name || "Participant";
 
                                             return (
                                                 <div
                                                     key={uid}
                                                     className={
                                                         "flex items-center gap-3 rounded-xl px-3 py-2 border " +
-                                                        (isLight
-                                                            ? "bg-white border-black/10"
-                                                            : "bg-[#0B1220]/40 border-white/10")
+                                                        (isLight ? "bg-white border-black/10" : "bg-[#0B1220]/40 border-white/10")
                                                     }
                                                 >
                                                     <img
@@ -1867,9 +1859,7 @@ export function ChatPanel({
                                                         alt=""
                                                     />
                                                     <div className="min-w-0">
-                                                        <div className={modalTextPrimary + " text-[13px] truncate"}>
-                                                            {displayName}
-                                                        </div>
+                                                        <div className={modalTextPrimary + " text-[13px] truncate"}>{displayName}</div>
                                                         <div className={modalTextSecondary + " text-[11px] truncate"}>
                                                             {uid === userId ? "This is you" : ""}
                                                         </div>
@@ -1902,9 +1892,7 @@ export function ChatPanel({
                         )}
                     </div>
 
-                    {subtitle && (
-                        <div className={subText + " text-[12px] mt-0.5"}>{subtitle}</div>
-                    )}
+                    {subtitle && <div className={subText + " text-[12px] mt-0.5"}>{subtitle}</div>}
                 </div>
             )}
 
@@ -1921,18 +1909,16 @@ export function ChatPanel({
                 }}
             >
                 {loading && (
-                    <div className={(isLight ? "text-black/45" : "text-white/40") + " text-sm italic"}>
-                        Loading…
-                    </div>
+                    <div className={(isLight ? "text-black/45" : "text-white/40") + " text-sm italic"}>Loading…</div>
                 )}
 
-                {!loading && uiMessages.length === 0 && (
+                {!loading && visibleMessages.length === 0 && (
                     <div className={(isLight ? "text-black/45" : "text-white/40") + " text-sm italic"}>
                         No messages yet
                     </div>
                 )}
 
-                {uiMessages.map((m) => {
+                {visibleMessages.map((m) => {
                     const mine = m.user_id === userId;
                     const canEdit = mine && !m.id.startsWith("optimistic-");
 
@@ -2012,7 +1998,7 @@ export function ChatPanel({
                         onKeyDown={(e) => {
                             if (e.key === "Enter" && !e.shiftKey) {
                                 e.preventDefault();
-                                send();
+                                void send();
                             }
                         }}
                         onFocus={() => {
@@ -2040,7 +2026,7 @@ export function ChatPanel({
                     </div>
 
                     <button
-                        onClick={send}
+                        onClick={() => void send()}
                         className={
                             "w-11 h-11 rounded-xl flex items-center justify-center transition border " +
                             (text.trim()
@@ -2055,9 +2041,7 @@ export function ChatPanel({
                     </button>
                 </div>
 
-                <div className={"mt-2 text-[11px] " + hintText}>
-                    Enter — send • Shift+Enter — new line
-                </div>
+                <div className={"mt-2 text-[11px] " + hintText}>Enter — send • Shift+Enter — new line</div>
             </div>
 
             {emojiPortal}

@@ -97,6 +97,18 @@ const OVERLAY_FONT_FAMILY =
 const PANEL_INTENTIONS_TABLE = "panel_intentions";
 const SESSION_INTENTIONS_TABLE = "intentions";
 
+/**
+ * Conservative limits:
+ * - enough for normal usage
+ * - lighter queries + lighter render
+ */
+const PANEL_INTENTIONS_FETCH_LIMIT = 120;
+const SESSION_INTENTIONS_FETCH_LIMIT = 80;
+const TEAM_INTENTIONS_RENDER_LIMIT = 50;
+const PLAN_ITEMS_RENDER_LIMIT = 40;
+const FOCUS_PLAN_ITEMS_FETCH_LIMIT = 120;
+const FOCUS_PLANS_FETCH_LIMIT = 40;
+
 function IconButton({
   title,
   onClick,
@@ -167,7 +179,7 @@ function copyStylesToDocument(from: Document, to: Document) {
     );
 
     nodes.forEach((n) => {
-      const clone = n.cloneNode(true) as any;
+      const clone = n.cloneNode(true) as HTMLElement;
       to.head.appendChild(clone);
     });
   } catch { }
@@ -183,11 +195,11 @@ function applyOverlayBaseStyles(doc: Document, isLight: boolean) {
   } catch { }
 }
 
-function safeTrim(x: any) {
+function safeTrim(x: unknown) {
   return String(x || "").trim();
 }
 
-function normalizeTextForMatch(x: any) {
+function normalizeTextForMatch(x: unknown) {
   return String(x || "").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
@@ -249,7 +261,7 @@ export function IntentionsPanel({
 
   const [timerText, setTimerText] = useState<string>("--:--");
 
-  const overlayRef = useRef<{ win: any; container: HTMLElement; kind: "pip" | "window" } | null>(null);
+  const overlayRef = useRef<{ win: Window | null; container: HTMLElement; kind: "pip" | "window" } | null>(null);
   const [overlayOpen, setOverlayOpen] = useState(false);
 
   const [importModalOpen, setImportModalOpen] = useState(false);
@@ -390,7 +402,8 @@ export function IntentionsPanel({
         .from(PANEL_INTENTIONS_TABLE)
         .select("id,user_id,text,focus_plan_item_id,completed,created_at,updated_at")
         .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .limit(PANEL_INTENTIONS_FETCH_LIMIT);
 
       if (seq !== panelSeqRef.current) return;
 
@@ -399,7 +412,7 @@ export function IntentionsPanel({
         return;
       }
 
-      setPanelIntentions(data as any);
+      setPanelIntentions(data as PanelIntention[]);
     } finally {
       if (seq === panelSeqRef.current) setPanelLoading(false);
     }
@@ -436,7 +449,8 @@ export function IntentionsPanel({
           .from(SESSION_INTENTIONS_TABLE)
           .select("id, text, user_id, session_id, created_at, completed")
           .eq("session_id", s)
-          .order("created_at", { ascending: false });
+          .order("created_at", { ascending: false })
+          .limit(SESSION_INTENTIONS_FETCH_LIMIT);
 
         if (seq !== loadSeqRef.current) return;
 
@@ -491,14 +505,8 @@ export function IntentionsPanel({
         "postgres_changes",
         { event: "*", schema: "public", table: SESSION_INTENTIONS_TABLE },
         (payload: any) => {
-          const payloadSessionId = String(
-            payload?.new?.session_id ||
-            payload?.old?.session_id ||
-            ""
-          ).trim();
+          const payloadSessionId = String(payload?.new?.session_id || payload?.old?.session_id || "").trim();
 
-          // INSERT/UPDATE usually carry session_id, DELETE may not.
-          // If session_id is missing, still reload current session as fallback.
           if (!payloadSessionId || payloadSessionId === String(sessionId)) {
             scheduleSessionIntentionsReload(sessionId);
           }
@@ -598,7 +606,7 @@ export function IntentionsPanel({
         if (error) throw error;
 
         if (data) {
-          setSessionIntentions((prev) => [data as any, ...prev]);
+          setSessionIntentions((prev) => [data as SessionIntention, ...prev].slice(0, SESSION_INTENTIONS_FETCH_LIMIT));
         }
 
         void loadSessionIntentions(sessionId);
@@ -618,7 +626,6 @@ export function IntentionsPanel({
       const existing = findOwnSessionIntentionLocal(text);
       if (!existing) return;
 
-      // optimistic local delete so author sees removal immediately
       setSessionIntentions((prev) => prev.filter((x) => x.id !== existing.id));
 
       try {
@@ -635,7 +642,6 @@ export function IntentionsPanel({
         return;
       }
 
-      // keep a refresh anyway for consistency
       scheduleSessionIntentionsReload(sessionId);
     },
     [user?.id, sessionId, findOwnSessionIntentionLocal, loadSessionIntentions, scheduleSessionIntentionsReload]
@@ -650,7 +656,8 @@ export function IntentionsPanel({
         .from("focus_plans")
         .select("id,user_id,title,created_at,updated_at")
         .eq("user_id", user.id)
-        .order("updated_at", { ascending: false });
+        .order("updated_at", { ascending: false })
+        .limit(FOCUS_PLANS_FETCH_LIMIT);
 
       if (error || !Array.isArray(data)) {
         setPlans([]);
@@ -693,7 +700,8 @@ export function IntentionsPanel({
           .eq("user_id", user.id)
           .eq("plan_id", planId)
           .order("sort_order", { ascending: true })
-          .order("created_at", { ascending: false });
+          .order("created_at", { ascending: false })
+          .limit(FOCUS_PLAN_ITEMS_FETCH_LIMIT);
 
         if (error || !Array.isArray(data)) {
           setPlanItems([]);
@@ -731,6 +739,10 @@ export function IntentionsPanel({
     if (!q) return base;
     return base.filter((it) => normalizeTextForMatch(it.text).includes(q));
   }, [planItems, planSearch]);
+
+  const renderedPlanItems = useMemo(() => {
+    return filteredPlanItems.slice(0, PLAN_ITEMS_RENDER_LIMIT);
+  }, [filteredPlanItems]);
 
   const syncFocusPlanItemCompleted = useCallback(
     async (focusPlanItemId: string, nextCompleted: boolean) => {
@@ -821,7 +833,7 @@ export function IntentionsPanel({
       updated_at: new Date().toISOString(),
     };
 
-    setPanelIntentions((prev) => [optimistic, ...prev]);
+    setPanelIntentions((prev) => [optimistic, ...prev].slice(0, PANEL_INTENTIONS_FETCH_LIMIT));
 
     try {
       const { data, error } = await supabase
@@ -835,7 +847,9 @@ export function IntentionsPanel({
         return;
       }
 
-      setPanelIntentions((prev) => [data as any, ...prev.filter((x) => x.id !== optimisticId)]);
+      setPanelIntentions((prev) =>
+        [data as PanelIntention, ...prev.filter((x) => x.id !== optimisticId)].slice(0, PANEL_INTENTIONS_FETCH_LIMIT)
+      );
       void upsertOwnSessionIntention({ text, completed: false });
     } catch {
       setPanelIntentions((prev) => prev.filter((x) => x.id !== optimisticId));
@@ -1038,7 +1052,7 @@ export function IntentionsPanel({
   }, [importModalOpen, closeImportModal, getPortalDocument]);
 
   const teamIntentions = useMemo(() => {
-    return sessionIntentions;
+    return sessionIntentions.slice(0, TEAM_INTENTIONS_RENDER_LIMIT);
   }, [sessionIntentions]);
 
   if (!rawSessionId) {
@@ -1180,7 +1194,7 @@ export function IntentionsPanel({
                     <div className={"text-[12px] italic " + mutedText}>No items match your filter.</div>
                   ) : (
                     <div className="flex flex-col gap-2">
-                      {filteredPlanItems.slice(0, 40).map((it) => {
+                      {renderedPlanItems.map((it) => {
                         const text = safeTrim(it.text);
                         const inPanelById = panelIntentions.some((p) => String(p.focus_plan_item_id || "") === String(it.id));
                         const inPanelByText = panelTextSet.has(normalizeTextForMatch(text));
@@ -1193,7 +1207,13 @@ export function IntentionsPanel({
                                 <div
                                   className={[
                                     "text-[13px] break-words leading-5",
-                                    it.completed ? (isLight ? "text-black/45 line-through" : "text-white/50 line-through") : isLight ? "text-black/80" : "text-white/80",
+                                    it.completed
+                                      ? isLight
+                                        ? "text-black/45 line-through"
+                                        : "text-white/50 line-through"
+                                      : isLight
+                                        ? "text-black/80"
+                                        : "text-white/80",
                                   ].join(" ")}
                                 >
                                   {text}
@@ -1405,7 +1425,7 @@ export function IntentionsPanel({
                             value={editingText}
                             onChange={(e) => setEditingText(e.target.value)}
                             onKeyDown={(e) => {
-                              if (e.key === "Enter") saveEdit();
+                              if (e.key === "Enter") void saveEdit();
                               if (e.key === "Escape") cancelEdit();
                             }}
                             className={editInputCls}

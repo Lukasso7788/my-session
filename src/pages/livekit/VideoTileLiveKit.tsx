@@ -82,15 +82,7 @@ function Icon({
     );
 }
 
-export function VideoTile({
-    label,
-    videoTrack,
-    isLocal,
-    theme,
-    showBadge,
-    hostActions,
-    avatarUrl,
-}: {
+type VideoTileProps = {
     label: string;
     videoTrack?: Track;
     isLocal: boolean;
@@ -98,10 +90,20 @@ export function VideoTile({
     showBadge?: string | null;
     hostActions?: HostTileActions;
     avatarUrl?: string;
-}) {
-    const wrapRef = useRef<HTMLDivElement | null>(null);
+    micMuted?: boolean;
+};
 
-    // Container where LiveKit mounts either <video> or <canvas>
+function VideoTileInner({
+    label,
+    videoTrack,
+    isLocal,
+    theme,
+    showBadge,
+    hostActions,
+    avatarUrl,
+    micMuted,
+}: VideoTileProps) {
+    const wrapRef = useRef<HTMLDivElement | null>(null);
     const mediaHostRef = useRef<HTMLDivElement | null>(null);
     const attachedElRef = useRef<HTMLElement | null>(null);
 
@@ -109,19 +111,14 @@ export function VideoTile({
 
     const tileBgClass = isLight ? "bg-white/80" : "bg-[#071427]";
     const mediaBgColor = isLight ? "#FFFFFF" : "#071427";
-    const offStateClass = isLight
-        ? "text-black/60 bg-[#F6F7FB]"
-        : "text-white/70 bg-[#071427]";
-
+    const offStateClass = isLight ? "text-black/60 bg-[#F6F7FB]" : "text-white/70 bg-[#071427]";
     const offPlateClass = isLight
         ? "bg-white/80 border-black/10 text-black/80"
         : "bg-black/35 border-white/10 text-white/90";
-
     const initialsBgClass = isLight
         ? "bg-blue-500/15 text-blue-700 border-black/10"
         : "bg-emerald-500/80 text-[#02140B] border-white/10";
 
-    // Debug sizing overlay for solo grid testing: add ?devTileDebug=1 in URL
     const debugSizing = useMemo(() => getQueryBool("devTileDebug", false), []);
     const [sizeText, setSizeText] = useState<string>("");
 
@@ -236,7 +233,6 @@ export function VideoTile({
         }
 
         attachedElRef.current = el;
-
         return cleanup;
     }, [videoTrack, isLocal, mediaBgColor]);
 
@@ -249,7 +245,6 @@ export function VideoTile({
 
     const normalizedAvatarUrl = String(avatarUrl || "").trim();
     const initials = getInitials(label || "User");
-
     const [avatarBroken, setAvatarBroken] = useState(false);
 
     useEffect(() => {
@@ -257,6 +252,15 @@ export function VideoTile({
     }, [normalizedAvatarUrl]);
 
     const shouldShowAvatar = !!normalizedAvatarUrl && !avatarBroken;
+    const effectiveMicMuted = typeof micMuted === "boolean" ? micMuted : !!hostActions?.micMuted;
+
+    const micBadgeCls = isLight
+        ? effectiveMicMuted
+            ? "bg-black/70 text-white border-black/10"
+            : "bg-emerald-600 text-white border-emerald-700/20"
+        : effectiveMicMuted
+            ? "bg-black/55 text-white border-white/10"
+            : "bg-emerald-500/20 text-emerald-200 border-emerald-300/20";
 
     return (
         <div
@@ -301,7 +305,21 @@ export function VideoTile({
                             </div>
                         </div>
 
-                        <div className="mt-2 text-[12px] opacity-75">Camera off</div>
+                        <div className="mt-2 flex items-center gap-2">
+                            <div className="text-[12px] opacity-75">Camera off</div>
+
+                            <div
+                                className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] border ${micBadgeCls}`}
+                                title={effectiveMicMuted ? "Microphone muted" : "Microphone on"}
+                            >
+                                <Icon
+                                    name={effectiveMicMuted ? "mic-off" : "mic-on"}
+                                    theme={theme}
+                                    className="w-3.5 h-3.5 opacity-90"
+                                />
+                                <span>{effectiveMicMuted ? "Mic off" : "Mic on"}</span>
+                            </div>
+                        </div>
 
                         {debugSizing && sizeText ? (
                             <div className="text-[11px] opacity-70 mt-1">{sizeText}</div>
@@ -407,4 +425,25 @@ export function VideoTile({
     );
 }
 
+const areVideoTilePropsEqual = (prev: VideoTileProps, next: VideoTileProps) => {
+    return (
+        prev.label === next.label &&
+        prev.videoTrack === next.videoTrack &&
+        prev.isLocal === next.isLocal &&
+        prev.theme === next.theme &&
+        prev.showBadge === next.showBadge &&
+        prev.avatarUrl === next.avatarUrl &&
+        prev.micMuted === next.micMuted &&
+        prev.hostActions?.canMuteMic === next.hostActions?.canMuteMic &&
+        prev.hostActions?.canMuteCam === next.hostActions?.canMuteCam &&
+        prev.hostActions?.micMuted === next.hostActions?.micMuted &&
+        prev.hostActions?.camMuted === next.hostActions?.camMuted &&
+        prev.hostActions?.busy === next.hostActions?.busy &&
+        prev.hostActions?.onToggleMuteMic === next.hostActions?.onToggleMuteMic &&
+        prev.hostActions?.onToggleMuteCam === next.hostActions?.onToggleMuteCam &&
+        prev.hostActions?.onKick === next.hostActions?.onKick
+    );
+};
+
+export const VideoTile = React.memo(VideoTileInner, areVideoTilePropsEqual);
 export default VideoTile;
