@@ -397,6 +397,14 @@ export function RoomSettingsModalLiveKit({
         })),
     ];
 
+    const isDesktopFx =
+        typeof window === "undefined" || !window.matchMedia
+            ? true
+            : window.matchMedia("(min-width: 1024px)").matches;
+
+    const disableFxControls = hideBackgroundFx || !isDesktopFx;
+    const effectivePreviewFilterCss = colorCorrectionEnabled ? (previewVideoFilterCss || "") : "";
+
     return (
         <div className={overlay} data-theme={theme} style={{ colorScheme: theme }}>
             <div className={backdrop} onClick={onClose} />
@@ -407,7 +415,7 @@ export function RoomSettingsModalLiveKit({
                         <div>
                             <div className="font-semibold text-[16px]">Settings</div>
                             <div className={`text-[12px] mt-1 ${subtleText}`}>
-                                Camera, mic, speakers, FX, room sounds and color tuning.
+                                Camera, mic, speakers and room tools.
                             </div>
                         </div>
 
@@ -510,19 +518,30 @@ export function RoomSettingsModalLiveKit({
                                     />
                                 </div>
                             </div>
+
+                            {!isDesktopFx && (
+                                <div className={`rounded-2xl p-4 ${sectionCls}`}>
+                                    <div className={`text-[13px] font-semibold ${isLight ? "text-black/85" : "text-white/90"}`}>
+                                        FX unavailable on mobile / tablet
+                                    </div>
+                                    <div className={`mt-2 text-[12px] ${subtleText}`}>
+                                        Blur, background replacement and color correction are disabled on mobile and tablet for stability.
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex flex-col gap-5 min-w-0 xl:sticky xl:top-0">
                             <div className={`rounded-2xl p-4 ${sectionCls}`}>
                                 <VideoPreviewBox
                                     track={previewTrack}
-                                    filterCss={previewVideoFilterCss}
+                                    filterCss={effectivePreviewFilterCss}
                                     isLight={isLight}
                                     label="Live preview"
                                 />
                             </div>
 
-                            {!hideBackgroundFx && (
+                            {!disableFxControls && (
                                 <>
                                     <div className={`rounded-2xl p-4 ${sectionCls}`}>
                                         <div className="text-[13px] font-semibold mb-3">Video effect mode</div>
