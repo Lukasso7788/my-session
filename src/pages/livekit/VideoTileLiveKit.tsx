@@ -252,15 +252,25 @@ function VideoTileInner({
     }, [normalizedAvatarUrl]);
 
     const shouldShowAvatar = !!normalizedAvatarUrl && !avatarBroken;
-    const effectiveMicMuted = typeof micMuted === "boolean" ? micMuted : !!hostActions?.micMuted;
 
-    const micBadgeCls = isLight
+    const effectiveMicMuted =
+        typeof micMuted === "boolean"
+            ? micMuted
+            : typeof hostActions?.micMuted === "boolean"
+                ? hostActions.micMuted
+                : false;
+
+    const bottomMetaCls = isLight
+        ? "bg-white/85 text-black border-black/10"
+        : "bg-black/55 text-white border-white/10";
+
+    const micIconWrapCls = isLight
         ? effectiveMicMuted
-            ? "bg-black/70 text-white border-black/10"
-            : "bg-emerald-600 text-white border-emerald-700/20"
+            ? "bg-black/8"
+            : "bg-emerald-500/12"
         : effectiveMicMuted
-            ? "bg-black/55 text-white border-white/10"
-            : "bg-emerald-500/20 text-emerald-200 border-emerald-300/20";
+            ? "bg-white/8"
+            : "bg-emerald-400/18";
 
     return (
         <div
@@ -305,21 +315,7 @@ function VideoTileInner({
                             </div>
                         </div>
 
-                        <div className="mt-2 flex items-center gap-2">
-                            <div className="text-[12px] opacity-75">Camera off</div>
-
-                            <div
-                                className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] border ${micBadgeCls}`}
-                                title={effectiveMicMuted ? "Microphone muted" : "Microphone on"}
-                            >
-                                <Icon
-                                    name={effectiveMicMuted ? "mic-off" : "mic-on"}
-                                    theme={theme}
-                                    className="w-3.5 h-3.5 opacity-90"
-                                />
-                                <span>{effectiveMicMuted ? "Mic off" : "Mic on"}</span>
-                            </div>
-                        </div>
+                        <div className="mt-2 text-[12px] opacity-75">Camera off</div>
 
                         {debugSizing && sizeText ? (
                             <div className="text-[11px] opacity-70 mt-1">{sizeText}</div>
@@ -340,30 +336,45 @@ function VideoTileInner({
                         {sizeText}
                     </div>
                 ) : null}
-            </div>
 
-            <div
-                className={
-                    "absolute left-2 bottom-2 px-2 py-1 rounded-lg text-[11px] " +
-                    (isLight ? "bg-white/80 text-black" : "bg-black/50 text-white")
-                }
-            >
-                {label}
-                {isLocal ? " (you)" : ""}
-            </div>
-
-            {showBadge ? (
                 <div
                     className={
-                        "absolute right-2 top-2 px-2 py-1 rounded-lg text-[11px] font-semibold " +
-                        (isLight
-                            ? "bg-amber-200/80 text-amber-900"
-                            : "bg-amber-400/20 text-amber-200 border border-amber-300/20")
+                        "absolute left-2 bottom-2 max-w-[calc(100%-16px)] px-2 py-1 rounded-lg text-[11px] border " +
+                        bottomMetaCls
                     }
                 >
-                    {showBadge}
+                    <div className="flex items-center gap-2 min-w-0">
+                        <span className="truncate">
+                            {label}
+                            {isLocal ? " (you)" : ""}
+                        </span>
+
+                        <span
+                            className={`shrink-0 inline-flex items-center justify-center w-5 h-5 rounded-md ${micIconWrapCls}`}
+                            title={effectiveMicMuted ? "Microphone muted" : "Microphone on"}
+                        >
+                            <Icon
+                                name={effectiveMicMuted ? "mic-off" : "mic-on"}
+                                theme={theme}
+                                className="w-3.5 h-3.5 opacity-90"
+                            />
+                        </span>
+                    </div>
                 </div>
-            ) : null}
+
+                {showBadge ? (
+                    <div
+                        className={
+                            "absolute right-2 top-2 px-2 py-1 rounded-lg text-[11px] font-semibold " +
+                            (isLight
+                                ? "bg-amber-200/80 text-amber-900"
+                                : "bg-amber-400/20 text-amber-200 border border-amber-300/20")
+                        }
+                    >
+                        {showBadge}
+                    </div>
+                ) : null}
+            </div>
 
             {showActions ? (
                 <div className="absolute right-2 bottom-2 flex flex-wrap justify-end gap-1 max-w-[92%]">

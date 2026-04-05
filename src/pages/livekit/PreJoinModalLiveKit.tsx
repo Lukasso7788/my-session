@@ -113,7 +113,8 @@ export function PreJoinModal({
     isLight ? "border-black/10" : "border-white/10",
   ].join(" ");
 
-  const headerCls = `px-5 sm:px-6 py-4 sm:py-5 border-b ${isLight ? "border-black/10" : "border-white/10"}`;
+  const headerCls = `px-5 sm:px-6 py-4 sm:py-5 border-b ${isLight ? "border-black/10" : "border-white/10"
+    }`;
 
   const bodyCls =
     "flex-1 min-h-0 overflow-y-auto overscroll-contain " +
@@ -126,13 +127,30 @@ export function PreJoinModal({
   const inputWrap = isLight ? "bg-black/5 border border-black/10" : "bg-white/5 border border-white/10";
   const inputCls = isLight ? "text-black placeholder:text-black/40" : "text-white placeholder:text-white/40";
   const labelCls = isLight ? "text-black/70" : "text-white/70";
-  const btnPrimary = isLight ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]";
+  const btnPrimary = isLight
+    ? "bg-blue-600 hover:bg-blue-700 text-white"
+    : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]";
   const btnGhost = isLight ? "bg-black/5 hover:bg-black/10 text-black/70" : "bg-white/5 hover:bg-white/10 text-white/80";
 
   const fxBtnBase =
     "h-10 px-4 rounded-2xl text-[13px] font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed";
   const fxBtnSelected = isLight ? "bg-black/80 text-white hover:bg-black" : "bg-white text-black hover:bg-white";
   const fxBtnIdle = btnGhost;
+
+  const selectCls = [
+    "w-full outline-none text-[13px] rounded-xl px-3 py-2",
+    isLight
+      ? "bg-white text-black border border-black/10"
+      : "bg-[#0B1220]/70 text-white border border-white/10",
+  ].join(" ");
+
+  const selectStyle: React.CSSProperties = isLight
+    ? { color: "#0b1220", backgroundColor: "#ffffff" }
+    : { color: "#ffffff", backgroundColor: "#0b1220" };
+
+  const optionStyle: React.CSSProperties = isLight
+    ? { color: "#0b1220", backgroundColor: "#ffffff" }
+    : { color: "#ffffff", backgroundColor: "#0b1220" };
 
   const previewHostRef = useRef<HTMLDivElement | null>(null);
   const attachedPreviewElRef = useRef<HTMLElement | null>(null);
@@ -211,9 +229,6 @@ export function PreJoinModal({
   const [blurDraft, setBlurDraft] = useState<number>(blurStrength);
   useEffect(() => setBlurDraft(blurStrength), [blurStrength]);
 
-  // Prevent endless blur/bg auto-reapply loops in prejoin.
-  // The previous version depended on fxApplying, so every apply ended by toggling
-  // fxApplying back to false and re-triggered another auto-apply.
   const lastAutoBlurKeyRef = useRef<string>("");
   const lastAutoBgKeyRef = useRef<string>("");
 
@@ -533,56 +548,59 @@ export function PreJoinModal({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="flex flex-col gap-2">
                   <div className={`text-[12px] ${labelCls}`}>Microphone</div>
-                  <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
-                    <select
-                      value={value.audioInputId}
-                      onChange={(e) => onChange({ ...value, audioInputId: e.target.value })}
-                      className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
-                    >
-                      <option value="">Default</option>
-                      {devices.audioInputs.map((d, i) => (
-                        <option key={d.deviceId} value={d.deviceId}>
-                          {deviceLabel(d, `Microphone ${i + 1}`)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  <select
+                    value={value.audioInputId}
+                    onChange={(e) => onChange({ ...value, audioInputId: e.target.value })}
+                    className={selectCls}
+                    style={selectStyle}
+                  >
+                    <option value="" style={optionStyle}>
+                      Default
+                    </option>
+                    {devices.audioInputs.map((d, i) => (
+                      <option key={d.deviceId} value={d.deviceId} style={optionStyle}>
+                        {deviceLabel(d, `Microphone ${i + 1}`)}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="flex flex-col gap-2">
                   <div className={`text-[12px] ${labelCls}`}>Camera</div>
-                  <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
-                    <select
-                      value={value.videoInputId}
-                      onChange={(e) => onChange({ ...value, videoInputId: e.target.value })}
-                      className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
-                    >
-                      <option value="">Default</option>
-                      {devices.videoInputs.map((d, i) => (
-                        <option key={d.deviceId} value={d.deviceId}>
-                          {deviceLabel(d, `Camera ${i + 1}`)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  <select
+                    value={value.videoInputId}
+                    onChange={(e) => onChange({ ...value, videoInputId: e.target.value })}
+                    className={selectCls}
+                    style={selectStyle}
+                  >
+                    <option value="" style={optionStyle}>
+                      Default
+                    </option>
+                    {devices.videoInputs.map((d, i) => (
+                      <option key={d.deviceId} value={d.deviceId} style={optionStyle}>
+                        {deviceLabel(d, `Camera ${i + 1}`)}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="sm:col-span-2 flex flex-col gap-2">
                   <div className={`text-[12px] ${labelCls}`}>Speaker</div>
-                  <div className={`rounded-2xl px-3 py-2 ${inputWrap}`}>
-                    <select
-                      value={value.audioOutputId}
-                      onChange={(e) => onChange({ ...value, audioOutputId: e.target.value })}
-                      className={`w-full bg-transparent outline-none text-[13px] ${inputCls}`}
-                    >
-                      <option value="default">Default</option>
-                      {devices.audioOutputs.map((d, i) => (
-                        <option key={d.deviceId} value={d.deviceId}>
-                          {deviceLabel(d, `Speaker ${i + 1}`)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  <select
+                    value={value.audioOutputId}
+                    onChange={(e) => onChange({ ...value, audioOutputId: e.target.value })}
+                    className={selectCls}
+                    style={selectStyle}
+                  >
+                    <option value="default" style={optionStyle}>
+                      Default
+                    </option>
+                    {devices.audioOutputs.map((d, i) => (
+                      <option key={d.deviceId} value={d.deviceId} style={optionStyle}>
+                        {deviceLabel(d, `Speaker ${i + 1}`)}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 

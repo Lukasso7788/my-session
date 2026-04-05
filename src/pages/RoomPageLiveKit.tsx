@@ -3155,7 +3155,9 @@ export function RoomPageLiveKit() {
           setProfilesById((prev) => ({ ...prev, ...patch }));
         }
 
-        scheduleRebuildTiles();
+        window.setTimeout(() => {
+          scheduleRebuildTiles();
+        }, 80);
       } catch (e) {
         console.warn("profiles fetch failed", e);
       }
