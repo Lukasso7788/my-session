@@ -84,6 +84,10 @@ type SessionRow = {
   created_at?: string | null;
   host_profile?: HostProfile | null;
   session_templates?: SessionTemplate | SessionTemplate[] | null;
+  session_bookings?: Array<{
+    user_id: string;
+    session_id?: string;
+  }> | null;
   max_participants?: number | null;
   host_id?: string | null;
 };
@@ -1320,7 +1324,7 @@ export function RoomPageLiveKit() {
 
       const { data, error } = await supabase
         .from("sessions")
-        .select("*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*)")
+        .select(SESSION_SELECT_STR)
         .eq("id", id)
         .single();
 
