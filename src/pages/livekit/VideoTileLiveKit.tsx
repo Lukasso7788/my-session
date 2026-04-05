@@ -253,25 +253,6 @@ function VideoTileInner({
 
     const shouldShowAvatar = !!normalizedAvatarUrl && !avatarBroken;
 
-    const effectiveMicMuted =
-        typeof micMuted === "boolean"
-            ? micMuted
-            : typeof hostActions?.micMuted === "boolean"
-                ? hostActions.micMuted
-                : false;
-
-    const bottomMetaCls = isLight
-        ? "bg-white/85 text-black border-black/10"
-        : "bg-black/55 text-white border-white/10";
-
-    const micIconWrapCls = isLight
-        ? effectiveMicMuted
-            ? "bg-black/8"
-            : "bg-emerald-500/12"
-        : effectiveMicMuted
-            ? "bg-white/8"
-            : "bg-emerald-400/18";
-
     return (
         <div
             ref={wrapRef}
@@ -336,31 +317,6 @@ function VideoTileInner({
                         {sizeText}
                     </div>
                 ) : null}
-
-                <div
-                    className={
-                        "absolute left-2 bottom-2 max-w-[calc(100%-16px)] px-2 py-1 rounded-lg text-[11px] border " +
-                        bottomMetaCls
-                    }
-                >
-                    <div className="flex items-center gap-2 min-w-0">
-                        <span className="truncate">
-                            {label}
-                            {isLocal ? " (you)" : ""}
-                        </span>
-
-                        <span
-                            className={`shrink-0 inline-flex items-center justify-center w-5 h-5 rounded-md ${micIconWrapCls}`}
-                            title={effectiveMicMuted ? "Microphone muted" : "Microphone on"}
-                        >
-                            <Icon
-                                name={effectiveMicMuted ? "mic-off" : "mic-on"}
-                                theme={theme}
-                                className="w-3.5 h-3.5 opacity-90"
-                            />
-                        </span>
-                    </div>
-                </div>
 
                 {showBadge ? (
                     <div

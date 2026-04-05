@@ -4684,6 +4684,16 @@ export function RoomPageLiveKit() {
       isLight ? "bg-white/70 border-black/10 text-black/85" : "bg-black/30 border-white/10 text-white/90",
     ].join(" ");
 
+    const micBadgeWrapCls = isLight
+      ? micMuted
+        ? "bg-black/8"
+        : "bg-emerald-500/12"
+      : micMuted
+        ? "bg-white/8"
+        : "bg-emerald-400/18";
+
+    const nameTextCls = "truncate max-w-[220px]";
+
     return (
       <div
         className="relative group w-full"
@@ -4716,19 +4726,21 @@ export function RoomPageLiveKit() {
           <div className="absolute bottom-2 left-2 z-20 max-w-[78%]">
             <div className={namePlateBaseCls}>
               <div className="flex items-center gap-2 min-w-0">
-                <div className="max-w-[340px] truncate text-[13px] font-semibold leading-none">
+                <span className={nameTextCls}>
                   {nameText}
-                </div>
+                  {t.isLocal ? " (you)" : ""}
+                </span>
 
-                {t.kind === "screen" ? (
-                  <div className="flex items-center gap-1 opacity-90 shrink-0">
-                    <span className="text-[11px]">🖥️</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1 opacity-90 shrink-0">
-                    <Icon name={micMuted ? "mic-off" : "mic-on"} theme={theme} className="w-4 h-4" />
-                  </div>
-                )}
+                <span
+                  className={`shrink-0 inline-flex items-center justify-center w-5 h-5 rounded-md ${micBadgeWrapCls}`}
+                  title={micMuted ? "Microphone muted" : "Microphone on"}
+                >
+                  <Icon
+                    name={micMuted ? "mic-off" : "mic-on"}
+                    theme={theme}
+                    className="w-3.5 h-3.5 opacity-90"
+                  />
+                </span>
               </div>
             </div>
           </div>
