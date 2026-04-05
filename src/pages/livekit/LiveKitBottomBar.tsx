@@ -76,7 +76,6 @@ export function LiveKitBottomBar(props: {
 
     const emitReaction = (type: ReactionType) => {
         onSendReaction(type);
-        setShowReactionsMenu(false);
     };
 
     useEffect(() => {
