@@ -72,24 +72,24 @@ export { ParticipantsSmartIcon };
 export type { RoomTheme };
 
 export type ReactionType =
-    | "like"
-    | "heart"
-    | "clap"
     | "fire"
-    | "wow"
-    | "celebrate"
     | "laugh"
     | "thumbsUp"
-    | "thumbsDown";
+    | "thumbsDown"
+    | "heart"
+    | "clap"
+    | "ok"
+    | "wave"
+    | "celebrate";
 
 export const reactionEmoji: Record<ReactionType, string> = {
-    like: "👍",
-    heart: "❤️",
-    clap: "👏",
     fire: "🔥",
-    wow: "😮",
-    celebrate: "🎉",
     laugh: "😂",
     thumbsUp: "👍",
     thumbsDown: "👎",
+    heart: "❤️",
+    clap: "👏",
+    ok: "👌",
+    wave: "👋",
+    celebrate: "🎉",
 };

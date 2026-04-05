@@ -1,6 +1,18 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Icon, reactionEmoji, type ReactionType, type RoomTheme } from "./LiveKitUI";
 
+const REACTION_MENU_ITEMS: ReactionType[] = [
+    "fire",
+    "laugh",
+    "thumbsUp",
+    "thumbsDown",
+    "heart",
+    "clap",
+    "ok",
+    "wave",
+    "celebrate",
+];
+
 export function LiveKitBottomBar(props: {
     theme: RoomTheme;
     isLight: boolean;
@@ -64,6 +76,7 @@ export function LiveKitBottomBar(props: {
 
     const emitReaction = (type: ReactionType) => {
         onSendReaction(type);
+        setShowReactionsMenu(false);
     };
 
     useEffect(() => {
@@ -375,9 +388,7 @@ export function LiveKitBottomBar(props: {
                                     className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex items-center gap-2 text-[26px] shadow-xl whitespace-nowrap ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
                                         }`}
                                 >
-                                    {(
-                                        ["fire", "laugh", "clap", "heart", "thumbsUp", "thumbsDown", "ok", "party"] as ReactionType[]
-                                    ).map((t) => (
+                                    {REACTION_MENU_ITEMS.map((t) => (
                                         <button
                                             key={t}
                                             onClick={() => {
