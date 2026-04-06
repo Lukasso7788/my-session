@@ -1040,8 +1040,8 @@ export function RoomPageLiveKit() {
     videoEnabled: true,
 
     echoCancellation: true,
-    noiseSuppression: true,
-    autoGainControl: true,
+    noiseSuppression: false,
+    autoGainControl: false,
   }));
   const prejoinRef = useRef(prejoin);
   useEffect(() => {
@@ -1070,8 +1070,32 @@ export function RoomPageLiveKit() {
   const [selectedVideoInputId, setSelectedVideoInputId] = useState<string>("");
 
   const [echoCancellationEnabled, setEchoCancellationEnabled] = useState(true);
-  const [noiseSuppressionEnabled, setNoiseSuppressionEnabled] = useState(true);
-  const [autoGainControlEnabled, setAutoGainControlEnabled] = useState(true);
+  const [noiseSuppressionEnabled, setNoiseSuppressionEnabled] = useState(false);
+  const [autoGainControlEnabled, setAutoGainControlEnabled] = useState(false);
+
+  useEffect(() => {
+    const nextEcho = true;
+    const nextNoise = isMobileQuery || isTabletQuery;
+    const nextAgc = isMobileQuery || isTabletQuery;
+
+    setPrejoin((prev) => ({
+      ...prev,
+      echoCancellation: nextEcho,
+      noiseSuppression: nextNoise,
+      autoGainControl: nextAgc,
+    }));
+
+    prejoinRef.current = {
+      ...prejoinRef.current,
+      echoCancellation: nextEcho,
+      noiseSuppression: nextNoise,
+      autoGainControl: nextAgc,
+    };
+
+    setEchoCancellationEnabled(nextEcho);
+    setNoiseSuppressionEnabled(nextNoise);
+    setAutoGainControlEnabled(nextAgc);
+  }, [isMobileQuery, isTabletQuery]);
 
   // pre-join prepared preview track
   const prejoinPreparedVideoTrackRef = useRef<LocalVideoTrack | null>(null);
