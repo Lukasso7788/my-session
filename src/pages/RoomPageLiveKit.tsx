@@ -1679,6 +1679,52 @@ export function RoomPageLiveKit() {
     if (!parsed) setStagebarStartTime(fallbackStart);
   }, []);
 
+  const reloadSessionSnapshot = React.useCallback(async () => {
+    if (!sessionId) return;
+
+    try {
+      const { data, error } = await supabase
+        .from("sessions")
+        .select(SESSION_SELECT_STR)
+        .eq("id", sessionId)
+        .single();
+
+      if (error) throw error;
+      if (!data) return;
+
+      const t = normalizeTemplates((data as any)?.session_templates);
+      const norm = { ...(data as any), session_templates: t };
+
+      applySessionSnapshot(norm as any);
+    } catch (e) {
+      console.error("reloadSessionSnapshot failed:", e);
+    }
+  }, [sessionId, applySessionSnapshot]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+
+    const ch = supabase
+      .channel(`livekit-session-sync:${sessionId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "sessions",
+          filter: `id=eq.${sessionId}`,
+        },
+        () => {
+          void reloadSessionSnapshot();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      safeRemoveRealtimeChannel(ch);
+    };
+  }, [sessionId, reloadSessionSnapshot]);
+
   useEffect(() => {
     if (isSilentRoom) {
       setRemainingTime("");
