@@ -2719,12 +2719,26 @@ export function RoomPageLiveKit() {
   }, [session?.id, authUserId]);
 
   const buildAuthHeaders = async (): Promise<Record<string, string>> => {
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    const cachedAccessToken = String(accessTokenRef.current || "").trim();
+    if (cachedAccessToken) {
+      headers.Authorization = `Bearer ${cachedAccessToken}`;
+      return headers;
+    }
+
     try {
       const { data } = await supabase.auth.getSession();
-      const accessToken = data.session?.access_token || "";
-      if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+      const fallbackAccessToken = String(data.session?.access_token || "").trim();
+
+      if (fallbackAccessToken) {
+        accessTokenRef.current = fallbackAccessToken;
+        headers.Authorization = `Bearer ${fallbackAccessToken}`;
+      }
     } catch { }
+
     return headers;
   };
 
@@ -4689,11 +4703,9 @@ export function RoomPageLiveKit() {
     ? ""
     : prejoinOpen
       ? ""
-      : !joinRequested
-        ? "Waiting to join…"
-        : tokenLoading
-          ? "Preparing token…"
-          : "Connecting to LiveKit…";
+      : joinRequested
+        ? "Joining room…"
+        : "";
   const lastErr = tokenError || clientError;
 
   // hide/pin helpers
@@ -5933,6 +5945,9 @@ export function RoomPageLiveKit() {
     setAutoGainControlEnabled(!!pj.autoGainControl);
 
     setPrejoinOpen(false);
+    setTokenError("");
+    setClientError("");
+    setDeviceError("");
     setJoinRequested(true);
   };
 
