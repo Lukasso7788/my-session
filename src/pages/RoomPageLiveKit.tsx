@@ -3660,6 +3660,8 @@ export function RoomPageLiveKit() {
     const attemptId = connectAttemptIdRef.current + 1;
     connectAttemptIdRef.current = attemptId;
 
+    let connectedToRoom = false;
+
     const failAfter = window.setTimeout(() => {
       if (connectAttemptIdRef.current !== attemptId) return;
       setClientError("Connecting to LiveKit timed out. Please try again.");
@@ -3672,7 +3674,7 @@ export function RoomPageLiveKit() {
     setFxError("");
 
     await disconnectRoom();
-
+  
     try {
       const pj = prejoinRef.current;
 
@@ -3731,6 +3733,7 @@ export function RoomPageLiveKit() {
       r.on(RoomEvent.LocalTrackUnpublished as any, refresh as any);
 
       await r.connect(lkServerUrl, lkToken, { autoSubscribe: true });
+      connectedToRoom = true;
 
       await r.localParticipant.setCameraEnabled(false);
       setCamOn(false);
@@ -3746,16 +3749,8 @@ export function RoomPageLiveKit() {
       startAttendanceHeartbeat();
 
       // mic
-      if (pj.audioEnabled) {
-        await r.localParticipant.setMicrophoneEnabled(true, {
-          deviceId: pj.audioInputId || selectedAudioInputId || undefined,
-          echoCancellation: pj.echoCancellation,
-          noiseSuppression: pj.noiseSuppression,
-          autoGainControl: pj.autoGainControl,
-        } as any);
-      } else {
-        await r.localParticipant.setMicrophoneEnabled(false);
-      }
+      await r.localParticipant.setMicrophoneEnabled(false);
+      setMicOn(false);
 
       const shouldAutoStartCameraOnJoin =
         pj.videoEnabled &&
@@ -3815,8 +3810,15 @@ export function RoomPageLiveKit() {
 
     } catch (e: any) {
       console.error("LiveKit connect failed:", e);
-      setClientError(String(e?.message || e || "connect_failed"));
-      await disconnectRoom();
+
+      const msg = String(e?.message || e || "connect_failed");
+      setClientError(msg);
+
+      if (!connectedToRoom) {
+        await disconnectRoom();
+      } else {
+        console.warn("Media step failed after room connect, keeping user in room");
+      }
     } finally {
       window.clearTimeout(failAfter);
       if (connectAttemptIdRef.current === attemptId) {
