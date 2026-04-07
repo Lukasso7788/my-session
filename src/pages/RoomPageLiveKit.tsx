@@ -2034,11 +2034,7 @@ export function RoomPageLiveKit() {
         return !String(d.label || "").trim();
       });
 
-      const shouldWarmupLabels =
-        labelsMissing &&
-        !deviceLabelsWarmupAttemptedRef.current &&
-        !isMobileQuery &&
-        !isTabletQuery;
+      const shouldWarmupLabels = false;
 
       if (shouldWarmupLabels) {
         deviceLabelsWarmupAttemptedRef.current = true;
@@ -2415,6 +2411,8 @@ export function RoomPageLiveKit() {
       return;
     }
 
+    if (isMobileQuery || isTabletQuery || deviceTier === "weak") return;
+
     (async () => {
       try {
         await initPrejoinPreview({
@@ -2425,12 +2423,13 @@ export function RoomPageLiveKit() {
         console.warn("prejoin video enable failed", e);
       }
     })();
-  }, [prejoin.videoEnabled, prejoinOpen, deviceTier]);
+  }, [prejoin.videoEnabled, prejoinOpen, deviceTier, isMobileQuery, isTabletQuery]);
 
   useEffect(() => {
     if (!settingsOpen) return;
     if (!prejoinOpen) return;
     if (!prejoinRef.current.videoEnabled) return;
+    if (isMobileQuery || isTabletQuery || deviceTier === "weak") return;
 
     if (prejoinPreparedVideoTrackRef.current) {
       setSettingsPreviewVersion((v) => v + 1);
@@ -2457,7 +2456,14 @@ export function RoomPageLiveKit() {
     return () => {
       cancelled = true;
     };
-  }, [settingsOpen, prejoinOpen, prejoin.videoEnabled, deviceTier]);
+  }, [
+    settingsOpen,
+    prejoinOpen,
+    prejoin.videoEnabled,
+    deviceTier,
+    isMobileQuery,
+    isTabletQuery,
+  ]);
 
   useEffect(() => {
     if (deviceTier !== "weak") return;
@@ -3711,6 +3717,9 @@ export function RoomPageLiveKit() {
       r.on(RoomEvent.LocalTrackUnpublished as any, refresh as any);
 
       await r.connect(lkServerUrl, lkToken, { autoSubscribe: true });
+
+      await r.localParticipant.setCameraEnabled(false);
+      setCamOn(false);
 
       await r.localParticipant.setMicrophoneEnabled(false);
       setMicOn(false);
@@ -5925,8 +5934,6 @@ export function RoomPageLiveKit() {
 
     setPrejoinOpen(false);
     setJoinRequested(true);
-
-    void cleanupPrejoinPreparedVideoTrack();
   };
 
   return (
