@@ -138,8 +138,9 @@ function SliderField(props: {
     onChange: (v: number) => void;
     disabled?: boolean;
     isLight: boolean;
+    valueSuffix?: string;
 }) {
-    const { label, description, min, max, step = 1, value, onChange, disabled, isLight } = props;
+    const { label, description, min, max, step = 1, value, onChange, disabled, isLight, valueSuffix = "" } = props;
 
     return (
         <div>
@@ -150,7 +151,10 @@ function SliderField(props: {
                         <div className={`mt-1 text-[12px] ${isLight ? "text-black/55" : "text-white/55"}`}>{description}</div>
                     ) : null}
                 </div>
-                <div className={`text-[13px] font-semibold ${isLight ? "text-black/70" : "text-white/80"}`}>{value}</div>
+                <div className={`text-[13px] font-semibold ${isLight ? "text-black/70" : "text-white/80"}`}>
+                    {value}
+                    {valueSuffix}
+                </div>
             </div>
 
             <input
@@ -175,8 +179,9 @@ function VideoPreviewBox(props: {
     filterCss?: string;
     isLight: boolean;
     label?: string;
+    mirrored?: boolean;
 }) {
-    const { track, filterCss, isLight, label = "Camera preview" } = props;
+    const { track, filterCss, isLight, label = "Camera preview", mirrored = true } = props;
     const hostRef = React.useRef<HTMLDivElement | null>(null);
     const mediaElRef = React.useRef<HTMLMediaElement | null>(null);
 
@@ -201,7 +206,7 @@ function VideoPreviewBox(props: {
         media.style.width = "100%";
         media.style.height = "100%";
         media.style.objectFit = "cover";
-        media.style.transform = "scaleX(-1)";
+        media.style.transform = mirrored ? "scaleX(-1)" : "scaleX(1)";
         media.style.filter = filterCss || "";
 
         host.appendChild(media);
@@ -222,7 +227,7 @@ function VideoPreviewBox(props: {
 
             mediaElRef.current = null;
         };
-    }, [track, filterCss]);
+    }, [track, filterCss, mirrored]);
 
     return (
         <div>
@@ -266,6 +271,8 @@ export function RoomSettingsModalLiveKit({
     fxStatusText,
     previewTrack,
     previewVideoFilterCss,
+    previewMirrored,
+    onTogglePreviewMirrored,
     onUploadBg,
     onResetBg,
 
@@ -285,7 +292,9 @@ export function RoomSettingsModalLiveKit({
     onChangeAutoGainControl,
 
     roomSoundsEnabled,
+    roomSoundsVolume,
     onToggleRoomSounds,
+    onChangeRoomSoundsVolume,
 
     colorCorrectionEnabled,
     brightness,
@@ -315,6 +324,8 @@ export function RoomSettingsModalLiveKit({
         detach?: (element?: HTMLMediaElement) => void;
     } | null;
     previewVideoFilterCss?: string;
+    previewMirrored: boolean;
+    onTogglePreviewMirrored: (v: boolean) => void;
     onUploadBg: (file: File) => void;
     onResetBg: () => void;
 
@@ -338,7 +349,9 @@ export function RoomSettingsModalLiveKit({
     onChangeAutoGainControl: (v: boolean) => void | Promise<void>;
 
     roomSoundsEnabled: boolean;
+    roomSoundsVolume: number;
     onToggleRoomSounds: () => void;
+    onChangeRoomSoundsVolume: (v: number) => void;
 
     colorCorrectionEnabled: boolean;
     brightness: number;
@@ -516,6 +529,27 @@ export function RoomSettingsModalLiveKit({
                                         onChange={() => onToggleRoomSounds()}
                                         isLight={isLight}
                                     />
+
+                                    <SliderField
+                                        label="Stage sounds volume"
+                                        description="Controls how loud local stage sounds play in this room."
+                                        min={0}
+                                        max={100}
+                                        step={1}
+                                        value={roomSoundsVolume}
+                                        onChange={onChangeRoomSoundsVolume}
+                                        disabled={!roomSoundsEnabled}
+                                        isLight={isLight}
+                                        valueSuffix="%"
+                                    />
+
+                                    <ToggleRow
+                                        label="Mirror camera preview"
+                                        description="Flip your local preview horizontally like a typical selfie view."
+                                        checked={previewMirrored}
+                                        onChange={onTogglePreviewMirrored}
+                                        isLight={isLight}
+                                    />
                                 </div>
                             </div>
 
@@ -538,6 +572,7 @@ export function RoomSettingsModalLiveKit({
                                     filterCss={effectivePreviewFilterCss}
                                     isLight={isLight}
                                     label="Live preview"
+                                    mirrored={previewMirrored}
                                 />
                             </div>
 
