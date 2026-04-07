@@ -154,6 +154,7 @@ type SessionRoleAssignmentRow = {
 };
 
 type RightPanelTab = "participants" | "chat" | "intentions" | null;
+type PiPMode = "focus" | "gallery";
 
 type FloatingReaction = {
   id: number;
@@ -372,6 +373,19 @@ function getQueryInt(name: string, def = 0) {
 }
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
+}
+
+function normalizeMediaWarningMessage(raw: unknown) {
+  const s = String(raw || "").trim();
+  if (!s) return "A device action failed.";
+
+  const low = s.toLowerCase();
+
+  if (low.includes("permission denied") || low.includes("notallowederror")) {
+    return "A camera or microphone permission step failed.";
+  }
+
+  return s;
 }
 
 function canUseSetSinkId() {
@@ -3061,6 +3075,7 @@ export function RoomPageLiveKit() {
   const roomRef = useRef<Room | null>(null);
   const [roomState, setRoomState] = useState<Room | null>(null);
   const [clientError, setClientError] = useState<string>("");
+  const [mediaWarning, setMediaWarning] = useState<string>("");
   
   const connectInFlightRef = useRef(false);
   const connectAttemptIdRef = useRef(0);
@@ -3068,6 +3083,7 @@ export function RoomPageLiveKit() {
   const [micOn, setMicOn] = useState(false);
   const [camOn, setCamOn] = useState(false);
   const [screenShareOn, setScreenShareOn] = useState(false);
+  const [pipMode, setPipMode] = useState<PiPMode>("focus");
 
   function getSettingsPreviewTrack(): LocalVideoTrack | null {
     if (prejoinPreparedVideoTrackRef.current) {
@@ -3626,7 +3642,9 @@ export function RoomPageLiveKit() {
       scheduleRebuildTiles();
     } catch (e) {
       console.error("syncLiveVideoInput failed:", e);
-      setClientError(String((e as any)?.message || e || "video_input_switch_failed"));
+      setMediaWarning(
+        normalizeMediaWarningMessage((e as any)?.message || e || "video_input_switch_failed")
+      );
     }
   };
 
@@ -3649,6 +3667,9 @@ export function RoomPageLiveKit() {
       scheduleRebuildTiles();
     } catch (e) {
       console.error("syncLiveAudioProcessing failed:", e);
+      setMediaWarning(
+        normalizeMediaWarningMessage((e as any)?.message || e || "audio_processing_failed")
+      );
     }
   };
 
@@ -3672,6 +3693,7 @@ export function RoomPageLiveKit() {
 
     setClientError("");
     setFxError("");
+    setMediaWarning("");
 
     await disconnectRoom();
   
@@ -3812,11 +3834,12 @@ export function RoomPageLiveKit() {
       console.error("LiveKit connect failed:", e);
 
       const msg = String(e?.message || e || "connect_failed");
-      setClientError(msg);
 
       if (!connectedToRoom) {
+        setClientError(msg);
         await disconnectRoom();
       } else {
+        setMediaWarning(normalizeMediaWarningMessage(msg));
         console.warn("Media step failed after room connect, keeping user in room");
       }
     } finally {
@@ -5341,6 +5364,28 @@ export function RoomPageLiveKit() {
     return tilesForRender.slice(1, 5);
   }, [activeScreenShareTile, pinnedParticipantTile, tilesForRender]);
 
+  const pipGalleryTiles = useMemo(() => {
+    if (activeScreenShareTile) {
+      const withoutDup = tilesForRender.filter((t) => t.id !== activeScreenShareTile.id);
+      return [activeScreenShareTile, ...withoutDup].slice(0, 9);
+    }
+
+    if (pinnedParticipantTile) {
+      const withoutDup = tilesForRender.filter((t) => t.id !== pinnedParticipantTile.id);
+      return [pinnedParticipantTile, ...withoutDup].slice(0, 9);
+    }
+
+    return tilesForRender.slice(0, 9);
+  }, [activeScreenShareTile, pinnedParticipantTile, tilesForRender]);
+
+  const pipGalleryColumns = useMemo(() => {
+    const count = pipGalleryTiles.length;
+
+    if (count <= 1) return 1;
+    if (count <= 4) return 2;
+    return 3;
+  }, [pipGalleryTiles.length]);
+
   const pipPortal = pipMountEl
     ? createPortal(
       <div className={`h-full w-full flex flex-col ${isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white"}`}>
@@ -5357,43 +5402,79 @@ export function RoomPageLiveKit() {
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => closePictureInPicture()}
-            className={`w-8 h-8 rounded-lg flex items-center justify-center ${isLight ? "bg-black/5 hover:bg-black/10 text-black/70" : "bg-white/5 hover:bg-white/10 text-white/85"
-              }`}
-            title="Close PiP"
-          >
-            ✕
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                setPipMode((prev) => (prev === "focus" ? "gallery" : "focus"))
+              }
+              className={`h-8 rounded-lg px-2 text-[11px] font-semibold ${isLight
+                  ? "bg-black/5 hover:bg-black/10 text-black/75"
+                  : "bg-white/5 hover:bg-white/10 text-white/85"
+                }`}
+              title={pipMode === "focus" ? "Switch to gallery mode" : "Switch to focus mode"}
+            >
+              {pipMode === "focus" ? "Gallery" : "Focus"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => closePictureInPicture()}
+              className={`w-8 h-8 rounded-lg flex items-center justify-center ${isLight
+                  ? "bg-black/5 hover:bg-black/10 text-black/70"
+                  : "bg-white/5 hover:bg-white/10 text-white/85"
+                }`}
+              title="Close PiP"
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
-        <div className="flex-1 min-h-0 grid grid-cols-[minmax(0,1fr),110px] gap-2 p-2">
-          <div className="min-w-0 min-h-0 flex items-center justify-center">
-            <div className="w-full">
-              {pipFeaturedTile ? renderTile(pipFeaturedTile) : null}
+        {pipMode === "focus" ? (
+          <div className="flex-1 min-h-0 grid grid-cols-[minmax(0,1fr),110px] gap-2 p-2">
+            <div className="min-w-0 min-h-0 flex items-center justify-center">
+              <div className="w-full">
+                {pipFeaturedTile ? renderTile(pipFeaturedTile) : null}
+              </div>
+            </div>
+
+            <div className="min-w-0 min-h-0 overflow-y-auto flex flex-col gap-2 pr-1">
+              {pipStripTiles.map((t) => (
+                <div key={`pip-${t.id}`}>{renderTile(t)}</div>
+              ))}
             </div>
           </div>
-
-          <div className="min-w-0 min-h-0 overflow-y-auto flex flex-col gap-2 pr-1">
-            {pipStripTiles.map((t) => (
-              <div key={`pip-${t.id}`}>{renderTile(t)}</div>
+        ) : (
+          <div
+            className="flex-1 min-h-0 grid gap-2 p-2"
+            style={{
+              gridTemplateColumns: `repeat(${pipGalleryColumns}, minmax(0, 1fr))`,
+            }}
+          >
+            {pipGalleryTiles.map((t) => (
+              <div
+                key={`pip-gallery-${t.id}`}
+                className="min-w-0 min-h-0"
+              >
+                {renderTile(t)}
+              </div>
             ))}
           </div>
-        </div>
+        )}
 
         <div className="grid grid-cols-5 gap-2 px-2 pb-2">
           <button
             type="button"
             onClick={() => toggleMic().catch(() => { })}
             className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
-              ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
-              : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
+                ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
+                : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
               }`}
           >
             <div className="flex flex-col items-center justify-center gap-1">
-              <Icon name={micOn ? "mic-on" : "mic-off"} theme={theme} className="w-4 h-4" />
-              <span>Mic</span>
+              <Icon theme={theme} name={micOn ? "mic" : "micOff"} className="w-4 h-4" />
+              <span>{micOn ? "Mic on" : "Mic off"}</span>
             </div>
           </button>
 
@@ -5401,13 +5482,13 @@ export function RoomPageLiveKit() {
             type="button"
             onClick={() => toggleCam().catch(() => { })}
             className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
-              ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
-              : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
+                ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
+                : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
               }`}
           >
             <div className="flex flex-col items-center justify-center gap-1">
-              <Icon name={camOn ? "camera-on" : "camera-off"} theme={theme} className="w-4 h-4" />
-              <span>Cam</span>
+              <Icon theme={theme} name={camOn ? "video" : "videoOff"} className="w-4 h-4" />
+              <span>{camOn ? "Cam on" : "Cam off"}</span>
             </div>
           </button>
 
@@ -5415,45 +5496,41 @@ export function RoomPageLiveKit() {
             type="button"
             onClick={() => toggleScreenShare().catch(() => { })}
             className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
-              ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
-              : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
+                ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
+                : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
               }`}
           >
             <div className="flex flex-col items-center justify-center gap-1">
-              <span className="text-[14px]">🖥️</span>
-              <span>Share</span>
+              <Icon theme={theme} name={screenShareOn ? "screenShareOff" : "screenShare"} className="w-4 h-4" />
+              <span>{screenShareOn ? "Stop share" : "Share"}</span>
             </div>
           </button>
 
           <button
             type="button"
-            onClick={() => {
-              try {
-                window.focus();
-              } catch { }
-            }}
+            onClick={() => setPipMode((prev) => (prev === "focus" ? "gallery" : "focus"))}
             className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
-              ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
-              : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
+                ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
+                : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
               }`}
           >
             <div className="flex flex-col items-center justify-center gap-1">
-              <span className="text-[14px]">↗</span>
-              <span>Main</span>
+              <span className="text-[14px] leading-none">▦</span>
+              <span>{pipMode === "focus" ? "Gallery" : "Focus"}</span>
             </div>
           </button>
 
           <button
             type="button"
-            onClick={() => leave().catch(() => { })}
+            onClick={() => closePictureInPicture()}
             className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
-              ? "border-red-200 bg-red-50 hover:bg-red-100 text-red-700"
-              : "border-red-400/20 bg-red-500/10 hover:bg-red-500/15 text-red-300"
+                ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
+                : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
               }`}
           >
             <div className="flex flex-col items-center justify-center gap-1">
-              <span className="text-[14px]">⎋</span>
-              <span>Leave</span>
+              <span className="text-[14px]">✕</span>
+              <span>Close</span>
             </div>
           </button>
         </div>
@@ -6067,6 +6144,18 @@ export function RoomPageLiveKit() {
               {lastErr && (
                 <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow z-30 max-w-[80%] break-words">
                   {lastErr}
+                </div>
+              )}
+              {mediaWarning && connected && (
+                <div
+                  className={`rounded-2xl border px-3 py-2 text-sm ${isLight
+                      ? "border-amber-200 bg-amber-50 text-amber-800"
+                      : "border-amber-500/30 bg-amber-500/10 text-amber-200"
+                    }`}
+                >
+                  <div className="break-words">
+                    Joined the room, but a device step failed: {mediaWarning}
+                  </div>
                 </div>
               )}
             </div>
