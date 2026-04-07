@@ -388,6 +388,32 @@ function normalizeMediaWarningMessage(raw: unknown) {
   return s;
 }
 
+function getPiPIconSrc(name: string, isLight: boolean) {
+  const themeSuffix = isLight ? "light" : "dark";
+  return `/icons/${name}-${themeSuffix}.svg`;
+}
+
+function PiPIcon({
+  name,
+  isLight,
+  alt,
+  className = "w-4 h-4",
+}: {
+  name: string;
+  isLight: boolean;
+  alt: string;
+  className?: string;
+}) {
+  return (
+    <img
+      src={getPiPIconSrc(name, isLight)}
+      alt={alt}
+      className={className}
+      draggable={false}
+    />
+  );
+}
+
 function canUseSetSinkId() {
   if (typeof window === "undefined") return false;
   try {
@@ -5473,7 +5499,11 @@ export function RoomPageLiveKit() {
               }`}
           >
             <div className="flex flex-col items-center justify-center gap-1">
-              <Icon theme={theme} name={micOn ? "mic" : "micOff"} className="w-4 h-4" />
+              <PiPIcon
+                name={micOn ? "mic-on" : "mic-off"}
+                isLight={isLight}
+                alt={micOn ? "Mic on" : "Mic off"}
+              />
               <span>{micOn ? "Mic on" : "Mic off"}</span>
             </div>
           </button>
@@ -5487,7 +5517,11 @@ export function RoomPageLiveKit() {
               }`}
           >
             <div className="flex flex-col items-center justify-center gap-1">
-              <Icon theme={theme} name={camOn ? "video" : "videoOff"} className="w-4 h-4" />
+              <PiPIcon
+                name={camOn ? "camera-on" : "camera-off"}
+                isLight={isLight}
+                alt={camOn ? "Cam on" : "Cam off"}
+              />
               <span>{camOn ? "Cam on" : "Cam off"}</span>
             </div>
           </button>
@@ -5501,7 +5535,11 @@ export function RoomPageLiveKit() {
               }`}
           >
             <div className="flex flex-col items-center justify-center gap-1">
-              <Icon theme={theme} name={screenShareOn ? "screenShareOff" : "screenShare"} className="w-4 h-4" />
+              <PiPIcon
+                name={screenShareOn ? "screen-share-off" : "screen-share"}
+                isLight={isLight}
+                alt={screenShareOn ? "Stop share" : "Share screen"}
+              />
               <span>{screenShareOn ? "Stop share" : "Share"}</span>
             </div>
           </button>
@@ -5515,7 +5553,11 @@ export function RoomPageLiveKit() {
               }`}
           >
             <div className="flex flex-col items-center justify-center gap-1">
-              <span className="text-[14px] leading-none">▦</span>
+              <PiPIcon
+                name={pipMode === "focus" ? "gallery" : "focus"}
+                isLight={isLight}
+                alt={pipMode === "focus" ? "Gallery mode" : "Focus mode"}
+              />
               <span>{pipMode === "focus" ? "Gallery" : "Focus"}</span>
             </div>
           </button>
