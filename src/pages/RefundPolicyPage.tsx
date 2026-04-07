@@ -2,7 +2,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 
 const APP_NAME = "MySession";
-const SUPPORT_EMAIL = "yaroslav@mysession.club"; // TODO: replace with your real support email
+const SUPPORT_EMAIL = "yaroslav@mysession.club";
 
 export default function RefundPolicyPage() {
     return (
@@ -17,112 +17,104 @@ export default function RefundPolicyPage() {
                     </p>
 
                     <div className="mt-6 space-y-6 text-[14px] leading-relaxed text-black/80">
+
                         <section>
                             <h2 className="text-[16px] font-semibold text-black/85">
                                 1. General policy
                             </h2>
                             <p className="mt-2">
-                                {APP_NAME} is a digital online service. Refund requests are reviewed
-                                individually and handled in a reasonable timeframe based on the
-                                payment type, service status, and the reason for the request.
+                                All purchases are processed by Paddle as an authorised reseller.
                             </p>
                             <p className="mt-2">
-                                To request a refund or billing review, please contact{" "}
-                                <a
-                                    className="underline underline-offset-2 hover:opacity-80"
-                                    href={`mailto:${SUPPORT_EMAIL}`}
-                                >
+                                Unless required by applicable law, transactions are non-refundable.
+                            </p>
+                            <p className="mt-2">
+                                Refund requests must be submitted within <b>14 days</b> from the date of the transaction.
+                            </p>
+                        </section>
+
+                        <section>
+                            <h2 className="text-[16px] font-semibold text-black/85">
+                                2. Statutory refund rights
+                            </h2>
+                            <p className="mt-2">
+                                Depending on your country, you may have a legal right to withdraw from a purchase and receive a refund.
+                            </p>
+                            <p className="mt-2">
+                                For users in the European Union, EEA, Switzerland, and the United Kingdom, this period is <b>14 days</b>.
+                            </p>
+                            <p className="mt-2">
+                                For other regions, different statutory periods (such as 7 days or 5 days) may apply.
+                            </p>
+                        </section>
+
+                        <section>
+                            <h2 className="text-[16px] font-semibold text-black/85">
+                                3. Digital service usage
+                            </h2>
+                            <p className="mt-2">
+                                {APP_NAME} is a digital service. If access to the service has been provided and used,
+                                your right to withdraw may be limited where permitted by law.
+                            </p>
+                            <p className="mt-2">
+                                By using the service after purchase, you may be deemed to have waived certain withdrawal rights.
+                            </p>
+                        </section>
+
+                        <section>
+                            <h2 className="text-[16px] font-semibold text-black/85">
+                                4. How to request a refund
+                            </h2>
+                            <p className="mt-2">
+                                To request a refund, you must contact Paddle using one of the following:
+                            </p>
+                            <ul className="mt-2 list-disc pl-5 space-y-1">
+                                <li>the receipt email you received after purchase;</li>
+                                <li>the “Manage subscription” or “View receipt” link;</li>
+                                <li>or Paddle support at https://paddle.net.</li>
+                            </ul>
+                            <p className="mt-2">
+                                You may also contact us at{" "}
+                                <a href={`mailto:${SUPPORT_EMAIL}`} className="underline">
                                     {SUPPORT_EMAIL}
                                 </a>{" "}
-                                and include the email associated with your account and details of
-                                the payment.
+                                for assistance.
                             </p>
                         </section>
 
                         <section>
                             <h2 className="text-[16px] font-semibold text-black/85">
-                                2. Cases where a refund may be granted
-                            </h2>
-                            <p className="mt-2">Refunds may be approved in situations such as:</p>
-                            <ul className="mt-2 list-disc pl-5 space-y-1">
-                                <li>duplicate or accidental double payment;</li>
-                                <li>technical billing error;</li>
-                                <li>failure to provide the paid service or paid access;</li>
-                                <li>another exceptional case reviewed and approved by support.</li>
-                            </ul>
-                        </section>
-
-                        <section>
-                            <h2 className="text-[16px] font-semibold text-black/85">
-                                3. Subscription cancellation
+                                5. Refund processing
                             </h2>
                             <p className="mt-2">
-                                If your plan is billed on a recurring basis, you may request
-                                cancellation before the next billing cycle.
+                                If approved, refunds will be issued to the original payment method where possible.
                             </p>
                             <p className="mt-2">
-                                Cancellation generally stops future charges. It does not
-                                automatically refund the current paid period unless the refund is
-                                separately approved under this policy or required by law.
+                                Refunds are typically processed within 14 days after approval.
                             </p>
                         </section>
 
                         <section>
                             <h2 className="text-[16px] font-semibold text-black/85">
-                                4. Non-refundable situations
+                                6. Subscriptions
                             </h2>
                             <p className="mt-2">
-                                Because {APP_NAME} provides digital access and online participation,
-                                certain payments may be non-refundable, including cases where:
+                                Subscriptions can be cancelled at any time to prevent future billing.
                             </p>
-                            <ul className="mt-2 list-disc pl-5 space-y-1">
-                                <li>paid access has already been granted and used;</li>
-                                <li>the current paid period is already active and functioning;</li>
-                                <li>
-                                    the request is based only on a change of mind after service
-                                    access has already been provided;
-                                </li>
-                                <li>
-                                    the issue was caused by the user’s own device, browser, internet
-                                    connection, or third-party environment outside our control.
-                                </li>
-                            </ul>
                             <p className="mt-2">
-                                Exceptions may still apply where required by law or where there is a
-                                confirmed technical/service failure on our side.
+                                Cancellation does not automatically result in a refund for the current billing period.
                             </p>
                         </section>
 
                         <section>
                             <h2 className="text-[16px] font-semibold text-black/85">
-                                5. Timeframe for review
+                                7. Chargebacks and disputes
                             </h2>
                             <p className="mt-2">
-                                Refund and billing requests are generally reviewed within 5–10
-                                business days, although some cases may require additional
-                                verification.
+                                We recommend contacting Paddle before initiating a chargeback or dispute with your payment provider.
                             </p>
-                        </section>
-
-                        <section>
-                            <h2 className="text-[16px] font-semibold text-black/85">
-                                6. Refund method
-                            </h2>
                             <p className="mt-2">
-                                If a refund is approved, it will normally be returned to the
-                                original payment method where technically possible.
-                            </p>
-                        </section>
-
-                        <section>
-                            <h2 className="text-[16px] font-semibold text-black/85">
-                                7. Transaction cancellation
-                            </h2>
-                            <p className="mt-2">
-                                If you believe a transaction should be cancelled or reversed, contact
-                                support as soon as possible. If the payment has not yet been fully
-                                processed or if there is a confirmed technical issue, cancellation
-                                may be possible.
+                                Access to the service may be suspended during dispute resolution.
                             </p>
                         </section>
 
@@ -131,48 +123,13 @@ export default function RefundPolicyPage() {
                                 8. Related pages
                             </h2>
                             <p className="mt-2">
-                                You can also review our{" "}
-                                <Link
-                                    to="/terms"
-                                    className="underline underline-offset-2 hover:opacity-80"
-                                >
-                                    Terms and Conditions
-                                </Link>{" "}
+                                See also our{" "}
+                                <Link to="/terms" className="underline">Terms and Conditions</Link>{" "}
                                 and{" "}
-                                <Link
-                                    to="/pricing"
-                                    className="underline underline-offset-2 hover:opacity-80"
-                                >
-                                    Pricing
-                                </Link>{" "}
-                                page for more information about plan access, service delivery, and
-                                billing structure.
+                                <Link to="/pricing" className="underline">Pricing</Link>.
                             </p>
                         </section>
-                    </div>
 
-                    <div className="mt-8 pt-6 border-t border-black/10 flex flex-wrap items-center justify-between gap-3">
-                        <Link
-                            to="/"
-                            className="text-[13px] text-black/65 hover:text-black/90 transition"
-                        >
-                            ← Back to home
-                        </Link>
-
-                        <div className="flex flex-wrap gap-2">
-                            <Link
-                                to="/terms"
-                                className="text-[13px] px-3 py-2 rounded-xl border border-black/10 bg-black/5 hover:bg-black/10 transition"
-                            >
-                                Terms
-                            </Link>
-                            <Link
-                                to="/contact"
-                                className="text-[13px] px-3 py-2 rounded-xl border border-black/10 bg-black/5 hover:bg-black/10 transition"
-                            >
-                                Contact
-                            </Link>
-                        </div>
                     </div>
                 </div>
             </main>
