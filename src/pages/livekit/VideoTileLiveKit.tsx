@@ -91,6 +91,7 @@ type VideoTileProps = {
     hostActions?: HostTileActions;
     avatarUrl?: string;
     micMuted?: boolean;
+    mirrorVideo?: boolean;
 };
 
 function VideoTileInner({
@@ -102,6 +103,7 @@ function VideoTileInner({
     hostActions,
     avatarUrl,
     micMuted,
+    mirrorVideo = true,
 }: VideoTileProps) {
     const wrapRef = useRef<HTMLDivElement | null>(null);
     const mediaHostRef = useRef<HTMLDivElement | null>(null);
@@ -206,7 +208,11 @@ function VideoTileInner({
             (el.style as any).objectFit = "cover";
             el.style.backgroundColor = mediaBgColor;
             el.style.display = "block";
-            el.style.transform = "translateZ(0)";
+            el.style.transform = isLocal
+                ? mirrorVideo
+                    ? "translateZ(0) scaleX(-1)"
+                    : "translateZ(0) scaleX(1)"
+                : "translateZ(0)";
             (el.style as any).backfaceVisibility = "hidden";
             el.style.willChange = "transform";
         } catch { }
@@ -234,7 +240,7 @@ function VideoTileInner({
 
         attachedElRef.current = el;
         return cleanup;
-    }, [videoTrack, isLocal, mediaBgColor]);
+    }, [videoTrack, isLocal, mediaBgColor, mirrorVideo]);
 
     const showActions =
         !isLocal &&
@@ -401,6 +407,7 @@ const areVideoTilePropsEqual = (prev: VideoTileProps, next: VideoTileProps) => {
         prev.showBadge === next.showBadge &&
         prev.avatarUrl === next.avatarUrl &&
         prev.micMuted === next.micMuted &&
+        prev.mirrorVideo === next.mirrorVideo &&
         prev.hostActions?.canMuteMic === next.hostActions?.canMuteMic &&
         prev.hostActions?.canMuteCam === next.hostActions?.canMuteCam &&
         prev.hostActions?.micMuted === next.hostActions?.micMuted &&

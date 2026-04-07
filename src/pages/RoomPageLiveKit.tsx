@@ -527,6 +527,8 @@ const REPORTS_TABLE = "session_reports";
 const KICK_EVENTS_CHANNEL_PREFIX = "mysession_lk_kick_events";
 
 const ROOM_SOUNDS_PREF_KEY = "mysession_lk_room_sounds";
+const ROOM_SOUNDS_VOLUME_PREF_KEY = "mysession_lk_room_sounds_volume";
+const PREVIEW_MIRROR_PREF_KEY = "mysession_lk_preview_mirror";
 const JOIN_SOUND_CANDIDATES = [
   "/sounds/jitsi/joined.mp3",
   "/sounds/joined.mp3",
@@ -1177,6 +1179,31 @@ export function RoomPageLiveKit() {
   });
   const roomSoundsEnabledRef = useRef(roomSoundsEnabled);
 
+  const [roomSoundsVolume, setRoomSoundsVolume] = useState<number>(() => {
+    try {
+      const raw = Number(localStorage.getItem(ROOM_SOUNDS_VOLUME_PREF_KEY) || "90");
+      if (!Number.isFinite(raw)) return 90;
+      return Math.max(0, Math.min(100, Math.round(raw)));
+    } catch {
+      return 90;
+    }
+  });
+  const roomSoundsVolumeRef = useRef(roomSoundsVolume);
+
+  const [previewMirrored, setPreviewMirrored] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem(PREVIEW_MIRROR_PREF_KEY);
+      return raw === null ? true : raw === "true";
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PREVIEW_MIRROR_PREF_KEY, String(previewMirrored));
+    } catch { }
+  }, [previewMirrored]);
 
   useEffect(() => {
     roomSoundsEnabledRef.current = roomSoundsEnabled;
@@ -1185,20 +1212,40 @@ export function RoomPageLiveKit() {
     } catch { }
   }, [roomSoundsEnabled]);
 
-  const playOneShot = (url: string, volume = 0.9) => {
+  useEffect(() => {
+    roomSoundsVolumeRef.current = roomSoundsVolume;
+    try {
+      localStorage.setItem(ROOM_SOUNDS_VOLUME_PREF_KEY, String(roomSoundsVolume));
+    } catch { }
+  }, [roomSoundsVolume]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PREVIEW_MIRROR_PREF_KEY, String(previewMirrored));
+    } catch { }
+  }, [previewMirrored]);
+
+  const playOneShot = (url: string, volume = 1) => {
     if (!url) return;
     if (!roomSoundsEnabledRef.current) return;
+
+    const baseVolume = Math.max(0, Math.min(1, roomSoundsVolumeRef.current / 100));
+    const finalVolume = Math.max(0, Math.min(1, baseVolume * volume));
+
     const a = new Audio(url);
-    a.volume = volume;
+    a.volume = finalVolume;
     a.play().catch(() => { });
   };
 
   const startWelcomeLoop = () => {
     stopWelcomeLoop();
     if (!roomSoundsEnabledRef.current) return;
+
+    const baseVolume = Math.max(0, Math.min(1, roomSoundsVolumeRef.current / 100));
+
     const a = new Audio(WELCOME_LOOP_SOUND);
     a.loop = true;
-    a.volume = 0.6;
+    a.volume = Math.max(0, Math.min(1, baseVolume * 0.6));
     welcomeLoopRef.current = a;
     a.play().catch(() => { });
   };
@@ -4791,6 +4838,7 @@ export function RoomPageLiveKit() {
             showBadge={getBadgeForTile(t)}
             hostActions={undefined}
             avatarUrl={tileAvatarUrl}
+            mirrorVideo={t.isLocal ? previewMirrored : false}
           />
         </div>
 
@@ -6052,6 +6100,8 @@ export function RoomPageLiveKit() {
             })()
           }
           previewVideoFilterCss={localVideoFilterCss}
+          previewMirrored={previewMirrored}
+          onTogglePreviewMirrored={setPreviewMirrored}
           onUploadBg={(file) => {
             try {
               if (uploadedBgUrlRef.current) {
@@ -6130,6 +6180,8 @@ export function RoomPageLiveKit() {
           }}
           roomSoundsEnabled={roomSoundsEnabled}
           onToggleRoomSounds={() => setRoomSoundsEnabled((prev) => !prev)}
+          roomSoundsVolume={roomSoundsVolume}
+          onChangeRoomSoundsVolume={setRoomSoundsVolume}
           colorCorrectionEnabled={isLgUp}
           brightness={colorCorrection.brightness}
           contrast={colorCorrection.contrast}
