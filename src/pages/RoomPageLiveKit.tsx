@@ -1036,7 +1036,7 @@ export function RoomPageLiveKit() {
     videoInputId: "",
     audioOutputId: "default",
 
-    audioEnabled: true,
+    audioEnabled: false,
     videoEnabled: true,
 
     echoCancellation: true,
@@ -3648,6 +3648,9 @@ export function RoomPageLiveKit() {
       r.on(RoomEvent.LocalTrackUnpublished as any, refresh as any);
 
       await r.connect(lkServerUrl, lkToken, { autoSubscribe: true });
+
+      await r.localParticipant.setMicrophoneEnabled(false);
+      setMicOn(false);
 
       kickedBySignalRef.current = false;
 
