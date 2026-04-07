@@ -2244,20 +2244,35 @@ export function RoomPageLiveKit() {
 
     await cleanupPrejoinPreparedVideoTrack();
 
-    const shouldForceVideoDeviceId =
-      !isMobileQuery &&
-      !isTabletQuery &&
-      !!String(pj.videoInputId || "").trim();
+    const isMobileLike = isMobileQuery || isTabletQuery || deviceTier === "weak";
+    const wantedVideoDeviceId = String(pj.videoInputId || "").trim();
 
-    const track = await createLocalVideoTrack({
-      deviceId: shouldForceVideoDeviceId ? pj.videoInputId || undefined : undefined,
-      resolution: { width: capturePreset.width, height: capturePreset.height },
-      frameRate: capturePreset.fps,
-    } as any);
+    try {
+      const track = await createLocalVideoTrack({
+        deviceId:
+          !isMobileLike && wantedVideoDeviceId
+            ? wantedVideoDeviceId
+            : undefined,
+        resolution: {
+          width: isMobileLike ? 320 : capturePreset.width,
+          height: isMobileLike ? 180 : capturePreset.height,
+        },
+        frameRate: isMobileLike ? 8 : capturePreset.fps,
+      } as any);
 
-    prejoinPreparedVideoTrackRef.current = track;
-    setPrejoinPreviewVersion((v) => v + 1);
-    return track;
+      prejoinPreparedVideoTrackRef.current = track;
+      setPrejoinPreviewVersion((v) => v + 1);
+      return track;
+    } catch (e: any) {
+      console.warn("createPrejoinPreparedVideoTrack failed:", e);
+
+      if (isMobileLike) {
+        setDeviceError(String(e?.message || e || "camera_preview_failed"));
+        return null;
+      }
+
+      throw e;
+    }
   };
 
   const applyPrejoinVideoFx = async (mode: FxMode) => {
@@ -2355,7 +2370,7 @@ export function RoomPageLiveKit() {
       if (cancelled) return;
 
       try {
-        if (deviceTier === "weak") return;
+        if (isMobileQuery || isTabletQuery || deviceTier === "weak") return;
 
         await initPrejoinPreview({
           delayedForWeak: false,
@@ -2373,6 +2388,7 @@ export function RoomPageLiveKit() {
 
   useEffect(() => {
     if (!prejoinOpen) return;
+    if (isMobileQuery || isTabletQuery || deviceTier === "weak") return;
 
     const pj = prejoinRef.current;
     if (!pj.videoEnabled) return;
@@ -2389,7 +2405,7 @@ export function RoomPageLiveKit() {
     }, 180);
 
     return () => window.clearTimeout(t);
-  }, [prejoin.videoInputId, prejoinOpen, deviceTier]);
+  }, [prejoin.videoInputId, prejoinOpen, deviceTier, isMobileQuery, isTabletQuery]);
 
   useEffect(() => {
     if (!prejoinOpen) return;
@@ -3718,11 +3734,17 @@ export function RoomPageLiveKit() {
         await r.localParticipant.setMicrophoneEnabled(false);
       }
 
+      const shouldAutoStartCameraOnJoin =
+        pj.videoEnabled &&
+        !isMobileQuery &&
+        !isTabletQuery &&
+        deviceTier !== "weak";
+        
       // cam
       let usedPrepared = false;
 
-      if (pj.videoEnabled) {
-        const fxAllowed = deviceTier !== "weak" && videoFxMode !== "off";
+      if (shouldAutoStartCameraOnJoin) {
+        const fxAllowed = videoFxMode !== "off";
         let prepared = prejoinPreparedVideoTrackRef.current;
 
         if (!prepared) {
@@ -3745,11 +3767,14 @@ export function RoomPageLiveKit() {
           await r.localParticipant.publishTrack(prepared, { source: Track.Source.Camera } as any);
           usedPrepared = true;
           prejoinPreparedVideoTrackRef.current = null;
+          setCamOn(true);
         } else {
           await r.localParticipant.setCameraEnabled(false);
+          setCamOn(false);
         }
       } else {
         await r.localParticipant.setCameraEnabled(false);
+        setCamOn(false);
       }
 
       refresh();
@@ -3863,17 +3888,21 @@ export function RoomPageLiveKit() {
 
       if (camOn) return;
 
+      const isMobileLike = isMobileQuery || isTabletQuery || deviceTier === "weak";
+
       const shouldForceVideoDeviceId =
-        !isMobileQuery &&
-        !isTabletQuery &&
+        !isMobileLike &&
         !!String(selectedVideoInputId || prejoinRef.current.videoInputId || "").trim();
 
       const nextTrack = await createLocalVideoTrack({
         deviceId: shouldForceVideoDeviceId
           ? selectedVideoInputId || prejoinRef.current.videoInputId || undefined
           : undefined,
-        resolution: { width: capturePreset.width, height: capturePreset.height },
-        frameRate: capturePreset.fps,
+        resolution: {
+          width: isMobileLike ? 320 : capturePreset.width,
+          height: isMobileLike ? 180 : capturePreset.height,
+        },
+        frameRate: isMobileLike ? 8 : capturePreset.fps,
       } as any);
 
       if (deviceTier !== "weak" && videoFxMode !== "off") {
