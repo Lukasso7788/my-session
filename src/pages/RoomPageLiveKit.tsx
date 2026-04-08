@@ -6246,7 +6246,7 @@ export function RoomPageLiveKit() {
                 value={editNameValue}
                 onChange={(e) => setEditNameValue(e.target.value)}
                 placeholder="Your name"
-                className={`mt-4 w-full rounded-xl px-3 py-2 outline-none border ${isLight ? "bg-white border-black/10 text-black/85" : "bg-black/20 border-white/10 text-white/90"
+                className={`mt-4 w-full rounded-xl px-3 py-2 outline-none border ${isLight ? "bg-white border-black/10 text-black/85" : "bg-[#020617] border-white/10 text-white/90"
                   }`}
               />
 
@@ -6298,11 +6298,6 @@ export function RoomPageLiveKit() {
           aria-hidden={false}
         >
           <div
-            className="absolute inset-0 pointer-events-auto"
-            onClick={() => closeTileMenu()}
-          />
-
-          <div
             data-lk-admin-menu-surface="true"
             className={`pointer-events-auto absolute w-[min(22rem,calc(100vw-1rem))] max-h-[min(78vh,34rem)] overflow-y-auto overflow-x-hidden select-none rounded-2xl border shadow-2xl ${isLight ? "bg-white border-black/10 text-black/85" : "bg-black/20 border-white/10 text-white/90"
               }`}
@@ -6318,6 +6313,12 @@ export function RoomPageLiveKit() {
               e.stopPropagation();
             }}
             onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+            }}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+            }}
           >
             {(() => {
               const targetTile = tilesBaseForUi.find((t) => t.id === openTileAdminMenuId) || null;
