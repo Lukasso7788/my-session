@@ -6304,23 +6304,18 @@ export function RoomPageLiveKit() {
 
           <div
             data-lk-admin-menu-surface="true"
-            className={`pointer-events-auto absolute w-[min(22rem,calc(100vw-1rem))] max-h-[min(70vh,32rem)] overflow-y-auto rounded-2xl shadow-2xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
+            className={`pointer-events-auto absolute w-[min(22rem,calc(100vw-1rem))] max-h-[min(78vh,34rem)] overflow-y-auto overflow-x-hidden select-none rounded-2xl border shadow-2xl ${isLight ? "bg-white border-black/10 text-black/85" : "bg-black/20 border-white/10 text-white/90"
               }`}
             style={{
-              left: Math.max(
-                8,
-                Math.min(
-                  tileMenuAnchor.x - 352,
-                  tileMenuAnchor.viewportWidth - 360
-                )
-              ),
-              top: Math.max(
-                8,
-                Math.min(
-                  tileMenuAnchor.y + 8,
-                  tileMenuAnchor.viewportHeight - 520
-                )
-              ),
+              left: Math.max(8, Math.min(tileMenuAnchor.x - 352, tileMenuAnchor.viewportWidth - 360)),
+              top: Math.max(8, Math.min(tileMenuAnchor.y + 8, tileMenuAnchor.viewportHeight - 520)),
+              fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+              overscrollBehavior: "contain",
+              WebkitOverflowScrolling: "touch",
+              touchAction: "pan-y",
+            }}
+            onWheel={(e) => {
+              e.stopPropagation();
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -6382,54 +6377,6 @@ export function RoomPageLiveKit() {
 
               return (
                 <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSettingsOpen(true);
-                      setSettingsPreviewVersion((v) => v + 1);
-                      closeTileMenu();
-                    }}
-                    className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
-                      }`}
-                  >
-                    Video room settings
-                  </button>
-
-                  {isHost && (
-                    <>
-                      <div className={isLight ? "border-t border-black/10" : "border-t border-white/10"} />
-
-                      <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>
-                        Remote audio for everyone
-                      </div>
-
-                      {[100, 150, 200, 300].map((pct) => (
-                        <button
-                          key={pct}
-                          type="button"
-                          onClick={() => {
-                            setDefaultRemoteVolumePct(pct);
-                            closeTileMenu();
-                          }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
-                        >
-                          Set default remote volume to {pct}%
-                        </button>
-                      ))}
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          resetAllParticipantVolumesToDefault();
-                          closeTileMenu();
-                        }}
-                        className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
-                      >
-                        Reset all participant volumes
-                      </button>
-                    </>
-                  )}
-
                   {canRoleManageTarget && (
                     <>
                       <div className={isLight ? "border-t border-black/10" : "border-t border-white/10"} />
@@ -6540,6 +6487,9 @@ export function RoomPageLiveKit() {
                               }));
                             }}
                             className="flex-1 accent-blue-500"
+                            style={{
+                              fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                            }}
                           />
 
                           <div
@@ -6610,6 +6560,55 @@ export function RoomPageLiveKit() {
                           </button>
                         </>
                       )}
+                    </>
+                  )}
+
+                  <div className={isLight ? "border-t border-black/10" : "border-t border-white/10"} />
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSettingsOpen(true);
+                      setSettingsPreviewVersion((v) => v + 1);
+                      closeTileMenu();
+                    }}
+                    className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
+                  >
+                    Video room settings
+                  </button>
+
+                  {isHost && (
+                    <>
+                      <div className={isLight ? "border-t border-black/10" : "border-t border-white/10"} />
+
+                      <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>
+                        Remote audio for everyone
+                      </div>
+
+                      {[100, 150, 200, 300].map((pct) => (
+                        <button
+                          key={pct}
+                          type="button"
+                          onClick={() => {
+                            setDefaultRemoteVolumePct(pct);
+                            closeTileMenu();
+                          }}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
+                        >
+                          Set default remote volume to {pct}%
+                        </button>
+                      ))}
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          resetAllParticipantVolumesToDefault();
+                          closeTileMenu();
+                        }}
+                        className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
+                      >
+                        Reset all participant volumes
+                      </button>
                     </>
                   )}
 
@@ -6706,26 +6705,15 @@ export function RoomPageLiveKit() {
                       </div>
 
                       <div className="px-4 py-3">
-                        <div className="flex items-center gap-3">
+                        <div
+                          className="flex items-center gap-3"
+                          style={{
+                            fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                          }}
+                        >
                           <div className={`text-[13px] ${isLight ? "text-black/70" : "text-white/70"}`}>
                             Vol
                           </div>
-
-                          <input
-                            type="range"
-                            min={0}
-                            max={100}
-                            step={1}
-                            value={participantVolumePct}
-                            onChange={(e) => {
-                              const nextPct = clamp(Number(e.target.value || 100), 0, 100);
-                              setVolumePctByParticipantKey((prev) => ({
-                                ...prev,
-                                [participantVolumeKey]: nextPct,
-                              }));
-                            }}
-                            className="flex-1 accent-blue-500"
-                          />
 
                           <div className={`w-10 text-right text-[13px] tabular-nums ${isLight ? "text-black/70" : "text-white/70"
                             }`}>
