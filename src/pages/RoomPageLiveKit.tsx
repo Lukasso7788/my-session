@@ -1231,14 +1231,12 @@ export function RoomPageLiveKit() {
     document.addEventListener("touchstart", onPointerDown, true);
     document.addEventListener("keydown", onEscape, true);
     window.addEventListener("resize", onWindowChange);
-    window.addEventListener("scroll", onWindowChange, true);
 
     return () => {
       document.removeEventListener("mousedown", onPointerDown, true);
       document.removeEventListener("touchstart", onPointerDown, true);
       document.removeEventListener("keydown", onEscape, true);
       window.removeEventListener("resize", onWindowChange);
-      window.removeEventListener("scroll", onWindowChange, true);
     };
   }, [openTileAdminMenuId, closeTileMenu]);
 
