@@ -20,10 +20,6 @@ type AudioWithSinkId = HTMLAudioElement & {
     setSinkId?: (deviceId: string) => Promise<void>;
 };
 
-type AudioContextLike = AudioContext & {
-    webkitAudioContext?: typeof AudioContext;
-};
-
 type AudioGraph = {
     audioContext: AudioContext;
     source: MediaElementAudioSourceNode;
@@ -225,11 +221,9 @@ export function RemoteAudioRenderer({
         };
     }, [room, rebuild]);
 
-    const renderedTracks = useMemo(() => tracks, [tracks]);
-
     return (
         <>
-            {renderedTracks.map((item) => {
+            {tracks.map((item) => {
                 const participantVolumeKey = getParticipantVolumeKey({
                     id: item.id,
                     participantUserId: item.participantUserId,
@@ -291,11 +285,12 @@ function AudioEl({
         };
     }, []);
 
+    // IMPORTANT:
+    // volume changes must NOT rebuild / detach / close the whole audio pipeline.
+    // Only update gain here.
     useEffect(() => {
         const graph = graphRef.current;
         const el = ref.current;
-
-        if (!el) return;
 
         if (graph) {
             try {
@@ -304,7 +299,11 @@ function AudioEl({
             return;
         }
 
-        el.volume = 1;
+        if (el) {
+            try {
+                el.volume = Math.max(0, Math.min(1, effectiveVolumeMultiplier));
+            } catch { }
+        }
     }, [effectiveVolumeMultiplier]);
 
     useEffect(() => {
@@ -340,7 +339,7 @@ function AudioEl({
             const audioContext = makeAudioContext();
             if (!audioContext) {
                 try {
-                    el.volume = Math.min(1, effectiveVolumeMultiplier);
+                    el.volume = Math.max(0, Math.min(1, effectiveVolumeMultiplier));
                 } catch { }
                 return;
             }
@@ -366,7 +365,7 @@ function AudioEl({
             } catch (error) {
                 console.warn(`Audio graph init failed for ${debugLabel}`, error);
                 try {
-                    el.volume = Math.min(1, effectiveVolumeMultiplier);
+                    el.volume = Math.max(0, Math.min(1, effectiveVolumeMultiplier));
                 } catch { }
             }
         };
@@ -382,7 +381,8 @@ function AudioEl({
 
         const tryPlay = async (reason: string) => {
             if (cancelled || !mountedRef.current) return;
-            if (!ref.current) return;
+            const audioEl = ref.current;
+            if (!audioEl) return;
 
             const now = Date.now();
             if (now - lastPlayAttemptAtRef.current < 120) return;
@@ -396,7 +396,7 @@ function AudioEl({
                     await graph.audioContext.resume();
                 }
 
-                await ref.current.play();
+                await audioEl.play();
             } catch (error) {
                 console.warn(`Remote audio play failed for ${debugLabel} (${reason})`, error);
                 scheduleRetry(reason, 900);
@@ -405,16 +405,17 @@ function AudioEl({
 
         const applySinkIfPossible = async () => {
             if (cancelled || !mountedRef.current) return;
-            if (!ref.current) return;
+            const audioEl = ref.current;
+            if (!audioEl) return;
             if (isMobile) return;
             if (!audioOutputId || audioOutputId === "default") return;
             if (!canUseSinkSelection()) return;
 
-            const audioEl = ref.current as AudioWithSinkId;
+            const sinkEl = audioEl as AudioWithSinkId;
 
             try {
-                if (typeof audioEl.setSinkId === "function") {
-                    await audioEl.setSinkId(audioOutputId);
+                if (typeof sinkEl.setSinkId === "function") {
+                    await sinkEl.setSinkId(audioOutputId);
                 }
             } catch (error) {
                 console.warn(`setSinkId failed for ${debugLabel}`, error);
@@ -485,9 +486,6 @@ function AudioEl({
 
             try {
                 el.pause();
-                el.srcObject = null;
-                el.removeAttribute("src");
-                el.load();
             } catch { }
 
             try {
@@ -500,7 +498,7 @@ function AudioEl({
                 }
             } catch { }
         };
-    }, [track, audioOutputId, debugLabel, effectiveVolumeMultiplier]);
+    }, [track, audioOutputId, debugLabel]);
 
     useEffect(() => {
         if (!mountedRef.current) return;
