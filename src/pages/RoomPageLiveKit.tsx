@@ -6325,26 +6325,63 @@ export function RoomPageLiveKit() {
             onClick={(e) => e.stopPropagation()}
           >
             {(() => {
-              const t = tilesForRender.find((x) => x.id === openTileAdminMenuId);
-              if (!t) return null;
+              const targetTile = tilesBaseForUi.find((t) => t.id === openTileAdminMenuId) || null;
+              if (!targetTile) return null;
 
-              const pidBase = String(t.participantUserId || extractBaseUserIdFromIdentity(String(t.participantIdentity || "")) || "").toLowerCase();
-              const isTargetModerator = !!pidBase && moderatorUserIds.includes(pidBase);
-              const roleBusy =
-                roleBusyKey === `mod:${pidBase}:grant` || roleBusyKey === `mod:${pidBase}:revoke`;
+              const targetIdentity = String(targetTile.participantIdentity || "").trim();
+              const targetUserId = String(
+                targetTile.participantUserId ||
+                extractBaseUserIdFromIdentity(targetIdentity)
+              )
+                .trim()
+                .toLowerCase();
+
+              const pidBase = looksLikeUuid(targetUserId) ? targetUserId : "";
+              const isTargetModerator = !!(pidBase && moderatorUserIds.includes(pidBase));
 
               const canRoleManageTarget =
-                !!pidBase &&
-                looksLikeUuid(pidBase) &&
+                !targetTile.isLocal &&
                 isHost &&
+                !!pidBase &&
                 pidBase !== String(authUserId || "").toLowerCase();
+
+              const canModerateTarget =
+                !targetTile.isLocal &&
+                !!targetIdentity &&
+                (isHost || isSelfModerator);
+
+              const participantVolumeKey = getParticipantVolumeKey(targetTile);
+              const participantVolumePctRaw = volumePctByParticipantKey[participantVolumeKey];
+              const participantVolumePct = Number.isFinite(Number(participantVolumePctRaw))
+                ? clamp(Number(participantVolumePctRaw), 0, 100)
+                : 100;
+
+              const roleBusy = !!pidBase
+                ? roleBusyKey === `mod:${pidBase}:${isTargetModerator ? "revoke" : "grant"}`
+                : false;
+
+              const muteBusyKey = `${targetIdentity}:${String(
+                targetTile.remoteMicPubSid || targetTile.micTrackSid || ""
+              )}:mute`;
+              const camBusyKey = `${targetIdentity}:${String(targetTile.camTrackSid || "")}:camera-off`;
+
+              const micBusy = adminBusyKey === muteBusyKey;
+              const camBusy = adminBusyKey === camBusyKey;
+              const kickBusy = adminBusyKey === `${targetIdentity}:kick`;
+
+              const canMuteMic =
+                canModerateTarget &&
+                !!String(targetTile.remoteMicPubSid || targetTile.micTrackSid || "").trim();
+
+              const canTurnOffCam =
+                canModerateTarget &&
+                !!String(targetTile.camTrackSid || "").trim();
+
+              const isPinned = pinnedTileId === targetTile.id;
+              const isHidden = !!hiddenTileIds[targetTile.id];
 
               return (
                 <>
-                  <div className={`px-4 py-3 text-[12px] font-semibold ${isLight ? "text-black/45" : "text-white/45"}`}>
-                    Participant actions
-                  </div>
-
                   <button
                     type="button"
                     onClick={() => {
@@ -6352,14 +6389,46 @@ export function RoomPageLiveKit() {
                       setSettingsPreviewVersion((v) => v + 1);
                       closeTileMenu();
                     }}
-                    className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
+                    className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                      }`}
                   >
                     Video room settings
                   </button>
 
                   {isHost && (
                     <>
-                      
+                      <div className={isLight ? "border-t border-black/10" : "border-t border-white/10"} />
+
+                      <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>
+                        Remote audio for everyone
+                      </div>
+
+                      {[100, 150, 200, 300].map((pct) => (
+                        <button
+                          key={pct}
+                          type="button"
+                          onClick={() => {
+                            setDefaultRemoteVolumePct(pct);
+                            closeTileMenu();
+                          }}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                            }`}
+                        >
+                          Set default remote volume to {pct}%
+                        </button>
+                      ))}
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          resetAllParticipantVolumesToDefault();
+                          closeTileMenu();
+                        }}
+                        className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                          }`}
+                      >
+                        Reset all participant volumes
+                      </button>
                     </>
                   )}
 
@@ -6380,7 +6449,8 @@ export function RoomPageLiveKit() {
                             await grantModerator(pidBase);
                             closeTileMenu();
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                            }`}
                         >
                           Make moderator
                         </button>
@@ -6393,10 +6463,157 @@ export function RoomPageLiveKit() {
                             await revokeModerator(pidBase);
                             closeTileMenu();
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                            }`}
                         >
                           Remove moderator
                         </button>
+                      )}
+                    </>
+                  )}
+
+                  {canModerateTarget && (
+                    <>
+                      <div className={isLight ? "border-t border-black/10" : "border-t border-white/10"} />
+
+                      <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>
+                        Moderation
+                      </div>
+
+                      {canMuteMic && (
+                        <button
+                          type="button"
+                          disabled={micBusy}
+                          onClick={async () => {
+                            const trackSid = String(targetTile.remoteMicPubSid || targetTile.micTrackSid || "").trim();
+                            if (!targetIdentity || !trackSid) return;
+                            await adminMuteRemoteTrack(targetTile.id, targetIdentity, trackSid);
+                            closeTileMenu();
+                          }}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                            }`}
+                        >
+                          Mute Mic
+                        </button>
+                      )}
+
+                      {canTurnOffCam && (
+                        <button
+                          type="button"
+                          disabled={camBusy}
+                          onClick={async () => {
+                            const trackSid = String(targetTile.camTrackSid || "").trim();
+                            if (!targetIdentity || !trackSid) return;
+                            await adminTurnOffRemoteCamera(targetTile.id, targetIdentity, trackSid);
+                            closeTileMenu();
+                          }}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                            }`}
+                        >
+                          Turn camera off
+                        </button>
+                      )}
+                    </>
+                  )}
+
+                  {!targetTile.isLocal && (
+                    <>
+                      <div className={isLight ? "border-t border-black/10" : "border-t border-white/10"} />
+
+                      <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>
+                        Audio
+                      </div>
+
+                      <div className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className={`text-[13px] ${isLight ? "text-black/70" : "text-white/70"}`}>
+                            Vol
+                          </div>
+
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            step={1}
+                            value={participantVolumePct}
+                            onChange={(e) => {
+                              const nextPct = clamp(Number(e.target.value || 100), 0, 100);
+                              setVolumePctByParticipantKey((prev) => ({
+                                ...prev,
+                                [participantVolumeKey]: nextPct,
+                              }));
+                            }}
+                            className="flex-1 accent-blue-500"
+                          />
+
+                          <div className={`w-10 text-right text-[13px] tabular-nums ${isLight ? "text-black/70" : "text-white/70"
+                            }`}>
+                            {participantVolumePct}%
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {!targetTile.isLocal && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          togglePin(targetTile.id);
+                          closeTileMenu();
+                        }}
+                        className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                          }`}
+                      >
+                        {isPinned ? "Unpin participant" : "Pin participant"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          toggleHide(targetTile.id);
+                          closeTileMenu();
+                        }}
+                        className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                          }`}
+                      >
+                        {isHidden ? "Unhide participant" : "Hide participant"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReportTarget(targetTile);
+                          setReportReason("");
+                          setReportError("");
+                          setReportModalOpen(true);
+                          closeTileMenu();
+                        }}
+                        className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                          }`}
+                      >
+                        Report participant
+                      </button>
+
+                      {canModerateTarget && (
+                        <>
+                          <div className={isLight ? "border-t border-black/10" : "border-t border-white/10"} />
+
+                          <button
+                            type="button"
+                            disabled={kickBusy}
+                            onClick={async () => {
+                              if (!targetIdentity) return;
+                              await adminKickParticipant(targetIdentity, targetUserId || undefined, targetTile.label || undefined);
+                              closeTileMenu();
+                            }}
+                            className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-red-600 hover:bg-red-50" : "text-red-300 hover:bg-red-500/10"
+                              }`}
+                          >
+                            Kick participant
+                          </button>
+                        </>
                       )}
                     </>
                   )}
