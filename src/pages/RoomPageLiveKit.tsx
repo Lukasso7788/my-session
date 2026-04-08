@@ -6462,109 +6462,74 @@ export function RoomPageLiveKit() {
                     </>
                   )}
 
-                  {!targetTile.isLocal && (
-                    <>
-                      <div className={isLight ? "border-t border-black/10" : "border-t border-white/10"} />
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        togglePin(targetTile.id);
+                        closeTileMenu();
+                      }}
+                      className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                        }`}
+                    >
+                      {isPinned ? "Unpin participant" : "Pin participant"}
+                    </button>
 
-                      <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>
-                        Audio
-                      </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        toggleHide(targetTile.id);
+                        closeTileMenu();
+                      }}
+                      className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                        }`}
+                    >
+                      {isHidden ? "Unhide participant" : "Hide participant"}
+                    </button>
 
-                      <div className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <div className={`text-[13px] ${isLight ? "text-black/70" : "text-white/70"}`}>
-                            Vol
-                          </div>
+                    {!targetTile.isLocal && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReportTarget(targetTile);
+                            setReportReason("");
+                            setReportError("");
+                            setReportModalOpen(true);
+                            closeTileMenu();
+                          }}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                            }`}
+                        >
+                          Report participant
+                        </button>
 
-                          <input
-                            type="range"
-                            min={0}
-                            max={100}
-                            step={1}
-                            value={participantVolumePct}
-                            onChange={(e) => {
-                              const nextPct = clamp(Number(e.target.value || 100), 0, 100);
-                              setVolumePctByParticipantKey((prev) => ({
-                                ...prev,
-                                [participantVolumeKey]: nextPct,
-                              }));
-                            }}
-                            className="flex-1 accent-blue-500"
-                            style={{
-                              fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                            }}
-                          />
+                        {canModerateTarget && (
+                          <>
+                            <div className={isLight ? "border-t border-black/10" : "border-t border-white/10"} />
 
-                          <div
-                            className={`w-10 text-right text-[13px] tabular-nums ${isLight ? "text-black/70" : "text-white/70"
-                              }`}
-                          >
-                            {participantVolumePct}%
-                          </div>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          togglePin(targetTile.id);
-                          closeTileMenu();
-                        }}
-                        className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
-                      >
-                        {isPinned ? "Unpin participant" : "Pin participant"}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          toggleHide(targetTile.id);
-                          closeTileMenu();
-                        }}
-                        className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
-                      >
-                        {isHidden ? "Unhide participant" : "Hide participant"}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setReportTarget(targetTile);
-                          setReportReason("");
-                          setReportError("");
-                          setReportModalOpen(true);
-                          closeTileMenu();
-                        }}
-                        className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
-                      >
-                        Report participant
-                      </button>
-
-                      {canModerateTarget && (
-                        <>
-                          <div className={isLight ? "border-t border-black/10" : "border-t border-white/10"} />
-
-                          <button
-                            type="button"
-                            disabled={kickBusy}
-                            onClick={async () => {
-                              if (!targetIdentity) return;
-                              await adminKickParticipant(
-                                targetIdentity,
-                                targetUserId || undefined,
-                                targetTile.label || undefined
-                              );
-                              closeTileMenu();
-                            }}
-                            className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-red-600 hover:bg-red-50" : "text-red-300 hover:bg-red-500/10"
-                              }`}
-                          >
-                            Kick participant
-                          </button>
-                        </>
-                      )}
-                    </>
-                  )}
+                            <button
+                              type="button"
+                              disabled={kickBusy}
+                              onClick={async () => {
+                                if (!targetIdentity) return;
+                                await adminKickParticipant(
+                                  targetIdentity,
+                                  targetUserId || undefined,
+                                  targetTile.label || undefined
+                                );
+                                closeTileMenu();
+                              }}
+                              className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-red-600 hover:bg-red-50" : "text-red-300 hover:bg-red-500/10"
+                                }`}
+                            >
+                              Kick participant
+                            </button>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </>
 
                   <div className={isLight ? "border-t border-black/10" : "border-t border-white/10"} />
 
