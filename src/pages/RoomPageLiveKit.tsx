@@ -1035,13 +1035,16 @@ export function RoomPageLiveKit() {
   const accessTokenRef = useRef<string>("");
 
   const [selectedUser, setSelectedUser] = useState<HostProfile | null>(null);
-const [tileMenuAnchor, setTileMenuAnchor] = useState<{
-  tileId: string;
-  x: number;
-  y: number;
-} | null>(null);
-const [openTileAdminMenuId, setOpenTileAdminMenuId] = useState<string | null>(null);
-const [timelineEditorOpen, setTimelineEditorOpen] = useState(false);
+  const [tileMenuAnchor, setTileMenuAnchor] = useState<{
+    tileId: string;
+    x: number;
+    y: number;
+    viewportWidth: number;
+    viewportHeight: number;
+    portalDocument: Document | null;
+  } | null>(null);
+  const [openTileAdminMenuId, setOpenTileAdminMenuId] = useState<string | null>(null);
+  const [timelineEditorOpen, setTimelineEditorOpen] = useState(false);
   const [timelineDraftBlocks, setTimelineDraftBlocks] = useState<RoomTimelineBlock[]>([]);
   const [timelineSaving, setTimelineSaving] = useState(false);
   const [reportModalOpen, setReportModalOpen] = useState(false);
@@ -1183,12 +1186,17 @@ const [timelineEditorOpen, setTimelineEditorOpen] = useState(false);
     if (!anchorEl) return;
 
     const r = anchorEl.getBoundingClientRect();
+    const ownerDoc = anchorEl.ownerDocument || document;
+    const ownerWin = ownerDoc.defaultView || window;
 
     setOpenTileAdminMenuId(tileId);
     setTileMenuAnchor({
       tileId,
       x: r.right,
       y: r.bottom,
+      viewportWidth: ownerWin.innerWidth,
+      viewportHeight: ownerWin.innerHeight,
+      portalDocument: ownerDoc,
     });
   }, []);
 
@@ -5287,6 +5295,7 @@ const [timelineEditorOpen, setTimelineEditorOpen] = useState(false);
     ? createPortal(
       <LiveKitPiPPortal
         isLight={isLight}
+        theme={theme}
         sessionTitle={String(session?.title || "Session")}
         participantsCount={participantsCount}
         remainingTime={remainingTime}
@@ -5296,13 +5305,22 @@ const [timelineEditorOpen, setTimelineEditorOpen] = useState(false);
         pipGalleryTiles={pipGalleryTiles}
         pipGalleryColumns={pipGalleryColumns}
         renderTile={renderTile}
-        onSetPipMode={setPipMode}
+        micOn={micOn}
+        camOn={camOn}
+        screenShareOn={screenShareOn}
+        onToggleMic={() => {
+          toggleMic().catch(() => { });
+        }}
+        onToggleCam={() => {
+          toggleCam().catch(() => { });
+        }}
         onToggleScreenShare={() => {
           toggleScreenShare().catch(() => { });
         }}
         onSendReaction={(reactionType) => {
           sendReaction(reactionType);
         }}
+        onSetPipMode={setPipMode}
       />,
       pipMountEl
     )
@@ -6289,8 +6307,20 @@ const [timelineEditorOpen, setTimelineEditorOpen] = useState(false);
             className={`pointer-events-auto absolute w-[min(22rem,calc(100vw-1rem))] max-h-[min(70vh,32rem)] overflow-y-auto rounded-2xl shadow-2xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
               }`}
             style={{
-              left: Math.max(8, Math.min(tileMenuAnchor.x - 352, window.innerWidth - 360)),
-              top: Math.max(8, Math.min(tileMenuAnchor.y + 8, window.innerHeight - 520)),
+              left: Math.max(
+                8,
+                Math.min(
+                  tileMenuAnchor.x - 352,
+                  tileMenuAnchor.viewportWidth - 360
+                )
+              ),
+              top: Math.max(
+                8,
+                Math.min(
+                  tileMenuAnchor.y + 8,
+                  tileMenuAnchor.viewportHeight - 520
+                )
+              ),
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -6375,7 +6405,7 @@ const [timelineEditorOpen, setTimelineEditorOpen] = useState(false);
             })()}
           </div>
         </div>,
-        document.body
+        tileMenuAnchor?.portalDocument?.body || document.body
       )}
       {pipPortal}
     </>
