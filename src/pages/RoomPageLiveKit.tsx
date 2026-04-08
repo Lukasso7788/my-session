@@ -5068,6 +5068,46 @@ export function RoomPageLiveKit() {
     );
   };
 
+  const renderPiPTile = (t: TileModel) => {
+    const tileIdentity = String(t.participantIdentity || "");
+    const participantProfile =
+      profilesById[String(t.participantUserId || "").toLowerCase()] || null;
+
+    const participantProfileName = String(participantProfile?.full_name || "").trim();
+    const tileAvatarUrl = String(participantProfile?.avatar_url || "").trim();
+
+    const nameText = t.isLocal
+      ? localRoomDisplayNameOverrideRef.current ||
+      displayName ||
+      prejoinRef.current.displayName ||
+      userName ||
+      "You"
+      : participantProfileName || t.label || "Participant";
+
+    const micMuted = !!t.micMuted;
+
+    return (
+      <div className="relative h-full w-full min-h-0 min-w-0">
+        <VideoTile
+          tileId={t.id}
+          label={nameText}
+          videoTrack={t.videoTrack}
+          isLocal={t.isLocal}
+          theme={theme}
+          showBadge={getBadgeForTile(t)}
+          hostActions={undefined}
+          avatarUrl={tileAvatarUrl}
+          micMuted={micMuted}
+          mirrorVideo={t.isLocal ? previewMirrored : false}
+          audioLevel={t.audioLevel || 0}
+          onToggleMenu={undefined}
+          showMenuButton={false}
+          onOpenProfile={undefined}
+        />
+      </div>
+    );
+  };
+
   const activeScreenShareTile = useMemo(() => {
     return screenShareTiles.length ? screenShareTiles[0] : null;
   }, [screenShareTiles]);
@@ -5285,7 +5325,10 @@ export function RoomPageLiveKit() {
     const count = pipGalleryTiles.length;
 
     if (count <= 1) return 1;
-    if (count <= 4) return 2;
+    if (count === 2) return 2;
+    if (count === 3) return 2;
+    if (count === 4) return 2;
+    if (count <= 6) return 3;
     return 3;
   }, [pipGalleryTiles.length]);
 
@@ -5302,7 +5345,7 @@ export function RoomPageLiveKit() {
         pipStripTiles={pipStripTiles}
         pipGalleryTiles={pipGalleryTiles}
         pipGalleryColumns={pipGalleryColumns}
-        renderTile={renderTile}
+        renderTile={renderPiPTile}
         micOn={micOn}
         camOn={camOn}
         screenShareOn={screenShareOn}
