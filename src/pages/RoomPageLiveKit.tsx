@@ -48,6 +48,7 @@ import { VideoTile } from "./livekit/VideoTileLiveKit";
 import { RemoteAudioRenderer } from "./livekit/RemoteAudioRendererLiveKit";
 import ReportParticipantModalLiveKit from "./livekit/ReportParticipantModalLiveKit";
 import { buildScreenShareTiles } from "./livekit/screenShareHelpers";
+import LiveKitPiPPortal from "./livekit/LiveKitPiPPortal";
 
 import {
   useElementSize,
@@ -127,6 +128,7 @@ type TileModel = {
   isLocal: boolean;
 
   videoTrack?: Track;
+  audioLevel?: number;
 
   participantIdentity?: string;
   participantUserId?: string;
@@ -1033,7 +1035,13 @@ export function RoomPageLiveKit() {
   const accessTokenRef = useRef<string>("");
 
   const [selectedUser, setSelectedUser] = useState<HostProfile | null>(null);
-  const [timelineEditorOpen, setTimelineEditorOpen] = useState(false);
+const [tileMenuAnchor, setTileMenuAnchor] = useState<{
+  tileId: string;
+  x: number;
+  y: number;
+} | null>(null);
+const [openTileAdminMenuId, setOpenTileAdminMenuId] = useState<string | null>(null);
+const [timelineEditorOpen, setTimelineEditorOpen] = useState(false);
   const [timelineDraftBlocks, setTimelineDraftBlocks] = useState<RoomTimelineBlock[]>([]);
   const [timelineSaving, setTimelineSaving] = useState(false);
   const [reportModalOpen, setReportModalOpen] = useState(false);
@@ -1170,6 +1178,61 @@ export function RoomPageLiveKit() {
       return tab;
     });
   };
+
+  const openTileMenuAt = useCallback((tileId: string, anchorEl: HTMLElement | null) => {
+    if (!anchorEl) return;
+
+    const r = anchorEl.getBoundingClientRect();
+
+    setOpenTileAdminMenuId(tileId);
+    setTileMenuAnchor({
+      tileId,
+      x: r.right,
+      y: r.bottom,
+    });
+  }, []);
+
+  const closeTileMenu = useCallback(() => {
+    setOpenTileAdminMenuId(null);
+    setTileMenuAnchor(null);
+  }, []);
+
+  useEffect(() => {
+    if (!openTileAdminMenuId) return;
+
+    const onPointerDown = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+
+      const insideAnchor = !!target.closest("[data-lk-admin-menu-anchor='true']");
+      const insideSurface = !!target.closest("[data-lk-admin-menu-surface='true']");
+
+      if (insideAnchor || insideSurface) return;
+      closeTileMenu();
+    };
+
+    const onEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeTileMenu();
+    };
+
+    const onWindowChange = () => {
+      closeTileMenu();
+    };
+
+    document.addEventListener("mousedown", onPointerDown, true);
+    document.addEventListener("touchstart", onPointerDown, true);
+    document.addEventListener("keydown", onEscape, true);
+    window.addEventListener("resize", onWindowChange);
+    window.addEventListener("scroll", onWindowChange, true);
+
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown, true);
+      document.removeEventListener("touchstart", onPointerDown, true);
+      document.removeEventListener("keydown", onEscape, true);
+      window.removeEventListener("resize", onWindowChange);
+      window.removeEventListener("scroll", onWindowChange, true);
+    };
+  }, [openTileAdminMenuId, closeTileMenu]);
 
   useEffect(() => {
     const fire = () => {
@@ -3133,7 +3196,6 @@ export function RoomPageLiveKit() {
   const [tiles, setTiles] = useState<TileModel[]>([]);
   const [screenShareTiles, setScreenShareTiles] = useState<TileModel[]>([]);
   const [adminBusyKey, setAdminBusyKey] = useState<string>("");
-  const [openTileAdminMenuId, setOpenTileAdminMenuId] = useState<string | null>(null);
 
   // hide / pin
   const [hiddenTileIds, setHiddenTileIds] = useState<Record<string, boolean>>({});
@@ -3187,27 +3249,6 @@ export function RoomPageLiveKit() {
     setOpenTileAdminMenuId((prev) => (prev && tiles.some((t) => t.id === prev) ? prev : null));
   }, [tiles]);
 
-  useEffect(() => {
-    if (!openTileAdminMenuId) return;
-
-    const onDown = (e: MouseEvent) => {
-      const el = e.target as HTMLElement | null;
-      if (el?.closest?.("[data-lk-admin-menu-anchor='true']")) return;
-      setOpenTileAdminMenuId(null);
-    };
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpenTileAdminMenuId(null);
-    };
-
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [openTileAdminMenuId]);
-
   const participantsCount = useMemo(() => {
     const r = roomRef.current;
     if (!r) return 0;
@@ -3242,6 +3283,10 @@ export function RoomPageLiveKit() {
 
   const resetAllParticipantVolumesToDefault = useCallback(() => {
     setVolumePctByParticipantKey({});
+  }, []);
+
+  const applyDefaultRemoteVolumePreset = useCallback((pct: number) => {
+    setDefaultRemoteVolumePct(clamp(Math.round(pct), 25, 300));
   }, []);
 
   const roomNameForApi = useMemo(() => {
@@ -4922,6 +4967,12 @@ export function RoomPageLiveKit() {
     const nameText = t.label || "User";
     const micMuted = !!t.micMuted;
     const tileAvatarUrl = getAvatarForTile(t);
+    const participantProfileKey = String(t.participantUserId || "").toLowerCase();
+
+    const participantProfile: HostProfile | null =
+      !t.isLocal && participantProfileKey
+        ? profilesById[participantProfileKey] || null
+        : null;
 
     const volumeKey = getParticipantVolumeKey(t);
     const volPct = !t.isLocal ? Number(volumePctByParticipantKey[volumeKey] ?? 100) : 100;
@@ -4944,9 +4995,8 @@ export function RoomPageLiveKit() {
 
     return (
       <div
-        className="relative group w-full"
+        className="relative group w-full min-w-0 min-h-0"
         style={{ aspectRatio: "16 / 9" }}
-        onMouseLeave={() => setOpenTileAdminMenuId((prev) => (prev === t.id ? null : prev))}
       >
         <div
           className="absolute inset-0"
@@ -4959,6 +5009,7 @@ export function RoomPageLiveKit() {
           }
         >
           <VideoTile
+            tileId={t.id}
             label={nameText}
             videoTrack={t.videoTrack}
             isLocal={t.isLocal}
@@ -4966,34 +5017,24 @@ export function RoomPageLiveKit() {
             showBadge={getBadgeForTile(t)}
             hostActions={undefined}
             avatarUrl={tileAvatarUrl}
+            micMuted={micMuted}
             mirrorVideo={t.isLocal ? previewMirrored : false}
+            audioLevel={t.audioLevel || 0}
+            onToggleMenu={(tileId, anchorEl) => {
+              if (openTileAdminMenuId === tileId) {
+                closeTileMenu();
+                return;
+              }
+              openTileMenuAt(tileId, anchorEl);
+            }}
+            showMenuButton={true}
+            onOpenProfile={() => {
+              if (participantProfile) {
+                setSelectedUser(participantProfile);
+              }
+            }}
           />
         </div>
-
-        {/* nameplate */}
-        {t.kind !== "screen" && (
-          <div className="absolute bottom-2 left-2 z-20 max-w-[78%]">
-            <div className={namePlateBaseCls}>
-              <div className="flex items-center gap-1 min-w-0">
-                <span className={nameTextCls}>
-                  {nameText}
-                  {t.isLocal ? " (you)": ""}
-                </span>
-
-                <span
-                  className={`shrink-0 inline-flex items-center justify-center w-5 h-5 rounded-md ${micBadgeWrapCls}`}
-                  title={micMuted ? "Microphone muted" : "Microphone on"}
-                >
-                  <Icon
-                    name={micMuted ? "mic-off" : "mic-on"}
-                    theme={theme}
-                    className="w-3.5 h-3.5 opacity-90"
-                  />
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
 
         {showLocalEditButton && (
           <div className="absolute top-2 left-2 z-30">
@@ -5017,211 +5058,6 @@ export function RoomPageLiveKit() {
             </button>
           </div>
         )}
-
-        {/* menu */}
-        <div
-          className="absolute top-2 right-2 z-30"
-          data-lk-admin-menu-anchor="true"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="relative">
-            <button
-              type="button"
-              title="Participant actions"
-              aria-label="Participant actions"
-              onClick={(e) => {
-                e.stopPropagation();
-                setOpenTileAdminMenuId((prev) => (prev === t.id ? null : t.id));
-              }}
-              className={[
-                "w-9 h-9 rounded-xl flex items-center justify-center transition shadow-sm",
-                isLight
-                  ? "bg-white/90 border border-black/10 text-black/75 hover:bg-white"
-                  : "bg-black/55 border border-white/10 text-white/90 hover:bg-black/70",
-                shouldForceMenuVisible ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-              ].join(" ")}
-            >
-              <span className="text-lg leading-none -mt-[2px]">⋯</span>
-            </button>
-
-            {isMenuOpen && (
-              <div
-                className={`absolute right-0 top-[calc(100%+8px)] w-[260px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}
-              >
-                {canRoleManageTarget && (
-                  <>
-                    <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>
-                      Roles
-                    </div>
-
-                    {!isTargetModerator ? (
-                      <button
-                        type="button"
-                        disabled={roleBusy || rolesLoading}
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          if (!pidBase) return;
-                          await grantModerator(pidBase);
-                          setOpenTileAdminMenuId(null);
-                        }}
-                        className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
-                      >
-                        Make moderator
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={roleBusy || rolesLoading}
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          if (!pidBase) return;
-                          await revokeModerator(pidBase);
-                          setOpenTileAdminMenuId(null);
-                        }}
-                        className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
-                      >
-                        Remove moderator
-                      </button>
-                    )}
-
-                    <div className={isLight ? "h-px bg-black/10" : "h-px bg-white/10"} />
-                  </>
-                )}
-
-                {!t.isLocal && t.kind !== "screen" && (
-                  <>
-                    <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>
-                      Moderation
-                    </div>
-
-                    <button
-                      type="button"
-                      disabled={muteMicDisabled || busyMuteMic}
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        if (!t.participantIdentity || !t.micTrackSid) return;
-                        if (muteMicDisabled) return;
-                        await adminMuteRemoteTrack(t.id, t.participantIdentity, t.micTrackSid);
-                        setOpenTileAdminMenuId(null);
-                      }}
-                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
-                    >
-                      Mute Mic
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={turnCameraOffDisabled || busyCameraOff}
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        if (!t.participantIdentity || !t.camTrackSid) return;
-                        if (turnCameraOffDisabled) return;
-                        await adminTurnOffRemoteCamera(t.id, t.participantIdentity, t.camTrackSid);
-                        setOpenTileAdminMenuId(null);
-                      }}
-                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
-                        }`}
-                    >
-                      Turn camera off
-                    </button>
-
-                    <div className={isLight ? "h-px bg-black/10" : "h-px bg-white/10"} />
-                  </>
-                )}
-
-                {!t.isLocal && t.kind !== "screen" && (
-                  <>
-                    <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>
-                      Audio
-                    </div>
-                    <div className="px-4 pb-3">
-                      <div className="flex items-center gap-3">
-                        <div className={`text-[11px] ${isLight ? "text-black/55" : "text-white/55"} w-[46px]`}>
-                          Vol
-                        </div>
-                        <input
-                          type="range"
-                          min={0}
-                          max={100}
-                          value={Number.isFinite(volPct) ? volPct : 100}
-                          onChange={(e) => setParticipantVolumePct(t, Number(e.target.value))}
-                          className="w-full"
-                        />
-                        <div className={`text-[11px] ${isLight ? "text-black/55" : "text-white/55"} w-[40px] text-right`}>
-                          {Number.isFinite(volPct) ? volPct : 100}%
-                        </div>
-                      </div>
-                    </div>
-                    <div className={isLight ? "h-px bg-black/10" : "h-px bg-white/10"} />
-                  </>
-                )}
-
-                {t.kind !== "screen" && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        togglePin(t.id);
-                      }}
-                      className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
-                    >
-                      {isPinned ? "Unpin participant" : "Pin participant"}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleHide(t.id);
-                      }}
-                      className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
-                    >
-                      {isHidden ? "Unhide participant" : "Hide participant"}
-                    </button>
-                  </>
-                )}
-
-                {!t.isLocal && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openReportParticipantModal(t);
-                        setOpenTileAdminMenuId(null);
-                      }}
-                      className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/80 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
-                    >
-                      Report participant
-                    </button>
-
-                    <div className={isLight ? "h-px bg-black/10" : "h-px bg-white/10"} />
-
-                    <button
-                      type="button"
-                      disabled={kickDisabled || busyKick}
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        if (!t.participantIdentity) return;
-                        if (!confirm(`Kick "${t.label}"?`)) return;
-                        await adminKickParticipant(
-                          t.participantIdentity,
-                          looksLikeUuid(pidBase) ? pidBase : undefined,
-                          t.label
-                        );
-                        setOpenTileAdminMenuId(null);
-                      }}
-                      className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-red-700 hover:bg-red-50" : "text-red-300 hover:bg-red-500/10"}`}
-                    >
-                      Kick participant
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
       </div>
     );
   };
@@ -5263,14 +5099,14 @@ export function RoomPageLiveKit() {
     effectiveW >= 900;
 
   const videoLayout = useFeaturedLayout ? (
-    <div className="h-full w-full grid grid-cols-[minmax(0,1fr),320px] gap-3 p-3">
-      <div className="min-w-0 min-h-0 flex items-center justify-center">
-        <div className="w-full">
-          {featuredTile ? renderTile(featuredTile) : null}
-        </div>
-      </div>
+    <div className="h-full w-full min-w-0 min-h-0 grid grid-cols-[minmax(0,1fr),clamp(15rem,24vw,20rem)] gap-3 p-3 overflow-hidden">
+  <div className="min-w-0 min-h-0 flex items-center justify-center overflow-hidden">
+    <div className="w-full min-w-0 min-h-0">
+      {featuredTile ? renderTile(featuredTile) : null}
+    </div>
+  </div>
 
-      <div className="min-w-0 min-h-0 overflow-y-auto pr-1 flex flex-col gap-3">
+  <div className="min-w-0 min-h-0 overflow-y-auto overflow-x-hidden pr-1 flex flex-col gap-3">
         {sidebarTiles.length === 0 ? (
           <div
             className={`min-h-[160px] rounded-2xl border flex items-center justify-center ${isLight ? "border-black/10 bg-black/5 text-black/50" : "border-white/10 bg-white/5 text-white/55"
@@ -5295,44 +5131,52 @@ export function RoomPageLiveKit() {
         </div>
       ) : tileCount ? (
         useVeryNarrowMode ? (
-          tileCount <= 2 ? (
-            <MobileFillLayoutSizing<TileModel>
-              items={tilesForRender}
-              containerWidth={effectiveW}
-              containerHeight={effectiveH}
-              paddingBottomPx={paddingBottomPx}
-              renderItem={(t) => renderTile(t)}
-            />
-          ) : (
-            <MobileStackLayoutSizing<TileModel>
-              items={tilesForRender}
-              paddingBottomPx={paddingBottomPx}
-              renderItem={(t) => renderTile(t)}
-            />
+              tileCount <= 2 ? (
+                <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
+                  <MobileFillLayoutSizing<TileModel>
+                    items={tilesForRender}
+                    containerWidth={effectiveW}
+                    containerHeight={effectiveH}
+                    paddingBottomPx={paddingBottomPx}
+                    renderItem={(t) => renderTile(t)}
+                  />
+                </div>
+              ) : (
+                  <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
+                    <MobileStackLayoutSizing<TileModel>
+                      items={tilesForRender}
+                      paddingBottomPx={paddingBottomPx}
+                      renderItem={(t) => renderTile(t)}
+                    />
+                  </div>
           )
-        ) : tileCount <= 2 ? (
-          <P2PLayoutSizing<TileModel>
-            items={tilesForRender}
-            containerWidth={effectiveW}
-            containerHeight={effectiveH}
-            stack={stackTwoOnThisViewport}
-            renderItem={(t) => renderTile(t)}
-          />
-        ) : (
-          <GridLayoutSizing<TileModel>
-            items={tilesForRender}
-            containerWidth={effectiveW}
-            containerHeight={effectiveH}
-            forceThreeAsTwoPlusOne={rightPanelOpen}
-            renderItem={(t) => renderTile(t)}
-          />
-        )
+            ) : tileCount <= 2 ? (
+              <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
+                <P2PLayoutSizing<TileModel>
+                  items={tilesForRender}
+                  containerWidth={effectiveW}
+                  containerHeight={effectiveH}
+                  stack={stackTwoOnThisViewport}
+                  renderItem={(t) => renderTile(t)}
+                />
+              </div>
+            ) : (
+                <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
+                  <GridLayoutSizing<TileModel>
+                    items={tilesForRender}
+                    containerWidth={effectiveW}
+                    containerHeight={effectiveH}
+                    forceThreeAsTwoPlusOne={rightPanelOpen}
+                    renderItem={(t) => renderTile(t)}
+                  />
+                </div>
+              )
       ) : null}
     </>
   );
 
   const videoContent = (
-    <div className="w-full h-full min-h-0 relative">
+    <div className="w-full h-full min-w-0 min-h-0 relative overflow-hidden">
       {roomReadyText ? (
         <div className={`absolute inset-0 flex items-center justify-center z-10 ${isLight ? "text-black/60" : "text-white/70"}`}>
           <div className={`px-4 py-2 rounded-xl ${isLight ? "bg-white/70" : "bg-black/30"}`}>
@@ -5441,169 +5285,25 @@ export function RoomPageLiveKit() {
 
   const pipPortal = pipMountEl
     ? createPortal(
-      <div className={`h-full w-full flex flex-col ${isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white"}`}>
-        <div
-          className={`h-11 px-3 flex items-center justify-between border-b ${isLight ? "border-black/10 bg-white/85" : "border-white/10 bg-[#020617]/80"
-            }`}
-        >
-          <div className="min-w-0">
-            <div className="text-[12px] font-semibold truncate">
-              {String(session?.title || "Session")}
-            </div>
-            <div className={`text-[10px] ${isLight ? "text-black/50" : "text-white/50"}`}>
-              {participantsCount} participants
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() =>
-                setPipMode((prev) => (prev === "focus" ? "gallery" : "focus"))
-              }
-              className={`h-8 rounded-lg px-2 text-[11px] font-semibold ${isLight
-                  ? "bg-black/5 hover:bg-black/10 text-black/75"
-                  : "bg-white/5 hover:bg-white/10 text-white/85"
-                }`}
-              title={pipMode === "focus" ? "Switch to gallery mode" : "Switch to focus mode"}
-            >
-              {pipMode === "focus" ? "Gallery" : "Focus"}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => closePictureInPicture()}
-              className={`w-8 h-8 rounded-lg flex items-center justify-center ${isLight
-                  ? "bg-black/5 hover:bg-black/10 text-black/70"
-                  : "bg-white/5 hover:bg-white/10 text-white/85"
-                }`}
-              title="Close PiP"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-
-        {pipMode === "focus" ? (
-          <div className="flex-1 min-h-0 grid grid-cols-[minmax(0,1fr),110px] gap-2 p-2">
-            <div className="min-w-0 min-h-0 flex items-center justify-center">
-              <div className="w-full">
-                {pipFeaturedTile ? renderTile(pipFeaturedTile) : null}
-              </div>
-            </div>
-
-            <div className="min-w-0 min-h-0 overflow-y-auto flex flex-col gap-2 pr-1">
-              {pipStripTiles.map((t) => (
-                <div key={`pip-${t.id}`}>{renderTile(t)}</div>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div
-            className="flex-1 min-h-0 grid gap-2 p-2"
-            style={{
-              gridTemplateColumns: `repeat(${pipGalleryColumns}, minmax(0, 1fr))`,
-            }}
-          >
-            {pipGalleryTiles.map((t) => (
-              <div
-                key={`pip-gallery-${t.id}`}
-                className="min-w-0 min-h-0"
-              >
-                {renderTile(t)}
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="grid grid-cols-5 gap-2 px-2 pb-2">
-          <button
-            type="button"
-            onClick={() => toggleMic().catch(() => { })}
-            className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
-                ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
-                : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
-              }`}
-          >
-            <div className="flex flex-col items-center justify-center gap-1">
-              <PiPIcon
-                name={micOn ? "mic-on" : "mic-off"}
-                isLight={isLight}
-                alt={micOn ? "Mic on" : "Mic off"}
-              />
-              <span>{micOn ? "Mic on" : "Mic off"}</span>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => toggleCam().catch(() => { })}
-            className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
-                ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
-                : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
-              }`}
-          >
-            <div className="flex flex-col items-center justify-center gap-1">
-              <PiPIcon
-                name={camOn ? "camera-on" : "camera-off"}
-                isLight={isLight}
-                alt={camOn ? "Cam on" : "Cam off"}
-              />
-              <span>{camOn ? "Cam on" : "Cam off"}</span>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => toggleScreenShare().catch(() => { })}
-            className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
-                ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
-                : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
-              }`}
-          >
-            <div className="flex flex-col items-center justify-center gap-1">
-              <PiPIcon
-                name={screenShareOn ? "screen-share-off" : "screen-share"}
-                isLight={isLight}
-                alt={screenShareOn ? "Stop share" : "Share screen"}
-              />
-              <span>{screenShareOn ? "Stop share" : "Share"}</span>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setPipMode((prev) => (prev === "focus" ? "gallery" : "focus"))}
-            className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
-                ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
-                : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
-              }`}
-          >
-            <div className="flex flex-col items-center justify-center gap-1">
-              <PiPIcon
-                name={pipMode === "focus" ? "gallery" : "focus"}
-                isLight={isLight}
-                alt={pipMode === "focus" ? "Gallery mode" : "Focus mode"}
-              />
-              <span>{pipMode === "focus" ? "Gallery" : "Focus"}</span>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => closePictureInPicture()}
-            className={`h-10 rounded-xl border text-[11px] font-semibold ${isLight
-                ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
-                : "border-white/10 bg-[#020617] hover:bg-white/5 text-white/90"
-              }`}
-          >
-            <div className="flex flex-col items-center justify-center gap-1">
-              <span className="text-[14px]">✕</span>
-              <span>Close</span>
-            </div>
-          </button>
-        </div>
-      </div>,
+      <LiveKitPiPPortal
+        isLight={isLight}
+        sessionTitle={String(session?.title || "Session")}
+        participantsCount={participantsCount}
+        remainingTime={remainingTime}
+        pipMode={pipMode}
+        pipFeaturedTile={pipFeaturedTile}
+        pipStripTiles={pipStripTiles}
+        pipGalleryTiles={pipGalleryTiles}
+        pipGalleryColumns={pipGalleryColumns}
+        renderTile={renderTile}
+        onSetPipMode={setPipMode}
+        onToggleScreenShare={() => {
+          toggleScreenShare().catch(() => { });
+        }}
+        onSendReaction={(reactionType) => {
+          sendReaction(reactionType);
+        }}
+      />,
       pipMountEl
     )
     : null;
@@ -6573,42 +6273,110 @@ export function RoomPageLiveKit() {
         {selectedUser && (
           <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
         )}
-        {isHost && (
-          <div className="fixed bottom-24 left-4 z-[90] flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setDefaultRemoteVolumePct(100)}
-              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
-            >
-              All 100%
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setDefaultRemoteVolumePct(125)}
-              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
-            >
-              All 125%
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setDefaultRemoteVolumePct(150)}
-              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
-            >
-              All 150%
-            </button>
-
-            <button
-              type="button"
-              onClick={resetAllParticipantVolumesToDefault}
-              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
-            >
-              Reset people volumes
-            </button>
-          </div>
-        )}
       </div>
+      {openTileAdminMenuId && tileMenuAnchor && createPortal(
+        <div
+          className="fixed inset-0 z-[220] pointer-events-none"
+          aria-hidden={false}
+        >
+          <div
+            className="absolute inset-0 pointer-events-auto"
+            onClick={() => closeTileMenu()}
+          />
+
+          <div
+            data-lk-admin-menu-surface="true"
+            className={`pointer-events-auto absolute w-[min(22rem,calc(100vw-1rem))] max-h-[min(70vh,32rem)] overflow-y-auto rounded-2xl shadow-2xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
+              }`}
+            style={{
+              left: Math.max(8, Math.min(tileMenuAnchor.x - 352, window.innerWidth - 360)),
+              top: Math.max(8, Math.min(tileMenuAnchor.y + 8, window.innerHeight - 520)),
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {(() => {
+              const t = tilesForRender.find((x) => x.id === openTileAdminMenuId);
+              if (!t) return null;
+
+              const pidBase = String(t.participantUserId || extractBaseUserIdFromIdentity(String(t.participantIdentity || "")) || "").toLowerCase();
+              const isTargetModerator = !!pidBase && moderatorUserIds.includes(pidBase);
+              const roleBusy =
+                roleBusyKey === `mod:${pidBase}:grant` || roleBusyKey === `mod:${pidBase}:revoke`;
+
+              const canRoleManageTarget =
+                !!pidBase &&
+                looksLikeUuid(pidBase) &&
+                isHost &&
+                pidBase !== String(authUserId || "").toLowerCase();
+
+              return (
+                <>
+                  <div className={`px-4 py-3 text-[12px] font-semibold ${isLight ? "text-black/45" : "text-white/45"}`}>
+                    Participant actions
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSettingsOpen(true);
+                      setSettingsPreviewVersion((v) => v + 1);
+                      closeTileMenu();
+                    }}
+                    className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
+                  >
+                    Video room settings
+                  </button>
+
+                  {isHost && (
+                    <>
+                      
+                    </>
+                  )}
+
+                  {canRoleManageTarget && (
+                    <>
+                      <div className={isLight ? "border-t border-black/10" : "border-t border-white/10"} />
+
+                      <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>
+                        Roles
+                      </div>
+
+                      {!isTargetModerator ? (
+                        <button
+                          type="button"
+                          disabled={roleBusy || rolesLoading}
+                          onClick={async () => {
+                            if (!pidBase) return;
+                            await grantModerator(pidBase);
+                            closeTileMenu();
+                          }}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
+                        >
+                          Make moderator
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={roleBusy || rolesLoading}
+                          onClick={async () => {
+                            if (!pidBase) return;
+                            await revokeModerator(pidBase);
+                            closeTileMenu();
+                          }}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
+                        >
+                          Remove moderator
+                        </button>
+                      )}
+                    </>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        </div>,
+        document.body
+      )}
       {pipPortal}
     </>
   );

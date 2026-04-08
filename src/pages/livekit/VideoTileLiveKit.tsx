@@ -56,7 +56,8 @@ function Icon({
     | "settings"
     | "theme-sun"
     | "theme-moon"
-    | "timer";
+    | "timer"
+    | "more";
     theme: RoomTheme;
     className?: string;
     alt?: string;
@@ -83,6 +84,7 @@ function Icon({
 }
 
 type VideoTileProps = {
+    tileId: string;
     label: string;
     videoTrack?: Track;
     isLocal: boolean;
@@ -92,9 +94,14 @@ type VideoTileProps = {
     avatarUrl?: string;
     micMuted?: boolean;
     mirrorVideo?: boolean;
+    audioLevel?: number;
+    showMenuButton?: boolean;
+    onToggleMenu?: (tileId: string, anchorEl: HTMLElement | null) => void;
+    onOpenProfile?: () => void;
 };
 
 function VideoTileInner({
+    tileId,
     label,
     videoTrack,
     isLocal,
@@ -104,6 +111,10 @@ function VideoTileInner({
     avatarUrl,
     micMuted,
     mirrorVideo = true,
+    audioLevel = 0,
+    showMenuButton = false,
+    onToggleMenu,
+    onOpenProfile,
 }: VideoTileProps) {
     const wrapRef = useRef<HTMLDivElement | null>(null);
     const mediaHostRef = useRef<HTMLDivElement | null>(null);
@@ -114,12 +125,35 @@ function VideoTileInner({
     const tileBgClass = isLight ? "bg-white/80" : "bg-[#071427]";
     const mediaBgColor = isLight ? "#FFFFFF" : "#071427";
     const offStateClass = isLight ? "text-black/60 bg-[#F6F7FB]" : "text-white/70 bg-[#071427]";
-    const offPlateClass = isLight
-        ? "bg-white/80 border-black/10 text-black/80"
-        : "bg-black/35 border-white/10 text-white/90";
     const initialsBgClass = isLight
         ? "bg-blue-500/15 text-blue-700 border-black/10"
         : "bg-emerald-500/80 text-[#02140B] border-white/10";
+
+    const namePillClass = isLight
+        ? "bg-white/88 border-black/10 text-black/85"
+        : "bg-black/40 border-white/10 text-white/90";
+
+    const menuBtnClass = isLight
+        ? "bg-white/88 border-black/10 text-black/85 hover:bg-white"
+        : "bg-black/40 border-white/10 text-white hover:bg-black/55";
+
+    const muteBadgeClass = micMuted
+        ? isLight
+            ? "bg-red-600 text-white border-red-700/60"
+            : "bg-red-500/90 text-white border-red-300/20"
+        : isLight
+            ? "bg-black/5 text-black/70 border-black/10"
+            : "bg-white/10 text-white/75 border-white/10";
+
+    const speaking = Number(audioLevel || 0) > 0.025;
+
+    const speakingDotClass = speaking
+        ? isLight
+            ? "bg-emerald-500 shadow-[0_0_0.8rem_rgba(16,185,129,0.45)]"
+            : "bg-emerald-400 shadow-[0_0_0.8rem_rgba(52,211,153,0.45)]"
+        : isLight
+            ? "bg-black/15"
+            : "bg-white/15";
 
     const debugSizing = useMemo(() => getQueryBool("devTileDebug", false), []);
     const [sizeText, setSizeText] = useState<string>("");
@@ -263,13 +297,13 @@ function VideoTileInner({
         <div
             ref={wrapRef}
             className={
-                "relative rounded-2xl overflow-hidden border " +
+                "relative h-full w-full min-h-0 min-w-0 rounded-2xl overflow-hidden border " +
                 (isLight ? "border-black/10" : "border-white/10") +
                 " " +
                 tileBgClass
             }
         >
-            <div className="w-full aspect-video relative">
+            <div className="absolute inset-0">
                 {videoTrack ? (
                     <div
                         ref={mediaHostRef}
@@ -277,12 +311,14 @@ function VideoTileInner({
                         style={{ backgroundColor: mediaBgColor }}
                     />
                 ) : (
-                    <div className={`absolute inset-0 w-full h-full flex flex-col items-center justify-center text-sm ${offStateClass}`}>
+                    <div
+                        className={`absolute inset-0 flex flex-col items-center justify-center ${offStateClass}`}
+                    >
                         {shouldShowAvatar ? (
                             <img
                                 src={normalizedAvatarUrl}
                                 alt={label || "User"}
-                                className={`w-[78px] h-[78px] rounded-full object-cover border shadow-2xl ${isLight ? "border-black/10" : "border-white/10"
+                                className={`h-[clamp(4.4rem,12vw,5.8rem)] w-[clamp(4.4rem,12vw,5.8rem)] rounded-full object-cover border shadow-2xl ${isLight ? "border-black/10" : "border-white/10"
                                     }`}
                                 referrerPolicy="no-referrer"
                                 onError={() => setAvatarBroken(true)}
@@ -290,22 +326,16 @@ function VideoTileInner({
                             />
                         ) : (
                             <div
-                                className={`w-[78px] h-[78px] rounded-full border flex items-center justify-center font-bold text-xl shadow-2xl ${initialsBgClass}`}
+                                className={`h-[clamp(4.4rem,12vw,5.8rem)] w-[clamp(4.4rem,12vw,5.8rem)] rounded-full border flex items-center justify-center font-bold text-[clamp(1.1rem,3vw,1.45rem)] shadow-2xl ${initialsBgClass}`}
                             >
                                 {initials}
                             </div>
                         )}
 
-                        <div className={`mt-3 px-3 py-1.5 rounded-xl border backdrop-blur ${offPlateClass}`}>
-                            <div className="text-[13px] font-semibold max-w-[260px] truncate text-center">
-                                {label || "User"}
-                            </div>
-                        </div>
-
-                        <div className="mt-2 text-[12px] opacity-75">Camera off</div>
+                        <div className="mt-[0.7rem] text-[0.76rem] opacity-75">Camera off</div>
 
                         {debugSizing && sizeText ? (
-                            <div className="text-[11px] opacity-70 mt-1">{sizeText}</div>
+                            <div className="text-[0.7rem] opacity-70 mt-[0.35rem]">{sizeText}</div>
                         ) : null}
                     </div>
                 )}
@@ -313,7 +343,7 @@ function VideoTileInner({
                 {debugSizing && videoTrack && sizeText ? (
                     <div
                         className={
-                            "absolute left-2 top-2 px-2 py-1 rounded-lg text-[11px] border " +
+                            "absolute left-2 top-2 px-2 py-1 rounded-lg text-[0.7rem] border " +
                             (isLight
                                 ? "bg-white/80 text-black border-black/10"
                                 : "bg-black/50 text-white border-white/10")
@@ -327,7 +357,7 @@ function VideoTileInner({
                 {showBadge ? (
                     <div
                         className={
-                            "absolute right-2 top-2 px-2 py-1 rounded-lg text-[11px] font-semibold " +
+                            "absolute right-2 top-2 px-2 py-1 rounded-lg text-[0.7rem] font-semibold " +
                             (isLight
                                 ? "bg-amber-200/80 text-amber-900"
                                 : "bg-amber-400/20 text-amber-200 border border-amber-300/20")
@@ -336,70 +366,124 @@ function VideoTileInner({
                         {showBadge}
                     </div>
                 ) : null}
+
+                {showMenuButton ? (
+                    <button
+                        type="button"
+                        data-lk-admin-menu-anchor="true"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleMenu?.(tileId, e.currentTarget);
+                        }}
+                        className={`absolute right-[0.55rem] top-[0.55rem] z-20 flex h-[2.1rem] w-[2.1rem] items-center justify-center rounded-full border backdrop-blur transition ${menuBtnClass}`}
+                        aria-label="Open participant actions"
+                        title="Open participant actions"
+                    >
+                        <span className="text-[1rem] leading-none">⋯</span>
+                    </button>
+                ) : null}
+
+                {showActions ? (
+                    <div className="absolute right-2 bottom-[3.35rem] z-10 flex max-w-[92%] flex-wrap justify-end gap-1">
+                        {hostActions?.canMuteMic && hostActions?.onToggleMuteMic ? (
+                            <button
+                                onClick={hostActions.onToggleMuteMic}
+                                disabled={hostActions.busy}
+                                className={
+                                    "px-2 py-1 rounded-lg text-[0.7rem] border flex items-center gap-1 " +
+                                    (isLight
+                                        ? "bg-white/85 text-black border-black/10 disabled:opacity-50"
+                                        : "bg-black/60 text-white border-white/10 disabled:opacity-50")
+                                }
+                                title="Mute / unmute remote microphone (host action)"
+                            >
+                                <Icon
+                                    name={hostActions.micMuted ? "mic-off" : "mic-on"}
+                                    theme={theme}
+                                    className="w-4 h-4 opacity-80"
+                                />
+                                <span>{hostActions.micMuted ? "Unmute mic" : "Mute mic"}</span>
+                            </button>
+                        ) : null}
+
+                        {hostActions?.canMuteCam && hostActions?.onToggleMuteCam ? (
+                            <button
+                                onClick={hostActions.onToggleMuteCam}
+                                disabled={hostActions.busy}
+                                className={
+                                    "px-2 py-1 rounded-lg text-[0.7rem] border flex items-center gap-1 " +
+                                    (isLight
+                                        ? "bg-white/85 text-black border-black/10 disabled:opacity-50"
+                                        : "bg-black/60 text-white border-white/10 disabled:opacity-50")
+                                }
+                                title="Mute / unmute remote camera (host action)"
+                            >
+                                <Icon
+                                    name={hostActions.camMuted ? "camera-off" : "camera-on"}
+                                    theme={theme}
+                                    className="w-4 h-4 opacity-80"
+                                />
+                                <span>{hostActions.camMuted ? "Unmute cam" : "Mute cam"}</span>
+                            </button>
+                        ) : null}
+
+                        {hostActions?.onKick ? (
+                            <button
+                                onClick={hostActions.onKick}
+                                disabled={hostActions.busy}
+                                className="px-2 py-1 rounded-lg text-[0.7rem] bg-red-600/90 hover:bg-red-700 text-white disabled:opacity-50"
+                                title="Remove participant from room"
+                            >
+                                Kick
+                            </button>
+                        ) : null}
+                    </div>
+                ) : null}
+
+                <button
+                    type="button"
+                    onClick={() => onOpenProfile?.()}
+                    className="absolute inset-0 z-[1]"
+                    aria-label={`Open ${label || "participant"} profile`}
+                    title={label || "Participant"}
+                />
             </div>
 
-            {showActions ? (
-                <div className="absolute right-2 bottom-2 flex flex-wrap justify-end gap-1 max-w-[92%]">
-                    {hostActions?.canMuteMic && hostActions?.onToggleMuteMic ? (
-                        <button
-                            onClick={hostActions.onToggleMuteMic}
-                            disabled={hostActions.busy}
-                            className={
-                                "px-2 py-1 rounded-lg text-[11px] border flex items-center gap-1 " +
-                                (isLight
-                                    ? "bg-white/85 text-black border-black/10 disabled:opacity-50"
-                                    : "bg-black/60 text-white border-white/10 disabled:opacity-50")
-                            }
-                            title="Mute / unmute remote microphone (host action)"
-                        >
-                            <Icon
-                                name={hostActions.micMuted ? "mic-off" : "mic-on"}
-                                theme={theme}
-                                className="w-4 h-4 opacity-80"
-                            />
-                            <span>{hostActions.micMuted ? "Unmute mic" : "Mute mic"}</span>
-                        </button>
-                    ) : null}
+            <div className="pointer-events-none absolute inset-x-[0.55rem] bottom-[0.55rem] z-[12] flex min-w-0 items-end justify-between gap-[0.45rem]">
+                <div
+                    className={`pointer-events-auto min-w-0 max-w-full rounded-[1rem] border px-[0.72rem] py-[0.52rem] backdrop-blur ${namePillClass}`}
+                >
+                    <div className="flex min-w-0 items-center gap-[0.45rem]">
+                        <span
+                            className={`h-[0.55rem] w-[0.55rem] shrink-0 rounded-full ${speakingDotClass}`}
+                            aria-hidden="true"
+                        />
 
-                    {hostActions?.canMuteCam && hostActions?.onToggleMuteCam ? (
-                        <button
-                            onClick={hostActions.onToggleMuteCam}
-                            disabled={hostActions.busy}
-                            className={
-                                "px-2 py-1 rounded-lg text-[11px] border flex items-center gap-1 " +
-                                (isLight
-                                    ? "bg-white/85 text-black border-black/10 disabled:opacity-50"
-                                    : "bg-black/60 text-white border-white/10 disabled:opacity-50")
-                            }
-                            title="Mute / unmute remote camera (host action)"
-                        >
-                            <Icon
-                                name={hostActions.camMuted ? "camera-off" : "camera-on"}
-                                theme={theme}
-                                className="w-4 h-4 opacity-80"
-                            />
-                            <span>{hostActions.camMuted ? "Unmute cam" : "Mute cam"}</span>
-                        </button>
-                    ) : null}
-
-                    {hostActions?.onKick ? (
-                        <button
-                            onClick={hostActions.onKick}
-                            disabled={hostActions.busy}
-                            className="px-2 py-1 rounded-lg text-[11px] bg-red-600/90 hover:bg-red-700 text-white disabled:opacity-50"
-                            title="Remove participant from room"
-                        >
-                            Kick
-                        </button>
-                    ) : null}
+                        <span className="min-w-0 truncate text-[clamp(0.76rem,1.4vw,0.9rem)] font-semibold leading-none">
+                            {label || "User"}
+                        </span>
+                    </div>
                 </div>
-            ) : null}
+
+                <div
+                    className={`pointer-events-auto flex h-[2rem] min-w-[2rem] shrink-0 items-center justify-center rounded-[0.8rem] border px-[0.55rem] ${muteBadgeClass}`}
+                    title={micMuted ? "Microphone off" : "Microphone on"}
+                    aria-label={micMuted ? "Microphone off" : "Microphone on"}
+                >
+                    <Icon
+                        name={micMuted ? "mic-off" : "mic-on"}
+                        theme={theme}
+                        className="h-[1rem] w-[1rem]"
+                    />
+                </div>
+            </div>
         </div>
     );
 }
 
 const areVideoTilePropsEqual = (prev: VideoTileProps, next: VideoTileProps) => {
     return (
+        prev.tileId === next.tileId &&
         prev.label === next.label &&
         prev.videoTrack === next.videoTrack &&
         prev.isLocal === next.isLocal &&
@@ -408,6 +492,10 @@ const areVideoTilePropsEqual = (prev: VideoTileProps, next: VideoTileProps) => {
         prev.avatarUrl === next.avatarUrl &&
         prev.micMuted === next.micMuted &&
         prev.mirrorVideo === next.mirrorVideo &&
+        prev.audioLevel === next.audioLevel &&
+        prev.showMenuButton === next.showMenuButton &&
+        prev.onToggleMenu === next.onToggleMenu &&
+        prev.onOpenProfile === next.onOpenProfile &&
         prev.hostActions?.canMuteMic === next.hostActions?.canMuteMic &&
         prev.hostActions?.canMuteCam === next.hostActions?.canMuteCam &&
         prev.hostActions?.micMuted === next.hostActions?.micMuted &&
