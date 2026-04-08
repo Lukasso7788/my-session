@@ -3109,6 +3109,7 @@ export function RoomPageLiveKit() {
   const [micOn, setMicOn] = useState(false);
   const [camOn, setCamOn] = useState(false);
   const [screenShareOn, setScreenShareOn] = useState(false);
+  const [remoteAudioRecoveryTick, setRemoteAudioRecoveryTick] = useState(0);
   const [pipMode, setPipMode] = useState<PiPMode>("focus");
 
   function getSettingsPreviewTrack(): LocalVideoTrack | null {
@@ -3140,6 +3141,24 @@ export function RoomPageLiveKit() {
 
   // per participant volume
   const [volumePctByParticipantKey, setVolumePctByParticipantKey] = useState<Record<string, number>>({});
+  const [defaultRemoteVolumePct, setDefaultRemoteVolumePct] = useState<number>(() => {
+    try {
+      const raw = Number(localStorage.getItem("mysession_lk_default_remote_volume_pct") || "125");
+      if (!Number.isFinite(raw)) return 125;
+      return Math.max(25, Math.min(300, Math.round(raw)));
+    } catch {
+      return 125;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "mysession_lk_default_remote_volume_pct",
+        String(defaultRemoteVolumePct)
+      );
+    } catch { }
+  }, [defaultRemoteVolumePct]);
 
   // chat unread
   const [unreadChat, setUnreadChat] = useState<number>(0);
@@ -3157,7 +3176,7 @@ export function RoomPageLiveKit() {
   const pipWindowRef = useRef<Window | null>(null);
   const [pipMountEl, setPipMountEl] = useState<HTMLElement | null>(null);
   const [pipOpen, setPipOpen] = useState(false);
-
+  
   const documentPipSupported =
     typeof window !== "undefined" &&
     typeof (window as WindowWithDocumentPiP).documentPictureInPicture !== "undefined";
@@ -3220,6 +3239,10 @@ export function RoomPageLiveKit() {
       localStorage.setItem(volumeStorageKey, JSON.stringify(volumePctByParticipantKey));
     } catch { }
   }, [volumeStorageKey, volumePctByParticipantKey]);
+
+  const resetAllParticipantVolumesToDefault = useCallback(() => {
+    setVolumePctByParticipantKey({});
+  }, []);
 
   const roomNameForApi = useMemo(() => {
     if (!session) return "";
@@ -3915,7 +3938,9 @@ export function RoomPageLiveKit() {
         const next = !!pub.isMuted;
         if (next) await pub.unmute?.();
         else await pub.mute?.();
+
         scheduleRebuildTiles();
+        setRemoteAudioRecoveryTick((v) => v + 1);
         return;
       }
 
@@ -3926,7 +3951,9 @@ export function RoomPageLiveKit() {
         noiseSuppression: noiseSuppressionEnabled,
         autoGainControl: autoGainControlEnabled,
       } as any);
+
       scheduleRebuildTiles();
+      setRemoteAudioRecoveryTick((v) => v + 1);
     } catch (e) {
       console.error("toggleMic error:", e);
     }
@@ -6122,6 +6149,7 @@ export function RoomPageLiveKit() {
         onApplyVideoFx={applyPrejoinVideoFx}
         onBlurStrengthChange={setBlurStrength}
         onSetBgImageUrl={setBgImageUrl}
+        
         onUploadBg={(file: File) => {
           try {
             if (uploadedBgUrlRef.current) {
@@ -6215,7 +6243,13 @@ export function RoomPageLiveKit() {
           </div>
         </div>
 
-        <RemoteAudioRenderer room={roomState} audioOutputId={selectedAudioOutputId} />
+        <RemoteAudioRenderer
+          room={roomState}
+          audioOutputId={selectedAudioOutputId}
+          defaultRemoteVolumePct={defaultRemoteVolumePct}
+          volumePctByParticipantKey={volumePctByParticipantKey}
+          recoveryTick={remoteAudioRecoveryTick}
+        />
 
         <LiveKitBottomBar
           theme={theme}
@@ -6261,6 +6295,11 @@ export function RoomPageLiveKit() {
           onBlurStrengthChange={setBlurStrength}
           bgImageUrl={bgImageUrl}
           onSetBgImageUrl={setBgImageUrl}
+
+          defaultRemoteVolumePct={defaultRemoteVolumePct}
+          onDefaultRemoteVolumePctChange={setDefaultRemoteVolumePct}
+          onResetAllParticipantVolumes={resetAllParticipantVolumesToDefault}
+
           onApplyMode={async (m) => {
             await applyVideoFx(m);
           }}
@@ -6533,6 +6572,41 @@ export function RoomPageLiveKit() {
 
         {selectedUser && (
           <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
+        )}
+        {isHost && (
+          <div className="fixed bottom-24 left-4 z-[90] flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setDefaultRemoteVolumePct(100)}
+              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
+            >
+              All 100%
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setDefaultRemoteVolumePct(125)}
+              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
+            >
+              All 125%
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setDefaultRemoteVolumePct(150)}
+              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
+            >
+              All 150%
+            </button>
+
+            <button
+              type="button"
+              onClick={resetAllParticipantVolumesToDefault}
+              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
+            >
+              Reset people volumes
+            </button>
+          </div>
         )}
       </div>
       {pipPortal}

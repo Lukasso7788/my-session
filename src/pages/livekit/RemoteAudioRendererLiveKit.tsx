@@ -12,10 +12,22 @@ type RemoteAudioItem = {
     id: string;
     track: RemoteAudioTrack;
     label: string;
+    participantUserId?: string;
+    participantIdentity?: string;
 };
 
 type AudioWithSinkId = HTMLAudioElement & {
     setSinkId?: (deviceId: string) => Promise<void>;
+};
+
+type AudioContextLike = AudioContext & {
+    webkitAudioContext?: typeof AudioContext;
+};
+
+type AudioGraph = {
+    audioContext: AudioContext;
+    source: MediaElementAudioSourceNode;
+    gainNode: GainNode;
 };
 
 function isProbablyMobileOrTablet() {
@@ -23,9 +35,7 @@ function isProbablyMobileOrTablet() {
 
     try {
         if (window.matchMedia("(max-width: 1023px)").matches) return true;
-    } catch {
-        // ignore
-    }
+    } catch { }
 
     try {
         const ua = String(navigator.userAgent || "").toLowerCase();
@@ -53,6 +63,8 @@ function sameTrackList(a: RemoteAudioItem[], b: RemoteAudioItem[]) {
         if (a[i].id !== b[i].id) return false;
         if (a[i].track !== b[i].track) return false;
         if (a[i].label !== b[i].label) return false;
+        if (a[i].participantUserId !== b[i].participantUserId) return false;
+        if (a[i].participantIdentity !== b[i].participantIdentity) return false;
     }
 
     return true;
@@ -74,12 +86,74 @@ function isRemoteAudioTrack(track: unknown): track is RemoteAudioTrack {
     );
 }
 
+function looksLikeUuid(v: string) {
+    const s = String(v || "").trim().toLowerCase();
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(s);
+}
+
+function getParticipantVolumeKey(args: {
+    id: string;
+    participantUserId?: string;
+    participantIdentity?: string;
+}) {
+    const userId = String(args.participantUserId || "").toLowerCase();
+    if (userId && looksLikeUuid(userId)) return `user:${userId}`;
+
+    const identity = String(args.participantIdentity || "").trim().toLowerCase();
+    if (identity) return `identity:${identity}`;
+
+    return `tile:${String(args.id || "")}`;
+}
+
+function clamp(n: number, a: number, b: number) {
+    return Math.max(a, Math.min(b, n));
+}
+
+function getSafePct(v: unknown, fallback: number) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return fallback;
+    return clamp(Math.round(n), 0, 300);
+}
+
+function getEffectiveVolumeMultiplier(args: {
+    defaultRemoteVolumePct: number;
+    participantVolumePct?: number;
+}) {
+    const defaultPct = getSafePct(args.defaultRemoteVolumePct, 125);
+    const participantPct = getSafePct(args.participantVolumePct, 100);
+    return (defaultPct / 100) * (participantPct / 100);
+}
+
+function makeAudioContext(): AudioContext | null {
+    if (typeof window === "undefined") return null;
+
+    try {
+        const AnyWindow = window as Window & {
+            AudioContext?: typeof AudioContext;
+            webkitAudioContext?: typeof AudioContext;
+        };
+
+        const Ctor = AnyWindow.AudioContext || AnyWindow.webkitAudioContext;
+        if (!Ctor) return null;
+
+        return new Ctor();
+    } catch {
+        return null;
+    }
+}
+
 export function RemoteAudioRenderer({
     room,
     audioOutputId,
+    defaultRemoteVolumePct,
+    volumePctByParticipantKey,
+    recoveryTick,
 }: {
     room: Room | null;
     audioOutputId: string;
+    defaultRemoteVolumePct: number;
+    volumePctByParticipantKey: Record<string, number>;
+    recoveryTick: number;
 }) {
     const [tracks, setTracks] = useState<RemoteAudioItem[]>([]);
     const tracksRef = useRef<RemoteAudioItem[]>([]);
@@ -108,6 +182,8 @@ export function RemoteAudioRenderer({
                     id: `${participant.sid}:${String(pub.trackSid || "")}`,
                     track: maybeTrack,
                     label,
+                    participantUserId: String((participant as any)?.identity || ""),
+                    participantIdentity: String(participant.identity || ""),
                 });
             });
         });
@@ -153,14 +229,27 @@ export function RemoteAudioRenderer({
 
     return (
         <>
-            {renderedTracks.map((item) => (
-                <AudioEl
-                    key={item.id}
-                    track={item.track}
-                    audioOutputId={audioOutputId}
-                    debugLabel={item.label}
-                />
-            ))}
+            {renderedTracks.map((item) => {
+                const participantVolumeKey = getParticipantVolumeKey({
+                    id: item.id,
+                    participantUserId: item.participantUserId,
+                    participantIdentity: item.participantIdentity,
+                });
+
+                const participantVolumePct = volumePctByParticipantKey[participantVolumeKey];
+
+                return (
+                    <AudioEl
+                        key={item.id}
+                        track={item.track}
+                        audioOutputId={audioOutputId}
+                        debugLabel={item.label}
+                        defaultRemoteVolumePct={defaultRemoteVolumePct}
+                        participantVolumePct={participantVolumePct}
+                        recoveryTick={recoveryTick}
+                    />
+                );
+            })}
         </>
     );
 }
@@ -169,15 +258,31 @@ function AudioEl({
     track,
     audioOutputId,
     debugLabel,
+    defaultRemoteVolumePct,
+    participantVolumePct,
+    recoveryTick,
 }: {
     track: RemoteAudioTrack;
     audioOutputId: string;
     debugLabel: string;
+    defaultRemoteVolumePct: number;
+    participantVolumePct?: number;
+    recoveryTick: number;
 }) {
     const ref = useRef<HTMLAudioElement | null>(null);
     const retryTimerRef = useRef<number | null>(null);
     const mountedRef = useRef(false);
     const lastPlayAttemptAtRef = useRef(0);
+    const graphRef = useRef<AudioGraph | null>(null);
+
+    const effectiveVolumeMultiplier = useMemo(
+        () =>
+            getEffectiveVolumeMultiplier({
+                defaultRemoteVolumePct,
+                participantVolumePct,
+            }),
+        [defaultRemoteVolumePct, participantVolumePct]
+    );
 
     useEffect(() => {
         mountedRef.current = true;
@@ -185,6 +290,22 @@ function AudioEl({
             mountedRef.current = false;
         };
     }, []);
+
+    useEffect(() => {
+        const graph = graphRef.current;
+        const el = ref.current;
+
+        if (!el) return;
+
+        if (graph) {
+            try {
+                graph.gainNode.gain.value = effectiveVolumeMultiplier;
+            } catch { }
+            return;
+        }
+
+        el.volume = 1;
+    }, [effectiveVolumeMultiplier]);
 
     useEffect(() => {
         const el = ref.current;
@@ -197,6 +318,56 @@ function AudioEl({
             if (retryTimerRef.current !== null) {
                 window.clearTimeout(retryTimerRef.current);
                 retryTimerRef.current = null;
+            }
+        };
+
+        const ensureAudioGraph = async () => {
+            if (cancelled || !mountedRef.current) return;
+
+            const existing = graphRef.current;
+            if (existing) {
+                try {
+                    existing.gainNode.gain.value = effectiveVolumeMultiplier;
+                } catch { }
+                try {
+                    if (existing.audioContext.state === "suspended") {
+                        await existing.audioContext.resume();
+                    }
+                } catch { }
+                return;
+            }
+
+            const audioContext = makeAudioContext();
+            if (!audioContext) {
+                try {
+                    el.volume = Math.min(1, effectiveVolumeMultiplier);
+                } catch { }
+                return;
+            }
+
+            try {
+                const source = audioContext.createMediaElementSource(el);
+                const gainNode = audioContext.createGain();
+
+                gainNode.gain.value = effectiveVolumeMultiplier;
+
+                source.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+
+                graphRef.current = {
+                    audioContext,
+                    source,
+                    gainNode,
+                };
+
+                if (audioContext.state === "suspended") {
+                    await audioContext.resume();
+                }
+            } catch (error) {
+                console.warn(`Audio graph init failed for ${debugLabel}`, error);
+                try {
+                    el.volume = Math.min(1, effectiveVolumeMultiplier);
+                } catch { }
             }
         };
 
@@ -218,6 +389,13 @@ function AudioEl({
             lastPlayAttemptAtRef.current = now;
 
             try {
+                await ensureAudioGraph();
+
+                const graph = graphRef.current;
+                if (graph?.audioContext?.state === "suspended") {
+                    await graph.audioContext.resume();
+                }
+
                 await ref.current.play();
             } catch (error) {
                 console.warn(`Remote audio play failed for ${debugLabel} (${reason})`, error);
@@ -257,15 +435,21 @@ function AudioEl({
             }
         };
 
+        const onFocus = () => {
+            void tryPlay("focus");
+        };
+
+        const onPageShow = () => {
+            void tryPlay("pageshow");
+        };
+
         try {
             el.autoplay = true;
             el.preload = "auto";
             el.muted = false;
             el.volume = 1;
             el.setAttribute("playsinline", "true");
-        } catch {
-            // ignore
-        }
+        } catch { }
 
         try {
             track.attach(el);
@@ -276,9 +460,12 @@ function AudioEl({
         el.addEventListener("loadedmetadata", onLoadedMetadata);
         el.addEventListener("canplay", onCanPlay);
         document.addEventListener("visibilitychange", onVisibilityChange);
+        window.addEventListener("focus", onFocus);
+        window.addEventListener("pageshow", onPageShow);
 
         void (async () => {
             await applySinkIfPossible();
+            await ensureAudioGraph();
             await tryPlay("initial");
         })();
 
@@ -289,23 +476,45 @@ function AudioEl({
             el.removeEventListener("loadedmetadata", onLoadedMetadata);
             el.removeEventListener("canplay", onCanPlay);
             document.removeEventListener("visibilitychange", onVisibilityChange);
+            window.removeEventListener("focus", onFocus);
+            window.removeEventListener("pageshow", onPageShow);
 
             try {
                 track.detach(el);
-            } catch {
-                // ignore
-            }
+            } catch { }
 
             try {
                 el.pause();
                 el.srcObject = null;
                 el.removeAttribute("src");
                 el.load();
-            } catch {
-                // ignore
-            }
+            } catch { }
+
+            try {
+                const graph = graphRef.current;
+                if (graph) {
+                    graph.source.disconnect();
+                    graph.gainNode.disconnect();
+                    void graph.audioContext.close();
+                    graphRef.current = null;
+                }
+            } catch { }
         };
-    }, [track, audioOutputId, debugLabel]);
+    }, [track, audioOutputId, debugLabel, effectiveVolumeMultiplier]);
+
+    useEffect(() => {
+        if (!mountedRef.current) return;
+
+        const graph = graphRef.current;
+        if (graph?.audioContext?.state === "suspended") {
+            graph.audioContext.resume().catch(() => { });
+        }
+
+        const el = ref.current;
+        if (!el) return;
+
+        el.play().catch(() => { });
+    }, [recoveryTick]);
 
     return <audio ref={ref} autoPlay />;
 }

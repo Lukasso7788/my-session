@@ -264,6 +264,9 @@ export function RoomSettingsModalLiveKit({
     onBlurStrengthChange,
     bgImageUrl,
     onSetBgImageUrl,
+    defaultRemoteVolumePct,
+    onDefaultRemoteVolumePctChange,
+    onResetAllParticipantVolumes,
     onApplyMode,
     onClose,
     fxError,
@@ -314,6 +317,11 @@ export function RoomSettingsModalLiveKit({
     onBlurStrengthChange: (v: number) => void;
     bgImageUrl: string;
     onSetBgImageUrl: (url: string) => void;
+
+    defaultRemoteVolumePct: number;
+    onDefaultRemoteVolumePctChange: (value: number) => void;
+    onResetAllParticipantVolumes: () => void;
+
     onApplyMode: (m: FxMode) => void | Promise<void>;
     onClose: () => void;
     fxError: string;
@@ -542,6 +550,54 @@ export function RoomSettingsModalLiveKit({
                                         isLight={isLight}
                                         valueSuffix="%"
                                     />
+
+                                    <div className="border-t border-white/10 pt-4">
+                                        <SliderField
+                                            label="Default remote volume"
+                                            description="Boost everyone at once, then fine-tune individual people separately."
+                                            min={25}
+                                            max={300}
+                                            step={5}
+                                            value={defaultRemoteVolumePct}
+                                            onChange={onDefaultRemoteVolumePctChange}
+                                            isLight={isLight}
+                                            valueSuffix="%"
+                                        />
+
+                                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => onDefaultRemoteVolumePctChange(100)}
+                                                className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn}`}
+                                            >
+                                                100%
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => onDefaultRemoteVolumePctChange(125)}
+                                                className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn}`}
+                                            >
+                                                125%
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => onDefaultRemoteVolumePctChange(150)}
+                                                className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn}`}
+                                            >
+                                                150%
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={onResetAllParticipantVolumes}
+                                                className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn}`}
+                                            >
+                                                Reset people volumes
+                                            </button>
+                                        </div>
+                                    </div>
 
                                     <ToggleRow
                                         label="Mirror camera preview"
