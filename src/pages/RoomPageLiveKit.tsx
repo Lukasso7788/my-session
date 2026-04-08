@@ -6299,7 +6299,7 @@ export function RoomPageLiveKit() {
         >
           <div
             data-lk-admin-menu-surface="true"
-            className={`pointer-events-auto absolute w-[min(22rem,calc(100vw-1rem))] max-h-[min(78vh,34rem)] overflow-y-auto overflow-x-hidden select-none rounded-2xl border shadow-2xl ${isLight ? "bg-white border-black/10 text-black/85" : "bg-black/20 border-white/10 text-white/90"
+            className={`pointer-events-auto fixed w-[min(22rem,calc(100vw-1rem))] max-h-[min(78vh,34rem)] overflow-y-auto overflow-x-hidden rounded-2xl border shadow-2xl ${isLight ? "bg-white border-black/10 text-black/85" : "bg-[#020617] border-white/10 text-white/90"
               }`}
             style={{
               left: Math.max(8, Math.min(tileMenuAnchor.x - 352, tileMenuAnchor.viewportWidth - 360)),
@@ -6308,11 +6308,15 @@ export function RoomPageLiveKit() {
               overscrollBehavior: "contain",
               WebkitOverflowScrolling: "touch",
               touchAction: "pan-y",
+              backgroundColor: isLight ? "#ffffff" : "#020617",
+              opacity: 1,
             }}
             onWheel={(e) => {
               e.stopPropagation();
             }}
-            onClick={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+            }}
             onMouseDown={(e) => {
               e.stopPropagation();
             }}
