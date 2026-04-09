@@ -36,6 +36,10 @@ function getInitials(name: string) {
     return out || "U";
 }
 
+function clamp(n: number, a: number, b: number) {
+    return Math.max(a, Math.min(b, n));
+}
+
 function Icon({
     name,
     theme,
@@ -149,15 +153,27 @@ function VideoTileInner({
 
     const micIconTheme: RoomTheme = isSelfMutedBadge ? "dark" : isLight ? "light" : "dark";
 
-    const speaking = Number(audioLevel || 0) > 0.025;
+    const safeAudioLevel = clamp(Number(audioLevel || 0), 0, 1);
+    const speakingFillPct = micMuted ? 0 : safeAudioLevel <= 0.02 ? 0 : Math.round(safeAudioLevel * 100);
+    const speaking = !micMuted && safeAudioLevel > 0.06;
 
-    const speakingDotClass = speaking
-        ? isLight
-            ? "bg-emerald-500 shadow-[0_0_0.8rem_rgba(16,185,129,0.45)]"
-            : "bg-emerald-400 shadow-[0_0_0.8rem_rgba(52,211,153,0.45)]"
+    const micFillTrackClass = isSelfMutedBadge
+        ? "bg-white/18"
         : isLight
-            ? "bg-black/15"
-            : "bg-white/15";
+            ? "bg-black/[0.06]"
+            : "bg-white/[0.08]";
+
+    const micFillActiveClass = isSelfMutedBadge
+        ? "bg-white/28"
+        : isLight
+            ? "bg-emerald-500/80"
+            : "bg-emerald-400/85";
+
+    const micGlowClass = speaking
+        ? isLight
+            ? "shadow-[0_0_0.9rem_rgba(16,185,129,0.30)]"
+            : "shadow-[0_0_0.9rem_rgba(52,211,153,0.30)]"
+        : "";
 
     const debugSizing = useMemo(() => getQueryBool("devTileDebug", false), []);
     const [sizeText, setSizeText] = useState<string>("");
@@ -301,7 +317,7 @@ function VideoTileInner({
         <div
             ref={wrapRef}
             className={
-                "relative h-full w-full min-h-0 min-w-0 rounded-2xl overflow-hidden border " +
+                "group relative h-full w-full min-h-0 min-w-0 rounded-2xl overflow-hidden border " +
                 (isLight ? "border-black/10" : "border-white/10") +
                 " " +
                 tileBgClass
@@ -379,7 +395,7 @@ function VideoTileInner({
                             e.stopPropagation();
                             onToggleMenu?.(tileId, e.currentTarget);
                         }}
-                        className={`absolute right-[0.55rem] top-[0.55rem] z-20 flex h-[2.1rem] w-[2.1rem] items-center justify-center rounded-full border backdrop-blur-md transition ${menuBtnClass}`}
+                        className={`absolute right-[0.55rem] top-[0.55rem] z-20 flex h-[2.1rem] w-[2.1rem] items-center justify-center rounded-full border backdrop-blur-md transition ${menuBtnClass} opacity-0 group-hover:opacity-100 focus:opacity-100 pointer-events-none group-hover:pointer-events-auto focus:pointer-events-auto`}
                         aria-label="Open participant actions"
                         title="Open participant actions"
                     >
@@ -459,11 +475,6 @@ function VideoTileInner({
                 >
                     <div className="flex min-w-0 items-center gap-[0.45rem]">
                         <span
-                            className={`h-[0.55rem] w-[0.55rem] shrink-0 rounded-full ${speakingDotClass}`}
-                            aria-hidden="true"
-                        />
-
-                        <span
                             className={`min-w-0 truncate text-[clamp(0.76rem,1.4vw,0.9rem)] font-semibold leading-none ${nameTextClass}`}
                         >
                             {label || "User"}
@@ -472,15 +483,26 @@ function VideoTileInner({
                 </div>
 
                 <div
-                    className={`pointer-events-auto flex h-[2rem] min-w-[2rem] shrink-0 items-center justify-center rounded-[0.8rem] border px-[0.55rem] backdrop-blur-md ${muteBadgeClass}`}
-                    title={micMuted ? "Microphone off" : "Microphone on"}
-                    aria-label={micMuted ? "Microphone off" : "Microphone on"}
+                    className={`pointer-events-auto relative flex h-[2rem] min-w-[2rem] shrink-0 items-center justify-center overflow-hidden rounded-[0.8rem] border px-[0.55rem] backdrop-blur-md ${muteBadgeClass} ${micGlowClass}`}
+                    title={micMuted ? "Microphone off" : speaking ? "Speaking" : "Microphone on"}
+                    aria-label={micMuted ? "Microphone off" : speaking ? "Speaking" : "Microphone on"}
                 >
-                    <Icon
-                        name={micMuted ? "mic-off" : "mic-on"}
-                        theme={micIconTheme}
-                        className="h-[1rem] w-[1rem]"
-                    />
+                    <div className={`absolute inset-0 ${micFillTrackClass}`} />
+
+                    {speakingFillPct > 0 ? (
+                        <div
+                            className={`absolute inset-x-0 bottom-0 ${micFillActiveClass}`}
+                            style={{ height: `${speakingFillPct}%` }}
+                        />
+                    ) : null}
+
+                    <div className="relative z-[1] flex items-center justify-center">
+                        <Icon
+                            name={micMuted ? "mic-off" : "mic-on"}
+                            theme={micIconTheme}
+                            className="h-[1rem] w-[1rem]"
+                        />
+                    </div>
                 </div>
             </div>
         </div>
