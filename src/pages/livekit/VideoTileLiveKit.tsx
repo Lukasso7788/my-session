@@ -130,20 +130,24 @@ function VideoTileInner({
         : "bg-emerald-500/80 text-[#02140B] border-white/10";
 
     const namePillClass = isLight
-        ? "bg-white/88 border-black/10 text-black/85"
-        : "bg-black/40 border-white/10 text-white/90";
+        ? "bg-white/92 border-black/10 text-neutral-900 shadow-sm"
+        : "bg-black/58 border-white/10 text-white shadow-sm";
+
+    const nameTextClass = isLight ? "text-neutral-900" : "text-white";
 
     const menuBtnClass = isLight
-        ? "bg-white/88 border-black/10 text-black/85 hover:bg-white"
-        : "bg-black/40 border-white/10 text-white hover:bg-black/55";
+        ? "bg-white/92 border-black/10 text-black/85 hover:bg-white"
+        : "bg-black/58 border-white/10 text-white hover:bg-black/70";
 
-    const muteBadgeClass = micMuted
-        ? isLight
-            ? "bg-red-600 text-white border-red-700/60"
-            : "bg-red-500/90 text-white border-red-300/20"
+    const isSelfMutedBadge = !!isLocal && !!micMuted;
+
+    const muteBadgeClass = isSelfMutedBadge
+        ? "bg-red-600 border-red-700/70 text-white shadow-sm"
         : isLight
-            ? "bg-black/5 text-black/70 border-black/10"
-            : "bg-white/10 text-white/75 border-white/10";
+            ? "bg-white/92 border-black/10 text-neutral-800 shadow-sm"
+            : "bg-black/58 border-white/10 text-white shadow-sm";
+
+    const micIconTheme: RoomTheme = isSelfMutedBadge ? "dark" : isLight ? "light" : "dark";
 
     const speaking = Number(audioLevel || 0) > 0.025;
 
@@ -375,7 +379,7 @@ function VideoTileInner({
                             e.stopPropagation();
                             onToggleMenu?.(tileId, e.currentTarget);
                         }}
-                        className={`absolute right-[0.55rem] top-[0.55rem] z-20 flex h-[2.1rem] w-[2.1rem] items-center justify-center rounded-full border backdrop-blur transition ${menuBtnClass}`}
+                        className={`absolute right-[0.55rem] top-[0.55rem] z-20 flex h-[2.1rem] w-[2.1rem] items-center justify-center rounded-full border backdrop-blur-md transition ${menuBtnClass}`}
                         aria-label="Open participant actions"
                         title="Open participant actions"
                     >
@@ -392,7 +396,7 @@ function VideoTileInner({
                                 className={
                                     "px-2 py-1 rounded-lg text-[0.7rem] border flex items-center gap-1 " +
                                     (isLight
-                                        ? "bg-white/85 text-black border-black/10 disabled:opacity-50"
+                                        ? "bg-white/90 text-black border-black/10 disabled:opacity-50"
                                         : "bg-black/60 text-white border-white/10 disabled:opacity-50")
                                 }
                                 title="Mute / unmute remote microphone (host action)"
@@ -413,7 +417,7 @@ function VideoTileInner({
                                 className={
                                     "px-2 py-1 rounded-lg text-[0.7rem] border flex items-center gap-1 " +
                                     (isLight
-                                        ? "bg-white/85 text-black border-black/10 disabled:opacity-50"
+                                        ? "bg-white/90 text-black border-black/10 disabled:opacity-50"
                                         : "bg-black/60 text-white border-white/10 disabled:opacity-50")
                                 }
                                 title="Mute / unmute remote camera (host action)"
@@ -451,7 +455,7 @@ function VideoTileInner({
 
             <div className="pointer-events-none absolute inset-x-[0.55rem] bottom-[0.55rem] z-[12] flex min-w-0 items-end justify-between gap-[0.45rem]">
                 <div
-                    className={`pointer-events-auto min-w-0 max-w-full rounded-[1rem] border px-[0.72rem] py-[0.52rem] backdrop-blur ${namePillClass}`}
+                    className={`pointer-events-auto min-w-0 max-w-full rounded-[1rem] border px-[0.72rem] py-[0.52rem] backdrop-blur-md ${namePillClass}`}
                 >
                     <div className="flex min-w-0 items-center gap-[0.45rem]">
                         <span
@@ -459,20 +463,22 @@ function VideoTileInner({
                             aria-hidden="true"
                         />
 
-                        <span className="min-w-0 truncate text-[clamp(0.76rem,1.4vw,0.9rem)] font-semibold leading-none">
+                        <span
+                            className={`min-w-0 truncate text-[clamp(0.76rem,1.4vw,0.9rem)] font-semibold leading-none ${nameTextClass}`}
+                        >
                             {label || "User"}
                         </span>
                     </div>
                 </div>
 
                 <div
-                    className={`pointer-events-auto flex h-[2rem] min-w-[2rem] shrink-0 items-center justify-center rounded-[0.8rem] border px-[0.55rem] ${muteBadgeClass}`}
+                    className={`pointer-events-auto flex h-[2rem] min-w-[2rem] shrink-0 items-center justify-center rounded-[0.8rem] border px-[0.55rem] backdrop-blur-md ${muteBadgeClass}`}
                     title={micMuted ? "Microphone off" : "Microphone on"}
                     aria-label={micMuted ? "Microphone off" : "Microphone on"}
                 >
                     <Icon
                         name={micMuted ? "mic-off" : "mic-on"}
-                        theme={theme}
+                        theme={micIconTheme}
                         className="h-[1rem] w-[1rem]"
                     />
                 </div>
