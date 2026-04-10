@@ -136,8 +136,8 @@ function MicBadgeWithBarVisualizer({
 
     const micGlowClass = speaking
         ? isLight
-            ? "shadow-[0_0_1rem_rgba(16,185,129,0.34)]"
-            : "shadow-[0_0_1rem_rgba(52,211,153,0.34)]"
+            ? "shadow-[0_0_1rem_rgba(76,160,255,0.35)]"
+            : "shadow-[0_0_1rem_rgba(52,211,153,0.35)]"
         : "";
 
     return (
@@ -157,15 +157,15 @@ function MicBadgeWithBarVisualizer({
                         <BarVisualizer
                             track={audioTrack}
                             barCount={1}
-                            options={{ minHeight: 14, maxHeight: 100 }}
+                            options={{ minHeight: 16, maxHeight: 100 }}
                             className="absolute inset-0 flex items-end justify-stretch"
                         >
                             <span
                                 className={
                                     "lk-audio-bar block h-full w-full rounded-none transition-all duration-75 " +
                                     (isLight
-                                        ? "bg-black/[0.08] data-[lk-highlighted=true]:bg-emerald-500/88"
-                                        : "bg-white/[0.10] data-[lk-highlighted=true]:bg-emerald-400/92")
+                                        ? "bg-[#4CA0FF]/18 data-[lk-highlighted=true]:bg-[#4CA0FF]/95"
+                                        : "bg-[#34D399]/18 data-[lk-highlighted=true]:bg-[#34D399]/95")
                                 }
                             />
                         </BarVisualizer>
