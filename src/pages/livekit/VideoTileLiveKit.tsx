@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Track, LocalAudioTrack, RemoteAudioTrack } from "livekit-client";
-import { BarVisualizer } from "@livekit/components-react";
 
 type RoomTheme = "dark" | "light";
 
@@ -106,7 +105,7 @@ type VideoTileProps = {
     onOpenProfile?: () => void;
 };
 
-function MicBadgeWithBarVisualizer({
+function MicBadgeWithSpeakingFill({
     theme,
     micMuted,
     audioTrack,
@@ -131,46 +130,45 @@ function MicBadgeWithBarVisualizer({
     const micIconTheme: RoomTheme = isSelfMutedBadge ? "dark" : isLight ? "light" : "dark";
 
     const safeAudioLevel = clamp(Number(audioLevel || 0), 0, 1);
-    const speaking = !micMuted && safeAudioLevel > 0.04;
-    const showVisualizer = !micMuted && !!audioTrack;
+
+    // ВАЖНО:
+    // Делаем отклик более чувствительным визуально:
+    // - низкий порог старта
+    // - нелинейное усиление тихой речи
+    // - небольшой минимальный fill, когда речь уже задетектена
+    const shouldAnimate = !micMuted && !!audioTrack && safeAudioLevel > 0.012;
+    const boostedLevel = shouldAnimate
+        ? Math.min(1, Math.pow(safeAudioLevel, 0.45) * 1.9)
+        : 0;
+
+    const fillPct = shouldAnimate
+        ? Math.max(16, Math.min(100, Math.round(boostedLevel * 100)))
+        : 0;
+
+    const speaking = !micMuted && safeAudioLevel > 0.015;
+
+    const activeFillClass = isLight ? "bg-[#4CA0FF]" : "bg-[#34D399]";
+    const idleFillClass = isLight ? "bg-black/[0.05]" : "bg-white/[0.07]";
 
     const micGlowClass = speaking
         ? isLight
-            ? "shadow-[0_0_1rem_rgba(76,160,255,0.35)]"
-            : "shadow-[0_0_1rem_rgba(52,211,153,0.35)]"
+            ? "shadow-[0_0_1rem_rgba(76,160,255,0.36)]"
+            : "shadow-[0_0_1rem_rgba(52,211,153,0.36)]"
         : "";
 
     return (
         <div
-            className={`pointer-events-auto relative flex h-[2rem] min-w-[2.45rem] shrink-0 items-center justify-center overflow-hidden rounded-[0.8rem] border px-[0.35rem] backdrop-blur-md ${badgeBaseClass} ${micGlowClass}`}
+            className={`pointer-events-auto relative flex h-[2rem] min-w-[2.5rem] shrink-0 items-center justify-center overflow-hidden rounded-[0.8rem] border px-[0.35rem] backdrop-blur-md ${badgeBaseClass} ${micGlowClass}`}
             title={micMuted ? "Microphone off" : speaking ? "Speaking" : "Microphone on"}
             aria-label={micMuted ? "Microphone off" : speaking ? "Speaking" : "Microphone on"}
         >
-            {showVisualizer ? (
-                <>
-                    <div
-                        className={`absolute inset-0 ${isLight ? "bg-black/[0.05]" : "bg-white/[0.07]"
-                            }`}
-                    />
+            {!micMuted ? <div className={`absolute inset-0 ${idleFillClass}`} /> : null}
 
-                    <div className="absolute inset-0 overflow-hidden rounded-[0.75rem]">
-                        <BarVisualizer
-                            track={audioTrack}
-                            barCount={1}
-                            options={{ minHeight: 16, maxHeight: 100 }}
-                            className="absolute inset-0 flex items-end justify-stretch"
-                        >
-                            <span
-                                className={
-                                    "lk-audio-bar block h-full w-full rounded-none transition-all duration-75 " +
-                                    (isLight
-                                        ? "bg-[#4CA0FF]/18 data-[lk-highlighted=true]:bg-[#4CA0FF]/95"
-                                        : "bg-[#34D399]/18 data-[lk-highlighted=true]:bg-[#34D399]/95")
-                                }
-                            />
-                        </BarVisualizer>
-                    </div>
-                </>
+            {fillPct > 0 ? (
+                <div
+                    className={`absolute inset-x-0 bottom-0 transition-[height] duration-75 ease-out ${activeFillClass}`}
+                    style={{ height: `${fillPct}%` }}
+                />
             ) : null}
 
             <div className="relative z-[1] flex items-center justify-center">
@@ -522,7 +520,9 @@ function VideoTileInner({
                 <div
                     className={`pointer-events-auto min-w-0 max-w-full rounded-[1rem] border px-[0.72rem] py-[0.52rem] backdrop-blur-md ${namePillClass}`}
                 >
-                    <div className="flex min-w-0 items-center gap-[0.45rem]">
+                    <div className="flex min-w-0 items-center 
+::contentReference[oaicite:1]{index=1}
+gap-[0.45rem]">
                         <span
                             className={`min-w-0 truncate text-[clamp(0.76rem,1.4vw,0.9rem)] font-semibold leading-none ${nameTextClass}`}
                         >
@@ -531,7 +531,7 @@ function VideoTileInner({
                     </div>
                 </div>
 
-                <MicBadgeWithBarVisualizer
+                <MicBadgeWithSpeakingFill
                     theme={theme}
                     micMuted={micMuted}
                     audioTrack={audioTrack}
