@@ -8,6 +8,8 @@ import {
   Track,
   RemoteParticipant,
   LocalVideoTrack,
+  LocalAudioTrack,
+  RemoteAudioTrack,
   LocalTrackPublication,
   RemoteTrackPublication,
   createLocalVideoTrack,
@@ -128,6 +130,7 @@ type TileModel = {
   isLocal: boolean;
 
   videoTrack?: Track;
+  audioTrack?: LocalAudioTrack | RemoteAudioTrack;
   audioLevel?: number;
 
   participantIdentity?: string;
@@ -3545,6 +3548,10 @@ export function RoomPageLiveKit() {
     ) as any;
 
     const localCamTrackRaw = (localCamPub?.track as any) || undefined;
+    const localAudioTrackRaw =
+      localMicPub?.track instanceof LocalAudioTrack
+        ? localMicPub.track
+        : undefined;
 
     const localIdentity = String(lp.identity || livekitIdentityRef.current || "");
     const localUserId =
@@ -3585,6 +3592,7 @@ export function RoomPageLiveKit() {
         ).trim() || "You",
       isLocal: true,
       videoTrack: localCamTrack,
+      audioTrack: localAudioTrackRaw,
       participantIdentity: localIdentity || undefined,
       participantUserId: localUserId || undefined,
       micMuted: localMicMuted,
@@ -3608,6 +3616,10 @@ export function RoomPageLiveKit() {
         remoteCamPubExists && remoteCamPubHasTrack && !remoteCamPubMuted;
 
       const vt = remoteCamActuallyVisible ? ((camPub?.track as any) || undefined) : undefined;
+      const remoteAudioTrack =
+        micPub?.track instanceof RemoteAudioTrack
+          ? micPub.track
+          : undefined;
 
       const exactIdentity = String(rp.identity || "");
       const baseUserId = extractBaseUserIdFromIdentity(exactIdentity);
@@ -3627,6 +3639,7 @@ export function RoomPageLiveKit() {
         label: nm,
         isLocal: false,
         videoTrack: vt,
+        audioTrack: remoteAudioTrack,
         participantIdentity: exactIdentity || undefined,
         participantUserId: baseUserId || undefined,
         micTrackSid: micPub?.trackSid,
@@ -4981,6 +4994,7 @@ export function RoomPageLiveKit() {
             tileId={t.id}
             label={nameText}
             videoTrack={t.videoTrack}
+            audioTrack={t.audioTrack}
             isLocal={t.isLocal}
             theme={theme}
             showBadge={getBadgeForTile(t)}
@@ -5055,6 +5069,7 @@ export function RoomPageLiveKit() {
           tileId={t.id}
           label={nameText}
           videoTrack={t.videoTrack}
+          audioTrack={t.audioTrack}
           isLocal={t.isLocal}
           theme={theme}
           showBadge={getBadgeForTile(t)}
