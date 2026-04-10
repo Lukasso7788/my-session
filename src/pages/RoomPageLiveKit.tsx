@@ -45,7 +45,7 @@ import {
 import { PreJoinModal } from "./livekit/PreJoinModalLiveKit";
 import { RoomSettingsModalLiveKit } from "./livekit/RoomSettingsModalLiveKit";
 import { VideoTile } from "./livekit/VideoTileLiveKit";
-import { RoomAudioRenderer, StartAudio } from "@livekit/components-react";
+import { RoomAudioRenderer, StartAudio, useTrackToggle } from "@livekit/components-react";
 import ReportParticipantModalLiveKit from "./livekit/ReportParticipantModalLiveKit";
 import { buildScreenShareTiles } from "./livekit/screenShareHelpers";
 import LiveKitPiPPortal from "./livekit/LiveKitPiPPortal";
@@ -3261,6 +3261,42 @@ export function RoomPageLiveKit() {
     return 1 + r.remoteParticipants.size;
   }, [roomState, tiles]);
 
+  const micToggleHook = useTrackToggle({
+    source: Track.Source.Microphone,
+    room: roomState || undefined,
+    captureOptions: {
+      deviceId: selectedAudioInputId || prejoinRef.current.audioInputId || undefined,
+      echoCancellation: echoCancellationEnabled,
+      noiseSuppression: noiseSuppressionEnabled,
+      autoGainControl: autoGainControlEnabled,
+    } as any,
+    onDeviceError: (error) => {
+      console.error("mic toggle device error:", error);
+      setMediaWarning(
+        normalizeMediaWarningMessage((error as any)?.message || error || "microphone_toggle_failed")
+      );
+    },
+  });
+
+  const camToggleHook = useTrackToggle({
+    source: Track.Source.Camera,
+    room: roomState || undefined,
+    captureOptions: {
+      deviceId: selectedVideoInputId || prejoinRef.current.videoInputId || undefined,
+      resolution: {
+        width: capturePreset.width,
+        height: capturePreset.height,
+      },
+      frameRate: capturePreset.fps,
+    } as any,
+    onDeviceError: (error) => {
+      console.error("camera toggle device error:", error);
+      setMediaWarning(
+        normalizeMediaWarningMessage((error as any)?.message || error || "camera_toggle_failed")
+      );
+    },
+  });
+
   const volumeStorageKey = useMemo(() => {
     return session?.id ? `mysession_lk_volume:${session.id}` : "";
   }, [session?.id]);
@@ -3980,28 +4016,8 @@ export function RoomPageLiveKit() {
 
   // toggle mic
   const toggleMic = async () => {
-    const r = roomRef.current;
-    if (!r) return;
-
     try {
-      const pub: any = getLocalMicPublication();
-      if (pub) {
-        const next = !!pub.isMuted;
-        if (next) await pub.unmute?.();
-        else await pub.mute?.();
-
-        scheduleRebuildTiles();
-        setRemoteAudioRecoveryTick((v) => v + 1);
-        return;
-      }
-
-      const next = !micOn;
-      await r.localParticipant.setMicrophoneEnabled(next, {
-        deviceId: selectedAudioInputId || prejoinRef.current.audioInputId || undefined,
-        echoCancellation: echoCancellationEnabled,
-        noiseSuppression: noiseSuppressionEnabled,
-        autoGainControl: autoGainControlEnabled,
-      } as any);
+      await micToggleHook.toggle();
 
       scheduleRebuildTiles();
       setRemoteAudioRecoveryTick((v) => v + 1);
@@ -4012,61 +4028,8 @@ export function RoomPageLiveKit() {
 
   // toggle cam without recreating track
   const toggleCam = async () => {
-    const r = roomRef.current;
-    if (!r) return;
-
     try {
-      const pub: any = getLocalCameraPublication();
-
-      if (pub) {
-        const nextOn = !!pub.isMuted;
-
-        setCamOn(nextOn);
-
-        if (nextOn) {
-          await pub.unmute?.();
-        } else {
-          await pub.mute?.();
-        }
-
-        scheduleRebuildTiles();
-
-        window.setTimeout(() => {
-          scheduleRebuildTiles();
-        }, 120);
-
-        return;
-      }
-
-      if (camOn) return;
-
-      const isMobileLike = isMobileQuery || isTabletQuery || deviceTier === "weak";
-
-      const shouldForceVideoDeviceId =
-        !isMobileLike &&
-        !!String(selectedVideoInputId || prejoinRef.current.videoInputId || "").trim();
-
-      const nextTrack = await createLocalVideoTrack({
-        deviceId: shouldForceVideoDeviceId
-          ? selectedVideoInputId || prejoinRef.current.videoInputId || undefined
-          : undefined,
-        resolution: {
-          width: isMobileLike ? 320 : capturePreset.width,
-          height: isMobileLike ? 180 : capturePreset.height,
-        },
-        frameRate: isMobileLike ? 8 : capturePreset.fps,
-      } as any);
-
-      if (deviceTier !== "weak" && videoFxMode !== "off") {
-        try {
-          await safeApplyProcessor(nextTrack, videoFxMode, blurStrength, bgImageUrl);
-        } catch (e) {
-          console.warn("toggleCam fx apply failed:", e);
-        }
-      }
-
-      await r.localParticipant.publishTrack(nextTrack, { source: Track.Source.Camera } as any);
-      setCamOn(true);
+      await camToggleHook.toggle();
 
       scheduleRebuildTiles();
 
