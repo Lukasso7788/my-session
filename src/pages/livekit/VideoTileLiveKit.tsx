@@ -122,7 +122,7 @@ function MicBadgeWithBarVisualizer({
     const isLight = theme === "light";
     const isSelfMutedBadge = !!isLocal && !!micMuted;
 
-    const muteBadgeClass = isSelfMutedBadge
+    const badgeBaseClass = isSelfMutedBadge
         ? "bg-red-600 border-red-700/70 text-white shadow-sm"
         : isLight
             ? "bg-white/92 border-black/10 text-neutral-800 shadow-sm"
@@ -131,43 +131,49 @@ function MicBadgeWithBarVisualizer({
     const micIconTheme: RoomTheme = isSelfMutedBadge ? "dark" : isLight ? "light" : "dark";
 
     const safeAudioLevel = clamp(Number(audioLevel || 0), 0, 1);
-    const speaking = !micMuted && safeAudioLevel > 0.06;
+    const speaking = !micMuted && safeAudioLevel > 0.04;
     const showVisualizer = !micMuted && !!audioTrack;
 
     const micGlowClass = speaking
         ? isLight
-            ? "shadow-[0_0_0.9rem_rgba(16,185,129,0.30)]"
-            : "shadow-[0_0_0.9rem_rgba(52,211,153,0.30)]"
+            ? "shadow-[0_0_1rem_rgba(16,185,129,0.34)]"
+            : "shadow-[0_0_1rem_rgba(52,211,153,0.34)]"
         : "";
 
     return (
         <div
-            className={`pointer-events-auto relative flex h-[2rem] min-w-[2.5rem] shrink-0 items-center justify-center overflow-hidden rounded-[0.8rem] border px-[0.45rem] backdrop-blur-md ${muteBadgeClass} ${micGlowClass}`}
+            className={`pointer-events-auto relative flex h-[2rem] min-w-[2.45rem] shrink-0 items-center justify-center overflow-hidden rounded-[0.8rem] border px-[0.35rem] backdrop-blur-md ${badgeBaseClass} ${micGlowClass}`}
             title={micMuted ? "Microphone off" : speaking ? "Speaking" : "Microphone on"}
             aria-label={micMuted ? "Microphone off" : speaking ? "Speaking" : "Microphone on"}
         >
             {showVisualizer ? (
-                <div className="absolute inset-0 flex items-center justify-center px-[0.4rem]">
-                    <BarVisualizer
-                        track={audioTrack}
-                        barCount={5}
-                        options={{ minHeight: 18, maxHeight: 88 }}
-                        className="flex h-[1.05rem] w-[1.45rem] items-end justify-center gap-[2px]"
-                    >
-                        <span
-                            className={
-                                "lk-audio-bar block w-[3px] rounded-full transition-all duration-100 " +
-                                (isLight ? "bg-black/12 data-[lk-highlighted=true]:bg-emerald-500/85" : "bg-white/16 data-[lk-highlighted=true]:bg-emerald-400/90")
-                            }
-                        />
-                    </BarVisualizer>
-                </div>
+                <>
+                    <div
+                        className={`absolute inset-0 ${isLight ? "bg-black/[0.05]" : "bg-white/[0.07]"
+                            }`}
+                    />
+
+                    <div className="absolute inset-0 overflow-hidden rounded-[0.75rem]">
+                        <BarVisualizer
+                            track={audioTrack}
+                            barCount={1}
+                            options={{ minHeight: 14, maxHeight: 100 }}
+                            className="absolute inset-0 flex items-end justify-stretch"
+                        >
+                            <span
+                                className={
+                                    "lk-audio-bar block h-full w-full rounded-none transition-all duration-75 " +
+                                    (isLight
+                                        ? "bg-black/[0.08] data-[lk-highlighted=true]:bg-emerald-500/88"
+                                        : "bg-white/[0.10] data-[lk-highlighted=true]:bg-emerald-400/92")
+                                }
+                            />
+                        </BarVisualizer>
+                    </div>
+                </>
             ) : null}
 
-            <div
-                className={`relative z-[1] flex items-center justify-center ${showVisualizer ? "opacity-0" : "opacity-100"
-                    }`}
-            >
+            <div className="relative z-[1] flex items-center justify-center">
                 <Icon
                     name={micMuted ? "mic-off" : "mic-on"}
                     theme={micIconTheme}
