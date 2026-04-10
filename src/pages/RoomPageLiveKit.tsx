@@ -45,7 +45,7 @@ import {
 import { PreJoinModal } from "./livekit/PreJoinModalLiveKit";
 import { RoomSettingsModalLiveKit } from "./livekit/RoomSettingsModalLiveKit";
 import { VideoTile } from "./livekit/VideoTileLiveKit";
-import { RemoteAudioRenderer } from "./livekit/RemoteAudioRendererLiveKit";
+import { RoomAudioRenderer, StartAudio } from "@livekit/components-react";
 import ReportParticipantModalLiveKit from "./livekit/ReportParticipantModalLiveKit";
 import { buildScreenShareTiles } from "./livekit/screenShareHelpers";
 import LiveKitPiPPortal from "./livekit/LiveKitPiPPortal";
@@ -6002,13 +6002,25 @@ export function RoomPageLiveKit() {
           </div>
         </div>
 
-        <RemoteAudioRenderer
-          room={roomState}
-          audioOutputId={selectedAudioOutputId}
-          defaultRemoteVolumePct={defaultRemoteVolumePct}
-          volumePctByParticipantKey={volumePctByParticipantKey}
-          recoveryTick={remoteAudioRecoveryTick}
-        />
+        {roomState ? (
+          <>
+            <RoomAudioRenderer
+              room={roomState}
+              volume={Math.max(0, Math.min(1, Number(defaultRemoteVolumePct || 100) / 100))}
+            />
+            <div className="fixed bottom-[5.25rem] left-1/2 z-[80] -translate-x-1/2">
+              <StartAudio
+                room={roomState}
+                label="Click to enable audio"
+                className={
+                  isLight
+                    ? "rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-medium text-black shadow-lg"
+                    : "rounded-xl border border-white/10 bg-[#071427] px-3 py-2 text-sm font-medium text-white shadow-lg"
+                }
+              />
+            </div>
+          </>
+        ) : null}
 
         <LiveKitBottomBar
           theme={theme}
