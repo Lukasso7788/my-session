@@ -40,6 +40,8 @@ export function PreJoinModal({
   onJoin,
   onCancel,
   onRefreshDevices,
+  onPrepareAudioGesture,
+  onTestSpeaker,
 
   // preview + FX
   previewVideoTrack,
@@ -71,6 +73,8 @@ export function PreJoinModal({
   onJoin: () => void;
   onCancel: () => void;
   onRefreshDevices: () => void;
+  onPrepareAudioGesture?: () => void;
+  onTestSpeaker?: () => void;
 
   previewVideoTrack?: LocalVideoTrack | null;
   previewVersion?: number;
@@ -665,8 +669,13 @@ export function PreJoinModal({
                 <div className={`text-[12px] font-semibold ${isLight ? "text-blue-900/80" : "text-white/80"}`}>
                   Quick sanity check
                 </div>
+
                 <div className={`mt-1 text-[12px] ${isLight ? "text-blue-900/70" : "text-white/65"}`}>
                   If preview is blank — allow camera permissions in the browser.
+                </div>
+
+                <div className={`mt-2 text-[12px] ${isLight ? "text-blue-900/70" : "text-white/65"}`}>
+                  On Android, tap <span className="font-semibold">Test speaker</span> before joining if room audio was flaky before.
                 </div>
               </div>
             </div>
@@ -674,11 +683,32 @@ export function PreJoinModal({
         </div>
 
         <div className={footerCls}>
-          <button onClick={onCancel} className={`h-11 px-5 rounded-2xl text-[13px] font-semibold ${btnGhost}`}>
+          <button
+            type="button"
+            onClick={() => {
+              onTestSpeaker?.();
+            }}
+            className={`h-11 px-5 rounded-2xl text-[13px] font-semibold ${btnGhost}`}
+          >
+            Test speaker
+          </button>
+
+          <button
+            type="button"
+            onClick={onCancel}
+            className={`h-11 px-5 rounded-2xl text-[13px] font-semibold ${btnGhost}`}
+          >
             Cancel
           </button>
 
           <button
+            type="button"
+            onMouseDown={() => {
+              onPrepareAudioGesture?.();
+            }}
+            onTouchStart={() => {
+              onPrepareAudioGesture?.();
+            }}
             onClick={onJoin}
             disabled={fxApplying}
             className={`h-11 px-6 rounded-2xl text-[13px] font-semibold ${btnPrimary} disabled:opacity-70`}

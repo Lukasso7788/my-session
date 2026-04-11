@@ -1271,6 +1271,8 @@ export function RoomPageLiveKit() {
   const firstTickDoneRef = useRef<boolean>(false);
   const welcomeLoopRef = useRef<HTMLAudioElement | null>(null);
   const audioUnlockedRef = useRef<boolean>(false);
+  const pendingRoomAudioUnlockRef = useRef<boolean>(false);
+  const audioUnlockInFlightRef = useRef(false);
 
   const STAGE_SOUND_MAP: Record<string, string> = {
     intentions: "/sounds/intentions.mp3",
@@ -1348,6 +1350,34 @@ export function RoomPageLiveKit() {
     a.volume = finalVolume;
     a.play().catch(() => { });
   };
+
+  const ensureRoomAudioPlaybackUnlocked = useCallback(async (reason: string) => {
+    const room = roomRef.current;
+    if (!room) return;
+
+    if (audioUnlockInFlightRef.current) return;
+    audioUnlockInFlightRef.current = true;
+
+    try {
+      const anyRoom = room as any;
+
+      if (typeof anyRoom.startAudio === "function") {
+        await anyRoom.startAudio();
+      }
+
+      setRemoteAudioBlocked(false);
+      setRemoteAudioBlockedReason("");
+      setAudioResumeNonce((v) => v + 1);
+
+      console.log("[lk-audio] playback unlock ok:", reason);
+    } catch (e: any) {
+      console.warn("[lk-audio] playback unlock failed:", reason, e);
+      setRemoteAudioBlocked(true);
+      setRemoteAudioBlockedReason(String(e?.message || e || "audio_playback_blocked"));
+    } finally {
+      audioUnlockInFlightRef.current = false;
+    }
+  }, []);
 
   const startWelcomeLoop = () => {
     stopWelcomeLoop();
@@ -2262,6 +2292,12 @@ export function RoomPageLiveKit() {
   const [settingsPreviewVersion, setSettingsPreviewVersion] = useState(0);
   const [blurStrength, setBlurStrength] = useState<number>(12);
   const [connected, setConnected] = useState(false);
+  const [remoteAudioBlocked, setRemoteAudioBlocked] = useState(false);
+  const [remoteAudioBlockedReason, setRemoteAudioBlockedReason] = useState("");
+  const [remoteAudioHasAnyTracks, setRemoteAudioHasAnyTracks] = useState(false);
+  const [audioResumeNonce, setAudioResumeNonce] = useState(0);
+  const [audioResumeBusy, setAudioResumeBusy] = useState(false);
+  
 
   const [colorCorrection, setColorCorrection] = useState<ColorCorrectionState>({
     brightness: 100,
@@ -3172,6 +3208,17 @@ export function RoomPageLiveKit() {
   // ---- livekit room
   const roomRef = useRef<Room | null>(null);
   const [roomState, setRoomState] = useState<Room | null>(null);
+  useEffect(() => {
+    if (!connected) return;
+    if (!roomState) return;
+    if (!pendingRoomAudioUnlockRef.current) return;
+
+    pendingRoomAudioUnlockRef.current = false;
+
+    window.setTimeout(() => {
+      ensureRoomAudioPlaybackUnlocked("post-connect").catch(() => { });
+    }, 120);
+  }, [connected, roomState, ensureRoomAudioPlaybackUnlocked]);
   const [clientError, setClientError] = useState<string>("");
   const [mediaWarning, setMediaWarning] = useState<string>("");
   
@@ -4032,6 +4079,8 @@ export function RoomPageLiveKit() {
     try {
       await micToggleHook.toggle();
 
+      await ensureRoomAudioPlaybackUnlocked("toggle-mic");
+
       scheduleRebuildTiles();
       setRemoteAudioRecoveryTick((v) => v + 1);
     } catch (e) {
@@ -4043,6 +4092,8 @@ export function RoomPageLiveKit() {
   const toggleCam = async () => {
     try {
       await camToggleHook.toggle();
+
+      await ensureRoomAudioPlaybackUnlocked("toggle-cam");
 
       scheduleRebuildTiles();
 
@@ -5833,6 +5884,9 @@ export function RoomPageLiveKit() {
     setTokenError("");
     setClientError("");
     setDeviceError("");
+
+    pendingRoomAudioUnlockRef.current = true;
+
     setJoinRequested(true);
   };
 
@@ -5874,6 +5928,16 @@ export function RoomPageLiveKit() {
           navigate("/sessions", { replace: true });
         }}
         onJoin={onJoinGate}
+        onPrepareAudioGesture={() => {
+          pendingRoomAudioUnlockRef.current = true;
+        }}
+        onTestSpeaker={() => {
+          try {
+            const a = new Audio("/sounds/jitsi/joined.mp3");
+            a.volume = 0.9;
+            a.play().catch(() => { });
+          } catch { }
+        }}
         previewVideoTrack={prejoinPreparedVideoTrackRef.current}
         previewVersion={prejoinPreviewVersion}
         videoFxMode={videoFxMode}
