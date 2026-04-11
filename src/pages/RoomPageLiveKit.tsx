@@ -5956,7 +5956,7 @@ export function RoomPageLiveKit() {
         }}
         onTestSpeaker={() => {
           try {
-            const a = new Audio("/sounds/jitsi/joined.mp3");
+            const a = new Audio("/sounds/joined.mp3")
             a.volume = 0.9;
             a.play().catch(() => { });
           } catch { }
@@ -6443,7 +6443,10 @@ export function RoomPageLiveKit() {
             }}
           >
             {(() => {
-              const targetTile = tilesBaseForUi.find((t) => t.id === openTileAdminMenuId) || null;
+              const targetTile =
+  tilesForRender.find((t) => t.id === openTileAdminMenuId) ||
+  tilesBaseForUi.find((t) => t.id === openTileAdminMenuId) ||
+  null;
               if (!targetTile) return null;
 
               const targetIdentity = String(targetTile.participantIdentity || "").trim();
