@@ -1047,6 +1047,7 @@ export function RoomPageLiveKit() {
     portalDocument: Document | null;
   } | null>(null);
   const [openTileAdminMenuId, setOpenTileAdminMenuId] = useState<string | null>(null);
+  const [screenSharePinned, setScreenSharePinned] = useState(true);
   const [timelineEditorOpen, setTimelineEditorOpen] = useState(false);
   const [timelineDraftBlocks, setTimelineDraftBlocks] = useState<RoomTimelineBlock[]>([]);
   const [timelineSaving, setTimelineSaving] = useState(false);
@@ -5141,18 +5142,40 @@ export function RoomPageLiveKit() {
     return screenShareTiles.length ? screenShareTiles[0] : null;
   }, [screenShareTiles]);
 
+  useEffect(() => {
+    if (!activeScreenShareTile) {
+      setScreenSharePinned(true);
+    }
+  }, [activeScreenShareTile]);
+
   const pinnedParticipantTile = useMemo(() => {
     if (!pinnedTileId) return null;
     return tilesForRender.find((t) => t.id === pinnedTileId) || null;
   }, [pinnedTileId, tilesForRender]);
 
-  const featuredTile = activeScreenShareTile || pinnedParticipantTile || null;
+  const featuredTile = useMemo(() => {
+    if (activeScreenShareTile && screenSharePinned) {
+      return activeScreenShareTile;
+    }
+
+    if (pinnedParticipantTile) {
+      return pinnedParticipantTile;
+    }
+
+    return null;
+  }, [activeScreenShareTile, screenSharePinned, pinnedParticipantTile]);
 
   const sidebarTiles = useMemo(() => {
-    if (activeScreenShareTile) return tilesForRender;
-    if (pinnedParticipantTile) return tilesForRender.filter((t) => t.id !== pinnedParticipantTile.id);
+    if (activeScreenShareTile && screenSharePinned) {
+      return tilesForRender;
+    }
+
+    if (pinnedParticipantTile) {
+      return tilesForRender.filter((t) => t.id !== pinnedParticipantTile.id);
+    }
+
     return tilesForRender;
-  }, [activeScreenShareTile, pinnedParticipantTile, tilesForRender]);
+  }, [activeScreenShareTile, screenSharePinned, pinnedParticipantTile, tilesForRender]);
 
   // Layout
   const tileCount = tilesForRender.length;
@@ -6629,6 +6652,24 @@ export function RoomPageLiveKit() {
                   </>
 
                   <div className={isLight ? "border-t border-black/10" : "border-t border-white/10"} />
+
+                  {targetTile?.kind === "screen" && (
+                    <>
+                      <div className={isLight ? "border-t border-black/10" : "border-t border-white/10"} />
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setScreenSharePinned((prev) => !prev);
+                          closeTileMenu();
+                        }}
+                        className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                          }`}
+                      >
+                        {screenSharePinned ? "Unpin shared screen" : "Pin shared screen"}
+                      </button>
+                    </>
+                  )}
 
                   <button
                     type="button"
