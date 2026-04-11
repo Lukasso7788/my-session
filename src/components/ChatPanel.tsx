@@ -359,8 +359,8 @@ function MessageCardInner({
         : "bg-black/25 border border-white/10 text-white/70 hover:bg-black/35";
 
     const reactionPillBase = isLight
-        ? "px-2 py-1 rounded-xl bg-black/5 border border-black/10 text-[12px] text-black/70 flex items-center gap-1 transition"
-        : "px-2 py-1 rounded-xl bg-white/5 border border-white/10 text-[12px] text-white/80 flex items-center gap-1 transition";
+        ? "px-2 py-1 rounded-xl bg-black/5 border border-black/10 text-[12px] text-black/70 flex items-center gap-1.5 transition"
+        : "px-2 py-1 rounded-xl bg-white/5 border border-white/10 text-[12px] text-white/80 flex items-center gap-1.5 transition";
 
     const reactionPillMine = isLight
         ? "ring-1 ring-emerald-400/60 border-emerald-500/40"
@@ -448,7 +448,7 @@ function MessageCardInner({
                                     createPortal(
                                         <div
                                             ref={reactionMenuRef}
-                                            className={"fixed z-[99999] rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl " + menuCls}
+                                            className={"fixed z-[99999] rounded-2xl px-3 py-2 flex gap-2 text-[26px] shadow-xl " + menuCls}
                                             style={{
                                                 top: reactionMenuPos.top,
                                                 left: reactionMenuPos.left,
@@ -465,7 +465,7 @@ function MessageCardInner({
                                                             setOpenReactions(false);
                                                         }}
                                                         className={
-                                                            "hover:scale-[1.06] transition " +
+                                                            "hover:scale-[1.06] transition leading-none " +
                                                             (isMine
                                                                 ? isLight
                                                                     ? "drop-shadow-[0_0_0.6rem_rgba(16,185,129,0.35)]"
@@ -475,7 +475,7 @@ function MessageCardInner({
                                                         title={isMine ? `Remove ${e}` : e}
                                                         type="button"
                                                     >
-                                                        {e}
+                                                        <span className="inline-block align-middle">{e}</span>
                                                     </button>
                                                 );
                                             })}
@@ -609,7 +609,7 @@ function MessageCardInner({
                                     }}
                                     title={"Click — who reacted • Right-click — toggle"}
                                 >
-                                    <span>{emoji}</span>
+                                    <span className="text-[16px] leading-none">{emoji}</span>
                                     <span className={reactionCountCls}>{count}</span>
                                 </button>
                             );
