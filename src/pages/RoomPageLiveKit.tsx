@@ -1366,6 +1366,18 @@ export function RoomPageLiveKit() {
         await anyRoom.startAudio();
       }
 
+      try {
+        const audioEls = Array.from(document.querySelectorAll("audio")) as HTMLAudioElement[];
+        await Promise.allSettled(
+          audioEls.map(async (el) => {
+            try {
+              el.muted = false;
+              await el.play();
+            } catch { }
+          })
+        );
+      } catch { }
+
       setRemoteAudioBlocked(false);
       setRemoteAudioBlockedReason("");
       setAudioResumeNonce((v) => v + 1);
@@ -3960,6 +3972,16 @@ export function RoomPageLiveKit() {
       await r.localParticipant.setMicrophoneEnabled(false);
       setMicOn(false);
 
+      if (pendingRoomAudioUnlockRef.current) {
+        try {
+          await ensureRoomAudioPlaybackUnlocked("connect");
+        } catch (e) {
+          console.warn("post-connect room audio unlock failed:", e);
+        } finally {
+          pendingRoomAudioUnlockRef.current = false;
+        }
+      }
+
       kickedBySignalRef.current = false;
 
       leaveOnceRef.current = false;
@@ -4082,6 +4104,10 @@ export function RoomPageLiveKit() {
 
       await ensureRoomAudioPlaybackUnlocked("toggle-mic");
 
+      window.setTimeout(() => {
+        ensureRoomAudioPlaybackUnlocked("toggle-mic-delayed").catch(() => { });
+      }, 180);
+
       scheduleRebuildTiles();
       setRemoteAudioRecoveryTick((v) => v + 1);
     } catch (e) {
@@ -4095,6 +4121,10 @@ export function RoomPageLiveKit() {
       await camToggleHook.toggle();
 
       await ensureRoomAudioPlaybackUnlocked("toggle-cam");
+
+      window.setTimeout(() => {
+        ensureRoomAudioPlaybackUnlocked("toggle-cam-delayed").catch(() => { });
+      }, 180);
 
       scheduleRebuildTiles();
 
@@ -6124,6 +6154,50 @@ export function RoomPageLiveKit() {
                     : "rounded-xl border border-white/10 bg-[#071427] px-3 py-2 text-sm font-medium text-white shadow-lg"
                 }
               />
+              {remoteAudioBlocked && (
+                <div className="fixed bottom-[9.5rem] left-1/2 z-[81] -translate-x-1/2 px-2">
+                  <div
+                    className={
+                      isLight
+                        ? "max-w-[92vw] rounded-2xl border border-amber-200 bg-white px-4 py-3 text-sm text-black shadow-xl"
+                        : "max-w-[92vw] rounded-2xl border border-amber-500/30 bg-[#071427] px-4 py-3 text-sm text-white shadow-xl"
+                    }
+                  >
+                    <div className="font-medium">
+                      Room audio needs a tap
+                    </div>
+                    <div className={`mt-1 text-xs ${isLight ? "text-black/65" : "text-white/70"}`}>
+                      After microphone changes on some Android devices, room audio may need to be resumed manually.
+                    </div>
+
+                    {remoteAudioBlockedReason ? (
+                      <div className={`mt-2 text-[11px] break-words ${isLight ? "text-black/45" : "text-white/45"}`}>
+                        {remoteAudioBlockedReason}
+                      </div>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      disabled={audioResumeBusy}
+                      onClick={async () => {
+                        try {
+                          setAudioResumeBusy(true);
+                          await ensureRoomAudioPlaybackUnlocked("manual-notice");
+                        } finally {
+                          setAudioResumeBusy(false);
+                        }
+                      }}
+                      className={
+                        isLight
+                          ? "mt-3 rounded-xl border border-black/10 bg-black px-3 py-2 text-sm font-medium text-white"
+                          : "mt-3 rounded-xl border border-white/10 bg-white px-3 py-2 text-sm font-medium text-black"
+                      }
+                    >
+                      {audioResumeBusy ? "Enabling audio..." : "Enable room audio"}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </>
         ) : null}
