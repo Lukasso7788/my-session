@@ -1257,7 +1257,9 @@ export function RoomPageLiveKit() {
       window.clearTimeout(t1);
       window.clearTimeout(t2);
     };
-  }, [rightPanelOpen, rightTab]);
+  }, [rightPanelOpen, rightTab, isLgUp]);
+
+  const rightPanelDesktopOpen = rightPanelOpen && isLgUp && !!rightTab;
 
   // stages
   const [stages, setStages] = useState<Stage[]>([]);
@@ -2439,9 +2441,11 @@ export function RoomPageLiveKit() {
 
     try {
       const pj = prejoinRef.current;
-      if (deviceTier === "weak") {
-        throw new Error("Background FX are disabled on weak/mobile devices for stability");
+
+      if (isMobileQuery || isTabletQuery) {
+        throw new Error("Background FX are disabled on phones and tablets");
       }
+
       if (!pj.videoEnabled) throw new Error("Turn camera on in pre-join first");
 
       let track = prejoinPreparedVideoTrackRef.current;
@@ -2490,7 +2494,7 @@ export function RoomPageLiveKit() {
 
       if (!pj.videoEnabled) return;
 
-      if (opts?.delayedForWeak && deviceTier === "weak") {
+      if (opts?.delayedForWeak && (isMobileQuery || isTabletQuery)) {
         await delay(WEAK_DEVICE_PREVIEW_INIT_DELAY_MS);
 
         if (!prejoinOpen) return;
@@ -2499,7 +2503,7 @@ export function RoomPageLiveKit() {
 
       await createPrejoinPreparedVideoTrack({ force: !!opts?.forceTrack });
 
-      if (deviceTier !== "weak" && videoFxMode !== "off") {
+      if (!isMobileQuery && !isTabletQuery && videoFxMode !== "off") {
         await applyPrejoinVideoFx(videoFxMode);
       }
     } finally {
@@ -2627,25 +2631,9 @@ export function RoomPageLiveKit() {
   ]);
 
   useEffect(() => {
-    if (deviceTier !== "weak") return;
-    if (videoFxMode === "off") return;
-
-    setVideoFxMode("off");
-    setFxStatusText("FX disabled automatically on weak/mobile device");
-
-    const track = prejoinPreparedVideoTrackRef.current;
-    if (track) {
-      stopAnyProcessor(track).catch(() => { });
-    }
-
-    lastPrejoinFxSignatureRef.current = "";
-    setPrejoinPreviewVersion((v) => v + 1);
-  }, [deviceTier, videoFxMode]);
-
-  useEffect(() => {
     if (!prejoinOpen) return;
     if (!prejoin.videoEnabled) return;
-    if (deviceTier === "weak") return;
+    if (isMobileQuery || isTabletQuery) return;
     if (videoFxMode === "off") return;
     if (!prejoinPreparedVideoTrackRef.current) return;
 
@@ -2658,7 +2646,8 @@ export function RoomPageLiveKit() {
     bgImageUrl,
     prejoinOpen,
     prejoin.videoEnabled,
-    deviceTier,
+    isMobileQuery,
+    isTabletQuery,
   ]);
 
   const isHost = useMemo(() => {
@@ -3996,14 +3985,13 @@ export function RoomPageLiveKit() {
       const shouldAutoStartCameraOnJoin =
         pj.videoEnabled &&
         !isMobileQuery &&
-        !isTabletQuery &&
-        deviceTier !== "weak";
+        !isTabletQuery;
         
       // cam
       let usedPrepared = false;
 
       if (shouldAutoStartCameraOnJoin) {
-        const fxAllowed = videoFxMode !== "off";
+        const fxAllowed = !isMobileQuery && !isTabletQuery && videoFxMode !== "off";
         let prepared = prejoinPreparedVideoTrackRef.current;
 
         if (!prepared) {
@@ -5316,7 +5304,7 @@ export function RoomPageLiveKit() {
                     items={layoutTilesForRender}
                     containerWidth={effectiveW}
                     containerHeight={effectiveH}
-                    forceThreeAsTwoPlusOne={rightPanelOpen}
+                      forceThreeAsTwoPlusOne={rightPanelDesktopOpen}
                     renderItem={(t) => renderTile(t)}
                   />
                 </div>
@@ -6125,11 +6113,11 @@ export function RoomPageLiveKit() {
               )}
             </div>
 
-            {rightPanelOpen && isLgUp && (
+            {rightPanelDesktopOpen && (
               <div className="min-h-0 h-full overflow-hidden">{RightPanelBody}</div>
             )}
 
-            {rightPanelOpen && !isLgUp && (
+            {rightPanelOpen && !isLgUp && !!rightTab && (
               <div className="absolute inset-0 z-40 min-h-0">
                 <div className="absolute inset-0 bg-black/40" onClick={() => openRightTab(null)} />
                 <div className="absolute inset-x-0 top-0 bottom-0 p-2 min-h-0">{RightPanelBody}</div>
