@@ -5160,10 +5160,19 @@ export function RoomPageLiveKit() {
     }
   }, [activeScreenShareTile]);
 
+  const layoutTilesForRender = useMemo(() => {
+    if (screenSharePinned) return tilesForRender;
+
+    if (!activeScreenShareTile) return tilesForRender;
+
+    const withoutDup = tilesForRender.filter((t) => t.id !== activeScreenShareTile.id);
+    return [activeScreenShareTile, ...withoutDup];
+  }, [tilesForRender, activeScreenShareTile, screenSharePinned]);
+
   const pinnedParticipantTile = useMemo(() => {
     if (!pinnedTileId) return null;
-    return tilesForRender.find((t) => t.id === pinnedTileId) || null;
-  }, [pinnedTileId, tilesForRender]);
+    return layoutTilesForRender.find((t) => t.id === pinnedTileId) || null;
+  }, [pinnedTileId, layoutTilesForRender]);
 
   const featuredTile = useMemo(() => {
     if (activeScreenShareTile && screenSharePinned) {
@@ -5183,14 +5192,15 @@ export function RoomPageLiveKit() {
     }
 
     if (pinnedParticipantTile) {
-      return tilesForRender.filter((t) => t.id !== pinnedParticipantTile.id);
+      return layoutTilesForRender.filter((t) => t.id !== pinnedParticipantTile.id);
     }
 
-    return tilesForRender;
-  }, [activeScreenShareTile, screenSharePinned, pinnedParticipantTile, tilesForRender]);
+    return layoutTilesForRender;
+  }, [activeScreenShareTile, screenSharePinned, pinnedParticipantTile, tilesForRender, layoutTilesForRender]);
 
   // Layout
-  const tileCount = tilesForRender.length;
+  const tileCount = layoutTilesForRender.length;
+
   const paddingBottomPx = 12;
 
   const isVeryNarrow = effectiveW < 430;
@@ -5244,7 +5254,7 @@ export function RoomPageLiveKit() {
               tileCount <= 2 ? (
                 <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
                   <MobileFillLayoutSizing<TileModel>
-                    items={tilesForRender}
+                    items={layoutTilesForRender}
                     containerWidth={effectiveW}
                     containerHeight={effectiveH}
                     paddingBottomPx={paddingBottomPx}
@@ -5254,7 +5264,7 @@ export function RoomPageLiveKit() {
               ) : (
                   <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
                     <MobileStackLayoutSizing<TileModel>
-                      items={tilesForRender}
+                      items={layoutTilesForRender}
                       paddingBottomPx={paddingBottomPx}
                       renderItem={(t) => renderTile(t)}
                     />
@@ -5263,7 +5273,7 @@ export function RoomPageLiveKit() {
             ) : tileCount <= 2 ? (
               <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
                 <P2PLayoutSizing<TileModel>
-                  items={tilesForRender}
+                  items={layoutTilesForRender}
                   containerWidth={effectiveW}
                   containerHeight={effectiveH}
                   stack={stackTwoOnThisViewport}
@@ -5273,7 +5283,7 @@ export function RoomPageLiveKit() {
             ) : (
                 <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
                   <GridLayoutSizing<TileModel>
-                    items={tilesForRender}
+                    items={layoutTilesForRender}
                     containerWidth={effectiveW}
                     containerHeight={effectiveH}
                     forceThreeAsTwoPlusOne={rightPanelOpen}
@@ -5358,32 +5368,34 @@ export function RoomPageLiveKit() {
   );
 
   const pipFeaturedTile = useMemo(() => {
-    if (activeScreenShareTile) return activeScreenShareTile;
+    if (activeScreenShareTile && screenSharePinned) return activeScreenShareTile;
     if (pinnedParticipantTile) return pinnedParticipantTile;
-    return tilesForRender[0] || null;
-  }, [activeScreenShareTile, pinnedParticipantTile, tilesForRender]);
+    return layoutTilesForRender[0] || null;
+  }, [activeScreenShareTile, screenSharePinned, pinnedParticipantTile, layoutTilesForRender]);
 
   const pipStripTiles = useMemo(() => {
-    if (activeScreenShareTile) return tilesForRender.slice(0, 4);
+    if (activeScreenShareTile && screenSharePinned) return tilesForRender.slice(0, 4);
+
     if (pinnedParticipantTile) {
-      return tilesForRender.filter((t) => t.id !== pinnedParticipantTile.id).slice(0, 4);
+      return layoutTilesForRender.filter((t) => t.id !== pinnedParticipantTile.id).slice(0, 4);
     }
-    return tilesForRender.slice(1, 5);
-  }, [activeScreenShareTile, pinnedParticipantTile, tilesForRender]);
+
+    return layoutTilesForRender.slice(1, 5);
+  }, [activeScreenShareTile, screenSharePinned, pinnedParticipantTile, tilesForRender, layoutTilesForRender]);
 
   const pipGalleryTiles = useMemo(() => {
-    if (activeScreenShareTile) {
+    if (activeScreenShareTile && screenSharePinned) {
       const withoutDup = tilesForRender.filter((t) => t.id !== activeScreenShareTile.id);
       return [activeScreenShareTile, ...withoutDup].slice(0, 9);
     }
 
     if (pinnedParticipantTile) {
-      const withoutDup = tilesForRender.filter((t) => t.id !== pinnedParticipantTile.id);
+      const withoutDup = layoutTilesForRender.filter((t) => t.id !== pinnedParticipantTile.id);
       return [pinnedParticipantTile, ...withoutDup].slice(0, 9);
     }
 
-    return tilesForRender.slice(0, 9);
-  }, [activeScreenShareTile, pinnedParticipantTile, tilesForRender]);
+    return layoutTilesForRender.slice(0, 9);
+  }, [activeScreenShareTile, screenSharePinned, pinnedParticipantTile, tilesForRender, layoutTilesForRender]);
 
   const pipGalleryColumns = useMemo(() => {
     const count = pipGalleryTiles.length;
