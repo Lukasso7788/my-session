@@ -5594,6 +5594,23 @@ export function RoomPageLiveKit() {
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
+                        {p.kind === "screen" && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setScreenSharePinned((prev) => !prev)}
+                              className={`w-9 h-9 rounded-xl flex items-center justify-center border transition ${isLight
+                                  ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
+                                  : "border-white/10 bg-white/5 hover:bg-white/10 text-white/85"
+                                }`}
+                              title={screenSharePinned ? "Unpin shared screen" : "Pin shared screen"}
+                              aria-label={screenSharePinned ? "Unpin shared screen" : "Pin shared screen"}
+                            >
+                              {screenSharePinned ? "⇱" : "📌"}
+                            </button>
+                          </>
+                        )}
+
                         {p.kind !== "screen" && (
                           <>
                             <button
