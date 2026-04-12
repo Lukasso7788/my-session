@@ -6485,6 +6485,7 @@ export function RoomPageLiveKit() {
           >
             {(() => {
               const targetTile =
+                layoutTilesForRender.find((t) => t.id === openTileAdminMenuId) ||
                 tilesForRender.find((t) => t.id === openTileAdminMenuId) ||
                 (featuredTile && featuredTile.id === openTileAdminMenuId ? featuredTile : null) ||
                 null;
