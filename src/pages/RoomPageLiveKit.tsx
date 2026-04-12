@@ -5130,9 +5130,21 @@ export function RoomPageLiveKit() {
           micMuted={micMuted}
           mirrorVideo={t.isLocal ? previewMirrored : false}
           audioLevel={t.audioLevel || 0}
-          onToggleMenu={undefined}
-          showMenuButton={false}
-          onOpenProfile={undefined}
+          onToggleMenu={(tileId, anchorEl) => {
+            if (!anchorEl) return;
+            openTileMenuAt(tileId, anchorEl);
+          }}
+          showMenuButton={!!(t.kind === "screen" || isSelfModerator || isHost)}
+          onOpenProfile={() => {
+            if (!t.participantUserId) return;
+
+            const p =
+              profilesById[String(t.participantUserId).toLowerCase()] ||
+              profilesById[String(t.participantIdentity || "").toLowerCase()] ||
+              null;
+
+            if (p) setSelectedUser(p);
+          }}
         />
       </div>
     );
@@ -6461,9 +6473,9 @@ export function RoomPageLiveKit() {
           >
             {(() => {
               const targetTile =
-  tilesForRender.find((t) => t.id === openTileAdminMenuId) ||
-  tilesBaseForUi.find((t) => t.id === openTileAdminMenuId) ||
-  null;
+                tilesForRender.find((t) => t.id === openTileAdminMenuId) ||
+                (featuredTile && featuredTile.id === openTileAdminMenuId ? featuredTile : null) ||
+                null;
               if (!targetTile) return null;
 
               const targetIdentity = String(targetTile.participantIdentity || "").trim();
