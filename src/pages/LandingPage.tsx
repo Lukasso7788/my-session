@@ -98,12 +98,12 @@ function Label({
 }) {
     const cls =
         tone === "blue"
-            ? "border-[#C8D7FF] bg-[#EEF3FF] text-[#335CCF]"
+            ? "border-[#D7E4FF] bg-[#F3F7FF] text-[#3E63D2]"
             : tone === "green"
-                ? "border-[#CBEBCD] bg-[#EFF9EF] text-[#2F8C39]"
+                ? "border-[#D8EEDB] bg-[#F4FBF5] text-[#2E8B57]"
                 : tone === "red"
-                    ? "border-[#F3CACA] bg-[#FFF0F0] text-[#C94848]"
-                    : "border-[#D7D2CC] bg-[#F4F1ED] text-[#5B5651]";
+                    ? "border-[#F3D9D9] bg-[#FFF5F5] text-[#C85A5A]"
+                    : "border-[#D9DCE3] bg-[#F5F6F8] text-[#5E6470]";
 
     return (
         <div
@@ -127,7 +127,7 @@ function Card({
     return (
         <div
             className={cx(
-                "rounded-[28px] border border-[#D9D4CE] bg-[#FCFBF9] p-6 md:p-8 shadow-[0_1px_0_rgba(0,0,0,0.02)] transition duration-300 hover:-translate-y-[2px] hover:shadow-[0_12px_40px_rgba(17,24,39,0.05)]",
+                "rounded-[28px] border border-[#E3E5EA] bg-[#FBFCFD] p-6 md:p-8 shadow-[0_1px_0_rgba(0,0,0,0.02)] transition duration-300 hover:-translate-y-[2px] hover:shadow-[0_12px_40px_rgba(17,24,39,0.05)]",
                 className
             )}
         >
@@ -177,10 +177,10 @@ function SessionChip({
 }) {
     const cls =
         tone === "blue"
-            ? "border-[#C8D7FF] bg-[#EEF3FF] text-[#335CCF]"
+            ? "border-[#D7E4FF] bg-[#F3F7FF] text-[#3E63D2]"
             : tone === "green"
-                ? "border-[#CBEBCD] bg-[#EFF9EF] text-[#2F8C39]"
-                : "border-[#F3CACA] bg-[#FFF0F0] text-[#C94848]";
+                ? "border-[#D8EEDB] bg-[#F4FBF5] text-[#2E8B57]"
+                : "border-[#F3D9D9] bg-[#FFF5F5] text-[#C85A5A]";
 
     return (
         <span className={cx("inline-flex items-center rounded-full border px-3 py-1 text-[12px] font-medium", cls)}>
@@ -251,7 +251,7 @@ function SessionTypeCard({
     tone: "blue" | "green" | "red";
 }) {
     return (
-        <div className="rounded-[24px] border border-[#D9D4CE] bg-white p-5 md:p-6 transition duration-300 hover:-translate-y-[2px] hover:shadow-[0_12px_34px_rgba(17,24,39,0.05)]">
+        <div className="rounded-[24px] border border-[#E3E5EA] bg-white p-5 md:p-6 transition duration-300 hover:-translate-y-[2px] hover:shadow-[0_12px_34px_rgba(17,24,39,0.05)]">
             <div className="flex items-center justify-between gap-4">
                 <h3 className="text-[20px] font-semibold text-[#2F2F2F]">{title}</h3>
                 <div
@@ -294,7 +294,7 @@ function SessionRow({
     people: string;
 }) {
     return (
-        <div className="rounded-[28px] border border-[#D9D4CE] bg-[#FCFBF9] px-5 py-5 md:px-8 md:py-6 transition duration-300 hover:-translate-y-[2px] hover:shadow-[0_14px_40px_rgba(17,24,39,0.05)]">
+        <div className="rounded-[28px] border border-[#E3E5EA] bg-[#FBFCFD] px-5 py-5 md:px-8 md:py-6 transition duration-300 hover:-translate-y-[2px] hover:shadow-[0_14px_40px_rgba(17,24,39,0.05)]">
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_auto_auto] lg:items-center">
                 <div className="min-w-0">
                     <div className="text-[28px] font-semibold leading-tight text-[#121212]">{title}</div>
@@ -310,7 +310,7 @@ function SessionRow({
                 </div>
 
                 <div className="hidden items-center gap-5 lg:flex">
-                    <div className="h-10 w-px bg-[#DED9D2]" />
+                    <div className="h-10 w-px bg-[#E1E4E8]" />
                     <div className="text-center">
                         <div className="text-[28px] font-semibold text-[#121212]">{people}</div>
                         <div className="mt-[-2px] text-[11px] text-[#7A746D]">In the session</div>
@@ -332,7 +332,7 @@ function SessionRow({
 
 function FaqCard({ q, a }: { q: string; a: string }) {
     return (
-        <div className="rounded-[24px] border border-[#D9D4CE] bg-white p-5 md:p-6 transition duration-300 hover:-translate-y-[2px] hover:shadow-[0_10px_30px_rgba(17,24,39,0.04)]">
+        <div className="rounded-[24px] border border-[#E3E5EA] bg-white p-5 md:p-6 transition duration-300 hover:-translate-y-[2px] hover:shadow-[0_10px_30px_rgba(17,24,39,0.04)]">
             <div className="text-[16px] font-semibold leading-snug text-[#2F2F2F]">{q}</div>
             <p className="mt-3 text-[14px] leading-relaxed text-[#5F5A55]">{a}</p>
         </div>
@@ -341,21 +341,21 @@ function FaqCard({ q, a }: { q: string; a: string }) {
 
 function HeroRoomCollage() {
     return (
-        <div className="rounded-[28px] border border-[#D9D4CE] bg-white p-4 md:p-5">
-            <div className="rounded-[24px] border border-[#E5E0DA] bg-[#FBFAF8] p-4">
+        <div className="rounded-[28px] border border-[#E3E5EA] bg-white p-4 md:p-5">
+            <div className="rounded-[24px] border border-[#ECEEF2] bg-[#F8F9FB] p-4">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                     <div>
                         <div className="text-[16px] font-semibold text-[#121212]">MySession live room</div>
-                        <div className="mt-1 text-[12px] text-[#736D66]">
+                        <div className="mt-1 text-[12px] text-[#6E7480]">
                             Quiet coworking with intention-setting and visible accountability.
                         </div>
                     </div>
 
                     <div className="flex items-center gap-2">
-                        <span className="rounded-full border border-[#D7D2CC] bg-white px-3 py-1 text-[12px] font-medium text-[#5B5651]">
+                        <span className="rounded-full border border-[#DEE2E8] bg-white px-3 py-1 text-[12px] font-medium text-[#5E6470]">
                             Silent by default
                         </span>
-                        <span className="rounded-full border border-[#D9E4FF] bg-[#F1F5FF] px-3 py-1 text-[12px] font-medium text-[#335CCF]">
+                        <span className="rounded-full border border-[#D7E4FF] bg-[#F3F7FF] px-3 py-1 text-[12px] font-medium text-[#3E63D2]">
                             4 in room
                         </span>
                     </div>
@@ -437,39 +437,39 @@ function HeroRoomCollage() {
 
 function HeroFlowPanels() {
     return (
-        <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-            <div className="rounded-[24px] border border-[#D9D4CE] bg-white p-5">
+        <div className="mt-6 flex flex-col gap-4">
+            <div className="rounded-[24px] border border-[#E3E5EA] bg-white p-5">
                 <div className="flex items-start justify-between gap-3">
                     <div>
                         <div className="text-[16px] font-semibold text-[#121212]">
                             Current session flow
                         </div>
-                        <div className="mt-1 text-[14px] text-[#736D66]">
+                        <div className="mt-1 text-[14px] text-[#6E7480]">
                             A simple loop that keeps people moving.
                         </div>
                     </div>
 
-                    <span className="rounded-full border border-[#F3CACA] bg-[#FFF0F0] px-3 py-1 text-[12px] font-medium text-[#C94848]">
+                    <span className="rounded-full border border-[#F3D9D9] bg-[#FFF5F5] px-3 py-1 text-[12px] font-medium text-[#C85A5A]">
                         Deep work
                     </span>
                 </div>
 
                 <div className="mt-4 space-y-3">
-                    <div className="rounded-[18px] border border-[#E5E0DA] bg-[#FBFAF8] px-4 py-4">
+                    <div className="rounded-[18px] border border-[#ECEEF2] bg-[#F8F9FB] px-4 py-4">
                         <div className="text-[15px] font-semibold text-[#2F2F2F]">1. Join</div>
                         <div className="mt-2 text-[14px] leading-relaxed text-[#5F5A55]">
                             Enter a room with other focused people.
                         </div>
                     </div>
 
-                    <div className="rounded-[18px] border border-[#E5E0DA] bg-[#FBFAF8] px-4 py-4">
+                    <div className="rounded-[18px] border border-[#ECEEF2] bg-[#F8F9FB] px-4 py-4">
                         <div className="text-[15px] font-semibold text-[#2F2F2F]">2. Set intention</div>
                         <div className="mt-2 text-[14px] leading-relaxed text-[#5F5A55]">
                             Tell yourself and others what you’re working on.
                         </div>
                     </div>
 
-                    <div className="rounded-[18px] border border-[#E5E0DA] bg-[#FBFAF8] px-4 py-4">
+                    <div className="rounded-[18px] border border-[#ECEEF2] bg-[#F8F9FB] px-4 py-4">
                         <div className="text-[15px] font-semibold text-[#2F2F2F]">3. Focus</div>
                         <div className="mt-2 text-[14px] leading-relaxed text-[#5F5A55]">
                             Stay in the room, work quietly, and keep momentum.
@@ -478,12 +478,12 @@ function HeroFlowPanels() {
                 </div>
             </div>
 
-            <div className="rounded-[24px] border border-[#D9D4CE] bg-white p-5">
+            <div className="rounded-[24px] border border-[#E3E5EA] bg-white p-5">
                 <div className="text-[16px] font-semibold text-[#121212]">
                     Task / screenshare-style block
                 </div>
 
-                <div className="mt-4 rounded-[18px] border border-[#E5E0DA] bg-[#FBFAF8] p-4">
+                <div className="mt-4 rounded-[18px] border border-[#ECEEF2] bg-[#F8F9FB] p-4">
                     <div className="text-[14px] font-semibold text-[#2F2F2F]">
                         Current task
                     </div>
@@ -493,7 +493,7 @@ function HeroFlowPanels() {
                         conversion.
                     </div>
 
-                    <div className="mt-4 h-2 rounded-full bg-[#ECE8E3]">
+                    <div className="mt-4 h-2 rounded-full bg-[#E6E8EC]">
                         <div
                             className="h-2 rounded-full"
                             style={{
@@ -503,7 +503,7 @@ function HeroFlowPanels() {
                         />
                     </div>
 
-                    <div className="mt-3 text-[12px] leading-relaxed text-[#736D66]">
+                    <div className="mt-3 text-[12px] leading-relaxed text-[#6E7480]">
                         Progress visible. Accountability visible. Momentum visible.
                     </div>
                 </div>
@@ -523,13 +523,12 @@ export default function LandingPage() {
     );
 
     return (
-        <div className="min-h-screen bg-[#F5F3F0] text-[#2F2F2F]">
+        <div className="min-h-screen bg-[#F6F7F9] text-[#2F2F2F]">
             <main className="pb-16 pt-[88px] md:pt-[104px]">
                 <Shell>
-                    {/* HERO */}
                     <section className="mb-6 md:mb-8">
                         <Reveal>
-                            <Card className="overflow-hidden">
+                            <Card className="overflow-hidden bg-[#FCFCFD]">
                                 <div className="grid grid-cols-1 gap-8 lg:grid-cols-[0.95fr_1.05fr] lg:items-start">
                                     <div>
                                         <Label tone="red">Hero section</Label>
@@ -539,11 +538,11 @@ export default function LandingPage() {
                                                 Do you
                                             </div>
 
-                                            <div className="mt-3 text-[28px] font-medium leading-tight text-[#4D4741] md:text-[40px]">
+                                            <div className="mt-3 text-[28px] font-medium leading-tight text-[#4D535E] md:text-[40px]">
                                                 <RotatingPrompt />
                                             </div>
 
-                                            <p className="mt-7 max-w-[640px] text-[16px] leading-relaxed text-[#5F5A55]">
+                                            <p className="mt-7 max-w-[640px] text-[16px] leading-relaxed text-[#5F6672]">
                                                 Join live coworking sessions, work alongside focused people,
                                                 set a clear intention, and actually get things done.
                                             </p>
@@ -574,10 +573,9 @@ export default function LandingPage() {
                         </Reveal>
                     </section>
 
-                    {/* STATS */}
                     <section className="mb-6 md:mb-8">
                         <Reveal delay={80}>
-                            <Card>
+                            <Card className="bg-[#FCFCFD]">
                                 <Label tone="neutral">stats</Label>
 
                                 <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-3">
@@ -590,8 +588,8 @@ export default function LandingPage() {
                                     ))}
                                 </div>
 
-                                <div className="mt-8 overflow-hidden rounded-full border border-[#E0DCD7] bg-white py-3">
-                                    <div className="landing-marquee whitespace-nowrap text-[13px] text-[#5F5A55]">
+                                <div className="mt-8 overflow-hidden rounded-full border border-[#E3E5EA] bg-white py-3">
+                                    <div className="landing-marquee whitespace-nowrap text-[13px] text-[#606874]">
                                         <span className="mx-4">{MOVING_LINE}</span>
                                         <span className="mx-4">{MOVING_LINE}</span>
                                     </div>
@@ -600,11 +598,10 @@ export default function LandingPage() {
                         </Reveal>
                     </section>
 
-                    {/* PAIN / TRUTHS */}
                     <section className="mb-6 md:mb-8">
                         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.18fr_0.82fr]">
                             <Reveal delay={120}>
-                                <Card>
+                                <Card className="bg-[#FCFCFD]">
                                     <Label tone="red">pain/truths</Label>
 
                                     <div className="mt-6">
@@ -612,7 +609,7 @@ export default function LandingPage() {
                                             Work alongside others — and get x2 more done
                                         </h2>
 
-                                        <div className="mt-5 space-y-4 text-[15px] leading-relaxed text-[#5F5A55]">
+                                        <div className="mt-5 space-y-4 text-[15px] leading-relaxed text-[#5F6672]">
                                             <p>
                                                 Whether you have ADHD, tend to procrastinate, get distracted
                                                 easily, feel lonely working alone, or simply work better around
@@ -627,7 +624,7 @@ export default function LandingPage() {
                                             </p>
                                         </div>
 
-                                        <div className="mt-8 flex flex-wrap gap-x-3 gap-y-2 text-[13px] text-[#4E4A46]">
+                                        <div className="mt-8 flex flex-wrap gap-x-3 gap-y-2 text-[13px] text-[#4E5560]">
                                             <span>Writers</span>
                                             <span>•</span>
                                             <span>Designers</span>
@@ -651,10 +648,10 @@ export default function LandingPage() {
                             </Reveal>
 
                             <Reveal delay={180}>
-                                <Card className="h-full">
+                                <Card className="h-full bg-[#FCFCFD]">
                                     <Label tone="neutral">Who it is &gt; What + Value</Label>
 
-                                    <div className="mt-6 space-y-4 text-[14px] leading-relaxed text-[#5F5A55]">
+                                    <div className="mt-6 space-y-4 text-[14px] leading-relaxed text-[#5F6672]">
                                         <p>
                                             Whether you have ADHD, tend to procrastinate, get distracted
                                             easily, feel lonely working alone, or simply work better around
@@ -679,39 +676,38 @@ export default function LandingPage() {
                         </div>
                     </section>
 
-                    {/* HOW IT WORKS */}
                     <section className="mb-6 md:mb-8">
                         <Reveal delay={220}>
-                            <Card>
+                            <Card className="bg-[#FCFCFD]">
                                 <Label tone="green">how it works</Label>
 
                                 <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
-                                    <div className="rounded-[24px] border border-[#D9D4CE] bg-white p-5 md:p-6">
+                                    <div className="rounded-[24px] border border-[#E3E5EA] bg-white p-5 md:p-6">
                                         <div className="text-[18px] font-semibold text-[#121212]">
                                             1) Join a session
                                         </div>
-                                        <p className="mt-4 text-[14px] leading-relaxed text-[#5F5A55]">
+                                        <p className="mt-4 text-[14px] leading-relaxed text-[#5F6672]">
                                             Choose what fits your day — a group session, a 24/7 room, or a
                                             cozy circle of 3. Jump right in.
                                         </p>
                                     </div>
 
-                                    <div className="rounded-[24px] border border-[#D9D4CE] bg-white p-5 md:p-6">
+                                    <div className="rounded-[24px] border border-[#E3E5EA] bg-white p-5 md:p-6">
                                         <div className="text-[18px] font-semibold text-[#121212]">
                                             2) Work alongside others
                                         </div>
-                                        <p className="mt-4 text-[14px] leading-relaxed text-[#5F5A55]">
+                                        <p className="mt-4 text-[14px] leading-relaxed text-[#5F6672]">
                                             Write down what you want to finish, see focused people around you,
                                             and naturally get into your work. Silent, structured,
                                             distraction-free.
                                         </p>
                                     </div>
 
-                                    <div className="rounded-[24px] border border-[#D9D4CE] bg-white p-5 md:p-6">
+                                    <div className="rounded-[24px] border border-[#E3E5EA] bg-white p-5 md:p-6">
                                         <div className="text-[18px] font-semibold text-[#121212]">
                                             3) Celebrate your progress
                                         </div>
-                                        <p className="mt-4 text-[14px] leading-relaxed text-[#5F5A55]">
+                                        <p className="mt-4 text-[14px] leading-relaxed text-[#5F6672]">
                                             Session done, share what you got done, celebrate your wins, and
                                             leave feeling accomplished.
                                         </p>
@@ -721,14 +717,13 @@ export default function LandingPage() {
                         </Reveal>
                     </section>
 
-                    {/* TYPE OF SESSIONS */}
                     <section className="mb-6 md:mb-8">
                         <Reveal delay={260}>
-                            <Card>
+                            <Card className="bg-[#FCFCFD]">
                                 <Label tone="blue">Type of sessions</Label>
 
                                 <div className="mt-6">
-                                    <div className="mx-auto flex w-full max-w-[620px] items-center justify-between rounded-full border border-[#D9D4CE] bg-white p-1 text-[14px]">
+                                    <div className="mx-auto flex w-full max-w-[620px] items-center justify-between rounded-full border border-[#E3E5EA] bg-white p-1 text-[14px]">
                                         {tabs.map((tab) => (
                                             <div
                                                 key={tab.label}
@@ -736,7 +731,7 @@ export default function LandingPage() {
                                                     "flex-1 rounded-full px-4 py-3 text-center transition duration-200",
                                                     tab.active
                                                         ? "bg-[#2F2F2F] font-medium text-white"
-                                                        : "text-[#5F5A55]"
+                                                        : "text-[#5F6672]"
                                                 )}
                                             >
                                                 {tab.label}
@@ -766,10 +761,9 @@ export default function LandingPage() {
                         </Reveal>
                     </section>
 
-                    {/* SESSION LIST PREVIEW */}
                     <section className="mb-6 md:mb-8">
                         <Reveal delay={300}>
-                            <Card>
+                            <Card className="bg-[#FCFCFD]">
                                 <Label tone="neutral">Live schedule preview</Label>
 
                                 <div className="mt-6 space-y-4">
@@ -807,40 +801,39 @@ export default function LandingPage() {
                         </Reveal>
                     </section>
 
-                    {/* SOCIAL / COMMUNITY */}
                     <section className="mb-6 md:mb-8">
                         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.92fr_1.08fr]">
                             <Reveal delay={340}>
-                                <Card>
+                                <Card className="bg-[#FCFCFD]">
                                     <Label tone="blue">What people come back for</Label>
 
                                     <div className="mt-6 grid grid-cols-1 gap-4">
-                                        <div className="rounded-[22px] border border-[#D9D4CE] bg-white p-5">
+                                        <div className="rounded-[22px] border border-[#E3E5EA] bg-white p-5">
                                             <div className="text-[16px] font-semibold text-[#121212]">
                                                 Low-friction start
                                             </div>
-                                            <p className="mt-2 text-[14px] leading-relaxed text-[#5F5A55]">
+                                            <p className="mt-2 text-[14px] leading-relaxed text-[#5F6672]">
                                                 The hardest part is starting. MySession gives you a room,
                                                 structure, and other people already working — so it becomes
                                                 easier to begin.
                                             </p>
                                         </div>
 
-                                        <div className="rounded-[22px] border border-[#D9D4CE] bg-white p-5">
+                                        <div className="rounded-[22px] border border-[#E3E5EA] bg-white p-5">
                                             <div className="text-[16px] font-semibold text-[#121212]">
                                                 Consistent accountability
                                             </div>
-                                            <p className="mt-2 text-[14px] leading-relaxed text-[#5F5A55]">
+                                            <p className="mt-2 text-[14px] leading-relaxed text-[#5F6672]">
                                                 Sessions are not just video calls. They are containers that help
                                                 you keep your plan in front of you and follow through.
                                             </p>
                                         </div>
 
-                                        <div className="rounded-[22px] border border-[#D9D4CE] bg-white p-5">
+                                        <div className="rounded-[22px] border border-[#E3E5EA] bg-white p-5">
                                             <div className="text-[16px] font-semibold text-[#121212]">
                                                 A calm community
                                             </div>
-                                            <p className="mt-2 text-[14px] leading-relaxed text-[#5F5A55]">
+                                            <p className="mt-2 text-[14px] leading-relaxed text-[#5F6672]">
                                                 No pressure, no performance. Just people quietly showing up to
                                                 work on things that matter.
                                             </p>
@@ -850,7 +843,7 @@ export default function LandingPage() {
                             </Reveal>
 
                             <Reveal delay={380}>
-                                <Card>
+                                <Card className="bg-[#FCFCFD]">
                                     <Label tone="red">Community</Label>
 
                                     <div className="mt-6 max-w-[820px]">
@@ -858,7 +851,7 @@ export default function LandingPage() {
                                             You’re not just joining sessions. You’re joining a community.
                                         </h2>
 
-                                        <p className="mt-5 text-[15px] leading-relaxed text-[#5F5A55]">
+                                        <p className="mt-5 text-[15px] leading-relaxed text-[#5F6672]">
                                             A global community of creators, builders, students, and
                                             professionals — all showing up every day to work on things that
                                             matter. No pressure, no judgment — just people doing their best
@@ -877,10 +870,9 @@ export default function LandingPage() {
                         </div>
                     </section>
 
-                    {/* FAQ */}
                     <section className="mb-6 md:mb-8">
                         <Reveal delay={420}>
-                            <Card>
+                            <Card className="bg-[#FCFCFD]">
                                 <Label tone="neutral">FAQs</Label>
 
                                 <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -892,10 +884,9 @@ export default function LandingPage() {
                         </Reveal>
                     </section>
 
-                    {/* FINAL CTA */}
                     <section>
                         <Reveal delay={460}>
-                            <Card className="bg-[#EDF6EC]">
+                            <Card className="bg-[#F2F7F2] border-[#DCE8DC]">
                                 <Label tone="green">final CTA</Label>
 
                                 <div className="mt-6 max-w-[760px]">
@@ -903,7 +894,7 @@ export default function LandingPage() {
                                         Ready to get things done, together?
                                     </h2>
 
-                                    <p className="mt-4 text-[16px] leading-relaxed text-[#5F5A55]">
+                                    <p className="mt-4 text-[16px] leading-relaxed text-[#5F6672]">
                                         Join a session now — it’s free.
                                     </p>
 
@@ -955,8 +946,8 @@ export default function LandingPage() {
             overflow: hidden;
             min-height: 208px;
             border-radius: 22px;
-            border: 1px solid #ddd7d0;
-            background: linear-gradient(180deg, #fdfcfb 0%, #f7f4f1 100%);
+            border: 1px solid #e6e8ed;
+            background: linear-gradient(180deg, #fbfcfd 0%, #f5f7fa 100%);
             padding: 14px;
             transition: transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease;
           }
@@ -968,26 +959,26 @@ export default function LandingPage() {
 
           .hero-participant-blue {
             background:
-              radial-gradient(circle at top right, rgba(82, 134, 246, 0.12), transparent 38%),
-              linear-gradient(180deg, #fdfcfb 0%, #f7f4f1 100%);
+              radial-gradient(circle at top right, rgba(82, 134, 246, 0.10), transparent 38%),
+              linear-gradient(180deg, #fbfcfd 0%, #f5f7fa 100%);
           }
 
           .hero-participant-green {
             background:
-              radial-gradient(circle at top right, rgba(101, 212, 108, 0.14), transparent 38%),
-              linear-gradient(180deg, #fdfcfb 0%, #f7f4f1 100%);
+              radial-gradient(circle at top right, rgba(101, 212, 108, 0.11), transparent 38%),
+              linear-gradient(180deg, #fbfcfd 0%, #f5f7fa 100%);
           }
 
           .hero-participant-red {
             background:
-              radial-gradient(circle at top right, rgba(246, 82, 82, 0.12), transparent 38%),
-              linear-gradient(180deg, #fdfcfb 0%, #f7f4f1 100%);
+              radial-gradient(circle at top right, rgba(246, 82, 82, 0.10), transparent 38%),
+              linear-gradient(180deg, #fbfcfd 0%, #f5f7fa 100%);
           }
 
           .hero-participant-neutral {
             background:
-              radial-gradient(circle at top right, rgba(47, 47, 47, 0.08), transparent 38%),
-              linear-gradient(180deg, #fdfcfb 0%, #f7f4f1 100%);
+              radial-gradient(circle at top right, rgba(47, 47, 47, 0.06), transparent 38%),
+              linear-gradient(180deg, #fbfcfd 0%, #f5f7fa 100%);
           }
 
           .hero-video-top {
@@ -1006,7 +997,7 @@ export default function LandingPage() {
 
           .hero-status-text {
             font-size: 12px;
-            color: #6f6962;
+            color: #6f7682;
             font-weight: 500;
           }
 
@@ -1042,7 +1033,7 @@ export default function LandingPage() {
           }
 
           .hero-avatar-neutral {
-            background: linear-gradient(180deg, #6a6a6a 0%, #2f2f2f 100%);
+            background: linear-gradient(180deg, #717784 0%, #3a404a 100%);
           }
 
           .hero-name {
@@ -1056,12 +1047,12 @@ export default function LandingPage() {
           .hero-intention {
             margin-top: 10px;
             border-radius: 16px;
-            border: 1px solid #e4ded7;
-            background: rgba(255,255,255,0.88);
+            border: 1px solid #e7eaf0;
+            background: rgba(255,255,255,0.92);
             padding: 12px 12px;
             font-size: 12px;
             line-height: 1.5;
-            color: #5f5a55;
+            color: #5f6672;
           }
 
           @media (prefers-reduced-motion: reduce) {
