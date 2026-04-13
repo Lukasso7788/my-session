@@ -105,8 +105,6 @@ type VideoTileProps = {
     onToggleMenu?: (tileId: string, anchorEl: HTMLElement | null) => void;
     onOpenProfile?: () => void;
 
-    // local name editing
-    showEditNameButton?: boolean;
     onEditName?: () => void;
     forceEditButtonVisible?: boolean;
 };
@@ -154,8 +152,7 @@ function MicBadgeWithBarVisualizer({
             {showVisualizer ? (
                 <>
                     <div
-                        className={`absolute inset-0 ${isLight ? "bg-black/[0.05]" : "bg-white/[0.07]"
-                            }`}
+                        className={`absolute inset-0 ${isLight ? "bg-black/[0.05]" : "bg-white/[0.07]"}`}
                     />
 
                     <div className="absolute inset-0 overflow-hidden rounded-[0.75rem]">
@@ -205,7 +202,6 @@ function VideoTileInner({
     showMenuButton = false,
     onToggleMenu,
     onOpenProfile,
-    showEditNameButton = false,
     onEditName,
     forceEditButtonVisible = false,
 }: VideoTileProps) {
@@ -223,18 +219,17 @@ function VideoTileInner({
         : "bg-emerald-500/80 text-[#02140B] border-white/10";
 
     const namePillClass = isLight
-        ? "bg-white/92 border-black/10 text-neutral-900 shadow-sm"
-        : "bg-black/58 border-white/10 text-white shadow-sm";
+        ? "bg-white/70 border-black/10 text-black/85"
+        : "bg-black/30 border-white/10 text-white/90";
 
-    const nameTextClass = isLight ? "text-black/80" : "text-white/90";
+    const nameTextClass = "truncate max-w-[220px] font-inter text-[14px] font-medium";
+    const editBtnClass = isLight
+        ? "bg-white/90 border-black/10 text-black/75 hover:bg-white"
+        : "bg-black/55 border-white/10 text-white/90 hover:bg-black/70";
 
     const menuBtnClass = isLight
         ? "bg-white/92 border-black/10 text-black/85 hover:bg-white"
         : "bg-black/58 border-white/10 text-white hover:bg-black/70";
-
-    const editBtnClass = isLight
-        ? "bg-white/92 border-black/10 text-black/75 hover:bg-white"
-        : "bg-black/58 border-white/10 text-white/90 hover:bg-black/70";
 
     const debugSizing = useMemo(() => getQueryBool("devTileDebug", false), []);
     const [sizeText, setSizeText] = useState<string>("");
@@ -373,8 +368,7 @@ function VideoTileInner({
     }, [normalizedAvatarUrl]);
 
     const shouldShowAvatar = !!normalizedAvatarUrl && !avatarBroken;
-
-    const showEdit = !!showEditNameButton && !!onEditName;
+    const showEditName = isLocal && typeof onEditName === "function";
 
     return (
         <div
@@ -394,9 +388,7 @@ function VideoTileInner({
                         style={{ backgroundColor: mediaBgColor }}
                     />
                 ) : (
-                    <div
-                        className={`absolute inset-0 flex flex-col items-center justify-center ${offStateClass}`}
-                    >
+                    <div className={`absolute inset-0 flex flex-col items-center justify-center ${offStateClass}`}>
                         {shouldShowAvatar ? (
                             <img
                                 src={normalizedAvatarUrl}
@@ -458,7 +450,9 @@ function VideoTileInner({
                             e.stopPropagation();
                             onToggleMenu?.(tileId, e.currentTarget);
                         }}
-                        className={`absolute right-[0.55rem] top-[0.55rem] z-20 flex h-[2.1rem] w-[2.1rem] items-center justify-center rounded-full border backdrop-blur-md transition ${menuBtnClass} ${forceEditButtonVisible ? "opacity-100 pointer-events-auto" : "opacity-0 group-hover:opacity-100 focus:opacity-100 pointer-events-none group-hover:pointer-events-auto focus:pointer-events-auto"
+                        className={`absolute right-[0.55rem] top-[0.55rem] z-20 flex h-[2.1rem] w-[2.1rem] items-center justify-center rounded-full border backdrop-blur-md transition ${menuBtnClass} ${forceEditButtonVisible
+                            ? "opacity-100 pointer-events-auto"
+                            : "opacity-0 group-hover:opacity-100 focus:opacity-100 pointer-events-none group-hover:pointer-events-auto focus:pointer-events-auto"
                             }`}
                         aria-label="Open participant actions"
                         title="Open participant actions"
@@ -468,7 +462,7 @@ function VideoTileInner({
                 ) : null}
 
                 {showActions ? (
-                    <div className="absolute right-2 bottom-[3.55rem] z-10 flex max-w-[92%] flex-wrap justify-end gap-1">
+                    <div className="absolute right-2 bottom-[3.35rem] z-10 flex max-w-[92%] flex-wrap justify-end gap-1">
                         {hostActions?.canMuteMic && hostActions?.onToggleMuteMic ? (
                             <button
                                 onClick={hostActions.onToggleMuteMic}
@@ -534,44 +528,40 @@ function VideoTileInner({
             </div>
 
             <div className="pointer-events-none absolute left-[0.55rem] right-[0.55rem] bottom-[0.55rem] z-[12] flex min-w-0 items-end justify-between gap-[0.45rem]">
-                <div className="pointer-events-none flex min-w-0 items-end gap-[0.4rem]">
+                <div className="pointer-events-none flex min-w-0 items-end gap-[0.45rem]">
                     <div
-                        className={`pointer-events-auto min-w-0 max-w-full rounded-[0.9rem] border px-[0.62rem] py-[0.42rem] backdrop-blur-md transition-all duration-200 ${namePillClass}`}
+                        className={`pointer-events-auto inline-flex min-w-0 max-w-full items-center rounded-2xl border backdrop-blur shadow-sm px-3 py-2 transition ${namePillClass}`}
                     >
-                        <div className="flex min-w-0 items-center gap-[0.35rem]">
-                            <span
-                                className={`min-w-0 truncate text-[12px] font-medium leading-[1.05rem] ${nameTextClass}`}
-                            >
-                                {label || "User"}
-                            </span>
-                        </div>
+                        <span className={nameTextClass}>
+                            {label || "User"}
+                        </span>
                     </div>
 
-                    {showEdit ? (
+                    {showEditName && (
                         <button
                             type="button"
+                            title="Edit name"
+                            aria-label="Edit name"
                             onClick={(e) => {
                                 e.stopPropagation();
                                 onEditName?.();
                             }}
-                            title="Edit name"
-                            aria-label="Edit name"
                             className={[
-                                "pointer-events-auto flex h-[2rem] items-center overflow-hidden rounded-[0.9rem] border backdrop-blur-md shadow-sm transition-all duration-200",
+                                "pointer-events-auto h-9 rounded-2xl border shadow-sm backdrop-blur overflow-hidden transition-all duration-200 flex items-center justify-center",
                                 forceEditButtonVisible
-                                    ? "w-[6.85rem] opacity-100"
-                                    : "w-0 opacity-0 group-hover:w-[6.85rem] group-hover:opacity-100 focus:w-[6.85rem] focus:opacity-100",
+                                    ? "max-w-[132px] px-3 opacity-100 translate-x-0"
+                                    : "max-w-0 px-0 opacity-0 -translate-x-1 group-hover:max-w-[132px] group-hover:px-3 group-hover:opacity-100 group-hover:translate-x-0 focus:max-w-[132px] focus:px-3 focus:opacity-100 focus:translate-x-0",
                                 editBtnClass,
                             ].join(" ")}
                         >
-                            <div className="flex min-w-[6.85rem] items-center gap-[0.42rem] px-[0.68rem]">
-                                <span className="text-[13px] leading-none">✎</span>
+                            <span className="flex min-w-max items-center gap-2">
+                                <span className="text-[15px] leading-none">✎</span>
                                 <span className="text-[12px] font-medium leading-none whitespace-nowrap">
                                     Edit name
                                 </span>
-                            </div>
+                            </span>
                         </button>
-                    ) : null}
+                    )}
                 </div>
 
                 <MicBadgeWithBarVisualizer
@@ -602,7 +592,6 @@ const areVideoTilePropsEqual = (prev: VideoTileProps, next: VideoTileProps) => {
         prev.showMenuButton === next.showMenuButton &&
         prev.onToggleMenu === next.onToggleMenu &&
         prev.onOpenProfile === next.onOpenProfile &&
-        prev.showEditNameButton === next.showEditNameButton &&
         prev.onEditName === next.onEditName &&
         prev.forceEditButtonVisible === next.forceEditButtonVisible &&
         prev.hostActions?.canMuteMic === next.hostActions?.canMuteMic &&

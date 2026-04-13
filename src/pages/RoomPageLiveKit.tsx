@@ -5086,6 +5086,14 @@ export function RoomPageLiveKit() {
                 setSelectedUser(participantProfile);
               }
             }}
+            onEditName={
+              t.isLocal && t.kind !== "screen"
+                ? () => {
+                  openEditName();
+                }
+                : undefined
+            }
+            forceEditButtonVisible={shouldForceMenuVisible}
           />
         </div>
 
