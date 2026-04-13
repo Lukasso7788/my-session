@@ -339,6 +339,122 @@ function FaqCard({ q, a }: { q: string; a: string }) {
     );
 }
 
+function HeroRoomCollage() {
+    return (
+        <div className="rounded-[28px] border border-[#D9D4CE] bg-white p-4 md:p-5">
+            <div className="rounded-[24px] border border-[#E5E0DA] bg-[#FBFAF8] p-4">
+                <div className="mb-4 flex items-center justify-between">
+                    <div>
+                        <div className="text-[16px] font-semibold text-[#121212]">MySession live room</div>
+                        <div className="mt-1 text-[12px] text-[#736D66]">
+                            People show up, set an intention, and quietly work together.
+                        </div>
+                    </div>
+
+                    <div className="inline-flex items-center rounded-full border border-[#D7D2CC] bg-white px-3 py-1 text-[12px] font-medium text-[#5B5651]">
+                        Silent by default
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                    <div className="hero-participant hero-participant-blue">
+                        <div className="hero-video-top">
+                            <span className="hero-status-dot" />
+                            <span className="hero-status-text">On camera</span>
+                        </div>
+
+                        <div className="hero-avatar-wrap">
+                            <div className="hero-avatar hero-avatar-blue">Y</div>
+                        </div>
+
+                        <div className="hero-name">Yaro</div>
+
+                        <div className="hero-intention">
+                            “I’m shipping the landing page and fixing layout polish.”
+                        </div>
+                    </div>
+
+                    <div className="hero-participant hero-participant-green">
+                        <div className="hero-video-top">
+                            <span className="hero-status-dot" />
+                            <span className="hero-status-text">On camera</span>
+                        </div>
+
+                        <div className="hero-avatar-wrap">
+                            <div className="hero-avatar hero-avatar-green">A</div>
+                        </div>
+
+                        <div className="hero-name">Angel</div>
+
+                        <div className="hero-intention">
+                            “I’m finishing client emails and then doing 25 minutes of admin.”
+                        </div>
+                    </div>
+
+                    <div className="hero-participant hero-participant-red">
+                        <div className="hero-video-top">
+                            <span className="hero-status-dot" />
+                            <span className="hero-status-text">On camera</span>
+                        </div>
+
+                        <div className="hero-avatar-wrap">
+                            <div className="hero-avatar hero-avatar-red">M</div>
+                        </div>
+
+                        <div className="hero-name">Maya</div>
+
+                        <div className="hero-intention">
+                            “I’m doing reading notes and outlining the next chapter.”
+                        </div>
+                    </div>
+
+                    <div className="hero-participant hero-participant-neutral">
+                        <div className="hero-video-top">
+                            <span className="hero-status-dot" />
+                            <span className="hero-status-text">On camera</span>
+                        </div>
+
+                        <div className="hero-avatar-wrap">
+                            <div className="hero-avatar hero-avatar-neutral">D</div>
+                        </div>
+
+                        <div className="hero-name">Dan</div>
+
+                        <div className="hero-intention">
+                            “I’m debugging auth flow and then testing the room on mobile.”
+                        </div>
+                    </div>
+                </div>
+
+                <div className="mt-4 rounded-[18px] border border-[#E5E0DA] bg-white px-4 py-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <div className="text-[14px] font-semibold text-[#121212]">
+                                Real people. Real tasks. Real accountability.
+                            </div>
+                            <div className="mt-1 text-[12px] leading-relaxed text-[#736D66]">
+                                No pressure to perform. Just join, state your intention, and work alongside others.
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <span className="rounded-full border border-[#D9E4FF] bg-[#F1F5FF] px-3 py-1 text-[12px] font-medium text-[#335CCF]">
+                                Video presence
+                            </span>
+                            <span className="rounded-full border border-[#D7EFD8] bg-[#F2FBF2] px-3 py-1 text-[12px] font-medium text-[#2F8C39]">
+                                Intentions
+                            </span>
+                            <span className="rounded-full border border-[#F1D3D3] bg-[#FFF2F2] px-3 py-1 text-[12px] font-medium text-[#C94848]">
+                                Focus flow
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export default function LandingPage() {
     const tabs = useMemo(
         () => [
@@ -357,7 +473,7 @@ export default function LandingPage() {
                     <section className="mb-6 md:mb-8">
                         <Reveal>
                             <Card className="overflow-hidden">
-                                <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
+                                <div className="grid grid-cols-1 gap-8 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
                                     <div>
                                         <Label tone="red">Hero section</Label>
 
@@ -370,9 +486,9 @@ export default function LandingPage() {
                                                 <RotatingPrompt />
                                             </div>
 
-                                            <p className="mt-7 max-w-[680px] text-[16px] leading-relaxed text-[#5F5A55]">
+                                            <p className="mt-7 max-w-[640px] text-[16px] leading-relaxed text-[#5F5A55]">
                                                 Join live coworking sessions, work alongside focused people,
-                                                and actually get things done.
+                                                set a clear intention, and actually get things done.
                                             </p>
 
                                             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -383,57 +499,17 @@ export default function LandingPage() {
                                                     See pricing
                                                 </SoftButton>
                                             </div>
-                                        </div>
-                                    </div>
 
-                                    <div className="rounded-[24px] border border-[#D9D4CE] bg-white p-5 md:p-6">
-                                        <div className="flex items-center justify-center">
-                                            <div className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-[#2F2F2F] text-[28px] text-white">
-                                                ∞
-                                            </div>
-                                        </div>
-
-                                        <div className="mt-5 text-center text-[30px] font-semibold leading-tight text-[#121212] md:text-[38px]">
-                                            24/7 Infinite Rooms
-                                        </div>
-
-                                        <p className="mx-auto mt-5 max-w-[520px] text-center text-[15px] leading-relaxed text-[#5F5A55]">
-                                            24/7 Infinite Rooms are always open, giving you a structured
-                                            space to focus whenever inspiration strikes. Join at any time,
-                                            follow the built-in workflow, stay accountable with others, and
-                                            keep your momentum going — day or night.
-                                        </p>
-
-                                        <div className="mt-8 grid grid-cols-2 gap-3 md:grid-cols-4">
-                                            <div className="rounded-[18px] border border-[#D9E4FF] bg-[#F1F5FF] px-4 py-4 text-center">
-                                                <div className="text-[14px] font-semibold text-[#2F2F2F]">
-                                                    Always Open
-                                                </div>
-                                                <div className="mt-1 text-[12px] text-[#6A655F]">24/7 Access</div>
-                                            </div>
-
-                                            <div className="rounded-[18px] border border-[#D7EFD8] bg-[#F2FBF2] px-4 py-4 text-center">
-                                                <div className="text-[14px] font-semibold text-[#2F2F2F]">
-                                                    Stay accountable
-                                                </div>
-                                                <div className="mt-1 text-[12px] text-[#6A655F]">With others</div>
-                                            </div>
-
-                                            <div className="rounded-[18px] border border-[#F1D3D3] bg-[#FFF2F2] px-4 py-4 text-center">
-                                                <div className="text-[14px] font-semibold text-[#2F2F2F]">
-                                                    Structured Flow
-                                                </div>
-                                                <div className="mt-1 text-[12px] text-[#6A655F]">Built-in workflow</div>
-                                            </div>
-
-                                            <div className="rounded-[18px] border border-[#D9E4FF] bg-[#F1F5FF] px-4 py-4 text-center">
-                                                <div className="text-[14px] font-semibold text-[#2F2F2F]">
-                                                    Keep momentum
-                                                </div>
-                                                <div className="mt-1 text-[12px] text-[#6A655F]">Day & Night</div>
+                                            <div className="mt-7 flex flex-wrap gap-2">
+                                                <Label tone="blue">Live coworking</Label>
+                                                <Label tone="green">Intentions</Label>
+                                                <Label tone="red">Structured sessions</Label>
+                                                <Label tone="neutral">No downloads</Label>
                                             </div>
                                         </div>
                                     </div>
+
+                                    <HeroRoomCollage />
                                 </div>
                             </Card>
                         </Reveal>
@@ -815,12 +891,130 @@ export default function LandingPage() {
             }
           }
 
+          .hero-participant {
+            position: relative;
+            overflow: hidden;
+            min-height: 216px;
+            border-radius: 22px;
+            border: 1px solid #ddd7d0;
+            background: linear-gradient(180deg, #fdfcfb 0%, #f7f4f1 100%);
+            padding: 14px;
+            transition: transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease;
+          }
+
+          .hero-participant:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 16px 32px rgba(17, 24, 39, 0.06);
+          }
+
+          .hero-participant-blue {
+            background:
+              radial-gradient(circle at top right, rgba(82, 134, 246, 0.12), transparent 38%),
+              linear-gradient(180deg, #fdfcfb 0%, #f7f4f1 100%);
+          }
+
+          .hero-participant-green {
+            background:
+              radial-gradient(circle at top right, rgba(101, 212, 108, 0.14), transparent 38%),
+              linear-gradient(180deg, #fdfcfb 0%, #f7f4f1 100%);
+          }
+
+          .hero-participant-red {
+            background:
+              radial-gradient(circle at top right, rgba(246, 82, 82, 0.12), transparent 38%),
+              linear-gradient(180deg, #fdfcfb 0%, #f7f4f1 100%);
+          }
+
+          .hero-participant-neutral {
+            background:
+              radial-gradient(circle at top right, rgba(47, 47, 47, 0.08), transparent 38%),
+              linear-gradient(180deg, #fdfcfb 0%, #f7f4f1 100%);
+          }
+
+          .hero-video-top {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          }
+
+          .hero-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: #65D46C;
+            box-shadow: 0 0 0 4px rgba(101, 212, 108, 0.12);
+          }
+
+          .hero-status-text {
+            font-size: 12px;
+            color: #6f6962;
+            font-weight: 500;
+          }
+
+          .hero-avatar-wrap {
+            margin-top: 18px;
+            display: flex;
+            justify-content: center;
+          }
+
+          .hero-avatar {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 84px;
+            height: 84px;
+            border-radius: 999px;
+            font-size: 28px;
+            font-weight: 700;
+            color: #fff;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.15);
+          }
+
+          .hero-avatar-blue {
+            background: linear-gradient(180deg, #6797ff 0%, #4f7ff0 100%);
+          }
+
+          .hero-avatar-green {
+            background: linear-gradient(180deg, #77dd7d 0%, #58c761 100%);
+          }
+
+          .hero-avatar-red {
+            background: linear-gradient(180deg, #ff7d7d 0%, #f15f5f 100%);
+          }
+
+          .hero-avatar-neutral {
+            background: linear-gradient(180deg, #6a6a6a 0%, #2f2f2f 100%);
+          }
+
+          .hero-name {
+            margin-top: 12px;
+            text-align: center;
+            font-size: 15px;
+            font-weight: 700;
+            color: #1f1f1f;
+          }
+
+          .hero-intention {
+            margin-top: 10px;
+            border-radius: 16px;
+            border: 1px solid #e4ded7;
+            background: rgba(255,255,255,0.88);
+            padding: 12px 12px;
+            font-size: 12px;
+            line-height: 1.5;
+            color: #5f5a55;
+          }
+
           @media (prefers-reduced-motion: reduce) {
             .landing-reveal,
             .landing-marquee {
               animation: none !important;
               opacity: 1 !important;
               transform: none !important;
+            }
+
+            .hero-participant {
+              transition: none !important;
             }
           }
         `}</style>
