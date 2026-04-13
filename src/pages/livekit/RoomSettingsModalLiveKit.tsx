@@ -3,6 +3,11 @@ import React from "react";
 type RoomTheme = "dark" | "light";
 type FxMode = "off" | "blur" | "bg";
 
+type SinkAudioElement = HTMLAudioElement & {
+    setSinkId?: (sinkId: string) => Promise<void>;
+    srcObject?: MediaStream | null;
+};
+
 function makeBgPresetDataUrl(a: string, b: string, c: string, d: string) {
     return (
         "data:image/svg+xml;utf8," +
@@ -251,6 +256,485 @@ function VideoPreviewBox(props: {
                         Camera preview is not available
                     </div>
                 )}
+            </div>
+        </div>
+    );
+}
+
+function SoundTestSection(props: {
+    isLight: boolean;
+    sectionCls: string;
+    ghostBtn: string;
+    subtleText: string;
+    selectedAudioInputId: string;
+    selectedAudioOutputId: string;
+    echoCancellationEnabled: boolean;
+    noiseSuppressionEnabled: boolean;
+    autoGainControlEnabled: boolean;
+}) {
+    const {
+        isLight,
+        sectionCls,
+        ghostBtn,
+        subtleText,
+        selectedAudioInputId,
+        selectedAudioOutputId,
+        echoCancellationEnabled,
+        noiseSuppressionEnabled,
+        autoGainControlEnabled,
+    } = props;
+
+    const [speakerTesting, setSpeakerTesting] = React.useState(false);
+    const [speakerTestError, setSpeakerTestError] = React.useState("");
+    const [speakerTestStatus, setSpeakerTestStatus] = React.useState("");
+
+    const [micTesting, setMicTesting] = React.useState(false);
+    const [micLevel, setMicLevel] = React.useState(0);
+    const [micTestError, setMicTestError] = React.useState("");
+    const [micTestStatus, setMicTestStatus] = React.useState("");
+
+    const [micMonitorEnabled, setMicMonitorEnabled] = React.useState(true);
+    const [micMonitorVolume, setMicMonitorVolume] = React.useState(70);
+
+    const micStreamRef = React.useRef<MediaStream | null>(null);
+    const micAudioContextRef = React.useRef<AudioContext | null>(null);
+    const micAnalyserRef = React.useRef<AnalyserNode | null>(null);
+    const micFrameRef = React.useRef<number | null>(null);
+
+    const micMonitorGainRef = React.useRef<GainNode | null>(null);
+    const micMonitorDestRef = React.useRef<MediaStreamAudioDestinationNode | null>(null);
+    const micMonitorAudioElRef = React.useRef<SinkAudioElement | null>(null);
+    const micMonitorSourceRef = React.useRef<MediaStreamAudioSourceNode | null>(null);
+
+    const stopMicTest = React.useCallback(() => {
+        if (micFrameRef.current != null) {
+            cancelAnimationFrame(micFrameRef.current);
+            micFrameRef.current = null;
+        }
+
+        try {
+            micAnalyserRef.current?.disconnect();
+        } catch { }
+
+        try {
+            micMonitorSourceRef.current?.disconnect();
+        } catch { }
+
+        try {
+            micMonitorGainRef.current?.disconnect();
+        } catch { }
+
+        try {
+            if (micMonitorAudioElRef.current) {
+                micMonitorAudioElRef.current.pause();
+                micMonitorAudioElRef.current.srcObject = null;
+                micMonitorAudioElRef.current.remove();
+            }
+        } catch { }
+
+        try {
+            micAudioContextRef.current?.close();
+        } catch { }
+
+        try {
+            micStreamRef.current?.getTracks().forEach((t) => t.stop());
+        } catch { }
+
+        micAnalyserRef.current = null;
+        micAudioContextRef.current = null;
+        micStreamRef.current = null;
+        micMonitorGainRef.current = null;
+        micMonitorDestRef.current = null;
+        micMonitorAudioElRef.current = null;
+        micMonitorSourceRef.current = null;
+
+        setMicTesting(false);
+        setMicLevel(0);
+        setMicTestStatus("");
+    }, []);
+
+    React.useEffect(() => {
+        return () => {
+            stopMicTest();
+        };
+    }, [stopMicTest]);
+
+    React.useEffect(() => {
+        const gain = micMonitorGainRef.current;
+        if (!gain) return;
+
+        const next = Math.max(0, Math.min(1, micMonitorVolume / 100));
+
+        try {
+            if (micAudioContextRef.current) {
+                gain.gain.setTargetAtTime(next, micAudioContextRef.current.currentTime, 0.015);
+            } else {
+                gain.gain.value = next;
+            }
+        } catch { }
+    }, [micMonitorVolume]);
+
+    React.useEffect(() => {
+        const gain = micMonitorGainRef.current;
+        if (!gain) return;
+
+        const next = micMonitorEnabled ? Math.max(0, Math.min(1, micMonitorVolume / 100)) : 0;
+
+        try {
+            if (micAudioContextRef.current) {
+                gain.gain.setTargetAtTime(next, micAudioContextRef.current.currentTime, 0.015);
+            } else {
+                gain.gain.value = next;
+            }
+        } catch { }
+    }, [micMonitorEnabled, micMonitorVolume]);
+
+    React.useEffect(() => {
+        const audioEl = micMonitorAudioElRef.current;
+        if (!audioEl) return;
+
+        if (
+            selectedAudioOutputId &&
+            selectedAudioOutputId !== "default" &&
+            typeof audioEl.setSinkId === "function"
+        ) {
+            audioEl.setSinkId(selectedAudioOutputId).catch(() => { });
+        }
+    }, [selectedAudioOutputId]);
+
+    const startMicTest = React.useCallback(async () => {
+        try {
+            stopMicTest();
+            setMicTestError("");
+            setMicTestStatus("Requesting microphone…");
+
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    deviceId: selectedAudioInputId ? { exact: selectedAudioInputId } : undefined,
+                    echoCancellation: echoCancellationEnabled,
+                    noiseSuppression: noiseSuppressionEnabled,
+                    autoGainControl: autoGainControlEnabled,
+                },
+                video: false,
+            });
+
+            const AudioContextCtor =
+                window.AudioContext ||
+                (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+
+            if (!AudioContextCtor) {
+                throw new Error("AudioContext is not supported in this browser.");
+            }
+
+            const ctx = new AudioContextCtor();
+            const analyser = ctx.createAnalyser();
+            analyser.fftSize = 2048;
+            analyser.smoothingTimeConstant = 0.8;
+
+            const source = ctx.createMediaStreamSource(stream);
+            source.connect(analyser);
+
+            micStreamRef.current = stream;
+            micAudioContextRef.current = ctx;
+            micAnalyserRef.current = analyser;
+            micMonitorSourceRef.current = source;
+
+            if (micMonitorEnabled) {
+                const dest = ctx.createMediaStreamDestination();
+                const gain = ctx.createGain();
+                const initialGain = Math.max(0, Math.min(1, micMonitorVolume / 100));
+
+                gain.gain.value = initialGain;
+
+                source.connect(gain);
+                gain.connect(dest);
+
+                const audioEl = document.createElement("audio") as SinkAudioElement;
+                audioEl.autoplay = true;
+                audioEl.playsInline = true;
+                audioEl.muted = false;
+                audioEl.srcObject = dest.stream;
+                audioEl.style.display = "none";
+                document.body.appendChild(audioEl);
+
+                if (
+                    selectedAudioOutputId &&
+                    selectedAudioOutputId !== "default" &&
+                    typeof audioEl.setSinkId === "function"
+                ) {
+                    await audioEl.setSinkId(selectedAudioOutputId);
+                }
+
+                await audioEl.play().catch(() => { });
+
+                micMonitorGainRef.current = gain;
+                micMonitorDestRef.current = dest;
+                micMonitorAudioElRef.current = audioEl;
+            }
+
+            const data = new Uint8Array(analyser.fftSize);
+
+            const tick = () => {
+                if (!micAnalyserRef.current) return;
+
+                micAnalyserRef.current.getByteTimeDomainData(data);
+
+                let sumSquares = 0;
+                for (let i = 0; i < data.length; i += 1) {
+                    const normalized = (data[i] - 128) / 128;
+                    sumSquares += normalized * normalized;
+                }
+
+                const rms = Math.sqrt(sumSquares / data.length);
+                const boosted = Math.min(100, Math.max(0, Math.round(rms * 260)));
+                setMicLevel(boosted);
+                micFrameRef.current = requestAnimationFrame(tick);
+            };
+
+            setMicTesting(true);
+            setMicTestStatus(
+                micMonitorEnabled
+                    ? "Speak now. You should see the level and hear your own voice."
+                    : "Speak now and watch the level."
+            );
+            tick();
+        } catch (err) {
+            const message = err instanceof Error ? err.message : "Could not start microphone test.";
+            setMicTestError(message);
+            setMicTesting(false);
+            setMicLevel(0);
+            setMicTestStatus("");
+        }
+    }, [
+        autoGainControlEnabled,
+        echoCancellationEnabled,
+        noiseSuppressionEnabled,
+        selectedAudioInputId,
+        selectedAudioOutputId,
+        micMonitorEnabled,
+        micMonitorVolume,
+        stopMicTest,
+    ]);
+
+    const playSpeakerTest = React.useCallback(async () => {
+        let ctx: AudioContext | null = null;
+        let streamDest: MediaStreamAudioDestinationNode | null = null;
+        let oscillator: OscillatorNode | null = null;
+        let gain: GainNode | null = null;
+        let audioEl: SinkAudioElement | null = null;
+        let cleanupTimer: number | null = null;
+
+        const cleanup = async () => {
+            if (cleanupTimer != null) {
+                window.clearTimeout(cleanupTimer);
+                cleanupTimer = null;
+            }
+
+            try {
+                oscillator?.stop();
+            } catch { }
+
+            try {
+                oscillator?.disconnect();
+            } catch { }
+
+            try {
+                gain?.disconnect();
+            } catch { }
+
+            try {
+                if (audioEl) {
+                    audioEl.pause();
+                    audioEl.srcObject = null;
+                    audioEl.remove();
+                }
+            } catch { }
+
+            try {
+                await ctx?.close();
+            } catch { }
+        };
+
+        try {
+            setSpeakerTesting(true);
+            setSpeakerTestError("");
+            setSpeakerTestStatus("Playing test sound…");
+
+            const AudioContextCtor =
+                window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+
+            if (!AudioContextCtor) {
+                throw new Error("AudioContext is not supported in this browser.");
+            }
+
+            ctx = new AudioContextCtor();
+            streamDest = ctx.createMediaStreamDestination();
+            oscillator = ctx.createOscillator();
+            gain = ctx.createGain();
+
+            oscillator.type = "sine";
+            oscillator.frequency.value = 880;
+
+            const now = ctx.currentTime;
+            gain.gain.setValueAtTime(0.0001, now);
+            gain.gain.exponentialRampToValueAtTime(0.16, now + 0.03);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.0);
+
+            oscillator.connect(gain);
+            gain.connect(streamDest);
+
+            audioEl = document.createElement("audio") as SinkAudioElement;
+            audioEl.autoplay = true;
+            audioEl.playsInline = true;
+            audioEl.muted = false;
+            audioEl.srcObject = streamDest.stream;
+            audioEl.style.display = "none";
+            document.body.appendChild(audioEl);
+
+            if (
+                selectedAudioOutputId &&
+                selectedAudioOutputId !== "default" &&
+                typeof audioEl.setSinkId === "function"
+            ) {
+                await audioEl.setSinkId(selectedAudioOutputId);
+            }
+
+            await audioEl.play();
+
+            oscillator.start(now);
+            oscillator.stop(now + 1.05);
+
+            cleanupTimer = window.setTimeout(() => {
+                void cleanup();
+                setSpeakerTesting(false);
+                setSpeakerTestStatus("Done.");
+            }, 1200);
+        } catch (err) {
+            await cleanup();
+            const message = err instanceof Error ? err.message : "Could not play test sound.";
+            setSpeakerTestError(message);
+            setSpeakerTesting(false);
+            setSpeakerTestStatus("");
+        }
+    }, [selectedAudioOutputId]);
+
+    const meterGradient = isLight
+        ? "linear-gradient(90deg, #22c55e 0%, #84cc16 45%, #eab308 75%, #f97316 88%, #ef4444 100%)"
+        : "linear-gradient(90deg, #34d399 0%, #a3e635 45%, #facc15 75%, #fb923c 88%, #f87171 100%)";
+
+    return (
+        <div className={`rounded-2xl p-4 ${sectionCls}`}>
+            <div className="text-[13px] font-semibold mb-4">Sound test</div>
+
+            <div className="flex flex-col gap-5">
+                <div>
+                    <div className={`text-[13px] font-semibold ${isLight ? "text-black/85" : "text-white/90"}`}>
+                        Test speakers / output
+                    </div>
+                    <div className={`mt-1 text-[12px] ${subtleText}`}>
+                        Plays a short test tone through the currently selected output device when the browser allows it.
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => void playSpeakerTest()}
+                            disabled={speakerTesting}
+                            className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${ghostBtn} disabled:opacity-60`}
+                        >
+                            {speakerTesting ? "Playing…" : "Play test sound"}
+                        </button>
+                    </div>
+
+                    {speakerTestStatus ? (
+                        <div className={`mt-2 text-[12px] ${subtleText}`}>{speakerTestStatus}</div>
+                    ) : null}
+
+                    {speakerTestError ? (
+                        <div className="mt-2 text-[12px] text-red-500 break-words">{speakerTestError}</div>
+                    ) : null}
+                </div>
+
+                <div className="border-t border-white/10 pt-5">
+                    <div className={`text-[13px] font-semibold ${isLight ? "text-black/85" : "text-white/90"}`}>
+                        Test microphone
+                    </div>
+                    <div className={`mt-1 text-[12px] ${subtleText}`}>
+                        Uses your currently selected microphone and current mic-processing settings. You can also monitor your own voice while testing.
+                    </div>
+
+                    <div className="mt-4 flex flex-col gap-4">
+                        <ToggleRow
+                            label="Hear my voice while testing"
+                            description="Routes your microphone back to your selected speakers while the mic test is running. Headphones are recommended to avoid feedback."
+                            checked={micMonitorEnabled}
+                            onChange={setMicMonitorEnabled}
+                            isLight={isLight}
+                        />
+
+                        <SliderField
+                            label="Monitor volume"
+                            description="How loud your own monitored voice plays back during the mic test."
+                            min={0}
+                            max={100}
+                            step={1}
+                            value={micMonitorVolume}
+                            onChange={setMicMonitorVolume}
+                            disabled={!micMonitorEnabled}
+                            isLight={isLight}
+                            valueSuffix="%"
+                        />
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                        {!micTesting ? (
+                            <button
+                                type="button"
+                                onClick={() => void startMicTest()}
+                                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${ghostBtn}`}
+                            >
+                                Start mic test
+                            </button>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={stopMicTest}
+                                className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${ghostBtn}`}
+                            >
+                                Stop mic test
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="mt-4">
+                        <div
+                            className={[
+                                "h-3 rounded-full overflow-hidden border",
+                                isLight ? "bg-black/5 border-black/10" : "bg-white/5 border-white/10",
+                            ].join(" ")}
+                        >
+                            <div
+                                className="h-full rounded-full transition-[width] duration-100"
+                                style={{
+                                    width: `${Math.max(2, micLevel)}%`,
+                                    background: meterGradient,
+                                }}
+                            />
+                        </div>
+
+                        <div className={`mt-2 text-[12px] ${subtleText}`}>
+                            Input level: <span className="font-semibold">{micLevel}%</span>
+                        </div>
+
+                        {micTestStatus ? (
+                            <div className={`mt-2 text-[12px] ${subtleText}`}>{micTestStatus}</div>
+                        ) : null}
+
+                        {micTestError ? (
+                            <div className="mt-2 text-[12px] text-red-500 break-words">{micTestError}</div>
+                        ) : null}
+                    </div>
+                </div>
             </div>
         </div>
     );
@@ -525,6 +1009,18 @@ export function RoomSettingsModalLiveKit({
                                     />
                                 </div>
                             </div>
+
+                            <SoundTestSection
+                                isLight={isLight}
+                                sectionCls={sectionCls}
+                                ghostBtn={ghostBtn}
+                                subtleText={subtleText}
+                                selectedAudioInputId={selectedAudioInputId}
+                                selectedAudioOutputId={selectedAudioOutputId}
+                                echoCancellationEnabled={echoCancellationEnabled}
+                                noiseSuppressionEnabled={noiseSuppressionEnabled}
+                                autoGainControlEnabled={autoGainControlEnabled}
+                            />
 
                             <div className={`rounded-2xl p-4 ${sectionCls}`}>
                                 <div className="text-[13px] font-semibold mb-4">Room tools</div>
