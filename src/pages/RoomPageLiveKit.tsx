@@ -8,6 +8,8 @@ import {
   Track,
   RemoteParticipant,
   LocalVideoTrack,
+  LocalAudioTrack,
+  RemoteAudioTrack,
   LocalTrackPublication,
   RemoteTrackPublication,
   createLocalVideoTrack,
@@ -45,7 +47,7 @@ import {
 import { PreJoinModal } from "./livekit/PreJoinModalLiveKit";
 import { RoomSettingsModalLiveKit } from "./livekit/RoomSettingsModalLiveKit";
 import { VideoTile } from "./livekit/VideoTileLiveKit";
-import { RemoteAudioRenderer } from "./livekit/RemoteAudioRendererLiveKit";
+import { RoomAudioRenderer, StartAudio, useTrackToggle } from "@livekit/components-react";
 import ReportParticipantModalLiveKit from "./livekit/ReportParticipantModalLiveKit";
 import { buildScreenShareTiles } from "./livekit/screenShareHelpers";
 import LiveKitPiPPortal from "./livekit/LiveKitPiPPortal";
@@ -128,6 +130,7 @@ type TileModel = {
   isLocal: boolean;
 
   videoTrack?: Track;
+  audioTrack?: LocalAudioTrack | RemoteAudioTrack;
   audioLevel?: number;
 
   participantIdentity?: string;
@@ -1044,6 +1047,7 @@ export function RoomPageLiveKit() {
     portalDocument: Document | null;
   } | null>(null);
   const [openTileAdminMenuId, setOpenTileAdminMenuId] = useState<string | null>(null);
+  const [screenSharePinned, setScreenSharePinned] = useState(true);
   const [timelineEditorOpen, setTimelineEditorOpen] = useState(false);
   const [timelineDraftBlocks, setTimelineDraftBlocks] = useState<RoomTimelineBlock[]>([]);
   const [timelineSaving, setTimelineSaving] = useState(false);
@@ -1268,6 +1272,8 @@ export function RoomPageLiveKit() {
   const firstTickDoneRef = useRef<boolean>(false);
   const welcomeLoopRef = useRef<HTMLAudioElement | null>(null);
   const audioUnlockedRef = useRef<boolean>(false);
+  const pendingRoomAudioUnlockRef = useRef<boolean>(false);
+  const audioUnlockInFlightRef = useRef(false);
 
   const STAGE_SOUND_MAP: Record<string, string> = {
     intentions: "/sounds/intentions.mp3",
@@ -1345,6 +1351,46 @@ export function RoomPageLiveKit() {
     a.volume = finalVolume;
     a.play().catch(() => { });
   };
+
+  const ensureRoomAudioPlaybackUnlocked = useCallback(async (reason: string) => {
+    const room = roomRef.current;
+    if (!room) return;
+
+    if (audioUnlockInFlightRef.current) return;
+    audioUnlockInFlightRef.current = true;
+
+    try {
+      const anyRoom = room as any;
+
+      if (typeof anyRoom.startAudio === "function") {
+        await anyRoom.startAudio();
+      }
+
+      try {
+        const audioEls = Array.from(document.querySelectorAll("audio")) as HTMLAudioElement[];
+        await Promise.allSettled(
+          audioEls.map(async (el) => {
+            try {
+              el.muted = false;
+              await el.play();
+            } catch { }
+          })
+        );
+      } catch { }
+
+      setRemoteAudioBlocked(false);
+      setRemoteAudioBlockedReason("");
+      setAudioResumeNonce((v) => v + 1);
+
+      console.log("[lk-audio] playback unlock ok:", reason);
+    } catch (e: any) {
+      console.warn("[lk-audio] playback unlock failed:", reason, e);
+      setRemoteAudioBlocked(true);
+      setRemoteAudioBlockedReason(String(e?.message || e || "audio_playback_blocked"));
+    } finally {
+      audioUnlockInFlightRef.current = false;
+    }
+  }, []);
 
   const startWelcomeLoop = () => {
     stopWelcomeLoop();
@@ -2259,6 +2305,12 @@ export function RoomPageLiveKit() {
   const [settingsPreviewVersion, setSettingsPreviewVersion] = useState(0);
   const [blurStrength, setBlurStrength] = useState<number>(12);
   const [connected, setConnected] = useState(false);
+  const [remoteAudioBlocked, setRemoteAudioBlocked] = useState(false);
+  const [remoteAudioBlockedReason, setRemoteAudioBlockedReason] = useState("");
+  const [remoteAudioHasAnyTracks, setRemoteAudioHasAnyTracks] = useState(false);
+  const [audioResumeNonce, setAudioResumeNonce] = useState(0);
+  const [audioResumeBusy, setAudioResumeBusy] = useState(false);
+  
 
   const [colorCorrection, setColorCorrection] = useState<ColorCorrectionState>({
     brightness: 100,
@@ -3169,6 +3221,17 @@ export function RoomPageLiveKit() {
   // ---- livekit room
   const roomRef = useRef<Room | null>(null);
   const [roomState, setRoomState] = useState<Room | null>(null);
+  useEffect(() => {
+    if (!connected) return;
+    if (!roomState) return;
+    if (!pendingRoomAudioUnlockRef.current) return;
+
+    pendingRoomAudioUnlockRef.current = false;
+
+    window.setTimeout(() => {
+      ensureRoomAudioPlaybackUnlocked("post-connect").catch(() => { });
+    }, 120);
+  }, [connected, roomState, ensureRoomAudioPlaybackUnlocked]);
   const [clientError, setClientError] = useState<string>("");
   const [mediaWarning, setMediaWarning] = useState<string>("");
   
@@ -3260,6 +3323,42 @@ export function RoomPageLiveKit() {
     if (!r) return 0;
     return 1 + r.remoteParticipants.size;
   }, [roomState, tiles]);
+
+  const micToggleHook = useTrackToggle({
+    source: Track.Source.Microphone,
+    room: roomState || undefined,
+    captureOptions: {
+      deviceId: selectedAudioInputId || prejoinRef.current.audioInputId || undefined,
+      echoCancellation: echoCancellationEnabled,
+      noiseSuppression: noiseSuppressionEnabled,
+      autoGainControl: autoGainControlEnabled,
+    } as any,
+    onDeviceError: (error) => {
+      console.error("mic toggle device error:", error);
+      setMediaWarning(
+        normalizeMediaWarningMessage((error as any)?.message || error || "microphone_toggle_failed")
+      );
+    },
+  });
+
+  const camToggleHook = useTrackToggle({
+    source: Track.Source.Camera,
+    room: roomState || undefined,
+    captureOptions: {
+      deviceId: selectedVideoInputId || prejoinRef.current.videoInputId || undefined,
+      resolution: {
+        width: capturePreset.width,
+        height: capturePreset.height,
+      },
+      frameRate: capturePreset.fps,
+    } as any,
+    onDeviceError: (error) => {
+      console.error("camera toggle device error:", error);
+      setMediaWarning(
+        normalizeMediaWarningMessage((error as any)?.message || error || "camera_toggle_failed")
+      );
+    },
+  });
 
   const volumeStorageKey = useMemo(() => {
     return session?.id ? `mysession_lk_volume:${session.id}` : "";
@@ -3509,6 +3608,10 @@ export function RoomPageLiveKit() {
     ) as any;
 
     const localCamTrackRaw = (localCamPub?.track as any) || undefined;
+    const localAudioTrackRaw =
+      localMicPub?.track instanceof LocalAudioTrack
+        ? localMicPub.track
+        : undefined;
 
     const localIdentity = String(lp.identity || livekitIdentityRef.current || "");
     const localUserId =
@@ -3549,6 +3652,7 @@ export function RoomPageLiveKit() {
         ).trim() || "You",
       isLocal: true,
       videoTrack: localCamTrack,
+      audioTrack: localAudioTrackRaw,
       participantIdentity: localIdentity || undefined,
       participantUserId: localUserId || undefined,
       micMuted: localMicMuted,
@@ -3572,6 +3676,10 @@ export function RoomPageLiveKit() {
         remoteCamPubExists && remoteCamPubHasTrack && !remoteCamPubMuted;
 
       const vt = remoteCamActuallyVisible ? ((camPub?.track as any) || undefined) : undefined;
+      const remoteAudioTrack =
+        micPub?.track instanceof RemoteAudioTrack
+          ? micPub.track
+          : undefined;
 
       const exactIdentity = String(rp.identity || "");
       const baseUserId = extractBaseUserIdFromIdentity(exactIdentity);
@@ -3591,6 +3699,7 @@ export function RoomPageLiveKit() {
         label: nm,
         isLocal: false,
         videoTrack: vt,
+        audioTrack: remoteAudioTrack,
         participantIdentity: exactIdentity || undefined,
         participantUserId: baseUserId || undefined,
         micTrackSid: micPub?.trackSid,
@@ -3863,6 +3972,16 @@ export function RoomPageLiveKit() {
       await r.localParticipant.setMicrophoneEnabled(false);
       setMicOn(false);
 
+      if (pendingRoomAudioUnlockRef.current) {
+        try {
+          await ensureRoomAudioPlaybackUnlocked("connect");
+        } catch (e) {
+          console.warn("post-connect room audio unlock failed:", e);
+        } finally {
+          pendingRoomAudioUnlockRef.current = false;
+        }
+      }
+
       kickedBySignalRef.current = false;
 
       leaveOnceRef.current = false;
@@ -3980,28 +4099,14 @@ export function RoomPageLiveKit() {
 
   // toggle mic
   const toggleMic = async () => {
-    const r = roomRef.current;
-    if (!r) return;
-
     try {
-      const pub: any = getLocalMicPublication();
-      if (pub) {
-        const next = !!pub.isMuted;
-        if (next) await pub.unmute?.();
-        else await pub.mute?.();
+      await micToggleHook.toggle();
 
-        scheduleRebuildTiles();
-        setRemoteAudioRecoveryTick((v) => v + 1);
-        return;
-      }
+      await ensureRoomAudioPlaybackUnlocked("toggle-mic");
 
-      const next = !micOn;
-      await r.localParticipant.setMicrophoneEnabled(next, {
-        deviceId: selectedAudioInputId || prejoinRef.current.audioInputId || undefined,
-        echoCancellation: echoCancellationEnabled,
-        noiseSuppression: noiseSuppressionEnabled,
-        autoGainControl: autoGainControlEnabled,
-      } as any);
+      window.setTimeout(() => {
+        ensureRoomAudioPlaybackUnlocked("toggle-mic-delayed").catch(() => { });
+      }, 180);
 
       scheduleRebuildTiles();
       setRemoteAudioRecoveryTick((v) => v + 1);
@@ -4012,61 +4117,14 @@ export function RoomPageLiveKit() {
 
   // toggle cam without recreating track
   const toggleCam = async () => {
-    const r = roomRef.current;
-    if (!r) return;
-
     try {
-      const pub: any = getLocalCameraPublication();
+      await camToggleHook.toggle();
 
-      if (pub) {
-        const nextOn = !!pub.isMuted;
+      await ensureRoomAudioPlaybackUnlocked("toggle-cam");
 
-        setCamOn(nextOn);
-
-        if (nextOn) {
-          await pub.unmute?.();
-        } else {
-          await pub.mute?.();
-        }
-
-        scheduleRebuildTiles();
-
-        window.setTimeout(() => {
-          scheduleRebuildTiles();
-        }, 120);
-
-        return;
-      }
-
-      if (camOn) return;
-
-      const isMobileLike = isMobileQuery || isTabletQuery || deviceTier === "weak";
-
-      const shouldForceVideoDeviceId =
-        !isMobileLike &&
-        !!String(selectedVideoInputId || prejoinRef.current.videoInputId || "").trim();
-
-      const nextTrack = await createLocalVideoTrack({
-        deviceId: shouldForceVideoDeviceId
-          ? selectedVideoInputId || prejoinRef.current.videoInputId || undefined
-          : undefined,
-        resolution: {
-          width: isMobileLike ? 320 : capturePreset.width,
-          height: isMobileLike ? 180 : capturePreset.height,
-        },
-        frameRate: isMobileLike ? 8 : capturePreset.fps,
-      } as any);
-
-      if (deviceTier !== "weak" && videoFxMode !== "off") {
-        try {
-          await safeApplyProcessor(nextTrack, videoFxMode, blurStrength, bgImageUrl);
-        } catch (e) {
-          console.warn("toggleCam fx apply failed:", e);
-        }
-      }
-
-      await r.localParticipant.publishTrack(nextTrack, { source: Track.Source.Camera } as any);
-      setCamOn(true);
+      window.setTimeout(() => {
+        ensureRoomAudioPlaybackUnlocked("toggle-cam-delayed").catch(() => { });
+      }, 180);
 
       scheduleRebuildTiles();
 
@@ -5018,6 +5076,7 @@ export function RoomPageLiveKit() {
             tileId={t.id}
             label={nameText}
             videoTrack={t.videoTrack}
+            audioTrack={t.audioTrack}
             isLocal={t.isLocal}
             theme={theme}
             showBadge={getBadgeForTile(t)}
@@ -5092,6 +5151,7 @@ export function RoomPageLiveKit() {
           tileId={t.id}
           label={nameText}
           videoTrack={t.videoTrack}
+          audioTrack={t.audioTrack}
           isLocal={t.isLocal}
           theme={theme}
           showBadge={getBadgeForTile(t)}
@@ -5100,9 +5160,21 @@ export function RoomPageLiveKit() {
           micMuted={micMuted}
           mirrorVideo={t.isLocal ? previewMirrored : false}
           audioLevel={t.audioLevel || 0}
-          onToggleMenu={undefined}
-          showMenuButton={false}
-          onOpenProfile={undefined}
+          onToggleMenu={(tileId, anchorEl) => {
+            if (!anchorEl) return;
+            openTileMenuAt(tileId, anchorEl);
+          }}
+          showMenuButton={!!(t.kind === "screen" || isSelfModerator || isHost)}
+          onOpenProfile={() => {
+            if (!t.participantUserId) return;
+
+            const p =
+              profilesById[String(t.participantUserId).toLowerCase()] ||
+              profilesById[String(t.participantIdentity || "").toLowerCase()] ||
+              null;
+
+            if (p) setSelectedUser(p);
+          }}
         />
       </div>
     );
@@ -5112,21 +5184,53 @@ export function RoomPageLiveKit() {
     return screenShareTiles.length ? screenShareTiles[0] : null;
   }, [screenShareTiles]);
 
+  useEffect(() => {
+    if (!activeScreenShareTile) {
+      setScreenSharePinned(true);
+    }
+  }, [activeScreenShareTile]);
+
+  const layoutTilesForRender = useMemo(() => {
+    if (screenSharePinned) return tilesForRender;
+
+    if (!activeScreenShareTile) return tilesForRender;
+
+    const withoutDup = tilesForRender.filter((t) => t.id !== activeScreenShareTile.id);
+    return [activeScreenShareTile, ...withoutDup];
+  }, [tilesForRender, activeScreenShareTile, screenSharePinned]);
+
   const pinnedParticipantTile = useMemo(() => {
     if (!pinnedTileId) return null;
-    return tilesForRender.find((t) => t.id === pinnedTileId) || null;
-  }, [pinnedTileId, tilesForRender]);
+    return layoutTilesForRender.find((t) => t.id === pinnedTileId) || null;
+  }, [pinnedTileId, layoutTilesForRender]);
 
-  const featuredTile = activeScreenShareTile || pinnedParticipantTile || null;
+  const featuredTile = useMemo(() => {
+    if (activeScreenShareTile && screenSharePinned) {
+      return activeScreenShareTile;
+    }
+
+    if (pinnedParticipantTile) {
+      return pinnedParticipantTile;
+    }
+
+    return null;
+  }, [activeScreenShareTile, screenSharePinned, pinnedParticipantTile]);
 
   const sidebarTiles = useMemo(() => {
-    if (activeScreenShareTile) return tilesForRender;
-    if (pinnedParticipantTile) return tilesForRender.filter((t) => t.id !== pinnedParticipantTile.id);
-    return tilesForRender;
-  }, [activeScreenShareTile, pinnedParticipantTile, tilesForRender]);
+    if (activeScreenShareTile && screenSharePinned) {
+      return tilesForRender;
+    }
+
+    if (pinnedParticipantTile) {
+      return layoutTilesForRender.filter((t) => t.id !== pinnedParticipantTile.id);
+    }
+
+    return layoutTilesForRender;
+  }, [activeScreenShareTile, screenSharePinned, pinnedParticipantTile, tilesForRender, layoutTilesForRender]);
 
   // Layout
-  const tileCount = tilesForRender.length;
+  const tileCount = layoutTilesForRender.length;
+
   const paddingBottomPx = 12;
 
   const isVeryNarrow = effectiveW < 430;
@@ -5180,7 +5284,7 @@ export function RoomPageLiveKit() {
               tileCount <= 2 ? (
                 <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
                   <MobileFillLayoutSizing<TileModel>
-                    items={tilesForRender}
+                    items={layoutTilesForRender}
                     containerWidth={effectiveW}
                     containerHeight={effectiveH}
                     paddingBottomPx={paddingBottomPx}
@@ -5190,7 +5294,7 @@ export function RoomPageLiveKit() {
               ) : (
                   <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
                     <MobileStackLayoutSizing<TileModel>
-                      items={tilesForRender}
+                      items={layoutTilesForRender}
                       paddingBottomPx={paddingBottomPx}
                       renderItem={(t) => renderTile(t)}
                     />
@@ -5199,7 +5303,7 @@ export function RoomPageLiveKit() {
             ) : tileCount <= 2 ? (
               <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
                 <P2PLayoutSizing<TileModel>
-                  items={tilesForRender}
+                  items={layoutTilesForRender}
                   containerWidth={effectiveW}
                   containerHeight={effectiveH}
                   stack={stackTwoOnThisViewport}
@@ -5209,7 +5313,7 @@ export function RoomPageLiveKit() {
             ) : (
                 <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
                   <GridLayoutSizing<TileModel>
-                    items={tilesForRender}
+                    items={layoutTilesForRender}
                     containerWidth={effectiveW}
                     containerHeight={effectiveH}
                     forceThreeAsTwoPlusOne={rightPanelOpen}
@@ -5294,32 +5398,34 @@ export function RoomPageLiveKit() {
   );
 
   const pipFeaturedTile = useMemo(() => {
-    if (activeScreenShareTile) return activeScreenShareTile;
+    if (activeScreenShareTile && screenSharePinned) return activeScreenShareTile;
     if (pinnedParticipantTile) return pinnedParticipantTile;
-    return tilesForRender[0] || null;
-  }, [activeScreenShareTile, pinnedParticipantTile, tilesForRender]);
+    return layoutTilesForRender[0] || null;
+  }, [activeScreenShareTile, screenSharePinned, pinnedParticipantTile, layoutTilesForRender]);
 
   const pipStripTiles = useMemo(() => {
-    if (activeScreenShareTile) return tilesForRender.slice(0, 4);
+    if (activeScreenShareTile && screenSharePinned) return tilesForRender.slice(0, 4);
+
     if (pinnedParticipantTile) {
-      return tilesForRender.filter((t) => t.id !== pinnedParticipantTile.id).slice(0, 4);
+      return layoutTilesForRender.filter((t) => t.id !== pinnedParticipantTile.id).slice(0, 4);
     }
-    return tilesForRender.slice(1, 5);
-  }, [activeScreenShareTile, pinnedParticipantTile, tilesForRender]);
+
+    return layoutTilesForRender.slice(1, 5);
+  }, [activeScreenShareTile, screenSharePinned, pinnedParticipantTile, tilesForRender, layoutTilesForRender]);
 
   const pipGalleryTiles = useMemo(() => {
-    if (activeScreenShareTile) {
+    if (activeScreenShareTile && screenSharePinned) {
       const withoutDup = tilesForRender.filter((t) => t.id !== activeScreenShareTile.id);
       return [activeScreenShareTile, ...withoutDup].slice(0, 9);
     }
 
     if (pinnedParticipantTile) {
-      const withoutDup = tilesForRender.filter((t) => t.id !== pinnedParticipantTile.id);
+      const withoutDup = layoutTilesForRender.filter((t) => t.id !== pinnedParticipantTile.id);
       return [pinnedParticipantTile, ...withoutDup].slice(0, 9);
     }
 
-    return tilesForRender.slice(0, 9);
-  }, [activeScreenShareTile, pinnedParticipantTile, tilesForRender]);
+    return layoutTilesForRender.slice(0, 9);
+  }, [activeScreenShareTile, screenSharePinned, pinnedParticipantTile, tilesForRender, layoutTilesForRender]);
 
   const pipGalleryColumns = useMemo(() => {
     const count = pipGalleryTiles.length;
@@ -5542,6 +5648,23 @@ export function RoomPageLiveKit() {
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
+                        {p.kind === "screen" && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setScreenSharePinned((prev) => !prev)}
+                              className={`w-9 h-9 rounded-xl flex items-center justify-center border transition ${isLight
+                                  ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
+                                  : "border-white/10 bg-white/5 hover:bg-white/10 text-white/85"
+                                }`}
+                              title={screenSharePinned ? "Unpin shared screen" : "Pin shared screen"}
+                              aria-label={screenSharePinned ? "Unpin shared screen" : "Pin shared screen"}
+                            >
+                              {screenSharePinned ? "⇱" : "📌"}
+                            </button>
+                          </>
+                        )}
+
                         {p.kind !== "screen" && (
                           <>
                             <button
@@ -5855,6 +5978,9 @@ export function RoomPageLiveKit() {
     setTokenError("");
     setClientError("");
     setDeviceError("");
+
+    pendingRoomAudioUnlockRef.current = true;
+
     setJoinRequested(true);
   };
 
@@ -5896,6 +6022,16 @@ export function RoomPageLiveKit() {
           navigate("/sessions", { replace: true });
         }}
         onJoin={onJoinGate}
+        onPrepareAudioGesture={() => {
+          pendingRoomAudioUnlockRef.current = true;
+        }}
+        onTestSpeaker={() => {
+          try {
+            const a = new Audio("/sounds/joined.mp3")
+            a.volume = 0.9;
+            a.play().catch(() => { });
+          } catch { }
+        }}
         previewVideoTrack={prejoinPreparedVideoTrackRef.current}
         previewVersion={prejoinPreviewVersion}
         videoFxMode={videoFxMode}
@@ -6002,13 +6138,69 @@ export function RoomPageLiveKit() {
           </div>
         </div>
 
-        <RemoteAudioRenderer
-          room={roomState}
-          audioOutputId={selectedAudioOutputId}
-          defaultRemoteVolumePct={defaultRemoteVolumePct}
-          volumePctByParticipantKey={volumePctByParticipantKey}
-          recoveryTick={remoteAudioRecoveryTick}
-        />
+        {roomState ? (
+          <>
+            <RoomAudioRenderer
+              room={roomState}
+              volume={Math.max(0, Math.min(1, Number(defaultRemoteVolumePct || 100) / 100))}
+            />
+            <div className="fixed bottom-[5.25rem] left-1/2 z-[80] -translate-x-1/2">
+              <StartAudio
+                room={roomState}
+                label="Click to enable audio"
+                className={
+                  isLight
+                    ? "rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-medium text-black shadow-lg"
+                    : "rounded-xl border border-white/10 bg-[#071427] px-3 py-2 text-sm font-medium text-white shadow-lg"
+                }
+              />
+              {remoteAudioBlocked && (
+                <div className="fixed bottom-[9.5rem] left-1/2 z-[81] -translate-x-1/2 px-2">
+                  <div
+                    className={
+                      isLight
+                        ? "max-w-[92vw] rounded-2xl border border-amber-200 bg-white px-4 py-3 text-sm text-black shadow-xl"
+                        : "max-w-[92vw] rounded-2xl border border-amber-500/30 bg-[#071427] px-4 py-3 text-sm text-white shadow-xl"
+                    }
+                  >
+                    <div className="font-medium">
+                      Room audio needs a tap
+                    </div>
+                    <div className={`mt-1 text-xs ${isLight ? "text-black/65" : "text-white/70"}`}>
+                      After microphone changes on some Android devices, room audio may need to be resumed manually.
+                    </div>
+
+                    {remoteAudioBlockedReason ? (
+                      <div className={`mt-2 text-[11px] break-words ${isLight ? "text-black/45" : "text-white/45"}`}>
+                        {remoteAudioBlockedReason}
+                      </div>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      disabled={audioResumeBusy}
+                      onClick={async () => {
+                        try {
+                          setAudioResumeBusy(true);
+                          await ensureRoomAudioPlaybackUnlocked("manual-notice");
+                        } finally {
+                          setAudioResumeBusy(false);
+                        }
+                      }}
+                      className={
+                        isLight
+                          ? "mt-3 rounded-xl border border-black/10 bg-black px-3 py-2 text-sm font-medium text-white"
+                          : "mt-3 rounded-xl border border-white/10 bg-white px-3 py-2 text-sm font-medium text-black"
+                      }
+                    >
+                      {audioResumeBusy ? "Enabling audio..." : "Enable room audio"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        ) : null}
 
         <LiveKitBottomBar
           theme={theme}
@@ -6366,7 +6558,11 @@ export function RoomPageLiveKit() {
             }}
           >
             {(() => {
-              const targetTile = tilesBaseForUi.find((t) => t.id === openTileAdminMenuId) || null;
+              const targetTile =
+                layoutTilesForRender.find((t) => t.id === openTileAdminMenuId) ||
+                tilesForRender.find((t) => t.id === openTileAdminMenuId) ||
+                (featuredTile && featuredTile.id === openTileAdminMenuId ? featuredTile : null) ||
+                null;
               if (!targetTile) return null;
 
               const targetIdentity = String(targetTile.participantIdentity || "").trim();
@@ -6575,6 +6771,24 @@ export function RoomPageLiveKit() {
                   </>
 
                   <div className={isLight ? "border-t border-black/10" : "border-t border-white/10"} />
+
+                  {targetTile?.kind === "screen" && (
+                    <>
+                      <div className={isLight ? "border-t border-black/10" : "border-t border-white/10"} />
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setScreenSharePinned((prev) => !prev);
+                          closeTileMenu();
+                        }}
+                        className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                          }`}
+                      >
+                        {screenSharePinned ? "Unpin shared screen" : "Pin shared screen"}
+                      </button>
+                    </>
+                  )}
 
                   <button
                     type="button"
