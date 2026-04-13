@@ -45,18 +45,16 @@ function computeCols(count: number, containerWidth: number) {
     if (count === 2) return 2;
     if (count === 4) return 2;
 
-    // 3 participants:
-    // - when the container is narrow desktop/tablet-ish, keep 2 + 1
-    // - when the container is wide enough, allow 3 columns so tiles can stretch wider
-    if (count === 3) {
-        if (!isDesktop) return 2;
-        return w >= 1280 ? 3 : 2;
-    }
+    // ✅ requirement:
+    // - for 3 participants on desktop widths (>=1024): ALWAYS 2 columns (2 + 1)
+    if (count === 3 && isDesktop) return 2;
 
-    // 5–9 participants on desktop: keep 3 columns as the stable default
+    // ✅ requirement:
+    // - for 5–9 participants on desktop widths (>=1024): ALWAYS 3 columns
     if (isDesktop && count >= 5 && count <= 9) return 3;
 
-    // fallback
+    // fallback (mobile/tablet/other cases)
+    if (count === 3) return 2;
     if (count === 5) return w >= 900 ? 3 : 2;
     if (count === 6) return w >= 780 ? 3 : 2;
 
@@ -149,10 +147,7 @@ export function GridLayoutSizing<T extends { id: string }>(props: {
 
     return (
         <div
-            className={
-                "w-full h-full min-h-0 overflow-y-auto flex justify-center " +
-                (shouldCenterY ? "items-center" : "items-start")
-            }
+            className={"w-full h-full min-h-0 overflow-y-auto flex justify-center " + (shouldCenterY ? "items-center" : "items-start")}
             style={{ padding: paddingPx }}
         >
             <div
@@ -221,10 +216,7 @@ export function P2PLayoutSizing<T extends { id: string }>(props: {
     }, [containerWidth, containerHeight, cols, rows, gapPx, paddingPx]);
 
     return (
-        <div
-            className="w-full h-full min-h-0 overflow-hidden flex justify-center items-center"
-            style={{ padding: paddingPx }}
-        >
+        <div className="w-full h-full min-h-0 overflow-hidden flex justify-center items-center" style={{ padding: paddingPx }}>
             <div
                 className="w-full grid"
                 style={{
@@ -290,10 +282,7 @@ export function MobileStackLayoutSizing<T extends { id: string }>(props: {
 }) {
     const { items, paddingBottomPx = 12, renderItem } = props;
     return (
-        <div
-            className="w-full h-full min-h-0 overflow-y-auto p-2 flex flex-col gap-2"
-            style={{ paddingBottom: paddingBottomPx }}
-        >
+        <div className="w-full h-full min-h-0 overflow-y-auto p-2 flex flex-col gap-2" style={{ paddingBottom: paddingBottomPx }}>
             {items.map((t, idx) => (
                 <React.Fragment key={t.id}>{renderItem(t, idx)}</React.Fragment>
             ))}

@@ -8,13 +8,6 @@ type BillingCycle = "monthly" | "yearly";
 export default function PricingPage() {
     const KOFI_URL = "https://ko-fi.com/mysession";
 
-    // Stripe Payment Links
-    // Put these in your Vite env:
-    // VITE_STRIPE_PRO_MONTHLY_URL=https://buy.stripe.com/...
-    // VITE_STRIPE_PRO_YEARLY_URL=https://buy.stripe.com/...
-    const STRIPE_PRO_MONTHLY_URL = import.meta.env.VITE_STRIPE_PRO_MONTHLY_URL?.trim() || "";
-    const STRIPE_PRO_YEARLY_URL = import.meta.env.VITE_STRIPE_PRO_YEARLY_URL?.trim() || "";
-
     const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
     const [checkingAuth, setCheckingAuth] = useState<boolean>(true);
 
@@ -79,7 +72,7 @@ export default function PricingPage() {
                 user_id: user.id,
                 plan_code: planCode,
                 source: "pricing_page",
-                note: "Stripe payment link missing on pricing page.",
+                note: "Invoice link missing on pricing page.",
             });
 
             if (error) {
@@ -88,19 +81,6 @@ export default function PricingPage() {
         },
         []
     );
-
-    const addPrefilledEmail = useCallback((baseUrl: string, email?: string | null) => {
-        if (!email) return baseUrl;
-
-        try {
-            const url = new URL(baseUrl);
-            url.searchParams.set("prefilled_email", email);
-            return url.toString();
-        } catch (err) {
-            console.error("Failed to append prefilled email:", err);
-            return baseUrl;
-        }
-    }, []);
 
     const handleUpgradeToPro = useCallback(async () => {
         setErrorMessage("");
@@ -153,22 +133,14 @@ export default function PricingPage() {
             }
 
             const planCode = billingCycle === "monthly" ? "pro_monthly" : "pro_yearly";
-
-            const legacyProfileCheckoutUrl =
+            const checkoutUrl =
                 billingCycle === "monthly"
                     ? profile?.pro_monthly_invoice_url
                     : profile?.pro_yearly_invoice_url;
 
-            const envStripeCheckoutUrl =
-                billingCycle === "monthly" ? STRIPE_PRO_MONTHLY_URL : STRIPE_PRO_YEARLY_URL;
-
-            const finalCheckoutUrl = envStripeCheckoutUrl
-                ? addPrefilledEmail(envStripeCheckoutUrl, user.email)
-                : legacyProfileCheckoutUrl || "";
-
-            if (finalCheckoutUrl) {
+            if (checkoutUrl) {
                 setStatusMessage("Redirecting you to secure payment...");
-                window.location.href = finalCheckoutUrl;
+                window.location.href = checkoutUrl;
                 return;
             }
 
@@ -185,15 +157,7 @@ export default function PricingPage() {
         } finally {
             setIsUpgrading(false);
         }
-    }, [
-        STRIPE_PRO_MONTHLY_URL,
-        STRIPE_PRO_YEARLY_URL,
-        addPrefilledEmail,
-        billingCycle,
-        checkingAuth,
-        createCheckoutRequest,
-        isLoggedIn,
-    ]);
+    }, [billingCycle, checkingAuth, createCheckoutRequest, isLoggedIn]);
 
     return (
         <div className="min-h-[calc(100vh-80px)] bg-transparent text-[#0B1220]">
@@ -294,7 +258,7 @@ export default function PricingPage() {
                         <div className="text-sm font-medium">Billing status</div>
 
                         <p className="mt-2 text-sm text-black/60">
-                            If your Stripe payment link is ready, the Pro button will open it
+                            If your personal invoice link is ready, the Pro button will open it
                             directly. If not, we’ll save a checkout request and prepare one for
                             you.
                         </p>
@@ -377,7 +341,9 @@ export default function PricingPage() {
                                 Refunds
                             </h3>
                             <p className="mt-2">
-                                Refund requests are handled according to the{" "}
+                                Refund requests are reviewed individually. Refunds may be available
+                                in cases such as duplicate payment, technical billing errors, or
+                                failure to provide the paid service. See the full{" "}
                                 <Link
                                     to="/refund-policy"
                                     className="underline underline-offset-2 hover:opacity-80"
@@ -437,8 +403,9 @@ export default function PricingPage() {
                                 How does Pro billing work right now?
                             </div>
                             <p className="mt-1 text-sm text-black/60">
-                                If your Stripe payment link is ready, clicking Pro will open it
-                                directly. If not, we’ll save a checkout request.
+                                Each account can have its own personal payment link. If your link is
+                                ready, clicking Pro will open it directly. If not, we’ll save a
+                                checkout request.
                             </p>
                         </div>
 
@@ -457,8 +424,9 @@ export default function PricingPage() {
                                 How should this be tested?
                             </div>
                             <p className="mt-1 text-sm text-black/60">
-                                First test the MySession flow with live Stripe payment links. Then
-                                run one real low-risk payment test to confirm the live payment flow.
+                                First test the MySession flow with mock invoice links and checkout
+                                requests. Then run one real low-risk payment test to confirm the
+                                live payment flow.
                             </p>
                         </div>
                     </div>

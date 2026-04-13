@@ -14,15 +14,22 @@ function isInAppBrowser() {
 
 function getPasswordResetRedirectUrl() {
   if (typeof window === "undefined") {
-    return "https://www.mysession.club/update-password";
+    return "https://mysession.club/update-password";
   }
 
-  return `${window.location.origin}/update-password`;
+  const host = window.location.hostname.toLowerCase();
+  const isLocalhost = host === "localhost" || host === "127.0.0.1";
+
+  if (isLocalhost) {
+    return `${window.location.origin}/update-password`;
+  }
+
+  return "https://mysession.club/update-password";
 }
 
 function getOauthRedirectUrl() {
   if (typeof window === "undefined") {
-    return "https://www.mysession.club/auth/callback";
+    return "https://mysession.club/auth/callback";
   }
 
   return `${window.location.origin}/auth/callback`;
