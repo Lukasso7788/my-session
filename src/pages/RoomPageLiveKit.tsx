@@ -5089,28 +5089,6 @@ export function RoomPageLiveKit() {
           />
         </div>
 
-        {showLocalEditButton && (
-          <div className="absolute top-2 left-2 z-30">
-            <button
-              type="button"
-              title="Edit name"
-              aria-label="Edit name"
-              onClick={(e) => {
-                e.stopPropagation();
-                openEditName();
-              }}
-              className={[
-                "w-9 h-9 rounded-xl flex items-center justify-center transition shadow-sm",
-                shouldForceMenuVisible ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-                isLight
-                  ? "bg-white/90 border border-black/10 text-black/75 hover:bg-white"
-                  : "bg-black/55 border border-white/10 text-white/90 hover:bg-black/70",
-              ].join(" ")}
-            >
-              <span className="text-[15px] leading-none">✎</span>
-            </button>
-          </div>
-        )}
       </div>
     );
   };

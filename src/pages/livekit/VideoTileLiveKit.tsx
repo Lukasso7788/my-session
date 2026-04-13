@@ -520,11 +520,11 @@ function VideoTileInner({
 
             <div className="pointer-events-none absolute inset-x-[0.55rem] bottom-[0.55rem] z-[12] flex min-w-0 items-end justify-between gap-[0.45rem]">
                 <div
-                    className={`pointer-events-auto min-w-0 max-w-full rounded-[1rem] border px-[0.72rem] py-[0.52rem] backdrop-blur-md ${namePillClass}`}
+                    className={`pointer-events-auto min-w-0 max-w-full rounded-[0.9rem] border px-[0.62rem] py-[0.42rem] backdrop-blur-md ${namePillClass}`}
                 >
-                    <div className="flex min-w-0 items-center gap-[0.45rem]">
+                    <div className="flex min-w-0 items-center gap-[0.4rem]">
                         <span
-                            className={`min-w-0 truncate text-[clamp(0.76rem,1.4vw,0.9rem)] font-semibold leading-none ${nameTextClass}`}
+                            className={`min-w-0 truncate text-[clamp(0.72rem,1.25vw,0.84rem)] font-semibold leading-none ${nameTextClass}`}
                         >
                             {label || "User"}
                         </span>
