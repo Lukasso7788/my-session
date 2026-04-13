@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Track } from "livekit-client";
+import { Track, LocalAudioTrack, RemoteAudioTrack } from "livekit-client";
+import { BarVisualizer } from "@livekit/components-react";
 
 type RoomTheme = "dark" | "light";
 
@@ -91,6 +92,7 @@ type VideoTileProps = {
     tileId: string;
     label: string;
     videoTrack?: Track;
+    audioTrack?: LocalAudioTrack | RemoteAudioTrack;
     isLocal: boolean;
     theme: RoomTheme;
     showBadge?: string | null;
@@ -104,10 +106,89 @@ type VideoTileProps = {
     onOpenProfile?: () => void;
 };
 
+function MicBadgeWithBarVisualizer({
+    theme,
+    micMuted,
+    audioTrack,
+    audioLevel = 0,
+    isLocal,
+}: {
+    theme: RoomTheme;
+    micMuted?: boolean;
+    audioTrack?: LocalAudioTrack | RemoteAudioTrack;
+    audioLevel?: number;
+    isLocal: boolean;
+}) {
+    const isLight = theme === "light";
+    const isSelfMutedBadge = !!isLocal && !!micMuted;
+
+    const badgeBaseClass = isSelfMutedBadge
+        ? "bg-red-600 border-red-700/70 text-white shadow-sm"
+        : isLight
+            ? "bg-white/92 border-black/10 text-neutral-800 shadow-sm"
+            : "bg-black/58 border-white/10 text-white shadow-sm";
+
+    const micIconTheme: RoomTheme = isSelfMutedBadge ? "dark" : isLight ? "light" : "dark";
+
+    const safeAudioLevel = clamp(Number(audioLevel || 0), 0, 1);
+    const speaking = !micMuted && safeAudioLevel > 0.04;
+    const showVisualizer = !micMuted && !!audioTrack;
+
+    const micGlowClass = speaking
+        ? isLight
+            ? "shadow-[0_0_1rem_rgba(76,160,255,0.35)]"
+            : "shadow-[0_0_1rem_rgba(52,211,153,0.35)]"
+        : "";
+
+    return (
+        <div
+            className={`pointer-events-auto relative flex h-[2rem] min-w-[2.45rem] shrink-0 items-center justify-center overflow-hidden rounded-[0.8rem] border px-[0.35rem] backdrop-blur-md ${badgeBaseClass} ${micGlowClass}`}
+            title={micMuted ? "Microphone off" : speaking ? "Speaking" : "Microphone on"}
+            aria-label={micMuted ? "Microphone off" : speaking ? "Speaking" : "Microphone on"}
+        >
+            {showVisualizer ? (
+                <>
+                    <div
+                        className={`absolute inset-0 ${isLight ? "bg-black/[0.05]" : "bg-white/[0.07]"
+                            }`}
+                    />
+
+                    <div className="absolute inset-0 overflow-hidden rounded-[0.75rem]">
+                        <BarVisualizer
+                            track={audioTrack}
+                            barCount={1}
+                            options={{ minHeight: 16, maxHeight: 100 }}
+                            className="absolute inset-0 flex items-end justify-stretch"
+                        >
+                            <span
+                                className={
+                                    "lk-audio-bar block h-full w-full rounded-none transition-all duration-75 " +
+                                    (isLight
+                                        ? "bg-[#4CA0FF]/18 data-[lk-highlighted=true]:bg-[#4CA0FF]/95"
+                                        : "bg-[#34D399]/18 data-[lk-highlighted=true]:bg-[#34D399]/95")
+                                }
+                            />
+                        </BarVisualizer>
+                    </div>
+                </>
+            ) : null}
+
+            <div className="relative z-[1] flex items-center justify-center">
+                <Icon
+                    name={micMuted ? "mic-off" : "mic-on"}
+                    theme={micIconTheme}
+                    className="h-[1rem] w-[1rem]"
+                />
+            </div>
+        </div>
+    );
+}
+
 function VideoTileInner({
     tileId,
     label,
     videoTrack,
+    audioTrack,
     isLocal,
     theme,
     showBadge,
@@ -142,38 +223,6 @@ function VideoTileInner({
     const menuBtnClass = isLight
         ? "bg-white/92 border-black/10 text-black/85 hover:bg-white"
         : "bg-black/58 border-white/10 text-white hover:bg-black/70";
-
-    const isSelfMutedBadge = !!isLocal && !!micMuted;
-
-    const muteBadgeClass = isSelfMutedBadge
-        ? "bg-red-600 border-red-700/70 text-white shadow-sm"
-        : isLight
-            ? "bg-white/92 border-black/10 text-neutral-800 shadow-sm"
-            : "bg-black/58 border-white/10 text-white shadow-sm";
-
-    const micIconTheme: RoomTheme = isSelfMutedBadge ? "dark" : isLight ? "light" : "dark";
-
-    const safeAudioLevel = clamp(Number(audioLevel || 0), 0, 1);
-    const speakingFillPct = micMuted ? 0 : safeAudioLevel <= 0.02 ? 0 : Math.round(safeAudioLevel * 100);
-    const speaking = !micMuted && safeAudioLevel > 0.06;
-
-    const micFillTrackClass = isSelfMutedBadge
-        ? "bg-white/18"
-        : isLight
-            ? "bg-black/[0.06]"
-            : "bg-white/[0.08]";
-
-    const micFillActiveClass = isSelfMutedBadge
-        ? "bg-white/28"
-        : isLight
-            ? "bg-emerald-500/80"
-            : "bg-emerald-400/85";
-
-    const micGlowClass = speaking
-        ? isLight
-            ? "shadow-[0_0_0.9rem_rgba(16,185,129,0.30)]"
-            : "shadow-[0_0_0.9rem_rgba(52,211,153,0.30)]"
-        : "";
 
     const debugSizing = useMemo(() => getQueryBool("devTileDebug", false), []);
     const [sizeText, setSizeText] = useState<string>("");
@@ -482,28 +531,13 @@ function VideoTileInner({
                     </div>
                 </div>
 
-                <div
-                    className={`pointer-events-auto relative flex h-[2rem] min-w-[2rem] shrink-0 items-center justify-center overflow-hidden rounded-[0.8rem] border px-[0.55rem] backdrop-blur-md ${muteBadgeClass} ${micGlowClass}`}
-                    title={micMuted ? "Microphone off" : speaking ? "Speaking" : "Microphone on"}
-                    aria-label={micMuted ? "Microphone off" : speaking ? "Speaking" : "Microphone on"}
-                >
-                    <div className={`absolute inset-0 ${micFillTrackClass}`} />
-
-                    {speakingFillPct > 0 ? (
-                        <div
-                            className={`absolute inset-x-0 bottom-0 ${micFillActiveClass}`}
-                            style={{ height: `${speakingFillPct}%` }}
-                        />
-                    ) : null}
-
-                    <div className="relative z-[1] flex items-center justify-center">
-                        <Icon
-                            name={micMuted ? "mic-off" : "mic-on"}
-                            theme={micIconTheme}
-                            className="h-[1rem] w-[1rem]"
-                        />
-                    </div>
-                </div>
+                <MicBadgeWithBarVisualizer
+                    theme={theme}
+                    micMuted={micMuted}
+                    audioTrack={audioTrack}
+                    audioLevel={audioLevel}
+                    isLocal={isLocal}
+                />
             </div>
         </div>
     );
@@ -514,6 +548,7 @@ const areVideoTilePropsEqual = (prev: VideoTileProps, next: VideoTileProps) => {
         prev.tileId === next.tileId &&
         prev.label === next.label &&
         prev.videoTrack === next.videoTrack &&
+        prev.audioTrack === next.audioTrack &&
         prev.isLocal === next.isLocal &&
         prev.theme === next.theme &&
         prev.showBadge === next.showBadge &&
