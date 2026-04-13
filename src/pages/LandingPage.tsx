@@ -21,7 +21,7 @@ const STATS = [
 ];
 
 const MOVING_LINE =
-    "Moving task lines • Moving task lines • Moving task lines • Moving task lines • Moving task lines • Moving task lines • Moving task lines • ";
+    "Show up • Set your intention • Work alongside others • Stay accountable • Follow the session flow • Finish the next step • Share your progress • Come back tomorrow • ";
 
 const FAQ_ITEMS = [
     {
@@ -343,110 +343,167 @@ function HeroRoomCollage() {
     return (
         <div className="rounded-[28px] border border-[#D9D4CE] bg-white p-4 md:p-5">
             <div className="rounded-[24px] border border-[#E5E0DA] bg-[#FBFAF8] p-4">
-                <div className="mb-4 flex items-center justify-between">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                     <div>
                         <div className="text-[16px] font-semibold text-[#121212]">MySession live room</div>
                         <div className="mt-1 text-[12px] text-[#736D66]">
-                            People show up, set an intention, and quietly work together.
+                            Quiet coworking with intention-setting and visible accountability.
                         </div>
                     </div>
 
-                    <div className="inline-flex items-center rounded-full border border-[#D7D2CC] bg-white px-3 py-1 text-[12px] font-medium text-[#5B5651]">
-                        Silent by default
-                    </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                    <div className="hero-participant hero-participant-blue">
-                        <div className="hero-video-top">
-                            <span className="hero-status-dot" />
-                            <span className="hero-status-text">On camera</span>
-                        </div>
-
-                        <div className="hero-avatar-wrap">
-                            <div className="hero-avatar hero-avatar-blue">Y</div>
-                        </div>
-
-                        <div className="hero-name">Yaro</div>
-
-                        <div className="hero-intention">
-                            “I’m shipping the landing page and fixing layout polish.”
-                        </div>
-                    </div>
-
-                    <div className="hero-participant hero-participant-green">
-                        <div className="hero-video-top">
-                            <span className="hero-status-dot" />
-                            <span className="hero-status-text">On camera</span>
-                        </div>
-
-                        <div className="hero-avatar-wrap">
-                            <div className="hero-avatar hero-avatar-green">A</div>
-                        </div>
-
-                        <div className="hero-name">Angel</div>
-
-                        <div className="hero-intention">
-                            “I’m finishing client emails and then doing 25 minutes of admin.”
-                        </div>
-                    </div>
-
-                    <div className="hero-participant hero-participant-red">
-                        <div className="hero-video-top">
-                            <span className="hero-status-dot" />
-                            <span className="hero-status-text">On camera</span>
-                        </div>
-
-                        <div className="hero-avatar-wrap">
-                            <div className="hero-avatar hero-avatar-red">M</div>
-                        </div>
-
-                        <div className="hero-name">Maya</div>
-
-                        <div className="hero-intention">
-                            “I’m doing reading notes and outlining the next chapter.”
-                        </div>
-                    </div>
-
-                    <div className="hero-participant hero-participant-neutral">
-                        <div className="hero-video-top">
-                            <span className="hero-status-dot" />
-                            <span className="hero-status-text">On camera</span>
-                        </div>
-
-                        <div className="hero-avatar-wrap">
-                            <div className="hero-avatar hero-avatar-neutral">D</div>
-                        </div>
-
-                        <div className="hero-name">Dan</div>
-
-                        <div className="hero-intention">
-                            “I’m debugging auth flow and then testing the room on mobile.”
-                        </div>
+                    <div className="flex items-center gap-2">
+                        <span className="rounded-full border border-[#D7D2CC] bg-white px-3 py-1 text-[12px] font-medium text-[#5B5651]">
+                            Silent by default
+                        </span>
+                        <span className="rounded-full border border-[#D9E4FF] bg-[#F1F5FF] px-3 py-1 text-[12px] font-medium text-[#335CCF]">
+                            4 in room
+                        </span>
                     </div>
                 </div>
 
-                <div className="mt-4 rounded-[18px] border border-[#E5E0DA] bg-white px-4 py-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
+                <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.15fr_0.85fr]">
+                    <div className="grid grid-cols-2 gap-3">
+                        <div className="hero-participant hero-participant-blue">
+                            <div className="hero-video-top">
+                                <span className="hero-status-dot" />
+                                <span className="hero-status-text">On camera</span>
+                            </div>
+
+                            <div className="hero-avatar-wrap">
+                                <div className="hero-avatar hero-avatar-blue">Y</div>
+                            </div>
+
+                            <div className="hero-name">Yaro</div>
+
+                            <div className="hero-intention">
+                                “I’m shipping the landing page and fixing layout polish.”
+                            </div>
+                        </div>
+
+                        <div className="hero-participant hero-participant-green">
+                            <div className="hero-video-top">
+                                <span className="hero-status-dot" />
+                                <span className="hero-status-text">On camera</span>
+                            </div>
+
+                            <div className="hero-avatar-wrap">
+                                <div className="hero-avatar hero-avatar-green">A</div>
+                            </div>
+
+                            <div className="hero-name">Angel</div>
+
+                            <div className="hero-intention">
+                                “I’m finishing client emails and then doing 25 minutes of admin.”
+                            </div>
+                        </div>
+
+                        <div className="hero-participant hero-participant-red">
+                            <div className="hero-video-top">
+                                <span className="hero-status-dot" />
+                                <span className="hero-status-text">On camera</span>
+                            </div>
+
+                            <div className="hero-avatar-wrap">
+                                <div className="hero-avatar hero-avatar-red">M</div>
+                            </div>
+
+                            <div className="hero-name">Maya</div>
+
+                            <div className="hero-intention">
+                                “I’m doing reading notes and outlining the next chapter.”
+                            </div>
+                        </div>
+
+                        <div className="hero-participant hero-participant-neutral">
+                            <div className="hero-video-top">
+                                <span className="hero-status-dot" />
+                                <span className="hero-status-text">On camera</span>
+                            </div>
+
+                            <div className="hero-avatar-wrap">
+                                <div className="hero-avatar hero-avatar-neutral">D</div>
+                            </div>
+
+                            <div className="hero-name">Dan</div>
+
+                            <div className="hero-intention">
+                                “I’m debugging auth flow and then testing the room on mobile.”
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col gap-3">
+                        <div className="rounded-[22px] border border-[#D9D4CE] bg-white p-4">
+                            <div className="flex items-center justify-between gap-3">
+                                <div>
+                                    <div className="text-[14px] font-semibold text-[#121212]">
+                                        Current session flow
+                                    </div>
+                                    <div className="mt-1 text-[12px] text-[#736D66]">
+                                        A simple loop that keeps people moving.
+                                    </div>
+                                </div>
+                                <span className="rounded-full border border-[#F1D3D3] bg-[#FFF2F2] px-3 py-1 text-[12px] font-medium text-[#C94848]">
+                                    Deep work
+                                </span>
+                            </div>
+
+                            <div className="mt-4 space-y-3">
+                                <div className="rounded-[16px] border border-[#E7E2DC] bg-[#FCFBF9] px-3 py-3">
+                                    <div className="text-[12px] font-semibold text-[#2F2F2F]">
+                                        1. Join
+                                    </div>
+                                    <div className="mt-1 text-[12px] leading-relaxed text-[#6B655F]">
+                                        Enter a room with other focused people.
+                                    </div>
+                                </div>
+
+                                <div className="rounded-[16px] border border-[#E7E2DC] bg-[#FCFBF9] px-3 py-3">
+                                    <div className="text-[12px] font-semibold text-[#2F2F2F]">
+                                        2. Set intention
+                                    </div>
+                                    <div className="mt-1 text-[12px] leading-relaxed text-[#6B655F]">
+                                        Tell yourself and others what you’re working on.
+                                    </div>
+                                </div>
+
+                                <div className="rounded-[16px] border border-[#E7E2DC] bg-[#FCFBF9] px-3 py-3">
+                                    <div className="text-[12px] font-semibold text-[#2F2F2F]">
+                                        3. Focus
+                                    </div>
+                                    <div className="mt-1 text-[12px] leading-relaxed text-[#6B655F]">
+                                        Stay in the room, work quietly, and keep momentum.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="rounded-[22px] border border-[#D9D4CE] bg-white p-4">
                             <div className="text-[14px] font-semibold text-[#121212]">
-                                Real people. Real tasks. Real accountability.
+                                Task / screenshare-style block
                             </div>
-                            <div className="mt-1 text-[12px] leading-relaxed text-[#736D66]">
-                                No pressure to perform. Just join, state your intention, and work alongside others.
-                            </div>
-                        </div>
+                            <div className="mt-3 rounded-[18px] border border-[#E5E0DA] bg-[#FBFAF8] p-4">
+                                <div className="text-[12px] font-semibold text-[#2F2F2F]">
+                                    Current task
+                                </div>
+                                <div className="mt-2 text-[13px] leading-relaxed text-[#5F5A55]">
+                                    Refine hero section, update session cards, and polish copy for clearer conversion.
+                                </div>
 
-                        <div className="flex items-center gap-2">
-                            <span className="rounded-full border border-[#D9E4FF] bg-[#F1F5FF] px-3 py-1 text-[12px] font-medium text-[#335CCF]">
-                                Video presence
-                            </span>
-                            <span className="rounded-full border border-[#D7EFD8] bg-[#F2FBF2] px-3 py-1 text-[12px] font-medium text-[#2F8C39]">
-                                Intentions
-                            </span>
-                            <span className="rounded-full border border-[#F1D3D3] bg-[#FFF2F2] px-3 py-1 text-[12px] font-medium text-[#C94848]">
-                                Focus flow
-                            </span>
+                                <div className="mt-4 h-2 rounded-full bg-[#ECE8E3]">
+                                    <div
+                                        className="h-2 rounded-full"
+                                        style={{
+                                            width: "62%",
+                                            background: "linear-gradient(90deg, #5286F6 0%, #65D46C 100%)",
+                                        }}
+                                    />
+                                </div>
+
+                                <div className="mt-2 text-[11px] text-[#736D66]">
+                                    Progress visible. Accountability visible. Momentum visible.
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -894,7 +951,7 @@ export default function LandingPage() {
           .hero-participant {
             position: relative;
             overflow: hidden;
-            min-height: 216px;
+            min-height: 208px;
             border-radius: 22px;
             border: 1px solid #ddd7d0;
             background: linear-gradient(180deg, #fdfcfb 0%, #f7f4f1 100%);
