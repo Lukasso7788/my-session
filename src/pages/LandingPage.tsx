@@ -1,1540 +1,538 @@
 // src/pages/LandingPage.tsx
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 
-/**
- * Palette (MySession)
- * Use colors as “soft wash” + accents (not hard blocks).
- */
-const MS_BLUE = "#5286F6";
-const MS_GREEN = "#65D46C";
-const MS_RED = "#F65252";
-
-const GRADIENT = "linear-gradient(90deg, #65D46C 0%, #5286F6 45%, #F65252 100%)";
-
-/**
- * Light SVG pattern (no external assets)
- * Used as a subtle background texture with fade.
- */
-const BG_PATTERN = `data:image/svg+xml,${encodeURIComponent(`
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="${MS_GREEN}" stop-opacity="0.35"/>
-      <stop offset="0.5" stop-color="${MS_BLUE}" stop-opacity="0.35"/>
-      <stop offset="1" stop-color="${MS_RED}" stop-opacity="0.35"/>
-    </linearGradient>
-    <filter id="b" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="0.6"/>
-    </filter>
-  </defs>
-
-  <!-- soft arcs -->
-  <g fill="none" stroke="url(#g)" stroke-width="2" opacity="0.28" filter="url(#b)">
-    <path d="M-50 140 C 180 40, 360 220, 600 140 S 980 40, 1250 160" />
-    <path d="M-50 260 C 240 150, 380 360, 620 260 S 980 150, 1250 280" />
-    <path d="M-50 380 C 220 300, 430 460, 670 380 S 980 300, 1250 420" />
-  </g>
-
-  <!-- tiny dots -->
-  <g opacity="0.22">
-    ${Array.from({ length: 70 })
-        .map((_, i) => {
-            const x = (i * 73) % 1200;
-            const y = (i * 41) % 600;
-            const c = i % 3 === 0 ? MS_GREEN : i % 3 === 1 ? MS_BLUE : MS_RED;
-            return `<circle cx="${x}" cy="${y}" r="2" fill="${c}" />`;
-        })
-        .join("\n")}
-  </g>
-</svg>
-`)}`;
-
-/**
- * Apply ONLY to session-related CTAs:
- * - Join now
- * - Browse sessions
- * - Join a session
- * - Join session (mini cards)
- * - Open full schedule
- *
- * Behavior:
- * - Default: black button
- * - Hover: subtle animated gradient "sheen" overlay (not full recolor)
- */
-const sessionCtaClass = `
-  session-cta
-  relative isolate overflow-hidden
-  before:content-[''] before:absolute before:inset-0 before:opacity-0
-  before:transition-opacity before:duration-200
-  before:[background-size:220%_220%]
-  hover:before:opacity-[0.22]
-  hover:before:animate-[gradMove_2.8s_ease-in-out_infinite]
-`;
-
-type UseRevealOptions = {
-    threshold?: number | number[];
-    rootMargin?: string;
-    once?: boolean;
+type SessionTypeCardProps = {
+    title: string;
+    description: string;
+    bullets: string[];
 };
 
-function useReveal({
-    threshold = 0.18,
-    rootMargin = "0px 0px -12% 0px",
-    once = true,
-}: UseRevealOptions = {}) {
-    const ref = useRef<HTMLDivElement | null>(null);
-    const [visible, setVisible] = useState(false);
+type FaqItem = {
+    q: string;
+    a: string;
+};
 
-    useEffect(() => {
-        const el = ref.current;
-        if (!el) return;
+const stats = [
+    "95% of users report improved focus",
+    "3.8x more likely to finish your tasks",
+    "85% report getting started on tasks more easily",
+];
 
-        if (typeof window === "undefined" || !("IntersectionObserver" in window)) {
-            setVisible(true);
-            return;
-        }
+const movingLine =
+    "Moving task lines • Moving task lines • Moving task lines • Moving task lines • Moving task lines • Moving task lines • Moving task lines •";
 
-        const observer = new IntersectionObserver(
-            (entries) => {
-                const entry = entries[0];
-                if (!entry) return;
+const sessionTypes: SessionTypeCardProps[] = [
+    {
+        title: "Group sessions",
+        description:
+            "Join a structured session with others, follow the structure, and get things done. Best for momentum and accountability.",
+        bullets: [
+            "Standard formats: 50/10, 25/5 Pomodoro",
+            "Custom sprints: 5, 10, 15-min formats",
+            "Verbal check-ins built in",
+        ],
+    },
+    {
+        title: "24/7 Rooms",
+        description:
+            "Always open. Drop in anytime, day or night — no scheduling, just show up and work.",
+        bullets: ["Great for spontaneous work sessions"],
+    },
+    {
+        title: "Buddy Tripling",
+        description:
+            "A cozy circle of 3. Personal enough to feel comfortable and to keep you on track.",
+        bullets: [
+            "Screenshare-only sessions available",
+            "Great for recurring sessions and habit building",
+        ],
+    },
+];
 
-                if (entry.isIntersecting) {
-                    setVisible(true);
-                    if (once) observer.unobserve(entry.target);
-                } else if (!once) {
-                    setVisible(false);
-                }
-            },
-            { threshold, rootMargin }
-        );
+const faqItems: FaqItem[] = [
+    {
+        q: "What is body doubling?",
+        a: "Working alongside other people — even silently — makes it easier to start and stay on task. MySession brings that online.",
+    },
+    {
+        q: "Do I have to talk during sessions?",
+        a: "No. Sessions are silent by default. You show up, set your tasks, and work. That’s it.",
+    },
+    {
+        q: "Who will I be working with?",
+        a: "Designers, developers, writers, students, freelancers — people from all over the world working on their own things, just like you.",
+    },
+    {
+        q: "Is it really free to start?",
+        a: "Yes. Join your first session for free, no credit card required.",
+    },
+    {
+        q: "Is MySession good for ADHD?",
+        a: "Many people with ADHD find that working alongside others helps them start and stay on task. MySession’s structured sessions and group energy make that easier.",
+    },
+    {
+        q: "Can I join from anywhere?",
+        a: "Yes — MySession is fully browser-based, no downloads required. Join from home, a coffee shop, or anywhere you work.",
+    },
+];
 
-        observer.observe(el);
-
-        return () => observer.disconnect();
-    }, [threshold, rootMargin, once]);
-
-    return { ref, visible };
+function Shell({ children }: { children: ReactNode }) {
+    return <div className="mx-auto w-full max-w-[1180px] px-4 md:px-6">{children}</div>;
 }
 
-function useScrollMetrics() {
-    const [metrics, setMetrics] = useState({ scrollY: 0, progress: 0 });
-
-    useEffect(() => {
-        let raf = 0;
-
-        const update = () => {
-            raf = 0;
-
-            const y = window.scrollY || window.pageYOffset || 0;
-            const doc = document.documentElement;
-            const max = Math.max(1, doc.scrollHeight - window.innerHeight);
-            const progress = Math.max(0, Math.min(1, y / max));
-
-            setMetrics({ scrollY: y, progress });
-        };
-
-        const onScroll = () => {
-            if (raf) return;
-            raf = window.requestAnimationFrame(update);
-        };
-
-        const onResize = () => {
-            if (raf) window.cancelAnimationFrame(raf);
-            raf = window.requestAnimationFrame(update);
-        };
-
-        update();
-        window.addEventListener("scroll", onScroll, { passive: true });
-        window.addEventListener("resize", onResize);
-
-        return () => {
-            if (raf) window.cancelAnimationFrame(raf);
-            window.removeEventListener("scroll", onScroll);
-            window.removeEventListener("resize", onResize);
-        };
-    }, []);
-
-    return metrics;
+function SectionLabel({ children }: { children: ReactNode }) {
+    return (
+        <div className="inline-flex items-center rounded-full border border-[#D7D2CC] bg-[#F3EFEA] px-3 py-1 text-[12px] font-medium text-[#4E4A46]">
+            {children}
+        </div>
+    );
 }
 
-function Reveal({
+function SectionCard({
     children,
     className = "",
-    delay = 0,
-    y = 24,
-    scale = 0.985,
-    blur = 8,
-    duration = 720,
-    once = true,
-    rootMargin = "0px 0px -12% 0px",
 }: {
     children: ReactNode;
     className?: string;
-    delay?: number;
-    y?: number;
-    scale?: number;
-    blur?: number;
-    duration?: number;
-    once?: boolean;
-    rootMargin?: string;
 }) {
-    const { ref, visible } = useReveal({ once, rootMargin });
-
     return (
         <div
-            ref={ref}
-            className={`reveal-block ${visible ? "is-visible" : ""} ${className}`}
-            style={
-                {
-                    ["--reveal-delay" as any]: `${delay}ms`,
-                    ["--reveal-y" as any]: `${y}px`,
-                    ["--reveal-scale" as any]: scale,
-                    ["--reveal-blur" as any]: `${blur}px`,
-                    ["--reveal-duration" as any]: `${duration}ms`,
-                } as any
-            }
+            className={`rounded-[28px] border border-[#D8D4CF] bg-[#FBFAF8] p-6 md:p-8 shadow-[0_1px_0_rgba(0,0,0,0.02)] ${className}`}
         >
             {children}
         </div>
     );
 }
 
-function ScrollProgressBar({ progress }: { progress: number }) {
-    return (
-        <div className="pointer-events-none fixed left-0 right-0 top-0 z-[80] h-[3px] bg-transparent">
-            <div
-                className="h-full origin-left"
-                style={{
-                    width: `${Math.max(0, Math.min(100, progress * 100))}%`,
-                    background: GRADIENT,
-                    boxShadow:
-                        "0 0 14px rgba(82,134,246,0.22), 0 0 22px rgba(101,212,108,0.16), 0 0 28px rgba(246,82,82,0.14)",
-                }}
-            />
-        </div>
-    );
-}
-
-function SectionSweep({ className = "" }: { className?: string }) {
-    return (
-        <div className={`pointer-events-none relative h-10 overflow-hidden ${className}`} aria-hidden="true">
-            <div className="section-sweep-line absolute inset-x-[8%] top-1/2 -translate-y-1/2 h-px" />
-            <div className="section-sweep-glow absolute left-[18%] top-1/2 -translate-y-1/2 w-28 h-28 rounded-full blur-3xl opacity-40" />
-            <div className="section-sweep-glow-alt absolute right-[14%] top-1/2 -translate-y-1/2 w-24 h-24 rounded-full blur-3xl opacity-35" />
-        </div>
-    );
-}
-
-function SectionTitle({
-    kicker,
-    title,
-    subtitle,
+function OutlineButton({
+    to,
+    children,
+    className = "",
 }: {
-    kicker?: string;
-    title: string;
-    subtitle?: string;
+    to: string;
+    children: ReactNode;
+    className?: string;
 }) {
     return (
-        <div className="text-center max-w-[880px] mx-auto">
-            {kicker && <div className="text-[12px] tracking-wide text-[#606060] mb-3">{kicker}</div>}
-            <h2 className="text-[26px] md:text-[32px] xl:text-[38px] font-normal text-[#2F2F2F] leading-tight">
-                {title}
-            </h2>
-            {subtitle && (
-                <p className="mt-4 text-[14px] md:text-[16px] text-[#606060] leading-relaxed">{subtitle}</p>
-            )}
+        <Link
+            to={to}
+            className={`inline-flex h-12 items-center justify-center rounded-full border border-[#2F2F2F] px-6 text-[14px] font-semibold text-[#2F2F2F] transition hover:bg-[#2F2F2F] hover:text-white ${className}`}
+        >
+            {children}
+        </Link>
+    );
+}
+
+function SolidButton({
+    to,
+    children,
+    className = "",
+}: {
+    to: string;
+    children: ReactNode;
+    className?: string;
+}) {
+    return (
+        <Link
+            to={to}
+            className={`inline-flex h-12 items-center justify-center rounded-full bg-[#2F2F2F] px-6 text-[14px] font-semibold text-white transition hover:opacity-90 ${className}`}
+        >
+            {children}
+        </Link>
+    );
+}
+
+function MetricItem({ text }: { text: string }) {
+    return (
+        <div className="text-center">
+            <div className="text-[15px] font-medium leading-relaxed text-[#2F2F2F]">{text}</div>
         </div>
     );
 }
 
-function AccentPill({
+function SessionTypeCard({ title, description, bullets }: SessionTypeCardProps) {
+    return (
+        <div className="rounded-[24px] border border-[#D8D4CF] bg-white p-5 md:p-6">
+            <div className="text-[20px] font-semibold text-[#2F2F2F]">{title}</div>
+            <p className="mt-3 text-[14px] leading-relaxed text-[#5F5A55]">{description}</p>
+
+            <ul className="mt-4 space-y-2">
+                {bullets.map((bullet) => (
+                    <li key={bullet} className="flex gap-3 text-[14px] leading-relaxed text-[#3F3B37]">
+                        <span className="mt-[8px] h-[6px] w-[6px] shrink-0 rounded-full bg-[#2F2F2F]" />
+                        <span>{bullet}</span>
+                    </li>
+                ))}
+            </ul>
+        </div>
+    );
+}
+
+function HowStep({
+    index,
+    title,
     text,
-    tone,
 }: {
+    index: string;
+    title: string;
     text: string;
-    tone: "blue" | "green" | "red" | "neutral";
 }) {
-    const cfg =
-        tone === "blue"
-            ? {
-                dot: MS_BLUE,
-                border: "#C9D9FF",
-                bg: "linear-gradient(180deg, rgba(82,134,246,0.16), rgba(82,134,246,0.06))",
-                fg: "#1D4ED8",
-            }
-            : tone === "green"
-                ? {
-                    dot: MS_GREEN,
-                    border: "#C9F2D0",
-                    bg: "linear-gradient(180deg, rgba(101,212,108,0.18), rgba(101,212,108,0.07))",
-                    fg: "#15803D",
-                }
-                : tone === "red"
-                    ? {
-                        dot: MS_RED,
-                        border: "#FFD0D0",
-                        bg: "linear-gradient(180deg, rgba(246,82,82,0.16), rgba(246,82,82,0.06))",
-                        fg: "#B91C1C",
-                    }
-                    : {
-                        dot: "#9CA3AF",
-                        border: "#DBD8D8",
-                        bg: "linear-gradient(180deg, rgba(0,0,0,0.03), rgba(0,0,0,0.01))",
-                        fg: "#606060",
-                    };
-
     return (
-        <span
-            className="inline-flex items-center gap-2 text-[12px] px-3 py-1 rounded-full border transition-all duration-300 will-change-transform hover:-translate-y-[1px] hover:shadow-[0_8px_20px_rgba(17,24,39,0.05)]"
-            style={{
-                borderColor: cfg.border,
-                background: cfg.bg,
-                color: cfg.fg,
-                boxShadow: "0 1px 0 rgba(0,0,0,0.03) inset",
-            }}
-        >
-            <span className="w-[7px] h-[7px] rounded-full" style={{ backgroundColor: cfg.dot }} />
-            {text}
-        </span>
-    );
-}
-
-function FeatureCard({
-    title,
-    desc,
-    bullets,
-    accent,
-    comingSoon,
-}: {
-    title: string;
-    desc: string;
-    bullets?: string[];
-    accent?: "blue" | "green" | "red";
-    comingSoon?: boolean;
-}) {
-    const accentColor =
-        accent === "blue" ? MS_BLUE : accent === "green" ? MS_GREEN : accent === "red" ? MS_RED : null;
-
-    const softWash =
-        accent === "blue"
-            ? "radial-gradient(1200px 600px at 0% 0%, rgba(82,134,246,0.10) 0%, rgba(82,134,246,0.00) 55%)"
-            : accent === "green"
-                ? "radial-gradient(1200px 600px at 0% 0%, rgba(101,212,108,0.11) 0%, rgba(101,212,108,0.00) 55%)"
-                : accent === "red"
-                    ? "radial-gradient(1200px 600px at 0% 0%, rgba(246,82,82,0.10) 0%, rgba(246,82,82,0.00) 55%)"
-                    : "none";
-
-    return (
-        <div
-            className="fancy-card h-full border border-[#DBD8D8] rounded-[24px] p-6 bg-white hover:bg-[#FAFAFA] transition relative overflow-hidden motion-safe:hover:-translate-y-[4px] motion-safe:hover:shadow-[0_18px_50px_rgba(17,24,39,0.08)]"
-            style={{ backgroundImage: softWash }}
-        >
-            {accentColor && (
-                <div
-                    className="absolute left-0 top-0 h-full w-[3px] opacity-90"
-                    style={{ backgroundColor: accentColor }}
-                />
-            )}
-
-            <div className="flex items-center justify-between gap-3">
-                <div className="text-[16px] font-semibold text-[#2F2F2F]">{title}</div>
-                {comingSoon && (
-                    <span className="text-[11px] px-2 py-[2px] rounded-full border border-[#DBD8D8] text-[#606060] bg-white/70">
-                        Coming soon
-                    </span>
-                )}
+        <div className="rounded-[24px] border border-[#D8D4CF] bg-white p-5 md:p-6">
+            <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#2F2F2F] bg-[#2F2F2F] text-[14px] font-semibold text-white">
+                    {index}
+                </div>
+                <div className="text-[18px] font-semibold text-[#2F2F2F]">{title}</div>
             </div>
 
-            <div className="mt-3 text-[14px] text-[#606060] leading-relaxed">{desc}</div>
-
-            {bullets?.length ? (
-                <ul className="mt-4 space-y-2 text-[13px] text-[#606060]">
-                    {bullets.map((b) => (
-                        <li key={b} className="flex gap-2">
-                            <span className="mt-[6px] w-[6px] h-[6px] rounded-full bg-[#2F2F2F] shrink-0" />
-                            <span>{b}</span>
-                        </li>
-                    ))}
-                </ul>
-            ) : null}
+            <p className="mt-4 text-[14px] leading-relaxed text-[#5F5A55]">{text}</p>
         </div>
     );
 }
 
-function FormatCard({
-    title,
-    desc,
-    bullets,
-    accent,
-}: {
-    title: string;
-    desc: string;
-    bullets: string[];
-    accent: "blue" | "green" | "red";
-}) {
-    const accentColor = accent === "blue" ? MS_BLUE : accent === "green" ? MS_GREEN : MS_RED;
-
-    const wash =
-        accent === "blue"
-            ? "radial-gradient(900px 400px at 20% 0%, rgba(82,134,246,0.14) 0%, rgba(82,134,246,0.00) 55%)"
-            : accent === "green"
-                ? "radial-gradient(900px 400px at 20% 0%, rgba(101,212,108,0.16) 0%, rgba(101,212,108,0.00) 55%)"
-                : "radial-gradient(900px 400px at 20% 0%, rgba(246,82,82,0.14) 0%, rgba(246,82,82,0.00) 55%)";
-
+function FaqCard({ q, a }: FaqItem) {
     return (
-        <div
-            className="fancy-card h-full border border-[#DBD8D8] rounded-[24px] bg-white p-6 relative overflow-hidden motion-safe:hover:-translate-y-[5px] motion-safe:hover:shadow-[0_22px_60px_rgba(17,24,39,0.09)] transition"
-            style={{ backgroundImage: wash }}
-        >
-            <div
-                className="absolute -top-12 -right-12 w-40 h-40 rounded-full blur-2xl opacity-60 animate-ambient-drift"
-                style={{ backgroundColor: accentColor }}
-            />
-            <div className="relative">
-                <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                        <div className="text-[16px] font-semibold text-[#2F2F2F]">{title}</div>
-                        <div className="mt-2 text-[14px] text-[#606060] leading-relaxed">{desc}</div>
-                    </div>
-
-                    <div
-                        className="shrink-0 border rounded-[16px] w-12 h-12 flex items-center justify-center bg-white/60 transition-transform duration-300 motion-safe:group-hover:scale-105"
-                        style={{ borderColor: accentColor }}
-                    >
-                        <div className="w-5 h-5 rounded-full" style={{ backgroundColor: accentColor }} />
-                    </div>
-                </div>
-
-                <ul className="mt-4 space-y-2 text-[13px] text-[#606060]">
-                    {bullets.map((b) => (
-                        <li key={b} className="flex gap-2">
-                            <span
-                                className="mt-[6px] w-[6px] h-[6px] rounded-full shrink-0"
-                                style={{ backgroundColor: accentColor }}
-                            />
-                            <span>{b}</span>
-                        </li>
-                    ))}
-                </ul>
-            </div>
-        </div>
-    );
-}
-
-function MiniSessionCard({
-    title,
-    tag,
-    tagColor = "blue",
-    host,
-    minutes,
-    startsIn,
-    people,
-}: {
-    title: string;
-    tag: string;
-    tagColor?: "blue" | "green" | "red";
-    host: string;
-    minutes: number;
-    startsIn: string;
-    people: number;
-}) {
-    const tagCfg =
-        tagColor === "blue"
-            ? { border: "#C9D9FF", bg: "rgba(82,134,246,0.12)", fg: "#1D4ED8" }
-            : tagColor === "green"
-                ? { border: "#C9F2D0", bg: "rgba(101,212,108,0.14)", fg: "#15803D" }
-                : { border: "#FFD0D0", bg: "rgba(246,82,82,0.12)", fg: "#B91C1C" };
-
-    return (
-        <div className="mini-session-card h-full border border-[#DBD8D8] rounded-[28px] bg-white p-5 flex flex-col gap-4 transition motion-safe:hover:-translate-y-[4px] motion-safe:hover:shadow-[0_18px_50px_rgba(17,24,39,0.08)]">
-            <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                    <div className="text-[18px] md:text-[20px] font-semibold text-[#2F2F2F] leading-snug">
-                        {title}
-                    </div>
-
-                    <div className="mt-2 flex flex-wrap items-center gap-3 text-[12px] text-[#606060]">
-                        <span className="flex items-center gap-1">
-                            <span className="opacity-70">Host:</span>
-                            <span className="underline underline-offset-2">{host}</span>
-                        </span>
-                        <span className="opacity-60">•</span>
-                        <span>{minutes} min</span>
-                        <span className="opacity-60">•</span>
-                        <span>Starts in {startsIn}</span>
-
-                        <span
-                            className="ml-0 md:ml-2 inline-flex items-center px-3 py-1 rounded-full border transition-transform duration-300 hover:-translate-y-[1px]"
-                            style={{ borderColor: tagCfg.border, background: tagCfg.bg, color: tagCfg.fg }}
-                        >
-                            {tag}
-                        </span>
-                    </div>
-                </div>
-
-                <div className="hidden md:flex items-center gap-5">
-                    <div className="w-px h-10 bg-[#D9D9D9]" />
-                    <div className="text-center">
-                        <div className="session-people-count text-[28px] font-bold text-[#2F2F2F]">{people}</div>
-                        <div className="text-[10px] text-[#606060] font-light -mt-1">in session</div>
-                    </div>
-                </div>
-            </div>
-
-            <div className="mt-auto flex flex-col sm:flex-row gap-3">
-                <Link
-                    to="/sessions"
-                    className="h-12 rounded-full px-6 text-[14px] font-semibold border border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition w-full sm:w-auto inline-flex items-center justify-center"
-                >
-                    Book session
-                </Link>
-
-                <Link
-                    to="/sessions"
-                    className={`
-            h-12 rounded-full px-6 text-[14px] font-semibold
-            bg-[#111827] text-white hover:opacity-90 transition
-            w-full sm:w-auto inline-flex items-center justify-center
-            ${sessionCtaClass}
-          `}
-                    style={{ ["--cta-grad" as any]: GRADIENT }}
-                >
-                    <span className="relative z-10">Join session</span>
-                </Link>
-            </div>
-        </div>
-    );
-}
-
-/**
- * Hero animation: “focus particles”
- */
-function FocusParticles({ count = 26 }: { count?: number }) {
-    const dots = useMemo(() => {
-        let seed = 1337;
-        const rand = () => {
-            seed = (seed * 9301 + 49297) % 233280;
-            return seed / 233280;
-        };
-
-        const colors = [
-            { c: MS_GREEN, a: 0.55 },
-            { c: MS_BLUE, a: 0.5 },
-            { c: MS_RED, a: 0.45 },
-        ];
-
-        return Array.from({ length: count }).map((_, i) => {
-            const col = colors[i % colors.length];
-            const size = 4 + Math.round(rand() * 5);
-            const x = 6 + rand() * 88;
-            const y = 8 + rand() * 62;
-            const dur = 10 + rand() * 12;
-            const delay = -(rand() * 18);
-            const drift = 18 + rand() * 38;
-            const blur = rand() > 0.7 ? 6 : 0;
-            const ring = rand() > 0.55;
-            const glow = rand() > 0.55;
-
-            return {
-                key: `p-${i}`,
-                size,
-                x,
-                y,
-                dur,
-                delay,
-                drift,
-                blur,
-                ring,
-                glow,
-                color: col.c,
-                alpha: col.a,
-            };
-        });
-    }, [count]);
-
-    return (
-        <div
-            aria-hidden="true"
-            className="focus-particles pointer-events-none absolute -inset-x-24 -top-40 h-[520px] md:h-[580px] overflow-hidden"
-        >
-            {dots.map((d) => (
-                <span
-                    key={d.key}
-                    className={`focus-dot ${d.ring ? "is-ring" : ""} ${d.glow ? "is-glow" : ""}`}
-                    style={
-                        {
-                            left: `${d.x}%`,
-                            top: `${d.y}%`,
-                            width: `${d.size}px`,
-                            height: `${d.size}px`,
-                            ["--dot-c" as any]: d.color,
-                            ["--dot-a" as any]: d.alpha,
-                            ["--dot-dur" as any]: `${d.dur}s`,
-                            ["--dot-delay" as any]: `${d.delay}s`,
-                            ["--dot-drift" as any]: `${d.drift}px`,
-                            filter: d.blur ? `blur(${d.blur}px)` : undefined,
-                        } as any
-                    }
-                />
-            ))}
-            <div className="focus-sweep" />
+        <div className="rounded-[24px] border border-[#D8D4CF] bg-white p-5 md:p-6">
+            <div className="text-[16px] font-semibold leading-snug text-[#2F2F2F]">{q}</div>
+            <p className="mt-3 text-[14px] leading-relaxed text-[#5F5A55]">{a}</p>
         </div>
     );
 }
 
 export default function LandingPage() {
-    const { scrollY, progress } = useScrollMetrics();
-
-    const heroAmbientShift = Math.min(scrollY * 0.12, 56);
-    const heroMeshShift = Math.min(scrollY * 0.08, 34);
-    const heroCardShift = Math.min(scrollY * 0.055, 24);
-
-    const heroSpotlightRef = useRef<HTMLDivElement | null>(null);
-    const [spotlight, setSpotlight] = useState({
-        x: 50,
-        y: 34,
-        active: false,
-    });
-
-    const handleHeroPointerMove = (e: ReactMouseEvent<HTMLDivElement>) => {
-        const el = heroSpotlightRef.current;
-        if (!el) return;
-
-        const rect = el.getBoundingClientRect();
-        const x = ((e.clientX - rect.left) / rect.width) * 100;
-        const y = ((e.clientY - rect.top) / rect.height) * 100;
-
-        setSpotlight({
-            x: Math.max(0, Math.min(100, x)),
-            y: Math.max(0, Math.min(100, y)),
-            active: true,
-        });
-    };
-
-    const handleHeroPointerLeave = () => {
-        setSpotlight((prev) => ({ ...prev, active: false }));
-    };
-
-    const coreConceptLinks = [
-        { text: "Body doubling", tone: "green" as const, to: "/body-doubling" },
-        { text: "Online coworking", tone: "blue" as const, to: "/online-coworking" },
-        { text: "Group focus sessions", tone: "red" as const, to: "/group-focus-sessions" },
-        { text: "Silent coworking", tone: "neutral" as const, to: "/silent-coworking" },
-        { text: "ADHD productivity", tone: "neutral" as const, to: "/adhd-productivity" },
-    ];
-
-    const aiPillar = { text: "Real-time AI assistant", tone: "red" as const, to: "/ai-assistant" };
-
-    const faqItems = [
-        {
-            q: "What is body doubling?",
-            a: "Body doubling is working alongside another person (in-person or online) to make it easier to start and stay on task — often with live presence and minimal talking.",
-        },
-        {
-            q: "Does body doubling work online?",
-            a: "For many people, yes. Online body doubling uses live coworking sessions so you get real-time presence and accountability without needing to chat.",
-        },
-        {
-            q: "Are online coworking sessions silent?",
-            a: "Most sessions are silent coworking: mic off by default, and people work on their own tasks with a simple intention and recap.",
-        },
-        {
-            q: "Do I need to talk during sessions?",
-            a: "No. Talking is optional. The default is quiet focus with a lightweight structure: intention → focus blocks → recap.",
-        },
-        {
-            q: "Is MySession similar to Focusmate?",
-            a: "It’s the same category (body doubling / online coworking), but MySession focuses on group sessions and always-available rooms — plus an integrated real-time AI assistant.",
-        },
-        {
-            q: "Can I join group focus sessions anytime?",
-            a: "Yes. Join scheduled sessions or drop into always-open rooms (24/7) whenever you need a focus container right now.",
-        },
-        {
-            q: "Is body doubling good for ADHD?",
-            a: "Some people with ADHD say body doubling helps them start and stay engaged. This is not medical advice — it’s a productivity format that some people find supportive.",
-        },
-        {
-            q: "What makes the AI assistant different from “just ChatGPT”?",
-            a: "It’s built into the session loop: it helps you decide the next step and keep momentum, and can optionally use screenshare context — without leaving the focus session.",
-        },
-    ];
-
     return (
-        <div className="min-h-screen bg-white text-[#2F2F2F] font-inter relative overflow-hidden">
-            <ScrollProgressBar progress={progress} />
+        <div className="min-h-screen bg-[#F5F3F0] text-[#2F2F2F]">
+            <main className="pb-16 pt-[88px] md:pt-[104px]">
+                <Shell>
+                    {/* HERO */}
+                    <section className="mb-6 md:mb-8">
+                        <SectionCard>
+                            <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
+                                <div>
+                                    <SectionLabel>Hero section</SectionLabel>
 
-            {/* Background pattern that fades out toward the bottom */}
-            <div
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-0 opacity-[0.55]"
-                style={{
-                    backgroundImage: `url("${BG_PATTERN}")`,
-                    backgroundRepeat: "repeat",
-                    backgroundSize: "1200px 600px",
-                    WebkitMaskImage:
-                        "linear-gradient(to bottom, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.35) 55%, rgba(0,0,0,0.0) 92%)",
-                    maskImage:
-                        "linear-gradient(to bottom, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.35) 55%, rgba(0,0,0,0.0) 92%)",
-                }}
-            />
+                                    <div className="mt-5">
+                                        <h1 className="text-[30px] font-semibold leading-tight text-[#2F2F2F] md:text-[42px]">
+                                            Do you...
+                                        </h1>
 
-            <main className="relative w-full px-3 md:px-6 lg:px-10 pb-16">
-                {/* HERO */}
-                <section className="pt-[92px] md:pt-[110px] pb-10 relative">
-                    <div
-                        className="pointer-events-none absolute inset-0"
-                        style={{ transform: `translate3d(0, ${heroAmbientShift}px, 0)` }}
-                    >
-                        <FocusParticles count={28} />
-                    </div>
+                                        <ul className="mt-5 space-y-3 text-[16px] leading-relaxed text-[#3F3B37]">
+                                            <li>• struggle to get started?</li>
+                                            <li>• lose focus easily?</li>
+                                            <li>• keep putting things off?</li>
+                                            <li>• get distracted at home?</li>
+                                            <li>• work better around other people?</li>
+                                        </ul>
 
-                    <div
-                        aria-hidden="true"
-                        className="pointer-events-none absolute inset-0"
-                        style={{ transform: `translate3d(0, ${heroMeshShift}px, 0)` }}
-                    >
-                        <div className="hero-mesh absolute -inset-x-24 -top-40 h-[520px] md:h-[580px]" />
-                        <div
-                            className="absolute -inset-x-24 -top-40 h-[520px] md:h-[580px]"
-                            style={{
-                                background:
-                                    "radial-gradient(900px 420px at 50% 30%, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.86) 45%, rgba(255,255,255,1) 70%)",
-                            }}
-                        />
-                    </div>
+                                        <p className="mt-7 max-w-[650px] text-[16px] leading-relaxed text-[#5F5A55]">
+                                            join live coworking sessions, work alongside focused people,
+                                            and actually get things done.
+                                        </p>
 
-                    <div className="max-w-[980px] mx-auto text-center relative">
-                        <Reveal delay={0} y={18} blur={6}>
-                            <div className="flex flex-wrap items-center justify-center gap-2 mb-5">
-                                <AccentPill text="Body doubling" tone="green" />
-                                <AccentPill text="Online coworking" tone="blue" />
-                                <AccentPill text="Group focus sessions" tone="red" />
-                                <AccentPill text="Real-time AI assistant" tone="red" />
-                                <AccentPill text="$10/month" tone="neutral" />
+                                        <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+                                            <SolidButton to="/sessions" className="w-full sm:w-auto">
+                                                Join a session — it’s free
+                                            </SolidButton>
+                                            <OutlineButton to="/pricing" className="w-full sm:w-auto">
+                                                See pricing
+                                            </OutlineButton>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="rounded-[24px] border border-[#D8D4CF] bg-white p-5 md:p-6">
+                                    <div className="flex items-center justify-center">
+                                        <div className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-[#2F2F2F] text-[28px] text-white">
+                                            ∞
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-5 text-center text-[30px] font-semibold leading-tight text-[#2F2F2F] md:text-[38px]">
+                                        Work alongside others — and get more done
+                                    </div>
+
+                                    <p className="mx-auto mt-5 max-w-[520px] text-center text-[15px] leading-relaxed text-[#5F5A55]">
+                                        Join structured live sessions, show up with your task, and
+                                        build momentum by working around other focused people.
+                                    </p>
+
+                                    <div className="mt-8 grid grid-cols-2 gap-3 md:grid-cols-4">
+                                        {[
+                                            ["Always Open", "24/7 Access"],
+                                            ["Stay accountable", "With others"],
+                                            ["Structured Flow", "Built-in workflow"],
+                                            ["Keep momentum", "Day & Night"],
+                                        ].map(([title, subtitle]) => (
+                                            <div
+                                                key={title}
+                                                className="rounded-[18px] border border-[#D8D4CF] bg-[#FAFAF8] px-4 py-4 text-center"
+                                            >
+                                                <div className="text-[14px] font-semibold text-[#2F2F2F]">
+                                                    {title}
+                                                </div>
+                                                <div className="mt-1 text-[12px] text-[#6A655F]">
+                                                    {subtitle}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
-                        </Reveal>
+                        </SectionCard>
+                    </section>
 
-                        <Reveal delay={90} y={24} blur={8}>
-                            <h1 className="text-[30px] md:text-[40px] xl:text-[52px] font-normal leading-tight">
-                                Live online body doubling
-                                <br className="hidden md:block" />
-                                &amp; group focus sessions — with real-time AI support.
-                            </h1>
-                        </Reveal>
+                    {/* STATS */}
+                    <section className="mb-6 md:mb-8">
+                        <SectionCard>
+                            <SectionLabel>stats</SectionLabel>
 
-                        <Reveal delay={170} y={24} blur={8}>
-                            <p className="mt-5 text-[14px] md:text-[16px] text-[#606060] leading-relaxed max-w-[940px] mx-auto">
-                                <span className="text-[#2F2F2F]">MySession is a platform for live online body doubling and group focus sessions.</span>{" "}
-                                Join silent coworking rooms (video-based accountability sessions), set a simple intention, and follow a structured focus format.{" "}
-                                <span className="text-[#2F2F2F]">Built-in real-time AI assistant (screenshare included)</span>{" "}
-                                helps you unblock the next step mid-session — without leaving the focus container.
-                            </p>
-                        </Reveal>
-
-                        <Reveal delay={240} y={20} blur={6}>
-                            <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-                                <Link
-                                    to="/sessions"
-                                    className={`
-                    h-12 rounded-full px-7 text-[14px] font-semibold
-                    bg-[#111827] text-white hover:opacity-90 transition
-                    w-full sm:w-auto inline-flex items-center justify-center
-                    ${sessionCtaClass}
-                  `}
-                                    style={{ ["--cta-grad" as any]: GRADIENT }}
-                                >
-                                    <span className="relative z-10">Join a focus session</span>
-                                </Link>
-
-                                <Link
-                                    to="/ai-assistant"
-                                    className="h-12 rounded-full px-7 text-[14px] font-semibold border border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition w-full sm:w-auto inline-flex items-center justify-center"
-                                >
-                                    See AI assistant
-                                </Link>
+                            <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-3">
+                                {stats.map((item) => (
+                                    <MetricItem key={item} text={item} />
+                                ))}
                             </div>
-                        </Reveal>
 
-                        <Reveal delay={320} y={18} blur={6}>
-                            <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-                                <AccentPill text="Silent coworking" tone="neutral" />
-                                <AccentPill text="Focus sessions with video" tone="neutral" />
-                                <AccentPill text="Virtual coworking sessions" tone="neutral" />
-                                <AccentPill text="24/7 rooms" tone="blue" />
-                                <AccentPill text="Buddy tripling (3 people)" tone="green" />
+                            <div className="mt-8 overflow-hidden rounded-full border border-[#E0DCD7] bg-white py-3">
+                                <div className="landing-marquee whitespace-nowrap text-[13px] text-[#5F5A55]">
+                                    <span className="mx-4">{movingLine}</span>
+                                    <span className="mx-4">{movingLine}</span>
+                                </div>
                             </div>
-                        </Reveal>
-                    </div>
+                        </SectionCard>
+                    </section>
 
-                    {/* HERO VISUAL */}
-                    <Reveal delay={380} y={32} blur={10}>
-                        <div
-                            ref={heroSpotlightRef}
-                            onMouseMove={handleHeroPointerMove}
-                            onMouseLeave={handleHeroPointerLeave}
-                            className="mt-10 max-w-[1100px] mx-auto relative"
-                            style={{ transform: `translate3d(0, ${heroCardShift}px, 0)` }}
-                        >
-                            <div className="hero-shell border border-[#DBD8D8] rounded-[32px] bg-white/70 backdrop-blur-[6px] p-4 md:p-6 shadow-[0_10px_30px_rgba(0,0,0,0.05)] relative overflow-hidden">
-                                <div
-                                    aria-hidden="true"
-                                    className="hero-spotlight pointer-events-none absolute inset-0 transition-opacity duration-300"
-                                    style={{
-                                        opacity: spotlight.active ? 1 : 0.55,
-                                        background: `radial-gradient(500px 240px at ${spotlight.x}% ${spotlight.y}%, rgba(255,255,255,0.65), rgba(255,255,255,0.18) 32%, rgba(255,255,255,0) 72%)`,
-                                    }}
+                    {/* PAIN / TRUTHS */}
+                    <section className="mb-6 md:mb-8">
+                        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.18fr_0.82fr]">
+                            <SectionCard>
+                                <SectionLabel>pain/truths</SectionLabel>
+
+                                <div className="mt-6">
+                                    <h2 className="text-[26px] font-semibold leading-tight text-[#2F2F2F]">
+                                        Work alongside others — and get x2 more done
+                                    </h2>
+
+                                    <div className="mt-5 space-y-4 text-[15px] leading-relaxed text-[#5F5A55]">
+                                        <p>
+                                            Whether you have ADHD, tend to procrastinate, get distracted
+                                            easily, feel lonely working alone, or simply work better around
+                                            people — MySession brings you into a structured community of
+                                            people working on things that matter. Join a session, set your
+                                            tasks, and actually make your plans a reality.
+                                        </p>
+
+                                        <p>
+                                            Even if you’re shy or introverted — you don’t need to talk or
+                                            perform. Just show up and work alongside others.
+                                        </p>
+                                    </div>
+
+                                    <div className="mt-8 flex flex-wrap gap-x-3 gap-y-2 text-[13px] text-[#4E4A46]">
+                                        <span>Writers</span>
+                                        <span>•</span>
+                                        <span>Designers</span>
+                                        <span>•</span>
+                                        <span>Developers</span>
+                                        <span>•</span>
+                                        <span>Students</span>
+                                        <span>•</span>
+                                        <span>Freelancers</span>
+                                        <span>•</span>
+                                        <span>Marketers</span>
+                                        <span>•</span>
+                                        <span>Founders</span>
+                                        <span>•</span>
+                                        <span>Creators</span>
+                                        <span>•</span>
+                                        <span>Researcher</span>
+                                    </div>
+                                </div>
+                            </SectionCard>
+
+                            <SectionCard className="h-full">
+                                <SectionLabel>Who it is &gt; What + Value</SectionLabel>
+
+                                <div className="mt-6 space-y-4 text-[14px] leading-relaxed text-[#5F5A55]">
+                                    <p>
+                                        Whether you have ADHD, tend to procrastinate, get distracted
+                                        easily, feel lonely working alone, or simply work better around
+                                        people, MySession brings you into a structured community of people
+                                        working on things that matter.
+                                    </p>
+
+                                    <p>
+                                        From deep work and serious projects to morning routines, reading,
+                                        meditation, and workouts, everyone is here to show up and make
+                                        progress, whatever that looks like for them.
+                                    </p>
+
+                                    <p>
+                                        Join a session, set your tasks, and actually make your plans a
+                                        reality. Even if you’re shy or introverted, you don’t need to talk
+                                        or perform. Just show up and work alongside others.
+                                    </p>
+                                </div>
+                            </SectionCard>
+                        </div>
+                    </section>
+
+                    {/* HOW IT WORKS */}
+                    <section className="mb-6 md:mb-8">
+                        <SectionCard>
+                            <SectionLabel>how it works</SectionLabel>
+
+                            <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+                                <HowStep
+                                    index="1"
+                                    title="Join a session"
+                                    text="Choose what fits your day — a group session, a 24/7 room, or a cozy circle of 3. Jump right in."
                                 />
 
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 relative">
-                                    {/* Left */}
-                                    <div className="bg-white border border-[#EAEAEA] rounded-[24px] p-5 relative overflow-hidden transition motion-safe:hover:-translate-y-[4px] motion-safe:hover:shadow-[0_24px_60px_rgba(17,24,39,0.07)]">
-                                        <div
-                                            aria-hidden="true"
-                                            className="absolute -top-20 -left-20 w-56 h-56 rounded-full blur-3xl opacity-40 animate-ambient-drift"
-                                            style={{ backgroundColor: MS_GREEN }}
-                                        />
-                                        <div
-                                            aria-hidden="true"
-                                            className="absolute -bottom-24 -right-24 w-64 h-64 rounded-full blur-3xl opacity-35 animate-ambient-drift-delayed"
-                                            style={{ backgroundColor: MS_BLUE }}
-                                        />
-                                        <div className="relative">
-                                            <div className="flex items-center justify-between">
-                                                <div className="text-[14px] font-semibold">Intention → focus → recap</div>
-                                                <div className="text-[12px] text-[#606060]">Structure that keeps you moving</div>
-                                            </div>
+                                <HowStep
+                                    index="2"
+                                    title="Work alongside others"
+                                    text="Write down what you want to finish, see focused people around you, and naturally get into your work. Silent, structured, distraction-free."
+                                />
 
-                                            <div className="mt-4 space-y-3">
-                                                <div className="rounded-[16px] border border-[#DBD8D8] p-4 bg-white/70 transition motion-safe:hover:-translate-y-[2px]">
-                                                    <div className="text-[13px] font-semibold">Current intention: “Ship sessions polish”</div>
-                                                    <div className="mt-2 text-[12px] text-[#606060]">Intention → stages → recap • progress tracked</div>
-                                                    <div className="mt-3 h-2 rounded-full bg-[#F1F1F1] overflow-hidden">
-                                                        <div className="hero-progress-fill h-2 w-[62%] bg-[#111827]" />
-                                                    </div>
-                                                    <div className="mt-2 text-[12px] text-[#606060]">62% complete</div>
-                                                </div>
+                                <HowStep
+                                    index="3"
+                                    title="Celebrate your progress"
+                                    text="Session done, share what you got done, celebrate your wins, and leave feeling accomplished."
+                                />
+                            </div>
+                        </SectionCard>
+                    </section>
 
-                                                <div className="rounded-[16px] border border-[#DBD8D8] p-4 bg-white/70 transition motion-safe:hover:-translate-y-[2px]">
-                                                    <div className="text-[13px] font-semibold">Body doubling (live presence)</div>
-                                                    <div className="mt-2 text-[12px] text-[#606060] leading-relaxed">
-                                                        Work alongside others — less friction to start, more follow-through — without chatter.
-                                                    </div>
-                                                </div>
+                    {/* TYPE OF SESSIONS */}
+                    <section className="mb-6 md:mb-8">
+                        <SectionCard>
+                            <SectionLabel>Type of sessions</SectionLabel>
 
-                                                <div className="rounded-[16px] border border-[#DBD8D8] p-4 bg-white/70 transition motion-safe:hover:-translate-y-[2px]">
-                                                    <div className="text-[13px] font-semibold">AI assistant inside the loop</div>
-                                                    <div className="mt-2 text-[12px] text-[#606060] leading-relaxed">
-                                                        If stuck mid-session: ask for the next step, break down tasks, or use screenshare context.
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
+                            <div className="mt-6">
+                                <div className="mx-auto flex w-full max-w-[620px] items-center justify-between rounded-full border border-[#D8D4CF] bg-white p-1 text-[14px]">
+                                    <div className="flex-1 rounded-full px-4 py-3 text-center text-[#5F5A55]">
+                                        Group sessions
                                     </div>
-
-                                    {/* Right */}
-                                    <div className="bg-white border border-[#EAEAEA] rounded-[24px] p-5 flex flex-col relative overflow-hidden transition motion-safe:hover:-translate-y-[4px] motion-safe:hover:shadow-[0_24px_60px_rgba(17,24,39,0.07)]">
-                                        <div
-                                            aria-hidden="true"
-                                            className="absolute -top-24 -right-24 w-72 h-72 rounded-full blur-3xl opacity-35 animate-ambient-drift"
-                                            style={{ backgroundColor: MS_RED }}
-                                        />
-                                        <div className="relative flex items-center justify-between">
-                                            <div className="text-[14px] font-semibold">Real-time AI assistant</div>
-                                            <div className="text-[12px] text-[#606060]">Screenshare included</div>
-                                        </div>
-
-                                        <div className="relative mt-4 flex-1 rounded-[20px] border border-[#DBD8D8] bg-[#F6F6F6]/70 p-4">
-                                            <div className="text-[12px] text-[#606060]">
-                                                Built into the session workflow — it helps you decide “what next” without leaving the focus container.
-                                            </div>
-
-                                            <div className="mt-4 rounded-[16px] bg-white border border-[#EAEAEA] p-4 transition motion-safe:hover:-translate-y-[2px]">
-                                                <div className="flex items-center justify-between">
-                                                    <div className="text-[13px] font-semibold">Current block</div>
-                                                    <div className="text-[12px] text-[#606060]">Deep work</div>
-                                                </div>
-                                                <div className="mt-3 h-2 rounded-full bg-[#F1F1F1] overflow-hidden">
-                                                    <div className="hero-progress-fill h-2 w-[35%] bg-[#111827]" />
-                                                </div>
-                                                <div className="mt-2 text-[12px] text-[#606060]">Stage 2/4 • Keep moving — minimal UI, maximum focus</div>
-                                            </div>
-
-                                            <div className="mt-4 rounded-[16px] bg-white border border-[#EAEAEA] p-4 transition motion-safe:hover:-translate-y-[2px]">
-                                                <div className="text-[13px] font-semibold">Screenshare unblock</div>
-                                                <div className="mt-2 text-[12px] text-[#606060]">
-                                                    Share your screen → ask what to do next → get a concrete next step, then continue the session.
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div className="mt-4 flex flex-col sm:flex-row gap-3 relative">
-                                            <Link
-                                                to="/sessions"
-                                                className={`
-                          h-12 rounded-full px-6 text-[14px] font-semibold
-                          bg-[#111827] text-white hover:opacity-90 transition
-                          w-full sm:w-auto inline-flex items-center justify-center
-                          ${sessionCtaClass}
-                        `}
-                                                style={{ ["--cta-grad" as any]: GRADIENT }}
-                                            >
-                                                <span className="relative z-10">Browse sessions</span>
-                                            </Link>
-
-                                            <Link
-                                                to="/ai-assistant"
-                                                className="h-12 rounded-full px-6 text-[14px] font-semibold border border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition w-full sm:w-auto inline-flex items-center justify-center"
-                                            >
-                                                Learn AI assistant
-                                            </Link>
-                                        </div>
+                                    <div className="flex-1 rounded-full bg-[#2F2F2F] px-4 py-3 text-center font-medium text-white">
+                                        Infinite rooms
+                                    </div>
+                                    <div className="flex-1 rounded-full px-4 py-3 text-center text-[#5F5A55]">
+                                        Body tripling
                                     </div>
                                 </div>
-                            </div>
-                        </div>
-                    </Reveal>
-                </section>
 
-                <SectionSweep className="mb-2" />
-
-                {/* CONCEPTS + AI */}
-                <section className="py-10 relative">
-                    <div
-                        aria-hidden="true"
-                        className="pointer-events-none absolute left-[8%] top-10 w-44 h-44 rounded-full blur-3xl opacity-25 animate-ambient-drift"
-                        style={{ backgroundColor: MS_BLUE }}
-                    />
-                    <Reveal>
-                        <SectionTitle
-                            kicker="Start here"
-                            title="Body doubling is the core. AI helps when you’re stuck."
-                            subtitle="Join a live focus container (silent by default). Start with an intention, work in focus blocks, recap — and use the built-in AI assistant when you need the next step."
-                        />
-                    </Reveal>
-
-                    <Reveal delay={80} y={20}>
-                        <div className="mt-7 max-w-[980px] mx-auto flex flex-wrap items-center justify-center gap-2">
-                            {coreConceptLinks.map((c, idx) => (
-                                <Reveal key={c.to} delay={idx * 55} y={14} blur={4} className="inline-block">
-                                    <Link
-                                        to={c.to}
-                                        className="focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#111827]/20 rounded-full"
-                                        aria-label={`Open ${c.text}`}
-                                    >
-                                        <AccentPill text={c.text} tone={c.tone} />
-                                    </Link>
-                                </Reveal>
-                            ))}
-                        </div>
-                    </Reveal>
-
-                    <Reveal delay={140} y={24}>
-                        <div className="mt-5 max-w-[980px] mx-auto">
-                            <div className="fancy-card border border-[#DBD8D8] rounded-[20px] bg-white/80 backdrop-blur-[4px] px-5 py-4 flex flex-col md:flex-row items-center justify-between gap-3 transition motion-safe:hover:-translate-y-[3px] motion-safe:hover:shadow-[0_16px_40px_rgba(17,24,39,0.06)]">
-                                <div className="text-[13px] text-[#606060]">
-                                    <span className="font-semibold text-[#2F2F2F]">Built-in AI assistant:</span>{" "}
-                                    get a concrete next step mid-session (screenshare optional) — without leaving the focus container.
+                                <div className="mt-7 text-center">
+                                    <h2 className="text-[26px] font-semibold leading-tight text-[#2F2F2F]">
+                                        Find the format that fits your day
+                                    </h2>
                                 </div>
 
-                                <Link
-                                    to={aiPillar.to}
-                                    className={`
-                    h-10 rounded-full px-5 text-[13px] font-semibold
-                    bg-[#111827] text-white hover:opacity-90 transition inline-flex items-center justify-center
-                    ${sessionCtaClass}
-                  `}
-                                    style={{ ["--cta-grad" as any]: GRADIENT }}
-                                >
-                                    <span className="relative z-10">Try AI assistant</span>
-                                </Link>
-                            </div>
-                        </div>
-                    </Reveal>
-
-                    <Reveal delay={180} y={16} blur={4}>
-                        <div className="mt-4 text-center text-[12px] text-[#606060]">
-                            If you’re new: start with <span className="underline underline-offset-2">Body doubling</span>. If you’re stuck: open the{" "}
-                            <span className="underline underline-offset-2">AI assistant</span>.
-                        </div>
-                    </Reveal>
-                </section>
-
-                <SectionSweep className="mb-2" />
-
-                {/* FORMATS */}
-                <section className="py-12 relative">
-                    <div
-                        aria-hidden="true"
-                        className="pointer-events-none absolute right-[7%] top-[15%] w-52 h-52 rounded-full blur-3xl opacity-20 animate-ambient-drift-delayed"
-                        style={{ backgroundColor: MS_GREEN }}
-                    />
-                    <Reveal>
-                        <SectionTitle
-                            kicker="Formats"
-                            title="Choose the accountability level that fits your day."
-                            subtitle="Group sessions for energy, 24/7 rooms for always-available focus, and Buddy Tripling for a cozy circle of 3."
-                        />
-                    </Reveal>
-
-                    <div className="mt-10 grid grid-cols-1 lg:grid-cols-3 gap-4">
-                        <Reveal delay={0} className="h-full">
-                            <FormatCard
-                                accent="blue"
-                                title="Group focus sessions"
-                                desc="Join structured sessions with multiple people and stay accountable through shared presence."
-                                bullets={["Best for energy + momentum", "Clear structure (Pomodoro / Deep Work / Sprints)", "Join in seconds — no setup"]}
-                            />
-                        </Reveal>
-
-                        <Reveal delay={100} className="h-full">
-                            <FormatCard
-                                accent="green"
-                                title="24/7 Infinite Rooms"
-                                desc="Always open. Drop in anytime and focus inside a structured room — day or night."
-                                bullets={["No scheduling — just join", "Great for spontaneous motivation", "Reliable “focus place” whenever you need it"]}
-                            />
-                        </Reveal>
-
-                        <Reveal delay={200} className="h-full">
-                            <FormatCard
-                                accent="red"
-                                title="Buddy Tripling (3 people)"
-                                desc="A small, cozy circle for accountability. Easier to fill than larger group sessions — less friction, faster start."
-                                bullets={["Higher comfort, still real accountability", "Easier to match than big group sessions", "Great for recurring sessions + habit building"]}
-                            />
-                        </Reveal>
-                    </div>
-                </section>
-
-                <SectionSweep className="mb-2" />
-
-                {/* HOW IT WORKS */}
-                <section className="py-12">
-                    <Reveal>
-                        <SectionTitle
-                            kicker="How it works"
-                            title="A simple flow that forces momentum."
-                            subtitle="Join fast — then the structure keeps you honest."
-                        />
-                    </Reveal>
-
-                    <div className="mt-10 grid grid-cols-1 lg:grid-cols-3 gap-4">
-                        <Reveal delay={0} className="h-full">
-                            <FeatureCard
-                                accent="blue"
-                                title="1) Join a session"
-                                desc="Pick a format that matches your day: groups, 24/7 rooms, or Buddy Tripling."
-                                bullets={["Schedule + filters", "Join instantly", "Zero setup friction"]}
-                            />
-                        </Reveal>
-
-                        <Reveal delay={100} className="h-full">
-                            <FeatureCard
-                                accent="green"
-                                title="2) Set intentions"
-                                desc="Write what you will finish. Track progress. Make the goal real."
-                                bullets={["Clear intention", "Progress tracking", "AI can help break it down"]}
-                            />
-                        </Reveal>
-
-                        <Reveal delay={200} className="h-full">
-                            <FeatureCard
-                                accent="red"
-                                title="3) Execute with AI help"
-                                desc="Work through the session format. If stuck — use AI (including screenshare) to unblock the next step."
-                                bullets={["Structured stages", "Less context switching", "Stay focused until completion"]}
-                            />
-                        </Reveal>
-                    </div>
-                </section>
-
-                <SectionSweep className="mb-2" />
-
-                {/* LIVE PREVIEW */}
-                <section className="py-12 relative">
-                    <div
-                        aria-hidden="true"
-                        className="pointer-events-none absolute left-[10%] bottom-[12%] w-56 h-56 rounded-full blur-3xl opacity-18 animate-ambient-drift"
-                        style={{ backgroundColor: MS_RED }}
-                    />
-                    <Reveal>
-                        <SectionTitle
-                            kicker="Explore"
-                            title="See sessions — join in seconds."
-                            subtitle="This is the core product. Simple, fast, and structured."
-                        />
-                    </Reveal>
-
-                    <Reveal delay={80}>
-                        <div className="mt-10 border border-[#DBD8D8] rounded-[32px] p-4 md:p-8 bg-white/70 backdrop-blur-[6px] shadow-[0_8px_30px_rgba(17,24,39,0.04)] relative overflow-hidden">
-                            <div
-                                aria-hidden="true"
-                                className="absolute inset-x-[10%] top-0 h-px opacity-70"
-                                style={{ background: GRADIENT }}
-                            />
-
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 relative">
-                                <Reveal delay={0} className="h-full">
-                                    <MiniSessionCard
-                                        title="50/5/5 Deep work — 2 hours"
-                                        tag="Deep work"
-                                        tagColor="blue"
-                                        host="Yaro"
-                                        minutes={120}
-                                        startsIn="44 mins"
-                                        people={6}
-                                    />
-                                </Reveal>
-
-                                <Reveal delay={90} className="h-full">
-                                    <MiniSessionCard
-                                        title="25/5 Pomodoro — 2 hours"
-                                        tag="Pomodoro 25/5"
-                                        tagColor="red"
-                                        host="Yaro"
-                                        minutes={120}
-                                        startsIn="1 hour"
-                                        people={4}
-                                    />
-                                </Reveal>
-
-                                <Reveal delay={180} className="h-full">
-                                    <MiniSessionCard
-                                        title="15/3 Short sprints — 2 hours"
-                                        tag="Short sprints"
-                                        tagColor="green"
-                                        host="Yaro"
-                                        minutes={120}
-                                        startsIn="2 hours"
-                                        people={5}
-                                    />
-                                </Reveal>
-                            </div>
-
-                            <Reveal delay={220} y={18} blur={5}>
-                                <div className="mt-6 flex justify-center">
-                                    <Link
-                                        to="/sessions"
-                                        className={`
-                      h-12 rounded-full px-7 text-[14px] font-semibold
-                      bg-[#111827] text-white hover:opacity-90 transition
-                      w-full sm:w-auto inline-flex items-center justify-center
-                      ${sessionCtaClass}
-                    `}
-                                        style={{ ["--cta-grad" as any]: GRADIENT }}
-                                    >
-                                        <span className="relative z-10">Open full schedule</span>
-                                    </Link>
-                                </div>
-                            </Reveal>
-                        </div>
-                    </Reveal>
-                </section>
-
-                <SectionSweep className="mb-2" />
-
-                {/* FAQ */}
-                <section className="py-12 relative">
-                    <div
-                        aria-hidden="true"
-                        className="pointer-events-none absolute right-[8%] top-[8%] w-52 h-52 rounded-full blur-3xl opacity-18 animate-ambient-drift-delayed"
-                        style={{ backgroundColor: MS_BLUE }}
-                    />
-                    <Reveal>
-                        <SectionTitle
-                            kicker="FAQ"
-                            title="Quick answers."
-                            subtitle="If you still have doubts — start with one session. That’s the best demo."
-                        />
-                    </Reveal>
-
-                    <div className="mt-10 max-w-[980px] mx-auto grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {faqItems.map((item, idx) => (
-                            <Reveal key={item.q} delay={idx * 55} className="h-full">
-                                <div className="faq-card h-full border border-[#DBD8D8] rounded-[24px] p-6 bg-white/80 backdrop-blur-[4px] transition motion-safe:hover:-translate-y-[3px] motion-safe:hover:shadow-[0_16px_40px_rgba(17,24,39,0.06)]">
-                                    <div className="text-[14px] font-semibold">{item.q}</div>
-                                    <div className="mt-2 text-[13px] text-[#606060] leading-relaxed">{item.a}</div>
-                                </div>
-                            </Reveal>
-                        ))}
-                    </div>
-                </section>
-
-                {/* FINAL CTA */}
-                <section className="pt-6 pb-4">
-                    <Reveal y={30} blur={10}>
-                        <div className="border border-[#DBD8D8] rounded-[32px] p-6 md:p-10 bg-[#111827] text-white relative overflow-hidden shadow-[0_18px_60px_rgba(17,24,39,0.14)]">
-                            <div
-                                aria-hidden="true"
-                                className="absolute -inset-20 opacity-70"
-                                style={{
-                                    background: `radial-gradient(600px 260px at 20% 40%, rgba(101,212,108,0.35), rgba(101,212,108,0.00) 70%),
-                             radial-gradient(520px 240px at 55% 30%, rgba(82,134,246,0.32), rgba(82,134,246,0.00) 70%),
-                             radial-gradient(520px 240px at 80% 60%, rgba(246,82,82,0.28), rgba(246,82,82,0.00) 70%)`,
-                                }}
-                            />
-                            <div className="final-cta-outline absolute inset-[1px] rounded-[31px] pointer-events-none" />
-                            <div className="max-w-[980px] mx-auto text-center relative">
-                                <div className="text-[24px] md:text-[32px] font-normal leading-tight">Start with one session. Ship something today.</div>
-                                <div className="mt-3 text-[14px] md:text-[16px] text-white/80">
-                                    Join a session, set intentions, stay accountable — and keep momentum going.
-                                </div>
-
-                                <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
-                                    <Link
-                                        to="/sessions"
-                                        className={`
-                      h-12 rounded-full px-7 text-[14px] font-semibold
-                      bg-white text-[#111827] hover:opacity-90 transition
-                      w-full sm:w-auto inline-flex items-center justify-center
-                      ${sessionCtaClass}
-                    `}
-                                        style={{ ["--cta-grad" as any]: GRADIENT }}
-                                    >
-                                        <span className="relative z-10">Join now</span>
-                                    </Link>
-
-                                    <Link
-                                        to="/pricing"
-                                        className="h-12 rounded-full px-7 text-[14px] font-semibold border border-white text-white hover:bg-white hover:text-[#111827] transition w-full sm:w-auto inline-flex items-center justify-center"
-                                    >
-                                        Subscribe $10/mo
-                                    </Link>
+                                <div className="mt-8 grid grid-cols-1 gap-4 lg:grid-cols-3">
+                                    {sessionTypes.map((item) => (
+                                        <SessionTypeCard
+                                            key={item.title}
+                                            title={item.title}
+                                            description={item.description}
+                                            bullets={item.bullets}
+                                        />
+                                    ))}
                                 </div>
                             </div>
-                        </div>
-                    </Reveal>
-                </section>
+                        </SectionCard>
+                    </section>
 
-                {/* Local CSS */}
+                    {/* TESTIMONIALS */}
+                    <section className="mb-6 md:mb-8">
+                        <SectionCard>
+                            <SectionLabel>testimonials</SectionLabel>
+
+                            <div className="mt-6 rounded-[24px] border border-dashed border-[#D8D4CF] bg-white px-6 py-10 text-center text-[15px] text-[#5F5A55]">
+                                [Testimonials — to be collected from real users]
+                            </div>
+                        </SectionCard>
+                    </section>
+
+                    {/* COMMUNITY */}
+                    <section className="mb-6 md:mb-8">
+                        <SectionCard>
+                            <SectionLabel>Community</SectionLabel>
+
+                            <div className="mt-6 max-w-[820px]">
+                                <h2 className="text-[26px] font-semibold leading-tight text-[#2F2F2F]">
+                                    You’re not just joining sessions. You’re joining a community.
+                                </h2>
+
+                                <p className="mt-5 text-[15px] leading-relaxed text-[#5F5A55]">
+                                    A global community of creators, builders, students, and professionals
+                                    — all showing up every day to work on things that matter. No pressure,
+                                    no judgment — just people doing their best work, together.
+                                </p>
+                            </div>
+                        </SectionCard>
+                    </section>
+
+                    {/* FAQ */}
+                    <section className="mb-6 md:mb-8">
+                        <SectionCard>
+                            <SectionLabel>FAQs</SectionLabel>
+
+                            <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+                                {faqItems.map((item) => (
+                                    <FaqCard key={item.q} q={item.q} a={item.a} />
+                                ))}
+                            </div>
+                        </SectionCard>
+                    </section>
+
+                    {/* FINAL CTA */}
+                    <section>
+                        <SectionCard className="bg-[#E6F1E5]">
+                            <SectionLabel>final CTA</SectionLabel>
+
+                            <div className="mt-6 max-w-[760px]">
+                                <h2 className="text-[28px] font-semibold leading-tight text-[#2F2F2F] md:text-[34px]">
+                                    Ready to get things done, together?
+                                </h2>
+
+                                <p className="mt-4 text-[16px] leading-relaxed text-[#5F5A55]">
+                                    Join a session now — it’s free.
+                                </p>
+
+                                <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+                                    <SolidButton to="/sessions" className="w-full sm:w-auto">
+                                        Join a session now
+                                    </SolidButton>
+                                    <OutlineButton to="/pricing" className="w-full sm:w-auto">
+                                        View pricing
+                                    </OutlineButton>
+                                </div>
+                            </div>
+                        </SectionCard>
+                    </section>
+                </Shell>
+
                 <style>{`
-          /* CTA sheen background */
-          .session-cta::before { background: var(--cta-grad); }
-
-          @keyframes gradMove {
-            0% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-            100% { background-position: 0% 50%; }
+          .landing-marquee {
+            display: inline-block;
+            min-width: 200%;
+            animation: landingMarquee 24s linear infinite;
           }
 
-          /* Reveal-on-scroll */
-          .reveal-block {
-            opacity: 0;
-            transform: translate3d(0, var(--reveal-y, 24px), 0) scale(var(--reveal-scale, 0.985));
-            filter: blur(var(--reveal-blur, 8px));
-            transition:
-              opacity var(--reveal-duration, 720ms) cubic-bezier(0.22, 1, 0.36, 1),
-              transform var(--reveal-duration, 720ms) cubic-bezier(0.22, 1, 0.36, 1),
-              filter var(--reveal-duration, 720ms) cubic-bezier(0.22, 1, 0.36, 1);
-            transition-delay: var(--reveal-delay, 0ms);
-            will-change: transform, opacity, filter;
-          }
-
-          .reveal-block.is-visible {
-            opacity: 1;
-            transform: translate3d(0, 0, 0) scale(1);
-            filter: blur(0);
-          }
-
-          /* Hero shell subtle shine */
-          .hero-shell {
-            position: relative;
-          }
-
-          .hero-shell::after {
-            content: "";
-            position: absolute;
-            inset: 0;
-            border-radius: 32px;
-            pointer-events: none;
-            background:
-              linear-gradient(
-                120deg,
-                rgba(255,255,255,0) 15%,
-                rgba(255,255,255,0.38) 32%,
-                rgba(255,255,255,0) 52%
-              );
-            transform: translateX(-48%);
-            animation: heroShine 7.4s ease-in-out infinite;
-            opacity: 0.72;
-          }
-
-          .hero-spotlight {
-            mix-blend-mode: screen;
-          }
-
-          @keyframes heroShine {
-            0%, 18% { transform: translateX(-52%); opacity: 0; }
-            26% { opacity: 0.58; }
-            42% { transform: translateX(46%); opacity: 0.0; }
-            100% { transform: translateX(46%); opacity: 0; }
-          }
-
-          .hero-progress-fill {
-            transform-origin: left center;
-            animation: progressPulse 4.5s ease-in-out infinite;
-          }
-
-          @keyframes progressPulse {
-            0%, 100% { opacity: 0.95; transform: scaleX(1); }
-            50% { opacity: 1; transform: scaleX(1.015); }
-          }
-
-          /* Decorative section sweep */
-          .section-sweep-line {
-            background: linear-gradient(
-              90deg,
-              rgba(101,212,108,0.00) 0%,
-              rgba(101,212,108,0.35) 16%,
-              rgba(82,134,246,0.28) 48%,
-              rgba(246,82,82,0.30) 78%,
-              rgba(246,82,82,0.00) 100%
-            );
-            opacity: 0.55;
-          }
-
-          .section-sweep-glow {
-            background: ${MS_BLUE};
-            animation: sweepGlow 10s ease-in-out infinite;
-          }
-
-          .section-sweep-glow-alt {
-            background: ${MS_GREEN};
-            animation: sweepGlowAlt 12s ease-in-out infinite;
-          }
-
-          @keyframes sweepGlow {
-            0%, 100% { transform: translate3d(-20px, -50%, 0) scale(0.92); opacity: 0.22; }
-            50% { transform: translate3d(28px, -50%, 0) scale(1.05); opacity: 0.42; }
-          }
-
-          @keyframes sweepGlowAlt {
-            0%, 100% { transform: translate3d(20px, -50%, 0) scale(0.9); opacity: 0.18; }
-            50% { transform: translate3d(-22px, -50%, 0) scale(1.06); opacity: 0.36; }
-          }
-
-          /* Fancy cards */
-          .fancy-card,
-          .faq-card,
-          .mini-session-card {
-            position: relative;
-          }
-
-          .fancy-card::after,
-          .faq-card::after,
-          .mini-session-card::after {
-            content: "";
-            position: absolute;
-            inset: 0;
-            border-radius: inherit;
-            pointer-events: none;
-            opacity: 0;
-            transition: opacity 260ms ease;
-            background:
-              linear-gradient(
-                135deg,
-                rgba(101,212,108,0.10),
-                rgba(82,134,246,0.06) 45%,
-                rgba(246,82,82,0.08)
-              );
-          }
-
-          .fancy-card:hover::after,
-          .faq-card:hover::after,
-          .mini-session-card:hover::after {
-            opacity: 1;
-          }
-
-          .faq-card::before {
-            content: "";
-            position: absolute;
-            inset: 0;
-            border-radius: inherit;
-            pointer-events: none;
-            opacity: 0;
-            transition: opacity 260ms ease;
-            background:
-              linear-gradient(
-                180deg,
-                rgba(82,134,246,0.05),
-                rgba(255,255,255,0)
-              );
-          }
-
-          .faq-card:hover::before {
-            opacity: 1;
-          }
-
-          /* Session count subtle pulse */
-          .session-people-count {
-            animation: peopleCountPulse 5.6s ease-in-out infinite;
-          }
-
-          @keyframes peopleCountPulse {
-            0%, 100% { transform: translate3d(0,0,0) scale(1); }
-            50% { transform: translate3d(0,-1px,0) scale(1.03); }
-          }
-
-          /* Final CTA inner animated outline */
-          .final-cta-outline {
-            box-shadow:
-              inset 0 0 0 1px rgba(255,255,255,0.06),
-              inset 0 0 30px rgba(255,255,255,0.03);
-          }
-
-          .final-cta-outline::after {
-            content: "";
-            position: absolute;
-            inset: 0;
-            border-radius: inherit;
-            background:
-              linear-gradient(
-                120deg,
-                rgba(255,255,255,0) 18%,
-                rgba(255,255,255,0.10) 34%,
-                rgba(255,255,255,0) 52%
-              );
-            transform: translateX(-55%);
-            animation: ctaSweep 8.6s ease-in-out infinite;
-          }
-
-          @keyframes ctaSweep {
-            0%, 20% { transform: translateX(-55%); opacity: 0; }
-            28% { opacity: 1; }
-            46% { transform: translateX(48%); opacity: 0; }
-            100% { transform: translateX(48%); opacity: 0; }
-          }
-
-          /* HERO animated mesh */
-          .hero-mesh {
-            border-radius: 9999px;
-            filter: blur(28px);
-            opacity: 0.9;
-            background:
-              radial-gradient(520px 320px at 18% 35%, rgba(101,212,108,0.55), rgba(101,212,108,0.00) 70%),
-              radial-gradient(520px 320px at 55% 28%, rgba(82,134,246,0.50), rgba(82,134,246,0.00) 70%),
-              radial-gradient(520px 320px at 82% 58%, rgba(246,82,82,0.46), rgba(246,82,82,0.00) 70%);
-            animation: meshFloat 14s ease-in-out infinite;
-            transform: translate3d(0,0,0);
-            -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.65) 45%, rgba(0,0,0,0.0) 95%);
-            mask-image: linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.65) 45%, rgba(0,0,0,0.0) 95%);
-          }
-
-          @keyframes meshFloat {
-            0%   { transform: translate3d(-10px, 0px, 0) scale(1.02); }
-            25%  { transform: translate3d(18px, 10px, 0) scale(1.05); }
-            50%  { transform: translate3d(8px, -8px, 0) scale(1.03); }
-            75%  { transform: translate3d(-14px, 8px, 0) scale(1.06); }
-            100% { transform: translate3d(-10px, 0px, 0) scale(1.02); }
-          }
-
-          /* Focus particles */
-          .focus-particles {
-            -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.65) 45%, rgba(0,0,0,0.0) 95%);
-            mask-image: linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.65) 45%, rgba(0,0,0,0.0) 95%);
-          }
-
-          .focus-dot {
-            position: absolute;
-            border-radius: 9999px;
-            background: color-mix(in srgb, var(--dot-c) calc(var(--dot-a) * 100%), transparent);
-            opacity: 0.75;
-            transform: translate3d(0,0,0);
-            animation:
-              dotDrift var(--dot-dur) ease-in-out infinite,
-              dotPulse 4.8s ease-in-out infinite;
-            animation-delay: var(--dot-delay), var(--dot-delay);
-            box-shadow: 0 0 0 0 rgba(0,0,0,0);
-          }
-
-          .focus-dot.is-ring {
-            background: transparent;
-            border: 1px solid color-mix(in srgb, var(--dot-c) 55%, transparent);
-          }
-
-          .focus-dot.is-glow {
-            box-shadow:
-              0 0 16px color-mix(in srgb, var(--dot-c) 30%, transparent),
-              0 0 32px color-mix(in srgb, var(--dot-c) 18%, transparent);
-          }
-
-          @keyframes dotDrift {
-            0%   { transform: translate3d(0px, 0px, 0) scale(1); }
-            40%  { transform: translate3d(calc(var(--dot-drift) * 0.6), calc(var(--dot-drift) * -0.35), 0) scale(1.05); }
-            70%  { transform: translate3d(calc(var(--dot-drift) * -0.35), calc(var(--dot-drift) * 0.55), 0) scale(0.98); }
-            100% { transform: translate3d(0px, 0px, 0) scale(1); }
-          }
-
-          @keyframes dotPulse {
-            0%, 100% { opacity: 0.55; }
-            50%      { opacity: 0.85; }
-          }
-
-          /* Subtle sweeping flow line */
-          .focus-sweep {
-            position: absolute;
-            left: -20%;
-            top: 20%;
-            width: 140%;
-            height: 2px;
-            opacity: 0.15;
-            background: ${GRADIENT};
-            filter: blur(0.4px);
-            transform: rotate(-8deg);
-            animation: sweep 9s ease-in-out infinite;
-          }
-
-          @keyframes sweep {
-            0%   { transform: translateX(-8%) rotate(-8deg); opacity: 0.0; }
-            15%  { opacity: 0.18; }
-            50%  { transform: translateX(8%) rotate(-8deg); opacity: 0.14; }
-            85%  { opacity: 0.18; }
-            100% { transform: translateX(-8%) rotate(-8deg); opacity: 0.0; }
-          }
-
-          /* Ambient drift */
-          .animate-ambient-drift {
-            animation: ambientDrift 14s ease-in-out infinite;
-          }
-
-          .animate-ambient-drift-delayed {
-            animation: ambientDrift 18s ease-in-out infinite reverse;
-          }
-
-          @keyframes ambientDrift {
-            0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
-            25% { transform: translate3d(12px, -8px, 0) scale(1.03); }
-            50% { transform: translate3d(-8px, 10px, 0) scale(1.07); }
-            75% { transform: translate3d(6px, 6px, 0) scale(1.02); }
-          }
-
-          /* Reduce motion */
-          @media (prefers-reduced-motion: reduce) {
-            .session-cta:hover::before,
-            .hero-mesh,
-            .focus-dot,
-            .focus-sweep,
-            .hero-shell::after,
-            .hero-progress-fill,
-            .section-sweep-glow,
-            .section-sweep-glow-alt,
-            .animate-ambient-drift,
-            .animate-ambient-drift-delayed,
-            .session-people-count,
-            .final-cta-outline::after {
-              animation: none !important;
+          @keyframes landingMarquee {
+            0% {
+              transform: translateX(0);
             }
+            100% {
+              transform: translateX(-50%);
+            }
+          }
 
-            .reveal-block,
-            .reveal-block.is-visible {
-              opacity: 1 !important;
+          @media (prefers-reduced-motion: reduce) {
+            .landing-marquee {
+              animation: none !important;
               transform: none !important;
-              filter: none !important;
-              transition: none !important;
             }
           }
         `}</style>
