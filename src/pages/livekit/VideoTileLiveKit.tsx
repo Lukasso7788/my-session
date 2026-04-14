@@ -122,15 +122,13 @@ function MicBadgeWithBarVisualizer({
     const isLight = theme === "light";
     const isSelfMutedBadge = !!isLocal && !!micMuted;
 
-    const activeBadgeClass = isLight
-        ? "bg-[#5286F6]/22 border-[#5286F6]/65 text-white shadow-[0_0_1rem_rgba(82,134,246,0.24)]"
-        : "bg-[#65D46C]/22 border-[#65D46C]/65 text-white shadow-[0_0_1rem_rgba(101,212,108,0.24)]";
-
     const badgeBaseClass = isSelfMutedBadge
         ? "bg-red-600 border-red-700/70 text-white shadow-sm"
-        : activeBadgeClass;
+        : isLight
+            ? "bg-white/92 border-black/10 text-neutral-800 shadow-sm"
+            : "bg-black/58 border-white/10 text-white shadow-sm";
 
-    const micIconTheme: RoomTheme = "dark";
+    const micIconTheme: RoomTheme = isSelfMutedBadge ? "dark" : isLight ? "light" : "dark";
 
     const safeAudioLevel = clamp(Number(audioLevel || 0), 0, 1);
     const speaking = !micMuted && safeAudioLevel > 0.04;
@@ -138,8 +136,8 @@ function MicBadgeWithBarVisualizer({
 
     const micGlowClass = speaking
         ? isLight
-            ? "shadow-[0_0_1rem_rgba(82,134,246,0.45)]"
-            : "shadow-[0_0_1rem_rgba(101,212,108,0.45)]"
+            ? "shadow-[0_0_1rem_rgba(76,160,255,0.35)]"
+            : "shadow-[0_0_1rem_rgba(52,211,153,0.35)]"
         : "";
 
     return (
@@ -151,7 +149,7 @@ function MicBadgeWithBarVisualizer({
             {showVisualizer ? (
                 <>
                     <div
-                        className={`absolute inset-0 ${isLight ? "bg-[#5286F6]/10" : "bg-[#65D46C]/10"
+                        className={`absolute inset-0 ${isLight ? "bg-black/[0.05]" : "bg-white/[0.07]"
                             }`}
                     />
 
@@ -166,8 +164,8 @@ function MicBadgeWithBarVisualizer({
                                 className={
                                     "lk-audio-bar block h-full w-full rounded-none transition-all duration-75 " +
                                     (isLight
-                                        ? "bg-[#5286F6]/20 data-[lk-highlighted=true]:bg-[#5286F6]"
-                                        : "bg-[#65D46C]/20 data-[lk-highlighted=true]:bg-[#65D46C]")
+                                        ? "bg-[#4CA0FF]/18 data-[lk-highlighted=true]:bg-[#4CA0FF]/95"
+                                        : "bg-[#34D399]/18 data-[lk-highlighted=true]:bg-[#34D399]/95")
                                 }
                             />
                         </BarVisualizer>
@@ -217,10 +215,10 @@ function VideoTileInner({
         : "bg-emerald-500/80 text-[#02140B] border-white/10";
 
     const namePillClass = isLight
-        ? "bg-black/62 border-black/12 text-white shadow-sm"
+        ? "bg-white/92 border-black/10 text-neutral-900 shadow-sm"
         : "bg-black/58 border-white/10 text-white shadow-sm";
 
-    const nameTextClass = "text-white";
+    const nameTextClass = isLight ? "text-neutral-900" : "text-white";
 
     const menuBtnClass = isLight
         ? "bg-white/92 border-black/10 text-black/85 hover:bg-white"
