@@ -50,23 +50,40 @@ function formatTime(iso?: string) {
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-function parseReplyBody(body: string): { quote: string | null; main: string } {
-    if (!body) return { quote: null, main: "" };
+type ParsedReplyBody = {
+    quote: string | null;
+    quoteMessageId: string | null;
+    main: string;
+};
+
+function parseReplyBody(body: string): ParsedReplyBody {
+    if (!body) return { quote: null, quoteMessageId: null, main: "" };
 
     const trimmed = body.trimStart();
-    if (!trimmed.startsWith("↪")) return { quote: null, main: body };
-
-    const parts = trimmed.split(/\n\s*\n/);
-    if (parts.length <= 1) {
-        const firstLine = trimmed.split("\n")[0] || trimmed;
-        const q = firstLine.replace(/^↪\s*/, "").replace(/^Reply:\s*/i, "").replace(/^Reply to:\s*/i, "");
-        return { quote: q.trim() || null, main: trimmed.replace(firstLine, "").trim() };
+    if (!trimmed.startsWith("↪")) {
+        return { quote: null, quoteMessageId: null, main: body };
     }
 
+    const parts = trimmed.split(/\n\s*\n/);
     const header = parts[0] || "";
-    const q = header.replace(/^↪\s*/, "").replace(/^Reply:\s*/i, "").replace(/^Reply to:\s*/i, "").trim();
-    const main = parts.slice(1).join("\n\n");
-    return { quote: q || null, main };
+    const main = parts.length > 1 ? parts.slice(1).join("\n\n") : trimmed.replace(header, "").trim();
+
+    let rest = header.replace(/^↪\s*/, "").trim();
+    let quoteMessageId: string | null = null;
+
+    const idMatch = rest.match(/^\[msg:([^[\]\s]+)\]\s*/i);
+    if (idMatch?.[1]) {
+        quoteMessageId = String(idMatch[1]).trim();
+        rest = rest.slice(idMatch[0].length).trim();
+    }
+
+    rest = rest.replace(/^Reply:\s*/i, "").replace(/^Reply to:\s*/i, "").trim();
+
+    return {
+        quote: rest || null,
+        quoteMessageId,
+        main,
+    };
 }
 
 function collapseWs(s: string) {
@@ -112,6 +129,7 @@ type ChatCacheEntry = {
     profilesById: Record<string, Profile>;
     meProfile: Profile | null;
 };
+
 const CHAT_CACHE = new Map<string, ChatCacheEntry>();
 const CACHE_MAX = 8;
 
@@ -173,6 +191,47 @@ function EmojiPickerPopover({
     );
 }
 
+function normalizeHref(raw: string) {
+    const s = String(raw || "").trim();
+    if (!s) return "";
+    if (/^https?:\/\//i.test(s)) return s;
+    if (/^www\./i.test(s)) return `https://${s}`;
+    return s;
+}
+
+function renderTextWithLinks(text: string, isLight: boolean) {
+    const input = String(text || "");
+    if (!input) return null;
+
+    const regex = /((?:https?:\/\/|www\.)[^\s<]+[^\s<.,:;"')\]\}])/gi;
+    const parts = input.split(regex);
+
+    return parts.map((part, idx) => {
+        if (!part) return null;
+
+        if (regex.test(part)) {
+            const href = normalizeHref(part);
+            return (
+                <a
+                    key={`link-${idx}`}
+                    href={href}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className={
+                        "underline break-all transition " +
+                        (isLight ? "text-[#2563eb] hover:text-[#1d4ed8]" : "text-[#7dd3fc] hover:text-[#bae6fd]")
+                    }
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    {part}
+                </a>
+            );
+        }
+
+        return <React.Fragment key={`txt-${idx}`}>{part}</React.Fragment>;
+    });
+}
+
 type MessageCardProps = {
     msg: Msg;
     mine: boolean;
@@ -185,6 +244,8 @@ type MessageCardProps = {
     canEdit: boolean;
     onUpdateMessage: (messageId: string, newBody: string) => Promise<void>;
     onDeleteMessage: (messageId: string) => Promise<void>;
+    onJumpToMessage: (messageId: string) => void;
+    highlighted: boolean;
 };
 
 function MessageCardInner({
@@ -199,6 +260,8 @@ function MessageCardInner({
     canEdit,
     onUpdateMessage,
     onDeleteMessage,
+    onJumpToMessage,
+    highlighted,
 }: MessageCardProps) {
     const name = mine ? "You" : msg.profile?.full_name || "Participant";
     const time = formatTime(msg.created_at);
@@ -277,22 +340,27 @@ function MessageCardInner({
     const menuCls = isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10";
 
     const bubbleCls =
-        "rounded-2xl px-3 py-2 text-[13px] leading-snug border whitespace-pre-wrap break-words " +
+        "rounded-2xl px-3 py-2 text-[13px] leading-snug border whitespace-pre-wrap break-words transition " +
         (mine
             ? isLight
                 ? "bg-emerald-500/15 border-emerald-600/25 text-black/85"
                 : "bg-emerald-500/15 border-emerald-400/20 text-white/90"
             : isLight
                 ? "bg-black/5 border-black/10 text-black/80"
-                : "bg-white/5 border-white/10 text-white/85");
+                : "bg-white/5 border-white/10 text-white/85") +
+        (highlighted
+            ? isLight
+                ? " ring-2 ring-[#4CA0FF]/55"
+                : " ring-2 ring-emerald-400/55"
+            : "");
 
     const quoteBoxCls = isLight
-        ? "bg-white/70 border border-black/10 text-black/70"
-        : "bg-black/25 border border-white/10 text-white/70";
+        ? "bg-white/70 border border-black/10 text-black/70 hover:bg-white/90"
+        : "bg-black/25 border border-white/10 text-white/70 hover:bg-black/35";
 
     const reactionPillBase = isLight
-        ? "px-2 py-1 rounded-xl bg-black/5 border border-black/10 text-[12px] text-black/70 flex items-center gap-1 transition"
-        : "px-2 py-1 rounded-xl bg-white/5 border border-white/10 text-[12px] text-white/80 flex items-center gap-1 transition";
+        ? "px-2 py-1 rounded-xl bg-black/5 border border-black/10 text-[12px] text-black/70 flex items-center gap-1.5 transition"
+        : "px-2 py-1 rounded-xl bg-white/5 border border-white/10 text-[12px] text-white/80 flex items-center gap-1.5 transition";
 
     const reactionPillMine = isLight
         ? "ring-1 ring-emerald-400/60 border-emerald-500/40"
@@ -304,7 +372,7 @@ function MessageCardInner({
         ? "w-full min-h-[42px] max-h-[180px] rounded-xl resize-none px-3 py-2 text-[13px] outline-none bg-white border border-black/10 text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
         : "w-full min-h-[42px] max-h-[180px] rounded-xl resize-none px-3 py-2 text-[13px] outline-none bg-[#0B1220]/70 border border-white/10 text-white/85 placeholder:text-white/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500";
 
-    const { quote, main } = useMemo(() => parseReplyBody(msg.body), [msg.body]);
+    const { quote, quoteMessageId, main } = useMemo(() => parseReplyBody(msg.body), [msg.body]);
 
     const saveEdit = async () => {
         const next = draft.trim();
@@ -380,7 +448,7 @@ function MessageCardInner({
                                     createPortal(
                                         <div
                                             ref={reactionMenuRef}
-                                            className={"fixed z-[99999] rounded-2xl px-3 py-2 flex gap-2 text-xl shadow-xl " + menuCls}
+                                            className={"fixed z-[99999] rounded-2xl px-3 py-2 flex gap-2 text-[26px] shadow-xl " + menuCls}
                                             style={{
                                                 top: reactionMenuPos.top,
                                                 left: reactionMenuPos.left,
@@ -397,7 +465,7 @@ function MessageCardInner({
                                                             setOpenReactions(false);
                                                         }}
                                                         className={
-                                                            "hover:scale-[1.06] transition " +
+                                                            "hover:scale-[1.06] transition leading-none " +
                                                             (isMine
                                                                 ? isLight
                                                                     ? "drop-shadow-[0_0_0.6rem_rgba(16,185,129,0.35)]"
@@ -407,7 +475,7 @@ function MessageCardInner({
                                                         title={isMine ? `Remove ${e}` : e}
                                                         type="button"
                                                     >
-                                                        {e}
+                                                        <span className="inline-block align-middle">{e}</span>
                                                     </button>
                                                 );
                                             })}
@@ -444,12 +512,29 @@ function MessageCardInner({
                 {!isEditing ? (
                     <div className={bubbleCls}>
                         {quote && (
-                            <div className={"mb-2 rounded-xl px-3 py-2 text-[12px] leading-snug " + quoteBoxCls}>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (quoteMessageId) onJumpToMessage(quoteMessageId);
+                                }}
+                                disabled={!quoteMessageId}
+                                className={
+                                    "mb-2 w-full rounded-xl px-3 py-2 text-left text-[12px] leading-snug transition " +
+                                    quoteBoxCls +
+                                    (quoteMessageId ? " cursor-pointer" : " cursor-default")
+                                }
+                                title={quoteMessageId ? "Jump to quoted message" : "Quoted message"}
+                            >
                                 <div className="text-[10px] opacity-75 mb-1">Reply</div>
-                                <div className="whitespace-pre-wrap break-words">{quote}</div>
-                            </div>
+                                <div className="whitespace-pre-wrap break-words">
+                                    {renderTextWithLinks(quote, isLight)}
+                                </div>
+                            </button>
                         )}
-                        <div className="whitespace-pre-wrap break-words">{main}</div>
+
+                        <div className="whitespace-pre-wrap break-words">
+                            {renderTextWithLinks(main, isLight)}
+                        </div>
                     </div>
                 ) : (
                     <div className={bubbleCls}>
@@ -524,7 +609,7 @@ function MessageCardInner({
                                     }}
                                     title={"Click — who reacted • Right-click — toggle"}
                                 >
-                                    <span>{emoji}</span>
+                                    <span className="text-[16px] leading-none">{emoji}</span>
                                     <span className={reactionCountCls}>{count}</span>
                                 </button>
                             );
@@ -556,7 +641,9 @@ const areMessageCardPropsEqual = (prev: MessageCardProps, next: MessageCardProps
         prev.onToggleReaction === next.onToggleReaction &&
         prev.onOpenReactionDetails === next.onOpenReactionDetails &&
         prev.onUpdateMessage === next.onUpdateMessage &&
-        prev.onDeleteMessage === next.onDeleteMessage
+        prev.onDeleteMessage === next.onDeleteMessage &&
+        prev.onJumpToMessage === next.onJumpToMessage &&
+        prev.highlighted === next.highlighted
     );
 };
 
@@ -616,10 +703,13 @@ export function ChatPanel({
     const [text, setText] = useState("");
     const [loading, setLoading] = useState(true);
     const [replyTo, setReplyTo] = useState<Msg | null>(null);
+    const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
 
     const bottomRef = useRef<HTMLDivElement | null>(null);
     const listRef = useRef<HTMLDivElement | null>(null);
     const pollingRef = useRef<number | null>(null);
+    const messageElementRefs = useRef<Record<string, HTMLDivElement | null>>({});
+    const highlightTimerRef = useRef<number | null>(null);
 
     const aliveRef = useRef(true);
     useEffect(() => {
@@ -670,6 +760,30 @@ export function ChatPanel({
     const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
         bottomRef.current?.scrollIntoView({ behavior });
     };
+
+    const jumpToMessage = useCallback((messageId: string) => {
+        const el = messageElementRefs.current[messageId];
+        if (!el) return;
+
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        setHighlightedMessageId(messageId);
+
+        if (highlightTimerRef.current) {
+            window.clearTimeout(highlightTimerRef.current);
+        }
+
+        highlightTimerRef.current = window.setTimeout(() => {
+            setHighlightedMessageId((prev) => (prev === messageId ? null : prev));
+        }, 1800);
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            if (highlightTimerRef.current) {
+                window.clearTimeout(highlightTimerRef.current);
+            }
+        };
+    }, []);
 
     useEffect(() => {
         if (!sessionId) return;
@@ -1480,8 +1594,9 @@ export function ChatPanel({
         if (!raw || !userId || !sessionId) return;
 
         const replyQuote = replyTo ? quotePreviewForReply(replyTo.body, 240) : "";
+        const replyName = replyTo?.profile?.full_name || "Participant";
         const replyHeader = replyTo
-            ? `↪ ${replyTo.profile?.full_name || "Participant"}: ${replyQuote || "[message]"}`
+            ? `↪ [msg:${replyTo.id}] ${replyName}: ${replyQuote || "[message]"}`
             : null;
 
         const composed = replyHeader ? `${replyHeader}\n\n${raw}` : raw;
@@ -1789,8 +1904,7 @@ export function ChatPanel({
                                 <div className={modalTextSecondary + " text-[12px]"}>
                                     {reactionDetails.loading
                                         ? "Loading…"
-                                        : `${reactionDetails.userIds.length} ${reactionDetails.userIds.length === 1 ? "person" : "people"
-                                        } reacted`}
+                                        : `${reactionDetails.userIds.length} ${reactionDetails.userIds.length === 1 ? "person" : "people"} reacted`}
                                 </div>
 
                                 {canToggleInModal && (
@@ -1923,20 +2037,29 @@ export function ChatPanel({
                     const canEdit = mine && !m.id.startsWith("optimistic-");
 
                     return (
-                        <MessageCard
+                        <div
                             key={m.id}
-                            msg={m}
-                            mine={mine}
-                            onReply={(msg) => setReplyTo(msg)}
-                            reactionsCounts={reactions[m.id]}
-                            myReactions={myReactions[m.id]}
-                            onToggleReaction={toggleReaction}
-                            onOpenReactionDetails={openReactionDetails}
-                            isLight={isLight}
-                            canEdit={canEdit}
-                            onUpdateMessage={updateMessage}
-                            onDeleteMessage={deleteMessage}
-                        />
+                            ref={(el) => {
+                                messageElementRefs.current[m.id] = el;
+                            }}
+                            data-message-id={m.id}
+                        >
+                            <MessageCard
+                                msg={m}
+                                mine={mine}
+                                onReply={(msg) => setReplyTo(msg)}
+                                reactionsCounts={reactions[m.id]}
+                                myReactions={myReactions[m.id]}
+                                onToggleReaction={toggleReaction}
+                                onOpenReactionDetails={openReactionDetails}
+                                isLight={isLight}
+                                canEdit={canEdit}
+                                onUpdateMessage={updateMessage}
+                                onDeleteMessage={deleteMessage}
+                                onJumpToMessage={jumpToMessage}
+                                highlighted={highlightedMessageId === m.id}
+                            />
+                        </div>
                     );
                 })}
 
