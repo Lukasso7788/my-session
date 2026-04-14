@@ -14,7 +14,7 @@ function isInAppBrowser() {
 
 function getPasswordResetRedirectUrl() {
   if (typeof window === "undefined") {
-    return "https://mysession.club/update-password";
+    return "https://www.mysession.club/update-password";
   }
 
   const host = window.location.hostname.toLowerCase();
@@ -24,15 +24,26 @@ function getPasswordResetRedirectUrl() {
     return `${window.location.origin}/update-password`;
   }
 
-  return "https://mysession.club/update-password";
+  return "https://www.mysession.club/update-password";
 }
 
-function getOauthRedirectUrl() {
+function getOauthRedirectUrl(redirectPath?: string) {
+  const safeRedirect =
+    redirectPath && redirectPath.startsWith("/") && !redirectPath.startsWith("//")
+      ? redirectPath
+      : "/sessions";
+
   if (typeof window === "undefined") {
-    return "https://mysession.club/auth/callback";
+    return `https://www.mysession.club/auth/callback?redirect=${encodeURIComponent(
+      safeRedirect
+    )}`;
   }
 
-  return `${window.location.origin}/auth/callback`;
+  const host = window.location.hostname.toLowerCase();
+  const isLocalhost = host === "localhost" || host === "127.0.0.1";
+  const base = isLocalhost ? window.location.origin : "https://www.mysession.club";
+
+  return `${base}/auth/callback?redirect=${encodeURIComponent(safeRedirect)}`;
 }
 
 export default function LoginPage() {
@@ -66,7 +77,9 @@ export default function LoginPage() {
         if (data.user) {
           navigate(redirectAfterLogin, { replace: true });
         }
-      } catch { }
+      } catch {
+        // ignore
+      }
     })();
   }, [navigate, redirectAfterLogin]);
 
@@ -136,7 +149,7 @@ export default function LoginPage() {
     try {
       setOauthLoading("google");
 
-      const redirectTo = getOauthRedirectUrl();
+      const redirectTo = getOauthRedirectUrl(redirectAfterLogin);
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
@@ -161,7 +174,7 @@ export default function LoginPage() {
     try {
       setOauthLoading("facebook");
 
-      const redirectTo = getOauthRedirectUrl();
+      const redirectTo = getOauthRedirectUrl(redirectAfterLogin);
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "facebook",
@@ -193,22 +206,23 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-white text-gray-900 flex flex-col font-inter">
+    <div className="flex min-h-screen flex-col bg-white font-inter text-gray-900">
       <HeaderLite />
 
-      <div className="flex flex-col items-center w-full pt-16 px-4">
-        <div className="w-full max-w-md mx-auto">
-          <h2 className="text-center text-[32px] font-bold mb-6">Log in</h2>
+      <div className="flex w-full flex-col items-center px-4 pt-16">
+        <div className="mx-auto w-full max-w-md">
+          <h2 className="mb-6 text-center text-[32px] font-bold">Log in</h2>
 
           {inApp && (
             <div className="mb-6 rounded-[16px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              <div className="font-semibold mb-1">Social login can be blocked here</div>
+              <div className="mb-1 font-semibold">Social login can be blocked here</div>
               <div className="opacity-90">
-                You’re likely in an in-app browser (Discord/Telegram/etc). Open this page in Chrome/Safari to log in.
+                You’re likely in an in-app browser (Discord/Telegram/etc). Open this
+                page in Chrome/Safari to log in.
               </div>
               <button
                 onClick={openInBrowserHint}
-                className="mt-3 inline-flex items-center gap-2 text-amber-900 font-semibold hover:underline"
+                className="mt-3 inline-flex items-center gap-2 font-semibold text-amber-900 hover:underline"
                 type="button"
               >
                 <ExternalLink size={16} /> Copy link / open in browser
@@ -216,11 +230,11 @@ export default function LoginPage() {
             </div>
           )}
 
-          <label className="block text-sm mb-1">Email address</label>
+          <label className="mb-1 block text-sm">Email address</label>
           <input
             type="email"
             placeholder="Enter your email"
-            className="w-full border border-gray-300 rounded-[16px] px-4 py-3 mb-4 bg-white focus:ring-2 focus:ring-[#2F2F2F] outline-none"
+            className="mb-4 w-full rounded-[16px] border border-gray-300 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-[#2F2F2F]"
             value={email}
             onChange={(e) => {
               setEmail(e.target.value);
@@ -231,12 +245,12 @@ export default function LoginPage() {
             }}
           />
 
-          <label className="block text-sm mb-1">Your password</label>
+          <label className="mb-1 block text-sm">Your password</label>
           <div className="relative mb-3">
             <input
               type={showPass ? "text" : "password"}
               placeholder="Enter your password here"
-              className="w-full border border-gray-300 rounded-[16px] px-4 py-3 bg-white focus:ring-2 focus:ring-[#2F2F2F] outline-none"
+              className="w-full rounded-[16px] border border-gray-300 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-[#2F2F2F]"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               onKeyDown={(e) => {
@@ -272,7 +286,7 @@ export default function LoginPage() {
           <button
             onClick={handleLogin}
             disabled={loading}
-            className="w-full bg-[#2F2F2F] text-white py-3 rounded-[16px] text-[18px] font-semibold hover:bg-[#1F1F1F] transition mb-3 disabled:opacity-60"
+            className="mb-3 w-full rounded-[16px] bg-[#2F2F2F] py-3 text-[18px] font-semibold text-white transition hover:bg-[#1F1F1F] disabled:opacity-60"
           >
             {loading ? "Loading…" : "Login"}
           </button>
@@ -280,7 +294,7 @@ export default function LoginPage() {
           <button
             onClick={loginWithGoogle}
             disabled={oauthLoading !== null}
-            className="w-full py-3 border border-gray-300 rounded-[16px] flex items-center justify-center gap-3 mb-3 hover:bg-gray-50 transition text-[18px] font-semibold disabled:opacity-60"
+            className="mb-3 flex w-full items-center justify-center gap-3 rounded-[16px] border border-gray-300 py-3 text-[18px] font-semibold transition hover:bg-gray-50 disabled:opacity-60"
           >
             <img
               src="https://www.svgrepo.com/show/475656/google-color.svg"
@@ -293,20 +307,22 @@ export default function LoginPage() {
           <button
             onClick={loginWithFacebook}
             disabled={oauthLoading !== null}
-            className="w-full py-3 rounded-[16px] flex items-center justify-center gap-3 mb-3 bg-[#1877F2] text-white hover:bg-[#0f66d3] transition text-[18px] font-semibold disabled:opacity-60"
+            className="mb-3 flex w-full items-center justify-center gap-3 rounded-[16px] bg-[#1877F2] py-3 text-[18px] font-semibold text-white transition hover:bg-[#0f66d3] disabled:opacity-60"
           >
             <img
               src="/icons/facebook.svg"
-              className="w-5 h-5"
+              className="h-5 w-5"
               alt="Facebook icon"
             />
-            {oauthLoading === "facebook" ? "Opening Facebook…" : "Continue with Facebook"}
+            {oauthLoading === "facebook"
+              ? "Opening Facebook…"
+              : "Continue with Facebook"}
           </button>
 
-          <p className="text-center text-sm text-gray-700 mt-6">
+          <p className="mt-6 text-center text-sm text-gray-700">
             You don’t have an account?{" "}
             <span
-              className="text-blue-600 cursor-pointer hover:underline"
+              className="cursor-pointer text-blue-600 hover:underline"
               onClick={() => navigate("/register")}
             >
               Sign up

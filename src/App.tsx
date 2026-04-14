@@ -143,7 +143,7 @@ export default function App() {
           <Route path="/profile/:id" element={<PublicProfilePage />} />
           <Route path="/focus-plan" element={<FocusPlanPage />} />
 
-          {/* ✅ UI Playground */}
+          {/* UI Playground */}
           <Route path="/ui-playground" element={<SessionCardsPlayground />} />
 
           {/* Legal */}
@@ -154,11 +154,11 @@ export default function App() {
           <Route path="/data-deletion" element={<DataDeletionPage />} />
           <Route path="/rules" element={<RulesPage />} />
 
-          {/* ✅ Blog routes — safe placeholders for now */}
+          {/* Blog placeholders */}
           <Route path="/blog" element={<BlogIndexPlaceholder />} />
           <Route path="/blog/:slug" element={<BlogPostPlaceholder />} />
 
-          {/* ✅ Canonical SEO pages */}
+          {/* Canonical SEO pages */}
           <Route path="/body-doubling" element={<BodyDoublingPage />} />
           <Route path="/online-coworking" element={<OnlineCoworkingPage />} />
           <Route
@@ -168,12 +168,10 @@ export default function App() {
           <Route path="/silent-coworking" element={<SilentCoworkingPage />} />
           <Route path="/adhd-productivity" element={<AdhdProductivityPage />} />
 
-          {/* ⏸ AI assistant page is postponed for now.
-              Keep route alive to avoid 404s from existing links/bookmarks.
-              Temporary behavior: /ai-assistant -> Sessions */}
+          {/* Temporary AI assistant route */}
           <Route path="/ai-assistant" element={<SessionsPage />} />
 
-          {/* ✅ 404 */}
+          {/* 404 for layout routes */}
           <Route path="*" element={<NotFoundPage />} />
         </Route>
 
@@ -185,25 +183,9 @@ export default function App() {
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/update-password" element={<UpdatePasswordPage />} />
 
-        {/* OAuth */}
-        <Route
-          path="/auth/callback"
-          element={
-            <>
-              {console.log("[ROUTER] Matched /auth/callback")}
-              <AuthCallback />
-            </>
-          }
-        />
-        <Route
-          path="/auth/callback/"
-          element={
-            <>
-              {console.log("[ROUTER] Matched /auth/callback/")}
-              <AuthCallback />
-            </>
-          }
-        />
+        {/* OAuth callback routes */}
+        <Route path="/auth/callback" element={<AuthCallback />} />
+        <Route path="/auth/callback/" element={<AuthCallback />} />
       </Routes>
     </CreateSessionModalProvider>
   );

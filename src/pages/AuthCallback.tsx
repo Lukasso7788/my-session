@@ -8,41 +8,60 @@ export const AuthCallback = () => {
     useEffect(() => {
         let mounted = true;
 
-        const handleAuthRedirect = async () => {
-            // 1. Сначала проверяем, не обработал ли Supabase сессию уже сам (это часто бывает быстрее рендера)
-            const { data: { session } } = await supabase.auth.getSession();
+        const {
+            data: { subscription },
+        } = supabase.auth.onAuthStateChange((event, session) => {
+            if (!mounted) return;
 
-            if (session && mounted) {
-                // Сессия уже активна — мгновенный редирект
+            if (event === 'SIGNED_IN' || session) {
+                navigate('/sessions', { replace: true });
+            }
+        });
+
+        const handleAuthRedirect = async () => {
+            const {
+                data: { session },
+            } = await supabase.auth.getSession();
+
+            if (!mounted) return;
+
+            if (session) {
                 navigate('/sessions', { replace: true });
                 return;
             }
 
-            // 2. Если сессии еще нет (Supabase в процессе обработки URL), слушаем событие входа
-            const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-                if ((event === 'SIGNED_IN' || session) && mounted) {
-                    navigate('/sessions', { replace: true });
-                }
-            });
+            // fallback: если по какой-то причине сессия не появилась сразу,
+            // через небольшую паузу ещё раз проверим
+            setTimeout(async () => {
+                if (!mounted) return;
 
-            return () => {
-                subscription.unsubscribe();
-            };
+                const {
+                    data: { session: retrySession },
+                } = await supabase.auth.getSession();
+
+                if (!mounted) return;
+
+                if (retrySession) {
+                    navigate('/sessions', { replace: true });
+                } else {
+                    navigate('/login', { replace: true });
+                }
+            }, 2500);
         };
 
         handleAuthRedirect();
 
-        // Предотвращаем утечку памяти, если компонент размонтируется
         return () => {
             mounted = false;
+            subscription.unsubscribe();
         };
     }, [navigate]);
 
     return (
-        <div className="flex items-center justify-center min-h-screen bg-gray-50 text-gray-900">
+        <div className="flex min-h-screen items-center justify-center bg-gray-50 text-gray-900">
             <div className="text-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                <h2 className="text-xl font-semibold mb-2">Завершаем вход...</h2>
+                <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600"></div>
+                <h2 className="mb-2 text-xl font-semibold">Завершаем вход...</h2>
                 <p className="text-gray-500">Подождите, мы перенаправляем вас в приложение.</p>
             </div>
         </div>
