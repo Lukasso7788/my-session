@@ -1036,6 +1036,17 @@ export function RoomPageLiveKit() {
   };
   const [localAvatarUrl, setLocalAvatarUrl] = useState<string>("");
   const accessTokenRef = useRef<string>("");
+  useEffect(() => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      accessTokenRef.current = String(session?.access_token || "").trim();
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
 
   const [selectedUser, setSelectedUser] = useState<HostProfile | null>(null);
   const [tileMenuAnchor, setTileMenuAnchor] = useState<{
@@ -2779,6 +2790,33 @@ export function RoomPageLiveKit() {
   const lkServerUrl = String((import.meta as any)?.env?.VITE_LIVEKIT_URL || "").trim();
   const tokenEndpoint = String((import.meta as any)?.env?.VITE_LIVEKIT_TOKEN_ENDPOINT || "/api/livekit/token").trim();
   const adminEndpoint = String((import.meta as any)?.env?.VITE_LIVEKIT_ADMIN_ENDPOINT || "/api/livekit/admin").trim();
+  const getFreshAccessToken = async () => {
+    try {
+      const { data } = await supabase.auth.getSession();
+      let token = String(data?.session?.access_token || "").trim();
+
+      if (token) {
+        accessTokenRef.current = token;
+        return token;
+      }
+
+      const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+
+      if (refreshError) {
+        throw refreshError;
+      }
+
+      token = String(refreshed?.session?.access_token || "").trim();
+      if (token) {
+        accessTokenRef.current = token;
+        return token;
+      }
+
+      throw new Error("No active Supabase access token");
+    } catch (e: any) {
+      throw new Error(String(e?.message || e || "Failed to refresh auth session"));
+    }
+  };
 
   // token
   const [lkToken, setLkToken] = useState<string>("");
@@ -4319,11 +4357,15 @@ export function RoomPageLiveKit() {
   };
 
   // admin endpoint
-  // admin endpoint
   const callAdmin = async (body: Record<string, unknown>) => {
+    const token = await getFreshAccessToken();
+
     const res = await fetch(adminEndpoint, {
       method: "POST",
-      headers: await buildAuthHeaders(),
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify({
         ...body,
         sessionId: session?.id,
