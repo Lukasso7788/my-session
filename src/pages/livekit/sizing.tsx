@@ -46,21 +46,40 @@ function computeCols(count: number, containerWidth: number) {
     if (count === 4) return 2;
 
     // 3 participants:
-    // - when the container is narrow desktop/tablet-ish, keep 2 + 1
-    // - when the container is wide enough, allow 3 columns so tiles can stretch wider
+    // - narrow desktop / tablet-ish -> keep 2 + 1
+    // - wider desktop -> allow 3 columns
     if (count === 3) {
         if (!isDesktop) return 2;
         return w >= 1280 ? 3 : 2;
     }
 
-    // 5–9 participants on desktop: keep 3 columns as the stable default
-    if (isDesktop && count >= 5 && count <= 9) return 3;
-
-    // fallback
+    // 5–6 participants
     if (count === 5) return w >= 900 ? 3 : 2;
     if (count === 6) return w >= 780 ? 3 : 2;
 
-    return w >= 1400 ? 4 : 3;
+    // 7–9 participants:
+    // default stable desktop layout = 3 columns
+    // but if the container is really wide, allow 4
+    if (count >= 7 && count <= 9) {
+        if (!isDesktop) return 2;
+        return w >= 1380 ? 4 : 3;
+    }
+
+    // 10–12 participants:
+    // on laptop-ish desktop widths with side panel closed,
+    // 4 columns usually distribute much better than 3x4
+    if (count >= 10 && count <= 12) {
+        if (!isDesktop) return 3;
+        return w >= 1080 ? 4 : 3;
+    }
+
+    // 13+ participants
+    if (count >= 13) {
+        if (!isDesktop) return 3;
+        return w >= 1320 ? 5 : 4;
+    }
+
+    return 3;
 }
 
 function calcMaxGridWidthPx(params: {

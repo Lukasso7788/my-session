@@ -136,13 +136,13 @@ function MicBadgeWithBarVisualizer({
 
     const micGlowClass = speaking
         ? isLight
-            ? "shadow-[0_0_1rem_rgba(76,160,255,0.35)]"
-            : "shadow-[0_0_1rem_rgba(52,211,153,0.35)]"
+            ? "shadow-[0_0_0.8rem_rgba(76,160,255,0.28)]"
+            : "shadow-[0_0_0.8rem_rgba(52,211,153,0.28)]"
         : "";
 
     return (
         <div
-            className={`pointer-events-auto relative flex h-[2rem] min-w-[2.45rem] shrink-0 items-center justify-center overflow-hidden rounded-[0.8rem] border px-[0.35rem] backdrop-blur-md ${badgeBaseClass} ${micGlowClass}`}
+            className={`pointer-events-auto relative flex h-6 min-w-6 shrink-0 items-center justify-center overflow-hidden rounded-[10px] border p-1 backdrop-blur-md ${badgeBaseClass} ${micGlowClass}`}
             title={micMuted ? "Microphone off" : speaking ? "Speaking" : "Microphone on"}
             aria-label={micMuted ? "Microphone off" : speaking ? "Speaking" : "Microphone on"}
         >
@@ -153,7 +153,7 @@ function MicBadgeWithBarVisualizer({
                             }`}
                     />
 
-                    <div className="absolute inset-0 overflow-hidden rounded-[0.75rem]">
+                    <div className="absolute inset-0 overflow-hidden rounded-[9px]">
                         <BarVisualizer
                             track={audioTrack}
                             barCount={1}
@@ -177,7 +177,7 @@ function MicBadgeWithBarVisualizer({
                 <Icon
                     name={micMuted ? "mic-off" : "mic-on"}
                     theme={micIconTheme}
-                    className="h-[1rem] w-[1rem]"
+                    className="h-4 w-4"
                 />
             </div>
         </div>
@@ -401,10 +401,10 @@ function VideoTileInner({
                             </div>
                         )}
 
-                        <div className="mt-[0.7rem] text-[0.76rem] opacity-75">Camera off</div>
+                        <div className="mt-2 text-[11px] opacity-75">Camera off</div>
 
                         {debugSizing && sizeText ? (
-                            <div className="text-[0.7rem] opacity-70 mt-[0.35rem]">{sizeText}</div>
+                            <div className="text-[10px] opacity-70 mt-1">{sizeText}</div>
                         ) : null}
                     </div>
                 )}
@@ -412,7 +412,7 @@ function VideoTileInner({
                 {debugSizing && videoTrack && sizeText ? (
                     <div
                         className={
-                            "absolute left-2 top-2 px-2 py-1 rounded-lg text-[0.7rem] border " +
+                            "absolute left-2 top-2 px-2 py-1 rounded-lg text-[10px] border " +
                             (isLight
                                 ? "bg-white/80 text-black border-black/10"
                                 : "bg-black/50 text-white border-white/10")
@@ -426,7 +426,7 @@ function VideoTileInner({
                 {showBadge ? (
                     <div
                         className={
-                            "absolute right-2 top-2 px-2 py-1 rounded-lg text-[0.7rem] font-semibold " +
+                            "absolute right-2 top-2 px-2 py-1 rounded-lg text-[10px] font-semibold " +
                             (isLight
                                 ? "bg-amber-200/80 text-amber-900"
                                 : "bg-amber-400/20 text-amber-200 border border-amber-300/20")
@@ -453,13 +453,13 @@ function VideoTileInner({
                 ) : null}
 
                 {showActions ? (
-                    <div className="absolute right-2 bottom-[3.35rem] z-10 flex max-w-[92%] flex-wrap justify-end gap-1">
+                    <div className="absolute right-2 bottom-10 z-10 flex max-w-[92%] flex-wrap justify-end gap-1">
                         {hostActions?.canMuteMic && hostActions?.onToggleMuteMic ? (
                             <button
                                 onClick={hostActions.onToggleMuteMic}
                                 disabled={hostActions.busy}
                                 className={
-                                    "px-2 py-1 rounded-lg text-[0.7rem] border flex items-center gap-1 " +
+                                    "px-2 py-1 rounded-lg text-[11px] border flex items-center gap-1 " +
                                     (isLight
                                         ? "bg-white/90 text-black border-black/10 disabled:opacity-50"
                                         : "bg-black/60 text-white border-white/10 disabled:opacity-50")
@@ -480,7 +480,7 @@ function VideoTileInner({
                                 onClick={hostActions.onToggleMuteCam}
                                 disabled={hostActions.busy}
                                 className={
-                                    "px-2 py-1 rounded-lg text-[0.7rem] border flex items-center gap-1 " +
+                                    "px-2 py-1 rounded-lg text-[11px] border flex items-center gap-1 " +
                                     (isLight
                                         ? "bg-white/90 text-black border-black/10 disabled:opacity-50"
                                         : "bg-black/60 text-white border-white/10 disabled:opacity-50")
@@ -500,7 +500,7 @@ function VideoTileInner({
                             <button
                                 onClick={hostActions.onKick}
                                 disabled={hostActions.busy}
-                                className="px-2 py-1 rounded-lg text-[0.7rem] bg-red-600/90 hover:bg-red-700 text-white disabled:opacity-50"
+                                className="px-2 py-1 rounded-lg text-[11px] bg-red-600/90 hover:bg-red-700 text-white disabled:opacity-50"
                                 title="Remove participant from room"
                             >
                                 Kick
@@ -518,13 +518,13 @@ function VideoTileInner({
                 />
             </div>
 
-            <div className="pointer-events-none absolute inset-x-[0.55rem] bottom-[0.55rem] z-[12] flex min-w-0 items-end justify-between gap-[0.45rem]">
+            <div className="pointer-events-none absolute inset-x-[0.4rem] bottom-[0.4rem] z-[12] flex min-w-0 items-end justify-between gap-[0.35rem]">
                 <div
-                    className={`pointer-events-auto min-w-0 max-w-full rounded-[1rem] border px-[0.72rem] py-[0.52rem] backdrop-blur-md ${namePillClass}`}
+                    className={`pointer-events-auto min-w-0 max-w-full rounded-[12px] border px-2 py-1 backdrop-blur-md ${namePillClass}`}
                 >
-                    <div className="flex min-w-0 items-center gap-[0.45rem]">
+                    <div className="flex min-w-0 items-center gap-[0.35rem]">
                         <span
-                            className={`min-w-0 truncate text-[clamp(0.76rem,1.4vw,0.9rem)] font-semibold leading-none ${nameTextClass}`}
+                            className={`min-w-0 truncate text-[12px] font-regular leading-none ${nameTextClass}`}
                         >
                             {label || "User"}
                         </span>
