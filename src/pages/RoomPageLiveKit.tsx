@@ -6707,112 +6707,108 @@ export function RoomPageLiveKit() {
                     </>
                   )}
 
-                  {canModerateTarget && (
-                    <>
-                      <div className={isLight ? "border-t border-black/10" : "border-t border-white/10"} />
-
-                      <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>
-                        Moderation
-                      </div>
-
-                      {canMuteMic && (
-                        <button
-                          type="button"
-                          disabled={micBusy}
-                          onClick={() => {
-                            const trackSid = String(targetTile.micTrackSid || "").trim();
-                            if (!targetIdentity || !trackSid) return;
-
-                            closeTileMenu();
-                            void adminMuteRemoteTrack(targetTile.id, targetIdentity, trackSid);
-                          }}
-                        >
-                          Mute Mic
-                        </button>
-                      )}
-
-                      {canTurnOffCam && (
-                        <button
-                          type="button"
-                          disabled={camBusy}
-                          onClick={() => {
-                            const trackSid = String(targetTile.camTrackSid || "").trim();
-                            if (!targetIdentity || !trackSid) return;
-
-                            closeTileMenu();
-                            void adminTurnOffRemoteCamera(targetTile.id, targetIdentity, trackSid);
-                          }}
-                        >
-                          Turn camera off
-                        </button>
-                      )}
-                    </>
-                  )}
-
                   <>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        togglePin(targetTile.id);
-                        closeTileMenu();
-                      }}
-                      className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
-                        }`}
-                    >
-                      {isPinned ? "Unpin participant" : "Pin participant"}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        toggleHide(targetTile.id);
-                        closeTileMenu();
-                      }}
-                      className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
-                        }`}
-                    >
-                      {isHidden ? "Unhide participant" : "Hide participant"}
-                    </button>
-
-                    {!targetTile.isLocal && (
+                    {(canModerateTarget || true) && (
                       <>
+                        <div className={isLight ? "border-t border-black/10" : "border-t border-white/10"} />
+
+                        <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>
+                          Participant actions
+                        </div>
+
+                        {canMuteMic && (
+                          <button
+                            type="button"
+                            disabled={micBusy}
+                            onClick={() => {
+                              const trackSid = String(
+                                targetTile.remoteMicPubSid || targetTile.micTrackSid || ""
+                              ).trim();
+                              if (!targetIdentity || !trackSid) return;
+
+                              closeTileMenu();
+                              void adminMuteRemoteTrack(targetTile.id, targetIdentity, trackSid);
+                            }}
+                            className={`block w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                              }`}
+                          >
+                            Mute Mic
+                          </button>
+                        )}
+
+                        {canTurnOffCam && (
+                          <button
+                            type="button"
+                            disabled={camBusy}
+                            onClick={() => {
+                              const trackSid = String(targetTile.camTrackSid || "").trim();
+                              if (!targetIdentity || !trackSid) return;
+
+                              closeTileMenu();
+                              void adminTurnOffRemoteCamera(targetTile.id, targetIdentity, trackSid);
+                            }}
+                            className={`block w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                              }`}
+                          >
+                            Turn camera off
+                          </button>
+                        )}
+
                         <button
                           type="button"
                           onClick={() => {
-                            setReportTarget(targetTile);
-                            setReportReason("");
-                            setReportError("");
-                            setReportModalOpen(true);
+                            togglePin(targetTile.id);
                             closeTileMenu();
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                          className={`block w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
                             }`}
                         >
-                          Report participant
+                          {isPinned ? "Unpin participant" : "Pin participant"}
                         </button>
 
-                        {canModerateTarget && (
-                          <>
-                            <div className={isLight ? "border-t border-black/10" : "border-t border-white/10"} />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            toggleHide(targetTile.id);
+                            closeTileMenu();
+                          }}
+                          className={`block w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                            }`}
+                        >
+                          {isHidden ? "Unhide participant" : "Hide participant"}
+                        </button>
 
-                            <button
-                              type="button"
-                              disabled={kickBusy}
-                              onClick={async () => {
-                                if (!targetIdentity) return;
-                                await adminKickParticipant(
-                                  targetIdentity,
-                                  targetUserId || undefined,
-                                  targetTile.label || undefined
-                                );
-                                closeTileMenu();
-                              }}
-                              className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-red-600 hover:bg-red-50" : "text-red-300 hover:bg-red-500/10"
-                                }`}
-                            >
-                              Kick participant
-                            </button>
-                          </>
+                        {!targetTile.isLocal && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setReportTarget(targetTile);
+                              setReportReason("");
+                              setReportError("");
+                              setReportModalOpen(true);
+                              closeTileMenu();
+                            }}
+                            className={`block w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                              }`}
+                          >
+                            Report participant
+                          </button>
+                        )}
+
+                        {canModerateTarget && !targetTile.isLocal && (
+                          <button
+                            type="button"
+                            disabled={kickBusy}
+                            onClick={() => {
+                              if (!targetIdentity) return;
+                              closeTileMenu();
+                              void adminKickParticipant(targetTile.id, targetIdentity);
+                            }}
+                            className={`block w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-red-600 hover:bg-red-500/10" : "text-red-400 hover:bg-red-500/10"
+                              }`}
+                          >
+                            Kick participant
+                          </button>
                         )}
                       </>
                     )}
