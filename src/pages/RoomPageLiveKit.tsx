@@ -2439,8 +2439,8 @@ export function RoomPageLiveKit() {
 
     try {
       const pj = prejoinRef.current;
-      if (deviceTier === "weak") {
-        throw new Error("Background FX are disabled on weak/mobile devices for stability");
+      if (isMobileQuery || isTabletQuery) {
+        throw new Error("Background FX are disabled on mobile/tablet devices for stability");
       }
       if (!pj.videoEnabled) throw new Error("Turn camera on in pre-join first");
 
@@ -2527,7 +2527,7 @@ export function RoomPageLiveKit() {
       if (cancelled) return;
 
       try {
-        if (isMobileQuery || isTabletQuery || deviceTier === "weak") return;
+        if (isMobileQuery || isTabletQuery) return;
 
         await initPrejoinPreview({
           delayedForWeak: false,
@@ -2545,7 +2545,7 @@ export function RoomPageLiveKit() {
 
   useEffect(() => {
     if (!prejoinOpen) return;
-    if (isMobileQuery || isTabletQuery || deviceTier === "weak") return;
+    if (isMobileQuery || isTabletQuery) return;
 
     const pj = prejoinRef.current;
     if (!pj.videoEnabled) return;
@@ -5940,9 +5940,9 @@ export function RoomPageLiveKit() {
   const onJoinGate = () => {
     joinFlowStartedRef.current = true;
     connectingFromPrejoinRef.current = true;
-    if (deviceTier === "weak" && videoFxMode !== "off") {
+    if ((isMobileQuery || isTabletQuery) && videoFxMode !== "off") {
       setVideoFxMode("off");
-      setFxStatusText("FX disabled automatically on weak/mobile device");
+      setFxStatusText("FX disabled automatically on mobile/tablet device");
     }
 
     const pj = prejoinRef.current;
