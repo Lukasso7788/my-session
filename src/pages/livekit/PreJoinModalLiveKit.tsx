@@ -31,38 +31,7 @@ function deviceLabel(d: MediaDeviceInfo, fallback: string) {
   return l || fallback;
 }
 
-export function PreJoinModal({
-  open,
-  theme,
-  devices,
-  value,
-  onChange,
-  onJoin,
-  onCancel,
-  onRefreshDevices,
-
-  // preview + FX
-  previewVideoTrack,
-  previewVersion,
-
-  videoFxMode,
-  blurStrength,
-  bgImageUrl,
-
-  fxApplying,
-  fxError,
-  fxStatusText,
-
-  fxBgPresets,
-
-  onApplyVideoFx,
-  onBlurStrengthChange,
-  onSetBgImageUrl,
-  onUploadBg,
-  onResetBg,
-
-  hideBackgroundFx = false,
-}: {
+type PreJoinModalProps = {
   open: boolean;
   theme: RoomTheme;
   devices: MediaDevicesResult;
@@ -72,6 +41,10 @@ export function PreJoinModal({
   onCancel: () => void;
   onRefreshDevices: () => void;
 
+  onPrepareAudioGesture?: () => void;
+  onTestSpeaker?: () => void;
+
+  // preview + FX
   previewVideoTrack?: LocalVideoTrack | null;
   previewVersion?: number;
 
@@ -92,9 +65,41 @@ export function PreJoinModal({
   onResetBg: () => void;
 
   hideBackgroundFx?: boolean;
-}) {
-  if (!open) return null;
+};
 
+export function PreJoinModal({
+  open,
+  theme,
+  devices,
+  value,
+  onChange,
+  onJoin,
+  onCancel,
+  onRefreshDevices,
+  onPrepareAudioGesture,
+  onTestSpeaker,
+
+  previewVideoTrack,
+  previewVersion,
+
+  videoFxMode,
+  blurStrength,
+  bgImageUrl,
+
+  fxApplying,
+  fxError,
+  fxStatusText,
+
+  fxBgPresets,
+
+  onApplyVideoFx,
+  onBlurStrengthChange,
+  onSetBgImageUrl,
+  onUploadBg,
+  onResetBg,
+
+  hideBackgroundFx = false,
+}: PreJoinModalProps) {
   const isLight = theme === "light";
 
   const overlay =
@@ -124,17 +129,31 @@ export function PreJoinModal({
   const footerCls = `px-5 sm:px-6 py-4 sm:py-5 border-t flex items-center justify-end gap-3 ${isLight ? "border-black/10" : "border-white/10"
     }`;
 
-  const inputWrap = isLight ? "bg-black/5 border border-black/10" : "bg-white/5 border border-white/10";
-  const inputCls = isLight ? "text-black placeholder:text-black/40" : "text-white placeholder:text-white/40";
+  const inputWrap = isLight
+    ? "bg-black/5 border border-black/10"
+    : "bg-white/5 border border-white/10";
+
+  const inputCls = isLight
+    ? "text-black placeholder:text-black/40"
+    : "text-white placeholder:text-white/40";
+
   const labelCls = isLight ? "text-black/70" : "text-white/70";
+
   const btnPrimary = isLight
     ? "bg-blue-600 hover:bg-blue-700 text-white"
     : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]";
-  const btnGhost = isLight ? "bg-black/5 hover:bg-black/10 text-black/70" : "bg-white/5 hover:bg-white/10 text-white/80";
+
+  const btnGhost = isLight
+    ? "bg-black/5 hover:bg-black/10 text-black/70"
+    : "bg-white/5 hover:bg-white/10 text-white/80";
 
   const fxBtnBase =
     "h-10 px-4 rounded-2xl text-[13px] font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed";
-  const fxBtnSelected = isLight ? "bg-black/80 text-white hover:bg-black" : "bg-white text-black hover:bg-white";
+
+  const fxBtnSelected = isLight
+    ? "bg-black/80 text-white hover:bg-black"
+    : "bg-white text-black hover:bg-white";
+
   const fxBtnIdle = btnGhost;
 
   const selectCls = [
@@ -154,6 +173,16 @@ export function PreJoinModal({
 
   const previewHostRef = useRef<HTMLDivElement | null>(null);
   const attachedPreviewElRef = useRef<HTMLElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const testAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  const [blurDraft, setBlurDraft] = useState<number>(blurStrength);
+  const lastAutoBlurKeyRef = useRef<string>("");
+  const lastAutoBgKeyRef = useRef<string>("");
+
+  useEffect(() => {
+    setBlurDraft(blurStrength);
+  }, [blurStrength]);
 
   useEffect(() => {
     const host = previewHostRef.current;
@@ -168,27 +197,34 @@ export function PreJoinModal({
         ) {
           (previewVideoTrack as any).detach(attachedPreviewElRef.current);
         }
-      } catch { }
+      } catch {
+        // ignore
+      }
 
       try {
         attachedPreviewElRef.current?.remove();
-      } catch { }
+      } catch {
+        // ignore
+      }
 
       attachedPreviewElRef.current = null;
 
       try {
         while (host.firstChild) host.removeChild(host.firstChild);
-      } catch { }
+      } catch {
+        // ignore
+      }
     };
 
     cleanup();
 
-    if (!value.videoEnabled || !previewVideoTrack) return cleanup;
+    if (!open || !value.videoEnabled || !previewVideoTrack) return cleanup;
 
     let el: any = null;
+
     try {
       el = (previewVideoTrack as any).attach?.();
-    } catch (e) {
+    } catch (e: unknown) {
       console.warn("preview attach failed", e);
       return cleanup;
     }
@@ -201,14 +237,18 @@ export function PreJoinModal({
       el.style.objectFit = "cover";
       el.style.backgroundColor = "#000";
       el.style.display = "block";
-    } catch { }
+    } catch {
+      // ignore
+    }
 
     if (el instanceof HTMLVideoElement) {
       try {
         el.muted = true;
         el.playsInline = true;
         el.autoplay = true;
-      } catch { }
+      } catch {
+        // ignore
+      }
 
       Promise.resolve()
         .then(() => el.play())
@@ -218,7 +258,7 @@ export function PreJoinModal({
     try {
       host.appendChild(el);
       attachedPreviewElRef.current = el as HTMLElement;
-    } catch (e) {
+    } catch (e: unknown) {
       console.warn("preview append failed", e);
       return cleanup;
     }
@@ -226,17 +266,12 @@ export function PreJoinModal({
     return cleanup;
   }, [open, value.videoEnabled, previewVideoTrack, previewVersion]);
 
-  const [blurDraft, setBlurDraft] = useState<number>(blurStrength);
-  useEffect(() => setBlurDraft(blurStrength), [blurStrength]);
-
-  const lastAutoBlurKeyRef = useRef<string>("");
-  const lastAutoBgKeyRef = useRef<string>("");
-
   useEffect(() => {
     if (!open || !value.videoEnabled || hideBackgroundFx) {
       lastAutoBlurKeyRef.current = "";
       return;
     }
+
     if (videoFxMode !== "blur") {
       lastAutoBlurKeyRef.current = "";
       return;
@@ -251,13 +286,21 @@ export function PreJoinModal({
     }, 280);
 
     return () => window.clearTimeout(t);
-  }, [blurStrength, open, value.videoEnabled, videoFxMode, hideBackgroundFx, onApplyVideoFx]);
+  }, [
+    blurStrength,
+    open,
+    value.videoEnabled,
+    videoFxMode,
+    hideBackgroundFx,
+    onApplyVideoFx,
+  ]);
 
   useEffect(() => {
     if (!open || !value.videoEnabled || hideBackgroundFx) {
       lastAutoBgKeyRef.current = "";
       return;
     }
+
     if (videoFxMode !== "bg") {
       lastAutoBgKeyRef.current = "";
       return;
@@ -272,7 +315,51 @@ export function PreJoinModal({
     }, 220);
 
     return () => window.clearTimeout(t);
-  }, [bgImageUrl, open, value.videoEnabled, videoFxMode, hideBackgroundFx, onApplyVideoFx]);
+  }, [
+    bgImageUrl,
+    open,
+    value.videoEnabled,
+    videoFxMode,
+    hideBackgroundFx,
+    onApplyVideoFx,
+  ]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+
+    document.addEventListener("keydown", onKey);
+
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, onCancel]);
+
+  const cardRef = useRef<HTMLDivElement | null>(null);
+
+  const onFocusAny = (e: React.FocusEvent) => {
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+
+    window.setTimeout(() => {
+      try {
+        target.scrollIntoView({
+          block: "nearest",
+          inline: "nearest",
+          behavior: "smooth",
+        });
+      } catch {
+        // ignore
+      }
+    }, 50);
+  };
 
   const previewHint = useMemo(() => {
     if (!value.videoEnabled) return "Video is disabled";
@@ -286,42 +373,84 @@ export function PreJoinModal({
       ? "Turn video on to use FX"
       : "";
 
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const playFallbackTestSound = async () => {
+    try {
+      const Ctx =
+        window.AudioContext ||
+        (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
 
-  useEffect(() => {
-    if (!open) return;
+      if (!Ctx) return;
 
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+      const ctx = new Ctx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
 
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
-    };
-    document.addEventListener("keydown", onKey);
+      gain.gain.value = 0.08;
+      osc.frequency.value = 880;
+      osc.type = "sine";
 
-    return () => {
-      document.body.style.overflow = prevOverflow;
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open, onCancel]);
+      osc.connect(gain);
 
-  const cardRef = useRef<HTMLDivElement | null>(null);
-  const onFocusAny = (e: React.FocusEvent) => {
-    const target = e.target as HTMLElement | null;
-    if (!target) return;
+      const dest = ctx.createMediaStreamDestination();
+      gain.connect(dest);
 
-    window.setTimeout(() => {
-      try {
-        target.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
-      } catch { }
-    }, 50);
+      const audioEl = testAudioRef.current;
+      if (!audioEl) return;
+
+      audioEl.srcObject = dest.stream;
+      await audioEl.play().catch(() => { });
+      osc.start();
+
+      window.setTimeout(() => {
+        try {
+          osc.stop();
+        } catch {
+          // ignore
+        }
+        try {
+          void ctx.close();
+        } catch {
+          // ignore
+        }
+        try {
+          audioEl.srcObject = null;
+        } catch {
+          // ignore
+        }
+      }, 350);
+    } catch {
+      // ignore
+    }
   };
+
+  const handleJoin = () => {
+    onPrepareAudioGesture?.();
+    onJoin();
+  };
+
+  const handleTestSpeaker = () => {
+    onPrepareAudioGesture?.();
+
+    if (onTestSpeaker) {
+      void Promise.resolve(onTestSpeaker());
+      return;
+    }
+
+    void playFallbackTestSound();
+  };
+
+  if (!open) return null;
 
   return (
     <div className={overlay} data-theme={theme} style={{ colorScheme: theme }}>
       <div className={backdrop} onClick={onCancel} />
 
-      <div ref={cardRef} className={card} onClick={(e) => e.stopPropagation()} onFocusCapture={onFocusAny}>
+      <div
+        ref={cardRef}
+        className={card}
+        onClick={(e) => e.stopPropagation()}
+        onFocusCapture={onFocusAny}
+      >
         <div className={headerCls}>
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
@@ -331,7 +460,12 @@ export function PreJoinModal({
               </div>
             </div>
 
-            <button onClick={onCancel} className={`w-9 h-9 rounded-2xl flex items-center justify-center ${btnGhost}`} title="Close">
+            <button
+              onClick={onCancel}
+              className={`w-9 h-9 rounded-2xl flex items-center justify-center ${btnGhost}`}
+              title="Close"
+              type="button"
+            >
               ✕
             </button>
           </div>
@@ -340,7 +474,10 @@ export function PreJoinModal({
         <div className={bodyCls}>
           <div className="grid grid-cols-1 lg:grid-cols-[380px,1fr] gap-5">
             <div className="flex flex-col gap-4">
-              <div className={`rounded-3xl overflow-hidden border ${isLight ? "border-black/10 bg-black/5" : "border-white/10 bg-white/5"}`}>
+              <div
+                className={`rounded-3xl overflow-hidden border ${isLight ? "border-black/10 bg-black/5" : "border-white/10 bg-white/5"
+                  }`}
+              >
                 <div className="px-4 py-3 flex items-center justify-between">
                   <div className={`text-[12px] font-semibold ${labelCls}`}>{previewHint}</div>
                   <div className={`text-[11px] ${labelCls}`}>
@@ -361,13 +498,17 @@ export function PreJoinModal({
                     <>
                       <div ref={previewHostRef} className="absolute inset-0 w-full h-full" />
                       {!previewVideoTrack && (
-                        <div className={`absolute inset-0 flex items-center justify-center text-[12px] ${labelCls}`}>
+                        <div
+                          className={`absolute inset-0 flex items-center justify-center text-[12px] ${labelCls}`}
+                        >
                           Allow camera permissions to see preview
                         </div>
                       )}
                     </>
                   ) : (
-                    <div className={`absolute inset-0 flex items-center justify-center text-[12px] ${labelCls}`}>
+                    <div
+                      className={`absolute inset-0 flex items-center justify-center text-[12px] ${labelCls}`}
+                    >
                       Video disabled
                     </div>
                   )}
@@ -377,7 +518,9 @@ export function PreJoinModal({
               {!hideBackgroundFx && (
                 <div className={`ms-desktop-only-fx rounded-3xl p-4 ${inputWrap}`}>
                   <div className="flex items-center justify-between gap-3">
-                    <div className={`text-[12px] font-semibold ${labelCls}`}>Background effects</div>
+                    <div className={`text-[12px] font-semibold ${labelCls}`}>
+                      Background effects
+                    </div>
                     {fxApplying ? (
                       <div className={`text-[11px] ${labelCls}`}>Applying…</div>
                     ) : fxStatusText ? (
@@ -419,9 +562,15 @@ export function PreJoinModal({
                     </button>
                   </div>
 
-                  {!!fxBlockedReason && <div className={`mt-2 text-[11px] ${labelCls}`}>{fxBlockedReason}</div>}
+                  {!!fxBlockedReason && (
+                    <div className={`mt-2 text-[11px] ${labelCls}`}>{fxBlockedReason}</div>
+                  )}
 
-                  {fxError ? <div className={`mt-3 text-[12px] ${isLight ? "text-red-700" : "text-red-300"}`}>{fxError}</div> : null}
+                  {fxError ? (
+                    <div className={`mt-3 text-[12px] ${isLight ? "text-red-700" : "text-red-300"}`}>
+                      {fxError}
+                    </div>
+                  ) : null}
 
                   {videoFxMode === "blur" && (
                     <div className="mt-4">
@@ -444,6 +593,7 @@ export function PreJoinModal({
                         className="mt-2 w-full"
                         disabled={!value.videoEnabled}
                       />
+
                       <div className={`mt-2 text-[11px] ${labelCls}`}>
                         Tip: Blur is CPU-heavy. If it stutters, lower strength.
                       </div>
@@ -461,7 +611,9 @@ export function PreJoinModal({
                             type="button"
                             disabled={!value.videoEnabled || fxApplying}
                             onClick={() => onSetBgImageUrl(p.url)}
-                            className={`rounded-2xl overflow-hidden border text-left transition ${isLight ? "border-black/10 hover:border-black/20" : "border-white/10 hover:border-white/20"
+                            className={`rounded-2xl overflow-hidden border text-left transition ${isLight
+                                ? "border-black/10 hover:border-black/20"
+                                : "border-white/10 hover:border-white/20"
                               }`}
                             title={p.label}
                           >
@@ -490,7 +642,9 @@ export function PreJoinModal({
                             onUploadBg(f);
                             try {
                               e.currentTarget.value = "";
-                            } catch { }
+                            } catch {
+                              // ignore
+                            }
                           }}
                         />
 
@@ -628,7 +782,9 @@ export function PreJoinModal({
                     <input
                       type="checkbox"
                       checked={value.echoCancellation}
-                      onChange={(e) => onChange({ ...value, echoCancellation: e.target.checked })}
+                      onChange={(e) =>
+                        onChange({ ...value, echoCancellation: e.target.checked })
+                      }
                     />
                     <span className={labelCls}>Echo cancellation</span>
                   </label>
@@ -637,7 +793,9 @@ export function PreJoinModal({
                     <input
                       type="checkbox"
                       checked={value.noiseSuppression}
-                      onChange={(e) => onChange({ ...value, noiseSuppression: e.target.checked })}
+                      onChange={(e) =>
+                        onChange({ ...value, noiseSuppression: e.target.checked })
+                      }
                     />
                     <span className={labelCls}>Noise suppression</span>
                   </label>
@@ -646,26 +804,55 @@ export function PreJoinModal({
                     <input
                       type="checkbox"
                       checked={value.autoGainControl}
-                      onChange={(e) => onChange({ ...value, autoGainControl: e.target.checked })}
+                      onChange={(e) =>
+                        onChange({ ...value, autoGainControl: e.target.checked })
+                      }
                     />
                     <span className={labelCls}>Auto gain control</span>
                   </label>
                 </div>
 
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                  <button onClick={onRefreshDevices} className={`h-10 px-4 rounded-2xl text-[13px] font-semibold ${btnGhost}`}>
-                    Refresh devices
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={onRefreshDevices}
+                      className={`h-10 px-4 rounded-2xl text-[13px] font-semibold ${btnGhost}`}
+                      type="button"
+                    >
+                      Refresh devices
+                    </button>
 
-                  <div className={`text-[12px] ${labelCls}`}>Tip: allow mic/camera to see device names</div>
+                    <button
+                      onClick={handleTestSpeaker}
+                      className={`h-10 px-4 rounded-2xl text-[13px] font-semibold ${btnGhost}`}
+                      type="button"
+                    >
+                      Test sound
+                    </button>
+                  </div>
+
+                  <div className={`text-[12px] ${labelCls}`}>
+                    Tip: allow mic/camera to see device names
+                  </div>
                 </div>
               </div>
 
-              <div className={`rounded-2xl p-4 ${isLight ? "bg-blue-50 border border-blue-100" : "bg-white/5 border border-white/10"}`}>
-                <div className={`text-[12px] font-semibold ${isLight ? "text-blue-900/80" : "text-white/80"}`}>
+              <div
+                className={`rounded-2xl p-4 ${isLight
+                    ? "bg-blue-50 border border-blue-100"
+                    : "bg-white/5 border border-white/10"
+                  }`}
+              >
+                <div
+                  className={`text-[12px] font-semibold ${isLight ? "text-blue-900/80" : "text-white/80"
+                    }`}
+                >
                   Quick sanity check
                 </div>
-                <div className={`mt-1 text-[12px] ${isLight ? "text-blue-900/70" : "text-white/65"}`}>
+                <div
+                  className={`mt-1 text-[12px] ${isLight ? "text-blue-900/70" : "text-white/65"
+                    }`}
+                >
                   If preview is blank — allow camera permissions in the browser.
                 </div>
               </div>
@@ -674,18 +861,25 @@ export function PreJoinModal({
         </div>
 
         <div className={footerCls}>
-          <button onClick={onCancel} className={`h-11 px-5 rounded-2xl text-[13px] font-semibold ${btnGhost}`}>
+          <button
+            onClick={onCancel}
+            className={`h-11 px-5 rounded-2xl text-[13px] font-semibold ${btnGhost}`}
+            type="button"
+          >
             Cancel
           </button>
 
           <button
-            onClick={onJoin}
+            onClick={handleJoin}
             disabled={fxApplying}
             className={`h-11 px-6 rounded-2xl text-[13px] font-semibold ${btnPrimary} disabled:opacity-70`}
+            type="button"
           >
             Join room
           </button>
         </div>
+
+        <audio ref={testAudioRef} />
       </div>
     </div>
   );

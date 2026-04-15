@@ -1,7 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { X, RefreshCcw } from "lucide-react";
+import type { LocalVideoTrack } from "livekit-client";
 
 type BgMode = "none" | "blur" | "image";
+type FxMode = "off" | "blur" | "bg";
+type RoomTheme = "light" | "dark";
+
+type MediaDevicesResult = {
+    videoInputs: MediaDeviceInfo[];
+    audioInputs: MediaDeviceInfo[];
+    audioOutputs: MediaDeviceInfo[];
+};
 
 export type PreJoinSettings = {
     displayName: string;
@@ -17,15 +26,43 @@ export type PreJoinSettings = {
     noiseSuppression: boolean;
     autoGainControl: boolean;
 
-    bgMode: BgMode;
+    bgMode?: BgMode;
     bgImageUrl?: string;
 };
 
 type Props = {
     open: boolean;
+
+    theme?: RoomTheme;
+    devices?: MediaDevicesResult;
+
+    value?: PreJoinSettings;
     initial?: Partial<PreJoinSettings>;
+
+    onChange?: React.Dispatch<React.SetStateAction<PreJoinSettings>>;
     onCancel?: () => void;
-    onJoin: (s: PreJoinSettings) => void;
+    onJoin?: ((s: PreJoinSettings) => void) | (() => void);
+
+    onRefreshDevices?: () => void | Promise<void>;
+    onTestSpeaker?: () => void;
+    onPrepareAudioGesture?: () => void;
+
+    hideBackgroundFx?: boolean;
+
+    previewVideoTrack?: LocalVideoTrack | null;
+    previewVersion?: number;
+
+    videoFxMode?: FxMode;
+    blurStrength?: number;
+    bgImageUrl?: string;
+    fxApplying?: boolean;
+    fxError?: string;
+    fxStatusText?: string;
+
+    onApplyVideoFx?: (mode: FxMode) => void | Promise<void>;
+    onBlurStrengthChange?: (value: number) => void;
+    onUploadBg?: (file: File) => void | Promise<void>;
+    onResetBg?: () => void;
 };
 
 const DEFAULTS: PreJoinSettings = {
@@ -56,153 +93,181 @@ const DEFAULT_BACKGROUNDS: { id: string; url: string; label: string }[] = [
 ];
 
 function supportsSetSinkId() {
-    return typeof (HTMLMediaElement.prototype as any).setSinkId === "function";
+    return (
+        typeof HTMLMediaElement !== "undefined" &&
+        typeof (HTMLMediaElement.prototype as HTMLMediaElement & {
+            setSinkId?: (id: string) => Promise<void>;
+        }).setSinkId === "function"
+    );
 }
 
 function deviceLabel(d: MediaDeviceInfo, fallback: string) {
     return d.label?.trim() || `${fallback} (${(d.deviceId || "").slice(0, 6)}…)`;
 }
 
-export default function PreJoinModal({ open, initial, onCancel, onJoin }: Props) {
-    const [s, setS] = useState<PreJoinSettings>({ ...DEFAULTS, ...(initial || {}) });
-    const sRef = useRef(s);
-    useEffect(() => { sRef.current = s; }, [s]);
+function attachPreviewTrack(
+    videoEl: HTMLVideoElement | null,
+    track: LocalVideoTrack | null | undefined
+) {
+    if (!videoEl || !track) return () => { };
 
-    const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-    const [permissionError, setPermissionError] = useState<string | null>(null);
-    const [videoReady, setVideoReady] = useState(false);
+    let attached: HTMLMediaElement | null = null;
+
+    try {
+        const el = track.attach();
+        if (el instanceof HTMLVideoElement) {
+            attached = el;
+            videoEl.srcObject = el.srcObject;
+            videoEl.muted = true;
+            (videoEl as HTMLVideoElement & { playsInline?: boolean }).playsInline = true;
+            void videoEl.play().catch(() => { });
+        }
+    } catch {
+        // ignore
+    }
+
+    return () => {
+        try {
+            if (attached) track.detach(attached);
+        } catch {
+            // ignore
+        }
+        try {
+            videoEl.srcObject = null;
+        } catch {
+            // ignore
+        }
+    };
+}
+
+export default function PreJoinModal({
+    open,
+    theme = "dark",
+    devices,
+    value,
+    initial,
+    onChange,
+    onCancel,
+    onJoin,
+    onRefreshDevices,
+    onTestSpeaker,
+    onPrepareAudioGesture,
+    hideBackgroundFx,
+    previewVideoTrack,
+    previewVersion,
+    videoFxMode = "off",
+    blurStrength = 10,
+    bgImageUrl,
+    fxApplying,
+    fxError,
+    fxStatusText,
+    onApplyVideoFx,
+    onBlurStrengthChange,
+    onUploadBg,
+    onResetBg,
+}: Props) {
+    const isControlled = !!value && !!onChange;
+
+    const [localSettings, setLocalSettings] = useState<PreJoinSettings>({
+        ...DEFAULTS,
+        ...(initial || {}),
+    });
+
+    const settings = isControlled ? (value as PreJoinSettings) : localSettings;
+    const settingsRef = useRef(settings);
+
+    useEffect(() => {
+        settingsRef.current = settings;
+    }, [settings]);
+
+    useEffect(() => {
+        if (!open) return;
+
+        if (!isControlled) {
+            try {
+                const raw = localStorage.getItem("mysession_prejoin");
+                if (raw) {
+                    const parsed = JSON.parse(raw) as Partial<PreJoinSettings>;
+                    setLocalSettings((prev) => ({ ...prev, ...parsed, ...(initial || {}) }));
+                } else if (initial) {
+                    setLocalSettings((prev) => ({ ...prev, ...(initial || {}) }));
+                }
+            } catch {
+                if (initial) {
+                    setLocalSettings((prev) => ({ ...prev, ...(initial || {}) }));
+                }
+            }
+        }
+    }, [open, initial, isControlled]);
+
+    const setSettings = (
+        updater: PreJoinSettings | ((prev: PreJoinSettings) => PreJoinSettings)
+    ) => {
+        if (isControlled) {
+            onChange?.(updater as React.SetStateAction<PreJoinSettings>);
+            return;
+        }
+
+        setLocalSettings((prev) =>
+            typeof updater === "function"
+                ? (updater as (prev: PreJoinSettings) => PreJoinSettings)(prev)
+                : updater
+        );
+    };
 
     const videoRef = useRef<HTMLVideoElement | null>(null);
-    const streamRef = useRef<MediaStream | null>(null);
-
     const testAudioRef = useRef<HTMLAudioElement | null>(null);
+    const [videoReady, setVideoReady] = useState(false);
 
-    const cameras = useMemo(() => devices.filter((d) => d.kind === "videoinput"), [devices]);
-    const mics = useMemo(() => devices.filter((d) => d.kind === "audioinput"), [devices]);
-    const speakers = useMemo(() => devices.filter((d) => d.kind === "audiooutput"), [devices]);
+    const videoInputs = devices?.videoInputs || [];
+    const audioInputs = devices?.audioInputs || [];
+    const audioOutputs = devices?.audioOutputs || [];
 
-    const ensureDevices = async () => {
-        if (!navigator.mediaDevices?.enumerateDevices) return;
-        const list = await navigator.mediaDevices.enumerateDevices();
-        setDevices(list);
-    };
+    const cameras = useMemo(() => videoInputs, [videoInputs]);
+    const mics = useMemo(() => audioInputs, [audioInputs]);
+    const speakers = useMemo(() => audioOutputs, [audioOutputs]);
 
-    const stopStream = () => {
-        try {
-            streamRef.current?.getTracks().forEach((t) => t.stop());
-        } catch { }
-        streamRef.current = null;
-        setVideoReady(false);
-    };
-
-    const getConstraints = (override?: Partial<PreJoinSettings>) => {
-        const cur = { ...sRef.current, ...(override || {}) };
-
-        const video: MediaTrackConstraints | boolean =
-            cur.videoEnabled
-                ? {
-                    deviceId: cur.videoInputId === "default" ? undefined : { exact: cur.videoInputId },
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 },
-                }
-                : false;
-
-        const audio: MediaTrackConstraints | boolean =
-            cur.audioEnabled
-                ? {
-                    deviceId: cur.audioInputId === "default" ? undefined : { exact: cur.audioInputId },
-                    echoCancellation: cur.echoCancellation,
-                    noiseSuppression: cur.noiseSuppression,
-                    autoGainControl: cur.autoGainControl,
-                }
-                : false;
-
-        return { video, audio };
-    };
-
-    const attachPreview = (stream: MediaStream) => {
-        const v = videoRef.current;
-        if (!v) return;
+    useEffect(() => {
+        if (!open) return;
+        const videoEl = videoRef.current;
+        if (!videoEl) return;
 
         setVideoReady(false);
-        v.muted = true;
-        (v as any).playsInline = true;
 
-        v.onloadedmetadata = () => {
+        const cleanup = attachPreviewTrack(videoEl, previewVideoTrack);
+
+        const onLoaded = () => {
             setVideoReady(true);
-            const pr = (v as any).play?.();
-            pr?.catch?.(() => { });
+            void videoEl.play().catch(() => { });
         };
 
-        v.srcObject = stream;
+        videoEl.addEventListener("loadedmetadata", onLoaded);
+        videoEl.addEventListener("canplay", onLoaded);
 
-        const pr = (v as any).play?.();
-        pr?.catch?.(() => { });
-    };
+        return () => {
+            videoEl.removeEventListener("loadedmetadata", onLoaded);
+            videoEl.removeEventListener("canplay", onLoaded);
+            cleanup();
+        };
+    }, [open, previewVideoTrack, previewVersion]);
 
-    const startPreview = async () => {
-        setPermissionError(null);
-        stopStream();
-
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia(getConstraints());
-            streamRef.current = stream;
-            attachPreview(stream);
-            await ensureDevices();
-
-            const cur = sRef.current;
-            if (supportsSetSinkId() && testAudioRef.current && cur.audioOutputId && cur.audioOutputId !== "default") {
-                try {
-                    await (testAudioRef.current as any).setSinkId(cur.audioOutputId);
-                } catch { }
-            }
-        } catch (e: any) {
-            setPermissionError(e?.message || e?.name || "getUserMedia failed");
-            stopStream();
-        }
-    };
-
-    // open lifecycle
     useEffect(() => {
         if (!open) return;
 
-        // restore saved settings if you have them
-        try {
-            const raw = localStorage.getItem("mysession_prejoin");
-            if (raw) {
-                const parsed = JSON.parse(raw);
-                setS((prev) => ({ ...prev, ...parsed, ...(initial || {}) }));
-            } else if (initial) {
-                setS((prev) => ({ ...prev, ...(initial || {}) }));
-            }
-        } catch {
-            if (initial) setS((prev) => ({ ...prev, ...(initial || {}) }));
-        }
+        const audioEl = testAudioRef.current;
+        if (!audioEl) return;
+        if (!supportsSetSinkId()) return;
 
-        ensureDevices().catch(() => { });
-        startPreview().catch(() => { });
+        const sinkId = String(settings.audioOutputId || "").trim();
+        if (!sinkId || sinkId === "default") return;
 
-        return () => stopStream();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [open]);
+        void (audioEl as HTMLAudioElement & {
+            setSinkId?: (id: string) => Promise<void>;
+        })
+            .setSinkId?.(sinkId)
+            .catch(() => { });
+    }, [open, settings.audioOutputId]);
 
-    // restart when toggles/devices change
-    useEffect(() => {
-        if (!open) return;
-        startPreview().catch(() => { });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [
-        open,
-        s.videoEnabled,
-        s.audioEnabled,
-        s.videoInputId,
-        s.audioInputId,
-        s.echoCancellation,
-        s.noiseSuppression,
-        s.autoGainControl,
-    ]);
-
-    // lock body scroll
     useEffect(() => {
         if (!open) return;
 
@@ -220,16 +285,11 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin }: Props)
         };
     }, [open]);
 
-    const onClickJoin = () => {
+    const playTestSoundFallback = async () => {
         try {
-            localStorage.setItem("mysession_prejoin", JSON.stringify(s));
-        } catch { }
-        onJoin(s);
-    };
-
-    const playTestSound = async () => {
-        try {
-            const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const ctx = new (window.AudioContext ||
+                (window as Window & { webkitAudioContext?: typeof AudioContext })
+                    .webkitAudioContext)();
 
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
@@ -249,48 +309,89 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin }: Props)
             await audioEl.play().catch(() => { });
             osc.start();
 
-            setTimeout(() => {
-                try { osc.stop(); } catch { }
-                try { ctx.close(); } catch { }
-                try { (audioEl as any).srcObject = null; } catch { }
+            window.setTimeout(() => {
+                try {
+                    osc.stop();
+                } catch {
+                    // ignore
+                }
+                try {
+                    void ctx.close();
+                } catch {
+                    // ignore
+                }
+                try {
+                    audioEl.srcObject = null;
+                } catch {
+                    // ignore
+                }
             }, 350);
-        } catch { }
+        } catch {
+            // ignore
+        }
     };
 
-    const refreshDevices = async () => {
-        await ensureDevices();
+    const onClickJoin = () => {
+        try {
+            localStorage.setItem("mysession_prejoin", JSON.stringify(settingsRef.current));
+        } catch {
+            // ignore
+        }
+
+        onPrepareAudioGesture?.();
+
+        if (typeof onJoin === "function") {
+            (onJoin as (s: PreJoinSettings) => void)(settingsRef.current);
+        }
     };
 
     const pillActive = "bg-emerald-500/15 border-emerald-400/30 text-white/90";
     const pillIdle = "bg-white/5 border-white/10 text-white/70 hover:bg-white/10";
 
-    const bgUrl = s.bgImageUrl || DEFAULT_BACKGROUNDS[0]?.url;
-    const blurClass = s.bgMode === "blur" ? "blur-[10px] scale-[1.03]" : "";
+    const effectiveBgUrl =
+        bgImageUrl || settings.bgImageUrl || DEFAULT_BACKGROUNDS[0]?.url || "";
+    const blurClass = videoFxMode === "blur" ? "blur-[10px] scale-[1.03]" : "";
+
+    const isLight = theme === "light";
 
     if (!open) return null;
 
     return (
         <div className="fixed inset-0 z-[9999]">
-            <div className="absolute inset-0 bg-black/60" onClick={onCancel} />
+            <div
+                className={isLight ? "absolute inset-0 bg-black/40" : "absolute inset-0 bg-black/60"}
+                onClick={onCancel}
+            />
 
             <div className="absolute inset-0 flex items-center justify-center p-3 sm:p-5">
                 <div
-                    className="w-[92vw] max-w-[640px] max-h-[calc(100vh-24px)] sm:max-h-[calc(100vh-40px)]
-                     rounded-2xl border border-white/10 bg-[#0B1220] shadow-xl
-                     flex flex-col overflow-hidden"
+                    className={`w-[92vw] max-w-[720px] max-h-[calc(100vh-24px)] sm:max-h-[calc(100vh-40px)]
+            rounded-2xl border shadow-xl flex flex-col overflow-hidden ${isLight
+                            ? "border-black/10 bg-white"
+                            : "border-white/10 bg-[#0B1220]"
+                        }`}
                     role="dialog"
                     aria-modal="true"
                 >
-                    {/* header */}
-                    <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 shrink-0">
+                    <div
+                        className={`flex items-center justify-between px-5 py-4 shrink-0 ${isLight ? "border-b border-black/10" : "border-b border-white/10"
+                            }`}
+                    >
                         <div>
-                            <div className="text-white/90 font-semibold">Before you join</div>
-                            <div className="text-xs text-white/50">Pick devices + name. Then join.</div>
+                            <div className={isLight ? "font-semibold text-black/90" : "font-semibold text-white/90"}>
+                                Before you join
+                            </div>
+                            <div className={isLight ? "text-xs text-black/50" : "text-xs text-white/50"}>
+                                Pick devices + name. Then join.
+                            </div>
                         </div>
 
                         <button
                             onClick={onCancel}
-                            className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/80"
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center ${isLight
+                                    ? "bg-black/5 hover:bg-black/10 text-black/80"
+                                    : "bg-white/5 hover:bg-white/10 text-white/80"
+                                }`}
                             title="Close"
                             type="button"
                         >
@@ -298,14 +399,17 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin }: Props)
                         </button>
                     </div>
 
-                    {/* body scroll */}
-                    <div className="px-5 py-4 space-y-4 overflow-y-auto overscroll-contain" style={{ WebkitOverflowScrolling: "touch" }}>
-                        {/* ✅ PREVIEW BLOCK (вот чего у тебя нет на скрине) */}
+                    <div
+                        className="px-5 py-4 space-y-4 overflow-y-auto overscroll-contain"
+                        style={{ WebkitOverflowScrolling: "touch" }}
+                    >
                         <div
-                            className="relative rounded-2xl overflow-hidden border border-white/10 bg-black"
+                            className={`relative rounded-2xl overflow-hidden border ${isLight ? "border-black/10 bg-black" : "border-white/10 bg-black"
+                                }`}
                             style={{
                                 aspectRatio: "16 / 9",
-                                backgroundImage: s.bgMode === "image" ? `url(${bgUrl})` : undefined,
+                                backgroundImage:
+                                    videoFxMode === "bg" && effectiveBgUrl ? `url(${effectiveBgUrl})` : undefined,
                                 backgroundSize: "cover",
                                 backgroundPosition: "center",
                             }}
@@ -317,133 +421,239 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin }: Props)
                                 muted
                                 className={
                                     "absolute inset-0 w-full h-full object-cover transition-opacity duration-150 " +
-                                    (s.videoEnabled ? "opacity-100 " : "opacity-0 ") +
+                                    (settings.videoEnabled ? "opacity-100 " : "opacity-0 ") +
                                     (blurClass ? blurClass : "")
                                 }
                             />
 
-                            {s.videoEnabled && !videoReady && (
+                            {settings.videoEnabled && !videoReady && (
                                 <div className="absolute inset-0 flex items-center justify-center text-white/70 text-sm">
                                     Starting camera…
                                 </div>
                             )}
 
-                            {!s.videoEnabled && (
+                            {!settings.videoEnabled && (
                                 <div className="absolute inset-0 flex items-center justify-center text-white/80 text-sm">
                                     Camera is off
                                 </div>
                             )}
 
-                            {/* effect pills */}
-                            <div className="absolute left-3 top-3 flex items-center gap-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setS((p) => ({ ...p, bgMode: "none", bgImageUrl: undefined }))}
-                                    className={`h-8 px-3 rounded-xl border text-[12px] transition ${s.bgMode === "none" ? pillActive : pillIdle}`}
-                                >
-                                    None
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setS((p) => ({ ...p, bgMode: "blur", bgImageUrl: undefined }))}
-                                    className={`h-8 px-3 rounded-xl border text-[12px] transition ${s.bgMode === "blur" ? pillActive : pillIdle}`}
-                                >
-                                    Blur
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setS((p) => ({ ...p, bgMode: "image", bgImageUrl: bgUrl }))}
-                                    className={`h-8 px-3 rounded-xl border text-[12px] transition ${s.bgMode === "image" ? pillActive : pillIdle}`}
-                                >
-                                    Image
-                                </button>
-                            </div>
+                            {!hideBackgroundFx && (
+                                <div className="absolute left-3 top-3 flex flex-wrap items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            void onApplyVideoFx?.("off");
+                                            setSettings((prev) => ({
+                                                ...prev,
+                                                bgMode: "none",
+                                                bgImageUrl: undefined,
+                                            }));
+                                        }}
+                                        disabled={!!fxApplying}
+                                        className={`h-8 px-3 rounded-xl border text-[12px] transition disabled:opacity-50 ${videoFxMode === "off" ? pillActive : pillIdle
+                                            }`}
+                                    >
+                                        None
+                                    </button>
 
-                            {/* toggles */}
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            void onApplyVideoFx?.("blur");
+                                            setSettings((prev) => ({
+                                                ...prev,
+                                                bgMode: "blur",
+                                                bgImageUrl: undefined,
+                                            }));
+                                        }}
+                                        disabled={!!fxApplying}
+                                        className={`h-8 px-3 rounded-xl border text-[12px] transition disabled:opacity-50 ${videoFxMode === "blur" ? pillActive : pillIdle
+                                            }`}
+                                    >
+                                        Blur
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            void onApplyVideoFx?.("bg");
+                                            setSettings((prev) => ({
+                                                ...prev,
+                                                bgMode: "image",
+                                                bgImageUrl: effectiveBgUrl,
+                                            }));
+                                        }}
+                                        disabled={!!fxApplying}
+                                        className={`h-8 px-3 rounded-xl border text-[12px] transition disabled:opacity-50 ${videoFxMode === "bg" ? pillActive : pillIdle
+                                            }`}
+                                    >
+                                        Image
+                                    </button>
+                                </div>
+                            )}
+
                             <div className="absolute left-3 bottom-3 flex items-center gap-2">
                                 <button
-                                    className="px-3 h-9 rounded-xl text-sm bg-white/10 hover:bg-white/15 border border-white/10 text-white/85"
-                                    onClick={() => setS((p) => ({ ...p, videoEnabled: !p.videoEnabled }))}
+                                    className="px-3 h-9 rounded-xl text-sm border text-white/85 bg-white/10 hover:bg-white/15 border-white/10"
+                                    onClick={() =>
+                                        setSettings((prev) => ({ ...prev, videoEnabled: !prev.videoEnabled }))
+                                    }
                                     type="button"
                                 >
-                                    {s.videoEnabled ? "Turn off camera" : "Turn on camera"}
+                                    {settings.videoEnabled ? "Turn off camera" : "Turn on camera"}
                                 </button>
 
                                 <button
-                                    className="px-3 h-9 rounded-xl text-sm bg-white/10 hover:bg-white/15 border border-white/10 text-white/85"
-                                    onClick={() => setS((p) => ({ ...p, audioEnabled: !p.audioEnabled }))}
+                                    className="px-3 h-9 rounded-xl text-sm border text-white/85 bg-white/10 hover:bg-white/15 border-white/10"
+                                    onClick={() =>
+                                        setSettings((prev) => ({ ...prev, audioEnabled: !prev.audioEnabled }))
+                                    }
                                     type="button"
                                 >
-                                    {s.audioEnabled ? "Mute mic" : "Unmute mic"}
+                                    {settings.audioEnabled ? "Mute mic" : "Unmute mic"}
                                 </button>
                             </div>
                         </div>
 
-                        {/* image picker */}
-                        {s.bgMode === "image" && (
+                        {!hideBackgroundFx && videoFxMode === "bg" && (
                             <div className="space-y-2">
-                                <div className="text-[12px] text-white/60">Choose a default</div>
+                                <div className={isLight ? "text-[12px] text-black/60" : "text-[12px] text-white/60"}>
+                                    Choose a default
+                                </div>
+
                                 <div className="grid grid-cols-3 gap-2">
                                     {DEFAULT_BACKGROUNDS.map((bg) => {
-                                        const active = s.bgImageUrl === bg.url;
+                                        const active = effectiveBgUrl === bg.url;
+
                                         return (
                                             <button
                                                 key={bg.id}
                                                 type="button"
-                                                onClick={() => setS((p) => ({ ...p, bgImageUrl: bg.url }))}
+                                                onClick={() => {
+                                                    setSettings((prev) => ({ ...prev, bgImageUrl: bg.url }));
+                                                    void onApplyVideoFx?.("bg");
+                                                }}
                                                 className={
                                                     "rounded-xl overflow-hidden border transition text-left " +
-                                                    (active ? "border-emerald-400/40" : "border-white/10 hover:border-white/25")
+                                                    (active
+                                                        ? "border-emerald-400/40"
+                                                        : isLight
+                                                            ? "border-black/10 hover:border-black/25"
+                                                            : "border-white/10 hover:border-white/25")
                                                 }
                                             >
                                                 <div className="w-full h-[70px] bg-black/20">
                                                     <img src={bg.url} alt={bg.label} className="w-full h-full object-cover" />
                                                 </div>
-                                                <div className="px-2 py-1 text-[11px] text-white/70 truncate">{bg.label}</div>
+                                                <div className={isLight ? "px-2 py-1 text-[11px] text-black/70 truncate" : "px-2 py-1 text-[11px] text-white/70 truncate"}>
+                                                    {bg.label}
+                                                </div>
                                             </button>
                                         );
                                     })}
                                 </div>
 
-                                <label className="inline-flex items-center gap-2 text-sm text-white/70 cursor-pointer">
-                                    <span className="px-3 h-9 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 inline-flex items-center">
-                                        Upload
-                                    </span>
-                                    <input
-                                        type="file"
-                                        accept="image/*"
-                                        className="hidden"
-                                        onChange={(e) => {
-                                            const file = e.target.files?.[0];
-                                            if (!file) return;
-                                            const url = URL.createObjectURL(file);
-                                            setS((p) => ({ ...p, bgImageUrl: url }));
-                                            e.currentTarget.value = "";
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <label className={`inline-flex items-center gap-2 text-sm cursor-pointer ${isLight ? "text-black/70" : "text-white/70"}`}>
+                                        <span
+                                            className={`px-3 h-9 rounded-xl inline-flex items-center border ${isLight
+                                                    ? "bg-black/5 hover:bg-black/10 border-black/10"
+                                                    : "bg-white/5 hover:bg-white/10 border-white/10"
+                                                }`}
+                                        >
+                                            Upload
+                                        </span>
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={(e) => {
+                                                const file = e.target.files?.[0];
+                                                if (!file) return;
+
+                                                if (onUploadBg) {
+                                                    void onUploadBg(file);
+                                                } else {
+                                                    const url = URL.createObjectURL(file);
+                                                    setSettings((prev) => ({ ...prev, bgImageUrl: url }));
+                                                }
+
+                                                void onApplyVideoFx?.("bg");
+                                                e.currentTarget.value = "";
+                                            }}
+                                        />
+                                    </label>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            onResetBg?.();
+                                            setSettings((prev) => ({ ...prev, bgImageUrl: undefined }));
+                                            void onApplyVideoFx?.("off");
                                         }}
-                                    />
-                                </label>
+                                        className={`h-9 px-3 rounded-xl border text-sm ${isLight
+                                                ? "bg-black/5 hover:bg-black/10 border-black/10 text-black/70"
+                                                : "bg-white/5 hover:bg-white/10 border-white/10 text-white/70"
+                                            }`}
+                                    >
+                                        Reset background
+                                    </button>
+                                </div>
                             </div>
                         )}
 
-                        {permissionError && (
-                            <div className="text-xs text-red-400">{permissionError}</div>
+                        {!hideBackgroundFx && videoFxMode === "blur" && (
+                            <div className="space-y-2">
+                                <div className={isLight ? "text-[12px] text-black/60" : "text-[12px] text-white/60"}>
+                                    Blur strength
+                                </div>
+                                <input
+                                    type="range"
+                                    min={0}
+                                    max={20}
+                                    step={1}
+                                    value={blurStrength}
+                                    onChange={(e) => onBlurStrengthChange?.(Number(e.target.value))}
+                                    className="w-full"
+                                />
+                            </div>
                         )}
 
-                        {/* form like on your screenshot */}
-                        <div className="text-[12px] text-white/60">Display name</div>
+                        {(fxError || fxStatusText) && (
+                            <div className={fxError ? "text-xs text-red-400" : isLight ? "text-xs text-black/50" : "text-xs text-white/50"}>
+                                {fxError || fxStatusText}
+                            </div>
+                        )}
+
+                        <div className={isLight ? "text-[12px] text-black/60" : "text-[12px] text-white/60"}>
+                            Display name
+                        </div>
                         <input
-                            value={s.displayName}
-                            onChange={(e) => setS((p) => ({ ...p, displayName: e.target.value }))}
-                            className="w-full h-11 rounded-xl bg-[#111827] border border-white/10 px-3 text-[13px] text-white/85 outline-none"
+                            value={settings.displayName}
+                            onChange={(e) =>
+                                setSettings((prev) => ({ ...prev, displayName: e.target.value }))
+                            }
+                            className={`w-full h-11 rounded-xl border px-3 text-[13px] outline-none ${isLight
+                                    ? "bg-[#F8FAFC] border-black/10 text-black/85"
+                                    : "bg-[#111827] border-white/10 text-white/85"
+                                }`}
                         />
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div>
-                                <div className="text-[12px] text-white/60 mb-2">Microphone</div>
+                                <div className={isLight ? "text-[12px] text-black/60 mb-2" : "text-[12px] text-white/60 mb-2"}>
+                                    Microphone
+                                </div>
                                 <select
-                                    value={s.audioInputId}
-                                    onChange={(e) => setS((p) => ({ ...p, audioInputId: e.target.value }))}
-                                    className="w-full h-11 rounded-xl bg-[#111827] border border-white/10 px-3 text-[13px] text-white/85 outline-none"
+                                    value={settings.audioInputId}
+                                    onChange={(e) =>
+                                        setSettings((prev) => ({ ...prev, audioInputId: e.target.value }))
+                                    }
+                                    className={`w-full h-11 rounded-xl border px-3 text-[13px] outline-none ${isLight
+                                            ? "bg-[#F8FAFC] border-black/10 text-black/85"
+                                            : "bg-[#111827] border-white/10 text-white/85"
+                                        }`}
                                 >
                                     <option value="default">Default</option>
                                     {mics.map((d) => (
@@ -455,11 +665,18 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin }: Props)
                             </div>
 
                             <div>
-                                <div className="text-[12px] text-white/60 mb-2">Camera</div>
+                                <div className={isLight ? "text-[12px] text-black/60 mb-2" : "text-[12px] text-white/60 mb-2"}>
+                                    Camera
+                                </div>
                                 <select
-                                    value={s.videoInputId}
-                                    onChange={(e) => setS((p) => ({ ...p, videoInputId: e.target.value }))}
-                                    className="w-full h-11 rounded-xl bg-[#111827] border border-white/10 px-3 text-[13px] text-white/85 outline-none"
+                                    value={settings.videoInputId}
+                                    onChange={(e) =>
+                                        setSettings((prev) => ({ ...prev, videoInputId: e.target.value }))
+                                    }
+                                    className={`w-full h-11 rounded-xl border px-3 text-[13px] outline-none ${isLight
+                                            ? "bg-[#F8FAFC] border-black/10 text-black/85"
+                                            : "bg-[#111827] border-white/10 text-white/85"
+                                        }`}
                                 >
                                     <option value="default">Default</option>
                                     {cameras.map((d) => (
@@ -472,12 +689,19 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin }: Props)
                         </div>
 
                         <div>
-                            <div className="text-[12px] text-white/60 mb-2">Speaker</div>
+                            <div className={isLight ? "text-[12px] text-black/60 mb-2" : "text-[12px] text-white/60 mb-2"}>
+                                Speaker
+                            </div>
                             <select
-                                value={s.audioOutputId}
-                                onChange={(e) => setS((p) => ({ ...p, audioOutputId: e.target.value }))}
+                                value={settings.audioOutputId}
+                                onChange={(e) =>
+                                    setSettings((prev) => ({ ...prev, audioOutputId: e.target.value }))
+                                }
                                 disabled={!supportsSetSinkId()}
-                                className="w-full h-11 rounded-xl bg-[#111827] border border-white/10 px-3 text-[13px] text-white/85 outline-none disabled:opacity-60"
+                                className={`w-full h-11 rounded-xl border px-3 text-[13px] outline-none disabled:opacity-60 ${isLight
+                                        ? "bg-[#F8FAFC] border-black/10 text-black/85"
+                                        : "bg-[#111827] border-white/10 text-white/85"
+                                    }`}
                             >
                                 <option value="default">Default</option>
                                 {speakers
@@ -491,60 +715,129 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin }: Props)
 
                             <div className="mt-2 flex items-center justify-between">
                                 <button
-                                    onClick={playTestSound}
-                                    className="text-xs underline text-white/50"
+                                    onClick={() => {
+                                        onPrepareAudioGesture?.();
+                                        if (onTestSpeaker) {
+                                            void onTestSpeaker();
+                                        } else {
+                                            void playTestSoundFallback();
+                                        }
+                                    }}
+                                    className={isLight ? "text-xs underline text-black/50" : "text-xs underline text-white/50"}
                                     type="button"
                                 >
                                     Test sound
                                 </button>
 
                                 <button
-                                    onClick={refreshDevices}
-                                    className="h-9 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 text-sm"
+                                    onClick={() => {
+                                        if (onRefreshDevices) {
+                                            void onRefreshDevices();
+                                        }
+                                    }}
+                                    className={`h-9 px-3 rounded-xl border text-sm inline-flex items-center gap-2 ${isLight
+                                            ? "bg-black/5 hover:bg-black/10 border-black/10 text-black/70"
+                                            : "bg-white/5 hover:bg-white/10 border-white/10 text-white/70"
+                                        }`}
                                     type="button"
                                 >
+                                    <RefreshCcw size={14} />
                                     Refresh devices
                                 </button>
                             </div>
                         </div>
 
-                        <div className="rounded-2xl border border-white/10 bg-white/5 p-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-white/70">
+                        <div
+                            className={`rounded-2xl border p-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm ${isLight
+                                    ? "border-black/10 bg-black/[0.03] text-black/70"
+                                    : "border-white/10 bg-white/5 text-white/70"
+                                }`}
+                        >
                             <label className="flex items-center gap-2">
-                                <input type="checkbox" checked={s.audioEnabled} onChange={(e) => setS((p) => ({ ...p, audioEnabled: e.target.checked }))} />
+                                <input
+                                    type="checkbox"
+                                    checked={settings.audioEnabled}
+                                    onChange={(e) =>
+                                        setSettings((prev) => ({ ...prev, audioEnabled: e.target.checked }))
+                                    }
+                                />
                                 Audio enabled
                             </label>
+
                             <label className="flex items-center gap-2">
-                                <input type="checkbox" checked={s.videoEnabled} onChange={(e) => setS((p) => ({ ...p, videoEnabled: e.target.checked }))} />
+                                <input
+                                    type="checkbox"
+                                    checked={settings.videoEnabled}
+                                    onChange={(e) =>
+                                        setSettings((prev) => ({ ...prev, videoEnabled: e.target.checked }))
+                                    }
+                                />
                                 Video enabled
                             </label>
+
                             <label className="flex items-center gap-2">
-                                <input type="checkbox" checked={s.echoCancellation} onChange={(e) => setS((p) => ({ ...p, echoCancellation: e.target.checked }))} />
+                                <input
+                                    type="checkbox"
+                                    checked={settings.echoCancellation}
+                                    onChange={(e) =>
+                                        setSettings((prev) => ({
+                                            ...prev,
+                                            echoCancellation: e.target.checked,
+                                        }))
+                                    }
+                                />
                                 Echo cancellation
                             </label>
+
                             <label className="flex items-center gap-2">
-                                <input type="checkbox" checked={s.noiseSuppression} onChange={(e) => setS((p) => ({ ...p, noiseSuppression: e.target.checked }))} />
+                                <input
+                                    type="checkbox"
+                                    checked={settings.noiseSuppression}
+                                    onChange={(e) =>
+                                        setSettings((prev) => ({
+                                            ...prev,
+                                            noiseSuppression: e.target.checked,
+                                        }))
+                                    }
+                                />
                                 Noise suppression
                             </label>
+
                             <label className="flex items-center gap-2">
-                                <input type="checkbox" checked={s.autoGainControl} onChange={(e) => setS((p) => ({ ...p, autoGainControl: e.target.checked }))} />
+                                <input
+                                    type="checkbox"
+                                    checked={settings.autoGainControl}
+                                    onChange={(e) =>
+                                        setSettings((prev) => ({
+                                            ...prev,
+                                            autoGainControl: e.target.checked,
+                                        }))
+                                    }
+                                />
                                 Auto gain control
                             </label>
                         </div>
 
-                        <div className="text-[11px] text-white/35">
+                        <div className={isLight ? "text-[11px] text-black/35" : "text-[11px] text-white/35"}>
                             Tip: allow mic/camera to see device names
                         </div>
                     </div>
 
-                    {/* footer */}
-                    <div className="px-5 py-4 border-t border-white/10 flex items-center justify-end gap-2 shrink-0">
+                    <div
+                        className={`px-5 py-4 flex items-center justify-end gap-2 shrink-0 ${isLight ? "border-t border-black/10" : "border-t border-white/10"
+                            }`}
+                    >
                         <button
                             onClick={onCancel}
-                            className="h-11 px-4 rounded-xl bg-white/5 hover:bg-white/10 text-white/80"
+                            className={`h-11 px-4 rounded-xl ${isLight
+                                    ? "bg-black/5 hover:bg-black/10 text-black/80"
+                                    : "bg-white/5 hover:bg-white/10 text-white/80"
+                                }`}
                             type="button"
                         >
                             Cancel
                         </button>
+
                         <button
                             onClick={onClickJoin}
                             className="h-11 px-5 rounded-xl font-semibold text-[13px] bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
@@ -560,3 +853,5 @@ export default function PreJoinModal({ open, initial, onCancel, onJoin }: Props)
         </div>
     );
 }
+
+export { PreJoinModal };

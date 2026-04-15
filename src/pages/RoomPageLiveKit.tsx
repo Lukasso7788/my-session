@@ -4426,6 +4426,8 @@ export function RoomPageLiveKit() {
       });
 
       scheduleRebuildTiles();
+      window.setTimeout(() => scheduleRebuildTiles(), 80);
+      window.setTimeout(() => scheduleRebuildTiles(), 220);
     } catch (e: any) {
       console.error("mute mic failed:", e);
       showSystemNotice({
@@ -4434,6 +4436,8 @@ export function RoomPageLiveKit() {
         body: String(e?.message || e || "mute_failed"),
       });
       scheduleRebuildTiles();
+      window.setTimeout(() => scheduleRebuildTiles(), 80);
+      window.setTimeout(() => scheduleRebuildTiles(), 220);
     } finally {
       setAdminBusyKey("");
     }
@@ -4461,6 +4465,8 @@ export function RoomPageLiveKit() {
       });
 
       scheduleRebuildTiles();
+      window.setTimeout(() => scheduleRebuildTiles(), 80);
+      window.setTimeout(() => scheduleRebuildTiles(), 220);
     } catch (e: any) {
       console.error("turn camera off failed:", e);
       showSystemNotice({
@@ -4469,6 +4475,8 @@ export function RoomPageLiveKit() {
         body: String(e?.message || e || "camera_off_failed"),
       });
       scheduleRebuildTiles();
+      window.setTimeout(() => scheduleRebuildTiles(), 80);
+      window.setTimeout(() => scheduleRebuildTiles(), 220);
     } finally {
       setAdminBusyKey("");
     }
@@ -4501,16 +4509,15 @@ export function RoomPageLiveKit() {
           at: Date.now(),
         };
 
-        try {
-          await channel.send({
+        channel
+          .send({
             type: "broadcast",
             event: "participant_kicked",
             payload,
+          })
+          .catch((e: unknown) => {
+            console.warn("kick broadcast failed:", e);
           });
-          await delay(180);
-        } catch (e) {
-          console.warn("kick broadcast failed:", e);
-        }
       }
 
       try {
@@ -4535,9 +4542,15 @@ export function RoomPageLiveKit() {
       });
 
       scheduleRebuildTiles();
+      window.setTimeout(() => scheduleRebuildTiles(), 80);
+      window.setTimeout(() => scheduleRebuildTiles(), 220);
     } catch (e: any) {
       console.error("kick failed:", e);
-      alert(String(e?.message || e || "kick_failed"));
+      showSystemNotice({
+        kind: "error",
+        title: "Kick failed",
+        body: String(e?.message || e || "kick_failed"),
+      });
     } finally {
       setAdminBusyKey("");
     }
@@ -6656,13 +6669,25 @@ export function RoomPageLiveKit() {
               const camBusy = adminBusyKey === camBusyKey;
               const kickBusy = adminBusyKey === `${targetIdentity}:kick`;
 
+              const remoteMicTrackSid = String(
+                targetTile.remoteMicPubSid || targetTile.micTrackSid || ""
+              ).trim();
+
+              const remoteCamTrackSid = String(targetTile.camTrackSid || "").trim();
+
+              const isMicAlreadyMuted = !!targetTile.micMuted;
+              const isCamAlreadyOff =
+                !!targetTile.camPubMuted || !targetTile.camPubHasTrack || !targetTile.camPubExists;
+
               const canMuteMic =
                 canModerateTarget &&
-                !!String(targetTile.remoteMicPubSid || targetTile.micTrackSid || "").trim();
+                !!remoteMicTrackSid &&
+                !isMicAlreadyMuted;
 
               const canTurnOffCam =
                 canModerateTarget &&
-                !!String(targetTile.camTrackSid || "").trim();
+                !!remoteCamTrackSid &&
+                !isCamAlreadyOff;
 
               const isPinned = pinnedTileId === targetTile.id;
               const isHidden = !!hiddenTileIds[targetTile.id];
@@ -6716,38 +6741,34 @@ export function RoomPageLiveKit() {
                           Participant actions
                         </div>
 
-                        {canMuteMic && (
+                        {(!!remoteMicTrackSid || isMicAlreadyMuted) && (
                           <button
                             type="button"
-                            disabled={micBusy}
+                            disabled={micBusy || isMicAlreadyMuted}
                             onClick={() => {
-                              const trackSid = String(
-                                targetTile.remoteMicPubSid || targetTile.micTrackSid || ""
-                              ).trim();
-                              if (!targetIdentity || !trackSid) return;
+                              if (!targetIdentity || !remoteMicTrackSid || isMicAlreadyMuted) return;
 
                               closeTileMenu();
-                              void adminMuteRemoteTrack(targetTile.id, targetIdentity, trackSid);
+                              void adminMuteRemoteTrack(targetTile.id, targetIdentity, remoteMicTrackSid);
                             }}
-                            className={`block w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                            className={`w-full px-4 py-3 text-left text-[13px] transition disabled:cursor-not-allowed disabled:opacity-50 ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
                               }`}
                           >
                             Mute Mic
                           </button>
                         )}
 
-                        {canTurnOffCam && (
+                        {(!!remoteCamTrackSid || isCamAlreadyOff) && (
                           <button
                             type="button"
-                            disabled={camBusy}
+                            disabled={camBusy || isCamAlreadyOff}
                             onClick={() => {
-                              const trackSid = String(targetTile.camTrackSid || "").trim();
-                              if (!targetIdentity || !trackSid) return;
+                              if (!targetIdentity || !remoteCamTrackSid || isCamAlreadyOff) return;
 
                               closeTileMenu();
-                              void adminTurnOffRemoteCamera(targetTile.id, targetIdentity, trackSid);
+                              void adminTurnOffRemoteCamera(targetTile.id, targetIdentity, remoteCamTrackSid);
                             }}
-                            className={`block w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                            className={`w-full px-4 py-3 text-left text-[13px] transition disabled:cursor-not-allowed disabled:opacity-50 ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
                               }`}
                           >
                             Turn camera off
@@ -6801,10 +6822,15 @@ export function RoomPageLiveKit() {
                             disabled={kickBusy}
                             onClick={() => {
                               if (!targetIdentity) return;
+
                               closeTileMenu();
-                              void adminKickParticipant(targetTile.id, targetIdentity);
+                              void adminKickParticipant(
+                                targetIdentity,
+                                targetUserId || undefined,
+                                targetTile.label || undefined
+                              );
                             }}
-                            className={`block w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-red-600 hover:bg-red-500/10" : "text-red-400 hover:bg-red-500/10"
+                            className={`w-full px-4 py-3 text-left text-[13px] transition disabled:cursor-not-allowed disabled:opacity-50 ${isLight ? "text-red-600 hover:bg-red-50" : "text-red-300 hover:bg-red-500/10"
                               }`}
                           >
                             Kick participant
