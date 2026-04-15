@@ -490,6 +490,26 @@ function getCapturePresetForTier(tier: DeviceTier) {
   };
 }
 
+function isChromeOSLike() {
+  if (typeof navigator === "undefined") return false;
+
+  const nav = navigator as Navigator & {
+    userAgentData?: {
+      platform?: string;
+    };
+  };
+
+  const ua = String(nav.userAgent || "").toLowerCase();
+  const platform = String(nav.userAgentData?.platform || nav.platform || "").toLowerCase();
+
+  return (
+    ua.includes("cros") ||
+    ua.includes("chromebook") ||
+    platform.includes("cros") ||
+    platform.includes("chrome os")
+  );
+}
+
 function getInitials(name: string) {
   const s = String(name || "").trim();
   if (!s) return "U";
@@ -1098,6 +1118,40 @@ export function RoomPageLiveKit() {
 
   const capturePreset = useMemo(() => getCapturePresetForTier(deviceTier), [deviceTier]);
 
+  const isChromeOS = useMemo(() => isChromeOSLike(), []);
+
+  const prejoinPreviewPreset = useMemo(() => {
+    if (isMobileQuery || isTabletQuery) {
+      return {
+        width: 320,
+        height: 180,
+        fps: 8,
+      };
+    }
+
+    if (isChromeOS) {
+      return {
+        width: 640,
+        height: 360,
+        fps: 15,
+      };
+    }
+
+    if (deviceTier === "weak") {
+      return {
+        width: 640,
+        height: 360,
+        fps: 12,
+      };
+    }
+
+    return {
+      width: capturePreset.width,
+      height: capturePreset.height,
+      fps: capturePreset.fps,
+    };
+  }, [isMobileQuery, isTabletQuery, isChromeOS, deviceTier, capturePreset]);
+
   const [prejoin, setPrejoin] = useState<PreJoinSettings>(() => ({
     displayName: "",
     audioInputId: "",
@@ -1108,8 +1162,8 @@ export function RoomPageLiveKit() {
     videoEnabled: true,
 
     echoCancellation: true,
-    noiseSuppression: false,
-    autoGainControl: false,
+    noiseSuppression: true,
+    autoGainControl: true,
   }));
   const prejoinRef = useRef(prejoin);
   useEffect(() => {
@@ -1138,13 +1192,13 @@ export function RoomPageLiveKit() {
   const [selectedVideoInputId, setSelectedVideoInputId] = useState<string>("");
 
   const [echoCancellationEnabled, setEchoCancellationEnabled] = useState(true);
-  const [noiseSuppressionEnabled, setNoiseSuppressionEnabled] = useState(false);
-  const [autoGainControlEnabled, setAutoGainControlEnabled] = useState(false);
+  const [noiseSuppressionEnabled, setNoiseSuppressionEnabled] = useState(true);
+  const [autoGainControlEnabled, setAutoGainControlEnabled] = useState(true);
 
   useEffect(() => {
     const nextEcho = true;
-    const nextNoise = isMobileQuery || isTabletQuery;
-    const nextAgc = isMobileQuery || isTabletQuery;
+    const nextNoise = true;
+    const nextAgc = true;
 
     setPrejoin((prev) => ({
       ...prev,
@@ -1163,7 +1217,7 @@ export function RoomPageLiveKit() {
     setEchoCancellationEnabled(nextEcho);
     setNoiseSuppressionEnabled(nextNoise);
     setAutoGainControlEnabled(nextAgc);
-  }, [isMobileQuery, isTabletQuery]);
+  }, []);
 
   // pre-join prepared preview track
   const prejoinPreparedVideoTrackRef = useRef<LocalVideoTrack | null>(null);
@@ -2412,34 +2466,61 @@ export function RoomPageLiveKit() {
 
     await cleanupPrejoinPreparedVideoTrack();
 
-    const isMobileLike = isMobileQuery || isTabletQuery || deviceTier === "weak";
+    const isMobileOrTablet = isMobileQuery || isTabletQuery;
     const wantedVideoDeviceId = String(pj.videoInputId || "").trim();
 
-    try {
-      const track = await createLocalVideoTrack({
+    const buildTrack = async (args: {
+      width: number;
+      height: number;
+      fps: number;
+      useExactDeviceId: boolean;
+    }) => {
+      return await createLocalVideoTrack({
         deviceId:
-          !isMobileLike && wantedVideoDeviceId
+          args.useExactDeviceId && wantedVideoDeviceId
             ? wantedVideoDeviceId
             : undefined,
         resolution: {
-          width: isMobileLike ? 320 : capturePreset.width,
-          height: isMobileLike ? 180 : capturePreset.height,
+          width: args.width,
+          height: args.height,
         },
-        frameRate: isMobileLike ? 8 : capturePreset.fps,
+        frameRate: args.fps,
       } as any);
+    };
+
+    try {
+      let track: LocalVideoTrack | null = null;
+
+      try {
+        track = await buildTrack({
+          width: prejoinPreviewPreset.width,
+          height: prejoinPreviewPreset.height,
+          fps: prejoinPreviewPreset.fps,
+          useExactDeviceId: !isMobileOrTablet,
+        });
+      } catch (firstError) {
+        console.warn("prejoin preview primary create failed:", firstError);
+
+        if (!isChromeOS && !isMobileOrTablet && deviceTier !== "weak") {
+          throw firstError;
+        }
+
+        track = await buildTrack({
+          width: 480,
+          height: 270,
+          fps: 12,
+          useExactDeviceId: !isMobileOrTablet,
+        });
+      }
 
       prejoinPreparedVideoTrackRef.current = track;
+      setDeviceError("");
       setPrejoinPreviewVersion((v) => v + 1);
       return track;
     } catch (e: any) {
       console.warn("createPrejoinPreparedVideoTrack failed:", e);
-
-      if (isMobileLike) {
-        setDeviceError(String(e?.message || e || "camera_preview_failed"));
-        return null;
-      }
-
-      throw e;
+      setDeviceError(String(e?.message || e || "camera_preview_failed"));
+      return null;
     }
   };
 
@@ -2501,7 +2582,7 @@ export function RoomPageLiveKit() {
 
       if (!pj.videoEnabled) return;
 
-      if (opts?.delayedForWeak && deviceTier === "weak") {
+      if (opts?.delayedForWeak && deviceTier === "weak" && !isChromeOS) {
         await delay(WEAK_DEVICE_PREVIEW_INIT_DELAY_MS);
 
         if (!prejoinOpen) return;
@@ -2510,7 +2591,7 @@ export function RoomPageLiveKit() {
 
       await createPrejoinPreparedVideoTrack({ force: !!opts?.forceTrack });
 
-      if (deviceTier !== "weak" && videoFxMode !== "off") {
+      if (!(isMobileQuery || isTabletQuery) && videoFxMode !== "off") {
         await applyPrejoinVideoFx(videoFxMode);
       }
     } finally {
@@ -3873,11 +3954,14 @@ export function RoomPageLiveKit() {
 
       const nextTrack = await createLocalVideoTrack({
         deviceId: useId || undefined,
-        resolution: { width: capturePreset.width, height: capturePreset.height },
-        frameRate: capturePreset.fps,
+        resolution: {
+          width: isChromeOS ? 640 : capturePreset.width,
+          height: isChromeOS ? 360 : capturePreset.height,
+        },
+        frameRate: isChromeOS ? 15 : capturePreset.fps,
       } as any);
 
-      if (deviceTier !== "weak" && videoFxMode !== "off") {
+      if (!(isMobileQuery || isTabletQuery) && videoFxMode !== "off") {
         try {
           await safeApplyProcessor(nextTrack, videoFxMode, blurStrength, bgImageUrl);
         } catch (e) {
@@ -4045,11 +4129,7 @@ export function RoomPageLiveKit() {
         let prepared = prejoinPreparedVideoTrackRef.current;
 
         if (!prepared) {
-          prepared = await createLocalVideoTrack({
-            deviceId: pj.videoInputId || selectedVideoInputId || undefined,
-            resolution: { width: capturePreset.width, height: capturePreset.height },
-            frameRate: capturePreset.fps,
-          } as any);
+          prepared = await createPrejoinPreparedVideoTrack({ force: true });
 
           if (prepared && fxAllowed) {
             try {
