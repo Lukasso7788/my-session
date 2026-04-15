@@ -524,7 +524,7 @@ function VideoTileInner({
                 >
                     <div className="flex min-w-0 items-center gap-[0.35rem]">
                         <span
-                            className={`min-w-0 truncate text-[12px] font-regular leading-none ${nameTextClass}`}
+                            className={`min-w-0 truncate text-[12px] font-medium leading-none ${nameTextClass}`}
                         >
                             {label || "User"}
                         </span>
