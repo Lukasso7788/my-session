@@ -4428,7 +4428,11 @@ export function RoomPageLiveKit() {
       scheduleRebuildTiles();
     } catch (e: any) {
       console.error("mute mic failed:", e);
-      alert(String(e?.message || e || "mute_failed"));
+      showSystemNotice({
+        kind: "error",
+        title: "Mic mute failed",
+        body: String(e?.message || e || "mute_failed"),
+      });
       scheduleRebuildTiles();
     } finally {
       setAdminBusyKey("");
@@ -4459,7 +4463,11 @@ export function RoomPageLiveKit() {
       scheduleRebuildTiles();
     } catch (e: any) {
       console.error("turn camera off failed:", e);
-      alert(String(e?.message || e || "camera_off_failed"));
+      showSystemNotice({
+        kind: "error",
+        title: "Camera action failed",
+        body: String(e?.message || e || "camera_off_failed"),
+      });
       scheduleRebuildTiles();
     } finally {
       setAdminBusyKey("");
@@ -6711,15 +6719,13 @@ export function RoomPageLiveKit() {
                         <button
                           type="button"
                           disabled={micBusy}
-                          onClick={async () => {
-                            const trackSid = String(
-                              targetTile.remoteMicPubSid || targetTile.micTrackSid || ""
-                            ).trim();
+                          onClick={() => {
+                            const trackSid = String(targetTile.micTrackSid || "").trim();
                             if (!targetIdentity || !trackSid) return;
-                            await adminMuteRemoteTrack(targetTile.id, targetIdentity, trackSid);
+
                             closeTileMenu();
+                            void adminMuteRemoteTrack(targetTile.id, targetIdentity, trackSid);
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
                         >
                           Mute Mic
                         </button>
@@ -6729,13 +6735,13 @@ export function RoomPageLiveKit() {
                         <button
                           type="button"
                           disabled={camBusy}
-                          onClick={async () => {
+                          onClick={() => {
                             const trackSid = String(targetTile.camTrackSid || "").trim();
                             if (!targetIdentity || !trackSid) return;
-                            await adminTurnOffRemoteCamera(targetTile.id, targetIdentity, trackSid);
+
                             closeTileMenu();
+                            void adminTurnOffRemoteCamera(targetTile.id, targetIdentity, trackSid);
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
                         >
                           Turn camera off
                         </button>

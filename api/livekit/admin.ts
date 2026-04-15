@@ -35,6 +35,41 @@ type ActorRole = {
   isModerator: boolean;
 };
 
+const ACTOR_ROLE_CACHE_TTL_MS = 15_000;
+
+const actorRoleCache = new Map<
+  string,
+  {
+    expiresAt: number;
+    value: ActorRole;
+  }
+>();
+
+function makeActorRoleCacheKey(accessToken: string, sessionId: string) {
+  return `${String(sessionId || "").trim().toLowerCase()}::${String(accessToken || "").trim()}`;
+}
+
+function readActorRoleCache(accessToken: string, sessionId: string): ActorRole | null {
+  const key = makeActorRoleCacheKey(accessToken, sessionId);
+  const hit = actorRoleCache.get(key);
+  if (!hit) return null;
+
+  if (Date.now() >= hit.expiresAt) {
+    actorRoleCache.delete(key);
+    return null;
+  }
+
+  return hit.value;
+}
+
+function writeActorRoleCache(accessToken: string, sessionId: string, value: ActorRole) {
+  const key = makeActorRoleCacheKey(accessToken, sessionId);
+  actorRoleCache.set(key, {
+    expiresAt: Date.now() + ACTOR_ROLE_CACHE_TTL_MS,
+    value,
+  });
+}
+
 function nowMs() {
   return Date.now();
 }
@@ -205,6 +240,11 @@ async function getActorRole(params: {
 }): Promise<ActorRole> {
   const { supabaseUrl, serviceKey, accessToken, sessionId } = params;
 
+  const cached = readActorRoleCache(accessToken, sessionId);
+  if (cached) {
+    return cached;
+  }
+
   const sb = createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
@@ -241,7 +281,15 @@ async function getActorRole(params: {
     }
   }
 
-  return { userId, hostId, isHost, isModerator };
+  const result: ActorRole = {
+    userId,
+    hostId,
+    isHost,
+    isModerator,
+  };
+
+  writeActorRoleCache(accessToken, sessionId, result);
+  return result;
 }
 
 function setCors(res: VercelResponse, req: VercelRequest) {
