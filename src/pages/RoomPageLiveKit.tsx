@@ -1062,6 +1062,29 @@ export function RoomPageLiveKit() {
   const [displayName, setDisplayName] = useState("");
   const localRoomDisplayNameOverrideRef = useRef<string>("");
   const [localRoomDisplayNameVersion, setLocalRoomDisplayNameVersion] = useState(0);
+  const applyRoomDisplayNameLocally = (nextRaw: string) => {
+    const next = String(nextRaw || "").trim();
+    if (!next) return;
+
+    // 1) локальный source of truth для local tile
+    localRoomDisplayNameOverrideRef.current = next;
+    setLocalRoomDisplayNameVersion((v) => v + 1);
+
+    // 2) основной state
+    setDisplayName(next);
+
+    // 3) prejoin state
+    setPrejoin((prev) => ({
+      ...prev,
+      displayName: next,
+    }));
+
+    // 4) prejoin ref
+    prejoinRef.current = {
+      ...prejoinRef.current,
+      displayName: next,
+    };
+  };
   
   const [localAvatarUrl, setLocalAvatarUrl] = useState<string>("");
   const accessTokenRef = useRef<string>("");
@@ -1096,6 +1119,8 @@ export function RoomPageLiveKit() {
   const [reportReason, setReportReason] = useState("");
   const [reportBusy, setReportBusy] = useState(false);
   const [reportError, setReportError] = useState("");
+  const [editNameOpen, setEditNameOpen] = useState(false);
+  const [editNameValue, setEditNameValue] = useState("");
 
   // profile cache for remote
   const [profilesById, setProfilesById] = useState<Record<string, HostProfile>>({});
@@ -4888,12 +4913,25 @@ export function RoomPageLiveKit() {
   };
 
   // edit name
+  const openEditName = () => {
+    const current = String(
+      localRoomDisplayNameOverrideRef.current ||
+      displayName ||
+      prejoinRef.current.displayName ||
+      userName ||
+      ""
+    ).trim();
+
+    setEditNameValue(current);
+    setEditNameOpen(true);
+  };
+
   const saveEditName = async () => {
     const nm = String(editNameValue || "").trim();
     if (!nm) return;
 
     try {
-      // 1) сразу локально обновляем имя
+      // 1) сразу обновляем локальный UI
       applyRoomDisplayNameLocally(nm);
 
       // 2) сразу перестраиваем тайлы локально
