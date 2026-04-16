@@ -127,6 +127,7 @@ type TileModel = {
   id: string;
   kind?: "camera" | "screen";
   label: string;
+  metadataDisplayName?: string;
   isLocal: boolean;
 
   videoTrack?: Track;
@@ -689,6 +690,38 @@ function buildColorCorrectionFilter(state: ColorCorrectionState) {
   ]
     .filter(Boolean)
     .join(" ");
+}
+
+function parseParticipantMetadata(raw: unknown): Record<string, unknown> | null {
+  const s = String(raw || "").trim();
+  if (!s) return null;
+
+  try {
+    const parsed = JSON.parse(s);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function getDisplayNameFromParticipantMetadata(raw: unknown): string {
+  const meta = parseParticipantMetadata(raw);
+  if (!meta) return "";
+
+  const direct = String(meta.displayName || "").trim();
+  if (direct) return direct;
+
+  const nestedProfileName = String(
+    (meta.profile && typeof meta.profile === "object"
+      ? (meta.profile as Record<string, unknown>).displayName
+      : "") || ""
+  ).trim();
+
+  if (nestedProfileName) return nestedProfileName;
+
+  return "";
 }
 
 // tab presence
@@ -3758,17 +3791,25 @@ export function RoomPageLiveKit() {
       return prev === nextOn ? prev : nextOn;
     });
 
+    const localParticipantMetadataDisplayName = getDisplayNameFromParticipantMetadata(
+      (lp as any)?.metadata
+    );
+
+    const effectiveLocalLabel =
+      String(
+        localRoomDisplayNameOverrideRef.current ||
+        localParticipantMetadataDisplayName ||
+        displayName ||
+        prejoinRef.current.displayName ||
+        userName ||
+        "You"
+      ).trim() || "You";
+
     next.push({
       id: "local",
       kind: "camera",
-      label:
-        String(
-          localRoomDisplayNameOverrideRef.current ||
-          displayName ||
-          prejoinRef.current.displayName ||
-          userName ||
-          "You"
-        ).trim() || "You",
+      label: effectiveLocalLabel,
+      metadataDisplayName: localParticipantMetadataDisplayName || undefined,
       isLocal: true,
       videoTrack: localCamTrack,
       audioTrack: localAudioTrackRaw,
@@ -3779,7 +3820,6 @@ export function RoomPageLiveKit() {
       camPubHasTrack: localCamPubHasTrack,
       camPubMuted: localCamPubMuted,
     });
-
     room.remoteParticipants.forEach((rp: RemoteParticipant) => {
       const allVideoPubs = Array.from(rp.videoTrackPublications.values()) as RemoteTrackPublication[];
       const allAudioPubs = Array.from(rp.audioTrackPublications.values()) as RemoteTrackPublication[];
@@ -3812,10 +3852,21 @@ export function RoomPageLiveKit() {
       const tileId = rp.sid;
       const remoteMicMuted = micPub ? !!(micPub as any).isMuted : true;
 
+      const participantMetadataDisplayName = getDisplayNameFromParticipantMetadata(
+        (rp as any)?.metadata
+      );
+
+      const effectiveRemoteLabel =
+        participantMetadataDisplayName ||
+        String(nm || "").trim() ||
+        String((rp as any)?.name || "").trim() ||
+        "Participant";
+
       next.push({
         id: tileId,
         kind: "camera",
-        label: nm,
+        label: effectiveRemoteLabel,
+        metadataDisplayName: participantMetadataDisplayName || undefined,
         isLocal: false,
         videoTrack: vt,
         audioTrack: remoteAudioTrack,
@@ -3836,8 +3887,11 @@ export function RoomPageLiveKit() {
         participantIdentity: exactIdentity || undefined,
       });
 
-      const pct = Number(volumePctByParticipantKey[volumeKey] ?? 100);
-      if (Number.isFinite(pct)) applyVolumeToRemoteParticipant(tileId, pct);
+      const pct = Number(volumePctByParticipantKey[volumeKey] ?? defaultRemoteVolumePct);
+      if (Number.isFinite(pct)) {
+        applyVolumeToRemoteParticipant(tileId, pct);
+      }
+      
     });
 
     setTiles(next);
@@ -4868,29 +4922,46 @@ export function RoomPageLiveKit() {
     const nm = String(editNameValue || "").trim();
     if (!nm) return;
 
-    // 1) сразу обновляем локальный source of truth
-    applyRoomDisplayNameLocally(nm);
-
-    // 2) сразу перестраиваем тайлы уже с новым локальным именем
-    scheduleRebuildTiles();
-
     try {
+      // 1) сразу обновляем локальное имя у себя
+      applyRoomDisplayNameLocally(nm);
+
+      // 2) сразу перестраиваем тайлы локально
+      scheduleRebuildTiles();
+
       const r = roomRef.current;
       const lp: any = r?.localParticipant as any;
 
-      if (lp?.setName) {
-        await lp.setName(nm);
+      if (lp) {
+        const prevMeta = parseParticipantMetadata(lp.metadata) || {};
+
+        const nextMeta = {
+          ...prevMeta,
+          displayName: nm,
+        };
+
+        if (typeof lp.setMetadata === "function") {
+          await lp.setMetadata(JSON.stringify(nextMeta));
+        }
+
+        if (typeof lp.setName === "function") {
+          try {
+            await lp.setName(nm);
+          } catch (e) {
+            console.warn("localParticipant.setName failed", e);
+          }
+        }
       }
-    } catch (e) {
-      console.warn("localParticipant.setName failed", e);
-    }
 
-    // 3) ещё один rebuild после sync с LiveKit
-    requestAnimationFrame(() => {
+      // 3) несколько перестроений тайлов после sync
       scheduleRebuildTiles();
-    });
+      window.setTimeout(() => scheduleRebuildTiles(), 60);
+      window.setTimeout(() => scheduleRebuildTiles(), 180);
 
-    setEditNameOpen(false);
+      setEditNameOpen(false);
+    } catch (e) {
+      console.error("saveEditName failed:", e);
+    }
   };
 
   // report participant
@@ -5280,11 +5351,15 @@ export function RoomPageLiveKit() {
 
     const nameText = t.isLocal
       ? localRoomDisplayNameOverrideRef.current ||
+      t.metadataDisplayName ||
       displayName ||
       prejoinRef.current.displayName ||
       userName ||
       "You"
-      : participantProfileName || t.label || "Participant";
+      : t.metadataDisplayName ||
+      participantProfileName ||
+      t.label ||
+      "Participant";
 
     const micMuted = !!t.micMuted;
 
