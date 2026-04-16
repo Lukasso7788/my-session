@@ -1063,30 +1063,6 @@ export function RoomPageLiveKit() {
   const localRoomDisplayNameOverrideRef = useRef<string>("");
   const [localRoomDisplayNameVersion, setLocalRoomDisplayNameVersion] = useState(0);
   
-
-  const applyRoomDisplayNameLocally = (nextRaw: string) => {
-    const next = String(nextRaw || "").trim();
-    if (!next) return;
-
-    // 1) главный локальный source of truth для local tile
-    localRoomDisplayNameOverrideRef.current = next;
-    setLocalRoomDisplayNameVersion((v) => v + 1);
-
-    // 2) обычный state
-    setDisplayName(next);
-
-    // 3) prejoin state
-    setPrejoin((prev) => ({
-      ...prev,
-      displayName: next,
-    }));
-
-    // 4) prejoin ref
-    prejoinRef.current = {
-      ...prejoinRef.current,
-      displayName: next,
-    };
-  };
   const [localAvatarUrl, setLocalAvatarUrl] = useState<string>("");
   const accessTokenRef = useRef<string>("");
   useEffect(() => {
@@ -4912,18 +4888,12 @@ export function RoomPageLiveKit() {
   };
 
   // edit name
-  const openEditName = () => {
-    const current = (displayName || userName || "").trim();
-    setEditNameValue(current);
-    setEditNameOpen(true);
-  };
-
   const saveEditName = async () => {
     const nm = String(editNameValue || "").trim();
     if (!nm) return;
 
     try {
-      // 1) сразу обновляем локальное имя у себя
+      // 1) сразу локально обновляем имя
       applyRoomDisplayNameLocally(nm);
 
       // 2) сразу перестраиваем тайлы локально
@@ -4953,7 +4923,7 @@ export function RoomPageLiveKit() {
         }
       }
 
-      // 3) несколько перестроений тайлов после sync
+      // 3) ещё несколько перестроений после sync
       scheduleRebuildTiles();
       window.setTimeout(() => scheduleRebuildTiles(), 60);
       window.setTimeout(() => scheduleRebuildTiles(), 180);
