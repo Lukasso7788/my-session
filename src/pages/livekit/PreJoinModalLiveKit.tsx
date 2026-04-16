@@ -67,6 +67,48 @@ type PreJoinModalProps = {
   hideBackgroundFx?: boolean;
 };
 
+function IconMic({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <rect x="9" y="3" width="6" height="11" rx="3" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M6.5 11.5a5.5 5.5 0 0 0 11 0" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M12 17v4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M8.5 21h7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconMicOff({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <rect x="9" y="3" width="6" height="11" rx="3" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M6.5 11.5a5.5 5.5 0 0 0 8.52 4.62" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M12 17v4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M8.5 21h7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M4 4l16 16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconCamera({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <rect x="3" y="7" width="12" height="10" rx="2" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M15 10l5-3v10l-5-3" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconCameraOff({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <rect x="3" y="7" width="12" height="10" rx="2" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M15 10l5-3v10l-5-3" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M4 4l16 16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function PreJoinModal({
   open,
   theme,
@@ -170,6 +212,15 @@ export function PreJoinModal({
   const optionStyle: React.CSSProperties = isLight
     ? { color: "#0b1220", backgroundColor: "#ffffff" }
     : { color: "#ffffff", backgroundColor: "#0b1220" };
+
+  const mediaToggleBase =
+    "h-11 px-4 rounded-2xl border text-[13px] font-semibold transition inline-flex items-center gap-2 justify-center";
+  const mediaToggleOn = isLight
+    ? "bg-black text-white border-black hover:bg-black/90"
+    : "bg-white text-black border-white hover:bg-white/90";
+  const mediaToggleOff = isLight
+    ? "bg-red-50 text-red-700 border-red-200 hover:bg-red-100"
+    : "bg-red-500/15 text-red-200 border-red-400/30 hover:bg-red-500/25";
 
   const previewHostRef = useRef<HTMLDivElement | null>(null);
   const attachedPreviewElRef = useRef<HTMLElement | null>(null);
@@ -760,23 +811,45 @@ export function PreJoinModal({
 
               <div className={`rounded-2xl p-4 ${inputWrap}`}>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <label className="flex items-center gap-2 text-[13px]">
-                    <input
-                      type="checkbox"
-                      checked={value.audioEnabled}
-                      onChange={(e) => onChange({ ...value, audioEnabled: e.target.checked })}
-                    />
-                    <span className={labelCls}>Audio enabled</span>
-                  </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onChange({
+                        ...value,
+                        audioEnabled: !value.audioEnabled,
+                      })
+                    }
+                    className={`${mediaToggleBase} ${value.audioEnabled ? mediaToggleOn : mediaToggleOff
+                      }`}
+                    title={value.audioEnabled ? "Disable microphone" : "Enable microphone"}
+                  >
+                    {value.audioEnabled ? (
+                      <IconMic className="w-4 h-4" />
+                    ) : (
+                      <IconMicOff className="w-4 h-4" />
+                    )}
+                    <span>{value.audioEnabled ? "Microphone on" : "Microphone off"}</span>
+                  </button>
 
-                  <label className="flex items-center gap-2 text-[13px]">
-                    <input
-                      type="checkbox"
-                      checked={value.videoEnabled}
-                      onChange={(e) => onChange({ ...value, videoEnabled: e.target.checked })}
-                    />
-                    <span className={labelCls}>Video enabled</span>
-                  </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onChange({
+                        ...value,
+                        videoEnabled: !value.videoEnabled,
+                      })
+                    }
+                    className={`${mediaToggleBase} ${value.videoEnabled ? mediaToggleOn : mediaToggleOff
+                      }`}
+                    title={value.videoEnabled ? "Disable camera" : "Enable camera"}
+                  >
+                    {value.videoEnabled ? (
+                      <IconCamera className="w-4 h-4" />
+                    ) : (
+                      <IconCameraOff className="w-4 h-4" />
+                    )}
+                    <span>{value.videoEnabled ? "Camera on" : "Camera off"}</span>
+                  </button>
 
                   <label className="flex items-center gap-2 text-[13px]">
                     <input
