@@ -104,6 +104,7 @@ type VideoTileProps = {
     showMenuButton?: boolean;
     onToggleMenu?: (tileId: string, anchorEl: HTMLElement | null) => void;
     onOpenProfile?: () => void;
+    onEditName?: () => void;
 };
 
 function MicBadgeWithBarVisualizer({
@@ -200,6 +201,7 @@ function VideoTileInner({
     showMenuButton = false,
     onToggleMenu,
     onOpenProfile,
+    onEditName,
 }: VideoTileProps) {
     const wrapRef = useRef<HTMLDivElement | null>(null);
     const mediaHostRef = useRef<HTMLDivElement | null>(null);
@@ -452,6 +454,21 @@ function VideoTileInner({
                     </button>
                 ) : null}
 
+                {isLocal ? (
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onEditName?.();
+                        }}
+                        className={`absolute left-[0.55rem] top-[0.55rem] z-20 rounded-full border px-3 py-1.5 text-[11px] font-medium backdrop-blur-md transition ${menuBtnClass} opacity-0 group-hover:opacity-100 focus:opacity-100 pointer-events-none group-hover:pointer-events-auto focus:pointer-events-auto`}
+                        aria-label="Edit your name"
+                        title="Edit your name"
+                    >
+                        Edit Name
+                    </button>
+                ) : null}
+
                 {showActions ? (
                     <div className="absolute right-2 bottom-10 z-10 flex max-w-[92%] flex-wrap justify-end gap-1">
                         {hostActions?.canMuteMic && hostActions?.onToggleMuteMic ? (
@@ -559,6 +576,7 @@ const areVideoTilePropsEqual = (prev: VideoTileProps, next: VideoTileProps) => {
         prev.showMenuButton === next.showMenuButton &&
         prev.onToggleMenu === next.onToggleMenu &&
         prev.onOpenProfile === next.onOpenProfile &&
+        prev.onEditName === next.onEditName &&
         prev.hostActions?.canMuteMic === next.hostActions?.canMuteMic &&
         prev.hostActions?.canMuteCam === next.hostActions?.canMuteCam &&
         prev.hostActions?.micMuted === next.hostActions?.micMuted &&
