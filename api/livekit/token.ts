@@ -118,7 +118,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const accessToken = getBearerToken(req);
-
     const sessionId = String(bodySessionId || deriveSessionId(roomName)).toLowerCase();
 
     let role = { isHost: false, isModerator: false, userId: "" };
@@ -174,9 +173,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       canPublish: true,
       canSubscribe: true,
       canPublishData: true,
+      canUpdateOwnMetadata: true,
     };
 
-    // Даем roomAdmin хосту И модератору (если хочешь более мягко — скажи, сделаем отдельно)
+    // Даем roomAdmin хосту И модератору
     if (role.isHost || role.isModerator) {
       grant.roomAdmin = true;
     }
@@ -186,11 +186,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const token = await at.toJwt();
 
     console.log("LK TOKEN GENERATED", {
-      marker: "lk-token-secure-v1",
+      marker: "lk-token-secure-v2",
       roomName: String(roomName),
       identity: String(identity),
       isHost: role.isHost,
       isModerator: role.isModerator,
+      canUpdateOwnMetadata: true,
       apiKeyPrefix: String(apiKey).slice(0, 6),
       tokenPreview: `${token.slice(0, 18)}...${token.slice(-10)}`,
     });
