@@ -41,6 +41,63 @@ function clamp(n: number, a: number, b: number) {
     return Math.max(a, Math.min(b, n));
 }
 
+function getStatusLabel(status: unknown): string {
+    const key = String(status || "").trim().toLowerCase();
+
+    if (key === "afk") return "AFK";
+    if (key === "break") return "Break";
+    if (key === "skip") return "Skip me";
+    if (key === "call") return "On a call";
+    if (key === "eating") return "Eating";
+    if (key === "private") return "Private";
+
+    return "";
+}
+
+function getStatusClass(status: unknown, isLight: boolean): string {
+    const key = String(status || "").trim().toLowerCase();
+
+    if (key === "afk") {
+        return isLight
+            ? "bg-neutral-200 text-neutral-700 border-black/10"
+            : "bg-white/10 text-white/80 border-white/10";
+    }
+
+    if (key === "break") {
+        return isLight
+            ? "bg-yellow-100 text-yellow-800 border-yellow-300/60"
+            : "bg-yellow-400/15 text-yellow-200 border-yellow-300/25";
+    }
+
+    if (key === "skip") {
+        return isLight
+            ? "bg-purple-100 text-purple-800 border-purple-300/60"
+            : "bg-purple-400/15 text-purple-200 border-purple-300/25";
+    }
+
+    if (key === "call") {
+        return isLight
+            ? "bg-blue-100 text-blue-800 border-blue-300/60"
+            : "bg-blue-400/15 text-blue-200 border-blue-300/25";
+    }
+
+    if (key === "eating") {
+        return isLight
+            ? "bg-orange-100 text-orange-800 border-orange-300/60"
+            : "bg-orange-400/15 text-orange-200 border-orange-300/25";
+    }
+
+    if (key === "private") {
+        return isLight
+            ? "bg-neutral-100 text-neutral-700 border-neutral-300/60"
+            : "bg-neutral-400/15 text-neutral-200 border-neutral-300/25";
+    }
+
+    return isLight
+        ? "bg-neutral-100 text-neutral-700 border-black/10"
+        : "bg-white/10 text-white/80 border-white/10";
+}
+
 function Icon({
     name,
     theme,
@@ -91,6 +148,7 @@ function Icon({
 type VideoTileProps = {
     tileId: string;
     label: string;
+    status?: string | null;
     videoTrack?: Track;
     audioTrack?: LocalAudioTrack | RemoteAudioTrack;
     isLocal: boolean;
@@ -104,6 +162,7 @@ type VideoTileProps = {
     showMenuButton?: boolean;
     onToggleMenu?: (tileId: string, anchorEl: HTMLElement | null) => void;
     onOpenProfile?: () => void;
+    onEditName?: () => void;
 };
 
 function MicBadgeWithBarVisualizer({
@@ -187,6 +246,7 @@ function MicBadgeWithBarVisualizer({
 function VideoTileInner({
     tileId,
     label,
+    status,
     videoTrack,
     audioTrack,
     isLocal,
@@ -523,11 +583,22 @@ function VideoTileInner({
                     className={`pointer-events-auto min-w-0 max-w-full rounded-[12px] border px-2 py-1 backdrop-blur-md ${namePillClass}`}
                 >
                     <div className="flex min-w-0 items-center gap-[0.35rem]">
-                        <span
-                            className={`min-w-0 truncate text-[12px] font-medium leading-none ${nameTextClass}`}
-                        >
-                            {label || "User"}
-                        </span>
+                        <>
+                            <span
+                                className={`min-w-0 truncate text-[12px] font-medium leading-none ${nameTextClass}`}
+                            >
+                                {label || "User"}
+                            </span>
+
+                            {status ? (
+                                <span
+                                    className={`shrink-0 rounded-full border px-1.5 py-[1px] text-[10px] leading-none ${getStatusClass(status, isLight)}`}
+                                    title={getStatusLabel(status)}
+                                >
+                                    {getStatusLabel(status)}
+                                </span>
+                            ) : null}
+                        </>
                     </div>
                 </div>
 
@@ -547,6 +618,7 @@ const areVideoTilePropsEqual = (prev: VideoTileProps, next: VideoTileProps) => {
     return (
         prev.tileId === next.tileId &&
         prev.label === next.label &&
+        prev.status === next.status &&
         prev.videoTrack === next.videoTrack &&
         prev.audioTrack === next.audioTrack &&
         prev.isLocal === next.isLocal &&
