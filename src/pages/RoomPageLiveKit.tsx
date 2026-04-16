@@ -2461,6 +2461,28 @@ export function RoomPageLiveKit() {
   const [settingsPreviewVersion, setSettingsPreviewVersion] = useState(0);
   const [blurStrength, setBlurStrength] = useState<number>(12);
   const [connected, setConnected] = useState(false);
+  useEffect(() => {
+    if (!connected) return;
+
+    const room = roomRef.current;
+    if (!room) return;
+
+    const onParticipantMetadataChanged = () => {
+      try {
+        scheduleRebuildTiles();
+        window.setTimeout(() => scheduleRebuildTiles(), 80);
+        window.setTimeout(() => scheduleRebuildTiles(), 220);
+      } catch (e) {
+        console.error("metadata changed rebuild failed:", e);
+      }
+    };
+
+    room.on(RoomEvent.ParticipantMetadataChanged, onParticipantMetadataChanged);
+
+    return () => {
+      room.off(RoomEvent.ParticipantMetadataChanged, onParticipantMetadataChanged);
+    };
+  }, [connected]);
   const [remoteAudioBlocked, setRemoteAudioBlocked] = useState(false);
   const [remoteAudioBlockedReason, setRemoteAudioBlockedReason] = useState("");
   const [remoteAudioHasAnyTracks, setRemoteAudioHasAnyTracks] = useState(false);
