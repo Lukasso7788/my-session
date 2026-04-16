@@ -128,6 +128,7 @@ type TileModel = {
   kind?: "camera" | "screen";
   label: string;
   metadataDisplayName?: string;
+  status?: string | null;
   isLocal: boolean;
 
   videoTrack?: Track;
@@ -706,6 +707,14 @@ function parseParticipantMetadata(raw: unknown): Record<string, unknown> | null 
   }
 }
 
+function getStatusFromMetadata(raw: unknown): string | null {
+  const meta = parseParticipantMetadata(raw);
+  if (!meta) return null;
+
+  const status = String(meta.status || "").trim();
+  return status || null;
+}
+
 function getDisplayNameFromParticipantMetadata(raw: unknown): string {
   const meta = parseParticipantMetadata(raw);
   if (!meta) return "";
@@ -722,6 +731,32 @@ function getDisplayNameFromParticipantMetadata(raw: unknown): string {
   if (nestedProfileName) return nestedProfileName;
 
   return "";
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  afk: "AFK",
+  break: "Break",
+  skip: "Skip me",
+  call: "On a call",
+  eating: "Eating",
+  private: "Private",
+};
+
+function getStatusLabel(status: unknown): string {
+  const key = String(status || "").trim().toLowerCase();
+  return STATUS_LABELS[key] || "";
+}
+
+function getStatusTone(status: unknown): string {
+  const key = String(status || "").trim().toLowerCase();
+
+  if (key === "afk") return "neutral";
+  if (key === "break") return "yellow";
+  if (key === "skip") return "purple";
+  if (key === "call") return "blue";
+  if (key === "eating") return "orange";
+  if (key === "private") return "neutral";
+  return "neutral";
 }
 
 // tab presence
@@ -1062,17 +1097,15 @@ export function RoomPageLiveKit() {
   const [displayName, setDisplayName] = useState("");
   const localRoomDisplayNameOverrideRef = useRef<string>("");
   const [localRoomDisplayNameVersion, setLocalRoomDisplayNameVersion] = useState(0);
-  
-
   const applyRoomDisplayNameLocally = (nextRaw: string) => {
     const next = String(nextRaw || "").trim();
     if (!next) return;
 
-    // 1) главный локальный source of truth для local tile
+    // 1) локальный source of truth для local tile
     localRoomDisplayNameOverrideRef.current = next;
     setLocalRoomDisplayNameVersion((v) => v + 1);
 
-    // 2) обычный state
+    // 2) основной state
     setDisplayName(next);
 
     // 3) prejoin state
@@ -1087,6 +1120,29 @@ export function RoomPageLiveKit() {
       displayName: next,
     };
   };
+
+  const setMyStatus = async (status: string | null) => {
+    const room = roomRef.current;
+    const me = room?.localParticipant;
+    if (!me) return;
+
+    let currentMeta = {};
+    try {
+      currentMeta = JSON.parse(me.metadata || "{}");
+    } catch { }
+
+    const nextMeta = {
+      ...currentMeta,
+      status, // 👈 ВОТ ЭТО
+    };
+
+    try {
+      await me.setMetadata(JSON.stringify(nextMeta));
+    } catch (e) {
+      console.error("setMetadata failed", e);
+    }
+  };
+  
   const [localAvatarUrl, setLocalAvatarUrl] = useState<string>("");
   const accessTokenRef = useRef<string>("");
   useEffect(() => {
@@ -1120,6 +1176,8 @@ export function RoomPageLiveKit() {
   const [reportReason, setReportReason] = useState("");
   const [reportBusy, setReportBusy] = useState(false);
   const [reportError, setReportError] = useState("");
+  const [editNameOpen, setEditNameOpen] = useState(false);
+  const [editNameValue, setEditNameValue] = useState("");
 
   // profile cache for remote
   const [profilesById, setProfilesById] = useState<Record<string, HostProfile>>({});
@@ -3454,8 +3512,6 @@ export function RoomPageLiveKit() {
   const reactionsChannelRef = useRef<any>(null);
 
   // edit name modal
-  const [editNameOpen, setEditNameOpen] = useState(false);
-  const [editNameValue, setEditNameValue] = useState("");
   const pipWindowRef = useRef<Window | null>(null);
   const [pipMountEl, setPipMountEl] = useState<HTMLElement | null>(null);
   const [pipOpen, setPipOpen] = useState(false);
@@ -3795,6 +3851,8 @@ export function RoomPageLiveKit() {
       (lp as any)?.metadata
     );
 
+    const localParticipantStatus = getStatusFromMetadata((lp as any)?.metadata);
+
     const effectiveLocalLabel =
       String(
         localRoomDisplayNameOverrideRef.current ||
@@ -3810,6 +3868,7 @@ export function RoomPageLiveKit() {
       kind: "camera",
       label: effectiveLocalLabel,
       metadataDisplayName: localParticipantMetadataDisplayName || undefined,
+      status: localParticipantStatus,
       isLocal: true,
       videoTrack: localCamTrack,
       audioTrack: localAudioTrackRaw,
@@ -3856,6 +3915,8 @@ export function RoomPageLiveKit() {
         (rp as any)?.metadata
       );
 
+      const participantStatus = getStatusFromMetadata((rp as any)?.metadata);
+
       const effectiveRemoteLabel =
         participantMetadataDisplayName ||
         String(nm || "").trim() ||
@@ -3867,6 +3928,7 @@ export function RoomPageLiveKit() {
         kind: "camera",
         label: effectiveRemoteLabel,
         metadataDisplayName: participantMetadataDisplayName || undefined,
+        status: participantStatus,
         isLocal: false,
         videoTrack: vt,
         audioTrack: remoteAudioTrack,
@@ -4913,7 +4975,14 @@ export function RoomPageLiveKit() {
 
   // edit name
   const openEditName = () => {
-    const current = (displayName || userName || "").trim();
+    const current = String(
+      localRoomDisplayNameOverrideRef.current ||
+      displayName ||
+      prejoinRef.current.displayName ||
+      userName ||
+      ""
+    ).trim();
+
     setEditNameValue(current);
     setEditNameOpen(true);
   };
@@ -4923,7 +4992,7 @@ export function RoomPageLiveKit() {
     if (!nm) return;
 
     try {
-      // 1) сразу обновляем локальное имя у себя
+      // 1) сразу обновляем локальный UI
       applyRoomDisplayNameLocally(nm);
 
       // 2) сразу перестраиваем тайлы локально
@@ -4953,7 +5022,7 @@ export function RoomPageLiveKit() {
         }
       }
 
-      // 3) несколько перестроений тайлов после sync
+      // 3) ещё несколько перестроений после sync
       scheduleRebuildTiles();
       window.setTimeout(() => scheduleRebuildTiles(), 60);
       window.setTimeout(() => scheduleRebuildTiles(), 180);
@@ -5289,6 +5358,7 @@ export function RoomPageLiveKit() {
           <VideoTile
             tileId={t.id}
             label={nameText}
+            status={t.status || null}
             videoTrack={t.videoTrack}
             audioTrack={t.audioTrack}
             isLocal={t.isLocal}
@@ -5300,17 +5370,25 @@ export function RoomPageLiveKit() {
             mirrorVideo={t.isLocal ? previewMirrored : false}
             audioLevel={t.audioLevel || 0}
             onToggleMenu={(tileId, anchorEl) => {
+              if (!anchorEl) return;
+
               if (openTileAdminMenuId === tileId) {
                 closeTileMenu();
                 return;
               }
+
               openTileMenuAt(tileId, anchorEl);
             }}
-            showMenuButton={true}
+            showMenuButton={!!(t.isLocal || t.kind === "screen" || isSelfModerator || isHost)}
             onOpenProfile={() => {
-              if (participantProfile) {
-                setSelectedUser(participantProfile);
-              }
+              if (!t.participantUserId) return;
+
+              const p =
+                profilesById[String(t.participantUserId).toLowerCase()] ||
+                profilesById[String(t.participantIdentity || "").toLowerCase()] ||
+                null;
+
+              if (p) setSelectedUser(p);
             }}
           />
         </div>
@@ -5380,9 +5458,15 @@ export function RoomPageLiveKit() {
           audioLevel={t.audioLevel || 0}
           onToggleMenu={(tileId, anchorEl) => {
             if (!anchorEl) return;
+
+            if (openTileAdminMenuId === tileId) {
+              closeTileMenu();
+              return;
+            }
+
             openTileMenuAt(tileId, anchorEl);
           }}
-          showMenuButton={!!(t.kind === "screen" || isSelfModerator || isHost)}
+          showMenuButton={!!(t.isLocal || t.kind === "screen" || isSelfModerator || isHost)}
           onOpenProfile={() => {
             if (!t.participantUserId) return;
 
@@ -5793,6 +5877,8 @@ export function RoomPageLiveKit() {
 
                 const avatar = getAvatarForTile(p);
                 const initials = getInitials(p.label);
+                const statusLabel = getStatusLabel(p.status);
+                const statusTone = getStatusTone(p.status);
 
                 const pidBase = String(p.participantUserId || "").toLowerCase();
                 const isMod = !p.isLocal && looksLikeUuid(pidBase)
@@ -5852,7 +5938,37 @@ export function RoomPageLiveKit() {
                             className={`text-[13px] font-medium truncate ${isLight ? "text-black/85" : "text-white/90"
                               }`}
                           >
-                            {p.label}
+                            <div className="min-w-0 flex items-center gap-2">
+                              <span className="truncate">{p.label}</span>
+
+                              {statusLabel ? (
+                                <span
+                                  className={`shrink-0 rounded-full border px-1.5 py-[1px] text-[10px] leading-none ${statusTone === "yellow"
+                                      ? isLight
+                                        ? "bg-yellow-100 text-yellow-800 border-yellow-300/60"
+                                        : "bg-yellow-400/15 text-yellow-200 border-yellow-300/25"
+                                      : statusTone === "purple"
+                                        ? isLight
+                                          ? "bg-purple-100 text-purple-800 border-purple-300/60"
+                                          : "bg-purple-400/15 text-purple-200 border-purple-300/25"
+                                        : statusTone === "blue"
+                                          ? isLight
+                                            ? "bg-blue-100 text-blue-800 border-blue-300/60"
+                                            : "bg-blue-400/15 text-blue-200 border-blue-300/25"
+                                          : statusTone === "orange"
+                                            ? isLight
+                                              ? "bg-orange-100 text-orange-800 border-orange-300/60"
+                                              : "bg-orange-400/15 text-orange-200 border-orange-300/25"
+                                            : isLight
+                                              ? "bg-neutral-100 text-neutral-700 border-neutral-300/60"
+                                              : "bg-white/10 text-white/80 border-white/10"
+                                    }`}
+                                  title={statusLabel}
+                                >
+                                  {statusLabel}
+                                </span>
+                              ) : null}
+                            </div>
                             {isPinned ? <span className="ml-2 opacity-70">📌</span> : null}
                             {isHidden ? <span className="ml-2 opacity-70">🙈</span> : null}
                           </div>
@@ -7026,6 +7142,114 @@ export function RoomPageLiveKit() {
                   >
                     Video room settings
                   </button>
+
+                  {targetTile?.isLocal && targetTile?.kind !== "screen" && (
+                    <>
+                      <div className={isLight ? "border-t border-black/10" : "border-t border-white/10"} />
+
+                      <div className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>
+                        Status
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await setMyStatus(null);
+                          closeTileMenu();
+                          scheduleRebuildTiles();
+                          window.setTimeout(() => scheduleRebuildTiles(), 80);
+                          window.setTimeout(() => scheduleRebuildTiles(), 220);
+                        }}
+                        className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
+                      >
+                        Clear status
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await setMyStatus("afk");
+                          closeTileMenu();
+                          scheduleRebuildTiles();
+                          window.setTimeout(() => scheduleRebuildTiles(), 80);
+                          window.setTimeout(() => scheduleRebuildTiles(), 220);
+                        }}
+                        className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
+                      >
+                        AFK
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await setMyStatus("break");
+                          closeTileMenu();
+                          scheduleRebuildTiles();
+                          window.setTimeout(() => scheduleRebuildTiles(), 80);
+                          window.setTimeout(() => scheduleRebuildTiles(), 220);
+                        }}
+                        className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
+                      >
+                        Taking a break
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await setMyStatus("skip");
+                          closeTileMenu();
+                          scheduleRebuildTiles();
+                          window.setTimeout(() => scheduleRebuildTiles(), 80);
+                          window.setTimeout(() => scheduleRebuildTiles(), 220);
+                        }}
+                        className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
+                      >
+                        Skip me
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await setMyStatus("call");
+                          closeTileMenu();
+                          scheduleRebuildTiles();
+                          window.setTimeout(() => scheduleRebuildTiles(), 80);
+                          window.setTimeout(() => scheduleRebuildTiles(), 220);
+                        }}
+                        className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
+                      >
+                        On a call
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await setMyStatus("eating");
+                          closeTileMenu();
+                          scheduleRebuildTiles();
+                          window.setTimeout(() => scheduleRebuildTiles(), 80);
+                          window.setTimeout(() => scheduleRebuildTiles(), 220);
+                        }}
+                        className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
+                      >
+                        Eating
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await setMyStatus("private");
+                          closeTileMenu();
+                          scheduleRebuildTiles();
+                          window.setTimeout(() => scheduleRebuildTiles(), 80);
+                          window.setTimeout(() => scheduleRebuildTiles(), 220);
+                        }}
+                        className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"}`}
+                      >
+                        Private
+                      </button>
+                    </>
+                  )}
 
                   {isHost && (
                     <>
