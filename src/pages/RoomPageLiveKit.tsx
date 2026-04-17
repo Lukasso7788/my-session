@@ -23,6 +23,8 @@ import {
 } from "@livekit/track-processors";
 
 import { supabase } from "../lib/supabase";
+import { USAGE_TRACKING_ENABLED } from "../lib/flags";
+import { incrementWeeklyUsage } from "../lib/usage";
 
 import ChatPanel from "../components/ChatPanel";
 import { IntentionsPanel } from "../components/IntentionsPanel";
@@ -1145,6 +1147,8 @@ export function RoomPageLiveKit() {
   
   const [localAvatarUrl, setLocalAvatarUrl] = useState<string>("");
   const accessTokenRef = useRef<string>("");
+  const sessionJoinStartedAtRef = useRef<number | null>(null);
+  const usageTrackedRef = useRef(false);
   useEffect(() => {
     const {
       data: { subscription },
@@ -1639,6 +1643,8 @@ export function RoomPageLiveKit() {
     prejoinBootstrappedSessionIdRef.current = "";
     joinFlowStartedRef.current = false;
     connectingFromPrejoinRef.current = false;
+    sessionJoinStartedAtRef.current = null;
+    usageTrackedRef.current = false;
     setPrejoinOpen(false);
     setJoinRequested(false);
     setLkToken("");
@@ -2483,6 +2489,44 @@ export function RoomPageLiveKit() {
       room.off(RoomEvent.ParticipantMetadataChanged, onParticipantMetadataChanged);
     };
   }, [connected]);
+
+  const trackWeeklyUsageOnLeave = useCallback(async () => {
+    if (!USAGE_TRACKING_ENABLED) return;
+    if (usageTrackedRef.current) return;
+
+    const userId = String(authUserId || "").trim();
+    if (!userId) return;
+
+    const startedAt = sessionJoinStartedAtRef.current;
+    if (!startedAt) return;
+
+    usageTrackedRef.current = true;
+
+    const minutes = Math.max(1, Math.ceil((Date.now() - startedAt) / 60000));
+
+    try {
+      await incrementWeeklyUsage({
+        userId,
+        addMinutes: minutes,
+      });
+
+      console.log("[usage] weekly minutes saved:", {
+        userId,
+        sessionId,
+        minutes,
+      });
+    } catch (e) {
+      usageTrackedRef.current = false;
+      console.error("[usage] incrementWeeklyUsage failed:", e);
+    }
+  }, [authUserId, sessionId]);
+
+  useEffect(() => {
+    return () => {
+      void trackWeeklyUsageOnLeave();
+    };
+  }, [trackWeeklyUsageOnLeave]);
+
   const [remoteAudioBlocked, setRemoteAudioBlocked] = useState(false);
   const [remoteAudioBlockedReason, setRemoteAudioBlockedReason] = useState("");
   const [remoteAudioHasAnyTracks, setRemoteAudioHasAnyTracks] = useState(false);
@@ -4185,6 +4229,8 @@ export function RoomPageLiveKit() {
       });
 
       r.on(RoomEvent.Disconnected, () => {
+        void trackWeeklyUsageOnLeave();
+
         setConnected(false);
         setTiles([]);
         setScreenShareTiles([]);
@@ -4225,6 +4271,25 @@ export function RoomPageLiveKit() {
 
       await r.connect(lkServerUrl, lkToken, { autoSubscribe: true });
       connectedToRoom = true;
+
+      if (USAGE_TRACKING_ENABLED) {
+        sessionJoinStartedAtRef.current = Date.now();
+        usageTrackedRef.current = false;
+
+        try {
+          await incrementWeeklyUsage({
+            userId: String(authUserId || "").trim(),
+            addSessions: 1,
+          });
+
+          console.log("[usage] weekly session counted:", {
+            userId: authUserId,
+            sessionId: session?.id,
+          });
+        } catch (e) {
+          console.error("[usage] incrementWeeklyUsage sessions failed:", e);
+        }
+      }
 
       await r.localParticipant.setCameraEnabled(false);
       setCamOn(false);

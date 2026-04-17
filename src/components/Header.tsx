@@ -1,8 +1,8 @@
-// src/components/Header.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useCreateSessionModal } from "../context/CreateSessionModalContext";
 import { useAuth } from "../context/AuthContext";
+import { loadEntitlementState, type EntitlementState } from "../lib/entitlements";
 
 const DEBUG = true;
 
@@ -31,6 +31,37 @@ const tabs = [
 
 type SessionTabId = (typeof tabs)[number]["id"];
 
+function getPlanBadgeLabel(state: EntitlementState | null): "Free" | "Pro" | null {
+    if (!state?.isLoggedIn) return null;
+
+    const plan = String(state?.entitlement?.plan || "free").toLowerCase();
+
+    if (
+        state.isTrial ||
+        plan === "pro_monthly" ||
+        plan === "pro_yearly" ||
+        plan === "lifetime" ||
+        plan === "founding_free"
+    ) {
+        return "Pro";
+    }
+
+    return "Free";
+}
+
+function getPlanPopoverText(state: EntitlementState | null): string {
+    if (!state?.isLoggedIn) return "";
+
+    const plan = String(state?.entitlement?.plan || "free").toLowerCase();
+
+    if (state.isTrial) return "Your Pro trial is active.";
+    if (plan === "pro_monthly" || plan === "pro_yearly") return "Your Pro plan is active.";
+    if (plan === "lifetime") return "Your Pro access is active.";
+    if (plan === "founding_free") return "Your Pro access is active.";
+
+    return "You’re on Free. Upgrade to Pro for unlimited access.";
+}
+
 export default function Header() {
     const navigate = useNavigate();
     const location = useLocation();
@@ -41,16 +72,18 @@ export default function Header() {
     const [mobileMenu, setMobileMenu] = useState(false);
     const [hoverCreate, setHoverCreate] = useState(false);
 
-    // Sessions dropdown (desktop)
     const [sessionsOpen, setSessionsOpen] = useState(false);
     const [hoveredSessionTab, setHoveredSessionTab] = useState<SessionTabId | null>(null);
     const dropdownRef = useRef<HTMLDivElement | null>(null);
+
+    const [entitlementState, setEntitlementState] = useState<EntitlementState | null>(null);
+    const [planBadgeOpen, setPlanBadgeOpen] = useState(false);
+    const planBadgeWrapRef = useRef<HTMLDivElement | null>(null);
 
     const avatarSrc =
         profile?.avatar_url ||
         `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || "User")}`;
 
-    // ✅ determine active tab by querystring (?tab=...)
     const activeSessionsTab: SessionTabId = useMemo(() => {
         const params = new URLSearchParams(location.search);
         const tab = (params.get("tab") || "group").toLowerCase();
@@ -59,14 +92,26 @@ export default function Header() {
         return "group";
     }, [location.search]);
 
-    // ✅ close dropdown on outside click / esc
+    const planBadgeLabel = useMemo(
+        () => getPlanBadgeLabel(entitlementState),
+        [entitlementState]
+    );
+
+    const planPopoverText = useMemo(
+        () => getPlanPopoverText(entitlementState),
+        [entitlementState]
+    );
+
     useEffect(() => {
         function onDocClick(e: MouseEvent) {
             if (!dropdownRef.current) return;
             if (!dropdownRef.current.contains(e.target as Node)) setSessionsOpen(false);
         }
         function onEsc(e: KeyboardEvent) {
-            if (e.key === "Escape") setSessionsOpen(false);
+            if (e.key === "Escape") {
+                setSessionsOpen(false);
+                setPlanBadgeOpen(false);
+            }
         }
         document.addEventListener("mousedown", onDocClick);
         document.addEventListener("keydown", onEsc);
@@ -76,14 +121,27 @@ export default function Header() {
         };
     }, []);
 
-    // ✅ ADDED: close menus on route change
+    useEffect(() => {
+        function onDocClick(e: MouseEvent) {
+            if (!planBadgeWrapRef.current) return;
+            if (!planBadgeWrapRef.current.contains(e.target as Node)) {
+                setPlanBadgeOpen(false);
+            }
+        }
+
+        document.addEventListener("mousedown", onDocClick);
+        return () => {
+            document.removeEventListener("mousedown", onDocClick);
+        };
+    }, []);
+
     useEffect(() => {
         setMobileMenu(false);
         setSessionsOpen(false);
         setShowUserMenu(false);
+        setPlanBadgeOpen(false);
     }, [location.pathname, location.search]);
 
-    // ✅ ADDED: lock scroll when mobile menu is open
     useEffect(() => {
         if (!mobileMenu) return;
         const prev = document.body.style.overflow;
@@ -93,18 +151,56 @@ export default function Header() {
         };
     }, [mobileMenu]);
 
+    useEffect(() => {
+        let cancelled = false;
+
+        const run = async () => {
+            if (!user?.id) {
+                setEntitlementState(null);
+                return;
+            }
+
+            try {
+                const state = await loadEntitlementState();
+                if (!cancelled) {
+                    setEntitlementState(state);
+                    if (DEBUG) console.log("[DEBUG Header] entitlement state:", state);
+                }
+            } catch (e) {
+                console.error("[DEBUG Header] entitlement load failed:", e);
+                if (!cancelled) setEntitlementState(null);
+            }
+        };
+
+        void run();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [user?.id]);
+
     const goToSessions = (tabId: SessionTabId) => {
         navigate(`/sessions?tab=${tabId}`);
         setSessionsOpen(false);
         setMobileMenu(false);
     };
 
+    const handlePlanBadgeClick = () => {
+        if (!planBadgeLabel) return;
+
+        const isFree = planBadgeLabel === "Free";
+        if (isFree) {
+            navigate("/pricing");
+            return;
+        }
+
+        setPlanBadgeOpen((v) => !v);
+    };
+
     return (
         <header className="border-b border-borderGray bg-white sticky top-0 z-30">
             <div className="w-full px-5 md:px-8 py-5 flex items-center justify-between gap-3">
-                {/* LEFT NAV (only on >=1024px) */}
                 <nav className="hidden lg:flex items-center gap-6 flex-1 text-sm text-[#2E2E2E]">
-                    {/* Sessions dropdown */}
                     <div className="relative" ref={dropdownRef}>
                         <button
                             onClick={() => setSessionsOpen((v) => !v)}
@@ -161,7 +257,6 @@ export default function Header() {
                         )}
                     </div>
 
-                    {/* Pricing + Focus plan (Latest updates removed) */}
                     <button onClick={() => navigate("/pricing")} className="hover:text-[#2F2F2F]">
                         Pricing
                     </button>
@@ -171,23 +266,66 @@ export default function Header() {
                     </button>
                 </nav>
 
-                {/* LOGO */}
                 <div className="flex-1 flex justify-start lg:justify-center">
-                    <button
-                        onClick={() => navigate("/")}
-                        className="text-[28px] md:text-4xl font-extrabold text-brandBlack hover:opacity-80 transition"
-                    >
-                        MySession
-                    </button>
+                    <div className="relative inline-flex items-center justify-center" ref={planBadgeWrapRef}>
+                        <button
+                            onClick={() => navigate("/")}
+                            className="text-[28px] md:text-4xl font-extrabold text-brandBlack hover:opacity-80 transition"
+                        >
+                            MySession
+                        </button>
+
+                        {planBadgeLabel ? (
+                            <div
+                                className="absolute left-1/2 top-full z-20 -translate-x-1/2 -translate-y-[7px]"
+                                onMouseEnter={() => setPlanBadgeOpen(true)}
+                                onMouseLeave={() => setPlanBadgeOpen(false)}
+                            >
+                                <button
+                                    type="button"
+                                    onClick={handlePlanBadgeClick}
+                                    className="inline-flex items-center justify-center rounded-[8px] border border-[#2F2F2F] bg-white px-[6px] py-[2px] text-[12px] font-bold leading-none text-[#2F2F2F] shadow-[0_2px_8px_rgba(0,0,0,0.06)]"
+                                    style={{ fontFamily: "Inter, sans-serif" }}
+                                    aria-label={`Current plan: ${planBadgeLabel}`}
+                                    title={planBadgeLabel === "Free" ? "Upgrade plan" : "Plan status"}
+                                >
+                                    {planBadgeLabel}
+                                </button>
+
+                                {planBadgeOpen ? (
+                                    <div className="absolute left-1/2 top-full mt-2 w-[220px] -translate-x-1/2 rounded-[14px] border border-[#2F2F2F]/10 bg-white p-3 text-left shadow-[0_12px_32px_rgba(0,0,0,0.12)]">
+                                        <div className="text-[12px] font-semibold text-[#2F2F2F]">
+                                            {planBadgeLabel === "Free" ? "Free plan" : "Pro plan"}
+                                        </div>
+
+                                        <div className="mt-1 text-[12px] leading-[1.45] text-[#2F2F2F]/75">
+                                            {planPopoverText}
+                                        </div>
+
+                                        {planBadgeLabel === "Free" ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setPlanBadgeOpen(false);
+                                                    navigate("/pricing");
+                                                }}
+                                                className="mt-3 inline-flex items-center rounded-full border border-[#2F2F2F] px-3 py-1.5 text-[12px] font-medium text-[#2F2F2F] transition hover:bg-[#2F2F2F] hover:text-white"
+                                            >
+                                                Upgrade plan
+                                            </button>
+                                        ) : null}
+                                    </div>
+                                ) : null}
+                            </div>
+                        ) : null}
+                    </div>
                 </div>
 
-                {/* RIGHT */}
                 <div className="flex-1 flex items-center justify-end gap-3 relative">
                     {loading ? (
                         <div className="text-sm text-gray-500">Checking session...</div>
                     ) : (
                         <>
-                            {/* Logged out buttons (desktop-ish) */}
                             {!user && (
                                 <div className="hidden sm:flex gap-3">
                                     <button
@@ -206,10 +344,8 @@ export default function Header() {
                                 </div>
                             )}
 
-                            {/* Logged in actions */}
                             {user && (
                                 <>
-                                    {/* CREATE SESSION (>=768px) */}
                                     <button
                                         onClick={() => modal.open()}
                                         onMouseEnter={() => setHoverCreate(true)}
@@ -229,7 +365,6 @@ export default function Header() {
                                         <span>Create a session</span>
                                     </button>
 
-                                    {/* AVATAR (>=640px) */}
                                     <button onClick={() => setShowUserMenu((v) => !v)} className="hidden sm:flex items-center">
                                         <img
                                             src={avatarSrc}
@@ -238,7 +373,6 @@ export default function Header() {
                                         />
                                     </button>
 
-                                    {/* Desktop User Menu */}
                                     {showUserMenu && (
                                         <div className="hidden sm:block absolute right-0 top-14 w-48 bg-white rounded-xl shadow-lg border border-borderGray z-40">
                                             <button
@@ -266,7 +400,6 @@ export default function Header() {
                                 </>
                             )}
 
-                            {/* ✅ BURGER always available on <lg */}
                             <button onClick={() => setMobileMenu(true)} className="lg:hidden flex items-center p-2">
                                 <img src="/icons/burger-menu.svg" className="w-7 h-7" alt="Menu" />
                             </button>
@@ -275,10 +408,8 @@ export default function Header() {
                 </div>
             </div>
 
-            {/* ✅ FULL-SCREEN MENU (fixed: never exceeds mobile viewport width) */}
             {mobileMenu && (
                 <div className="fixed inset-0 z-50 bg-white w-screen h-[100dvh] overflow-x-hidden overflow-y-auto animate-fadeIn">
-                    {/* ✅ ADDED: prevents children from expanding beyond viewport */}
                     <div className="w-full min-w-0">
                         <div className="flex justify-between items-center px-5 py-4 border-b border-borderGray">
                             <span className="text-xl font-bold">Menu</span>
@@ -288,7 +419,6 @@ export default function Header() {
                         </div>
 
                         <div className="flex flex-col gap-6 p-6 text-lg text-brandBlack w-full min-w-0">
-                            {/* Sessions section in mobile */}
                             <div className="flex flex-col gap-3 w-full min-w-0">
                                 <button
                                     onClick={() => {
@@ -315,14 +445,12 @@ export default function Header() {
                                                 className="w-5 h-5 shrink-0"
                                                 alt=""
                                             />
-                                            {/* ✅ ADDED: break-words avoids text forcing overflow */}
                                             <span className="text-base break-words">{t.label}</span>
                                         </button>
                                     ))}
                                 </div>
                             </div>
 
-                            {/* Pricing + Focus plan (Latest updates removed) */}
                             <button
                                 onClick={() => {
                                     navigate("/pricing");

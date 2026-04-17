@@ -1,4 +1,3 @@
-// src/pages/SessionsPage.tsx
 const DEBUG = true;
 
 import { useState, useEffect, useMemo, useCallback } from "react";
@@ -11,8 +10,6 @@ import { BodyTriplingIntro } from "../components/body/BodyTriplingIntro";
 import { supabase } from "../lib/supabase";
 import { useCreateSessionModal } from "../context/CreateSessionModalContext";
 import { useAuth } from "../context/AuthContext";
-import { loadEntitlementState, type EntitlementState } from "../lib/entitlements";
-import { PAYWALL_ENABLED, USAGE_TRACKING_ENABLED } from "../lib/flags";
 import type { Session } from "../types/session";
 
 type BookingProfile = {
@@ -158,19 +155,6 @@ function resolveSessionType(
   return "group";
 }
 
-function getPlanLabel(state: EntitlementState | null): string {
-  const plan = state?.entitlement?.plan || "free";
-
-  if (plan === "pro_monthly") return "Pro Monthly";
-  if (plan === "pro_yearly") return "Pro Yearly";
-  if (plan === "lifetime") return "Lifetime";
-  if (plan === "founding_free") return "Founding Free";
-  return "Free";
-}
-
-// =====================
-// UI: Infinite intro card
-// =====================
 function InfinityIcon({ className = "w-5 h-5" }: { className?: string }) {
   return (
     <img
@@ -391,9 +375,6 @@ export function SessionsPage() {
 
   const [howItWorksOpen, setHowItWorksOpen] = useState(false);
 
-  const [entitlementState, setEntitlementState] = useState<EntitlementState | null>(null);
-  const [entitlementLoading, setEntitlementLoading] = useState(true);
-
   useEffect(() => {
     if (!howItWorksOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -417,29 +398,6 @@ export function SessionsPage() {
   useEffect(() => {
     if (sessionTypeTab === "body" && !dateFilter) setDateFilter(todayLocalYMD());
   }, [sessionTypeTab, dateFilter]);
-
-  useEffect(() => {
-    const run = async () => {
-      setEntitlementLoading(true);
-      try {
-        const state = await loadEntitlementState();
-        setEntitlementState(state);
-
-        if (DEBUG) {
-          console.log("[DEBUG Sessions] entitlement state:", state);
-          console.log("[DEBUG Sessions] PAYWALL_ENABLED:", PAYWALL_ENABLED);
-          console.log("[DEBUG Sessions] USAGE_TRACKING_ENABLED:", USAGE_TRACKING_ENABLED);
-        }
-      } catch (e) {
-        console.error("[DEBUG Sessions] entitlement load failed:", e);
-        setEntitlementState(null);
-      } finally {
-        setEntitlementLoading(false);
-      }
-    };
-
-    run();
-  }, [user?.id]);
 
   useEffect(() => {
     const run = async () => {
@@ -816,11 +774,6 @@ export function SessionsPage() {
     />
   );
 
-  const accessToneClass =
-    entitlementState?.isUnlimited || entitlementState?.isTrial
-      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-      : "border-black/10 bg-white text-black/80";
-
   return (
     <div className="min-h-screen bg-white text-brandBlack font-inter">
       <main className="w-full px-3 md:px-6 lg:px-10 pb-12">
@@ -835,118 +788,6 @@ export function SessionsPage() {
         <div className="w-full">
           {sessionTypeTab === "infinite" && <InfiniteRoomsIntroCard />}
           {sessionTypeTab === "body" && <BodyTriplingIntro />}
-
-          <div className="w-full flex justify-center mb-[24px]">
-            <div className="w-full max-w-[980px]">
-              <div className={`rounded-[20px] border px-4 py-4 sm:px-5 sm:py-5 ${accessToneClass}`}>
-                {DEBUG ? (
-                  <div className="mb-3 rounded-xl border border-dashed border-black/10 bg-black/[0.03] px-3 py-2 text-[12px] text-black/60">
-                    Flags → usage_tracking: {String(USAGE_TRACKING_ENABLED)} | paywall: {String(PAYWALL_ENABLED)}
-                  </div>
-                ) : null}
-                {entitlementLoading ? (
-                  <div className="text-sm opacity-70">
-                    Checking your access...
-                  </div>
-                ) : !entitlementState?.isLoggedIn ? (
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <div className="text-sm font-semibold">Access status</div>
-                      <div className="mt-1 text-sm opacity-75">
-                        You are browsing as a guest. Log in to track your plan and usage.
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => navigate("/login?redirect=/sessions")}
-                      className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-medium transition hover:bg-black/5"
-                    >
-                      Log in
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-3">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <div className="text-sm font-semibold">
-                          Your access: {getPlanLabel(entitlementState)}
-                        </div>
-
-                        <div className="mt-1 text-sm opacity-75">
-                          {entitlementState.isTrial
-                            ? "Your free trial is active."
-                            : entitlementState.isUnlimited
-                              ? "You currently have unlimited access."
-                              : "Your current account uses weekly free limits."}
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => navigate("/pricing")}
-                        className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-medium transition hover:bg-black/5"
-                      >
-                        View pricing
-                      </button>
-                    </div>
-
-                    {!entitlementState.isUnlimited && !entitlementState.isTrial ? (
-                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                        <div className="rounded-2xl border border-black/10 bg-white px-4 py-3">
-                          <div className="text-[12px] uppercase tracking-[0.08em] text-black/50">
-                            Sessions used
-                          </div>
-                          <div className="mt-1 text-[18px] font-semibold text-black">
-                            {entitlementState.weekly.sessionsUsed}
-                            <span className="text-black/45">
-                              {" / "}
-                              {entitlementState.weekly.sessionsLimit ?? "—"}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="rounded-2xl border border-black/10 bg-white px-4 py-3">
-                          <div className="text-[12px] uppercase tracking-[0.08em] text-black/50">
-                            Hours used
-                          </div>
-                          <div className="mt-1 text-[18px] font-semibold text-black">
-                            {(entitlementState.weekly.minutesUsed / 60).toFixed(1)}
-                            <span className="text-black/45">
-                              {" / "}
-                              {entitlementState.weekly.minutesLimit != null
-                                ? (entitlementState.weekly.minutesLimit / 60).toFixed(1)
-                                : "—"}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="rounded-2xl border border-black/10 bg-white px-4 py-3">
-                          <div className="text-[12px] uppercase tracking-[0.08em] text-black/50">
-                            Sessions left
-                          </div>
-                          <div className="mt-1 text-[18px] font-semibold text-black">
-                            {entitlementState.weekly.sessionsRemaining ?? "—"}
-                          </div>
-                        </div>
-
-                        <div className="rounded-2xl border border-black/10 bg-white px-4 py-3">
-                          <div className="text-[12px] uppercase tracking-[0.08em] text-black/50">
-                            Hours left
-                          </div>
-                          <div className="mt-1 text-[18px] font-semibold text-black">
-                            {entitlementState.weekly.minutesRemaining != null
-                              ? (entitlementState.weekly.minutesRemaining / 60).toFixed(1)
-                              : "—"}
-                          </div>
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
 
           <div className="w-full flex justify-center mb-[55px]">
             <SessionTypeSwitcher
