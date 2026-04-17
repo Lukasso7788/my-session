@@ -103,6 +103,7 @@ export default function Header() {
     const [entitlementState, setEntitlementState] = useState<EntitlementState | null>(null);
     const [planBadgeOpen, setPlanBadgeOpen] = useState(false);
     const planBadgeWrapRef = useRef<HTMLDivElement | null>(null);
+    const planBadgeCloseTimeoutRef = useRef<number | null>(null);
 
     const avatarSrc =
         profile?.avatar_url ||
@@ -208,6 +209,14 @@ export default function Header() {
         };
     }, [user?.id]);
 
+    useEffect(() => {
+        return () => {
+            if (planBadgeCloseTimeoutRef.current != null) {
+                window.clearTimeout(planBadgeCloseTimeoutRef.current);
+            }
+        };
+    }, []);
+
     const goToSessions = (tabId: SessionTabId) => {
         navigate(`/sessions?tab=${tabId}`);
         setSessionsOpen(false);
@@ -223,6 +232,25 @@ export default function Header() {
         }
 
         setPlanBadgeOpen((v) => !v);
+    };
+
+    const openPlanPopover = () => {
+        if (planBadgeCloseTimeoutRef.current != null) {
+            window.clearTimeout(planBadgeCloseTimeoutRef.current);
+            planBadgeCloseTimeoutRef.current = null;
+        }
+        setPlanBadgeOpen(true);
+    };
+
+    const closePlanPopoverWithDelay = () => {
+        if (planBadgeCloseTimeoutRef.current != null) {
+            window.clearTimeout(planBadgeCloseTimeoutRef.current);
+        }
+
+        planBadgeCloseTimeoutRef.current = window.setTimeout(() => {
+            setPlanBadgeOpen(false);
+            planBadgeCloseTimeoutRef.current = null;
+        }, 140);
     };
 
     return (
@@ -308,9 +336,9 @@ export default function Header() {
 
                         {planBadgeLabel ? (
                             <div
-                                className="absolute -right-[32px] -top-[2px] z-20"
-                                onMouseEnter={() => setPlanBadgeOpen(true)}
-                                onMouseLeave={() => setPlanBadgeOpen(false)}
+                                className="absolute -right-[32px] -top-[2px] z-20 pb-[12px]"
+                                onMouseEnter={openPlanPopover}
+                                onMouseLeave={closePlanPopoverWithDelay}
                             >
                                 <button
                                     type="button"
@@ -324,27 +352,29 @@ export default function Header() {
                                 </button>
 
                                 {planBadgeOpen ? (
-                                    <div className="absolute right-0 top-full mt-2 w-[220px] rounded-[14px] border border-[#2F2F2F]/10 bg-white p-3 text-left shadow-[0_12px_32px_rgba(0,0,0,0.12)]">
-                                        <div className="text-[12px] font-semibold text-[#2F2F2F]">
-                                            {planPopoverTitle}
-                                        </div>
+                                    <div className="absolute right-0 top-full mt-0 w-[220px] pt-[8px]">
+                                        <div className="rounded-[14px] border border-[#2F2F2F]/10 bg-white p-3 text-left shadow-[0_12px_32px_rgba(0,0,0,0.12)]">
+                                            <div className="text-[12px] font-semibold text-[#2F2F2F]">
+                                                {planPopoverTitle}
+                                            </div>
 
-                                        <div className="mt-1 text-[12px] leading-[1.45] text-[#2F2F2F]/75">
-                                            {planPopoverText}
-                                        </div>
+                                            <div className="mt-1 text-[12px] leading-[1.45] text-[#2F2F2F]/75">
+                                                {planPopoverText}
+                                            </div>
 
-                                        {planBadgeLabel === "Free" ? (
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setPlanBadgeOpen(false);
-                                                    navigate("/pricing");
-                                                }}
-                                                className="mt-3 inline-flex items-center rounded-full border border-[#2F2F2F] px-3 py-1.5 text-[12px] font-medium text-[#2F2F2F] transition hover:bg-[#2F2F2F] hover:text-white"
-                                            >
-                                                Upgrade plan
-                                            </button>
-                                        ) : null}
+                                            {planBadgeLabel === "Free" ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setPlanBadgeOpen(false);
+                                                        navigate("/pricing");
+                                                    }}
+                                                    className="mt-3 inline-flex items-center rounded-full border border-[#2F2F2F] px-3 py-1.5 text-[12px] font-medium text-[#2F2F2F] transition hover:bg-[#2F2F2F] hover:text-white"
+                                                >
+                                                    Upgrade plan
+                                                </button>
+                                            ) : null}
+                                        </div>
                                     </div>
                                 ) : null}
                             </div>
