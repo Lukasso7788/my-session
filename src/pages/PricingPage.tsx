@@ -4,18 +4,10 @@ import { PricingPlanCard } from "../components/PricingPlanCard";
 import { supabase } from "../lib/supabase";
 
 type BillingCycle = "monthly" | "yearly" | "lifetime";
+type CheckoutPlan = "pro_monthly" | "pro_yearly" | "lifetime";
 
 export default function PricingPage() {
     const KOFI_URL = "https://ko-fi.com/mysession";
-
-    // Stripe Payment Links
-    // Put these in your Vite env:
-    // VITE_STRIPE_PRO_MONTHLY_URL=https://buy.stripe.com/...
-    // VITE_STRIPE_PRO_YEARLY_URL=https://buy.stripe.com/...
-    // VITE_STRIPE_LIFETIME_URL=https://buy.stripe.com/...
-    const STRIPE_PRO_MONTHLY_URL = import.meta.env.VITE_STRIPE_PRO_MONTHLY_URL?.trim() || "";
-    const STRIPE_PRO_YEARLY_URL = import.meta.env.VITE_STRIPE_PRO_YEARLY_URL?.trim() || "";
-    const STRIPE_LIFETIME_URL = import.meta.env.VITE_STRIPE_LIFETIME_URL?.trim() || "";
 
     const LIFETIME_TOTAL_SLOTS = 5;
     const LIFETIME_LEFT_SLOTS = 5; // <- потом можно заменить на реальный счётчик из базы
@@ -24,6 +16,7 @@ export default function PricingPage() {
     const [checkingAuth, setCheckingAuth] = useState<boolean>(true);
 
     const [isUpgrading, setIsUpgrading] = useState<boolean>(false);
+    const [checkoutLoadingPlan, setCheckoutLoadingPlan] = useState<CheckoutPlan | null>(null);
     const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
 
     const [statusMessage, setStatusMessage] = useState<string>("");
@@ -69,44 +62,45 @@ export default function PricingPage() {
         window.location.href = "/sessions";
     }, []);
 
-    const createCheckoutRequest = useCallback(
-        async (planCode: "pro_monthly" | "pro_yearly" | "lifetime") => {
-            const {
-                data: { user },
-                error: userError,
-            } = await supabase.auth.getUser();
+    const startCheckout = useCallback(async (plan: CheckoutPlan) => {
+        try {
+            setCheckoutLoadingPlan(plan);
+            setErrorMessage("");
+            setStatusMessage("");
 
-            if (userError || !user) {
-                throw new Error("You must be logged in to request a checkout link.");
+            const {
+                data: { session },
+            } = await supabase.auth.getSession();
+
+            const accessToken = session?.access_token;
+
+            if (!accessToken) {
+                window.location.href = `/login?redirect=${encodeURIComponent("/pricing")}`;
+                return;
             }
 
-            const { error } = await supabase.from("checkout_requests").insert({
-                user_id: user.id,
-                plan_code: planCode,
-                source: "pricing_page",
-                note:
-                    planCode === "lifetime"
-                        ? "Lifetime payment link missing on pricing page."
-                        : "Stripe payment link missing on pricing page.",
+            const response = await fetch("/api/billing/create-checkout-session", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${accessToken}`,
+                },
+                body: JSON.stringify({ plan }),
             });
 
-            if (error) {
-                throw error;
+            const data = await response.json();
+
+            if (!response.ok || !data?.url) {
+                throw new Error(data?.error || "Failed to create checkout session");
             }
-        },
-        []
-    );
 
-    const addPrefilledEmail = useCallback((baseUrl: string, email?: string | null) => {
-        if (!email) return baseUrl;
-
-        try {
-            const url = new URL(baseUrl);
-            url.searchParams.set("prefilled_email", email);
-            return url.toString();
+            setStatusMessage("Redirecting you to secure payment...");
+            window.location.href = data.url;
         } catch (err) {
-            console.error("Failed to append prefilled email:", err);
-            return baseUrl;
+            console.error("startCheckout error:", err);
+            setErrorMessage("Failed to start checkout. Please try again.");
+        } finally {
+            setCheckoutLoadingPlan(null);
         }
     }, []);
 
@@ -132,102 +126,21 @@ export default function PricingPage() {
         setIsUpgrading(true);
 
         try {
-            const {
-                data: { user },
-                error: userError,
-            } = await supabase.auth.getUser();
-
-            if (userError || !user) {
-                setErrorMessage("Could not verify your account. Please log in again.");
-                return;
-            }
-
-            const { data: profile, error: profileError } = await supabase
-                .from("profiles")
-                .select(
-                    "pro_monthly_invoice_url, pro_yearly_invoice_url, plan_code, plan_status, pro_expires_at"
-                )
-                .eq("id", user.id)
-                .single();
-
-            if (profileError) {
-                console.error("Failed to load billing links:", profileError);
-                setErrorMessage("Could not load your billing link.");
-                return;
-            }
-
-            const isAlreadyActive =
-                profile?.plan_status === "active" &&
-                (profile?.plan_code === "pro_monthly" || profile?.plan_code === "pro_yearly");
-
-            if (billingCycle !== "lifetime" && isAlreadyActive) {
-                setStatusMessage("Your Pro plan is already active.");
-                return;
-            }
-
-            const planCode =
+            const planCode: CheckoutPlan =
                 billingCycle === "monthly"
                     ? "pro_monthly"
                     : billingCycle === "yearly"
-                      ? "pro_yearly"
-                      : "lifetime";
+                        ? "pro_yearly"
+                        : "lifetime";
 
-            const legacyProfileCheckoutUrl =
-                billingCycle === "monthly"
-                    ? profile?.pro_monthly_invoice_url
-                    : billingCycle === "yearly"
-                      ? profile?.pro_yearly_invoice_url
-                      : "";
-
-            const envStripeCheckoutUrl =
-                billingCycle === "monthly"
-                    ? STRIPE_PRO_MONTHLY_URL
-                    : billingCycle === "yearly"
-                      ? STRIPE_PRO_YEARLY_URL
-                      : STRIPE_LIFETIME_URL;
-
-            const finalCheckoutUrl = envStripeCheckoutUrl
-                ? addPrefilledEmail(envStripeCheckoutUrl, user.email)
-                : legacyProfileCheckoutUrl || "";
-
-            if (finalCheckoutUrl) {
-                setStatusMessage("Redirecting you to secure payment...");
-                window.location.href = finalCheckoutUrl;
-                return;
-            }
-
-            await createCheckoutRequest(planCode);
-
-            if (billingCycle === "monthly") {
-                setStatusMessage(
-                    "Your monthly checkout request has been sent. We’re preparing your payment link."
-                );
-            } else if (billingCycle === "yearly") {
-                setStatusMessage(
-                    "Your yearly checkout request has been sent. We’re preparing your payment link."
-                );
-            } else {
-                setStatusMessage(
-                    "Your lifetime checkout request has been sent. We’re preparing your lifetime payment link."
-                );
-            }
+            await startCheckout(planCode);
         } catch (err) {
             console.error("Unexpected upgrade error:", err);
             setErrorMessage("Unexpected error while starting the upgrade.");
         } finally {
             setIsUpgrading(false);
         }
-    }, [
-        STRIPE_PRO_MONTHLY_URL,
-        STRIPE_PRO_YEARLY_URL,
-        STRIPE_LIFETIME_URL,
-        addPrefilledEmail,
-        billingCycle,
-        checkingAuth,
-        createCheckoutRequest,
-        isLoggedIn,
-        LIFETIME_LEFT_SLOTS,
-    ]);
+    }, [LIFETIME_LEFT_SLOTS, billingCycle, checkingAuth, isLoggedIn, startCheckout]);
 
     const activeCard = useMemo(() => {
         if (billingCycle === "monthly") {
@@ -245,9 +158,9 @@ export default function PricingPage() {
                 ],
                 ctaLabel: checkingAuth
                     ? "Checking account..."
-                    : isUpgrading
-                      ? "Opening payment..."
-                      : "Upgrade to Pro Monthly",
+                    : isUpgrading || checkoutLoadingPlan === "pro_monthly"
+                        ? "Opening payment..."
+                        : "Upgrade to Pro Monthly",
                 footnote: "Cancel anytime",
             };
         }
@@ -267,9 +180,9 @@ export default function PricingPage() {
                 ],
                 ctaLabel: checkingAuth
                     ? "Checking account..."
-                    : isUpgrading
-                      ? "Opening payment..."
-                      : "Upgrade to Pro Yearly",
+                    : isUpgrading || checkoutLoadingPlan === "pro_yearly"
+                        ? "Opening payment..."
+                        : "Upgrade to Pro Yearly",
                 footnote: "Pay $96/year instead of $120",
             };
         }
@@ -291,17 +204,17 @@ export default function PricingPage() {
             ],
             ctaLabel: checkingAuth
                 ? "Checking account..."
-                : isUpgrading
-                  ? "Opening payment..."
-                  : LIFETIME_LEFT_SLOTS > 0
-                    ? "Get Lifetime Access"
-                    : "Sold out",
+                : isUpgrading || checkoutLoadingPlan === "lifetime"
+                    ? "Opening payment..."
+                    : LIFETIME_LEFT_SLOTS > 0
+                        ? "Get Lifetime Access"
+                        : "Sold out",
             footnote:
                 LIFETIME_LEFT_SLOTS > 0
                     ? "Limited drop"
                     : "No spots left in this drop",
         };
-    }, [billingCycle, checkingAuth, isUpgrading]);
+    }, [LIFETIME_LEFT_SLOTS, billingCycle, checkingAuth, checkoutLoadingPlan, isUpgrading]);
 
     return (
         <div className="min-h-[calc(100vh-80px)] bg-transparent text-[#0B1220]">
@@ -322,11 +235,10 @@ export default function PricingPage() {
                     <div className="grid grid-cols-3 gap-1">
                         <button
                             type="button"
-                            className={`h-10 rounded-full text-sm font-medium transition ${
-                                billingCycle === "monthly"
+                            className={`h-10 rounded-full text-sm font-medium transition ${billingCycle === "monthly"
                                     ? "bg-black text-white"
                                     : "text-black/70 hover:bg-black/5"
-                            }`}
+                                }`}
                             onClick={() => setBillingCycle("monthly")}
                         >
                             Monthly
@@ -334,11 +246,10 @@ export default function PricingPage() {
 
                         <button
                             type="button"
-                            className={`h-10 rounded-full text-sm font-medium transition ${
-                                billingCycle === "yearly"
+                            className={`h-10 rounded-full text-sm font-medium transition ${billingCycle === "yearly"
                                     ? "bg-black text-white"
                                     : "text-black/70 hover:bg-black/5"
-                            }`}
+                                }`}
                             onClick={() => setBillingCycle("yearly")}
                         >
                             Yearly
@@ -346,11 +257,10 @@ export default function PricingPage() {
 
                         <button
                             type="button"
-                            className={`h-10 rounded-full text-sm font-medium transition ${
-                                billingCycle === "lifetime"
+                            className={`h-10 rounded-full text-sm font-medium transition ${billingCycle === "lifetime"
                                     ? "bg-black text-white"
                                     : "text-black/70 hover:bg-black/5"
-                            }`}
+                                }`}
                             onClick={() => setBillingCycle("lifetime")}
                         >
                             Lifetime
@@ -395,8 +305,7 @@ export default function PricingPage() {
                         <div className="text-sm font-medium">Billing status</div>
 
                         <p className="mt-2 text-sm text-black/60">
-                            If your payment link is ready, the button will open it directly.
-                            If not, we’ll save a checkout request and prepare one for you.
+                            Clicking upgrade will open secure checkout for your selected plan.
                         </p>
 
                         {statusMessage ? (
@@ -546,8 +455,7 @@ export default function PricingPage() {
                                 How does billing work right now?
                             </div>
                             <p className="mt-1 text-sm text-black/60">
-                                If your payment link is ready, clicking upgrade will open it
-                                directly. If not, we’ll save a checkout request.
+                                Clicking upgrade opens secure checkout for the selected plan.
                             </p>
                         </div>
 
