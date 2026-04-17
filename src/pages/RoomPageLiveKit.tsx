@@ -25,6 +25,9 @@ import {
 import { supabase } from "../lib/supabase";
 import { USAGE_TRACKING_ENABLED } from "../lib/flags";
 import { incrementWeeklyUsage } from "../lib/usage";
+import { loadEntitlementState, type EntitlementState } from "../lib/entitlements";
+import { getPaywallDecision } from "../lib/paywall";
+import PaywallModal from "../components/PaywallModal";
 
 import ChatPanel from "../components/ChatPanel";
 import { IntentionsPanel } from "../components/IntentionsPanel";
@@ -981,8 +984,45 @@ export function RoomPageLiveKit() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const [entitlementState, setEntitlementState] = useState<EntitlementState | null>(null);
+  const [paywallModalOpen, setPaywallModalOpen] = useState(false);
+
   const tabId = useMemo(() => getOrCreateTabId("mysession_lk_tab_id"), []);
   const devClones = useMemo(() => Math.max(0, Math.min(24, getQueryInt("devClones", 0))), []);
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        const state = await loadEntitlementState();
+        if (!cancelled) {
+          setEntitlementState(state);
+        }
+      } catch (e) {
+        console.error("[RoomPageLiveKit] entitlement load failed:", e);
+        if (!cancelled) {
+          setEntitlementState(null);
+        }
+      }
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const paywallDecision = useMemo(() => {
+    if (!entitlementState) return null;
+
+    return getPaywallDecision({
+      entitlement: entitlementState.entitlement,
+      usage: entitlementState.usage,
+    });
+  }, [entitlementState]);
+
+  const paywallBlocked = !!paywallDecision?.blocked;
 
   // theme
   const [theme, setTheme] = useState<RoomTheme>(() => {
@@ -4189,6 +4229,10 @@ export function RoomPageLiveKit() {
   const connectRoom = async () => {
     if (!lkServerUrl || !lkToken) return;
     if (connectInFlightRef.current) return;
+    if (paywallBlocked) {
+      setPaywallModalOpen(true);
+      return;
+    }
 
     connectInFlightRef.current = true;
     const attemptId = connectAttemptIdRef.current + 1;
@@ -6330,6 +6374,41 @@ export function RoomPageLiveKit() {
     }
   };
 
+  if (paywallBlocked) {
+    return (
+      <>
+        <div className={`flex h-screen items-center justify-center ${pageBg}`}>
+          <div className="w-full max-w-[520px] rounded-[28px] border border-black/10 bg-white p-8 shadow-sm">
+            <h1 className="text-[28px] font-semibold tracking-[-0.02em] text-[#2F2F2F]">
+              Upgrade to continue
+            </h1>
+
+            <p className="mt-3 text-[15px] leading-7 text-black/65">
+              You’ve reached the current Free plan limit. Upgrade to Pro to keep joining sessions.
+            </p>
+
+            <div className="mt-6">
+              <button
+                type="button"
+                onClick={() => navigate("/pricing")}
+                className="inline-flex rounded-2xl bg-black px-5 py-3 text-sm font-medium text-white transition hover:opacity-90"
+              >
+                Upgrade plan
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <PaywallModal
+          open={paywallModalOpen}
+          onClose={() => setPaywallModalOpen(false)}
+          title="Upgrade to join this session"
+          description="Your Free plan limit has been reached. Upgrade to Pro to keep using MySession without limits."
+        />
+      </>
+    );
+  }
+
   if (joinBlocked) {
     return (
       <JoinGateModal
@@ -6361,6 +6440,12 @@ export function RoomPageLiveKit() {
   const onJoinGate = () => {
     joinFlowStartedRef.current = true;
     connectingFromPrejoinRef.current = true;
+    if (paywallBlocked) {
+      setPaywallModalOpen(true);
+      joinFlowStartedRef.current = false;
+      connectingFromPrejoinRef.current = false;
+      return;
+    }
     if ((isMobileQuery || isTabletQuery) && videoFxMode !== "off") {
       setVideoFxMode("off");
       setFxStatusText("FX disabled automatically on mobile/tablet device");

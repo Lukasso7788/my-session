@@ -49,6 +49,16 @@ export type BillingPlanRow = {
   updated_at: string;
 };
 
+export type WeeklyUsageRow = {
+  id?: string;
+  user_id: string;
+  week_start: string;
+  sessions_count: number;
+  minutes_total: number;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type WeeklyLimitState = {
   sessionsUsed: number;
   sessionsLimit: number | null;
@@ -125,7 +135,10 @@ export function isEntitlementActive(
 }
 
 export function getWeeklyLimitState(args: {
-  entitlement: Pick<UserEntitlement, "plan" | "status" | "trial_ends_at" | "current_period_end"> | null | undefined;
+  entitlement:
+    | Pick<UserEntitlement, "plan" | "status" | "trial_ends_at" | "current_period_end">
+    | null
+    | undefined;
   sessionsUsed: number;
   minutesUsed: number;
 }): WeeklyLimitState {

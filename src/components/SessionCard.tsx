@@ -10,6 +10,9 @@ import { Link, useNavigate } from "react-router-dom";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { Layers, ArrowUp, ArrowDown, Trash2, RotateCcw, Eraser } from "lucide-react";
 import { SessionStageBar } from "./SessionStageBar";
+import { loadEntitlementState, type EntitlementState } from "../lib/entitlements";
+import { getPaywallDecision } from "../lib/paywall";
+import PaywallModal from "./PaywallModal";
 import type { SessionStage } from "../SessionConfig";
 
 /** =========================
@@ -109,8 +112,8 @@ function extractBookers(session: any): BookedUser[] {
     const raw = session?.session_bookings || [];
     if (!Array.isArray(raw)) return [];
 
-    const users: BookedUser[] = raw
-        .map((b: any) => {
+    const users = raw
+        .map((b: any): BookedUser | null => {
             const uid = b?.user_id || b?.userId;
             const p = b?.profiles || b?.profile || b?.user || null;
 
@@ -118,18 +121,24 @@ function extractBookers(session: any): BookedUser[] {
             const avatar_url = p?.avatar_url ?? b?.avatar_url;
 
             if (!uid) return null;
-            return { id: String(uid), full_name, avatar_url } as BookedUser;
+
+            return {
+                id: String(uid),
+                full_name,
+                avatar_url,
+            };
         })
-        .filter(Boolean);
+        .filter((u): u is BookedUser => !!u);
 
     const seen = new Set<string>();
     const out: BookedUser[] = [];
+
     for (const u of users) {
-        if (!u) continue;
         if (seen.has(u.id)) continue;
         seen.add(u.id);
         out.push(u);
     }
+
     return out;
 }
 
@@ -870,26 +879,30 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
 }
 
 function normalizeUsers(raw: any[]): BookedUser[] {
-    const users: BookedUser[] = (raw || [])
-        .map((row: any) => {
+    const users = (raw || [])
+        .map((row: any): BookedUser | null => {
             const p = row?.profiles || row?.profile || row?.user || null;
             const uid = row?.user_id || row?.userId || p?.id || row?.id;
+
             if (!uid) return null;
+
             return {
                 id: String(uid),
                 full_name: p?.full_name ?? p?.name ?? row?.full_name ?? row?.name,
                 avatar_url: p?.avatar_url ?? row?.avatar_url,
-            } as BookedUser;
+            };
         })
-        .filter(Boolean);
+        .filter((u): u is BookedUser => !!u);
 
     const seen = new Set<string>();
     const out: BookedUser[] = [];
+
     for (const u of users) {
         if (seen.has(u.id)) continue;
         seen.add(u.id);
         out.push(u);
     }
+
     return out;
 }
 
@@ -992,62 +1005,82 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
         const selectSimple =
             "user_id, profiles:profiles(id, full_name, avatar_url), last_seen_at, created_at";
 
-        let res = await sb
+        const resWithLastSeen = await sb
             .from("session_attendance")
             .select(selectSimple)
             .eq("session_id", sessionId)
             .order("last_seen_at", { ascending: false });
 
-        if (res.error && isColumnMissingErr(res.error, "last_seen_at")) {
-            res = await sb
+        if (!resWithLastSeen.error && Array.isArray(resWithLastSeen.data)) {
+            const rows = filterActiveRows(resWithLastSeen.data, cutoffMs);
+            return normalizeUsers(rows);
+        }
+
+        if (resWithLastSeen.error && isColumnMissingErr(resWithLastSeen.error, "last_seen_at")) {
+            const resCreatedOnly = await sb
                 .from("session_attendance")
                 .select("user_id, profiles:profiles(id, full_name, avatar_url), created_at")
                 .eq("session_id", sessionId)
                 .order("created_at", { ascending: false });
-        }
 
-        if (!res.error && Array.isArray(res.data)) {
-            const rows = filterActiveRows(res.data, cutoffMs);
-            return normalizeUsers(rows);
+            if (!resCreatedOnly.error && Array.isArray(resCreatedOnly.data)) {
+                const rows = filterActiveRows(resCreatedOnly.data, cutoffMs);
+                return normalizeUsers(rows);
+            }
         }
 
         const selectLegacy =
             "user_id, profiles:profiles(id, full_name, avatar_url), left_at, joined_at, last_seen_at, created_at";
 
-        let legacy = await sb
+        const legacyFull = await sb
             .from("session_attendance")
             .select(selectLegacy)
             .eq("session_id", sessionId)
             .is("left_at", null)
             .order("joined_at", { ascending: false });
 
-        if (legacy.error && isColumnMissingErr(legacy.error, "left_at")) {
-            legacy = await sb
+        if (!legacyFull.error && Array.isArray(legacyFull.data)) {
+            const rows = filterActiveRows(legacyFull.data, cutoffMs);
+            return normalizeUsers(rows);
+        }
+
+        if (legacyFull.error && isColumnMissingErr(legacyFull.error, "left_at")) {
+            const legacyNoLeftAt = await sb
                 .from("session_attendance")
                 .select("user_id, profiles:profiles(id, full_name, avatar_url), joined_at, last_seen_at, created_at")
                 .eq("session_id", sessionId)
                 .order("joined_at", { ascending: false });
+
+            if (!legacyNoLeftAt.error && Array.isArray(legacyNoLeftAt.data)) {
+                const rows = filterActiveRows(legacyNoLeftAt.data, cutoffMs);
+                return normalizeUsers(rows);
+            }
         }
 
-        if (legacy.error && isColumnMissingErr(legacy.error, "joined_at")) {
-            legacy = await sb
+        if (legacyFull.error && isColumnMissingErr(legacyFull.error, "joined_at")) {
+            const legacyNoJoinedAt = await sb
                 .from("session_attendance")
                 .select("user_id, profiles:profiles(id, full_name, avatar_url), last_seen_at, created_at")
                 .eq("session_id", sessionId)
                 .order("created_at", { ascending: false });
+
+            if (!legacyNoJoinedAt.error && Array.isArray(legacyNoJoinedAt.data)) {
+                const rows = filterActiveRows(legacyNoJoinedAt.data, cutoffMs);
+                return normalizeUsers(rows);
+            }
         }
 
-        if (legacy.error && isColumnMissingErr(legacy.error, "last_seen_at")) {
-            legacy = await sb
+        if (legacyFull.error && isColumnMissingErr(legacyFull.error, "last_seen_at")) {
+            const legacyCreatedOnly = await sb
                 .from("session_attendance")
                 .select("user_id, profiles:profiles(id, full_name, avatar_url), created_at")
                 .eq("session_id", sessionId)
                 .order("created_at", { ascending: false });
-        }
 
-        if (!legacy.error && Array.isArray(legacy.data)) {
-            const rows = filterActiveRows(legacy.data, cutoffMs);
-            return normalizeUsers(rows);
+            if (!legacyCreatedOnly.error && Array.isArray(legacyCreatedOnly.data)) {
+                const rows = filterActiveRows(legacyCreatedOnly.data, cutoffMs);
+                return normalizeUsers(rows);
+            }
         }
     }
 
@@ -1055,40 +1088,55 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
         const selectLegacy =
             "user_id, profiles:profiles(id, full_name, avatar_url), left_at, joined_at, last_seen_at, created_at";
 
-        let res = await sb
+        const participantsFull = await sb
             .from("session_participants")
             .select(selectLegacy)
             .eq("session_id", sessionId)
             .is("left_at", null)
             .order("joined_at", { ascending: false });
 
-        if (res.error && isColumnMissingErr(res.error, "left_at")) {
-            res = await sb
+        if (!participantsFull.error && Array.isArray(participantsFull.data)) {
+            const rows = filterActiveRows(participantsFull.data, cutoffMs);
+            return normalizeUsers(rows);
+        }
+
+        if (participantsFull.error && isColumnMissingErr(participantsFull.error, "left_at")) {
+            const participantsNoLeftAt = await sb
                 .from("session_participants")
                 .select("user_id, profiles:profiles(id, full_name, avatar_url), joined_at, last_seen_at, created_at")
                 .eq("session_id", sessionId)
                 .order("joined_at", { ascending: false });
+
+            if (!participantsNoLeftAt.error && Array.isArray(participantsNoLeftAt.data)) {
+                const rows = filterActiveRows(participantsNoLeftAt.data, cutoffMs);
+                return normalizeUsers(rows);
+            }
         }
 
-        if (res.error && isColumnMissingErr(res.error, "joined_at")) {
-            res = await sb
+        if (participantsFull.error && isColumnMissingErr(participantsFull.error, "joined_at")) {
+            const participantsNoJoinedAt = await sb
                 .from("session_participants")
                 .select("user_id, profiles:profiles(id, full_name, avatar_url), last_seen_at, created_at")
                 .eq("session_id", sessionId)
                 .order("created_at", { ascending: false });
+
+            if (!participantsNoJoinedAt.error && Array.isArray(participantsNoJoinedAt.data)) {
+                const rows = filterActiveRows(participantsNoJoinedAt.data, cutoffMs);
+                return normalizeUsers(rows);
+            }
         }
 
-        if (res.error && isColumnMissingErr(res.error, "last_seen_at")) {
-            res = await sb
+        if (participantsFull.error && isColumnMissingErr(participantsFull.error, "last_seen_at")) {
+            const participantsCreatedOnly = await sb
                 .from("session_participants")
                 .select("user_id, profiles:profiles(id, full_name, avatar_url), created_at")
                 .eq("session_id", sessionId)
                 .order("created_at", { ascending: false });
-        }
 
-        if (!res.error && Array.isArray(res.data)) {
-            const rows = filterActiveRows(res.data, cutoffMs);
-            return normalizeUsers(rows);
+            if (!participantsCreatedOnly.error && Array.isArray(participantsCreatedOnly.data)) {
+                const rows = filterActiveRows(participantsCreatedOnly.data, cutoffMs);
+                return normalizeUsers(rows);
+            }
         }
     }
 
@@ -2559,6 +2607,8 @@ export default function SessionCard({
 
     const [isBookersModalOpen, setIsBookersModalOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [entitlementState, setEntitlementState] = useState<EntitlementState | null>(null);
+    const [paywallOpen, setPaywallOpen] = useState(false);
 
     const [isOptionsOpen, setIsOptionsOpen] = useState(false);
     const optionsRef = useRef<HTMLDivElement | null>(null);
@@ -2580,6 +2630,39 @@ export default function SessionCard({
 
     const [copyInviteState, setCopyInviteState] = useState<"idle" | "copied" | "error">("idle");
     const copyInviteTimerRef = useRef<number | null>(null);
+    useEffect(() => {
+        let cancelled = false;
+
+        const run = async () => {
+            if (!userId) {
+                setEntitlementState(null);
+                return;
+            }
+
+            try {
+                const state = await loadEntitlementState();
+                if (!cancelled) setEntitlementState(state);
+            } catch (e) {
+                console.error("[SessionCard] entitlement load failed:", e);
+                if (!cancelled) setEntitlementState(null);
+            }
+        };
+
+        void run();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [userId]);
+
+    const paywallDecision = useMemo(() => {
+        if (!entitlementState) return null;
+
+        return getPaywallDecision({
+            entitlement: entitlementState.entitlement,
+            usage: entitlementState.usage,
+        });
+    }, [entitlementState]);
 
     useEffect(() => setIsBookingConfirmed(!!initialIsBooked), [session.id, initialIsBooked]);
     useEffect(() => setBookers(initialBookers), [initialBookers]);
@@ -2970,6 +3053,11 @@ export default function SessionCard({
 
         if (!userId) {
             navigate(buildLoginNext(nextPath));
+            return;
+        }
+
+        if (paywallDecision?.blocked) {
+            setPaywallOpen(true);
             return;
         }
 
@@ -3622,6 +3710,13 @@ export default function SessionCard({
                     }}
                 />
             )}
+
+            <PaywallModal
+                open={paywallOpen}
+                onClose={() => setPaywallOpen(false)}
+                title="Upgrade to join sessions"
+                description="You’ve reached the current Free plan limit. Upgrade to Pro to keep joining sessions."
+            />
         </>
     );
 }
