@@ -37,7 +37,6 @@ function getPlanBadgeLabel(state: EntitlementState | null): "Free" | "Pro" | nul
     const plan = String(state?.entitlement?.plan || "free").toLowerCase();
 
     if (
-        state.isTrial ||
         plan === "pro_monthly" ||
         plan === "pro_yearly" ||
         plan === "lifetime" ||
@@ -49,15 +48,40 @@ function getPlanBadgeLabel(state: EntitlementState | null): "Free" | "Pro" | nul
     return "Free";
 }
 
-function getPlanPopoverText(state: EntitlementState | null): string {
+function getPlanPopoverTitle(state: EntitlementState | null): string {
     if (!state?.isLoggedIn) return "";
 
     const plan = String(state?.entitlement?.plan || "free").toLowerCase();
 
-    if (state.isTrial) return "Your Pro trial is active.";
-    if (plan === "pro_monthly" || plan === "pro_yearly") return "Your Pro plan is active.";
-    if (plan === "lifetime") return "Your Pro access is active.";
-    if (plan === "founding_free") return "Your Pro access is active.";
+    if (
+        plan === "pro_monthly" ||
+        plan === "pro_yearly" ||
+        plan === "lifetime" ||
+        plan === "founding_free"
+    ) {
+        return "Pro plan";
+    }
+
+    return "Free plan";
+}
+
+function getPlanPopoverText(state: EntitlementState | null): string {
+    if (!state?.isLoggedIn) return "";
+
+    const plan = String(state?.entitlement?.plan || "free").toLowerCase();
+    const status = String(state?.entitlement?.status || "active").toLowerCase();
+
+    if (plan === "pro_monthly" || plan === "pro_yearly") {
+        return "Your Pro plan is active.";
+    }
+
+    if (plan === "lifetime" || plan === "founding_free") {
+        return "Your Pro access is active.";
+    }
+
+    if (plan === "free" && status === "trialing") {
+        return "Your account is currently marked as Free in trial state.";
+    }
 
     return "You’re on Free. Upgrade to Pro for unlimited access.";
 }
@@ -94,6 +118,11 @@ export default function Header() {
 
     const planBadgeLabel = useMemo(
         () => getPlanBadgeLabel(entitlementState),
+        [entitlementState]
+    );
+
+    const planPopoverTitle = useMemo(
+        () => getPlanPopoverTitle(entitlementState),
         [entitlementState]
     );
 
@@ -188,8 +217,7 @@ export default function Header() {
     const handlePlanBadgeClick = () => {
         if (!planBadgeLabel) return;
 
-        const isFree = planBadgeLabel === "Free";
-        if (isFree) {
+        if (planBadgeLabel === "Free") {
             navigate("/pricing");
             return;
         }
@@ -298,7 +326,7 @@ export default function Header() {
                                 {planBadgeOpen ? (
                                     <div className="absolute right-0 top-full mt-2 w-[220px] rounded-[14px] border border-[#2F2F2F]/10 bg-white p-3 text-left shadow-[0_12px_32px_rgba(0,0,0,0.12)]">
                                         <div className="text-[12px] font-semibold text-[#2F2F2F]">
-                                            {planBadgeLabel === "Free" ? "Free plan" : "Pro plan"}
+                                            {planPopoverTitle}
                                         </div>
 
                                         <div className="mt-1 text-[12px] leading-[1.45] text-[#2F2F2F]/75">
