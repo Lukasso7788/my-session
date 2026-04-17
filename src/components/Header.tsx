@@ -267,7 +267,10 @@ export default function Header() {
                 </nav>
 
                 <div className="flex-1 flex justify-start lg:justify-center">
-                    <div className="relative inline-flex items-center justify-center" ref={planBadgeWrapRef}>
+                    <div
+                        className="relative inline-flex items-center justify-center"
+                        ref={planBadgeWrapRef}
+                    >
                         <button
                             onClick={() => navigate("/")}
                             className="text-[28px] md:text-4xl font-extrabold text-brandBlack hover:opacity-80 transition"
@@ -277,7 +280,7 @@ export default function Header() {
 
                         {planBadgeLabel ? (
                             <div
-                                className="absolute left-1/2 top-full z-20 -translate-x-1/2 -translate-y-[7px]"
+                                className="absolute -right-[32px] -top-[2px] z-20"
                                 onMouseEnter={() => setPlanBadgeOpen(true)}
                                 onMouseLeave={() => setPlanBadgeOpen(false)}
                             >
@@ -293,7 +296,7 @@ export default function Header() {
                                 </button>
 
                                 {planBadgeOpen ? (
-                                    <div className="absolute left-1/2 top-full mt-2 w-[220px] -translate-x-1/2 rounded-[14px] border border-[#2F2F2F]/10 bg-white p-3 text-left shadow-[0_12px_32px_rgba(0,0,0,0.12)]">
+                                    <div className="absolute right-0 top-full mt-2 w-[220px] rounded-[14px] border border-[#2F2F2F]/10 bg-white p-3 text-left shadow-[0_12px_32px_rgba(0,0,0,0.12)]">
                                         <div className="text-[12px] font-semibold text-[#2F2F2F]">
                                             {planBadgeLabel === "Free" ? "Free plan" : "Pro plan"}
                                         </div>
