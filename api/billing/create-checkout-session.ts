@@ -16,16 +16,27 @@ const APP_URL = process.env.APP_URL || "http://localhost:5173";
 type SupportedPlan = "pro_monthly" | "pro_yearly" | "lifetime";
 
 function getPriceIdForPlan(plan: SupportedPlan): string {
+  let priceId = "";
+
   switch (plan) {
     case "pro_monthly":
-      return process.env.STRIPE_PRICE_PRO_MONTHLY!;
+      priceId = process.env.STRIPE_PRICE_PRO_MONTHLY || "";
+      break;
     case "pro_yearly":
-      return process.env.STRIPE_PRICE_PRO_YEARLY!;
+      priceId = process.env.STRIPE_PRICE_PRO_YEARLY || "";
+      break;
     case "lifetime":
-      return process.env.STRIPE_PRICE_LIFETIME!;
+      priceId = process.env.STRIPE_PRICE_LIFETIME || "";
+      break;
     default:
-      throw new Error(`Unsupported plan: ${plan satisfies never}`);
+      throw new Error(`Unsupported plan: ${plan}`);
   }
+
+  if (!priceId) {
+    throw new Error(`Missing Stripe price env for plan: ${plan}`);
+  }
+
+  return priceId;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -62,6 +73,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const mode: "subscription" | "payment" =
       plan === "lifetime" ? "payment" : "subscription";
 
+    const couponId = process.env.STRIPE_COUPON_100_OFF || "";
+
+    if (!couponId) {
+      throw new Error("Missing STRIPE_COUPON_100_OFF env");
+    }
+
+    console.log("create-checkout-session debug", {
+      userId: user.id,
+      email: user.email,
+      plan,
+      mode,
+      priceId,
+      couponId,
+      hasStripeSecretKey: Boolean(process.env.STRIPE_SECRET_KEY),
+      hasSupabaseUrl: Boolean(process.env.SUPABASE_URL),
+      hasSupabaseServiceRoleKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+      appUrl: APP_URL,
+    });
+
     const session = await stripe.checkout.sessions.create({
       mode,
       line_items: [
@@ -72,7 +102,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ],
       discounts: [
         {
-          coupon: process.env.STRIPE_COUPON_100_OFF!,
+          coupon: couponId,
         },
       ],
       success_url: `${APP_URL}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,
@@ -97,6 +127,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ url: session.url });
   } catch (error) {
     console.error("create-checkout-session error", error);
-    return res.status(500).json({ error: "Internal server error" });
+
+    const message =
+      error instanceof Error ? error.message : "Internal server error";
+
+    return res.status(500).json({
+      error: "Internal server error",
+      details: message,
+    });
   }
 }
