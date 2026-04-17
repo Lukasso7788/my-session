@@ -1,52 +1,28 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { PricingPlanCard } from "../components/PricingPlanCard";
 import { supabase } from "../lib/supabase";
-import { PRICING, formatUsd } from "../lib/billing";
 
 type BillingCycle = "monthly" | "yearly";
 
 export default function PricingPage() {
     const KOFI_URL = "https://ko-fi.com/mysession";
 
+    // Stripe Payment Links
+    // Put these in your Vite env:
+    // VITE_STRIPE_PRO_MONTHLY_URL=https://buy.stripe.com/...
+    // VITE_STRIPE_PRO_YEARLY_URL=https://buy.stripe.com/...
+    const STRIPE_PRO_MONTHLY_URL = import.meta.env.VITE_STRIPE_PRO_MONTHLY_URL?.trim() || "";
+    const STRIPE_PRO_YEARLY_URL = import.meta.env.VITE_STRIPE_PRO_YEARLY_URL?.trim() || "";
+
     const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
     const [checkingAuth, setCheckingAuth] = useState<boolean>(true);
 
     const [isUpgrading, setIsUpgrading] = useState<boolean>(false);
-    const [isRequestingLifetime, setIsRequestingLifetime] = useState<boolean>(false);
     const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
 
     const [statusMessage, setStatusMessage] = useState<string>("");
     const [errorMessage, setErrorMessage] = useState<string>("");
-
-    // Пока это UI-счётчик от константы.
-    // Позже можно заменить на публичный реальный counter из отдельной таблицы / view / edge function.
-    const [lifetimeSlotsLeft] = useState<number>(PRICING.lifetimeSlotsTotal);
-
-    const monthlyPrice = formatUsd(PRICING.monthlyUsd);
-    const yearlyPrice = formatUsd(PRICING.yearlyUsd);
-    const lifetimePrice = formatUsd(PRICING.lifetimeUsd);
-
-    const proPrice = billingCycle === "monthly" ? monthlyPrice : yearlyPrice;
-    const proSubtitle =
-        billingCycle === "monthly"
-            ? "Unlimited access to all session formats"
-            : "Unlimited access to all session formats • billed yearly";
-
-    const proBadge =
-        billingCycle === "yearly"
-            ? "Save 20%"
-            : "Most flexible";
-
-    const proFootnote =
-        billingCycle === "monthly"
-            ? "7-day free trial • cancel anytime"
-            : "7-day free trial • billed yearly";
-
-    const lifetimeBadge = useMemo(() => {
-        if (lifetimeSlotsLeft <= 0) return "Sold out";
-        return `Only ${lifetimeSlotsLeft} left`;
-    }, [lifetimeSlotsLeft]);
 
     useEffect(() => {
         let isMounted = true;
@@ -89,7 +65,7 @@ export default function PricingPage() {
     }, []);
 
     const createCheckoutRequest = useCallback(
-        async (planCode: "pro_monthly" | "pro_yearly" | "lifetime") => {
+        async (planCode: "pro_monthly" | "pro_yearly") => {
             const {
                 data: { user },
                 error: userError,
@@ -103,10 +79,7 @@ export default function PricingPage() {
                 user_id: user.id,
                 plan_code: planCode,
                 source: "pricing_page",
-                note:
-                    planCode === "lifetime"
-                        ? "Lifetime access request from pricing page."
-                        : "Invoice link missing on pricing page.",
+                note: "Stripe payment link missing on pricing page.",
             });
 
             if (error) {
@@ -115,6 +88,19 @@ export default function PricingPage() {
         },
         []
     );
+
+    const addPrefilledEmail = useCallback((baseUrl: string, email?: string | null) => {
+        if (!email) return baseUrl;
+
+        try {
+            const url = new URL(baseUrl);
+            url.searchParams.set("prefilled_email", email);
+            return url.toString();
+        } catch (err) {
+            console.error("Failed to append prefilled email:", err);
+            return baseUrl;
+        }
+    }, []);
 
     const handleUpgradeToPro = useCallback(async () => {
         setErrorMessage("");
@@ -167,14 +153,22 @@ export default function PricingPage() {
             }
 
             const planCode = billingCycle === "monthly" ? "pro_monthly" : "pro_yearly";
-            const checkoutUrl =
+
+            const legacyProfileCheckoutUrl =
                 billingCycle === "monthly"
                     ? profile?.pro_monthly_invoice_url
                     : profile?.pro_yearly_invoice_url;
 
-            if (checkoutUrl) {
+            const envStripeCheckoutUrl =
+                billingCycle === "monthly" ? STRIPE_PRO_MONTHLY_URL : STRIPE_PRO_YEARLY_URL;
+
+            const finalCheckoutUrl = envStripeCheckoutUrl
+                ? addPrefilledEmail(envStripeCheckoutUrl, user.email)
+                : legacyProfileCheckoutUrl || "";
+
+            if (finalCheckoutUrl) {
                 setStatusMessage("Redirecting you to secure payment...");
-                window.location.href = checkoutUrl;
+                window.location.href = finalCheckoutUrl;
                 return;
             }
 
@@ -191,56 +185,26 @@ export default function PricingPage() {
         } finally {
             setIsUpgrading(false);
         }
-    }, [billingCycle, checkingAuth, createCheckoutRequest, isLoggedIn]);
-
-    const handleLifetimeRequest = useCallback(async () => {
-        setErrorMessage("");
-        setStatusMessage("");
-
-        if (lifetimeSlotsLeft <= 0) {
-            setErrorMessage("Lifetime access is currently sold out.");
-            return;
-        }
-
-        if (checkingAuth) {
-            setErrorMessage("Still checking your account. Try again in a second.");
-            return;
-        }
-
-        if (!isLoggedIn) {
-            window.location.href = "/login?redirect=/pricing";
-            return;
-        }
-
-        setIsRequestingLifetime(true);
-
-        try {
-            await createCheckoutRequest("lifetime");
-            setStatusMessage(
-                "Your lifetime access request has been saved. We’ll prepare your lifetime payment link manually."
-            );
-        } catch (err) {
-            console.error("Unexpected lifetime request error:", err);
-            setErrorMessage("Unexpected error while requesting lifetime access.");
-        } finally {
-            setIsRequestingLifetime(false);
-        }
-    }, [checkingAuth, createCheckoutRequest, isLoggedIn, lifetimeSlotsLeft]);
+    }, [
+        STRIPE_PRO_MONTHLY_URL,
+        STRIPE_PRO_YEARLY_URL,
+        addPrefilledEmail,
+        billingCycle,
+        checkingAuth,
+        createCheckoutRequest,
+        isLoggedIn,
+    ]);
 
     return (
         <div className="min-h-[calc(100vh-80px)] bg-transparent text-[#0B1220]">
-            <main className="mx-auto w-full max-w-[1180px] px-4 py-10 sm:px-6">
+            <main className="mx-auto w-full max-w-[1100px] px-4 sm:px-6 py-10">
                 <div className="text-center">
-                    <h1 className="text-[34px] font-semibold tracking-[-0.03em] sm:text-[44px]">
+                    <h1 className="text-[34px] sm:text-[44px] font-semibold tracking-[-0.03em]">
                         Pricing that stays simple
                     </h1>
-
                     <p className="mt-3 text-[15px] text-black/60">
-                        Start free, build momentum, and upgrade when you want unlimited access.
-                    </p>
-
-                    <p className="mt-2 text-[14px] text-black/50">
-                        Monthly and yearly Pro plans include a 7-day free trial.
+                        Join focus sessions for accountability. Upgrade when you want unlimited
+                        access.
                     </p>
                 </div>
 
@@ -256,7 +220,6 @@ export default function PricingPage() {
                         >
                             Monthly
                         </button>
-
                         <button
                             type="button"
                             className={`h-10 rounded-full text-sm font-medium transition ${billingCycle === "yearly"
@@ -270,18 +233,18 @@ export default function PricingPage() {
                     </div>
                 </div>
 
-                <div className="mt-10 grid gap-6 lg:grid-cols-3">
+                <div className="mt-10 grid gap-6 md:grid-cols-2">
                     <PricingPlanCard
                         title="Free"
                         price="$0"
-                        subtitle="For getting started with MySession"
+                        subtitle="For trying MySession"
                         badge="Starter"
                         highlights={[
-                            `Up to ${PRICING.freeSessionsPerWeek} sessions per week`,
-                            `Up to ${Math.round(PRICING.freeMinutesPerWeek / 60)} hours total per week`,
-                            "Join and host sessions",
-                            "Core room features, chat, reactions, intentions",
-                            "Upgrade later when you want unlimited access",
+                            "Join up to 3 group sessions per week",
+                            "Up to 2 hours per session",
+                            "Basic chat + reactions",
+                            "No hosting / creating sessions",
+                            "Infinite rooms & Body tripling: Pro only",
                         ]}
                         ctaLabel="Start free"
                         ctaVariant="secondary"
@@ -291,17 +254,21 @@ export default function PricingPage() {
 
                     <PricingPlanCard
                         title="Pro"
-                        price={proPrice}
-                        subtitle={proSubtitle}
-                        badge={proBadge}
+                        price={billingCycle === "monthly" ? "$10" : "$96"}
+                        subtitle={
+                            billingCycle === "monthly"
+                                ? "Full access to all formats"
+                                : "Full access to all formats • billed yearly"
+                        }
+                        badge={billingCycle === "yearly" ? "Save 20%" : "Best value"}
                         highlights={[
                             "Unlimited sessions per week",
-                            "Unlimited hours",
-                            "Join and host without limits",
-                            "All formats and future premium room features",
+                            "All formats: Group sessions, Infinite rooms, Body tripling",
+                            "Create & host sessions",
+                            "Priority access to new features (AI layer, backgrounds)",
                             billingCycle === "yearly"
-                                ? `Yearly plan: ${formatUsd(PRICING.monthlyUsd * 12)} → ${yearlyPrice}`
-                                : "Best for flexibility",
+                                ? "Yearly plan: $120 → $96 with 20% discount"
+                                : "Support the project ❤️",
                         ]}
                         ctaLabel={
                             checkingAuth
@@ -309,42 +276,16 @@ export default function PricingPage() {
                                 : isUpgrading
                                     ? "Opening payment..."
                                     : billingCycle === "monthly"
-                                        ? "Start Pro Monthly"
-                                        : "Start Pro Yearly"
+                                        ? "Upgrade to Pro Monthly"
+                                        : "Upgrade to Pro Yearly"
                         }
                         ctaVariant="primary"
-                        footnote={proFootnote}
-                        onCta={handleUpgradeToPro}
-                    />
-
-                    <PricingPlanCard
-                        title="Lifetime"
-                        price={lifetimePrice}
-                        subtitle="Early supporter lifetime access"
-                        badge={lifetimeBadge}
-                        highlights={[
-                            "Unlimited lifetime access",
-                            "One-time payment",
-                            "Early supporter deal",
-                            `Only ${PRICING.lifetimeSlotsTotal} total spots in this drop`,
-                            "Handled manually for now",
-                        ]}
-                        ctaLabel={
-                            lifetimeSlotsLeft <= 0
-                                ? "Sold out"
-                                : checkingAuth
-                                    ? "Checking account..."
-                                    : isRequestingLifetime
-                                        ? "Saving request..."
-                                        : "Request Lifetime Access"
-                        }
-                        ctaVariant="secondary"
                         footnote={
-                            lifetimeSlotsLeft <= 0
-                                ? "This drop is sold out"
-                                : `${lifetimeSlotsLeft} of ${PRICING.lifetimeSlotsTotal} available right now`
+                            billingCycle === "monthly"
+                                ? "Cancel anytime"
+                                : "Pay $96/year instead of $120"
                         }
-                        onCta={handleLifetimeRequest}
+                        onCta={handleUpgradeToPro}
                     />
                 </div>
 
@@ -353,9 +294,9 @@ export default function PricingPage() {
                         <div className="text-sm font-medium">Billing status</div>
 
                         <p className="mt-2 text-sm text-black/60">
-                            If your personal invoice link is ready, the Pro button will open it
+                            If your Stripe payment link is ready, the Pro button will open it
                             directly. If not, we’ll save a checkout request and prepare one for
-                            you manually.
+                            you.
                         </p>
 
                         {statusMessage ? (
@@ -391,12 +332,12 @@ export default function PricingPage() {
                     .
                 </div>
 
-                <div className="mt-10 rounded-2xl border border-black/10 bg-white/85 p-6 shadow-sm sm:p-8">
+                <div className="mt-10 rounded-2xl border border-black/10 bg-white/85 shadow-sm p-6 sm:p-8">
                     <h2 className="text-[18px] font-semibold tracking-[-0.01em]">
                         Payment and service information
                     </h2>
 
-                    <div className="mt-6 grid gap-6 text-[14px] leading-relaxed text-black/80 md:grid-cols-2">
+                    <div className="mt-6 grid gap-6 md:grid-cols-2 text-[14px] leading-relaxed text-black/80">
                         <section>
                             <h3 className="text-[16px] font-semibold text-black/85">
                                 Payment methods
@@ -436,9 +377,7 @@ export default function PricingPage() {
                                 Refunds
                             </h3>
                             <p className="mt-2">
-                                Refund requests are reviewed individually. Refunds may be available
-                                in cases such as duplicate payment, technical billing errors, or
-                                failure to provide the paid service. See the full{" "}
+                                Refund requests are handled according to the{" "}
                                 <Link
                                     to="/refund-policy"
                                     className="underline underline-offset-2 hover:opacity-80"
@@ -455,25 +394,25 @@ export default function PricingPage() {
                         <div className="mt-3 flex flex-wrap gap-3 text-sm">
                             <Link
                                 to="/terms"
-                                className="rounded-xl border border-black/10 bg-white px-3 py-2 transition hover:bg-black/[0.03]"
+                                className="rounded-xl border border-black/10 bg-white px-3 py-2 hover:bg-black/[0.03] transition"
                             >
                                 Terms and Conditions
                             </Link>
                             <Link
                                 to="/refund-policy"
-                                className="rounded-xl border border-black/10 bg-white px-3 py-2 transition hover:bg-black/[0.03]"
+                                className="rounded-xl border border-black/10 bg-white px-3 py-2 hover:bg-black/[0.03] transition"
                             >
                                 Refund Policy
                             </Link>
                             <Link
                                 to="/privacy"
-                                className="rounded-xl border border-black/10 bg-white px-3 py-2 transition hover:bg-black/[0.03]"
+                                className="rounded-xl border border-black/10 bg-white px-3 py-2 hover:bg-black/[0.03] transition"
                             >
                                 Privacy Policy
                             </Link>
                             <Link
                                 to="/contact"
-                                className="rounded-xl border border-black/10 bg-white px-3 py-2 transition hover:bg-black/[0.03]"
+                                className="rounded-xl border border-black/10 bg-white px-3 py-2 hover:bg-black/[0.03] transition"
                             >
                                 Contact information
                             </Link>
@@ -486,21 +425,10 @@ export default function PricingPage() {
 
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
                         <div>
-                            <div className="text-sm font-medium">What does Free include?</div>
+                            <div className="text-sm font-medium">Why weekly limits on Free?</div>
                             <p className="mt-1 text-sm text-black/60">
-                                Free includes up to {PRICING.freeSessionsPerWeek} sessions per week
-                                and up to {Math.round(PRICING.freeMinutesPerWeek / 60)} hours total
-                                per week.
-                            </p>
-                        </div>
-
-                        <div>
-                            <div className="text-sm font-medium">
-                                Do paid plans include a trial?
-                            </div>
-                            <p className="mt-1 text-sm text-black/60">
-                                Yes. Monthly and yearly Pro plans include a {PRICING.trialDays}-day
-                                free trial.
+                                Video calls are expensive to run. Limits keep Free sustainable while
+                                Pro supports the infrastructure.
                             </p>
                         </div>
 
@@ -509,19 +437,28 @@ export default function PricingPage() {
                                 How does Pro billing work right now?
                             </div>
                             <p className="mt-1 text-sm text-black/60">
-                                Each account can have its own personal payment link. If your link is
-                                ready, clicking Pro will open it directly. If not, we’ll save a
-                                checkout request.
+                                If your Stripe payment link is ready, clicking Pro will open it
+                                directly. If not, we’ll save a checkout request.
                             </p>
                         </div>
 
                         <div>
                             <div className="text-sm font-medium">
-                                How does Lifetime work right now?
+                                What if my payment link is not ready yet?
                             </div>
                             <p className="mt-1 text-sm text-black/60">
-                                Lifetime access is a limited early supporter offer. Right now it is
-                                handled manually after you submit a request.
+                                We’ll save a checkout request for your account so your payment link
+                                can be prepared manually.
+                            </p>
+                        </div>
+
+                        <div>
+                            <div className="text-sm font-medium">
+                                How should this be tested?
+                            </div>
+                            <p className="mt-1 text-sm text-black/60">
+                                First test the MySession flow with live Stripe payment links. Then
+                                run one real low-risk payment test to confirm the live payment flow.
                             </p>
                         </div>
                     </div>
