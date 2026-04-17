@@ -14,6 +14,7 @@ import PublicProfilePage from "./pages/PublicProfilePage";
 import AuthCallback from "./pages/AuthCallback";
 
 import PricingPage from "./pages/PricingPage";
+import PricingSuccessPage from "./pages/PricingSuccessPage";
 import UpdatesPage from "./pages/UpdatesPage";
 
 import PrivacyPage from "./pages/PrivacyPage";
@@ -138,6 +139,7 @@ export default function App() {
           {/* Core app pages */}
           <Route path="/sessions" element={<SessionsPage />} />
           <Route path="/pricing" element={<PricingPage />} />
+          <Route path="/pricing/success" element={<PricingSuccessPage />} />
           <Route path="/updates" element={<UpdatesPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/profile/:id" element={<PublicProfilePage />} />
