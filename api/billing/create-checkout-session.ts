@@ -73,22 +73,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const mode: "subscription" | "payment" =
       plan === "lifetime" ? "payment" : "subscription";
 
-    const couponId = process.env.STRIPE_COUPON_100_OFF || "";
-
-    if (!couponId) {
-      throw new Error("Missing STRIPE_COUPON_100_OFF env");
-    }
-
-    console.log("create-checkout-session debug", {
+    console.log("create-checkout-session LIVE", {
       userId: user.id,
       email: user.email,
       plan,
       mode,
       priceId,
-      couponId,
-      hasStripeSecretKey: Boolean(process.env.STRIPE_SECRET_KEY),
-      hasSupabaseUrl: Boolean(process.env.SUPABASE_URL),
-      hasSupabaseServiceRoleKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
       appUrl: APP_URL,
     });
 
@@ -100,19 +90,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           quantity: 1,
         },
       ],
-      discounts: [
-        {
-          coupon: couponId,
-        },
-      ],
+
+      // ❌ УБРАНО:
+      // discounts: [{ coupon: ... }]
+
       success_url: `${APP_URL}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${APP_URL}/pricing?checkout=cancelled`,
+
       client_reference_id: user.id,
       customer_email: user.email || undefined,
+
       metadata: {
         plan,
         supabase_user_id: user.id,
       },
+
       subscription_data:
         mode === "subscription"
           ? {
