@@ -28,6 +28,7 @@ import { incrementWeeklyUsage } from "../lib/usage";
 import { loadEntitlementState, type EntitlementState } from "../lib/entitlements";
 import { getPaywallDecision } from "../lib/paywall";
 import PaywallModal from "../components/PaywallModal";
+import { PAYWALL_ENABLED } from "../lib/flags";
 
 import ChatPanel from "../components/ChatPanel";
 import { IntentionsPanel } from "../components/IntentionsPanel";
@@ -1023,6 +1024,22 @@ export function RoomPageLiveKit() {
   }, [entitlementState]);
 
   const paywallBlocked = !!paywallDecision?.blocked;
+  useEffect(() => {
+    console.log("[PAYWALL Room DEBUG]", {
+      PAYWALL_ENABLED,
+      entitlementState,
+      paywallDecision,
+      paywallBlocked,
+    });
+  }, [entitlementState, paywallDecision, paywallBlocked]);
+  
+  useEffect(() => {
+    console.log("[PAYWALL RoomPageLiveKit]", {
+      entitlementState,
+      paywallDecision,
+      paywallBlocked,
+    });
+  }, [entitlementState, paywallDecision, paywallBlocked]);
 
   // theme
   const [theme, setTheme] = useState<RoomTheme>(() => {

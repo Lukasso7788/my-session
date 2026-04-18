@@ -5,6 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import { loadEntitlementState, type EntitlementState } from "../lib/entitlements";
 import { getPaywallDecision } from "../lib/paywall";
 import PaywallModal from "./PaywallModal";
+import { PAYWALL_ENABLED } from "../lib/flags";
 
 const DEBUG = true;
 const BRAND_BLACK = "#2F2F2F";
@@ -132,6 +133,13 @@ export default function Header() {
             usage: entitlementState.usage,
         });
     }, [entitlementState]);
+
+    useEffect(() => {
+        console.log("[PAYWALL Header]", {
+            entitlementState,
+            paywallDecision,
+        });
+    }, [entitlementState, paywallDecision]);
 
     useEffect(() => {
         function onDocClick(e: MouseEvent) {

@@ -14,6 +14,7 @@ import { loadEntitlementState, type EntitlementState } from "../lib/entitlements
 import { getPaywallDecision } from "../lib/paywall";
 import PaywallModal from "./PaywallModal";
 import type { SessionStage } from "../SessionConfig";
+import { PAYWALL_ENABLED } from "../lib/flags";
 
 /** =========================
  * ✅ Global Supabase singleton (avoid multiple GoTrueClient instances)
@@ -2663,6 +2664,15 @@ export default function SessionCard({
             usage: entitlementState.usage,
         });
     }, [entitlementState]);
+
+    useEffect(() => {
+        console.log("[PAYWALL SessionCard DEBUG]", {
+            sessionId: session?.id,
+            PAYWALL_ENABLED,
+            entitlementState,
+            paywallDecision,
+        });
+    }, [session?.id, entitlementState, paywallDecision]);
 
     useEffect(() => setIsBookingConfirmed(!!initialIsBooked), [session.id, initialIsBooked]);
     useEffect(() => setBookers(initialBookers), [initialBookers]);
