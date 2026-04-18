@@ -1,4 +1,3 @@
-// src/pages/LiveKit/sizing.tsx
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 // ----------------------- SIZING (ported from VideoRoom, ONLY sizing) -----------------------
@@ -45,35 +44,24 @@ function computeCols(count: number, containerWidth: number) {
     if (count === 2) return 2;
     if (count === 4) return 2;
 
-    // 3 participants:
-    // - narrow desktop / tablet-ish -> keep 2 + 1
-    // - wider desktop -> allow 3 columns
     if (count === 3) {
         if (!isDesktop) return 2;
         return w >= 1280 ? 3 : 2;
     }
 
-    // 5–6 participants
     if (count === 5) return w >= 900 ? 3 : 2;
     if (count === 6) return w >= 780 ? 3 : 2;
 
-    // 7–9 participants:
-    // default stable desktop layout = 3 columns
-    // but if the container is really wide, allow 4
     if (count >= 7 && count <= 9) {
         if (!isDesktop) return 2;
         return w >= 1380 ? 4 : 3;
     }
 
-    // 10–12 participants:
-    // on laptop-ish desktop widths with side panel closed,
-    // 4 columns usually distribute much better than 3x4
     if (count >= 10 && count <= 12) {
         if (!isDesktop) return 3;
         return w >= 1080 ? 4 : 3;
     }
 
-    // 13+ participants
     if (count >= 13) {
         if (!isDesktop) return 3;
         return w >= 1320 ? 5 : 4;
@@ -304,17 +292,77 @@ export function MobileFillLayoutSizing<T extends { id: string }>(props: {
 
 export function MobileStackLayoutSizing<T extends { id: string }>(props: {
     items: T[];
+    containerWidth: number;
+    containerHeight: number;
     paddingBottomPx?: number;
     renderItem: (t: T, idx: number) => React.ReactNode;
 }) {
-    const { items, paddingBottomPx = 12, renderItem } = props;
+    const { items, containerWidth, containerHeight, paddingBottomPx = 12, renderItem } = props;
+
+    const count = items.length || 1;
+    const paddingPx = containerWidth && containerWidth < 520 ? 8 : 10;
+    const gapPx = containerWidth && containerWidth < 520 ? 6 : 8;
+
+    // 3–4 участников на узком мобайле лучше выглядят как 2 колонки.
+    const useTwoCols = count >= 3 && count <= 4;
+
+    if (useTwoCols) {
+        const cols = 2;
+        const rows = Math.ceil(count / cols);
+
+        const maxGridWidth = calcMaxGridWidthPx({
+            containerWidth: containerWidth || 0,
+            containerHeight: containerHeight || 0,
+            cols,
+            rows,
+            gapPx,
+            paddingPx,
+            aspectHOverW: 9 / 16,
+        });
+
+        return (
+            <div
+                className="w-full h-full min-h-0 overflow-y-auto flex justify-center items-start"
+                style={{ padding: paddingPx, paddingBottom: paddingBottomPx }}
+            >
+                <div
+                    className="w-full grid"
+                    style={{
+                        gap: gapPx,
+                        maxWidth: maxGridWidth ? `${maxGridWidth}px` : undefined,
+                        gridTemplateColumns: "1fr 1fr",
+                    }}
+                >
+                    {items.map((t, idx) => (
+                        <React.Fragment key={t.id}>{renderItem(t, idx)}</React.Fragment>
+                    ))}
+                </div>
+            </div>
+        );
+    }
+
+    // 5+ участников: остаёмся в stack, но делаем компактнее и ограничиваем ширину.
+    const availW = Math.max(0, (containerWidth || 0) - paddingPx * 2);
+    const compactTileHeight = count >= 7 ? 96 : 112;
+    const compactTileWidth = Math.min(availW, Math.round(compactTileHeight * (16 / 9)));
+
     return (
         <div
-            className="w-full h-full min-h-0 overflow-y-auto p-2 flex flex-col gap-2"
-            style={{ paddingBottom: paddingBottomPx }}
+            className="w-full h-full min-h-0 overflow-y-auto flex flex-col items-center"
+            style={{
+                padding: paddingPx,
+                paddingBottom: paddingBottomPx,
+                gap: gapPx,
+            }}
         >
             {items.map((t, idx) => (
-                <React.Fragment key={t.id}>{renderItem(t, idx)}</React.Fragment>
+                <div
+                    key={t.id}
+                    className="w-full flex justify-center shrink-0"
+                    style={{ maxWidth: compactTileWidth ? `${compactTileWidth}px` : undefined }}
+                >
+                    {renderItem(t, idx)}
+                </div>
             ))}
         </div>
     );

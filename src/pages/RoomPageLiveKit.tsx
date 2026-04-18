@@ -5779,6 +5779,8 @@ export function RoomPageLiveKit() {
                   <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
                     <MobileStackLayoutSizing<TileModel>
                       items={layoutTilesForRender}
+                      containerWidth={effectiveW}
+                      containerHeight={effectiveH}
                       paddingBottomPx={paddingBottomPx}
                       renderItem={(t) => renderTile(t)}
                     />
