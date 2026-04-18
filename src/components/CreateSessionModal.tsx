@@ -37,7 +37,6 @@ import {
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { assignServerForSession } from "../lib/livekitPlacement";
-import type { SessionTemplate } from "../types/session";
 import { useAuth } from "../context/AuthContext";
 
 interface CreateSessionModalProps {
@@ -45,6 +44,14 @@ interface CreateSessionModalProps {
   onClose: () => void;
   onSessionCreated: () => void;
 }
+
+type SessionTemplate = {
+  id: string;
+  name: string | null;
+  total_duration?: number | null;
+  blocks?: any;
+  schedule?: any;
+};
 
 // ✅ Fixed EU domain (no picker in UI)
 const FIXED_JITSI_DOMAIN = "jitsi.mysession.club";
