@@ -11,8 +11,6 @@ type Body = {
   // DEPRECATED (не используем для авторизации)
   isHost?: boolean;
   isModerator?: boolean;
-  baseUserId?: string;
-  tabId?: string;
 };
 
 type ResolvedRole = {
@@ -217,6 +215,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     let role: ResolvedRole = { isHost: false, isModerator: false, userId: "" };
 
+    // Если identity выглядит как UUID — требуем Supabase auth, иначе можно подделать host_id
     if (looksLikeUuid(String(identity))) {
       if (!accessToken) {
         return res.status(401).json({
@@ -302,6 +301,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       livekitWsUrl,
       isHost: role.isHost,
       isModerator: role.isModerator,
+      canUpdateOwnMetadata: true,
       apiKeyPrefix: String(apiKey).slice(0, 6),
       tokenPreview: `${token.slice(0, 18)}...${token.slice(-10)}`,
     });

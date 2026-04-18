@@ -1240,6 +1240,46 @@ export function RoomPageLiveKit() {
   const [editNameOpen, setEditNameOpen] = useState(false);
   const [editNameValue, setEditNameValue] = useState("");
 
+  // LiveKit env + token routing state
+  const defaultLivekitUrl = String((import.meta as any)?.env?.VITE_LIVEKIT_URL || "").trim();
+  const tokenEndpoint = String(
+    (import.meta as any)?.env?.VITE_LIVEKIT_TOKEN_ENDPOINT || "/api/livekit/token"
+  ).trim();
+  const adminEndpoint = String(
+    (import.meta as any)?.env?.VITE_LIVEKIT_ADMIN_ENDPOINT || "/api/livekit/admin"
+  ).trim();
+
+  const [lkServerUrl, setLkServerUrl] = useState<string>(defaultLivekitUrl);
+  const [lkToken, setLkToken] = useState<string>("");
+  const [tokenLoading, setTokenLoading] = useState(false);
+  const [tokenError, setTokenError] = useState<string>("");
+  const [assignedServerId, setAssignedServerId] = useState<string>("");
+
+  const getFreshAccessToken = async () => {
+    try {
+      const { data } = await supabase.auth.getSession();
+      let token = String(data?.session?.access_token || "").trim();
+
+      if (token) {
+        accessTokenRef.current = token;
+        return token;
+      }
+
+      const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+      if (refreshError) throw refreshError;
+
+      token = String(refreshed?.session?.access_token || "").trim();
+      if (token) {
+        accessTokenRef.current = token;
+        return token;
+      }
+
+      throw new Error("No active Supabase access token");
+    } catch (e: any) {
+      throw new Error(String(e?.message || e || "Failed to refresh auth session"));
+    }
+  };
+
   // profile cache for remote
   const [profilesById, setProfilesById] = useState<Record<string, HostProfile>>({});
 
@@ -1696,6 +1736,16 @@ export function RoomPageLiveKit() {
 
   const sessionId = useMemo(() => String(session?.id || ""), [session?.id]);
   const sessionTitle = useMemo(() => String(session?.title || "Session"), [session?.title]);
+
+  useEffect(() => {
+    console.log("[LK SERVER ROUTING]", {
+      sessionId,
+      assignedServerId,
+      lkServerUrl,
+      hasToken: !!lkToken,
+    });
+  }, [sessionId, assignedServerId, lkServerUrl, lkToken]);
+
   useEffect(() => {
     prejoinBootstrappedSessionIdRef.current = "";
     joinFlowStartedRef.current = false;
@@ -1705,7 +1755,9 @@ export function RoomPageLiveKit() {
     setPrejoinOpen(false);
     setJoinRequested(false);
     setLkToken("");
-  }, [sessionId]);
+    setLkServerUrl(defaultLivekitUrl);
+    setAssignedServerId("");
+  }, [sessionId, defaultLivekitUrl]);
 
   const [joinNowTickMs, setJoinNowTickMs] = useState<number>(() => Date.now());
 
@@ -3081,43 +3133,6 @@ export function RoomPageLiveKit() {
     }
   };
 
-  // LiveKit env
-  const lkServerUrl = String((import.meta as any)?.env?.VITE_LIVEKIT_URL || "").trim();
-  const tokenEndpoint = String((import.meta as any)?.env?.VITE_LIVEKIT_TOKEN_ENDPOINT || "/api/livekit/token").trim();
-  const adminEndpoint = String((import.meta as any)?.env?.VITE_LIVEKIT_ADMIN_ENDPOINT || "/api/livekit/admin").trim();
-  const getFreshAccessToken = async () => {
-    try {
-      const { data } = await supabase.auth.getSession();
-      let token = String(data?.session?.access_token || "").trim();
-
-      if (token) {
-        accessTokenRef.current = token;
-        return token;
-      }
-
-      const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
-
-      if (refreshError) {
-        throw refreshError;
-      }
-
-      token = String(refreshed?.session?.access_token || "").trim();
-      if (token) {
-        accessTokenRef.current = token;
-        return token;
-      }
-
-      throw new Error("No active Supabase access token");
-    } catch (e: any) {
-      throw new Error(String(e?.message || e || "Failed to refresh auth session"));
-    }
-  };
-
-  // token
-  const [lkToken, setLkToken] = useState<string>("");
-  const [tokenLoading, setTokenLoading] = useState(false);
-  const [tokenError, setTokenError] = useState<string>("");
-
   // identity refs
   const baseUserIdRef = useRef<string>("");
   const livekitIdentityRef = useRef<string>("");
@@ -3503,24 +3518,43 @@ export function RoomPageLiveKit() {
         }),
       });
 
+      const json = (await res.json().catch(() => ({}))) as {
+        token?: string;
+        url?: string;
+        assignedServerId?: string | null;
+        error?: string;
+        message?: string;
+      };
+
       if (!res.ok) {
-        const t = await res.text().catch(() => "");
-        const msg = `Token endpoint error: ${res.status} ${t || ""}`.trim();
-        console.error(msg);
+        const msg = String(
+          json?.error || json?.message || `Token endpoint error: ${res.status}`
+        ).trim();
+        console.error(msg, json);
         setTokenError(msg);
         setTokenLoading(false);
         return;
       }
 
-      const json = (await res.json()) as { token?: string };
-      const tok = String(json.token || "");
+      const tok = String(json.token || "").trim();
+      const nextUrl = String(json.url || defaultLivekitUrl || "").trim();
+      const nextAssignedServerId = String(json.assignedServerId || "").trim();
+
       if (!tok) {
         setTokenError("Token endpoint returned empty token");
         setTokenLoading(false);
         return;
       }
 
+      if (!nextUrl) {
+        setTokenError("Token endpoint returned empty LiveKit URL");
+        setTokenLoading(false);
+        return;
+      }
+
       setLkToken(tok);
+      setLkServerUrl(nextUrl);
+      setAssignedServerId(nextAssignedServerId);
       setTokenLoading(false);
     } catch (e: any) {
       console.error("requestToken exception:", e);

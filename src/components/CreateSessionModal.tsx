@@ -36,6 +36,7 @@ import {
   History,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { assignServerForSession } from "../lib/livekitPlacement";
 import type { SessionTemplate } from "../types/session";
 import { useAuth } from "../context/AuthContext";
 
@@ -1869,6 +1870,19 @@ export function CreateSessionModal({
         dailyUrls.push(String(fnData.url));
       }
 
+      const placement = await assignServerForSession({
+        sessionFormatType: "group",
+        maxParticipants: effectiveMaxParticipants,
+      });
+
+      console.log("[livekit placement] assigned", {
+        title,
+        serverCode: placement.server.code,
+        serverId: placement.server.id,
+        placementWeight: placement.placementWeight,
+        score: placement.score,
+      });
+
       const rows = datesLocal.map((d, idx) => {
         const scheduledISO = d.toISOString();
 
@@ -1895,6 +1909,9 @@ export function CreateSessionModal({
 
           max_participants: effectiveMaxParticipants,
           custom_slug: customSlugForRow,
+          assigned_server_id: placement.server.id,
+          placement_weight: placement.placementWeight,
+          assigned_at: new Date().toISOString(),
         };
       });
 
