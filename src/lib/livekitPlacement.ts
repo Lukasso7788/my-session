@@ -87,28 +87,14 @@ async function getEnabledServers(): Promise<LivekitServerRow[]> {
   return (data || []) as LivekitServerRow[];
 }
 
+/**
+ * Пока у нас нет columns вроде sessions.live_count,
+ * возвращаем 0 по всем серверам.
+ *
+ * Потом можно заменить это на реальный расчёт по attendance / room presence.
+ */
 async function getLiveUsersByServer(): Promise<Record<string, number>> {
-  const { data, error } = await supabase
-    .from("sessions")
-    .select("assigned_server_id, live_count")
-    .not("assigned_server_id", "is", null);
-
-  if (error) {
-    console.error("getLiveUsersByServer error:", error);
-    throw error;
-  }
-
-  const out: Record<string, number> = {};
-
-  for (const row of data || []) {
-    const serverId = String((row as any).assigned_server_id || "");
-    if (!serverId) continue;
-
-    const liveCount = Number((row as any).live_count || 0);
-    out[serverId] = (out[serverId] || 0) + (Number.isFinite(liveCount) ? liveCount : 0);
-  }
-
-  return out;
+  return {};
 }
 
 async function getReservedWeightsByServer(): Promise<
@@ -116,7 +102,7 @@ async function getReservedWeightsByServer(): Promise<
 > {
   const { data, error } = await supabase
     .from("sessions")
-    .select("assigned_server_id, placement_weight")
+    .select("assigned_server_id, placement_weight, status")
     .not("assigned_server_id", "is", null);
 
   if (error) {
@@ -129,6 +115,9 @@ async function getReservedWeightsByServer(): Promise<
   for (const row of data || []) {
     const serverId = String((row as any).assigned_server_id || "");
     if (!serverId) continue;
+
+    const status = String((row as any).status || "").trim().toLowerCase();
+    if (status === "cancelled" || status === "canceled") continue;
 
     const weight = Number((row as any).placement_weight || 0);
 
@@ -156,35 +145,33 @@ export async function assignServerForSession(
   const liveUsersByServer = await getLiveUsersByServer();
   const reservedByServer = await getReservedWeightsByServer();
 
-  const scored = servers
-    .map((server) => {
-      const liveUsersNow = liveUsersByServer[server.id] || 0;
-      const reserved = reservedByServer[server.id] || { weight: 0, rooms: 0 };
-      const roomCountPenalty = reserved.rooms * 0.5;
-      const currentScore = liveUsersNow + reserved.weight + roomCountPenalty;
-      const projectedScore = currentScore + placementWeight;
+  const scored = servers.map((server) => {
+    const liveUsersNow = liveUsersByServer[server.id] || 0;
+    const reserved = reservedByServer[server.id] || { weight: 0, rooms: 0 };
+    const roomCountPenalty = reserved.rooms * 0.5;
+    const currentScore = liveUsersNow + reserved.weight + roomCountPenalty;
+    const projectedScore = currentScore + placementWeight;
 
-      return {
-        server,
-        placementWeight,
-        score: {
-          serverId: server.id,
-          code: server.code,
-          liveUsersNow,
-          reservedRoomWeight: reserved.weight,
-          activeRoomCount: reserved.rooms,
-          roomCountPenalty,
-          currentScore,
-          projectedScore,
-          softUserCap: server.soft_user_cap,
-          hardUserCap: server.hard_user_cap,
-        } satisfies ServerScoreBreakdown,
-      };
-    })
-    .filter((x) => x.score.liveUsersNow < x.server.hard_user_cap);
+    return {
+      server,
+      placementWeight,
+      score: {
+        serverId: server.id,
+        code: server.code,
+        liveUsersNow,
+        reservedRoomWeight: reserved.weight,
+        activeRoomCount: reserved.rooms,
+        roomCountPenalty,
+        currentScore,
+        projectedScore,
+        softUserCap: server.soft_user_cap,
+        hardUserCap: server.hard_user_cap,
+      } satisfies ServerScoreBreakdown,
+    };
+  });
 
   if (!scored.length) {
-    throw new Error("All enabled LiveKit servers are at or above hard capacity");
+    throw new Error("No enabled LiveKit servers available");
   }
 
   scored.sort((a, b) => {
