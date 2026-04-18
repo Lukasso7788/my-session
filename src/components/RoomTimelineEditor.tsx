@@ -610,53 +610,131 @@ export function timelineBlocksToSchedulePayload(
     return cleaned;
 }
 
-function TimelinePreview({ blocks }: { blocks: RoomTimelineBlock[] }) {
+function TimelinePreview({
+    blocks,
+    onChange,
+}: {
+    blocks: RoomTimelineBlock[];
+    onChange: (b: RoomTimelineBlock[]) => void;
+}) {
+    const [dragId, setDragId] = useState<string | null>(null);
+
     const total = getTimelineTotalMinutes(blocks);
+
+    const move = (fromId: string, toId: string) => {
+        const from = blocks.findIndex(b => b.id === fromId);
+        const to = blocks.findIndex(b => b.id === toId);
+        if (from < 0 || to < 0) return;
+
+        const copy = [...blocks];
+        const [item] = copy.splice(from, 1);
+        copy.splice(to, 0, item);
+
+        onChange(copy);
+    };
+
+    const update = (id: string, patch: Partial<RoomTimelineBlock>) => {
+        onChange(blocks.map(b => b.id === id ? { ...b, ...patch } : b));
+    };
 
     if (!blocks.length) {
         return (
-            <div className="mt-3 border border-black/10 rounded-2xl p-4 text-[12px] text-black/50 font-inter">
-                Empty script. Add blocks from the library.
+            <div className="mt-3 text-sm opacity-50">
+                Empty timeline
             </div>
         );
     }
 
     return (
         <div className="mt-3">
-            <div className="flex items-center justify-between gap-3">
-                <div className="font-inter text-[12px] text-black/60">Session timeline</div>
-                <div className="font-inter text-[12px] text-black/60">
-                    Total: <span className="font-semibold text-black/80">{formatMinutes(total)}</span>
-                </div>
+
+            {/* HEADER */}
+            <div className="flex justify-between text-xs opacity-60">
+                <span>Timeline</span>
+                <span>{total} min</span>
             </div>
 
-            <div className="mt-2 border border-black/10 rounded-[999px] overflow-hidden bg-black/5">
-                <div className="flex h-3">
-                    {blocks.map((b) => {
-                        const mins = clamp(Number(b.minutes) || 1, 1, 24 * 60);
-                        const showText = mins >= 10;
+            {/* BAR */}
+            <div className="mt-2 flex h-10 rounded-xl overflow-hidden bg-black/10">
 
-                        return (
-                            <div
-                                key={b.id}
-                                className="h-full border-r border-white/70 flex items-center justify-center"
-                                style={{
-                                    flexGrow: mins,
-                                    flexBasis: 0,
-                                    minWidth: 6,
-                                    background: timelineBarBg(b.kind),
-                                }}
-                                title={`${b.title} • ${mins} min`}
-                            >
-                                {showText ? (
-                                    <span className="px-2 text-[11px] font-inter text-black/80 truncate">
-                                        {b.title} · {mins}m
-                                    </span>
-                                ) : null}
-                            </div>
-                        );
-                    })}
-                </div>
+                {blocks.map((b) => (
+                    <div
+                        key={b.id}
+                        draggable
+                        onDragStart={() => setDragId(b.id)}
+                        onDragOver={(e) => {
+                            e.preventDefault();
+                            if (dragId && dragId !== b.id) {
+                                move(dragId, b.id);
+                            }
+                        }}
+                        className="relative group flex items-center justify-center border-r border-white/20 cursor-grab active:cursor-grabbing"
+                        style={{ flexGrow: b.minutes }}
+                    >
+
+                        {/* BACKGROUND */}
+                        <div
+                            className="absolute inset-0 opacity-80"
+                            style={{ background: timelineBarBg(b.kind) }}
+                        />
+
+                        {/* CONTENT */}
+                        <div className="relative z-10 text-[11px] font-medium px-2 truncate">
+                            {b.title}
+                        </div>
+
+                        {/* HOVER EDIT */}
+                        <div className="absolute inset-0 opacity-0 group-hover:opacity-100 bg-black/60 flex flex-col items-center justify-center gap-1 transition">
+
+                            <input
+                                value={b.title}
+                                onChange={(e) =>
+                                    update(b.id, { title: e.target.value })
+                                }
+                                className="text-[10px] bg-black/40 px-1 rounded text-white w-[90%]"
+                            />
+
+                            <input
+                                type="number"
+                                value={b.minutes}
+                                onChange={(e) =>
+                                    update(b.id, {
+                                        minutes: clamp(Number(e.target.value) || 1, 1, 600),
+                                    })
+                                }
+                                className="text-[10px] bg-black/40 px-1 rounded w-14 text-center"
+                            />
+
+                        </div>
+
+                        {/* RESIZE HANDLE */}
+                        <div
+                            onMouseDown={(e) => {
+                                e.preventDefault();
+
+                                const startX = e.clientX;
+                                const startMinutes = b.minutes;
+
+                                const onMove = (ev: MouseEvent) => {
+                                    const delta = ev.clientX - startX;
+                                    const next = clamp(startMinutes + delta / 5, 1, 600);
+
+                                    update(b.id, { minutes: Math.round(next) });
+                                };
+
+                                const onUp = () => {
+                                    window.removeEventListener("mousemove", onMove);
+                                    window.removeEventListener("mouseup", onUp);
+                                };
+
+                                window.addEventListener("mousemove", onMove);
+                                window.addEventListener("mouseup", onUp);
+                            }}
+                            className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize bg-white/20 opacity-0 group-hover:opacity-100"
+                        />
+
+                    </div>
+                ))}
             </div>
         </div>
     );
@@ -974,7 +1052,7 @@ export default function RoomTimelineEditor({
                 </div>
 
                 <div ref={modalScrollRef} className="flex-1 overflow-y-auto p-4 sm:p-6">
-                    <TimelinePreview blocks={blocks} />
+                    <TimelinePreview blocks={blocks} onChange={onChange} />
 
                     <div className="mt-4 flex items-center justify-between gap-3 flex-wrap">
                         <div className={`font-inter text-[12px] ${mutedText}`}>
