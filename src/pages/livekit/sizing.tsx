@@ -303,67 +303,76 @@ export function MobileStackLayoutSizing<T extends { id: string }>(props: {
     const paddingPx = containerWidth && containerWidth < 520 ? 8 : 10;
     const gapPx = containerWidth && containerWidth < 520 ? 6 : 8;
 
-    // 3–4 участников на узком мобайле лучше выглядят как 2 колонки.
-    const useTwoCols = count >= 3 && count <= 4;
+    const availW = Math.max(0, (containerWidth || 0) - paddingPx * 2);
+    const availH = Math.max(0, (containerHeight || 0) - paddingPx * 2 - paddingBottomPx);
 
-    if (useTwoCols) {
-        const cols = 2;
-        const rows = Math.ceil(count / cols);
-
-        const maxGridWidth = calcMaxGridWidthPx({
-            containerWidth: containerWidth || 0,
-            containerHeight: containerHeight || 0,
-            cols,
-            rows,
-            gapPx,
-            paddingPx,
-            aspectHOverW: 9 / 16,
-        });
+    // ✅ До 4 участников включительно — всегда вертикальный стек
+    if (count <= 4) {
+        const totalGap = Math.max(0, (count - 1) * gapPx);
+        const tileH = count > 0 ? Math.max(0, (availH - totalGap) / count) : 0;
+        const tileWByH = tileH > 0 ? tileH * (16 / 9) : 0;
+        const stackWidth = Math.max(0, Math.min(availW, tileWByH || availW));
 
         return (
             <div
-                className="w-full h-full min-h-0 overflow-y-auto flex justify-center items-start"
-                style={{ padding: paddingPx, paddingBottom: paddingBottomPx }}
+                className="w-full h-full min-h-0 overflow-y-auto flex justify-center items-center"
+                style={{
+                    padding: paddingPx,
+                    paddingBottom: paddingBottomPx,
+                }}
             >
                 <div
-                    className="w-full grid"
+                    className="w-full flex flex-col justify-center items-center"
                     style={{
                         gap: gapPx,
-                        maxWidth: maxGridWidth ? `${maxGridWidth}px` : undefined,
-                        gridTemplateColumns: "1fr 1fr",
+                        maxWidth: stackWidth ? `${stackWidth}px` : undefined,
                     }}
                 >
                     {items.map((t, idx) => (
-                        <React.Fragment key={t.id}>{renderItem(t, idx)}</React.Fragment>
+                        <div key={t.id} className="w-full shrink-0">
+                            {renderItem(t, idx)}
+                        </div>
                     ))}
                 </div>
             </div>
         );
     }
 
-    // 5+ участников: остаёмся в stack, но делаем компактнее и ограничиваем ширину.
-    const availW = Math.max(0, (containerWidth || 0) - paddingPx * 2);
-    const compactTileHeight = count >= 7 ? 96 : 112;
-    const compactTileWidth = Math.min(availW, Math.round(compactTileHeight * (16 / 9)));
+    // ✅ С 5 участников — 2 колонки
+    const cols = 2;
+    const rows = Math.ceil(count / cols);
+
+    const maxGridWidth = calcMaxGridWidthPx({
+        containerWidth: containerWidth || 0,
+        containerHeight: containerHeight || 0,
+        cols,
+        rows,
+        gapPx,
+        paddingPx,
+        aspectHOverW: 9 / 16,
+    });
 
     return (
         <div
-            className="w-full h-full min-h-0 overflow-y-auto flex flex-col items-center"
+            className="w-full h-full min-h-0 overflow-y-auto flex justify-center items-center"
             style={{
                 padding: paddingPx,
                 paddingBottom: paddingBottomPx,
-                gap: gapPx,
             }}
         >
-            {items.map((t, idx) => (
-                <div
-                    key={t.id}
-                    className="w-full flex justify-center shrink-0"
-                    style={{ maxWidth: compactTileWidth ? `${compactTileWidth}px` : undefined }}
-                >
-                    {renderItem(t, idx)}
-                </div>
-            ))}
+            <div
+                className="w-full grid"
+                style={{
+                    gap: gapPx,
+                    maxWidth: maxGridWidth ? `${maxGridWidth}px` : undefined,
+                    gridTemplateColumns: "1fr 1fr",
+                    alignContent: "center",
+                }}
+            >
+                {items.map((t, idx) => (
+                    <React.Fragment key={t.id}>{renderItem(t, idx)}</React.Fragment>
+                ))}
+            </div>
         </div>
     );
 }
