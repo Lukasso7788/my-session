@@ -50,7 +50,7 @@ interface Props {
 
 const END_DROP_ID = "__end__";
 const QUICK_MINUTES = [3, 5, 10, 15, 25, 50];
-const TIMELINE_MIN_BLOCK_WIDTH = 78;
+const TIMELINE_MIN_BLOCK_WIDTH = 22;
 const TIMELINE_PX_PER_MINUTE = 4;
 
 const KIND_OPTIONS: { value: RoomTimelineBlockKind; label: string }[] = [
@@ -671,11 +671,7 @@ function TimelinePreview({
         const copy = blocks.filter((b) => b.id !== id);
         onChange(copy);
 
-        const next =
-            copy[idx] ||
-            copy[idx - 1] ||
-            null;
-
+        const next = copy[idx] || copy[idx - 1] || null;
         setSelectedBlockId(next ? next.id : null);
     }, [blocks, onChange, setSelectedBlockId]);
 
@@ -731,9 +727,15 @@ function TimelinePreview({
     }
 
     const textMuted = isLight ? "text-black/60" : "text-white/60";
-    const panelBg = isLight ? "bg-white border-black/10 shadow-[0_10px_30px_rgba(0,0,0,0.10)]" : "bg-[#0B1220] border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.35)]";
-    const inputBg = isLight ? "bg-white border-black/10 text-black/85" : "bg-[#111827] border-white/10 text-white/90";
-    const softBtn = isLight ? "bg-black/5 border-black/10 text-black/80" : "bg-white/5 border-white/10 text-white/85";
+    const panelBg = isLight
+        ? "bg-white border-black/10 shadow-[0_10px_30px_rgba(0,0,0,0.10)]"
+        : "bg-[#0B1220] border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.35)]";
+    const inputBg = isLight
+        ? "bg-white border-black/10 text-black/85"
+        : "bg-[#111827] border-white/10 text-white/90";
+    const softBtn = isLight
+        ? "bg-black/5 border-black/10 text-black/80"
+        : "bg-white/5 border-white/10 text-white/85";
 
     return (
         <div className="mt-3">
@@ -744,10 +746,16 @@ function TimelinePreview({
 
             <div
                 ref={wrapperRef}
-                className={`mt-2 border rounded-[18px] ${isLight ? "border-black/10 bg-black/[0.03]" : "border-white/10 bg-white/[0.04]"} p-2 overflow-x-auto overflow-y-visible`}
+                className={`mt-2 border rounded-[18px] ${isLight ? "border-black/10 bg-black/[0.03]" : "border-white/10 bg-white/[0.04]"
+                    } px-2 py-3 overflow-x-auto overflow-y-visible`}
             >
                 <div className="relative min-w-max">
-                    <div className="flex items-stretch gap-2 min-w-max">
+                    <div
+                        className={`absolute left-0 right-0 top-1/2 -translate-y-1/2 h-[2px] ${isLight ? "bg-black/10" : "bg-white/10"
+                            } rounded-full`}
+                    />
+
+                    <div className="relative flex items-center gap-[3px] min-w-max">
                         {blocks.map((b) => {
                             const isSelected = selectedBlockId === b.id;
                             const widthPx = Math.max(
@@ -794,75 +802,68 @@ function TimelinePreview({
                                             remove(b.id);
                                         }
                                     }}
-                                    className={
-                                        "relative h-12 shrink-0 rounded-[14px] border text-left px-3 transition outline-none " +
-                                        (isSelected
-                                            ? isLight
-                                                ? "border-black/30 ring-2 ring-black/15"
-                                                : "border-white/25 ring-2 ring-white/15"
-                                            : isLight
-                                                ? "border-black/10"
-                                                : "border-white/10")
-                                    }
-                                    style={{
-                                        width: `${widthPx}px`,
-                                        background: timelineBarBg(b.kind),
-                                    }}
+                                    className="relative h-6 shrink-0 outline-none"
+                                    style={{ width: `${widthPx}px` }}
                                     title={`${b.title} · ${b.minutes}m`}
                                 >
-                                    <div className="absolute inset-0 rounded-[14px] bg-black/10" />
-                                    <div className="relative z-10 flex h-full w-full items-center justify-between gap-2">
-                                        <div className="min-w-0">
-                                            <div className="truncate text-[11px] font-semibold text-black/85">
-                                                {b.title}
-                                            </div>
-                                            <div className="truncate text-[10px] text-black/65">
-                                                {b.minutes}m
-                                            </div>
-                                        </div>
+                                    <div
+                                        className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-[8px] rounded-full border"
+                                        style={{
+                                            background: timelineBarBg(b.kind),
+                                            borderColor: isSelected
+                                                ? isLight
+                                                    ? "rgba(0,0,0,0.32)"
+                                                    : "rgba(255,255,255,0.30)"
+                                                : "rgba(255,255,255,0.18)",
+                                            boxShadow: isSelected
+                                                ? isLight
+                                                    ? "0 0 0 3px rgba(0,0,0,0.10)"
+                                                    : "0 0 0 3px rgba(255,255,255,0.10)"
+                                                : "none",
+                                        }}
+                                    />
+                                    <div
+                                        className="absolute right-0 top-1/2 -translate-y-1/2 h-[14px] w-[6px] rounded-full cursor-ew-resize bg-black/20"
+                                        onMouseDown={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
 
-                                        <div className="h-full w-[6px] shrink-0 cursor-ew-resize rounded-full bg-black/15"
-                                            onMouseDown={(e) => {
-                                                e.preventDefault();
-                                                e.stopPropagation();
+                                            const startX = e.clientX;
+                                            const startMinutes = clamp(Number(b.minutes) || 1, 1, 24 * 60);
 
-                                                const startX = e.clientX;
-                                                const startMinutes = clamp(Number(b.minutes) || 1, 1, 24 * 60);
+                                            const onMove = (ev: MouseEvent) => {
+                                                const deltaPx = ev.clientX - startX;
+                                                const next = clamp(
+                                                    Math.round(startMinutes + deltaPx / TIMELINE_PX_PER_MINUTE),
+                                                    1,
+                                                    24 * 60
+                                                );
+                                                update(b.id, { minutes: next });
+                                            };
 
-                                                const onMove = (ev: MouseEvent) => {
-                                                    const deltaPx = ev.clientX - startX;
-                                                    const next = clamp(
-                                                        Math.round(startMinutes + deltaPx / TIMELINE_PX_PER_MINUTE),
-                                                        1,
-                                                        24 * 60
-                                                    );
-                                                    update(b.id, { minutes: next });
-                                                };
+                                            const onUp = () => {
+                                                window.removeEventListener("mousemove", onMove);
+                                                window.removeEventListener("mouseup", onUp);
+                                            };
 
-                                                const onUp = () => {
-                                                    window.removeEventListener("mousemove", onMove);
-                                                    window.removeEventListener("mouseup", onUp);
-                                                };
-
-                                                window.addEventListener("mousemove", onMove);
-                                                window.addEventListener("mouseup", onUp);
-                                            }}
-                                        />
-                                    </div>
+                                            window.addEventListener("mousemove", onMove);
+                                            window.addEventListener("mouseup", onUp);
+                                        }}
+                                    />
                                 </button>
                             );
                         })}
                     </div>
 
                     {selectedBlock && (
-                        <div className={`mt-3 rounded-[18px] border p-3 ${panelBg}`}>
+                        <div className={`mt-4 rounded-[18px] border p-3 ${panelBg}`}>
                             <div className="flex items-center justify-between gap-3">
                                 <div className="min-w-0">
                                     <div className="text-[13px] font-semibold">
                                         Edit selected block
                                     </div>
                                     <div className={`mt-0.5 text-[11px] ${textMuted}`}>
-                                        Move with ← / → while timeline block is focused
+                                        Thin timeline view. Click a segment, then edit here.
                                     </div>
                                 </div>
 
@@ -986,7 +987,7 @@ function TimelinePreview({
                                     </button>
                                 ))}
                                 <div className={`ml-auto text-[11px] ${textMuted}`}>
-                                    Width = minutes, with min width preserved
+                                    Thin line view • width still follows minutes
                                 </div>
                             </div>
                         </div>
@@ -1735,8 +1736,8 @@ export default function RoomTimelineEditor({
                             onClick={onSave}
                             disabled={saving || blocks.length === 0}
                             className={`px-4 py-2.5 rounded-xl text-[13px] font-semibold disabled:opacity-50 ${isLight
-                                ? "bg-blue-600 hover:bg-blue-700 text-white"
-                                : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
+                                    ? "bg-blue-600 hover:bg-blue-700 text-white"
+                                    : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
                                 }`}
                         >
                             {saving ? "Saving..." : "Save timeline"}
