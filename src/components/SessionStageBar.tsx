@@ -322,6 +322,7 @@ export function SessionStageBar({
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
   const [progress, setProgress] = useState(0);
   const [cycleProgress, setCycleProgress] = useState(0);
+  const [hoveredStageIndex, setHoveredStageIndex] = useState<number | null>(null);
 
   const stageSecondsList = useMemo(() => {
     return (stages || []).map((s) => Math.max(0, getStageSeconds(s)));
@@ -413,7 +414,6 @@ export function SessionStageBar({
 
   return (
     <div className="relative w-full h-2 overflow-visible">
-      {/* Track */}
       <div
         className={`absolute inset-x-0 top-0 h-2 flex rounded-full overflow-visible ${trackBgClass}`}
       >
@@ -434,6 +434,7 @@ export function SessionStageBar({
           } as SessionStage;
 
           const isActive = index === currentStageIndex;
+          const isHovered = hoveredStageIndex === index;
 
           const progressWidth = isActive
             ? `${clamp(progress, 0, 1) * 100}%`
@@ -444,7 +445,7 @@ export function SessionStageBar({
           return (
             <div
               key={(stage as any)?.id || `${index}-${displayName}`}
-              className="relative h-full group cursor-pointer transition-all duration-300"
+              className="relative h-full cursor-pointer transition-all duration-300"
               style={{
                 width: `${width}%`,
                 ...(typeof bg === "string" && bg.toLowerCase().includes("gradient")
@@ -452,51 +453,58 @@ export function SessionStageBar({
                   : { backgroundColor: bg }),
                 opacity: isActive ? 1 : 0.84,
               }}
-              onMouseEnter={() => onHoverStage?.(hoverStage)}
-              onMouseLeave={() => onHoverStage?.(null)}
+              onMouseEnter={() => {
+                setHoveredStageIndex(index);
+                onHoverStage?.(hoverStage);
+              }}
+              onMouseLeave={() => {
+                setHoveredStageIndex((prev) => (prev === index ? null : prev));
+                onHoverStage?.(null);
+              }}
             >
               <div
                 className="absolute left-0 top-0 bottom-0 rounded-full bg-black/18 transition-all"
                 style={{ width: progressWidth }}
               />
 
-              <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-3 hidden -translate-x-1/2 group-hover:flex">
-                <div className={`min-w-[150px] rounded-xl px-3 py-2 ${tooltipCardClass}`}>
-                  <div className="flex items-start gap-2">
-                    <div
-                      className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
-                      style={{
-                        ...(typeof bg === "string" && bg.toLowerCase().includes("gradient")
-                          ? { background: bg }
-                          : { backgroundColor: bg }),
-                      }}
-                    />
-                    <div className="min-w-0">
-                      <div className="truncate text-[12px] font-semibold leading-4">
-                        {displayName}
-                      </div>
-                      {durationLabel ? (
-                        <div className="mt-1 text-[11px] leading-4 opacity-75">
-                          {durationLabel}
+              {isHovered && (
+                <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-3 flex -translate-x-1/2">
+                  <div className={`relative min-w-[150px] rounded-xl px-3 py-2 ${tooltipCardClass}`}>
+                    <div className="flex items-start gap-2">
+                      <div
+                        className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
+                        style={{
+                          ...(typeof bg === "string" && bg.toLowerCase().includes("gradient")
+                            ? { background: bg }
+                            : { backgroundColor: bg }),
+                        }}
+                      />
+                      <div className="min-w-0">
+                        <div className="truncate text-[12px] font-semibold leading-4">
+                          {displayName}
                         </div>
-                      ) : null}
+                        {durationLabel ? (
+                          <div className="mt-1 text-[11px] leading-4 opacity-75">
+                            {durationLabel}
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
-                  </div>
 
-                  <div
-                    className={`absolute left-1/2 top-full h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 ${theme === "light"
-                        ? "border-r border-b border-slate-200 bg-white/95"
-                        : "border-r border-b border-white/10 bg-slate-900/95"
-                      }`}
-                  />
+                    <div
+                      className={`absolute left-1/2 top-full h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 ${theme === "light"
+                          ? "border-r border-b border-slate-200 bg-white/95"
+                          : "border-r border-b border-white/10 bg-slate-900/95"
+                        }`}
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           );
         })}
       </div>
 
-      {/* Moving marker tick */}
       {progressStyle === "tick" && (
         <div
           className="absolute pointer-events-none z-[40]"
