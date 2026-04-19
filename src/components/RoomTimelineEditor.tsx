@@ -50,8 +50,8 @@ interface Props {
 
 const END_DROP_ID = "__end__";
 const QUICK_MINUTES = [3, 5, 10, 15, 25, 50];
-const TIMELINE_MIN_BLOCK_WIDTH = 22;
-const TIMELINE_PX_PER_MINUTE = 4;
+const TIMELINE_MIN_SEGMENT_WIDTH = 6;
+const TIMELINE_RESIZE_PX_PER_MINUTE = 4;
 
 const KIND_OPTIONS: { value: RoomTimelineBlockKind; label: string }[] = [
     { value: "welcome", label: "Welcome" },
@@ -626,8 +626,6 @@ function TimelinePreview({
     isLight: boolean;
 }) {
     const [dragId, setDragId] = useState<string | null>(null);
-    const wrapperRef = useRef<HTMLDivElement | null>(null);
-    const segmentRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
     const total = getTimelineTotalMinutes(blocks);
 
@@ -636,92 +634,96 @@ function TimelinePreview({
         [blocks, selectedBlockId]
     );
 
-    const move = useCallback((fromId: string, toId: string) => {
-        const from = blocks.findIndex((b) => b.id === fromId);
-        const to = blocks.findIndex((b) => b.id === toId);
-        if (from < 0 || to < 0 || from === to) return;
+    const move = useCallback(
+        (fromId: string, toId: string) => {
+            const from = blocks.findIndex((b) => b.id === fromId);
+            const to = blocks.findIndex((b) => b.id === toId);
+            if (from < 0 || to < 0 || from === to) return;
 
-        const copy = [...blocks];
-        const [item] = copy.splice(from, 1);
-        copy.splice(to, 0, item);
-        onChange(copy);
-        setSelectedBlockId(item.id);
-    }, [blocks, onChange, setSelectedBlockId]);
+            const copy = [...blocks];
+            const [item] = copy.splice(from, 1);
+            copy.splice(to, 0, item);
+            onChange(copy);
+            setSelectedBlockId(item.id);
+        },
+        [blocks, onChange, setSelectedBlockId]
+    );
 
-    const moveByDelta = useCallback((id: string, delta: -1 | 1) => {
-        const from = blocks.findIndex((b) => b.id === id);
-        if (from < 0) return;
-        const to = from + delta;
-        if (to < 0 || to >= blocks.length) return;
+    const moveByDelta = useCallback(
+        (id: string, delta: -1 | 1) => {
+            const from = blocks.findIndex((b) => b.id === id);
+            if (from < 0) return;
+            const to = from + delta;
+            if (to < 0 || to >= blocks.length) return;
 
-        const copy = [...blocks];
-        const [item] = copy.splice(from, 1);
-        copy.splice(to, 0, item);
-        onChange(copy);
-        setSelectedBlockId(item.id);
-    }, [blocks, onChange, setSelectedBlockId]);
+            const copy = [...blocks];
+            const [item] = copy.splice(from, 1);
+            copy.splice(to, 0, item);
+            onChange(copy);
+            setSelectedBlockId(item.id);
+        },
+        [blocks, onChange, setSelectedBlockId]
+    );
 
-    const update = useCallback((id: string, patch: Partial<RoomTimelineBlock>) => {
-        onChange(blocks.map((b) => (b.id === id ? { ...b, ...patch } : b)));
-    }, [blocks, onChange]);
+    const update = useCallback(
+        (id: string, patch: Partial<RoomTimelineBlock>) => {
+            onChange(blocks.map((b) => (b.id === id ? { ...b, ...patch } : b)));
+        },
+        [blocks, onChange]
+    );
 
-    const remove = useCallback((id: string) => {
-        const idx = blocks.findIndex((b) => b.id === id);
-        if (idx < 0) return;
-        const copy = blocks.filter((b) => b.id !== id);
-        onChange(copy);
+    const remove = useCallback(
+        (id: string) => {
+            const idx = blocks.findIndex((b) => b.id === id);
+            if (idx < 0) return;
+            const copy = blocks.filter((b) => b.id !== id);
+            onChange(copy);
 
-        const next = copy[idx] || copy[idx - 1] || null;
-        setSelectedBlockId(next ? next.id : null);
-    }, [blocks, onChange, setSelectedBlockId]);
+            const next = copy[idx] || copy[idx - 1] || null;
+            setSelectedBlockId(next ? next.id : null);
+        },
+        [blocks, onChange, setSelectedBlockId]
+    );
 
-    const duplicate = useCallback((id: string) => {
-        const idx = blocks.findIndex((b) => b.id === id);
-        if (idx < 0) return;
-        const original = blocks[idx];
-        const clone: RoomTimelineBlock = {
-            ...original,
-            id: uid(),
-        };
-        const copy = [...blocks];
-        copy.splice(idx + 1, 0, clone);
-        onChange(copy);
-        setSelectedBlockId(clone.id);
-    }, [blocks, onChange, setSelectedBlockId]);
+    const duplicate = useCallback(
+        (id: string) => {
+            const idx = blocks.findIndex((b) => b.id === id);
+            if (idx < 0) return;
+            const original = blocks[idx];
+            const clone: RoomTimelineBlock = {
+                ...original,
+                id: uid(),
+            };
+            const copy = [...blocks];
+            copy.splice(idx + 1, 0, clone);
+            onChange(copy);
+            setSelectedBlockId(clone.id);
+        },
+        [blocks, onChange, setSelectedBlockId]
+    );
 
-    const insertAfter = useCallback((id: string) => {
-        const idx = blocks.findIndex((b) => b.id === id);
-        if (idx < 0) return;
-        const nextBlock: RoomTimelineBlock = {
-            id: uid(),
-            kind: "focus",
-            title: "New block",
-            minutes: 25,
-        };
-        const copy = [...blocks];
-        copy.splice(idx + 1, 0, nextBlock);
-        onChange(copy);
-        setSelectedBlockId(nextBlock.id);
-    }, [blocks, onChange, setSelectedBlockId]);
-
-    useEffect(() => {
-        if (!selectedBlockId) return;
-        const el = segmentRefs.current[selectedBlockId];
-        if (!el) return;
-
-        try {
-            el.scrollIntoView({
-                block: "nearest",
-                inline: "nearest",
-                behavior: "smooth",
-            });
-        } catch { }
-    }, [selectedBlockId, blocks]);
+    const insertAfter = useCallback(
+        (id: string) => {
+            const idx = blocks.findIndex((b) => b.id === id);
+            if (idx < 0) return;
+            const nextBlock: RoomTimelineBlock = {
+                id: uid(),
+                kind: "focus",
+                title: "New block",
+                minutes: 25,
+            };
+            const copy = [...blocks];
+            copy.splice(idx + 1, 0, nextBlock);
+            onChange(copy);
+            setSelectedBlockId(nextBlock.id);
+        },
+        [blocks, onChange, setSelectedBlockId]
+    );
 
     if (!blocks.length) {
         return (
             <div className="mt-3 border border-black/10 rounded-2xl p-4 text-[12px] text-black/50 font-inter">
-                Empty timeline. Add blocks from the library.
+                Empty script. Add blocks from the library.
             </div>
         );
     }
@@ -739,261 +741,244 @@ function TimelinePreview({
 
     return (
         <div className="mt-3">
-            <div className={`flex items-center justify-between gap-3 text-xs ${textMuted}`}>
-                <span>Timeline</span>
-                <span>{total} min</span>
-            </div>
-
-            <div
-                ref={wrapperRef}
-                className={`mt-2 border rounded-[18px] ${isLight ? "border-black/10 bg-black/[0.03]" : "border-white/10 bg-white/[0.04]"
-                    } px-2 py-3 overflow-x-auto overflow-y-visible`}
-            >
-                <div className="relative min-w-max">
-                    <div
-                        className={`absolute left-0 right-0 top-1/2 -translate-y-1/2 h-[2px] ${isLight ? "bg-black/10" : "bg-white/10"
-                            } rounded-full`}
-                    />
-
-                    <div className="relative flex items-center gap-[3px] min-w-max">
-                        {blocks.map((b) => {
-                            const isSelected = selectedBlockId === b.id;
-                            const widthPx = Math.max(
-                                TIMELINE_MIN_BLOCK_WIDTH,
-                                Math.round((Number(b.minutes) || 1) * TIMELINE_PX_PER_MINUTE)
-                            );
-
-                            return (
-                                <button
-                                    key={b.id}
-                                    ref={(el) => {
-                                        segmentRefs.current[b.id] = el;
-                                    }}
-                                    type="button"
-                                    draggable
-                                    onDragStart={() => {
-                                        setDragId(b.id);
-                                        setSelectedBlockId(b.id);
-                                    }}
-                                    onDragOver={(e) => {
-                                        e.preventDefault();
-                                        if (dragId && dragId !== b.id) {
-                                            move(dragId, b.id);
-                                        }
-                                    }}
-                                    onDrop={(e) => {
-                                        e.preventDefault();
-                                        if (dragId && dragId !== b.id) {
-                                            move(dragId, b.id);
-                                        }
-                                        setDragId(null);
-                                    }}
-                                    onDragEnd={() => setDragId(null)}
-                                    onClick={() => setSelectedBlockId(b.id)}
-                                    onKeyDown={(e) => {
-                                        if (e.key === "ArrowLeft") {
-                                            e.preventDefault();
-                                            moveByDelta(b.id, -1);
-                                        } else if (e.key === "ArrowRight") {
-                                            e.preventDefault();
-                                            moveByDelta(b.id, 1);
-                                        } else if (e.key === "Delete" || e.key === "Backspace") {
-                                            e.preventDefault();
-                                            remove(b.id);
-                                        }
-                                    }}
-                                    className="relative h-6 shrink-0 outline-none"
-                                    style={{ width: `${widthPx}px` }}
-                                    title={`${b.title} · ${b.minutes}m`}
-                                >
-                                    <div
-                                        className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-[8px] rounded-full border"
-                                        style={{
-                                            background: timelineBarBg(b.kind),
-                                            borderColor: isSelected
-                                                ? isLight
-                                                    ? "rgba(0,0,0,0.32)"
-                                                    : "rgba(255,255,255,0.30)"
-                                                : "rgba(255,255,255,0.18)",
-                                            boxShadow: isSelected
-                                                ? isLight
-                                                    ? "0 0 0 3px rgba(0,0,0,0.10)"
-                                                    : "0 0 0 3px rgba(255,255,255,0.10)"
-                                                : "none",
-                                        }}
-                                    />
-                                    <div
-                                        className="absolute right-0 top-1/2 -translate-y-1/2 h-[14px] w-[6px] rounded-full cursor-ew-resize bg-black/20"
-                                        onMouseDown={(e) => {
-                                            e.preventDefault();
-                                            e.stopPropagation();
-
-                                            const startX = e.clientX;
-                                            const startMinutes = clamp(Number(b.minutes) || 1, 1, 24 * 60);
-
-                                            const onMove = (ev: MouseEvent) => {
-                                                const deltaPx = ev.clientX - startX;
-                                                const next = clamp(
-                                                    Math.round(startMinutes + deltaPx / TIMELINE_PX_PER_MINUTE),
-                                                    1,
-                                                    24 * 60
-                                                );
-                                                update(b.id, { minutes: next });
-                                            };
-
-                                            const onUp = () => {
-                                                window.removeEventListener("mousemove", onMove);
-                                                window.removeEventListener("mouseup", onUp);
-                                            };
-
-                                            window.addEventListener("mousemove", onMove);
-                                            window.addEventListener("mouseup", onUp);
-                                        }}
-                                    />
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    {selectedBlock && (
-                        <div className={`mt-4 rounded-[18px] border p-3 ${panelBg}`}>
-                            <div className="flex items-center justify-between gap-3">
-                                <div className="min-w-0">
-                                    <div className="text-[13px] font-semibold">
-                                        Edit selected block
-                                    </div>
-                                    <div className={`mt-0.5 text-[11px] ${textMuted}`}>
-                                        Thin timeline view. Click a segment, then edit here.
-                                    </div>
-                                </div>
-
-                                <div className="flex items-center gap-2 shrink-0">
-                                    <button
-                                        type="button"
-                                        onClick={() => moveByDelta(selectedBlock.id, -1)}
-                                        className={`h-9 w-9 rounded-[12px] border ${softBtn} flex items-center justify-center`}
-                                        title="Move left"
-                                    >
-                                        <ArrowUp className="rotate-[-90deg]" size={15} />
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => moveByDelta(selectedBlock.id, 1)}
-                                        className={`h-9 w-9 rounded-[12px] border ${softBtn} flex items-center justify-center`}
-                                        title="Move right"
-                                    >
-                                        <ArrowDown className="rotate-[-90deg]" size={15} />
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => duplicate(selectedBlock.id)}
-                                        className={`px-3 h-9 rounded-[12px] border ${softBtn} text-[12px] font-semibold`}
-                                    >
-                                        Duplicate
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => insertAfter(selectedBlock.id)}
-                                        className={`px-3 h-9 rounded-[12px] border ${softBtn} text-[12px] font-semibold`}
-                                    >
-                                        Add after
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => remove(selectedBlock.id)}
-                                        className={`h-9 w-9 rounded-[12px] border ${softBtn} flex items-center justify-center`}
-                                        title="Delete"
-                                    >
-                                        <Trash2 size={15} />
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div className="mt-3 grid grid-cols-1 sm:grid-cols-[160px,minmax(0,1fr),140px] gap-2">
-                                <select
-                                    value={selectedBlock.kind}
-                                    onChange={(e) => {
-                                        const nextKind = normalizeBlockKind(e.target.value);
-                                        update(selectedBlock.id, {
-                                            kind: nextKind,
-                                            title:
-                                                String(selectedBlock.title || "").trim() ||
-                                                defaultTitleForKind(nextKind),
-                                        });
-                                    }}
-                                    className={`w-full px-3 py-2.5 rounded-[14px] border text-[13px] font-inter ${inputBg}`}
-                                >
-                                    {KIND_OPTIONS.map((opt) => (
-                                        <option key={opt.value} value={opt.value}>
-                                            {opt.label}
-                                        </option>
-                                    ))}
-                                </select>
-
-                                <input
-                                    value={selectedBlock.title}
-                                    onChange={(e) => update(selectedBlock.id, { title: e.target.value })}
-                                    className={`w-full px-3 py-2.5 rounded-[14px] border text-[13px] font-inter ${inputBg}`}
-                                    placeholder="Block title…"
-                                />
-
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() =>
-                                            update(selectedBlock.id, {
-                                                minutes: clamp((Number(selectedBlock.minutes) || 1) - 1, 1, 24 * 60),
-                                            })
-                                        }
-                                        className={`w-9 h-9 rounded-[12px] border ${softBtn}`}
-                                    >
-                                        –
-                                    </button>
-                                    <input
-                                        type="number"
-                                        min={1}
-                                        max={24 * 60}
-                                        value={selectedBlock.minutes}
-                                        onChange={(e) =>
-                                            update(selectedBlock.id, {
-                                                minutes: clamp(Number(e.target.value) || 1, 1, 24 * 60),
-                                            })
-                                        }
-                                        className={`w-full h-9 px-2 rounded-[12px] border text-center text-[13px] font-inter ${inputBg}`}
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={() =>
-                                            update(selectedBlock.id, {
-                                                minutes: clamp((Number(selectedBlock.minutes) || 1) + 1, 1, 24 * 60),
-                                            })
-                                        }
-                                        className={`w-9 h-9 rounded-[12px] border ${softBtn}`}
-                                    >
-                                        +
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div className="mt-2 flex flex-wrap items-center gap-2">
-                                {QUICK_MINUTES.map((m) => (
-                                    <button
-                                        key={m}
-                                        type="button"
-                                        onClick={() => update(selectedBlock.id, { minutes: m })}
-                                        className={`px-2.5 py-1.5 rounded-full border text-[11px] font-inter ${softBtn}`}
-                                    >
-                                        {m}m
-                                    </button>
-                                ))}
-                                <div className={`ml-auto text-[11px] ${textMuted}`}>
-                                    Thin line view • width still follows minutes
-                                </div>
-                            </div>
-                        </div>
-                    )}
+            <div className="flex items-center justify-between gap-3">
+                <div className={`font-inter text-[12px] ${textMuted}`}>Session timeline</div>
+                <div className={`font-inter text-[12px] ${textMuted}`}>
+                    Total: <span className={`font-semibold ${isLight ? "text-black/80" : "text-white/85"}`}>
+                        {formatMinutes(total)}
+                    </span>
                 </div>
             </div>
+
+            <div className={`mt-2 border rounded-[999px] overflow-hidden ${isLight ? "border-black/10 bg-black/5" : "border-white/10 bg-white/5"}`}>
+                <div className="flex h-3">
+                    {blocks.map((b) => {
+                        const mins = clamp(Number(b.minutes) || 1, 1, 24 * 60);
+                        const showText = mins >= 10;
+                        const isSelected = selectedBlockId === b.id;
+
+                        return (
+                            <button
+                                key={b.id}
+                                type="button"
+                                draggable
+                                onDragStart={() => {
+                                    setDragId(b.id);
+                                    setSelectedBlockId(b.id);
+                                }}
+                                onDragOver={(e) => {
+                                    e.preventDefault();
+                                    if (dragId && dragId !== b.id) {
+                                        move(dragId, b.id);
+                                    }
+                                }}
+                                onDrop={(e) => {
+                                    e.preventDefault();
+                                    if (dragId && dragId !== b.id) {
+                                        move(dragId, b.id);
+                                    }
+                                    setDragId(null);
+                                }}
+                                onDragEnd={() => setDragId(null)}
+                                onClick={() => setSelectedBlockId(b.id)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "ArrowLeft") {
+                                        e.preventDefault();
+                                        moveByDelta(b.id, -1);
+                                    } else if (e.key === "ArrowRight") {
+                                        e.preventDefault();
+                                        moveByDelta(b.id, 1);
+                                    } else if (e.key === "Delete" || e.key === "Backspace") {
+                                        e.preventDefault();
+                                        remove(b.id);
+                                    }
+                                }}
+                                className="relative h-full border-r border-white/70 flex items-center justify-center outline-none"
+                                style={{
+                                    flexGrow: mins,
+                                    flexBasis: 0,
+                                    minWidth: TIMELINE_MIN_SEGMENT_WIDTH,
+                                    background: timelineBarBg(b.kind),
+                                    boxShadow: isSelected
+                                        ? isLight
+                                            ? "inset 0 0 0 2px rgba(0,0,0,0.28)"
+                                            : "inset 0 0 0 2px rgba(255,255,255,0.32)"
+                                        : "none",
+                                }}
+                                title={`${b.title} • ${mins} min`}
+                            >
+                                {showText ? (
+                                    <span className={`px-2 text-[11px] font-inter truncate ${isLight ? "text-black/80" : "text-black/85"}`}>
+                                        {b.title} · {mins}m
+                                    </span>
+                                ) : null}
+
+                                <span
+                                    className="absolute right-0 top-0 bottom-0 w-[8px] cursor-ew-resize bg-black/10"
+                                    onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+
+                                        const startX = e.clientX;
+                                        const startMinutes = mins;
+
+                                        const onMove = (ev: MouseEvent) => {
+                                            const deltaPx = ev.clientX - startX;
+                                            const next = clamp(
+                                                Math.round(startMinutes + deltaPx / TIMELINE_RESIZE_PX_PER_MINUTE),
+                                                1,
+                                                24 * 60
+                                            );
+                                            update(b.id, { minutes: next });
+                                        };
+
+                                        const onUp = () => {
+                                            window.removeEventListener("mousemove", onMove);
+                                            window.removeEventListener("mouseup", onUp);
+                                        };
+
+                                        window.addEventListener("mousemove", onMove);
+                                        window.addEventListener("mouseup", onUp);
+                                    }}
+                                />
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+
+            {selectedBlock && (
+                <div className={`mt-3 rounded-[18px] border p-3 ${panelBg}`}>
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                            <div className="text-[13px] font-semibold">Edit selected block</div>
+                            <div className={`mt-0.5 text-[11px] ${textMuted}`}>
+                                Same compact timeline look, but interactive.
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                            <button
+                                type="button"
+                                onClick={() => moveByDelta(selectedBlock.id, -1)}
+                                className={`h-9 w-9 rounded-[12px] border ${softBtn} flex items-center justify-center`}
+                                title="Move left"
+                            >
+                                <ArrowUp className="rotate-[-90deg]" size={15} />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => moveByDelta(selectedBlock.id, 1)}
+                                className={`h-9 w-9 rounded-[12px] border ${softBtn} flex items-center justify-center`}
+                                title="Move right"
+                            >
+                                <ArrowDown className="rotate-[-90deg]" size={15} />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => duplicate(selectedBlock.id)}
+                                className={`px-3 h-9 rounded-[12px] border ${softBtn} text-[12px] font-semibold`}
+                            >
+                                Duplicate
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => insertAfter(selectedBlock.id)}
+                                className={`px-3 h-9 rounded-[12px] border ${softBtn} text-[12px] font-semibold`}
+                            >
+                                Add after
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => remove(selectedBlock.id)}
+                                className={`h-9 w-9 rounded-[12px] border ${softBtn} flex items-center justify-center`}
+                                title="Delete"
+                            >
+                                <Trash2 size={15} />
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-[160px,minmax(0,1fr),140px] gap-2">
+                        <select
+                            value={selectedBlock.kind}
+                            onChange={(e) => {
+                                const nextKind = normalizeBlockKind(e.target.value);
+                                update(selectedBlock.id, {
+                                    kind: nextKind,
+                                    title:
+                                        String(selectedBlock.title || "").trim() ||
+                                        defaultTitleForKind(nextKind),
+                                });
+                            }}
+                            className={`w-full px-3 py-2.5 rounded-[14px] border text-[13px] font-inter ${inputBg}`}
+                        >
+                            {KIND_OPTIONS.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                </option>
+                            ))}
+                        </select>
+
+                        <input
+                            value={selectedBlock.title}
+                            onChange={(e) => update(selectedBlock.id, { title: e.target.value })}
+                            className={`w-full px-3 py-2.5 rounded-[14px] border text-[13px] font-inter ${inputBg}`}
+                            placeholder="Block title…"
+                        />
+
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    update(selectedBlock.id, {
+                                        minutes: clamp((Number(selectedBlock.minutes) || 1) - 1, 1, 24 * 60),
+                                    })
+                                }
+                                className={`w-9 h-9 rounded-[12px] border ${softBtn}`}
+                            >
+                                –
+                            </button>
+                            <input
+                                type="number"
+                                min={1}
+                                max={24 * 60}
+                                value={selectedBlock.minutes}
+                                onChange={(e) =>
+                                    update(selectedBlock.id, {
+                                        minutes: clamp(Number(e.target.value) || 1, 1, 24 * 60),
+                                    })
+                                }
+                                className={`w-full h-9 px-2 rounded-[12px] border text-center text-[13px] font-inter ${inputBg}`}
+                            />
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    update(selectedBlock.id, {
+                                        minutes: clamp((Number(selectedBlock.minutes) || 1) + 1, 1, 24 * 60),
+                                    })
+                                }
+                                className={`w-9 h-9 rounded-[12px] border ${softBtn}`}
+                            >
+                                +
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                        {QUICK_MINUTES.map((m) => (
+                            <button
+                                key={m}
+                                type="button"
+                                onClick={() => update(selectedBlock.id, { minutes: m })}
+                                className={`px-2.5 py-1.5 rounded-full border text-[11px] font-inter ${softBtn}`}
+                            >
+                                {m}m
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
