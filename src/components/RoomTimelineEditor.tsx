@@ -50,6 +50,8 @@ interface Props {
 
 const END_DROP_ID = "__end__";
 const QUICK_MINUTES = [3, 5, 10, 15, 25, 50];
+const TIMELINE_MIN_BLOCK_WIDTH = 78;
+const TIMELINE_PX_PER_MINUTE = 4;
 
 const KIND_OPTIONS: { value: RoomTimelineBlockKind; label: string }[] = [
     { value: "welcome", label: "Welcome" },
@@ -613,128 +615,383 @@ export function timelineBlocksToSchedulePayload(
 function TimelinePreview({
     blocks,
     onChange,
+    selectedBlockId,
+    setSelectedBlockId,
+    isLight,
 }: {
     blocks: RoomTimelineBlock[];
     onChange: (b: RoomTimelineBlock[]) => void;
+    selectedBlockId: string | null;
+    setSelectedBlockId: (id: string | null) => void;
+    isLight: boolean;
 }) {
     const [dragId, setDragId] = useState<string | null>(null);
+    const wrapperRef = useRef<HTMLDivElement | null>(null);
+    const segmentRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
     const total = getTimelineTotalMinutes(blocks);
 
-    const move = (fromId: string, toId: string) => {
-        const from = blocks.findIndex(b => b.id === fromId);
-        const to = blocks.findIndex(b => b.id === toId);
-        if (from < 0 || to < 0) return;
+    const selectedBlock = useMemo(
+        () => blocks.find((b) => b.id === selectedBlockId) || null,
+        [blocks, selectedBlockId]
+    );
+
+    const move = useCallback((fromId: string, toId: string) => {
+        const from = blocks.findIndex((b) => b.id === fromId);
+        const to = blocks.findIndex((b) => b.id === toId);
+        if (from < 0 || to < 0 || from === to) return;
 
         const copy = [...blocks];
         const [item] = copy.splice(from, 1);
         copy.splice(to, 0, item);
-
         onChange(copy);
-    };
+        setSelectedBlockId(item.id);
+    }, [blocks, onChange, setSelectedBlockId]);
 
-    const update = (id: string, patch: Partial<RoomTimelineBlock>) => {
-        onChange(blocks.map(b => b.id === id ? { ...b, ...patch } : b));
-    };
+    const moveByDelta = useCallback((id: string, delta: -1 | 1) => {
+        const from = blocks.findIndex((b) => b.id === id);
+        if (from < 0) return;
+        const to = from + delta;
+        if (to < 0 || to >= blocks.length) return;
+
+        const copy = [...blocks];
+        const [item] = copy.splice(from, 1);
+        copy.splice(to, 0, item);
+        onChange(copy);
+        setSelectedBlockId(item.id);
+    }, [blocks, onChange, setSelectedBlockId]);
+
+    const update = useCallback((id: string, patch: Partial<RoomTimelineBlock>) => {
+        onChange(blocks.map((b) => (b.id === id ? { ...b, ...patch } : b)));
+    }, [blocks, onChange]);
+
+    const remove = useCallback((id: string) => {
+        const idx = blocks.findIndex((b) => b.id === id);
+        if (idx < 0) return;
+        const copy = blocks.filter((b) => b.id !== id);
+        onChange(copy);
+
+        const next =
+            copy[idx] ||
+            copy[idx - 1] ||
+            null;
+
+        setSelectedBlockId(next ? next.id : null);
+    }, [blocks, onChange, setSelectedBlockId]);
+
+    const duplicate = useCallback((id: string) => {
+        const idx = blocks.findIndex((b) => b.id === id);
+        if (idx < 0) return;
+        const original = blocks[idx];
+        const clone: RoomTimelineBlock = {
+            ...original,
+            id: uid(),
+        };
+        const copy = [...blocks];
+        copy.splice(idx + 1, 0, clone);
+        onChange(copy);
+        setSelectedBlockId(clone.id);
+    }, [blocks, onChange, setSelectedBlockId]);
+
+    const insertAfter = useCallback((id: string) => {
+        const idx = blocks.findIndex((b) => b.id === id);
+        if (idx < 0) return;
+        const nextBlock: RoomTimelineBlock = {
+            id: uid(),
+            kind: "focus",
+            title: "New block",
+            minutes: 25,
+        };
+        const copy = [...blocks];
+        copy.splice(idx + 1, 0, nextBlock);
+        onChange(copy);
+        setSelectedBlockId(nextBlock.id);
+    }, [blocks, onChange, setSelectedBlockId]);
+
+    useEffect(() => {
+        if (!selectedBlockId) return;
+        const el = segmentRefs.current[selectedBlockId];
+        if (!el) return;
+
+        try {
+            el.scrollIntoView({
+                block: "nearest",
+                inline: "nearest",
+                behavior: "smooth",
+            });
+        } catch { }
+    }, [selectedBlockId, blocks]);
 
     if (!blocks.length) {
         return (
-            <div className="mt-3 text-sm opacity-50">
-                Empty timeline
+            <div className="mt-3 border border-black/10 rounded-2xl p-4 text-[12px] text-black/50 font-inter">
+                Empty timeline. Add blocks from the library.
             </div>
         );
     }
 
+    const textMuted = isLight ? "text-black/60" : "text-white/60";
+    const panelBg = isLight ? "bg-white border-black/10 shadow-[0_10px_30px_rgba(0,0,0,0.10)]" : "bg-[#0B1220] border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.35)]";
+    const inputBg = isLight ? "bg-white border-black/10 text-black/85" : "bg-[#111827] border-white/10 text-white/90";
+    const softBtn = isLight ? "bg-black/5 border-black/10 text-black/80" : "bg-white/5 border-white/10 text-white/85";
+
     return (
         <div className="mt-3">
-
-            {/* HEADER */}
-            <div className="flex justify-between text-xs opacity-60">
+            <div className={`flex items-center justify-between gap-3 text-xs ${textMuted}`}>
                 <span>Timeline</span>
                 <span>{total} min</span>
             </div>
 
-            {/* BAR */}
-            <div className="mt-2 flex h-10 rounded-xl overflow-hidden bg-black/10">
+            <div
+                ref={wrapperRef}
+                className={`mt-2 border rounded-[18px] ${isLight ? "border-black/10 bg-black/[0.03]" : "border-white/10 bg-white/[0.04]"} p-2 overflow-x-auto overflow-y-visible`}
+            >
+                <div className="relative min-w-max">
+                    <div className="flex items-stretch gap-2 min-w-max">
+                        {blocks.map((b) => {
+                            const isSelected = selectedBlockId === b.id;
+                            const widthPx = Math.max(
+                                TIMELINE_MIN_BLOCK_WIDTH,
+                                Math.round((Number(b.minutes) || 1) * TIMELINE_PX_PER_MINUTE)
+                            );
 
-                {blocks.map((b) => (
-                    <div
-                        key={b.id}
-                        draggable
-                        onDragStart={() => setDragId(b.id)}
-                        onDragOver={(e) => {
-                            e.preventDefault();
-                            if (dragId && dragId !== b.id) {
-                                move(dragId, b.id);
-                            }
-                        }}
-                        className="relative group flex items-center justify-center border-r border-white/20 cursor-grab active:cursor-grabbing"
-                        style={{ flexGrow: b.minutes }}
-                    >
+                            return (
+                                <button
+                                    key={b.id}
+                                    ref={(el) => {
+                                        segmentRefs.current[b.id] = el;
+                                    }}
+                                    type="button"
+                                    draggable
+                                    onDragStart={() => {
+                                        setDragId(b.id);
+                                        setSelectedBlockId(b.id);
+                                    }}
+                                    onDragOver={(e) => {
+                                        e.preventDefault();
+                                        if (dragId && dragId !== b.id) {
+                                            move(dragId, b.id);
+                                        }
+                                    }}
+                                    onDrop={(e) => {
+                                        e.preventDefault();
+                                        if (dragId && dragId !== b.id) {
+                                            move(dragId, b.id);
+                                        }
+                                        setDragId(null);
+                                    }}
+                                    onDragEnd={() => setDragId(null)}
+                                    onClick={() => setSelectedBlockId(b.id)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "ArrowLeft") {
+                                            e.preventDefault();
+                                            moveByDelta(b.id, -1);
+                                        } else if (e.key === "ArrowRight") {
+                                            e.preventDefault();
+                                            moveByDelta(b.id, 1);
+                                        } else if (e.key === "Delete" || e.key === "Backspace") {
+                                            e.preventDefault();
+                                            remove(b.id);
+                                        }
+                                    }}
+                                    className={
+                                        "relative h-12 shrink-0 rounded-[14px] border text-left px-3 transition outline-none " +
+                                        (isSelected
+                                            ? isLight
+                                                ? "border-black/30 ring-2 ring-black/15"
+                                                : "border-white/25 ring-2 ring-white/15"
+                                            : isLight
+                                                ? "border-black/10"
+                                                : "border-white/10")
+                                    }
+                                    style={{
+                                        width: `${widthPx}px`,
+                                        background: timelineBarBg(b.kind),
+                                    }}
+                                    title={`${b.title} · ${b.minutes}m`}
+                                >
+                                    <div className="absolute inset-0 rounded-[14px] bg-black/10" />
+                                    <div className="relative z-10 flex h-full w-full items-center justify-between gap-2">
+                                        <div className="min-w-0">
+                                            <div className="truncate text-[11px] font-semibold text-black/85">
+                                                {b.title}
+                                            </div>
+                                            <div className="truncate text-[10px] text-black/65">
+                                                {b.minutes}m
+                                            </div>
+                                        </div>
 
-                        {/* BACKGROUND */}
-                        <div
-                            className="absolute inset-0 opacity-80"
-                            style={{ background: timelineBarBg(b.kind) }}
-                        />
+                                        <div className="h-full w-[6px] shrink-0 cursor-ew-resize rounded-full bg-black/15"
+                                            onMouseDown={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
 
-                        {/* CONTENT */}
-                        <div className="relative z-10 text-[11px] font-medium px-2 truncate">
-                            {b.title}
-                        </div>
+                                                const startX = e.clientX;
+                                                const startMinutes = clamp(Number(b.minutes) || 1, 1, 24 * 60);
 
-                        {/* HOVER EDIT */}
-                        <div className="absolute inset-0 opacity-0 group-hover:opacity-100 bg-black/60 flex flex-col items-center justify-center gap-1 transition">
+                                                const onMove = (ev: MouseEvent) => {
+                                                    const deltaPx = ev.clientX - startX;
+                                                    const next = clamp(
+                                                        Math.round(startMinutes + deltaPx / TIMELINE_PX_PER_MINUTE),
+                                                        1,
+                                                        24 * 60
+                                                    );
+                                                    update(b.id, { minutes: next });
+                                                };
 
-                            <input
-                                value={b.title}
-                                onChange={(e) =>
-                                    update(b.id, { title: e.target.value })
-                                }
-                                className="text-[10px] bg-black/40 px-1 rounded text-white w-[90%]"
-                            />
+                                                const onUp = () => {
+                                                    window.removeEventListener("mousemove", onMove);
+                                                    window.removeEventListener("mouseup", onUp);
+                                                };
 
-                            <input
-                                type="number"
-                                value={b.minutes}
-                                onChange={(e) =>
-                                    update(b.id, {
-                                        minutes: clamp(Number(e.target.value) || 1, 1, 600),
-                                    })
-                                }
-                                className="text-[10px] bg-black/40 px-1 rounded w-14 text-center"
-                            />
-
-                        </div>
-
-                        {/* RESIZE HANDLE */}
-                        <div
-                            onMouseDown={(e) => {
-                                e.preventDefault();
-
-                                const startX = e.clientX;
-                                const startMinutes = b.minutes;
-
-                                const onMove = (ev: MouseEvent) => {
-                                    const delta = ev.clientX - startX;
-                                    const next = clamp(startMinutes + delta / 5, 1, 600);
-
-                                    update(b.id, { minutes: Math.round(next) });
-                                };
-
-                                const onUp = () => {
-                                    window.removeEventListener("mousemove", onMove);
-                                    window.removeEventListener("mouseup", onUp);
-                                };
-
-                                window.addEventListener("mousemove", onMove);
-                                window.addEventListener("mouseup", onUp);
-                            }}
-                            className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize bg-white/20 opacity-0 group-hover:opacity-100"
-                        />
-
+                                                window.addEventListener("mousemove", onMove);
+                                                window.addEventListener("mouseup", onUp);
+                                            }}
+                                        />
+                                    </div>
+                                </button>
+                            );
+                        })}
                     </div>
-                ))}
+
+                    {selectedBlock && (
+                        <div className={`mt-3 rounded-[18px] border p-3 ${panelBg}`}>
+                            <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="text-[13px] font-semibold">
+                                        Edit selected block
+                                    </div>
+                                    <div className={`mt-0.5 text-[11px] ${textMuted}`}>
+                                        Move with ← / → while timeline block is focused
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <button
+                                        type="button"
+                                        onClick={() => moveByDelta(selectedBlock.id, -1)}
+                                        className={`h-9 w-9 rounded-[12px] border ${softBtn} flex items-center justify-center`}
+                                        title="Move left"
+                                    >
+                                        <ArrowUp className="rotate-[-90deg]" size={15} />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => moveByDelta(selectedBlock.id, 1)}
+                                        className={`h-9 w-9 rounded-[12px] border ${softBtn} flex items-center justify-center`}
+                                        title="Move right"
+                                    >
+                                        <ArrowDown className="rotate-[-90deg]" size={15} />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => duplicate(selectedBlock.id)}
+                                        className={`px-3 h-9 rounded-[12px] border ${softBtn} text-[12px] font-semibold`}
+                                    >
+                                        Duplicate
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => insertAfter(selectedBlock.id)}
+                                        className={`px-3 h-9 rounded-[12px] border ${softBtn} text-[12px] font-semibold`}
+                                    >
+                                        Add after
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => remove(selectedBlock.id)}
+                                        className={`h-9 w-9 rounded-[12px] border ${softBtn} flex items-center justify-center`}
+                                        title="Delete"
+                                    >
+                                        <Trash2 size={15} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="mt-3 grid grid-cols-1 sm:grid-cols-[160px,minmax(0,1fr),140px] gap-2">
+                                <select
+                                    value={selectedBlock.kind}
+                                    onChange={(e) => {
+                                        const nextKind = normalizeBlockKind(e.target.value);
+                                        update(selectedBlock.id, {
+                                            kind: nextKind,
+                                            title:
+                                                String(selectedBlock.title || "").trim() ||
+                                                defaultTitleForKind(nextKind),
+                                        });
+                                    }}
+                                    className={`w-full px-3 py-2.5 rounded-[14px] border text-[13px] font-inter ${inputBg}`}
+                                >
+                                    {KIND_OPTIONS.map((opt) => (
+                                        <option key={opt.value} value={opt.value}>
+                                            {opt.label}
+                                        </option>
+                                    ))}
+                                </select>
+
+                                <input
+                                    value={selectedBlock.title}
+                                    onChange={(e) => update(selectedBlock.id, { title: e.target.value })}
+                                    className={`w-full px-3 py-2.5 rounded-[14px] border text-[13px] font-inter ${inputBg}`}
+                                    placeholder="Block title…"
+                                />
+
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            update(selectedBlock.id, {
+                                                minutes: clamp((Number(selectedBlock.minutes) || 1) - 1, 1, 24 * 60),
+                                            })
+                                        }
+                                        className={`w-9 h-9 rounded-[12px] border ${softBtn}`}
+                                    >
+                                        –
+                                    </button>
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        max={24 * 60}
+                                        value={selectedBlock.minutes}
+                                        onChange={(e) =>
+                                            update(selectedBlock.id, {
+                                                minutes: clamp(Number(e.target.value) || 1, 1, 24 * 60),
+                                            })
+                                        }
+                                        className={`w-full h-9 px-2 rounded-[12px] border text-center text-[13px] font-inter ${inputBg}`}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            update(selectedBlock.id, {
+                                                minutes: clamp((Number(selectedBlock.minutes) || 1) + 1, 1, 24 * 60),
+                                            })
+                                        }
+                                        className={`w-9 h-9 rounded-[12px] border ${softBtn}`}
+                                    >
+                                        +
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                                {QUICK_MINUTES.map((m) => (
+                                    <button
+                                        key={m}
+                                        type="button"
+                                        onClick={() => update(selectedBlock.id, { minutes: m })}
+                                        className={`px-2.5 py-1.5 rounded-full border text-[11px] font-inter ${softBtn}`}
+                                    >
+                                        {m}m
+                                    </button>
+                                ))}
+                                <div className={`ml-auto text-[11px] ${textMuted}`}>
+                                    Width = minutes, with min width preserved
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );
@@ -783,6 +1040,17 @@ export default function RoomTimelineEditor({
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
     }, [open, onClose, saving]);
+
+    useEffect(() => {
+        if (!selectedBlockId && blocks.length) {
+            setSelectedBlockId(blocks[0].id);
+            return;
+        }
+
+        if (selectedBlockId && !blocks.some((b) => b.id === selectedBlockId)) {
+            setSelectedBlockId(blocks[0]?.id || null);
+        }
+    }, [blocks, selectedBlockId]);
 
     const totalMinutes = useMemo(() => getTimelineTotalMinutes(blocks), [blocks]);
 
@@ -902,16 +1170,16 @@ export default function RoomTimelineEditor({
 
     const addFromLibrary = useCallback(
         (b: RoomTimelineBlock) => {
-            onChange([
-                ...blocks,
-                {
-                    id: uid(),
-                    kind: b.kind,
-                    title: b.title,
-                    minutes: b.minutes,
-                    note: b.note,
-                },
-            ]);
+            const nextBlock = {
+                id: uid(),
+                kind: b.kind,
+                title: b.title,
+                minutes: b.minutes,
+                note: b.note,
+            };
+
+            onChange([...blocks, nextBlock]);
+            setSelectedBlockId(nextBlock.id);
         },
         [blocks, onChange]
     );
@@ -989,7 +1257,9 @@ export default function RoomTimelineEditor({
     );
 
     const resetDefault = useCallback(() => {
-        onChange(makeDefaultTimelineBlocks());
+        const next = makeDefaultTimelineBlocks();
+        onChange(next);
+        setSelectedBlockId(next[0]?.id || null);
     }, [onChange]);
 
     if (!open) return null;
@@ -1052,7 +1322,13 @@ export default function RoomTimelineEditor({
                 </div>
 
                 <div ref={modalScrollRef} className="flex-1 overflow-y-auto p-4 sm:p-6">
-                    <TimelinePreview blocks={blocks} onChange={onChange} />
+                    <TimelinePreview
+                        blocks={blocks}
+                        onChange={onChange}
+                        selectedBlockId={selectedBlockId}
+                        setSelectedBlockId={setSelectedBlockId}
+                        isLight={isLight}
+                    />
 
                     <div className="mt-4 flex items-center justify-between gap-3 flex-wrap">
                         <div className={`font-inter text-[12px] ${mutedText}`}>
