@@ -93,9 +93,33 @@ function getStageSeconds(stage: any): number {
 function getStageLabelMinutes(stage: any): number {
   const sec = getStageSeconds(stage);
   if (sec > 0) return Math.max(1, Math.round(sec / 60));
+
   const mins = Number(stage?.duration ?? stage?.minutes);
   if (Number.isFinite(mins) && mins > 0) return Math.round(mins);
+
   return 0;
+}
+
+function formatStageDuration(stage: any): string {
+  const totalSec = getStageSeconds(stage);
+
+  if (!Number.isFinite(totalSec) || totalSec <= 0) {
+    const mins = getStageLabelMinutes(stage);
+    return mins > 0 ? `${mins} min` : "";
+  }
+
+  if (totalSec < 60) {
+    return `${totalSec} sec`;
+  }
+
+  const mins = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+
+  if (sec === 0) {
+    return `${mins} min`;
+  }
+
+  return `${mins} min ${sec} sec`;
 }
 
 // ===============================
@@ -380,13 +404,18 @@ export function SessionStageBar({
       ? "bg-black/10 shadow-[inset_0_1px_2px_rgba(17,24,39,0.08)]"
       : "bg-white/10 shadow-inner";
 
+  const tooltipCardClass =
+    theme === "light"
+      ? "border border-slate-200 bg-white/95 text-slate-900 shadow-[0_12px_28px_rgba(15,23,42,0.18)] backdrop-blur-md"
+      : "border border-white/10 bg-slate-900/95 text-white shadow-[0_12px_28px_rgba(0,0,0,0.4)] backdrop-blur-md";
+
   const markerLeftPercent = clamp(cycleProgress * 100, 0.5, 99.5);
 
   return (
-    <div className="relative w-full h-4 overflow-visible">
+    <div className="relative w-full h-2 overflow-visible">
       {/* Track */}
       <div
-        className={`absolute inset-x-0 top-0 h-4 flex rounded-2xl overflow-hidden ${trackBgClass}`}
+        className={`absolute inset-x-0 top-0 h-2 flex rounded-full overflow-visible ${trackBgClass}`}
       >
         {(stages || []).map((stage, index) => {
           const durSec = stageSecondsList[index] || 0;
@@ -394,8 +423,8 @@ export function SessionStageBar({
 
           if (width <= 0) return null;
 
-          const { kind, name: displayName, color: bg, minutes: labelMins } =
-            resolveStageVisual(stage as any);
+          const { kind, name: displayName, color: bg } = resolveStageVisual(stage as any);
+          const durationLabel = formatStageDuration(stage);
 
           const hoverStage = {
             ...(stage as any),
@@ -421,23 +450,46 @@ export function SessionStageBar({
                 ...(typeof bg === "string" && bg.toLowerCase().includes("gradient")
                   ? { background: bg }
                   : { backgroundColor: bg }),
-                opacity: isActive ? 1 : 0.82,
+                opacity: isActive ? 1 : 0.84,
               }}
               onMouseEnter={() => onHoverStage?.(hoverStage)}
               onMouseLeave={() => onHoverStage?.(null)}
-              title={`${displayName}${labelMins ? ` • ${labelMins} min` : ""}`}
             >
               <div
-                className="absolute left-0 top-0 bottom-0 bg-black/15 transition-all"
+                className="absolute left-0 top-0 bottom-0 rounded-full bg-black/18 transition-all"
                 style={{ width: progressWidth }}
               />
 
-              <div className="absolute bottom-full left-1/2 z-50 mb-2 hidden -translate-x-1/2 group-hover:flex flex-col items-center">
-                <div className="bg-slate-900 text-white text-[11px] px-2 py-1 rounded-md shadow-lg whitespace-nowrap">
-                  {displayName}
-                  {labelMins ? ` • ${labelMins} min` : ""}
+              <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-3 hidden -translate-x-1/2 group-hover:flex">
+                <div className={`min-w-[150px] rounded-xl px-3 py-2 ${tooltipCardClass}`}>
+                  <div className="flex items-start gap-2">
+                    <div
+                      className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{
+                        ...(typeof bg === "string" && bg.toLowerCase().includes("gradient")
+                          ? { background: bg }
+                          : { backgroundColor: bg }),
+                      }}
+                    />
+                    <div className="min-w-0">
+                      <div className="truncate text-[12px] font-semibold leading-4">
+                        {displayName}
+                      </div>
+                      {durationLabel ? (
+                        <div className="mt-1 text-[11px] leading-4 opacity-75">
+                          {durationLabel}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div
+                    className={`absolute left-1/2 top-full h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 ${theme === "light"
+                        ? "border-r border-b border-slate-200 bg-white/95"
+                        : "border-r border-b border-white/10 bg-slate-900/95"
+                      }`}
+                  />
                 </div>
-                <div className="w-2 h-2 bg-slate-900 rotate-45 mt-[-3px]" />
               </div>
             </div>
           );
@@ -450,12 +502,16 @@ export function SessionStageBar({
           className="absolute pointer-events-none z-[40]"
           style={{
             left: `${markerLeftPercent}%`,
-            top: -2,
+            top: -3,
             width: 2,
-            height: 20,
+            height: 12,
             transform: "translateX(-50%)",
             backgroundColor: markerColor,
             borderRadius: 9999,
+            boxShadow:
+              theme === "light"
+                ? "0 0 0 1px rgba(255,255,255,0.65)"
+                : "0 0 0 1px rgba(15,23,42,0.45)",
           }}
         />
       )}
