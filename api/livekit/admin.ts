@@ -35,6 +35,11 @@ type ActorRole = {
   isModerator: boolean;
 };
 
+type LivekitServerRow = {
+  id: string;
+  ws_url: string | null;
+};
+
 const ACTOR_ROLE_CACHE_TTL_MS = 15_000;
 
 const actorRoleCache = new Map<
@@ -101,21 +106,6 @@ function normalizeLiveKitHost(raw: string): string {
   if (host.startsWith("ws://")) host = "http://" + host.slice("ws://".length);
 
   return host.replace(/\/+$/, "");
-}
-
-function getLiveKitHttpHost(): string {
-  const candidates = [
-    process.env.LIVEKIT_HTTP_URL,
-    process.env.LIVEKIT_URL,
-    process.env.VITE_LIVEKIT_URL,
-  ];
-
-  for (const c of candidates) {
-    const norm = normalizeLiveKitHost(String(c || ""));
-    if (norm) return norm;
-  }
-
-  return "";
 }
 
 function getBearerToken(req: VercelRequest): string {
@@ -292,6 +282,51 @@ async function getActorRole(params: {
   return result;
 }
 
+async function resolveLiveKitHttpHostForSession(params: {
+  supabaseUrl: string;
+  serviceKey: string;
+  sessionId: string;
+}): Promise<string> {
+  const { supabaseUrl, serviceKey, sessionId } = params;
+
+  const sb = createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const { data: sessionRow, error: sessionErr } = await sb
+    .from("sessions")
+    .select("assigned_server_id")
+    .eq("id", sessionId)
+    .single();
+
+  if (sessionErr) {
+    throw new Error("session_not_found");
+  }
+
+  const assignedServerId = String((sessionRow as any)?.assigned_server_id || "").trim();
+  if (!looksLikeUuid(assignedServerId)) {
+    throw new Error("assigned_server_not_found");
+  }
+
+  const { data: serverRow, error: serverErr } = await sb
+    .from("livekit_servers")
+    .select("id, ws_url")
+    .eq("id", assignedServerId)
+    .eq("enabled", true)
+    .single<LivekitServerRow>();
+
+  if (serverErr || !serverRow?.id) {
+    throw new Error("livekit_server_not_found");
+  }
+
+  const host = normalizeLiveKitHost(String(serverRow.ws_url || ""));
+  if (!host) {
+    throw new Error("livekit_server_url_missing");
+  }
+
+  return host;
+}
+
 function setCors(res: VercelResponse, req: VercelRequest) {
   const origin = String(req.headers.origin || "*");
   res.setHeader("Cache-Control", "no-store, max-age=0");
@@ -417,18 +452,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const apiKey = String(process.env.LIVEKIT_API_KEY || "").trim();
     const apiSecret = String(process.env.LIVEKIT_API_SECRET || "").trim();
-    const livekitHost = getLiveKitHttpHost();
 
     if (!apiKey || !apiSecret) {
       return res.status(500).json({ error: "livekit_keys_missing" });
     }
 
-    if (!livekitHost) {
-      return res.status(500).json({
-        error: "livekit_http_host_missing",
-        hint: "Set LIVEKIT_HTTP_URL (or LIVEKIT_URL / VITE_LIVEKIT_URL) in Vercel env",
-      });
-    }
+    const livekitHost = await resolveLiveKitHttpHostForSession({
+      supabaseUrl,
+      serviceKey,
+      sessionId,
+    });
 
     const svc = new RoomServiceClient(livekitHost, apiKey, apiSecret);
 
@@ -453,6 +486,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           userId: actor.userId,
           isHost: actor.isHost,
           isModerator: actor.isModerator,
+        },
+        routing: {
+          sessionId,
+          livekitHost,
         },
         timings: {
           authMs,
@@ -544,6 +581,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         isHost: actor.isHost,
         isModerator: actor.isModerator,
       },
+      routing: {
+        sessionId,
+        livekitHost,
+      },
       meta: {
         trackWasResolvedServerSide,
       },
@@ -587,6 +628,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       message === "microphone_track_not_found"
     ) {
       return res.status(404).json({
+        error: message,
+        timings: { authMs, resolvedTrackMs, livekitMs, totalMs },
+      });
+    }
+
+    if (
+      message === "assigned_server_not_found" ||
+      message === "livekit_server_not_found" ||
+      message === "livekit_server_url_missing"
+    ) {
+      return res.status(500).json({
         error: message,
         timings: { authMs, resolvedTrackMs, livekitMs, totalMs },
       });
