@@ -51,6 +51,7 @@ type SessionContext = {
   hostId: string;
   assignedServerId: string;
   livekitHost: string;
+  usedLegacyFallback: boolean;
 };
 
 const ACTOR_ROLE_CACHE_TTL_MS = 15_000;
@@ -151,6 +152,21 @@ function normalizeLiveKitHost(raw: string): string {
   if (host.startsWith("ws://")) host = "http://" + host.slice("ws://".length);
 
   return host.replace(/\/+$/, "");
+}
+
+function getLegacyLiveKitHttpHost(): string {
+  const candidates = [
+    process.env.LIVEKIT_HTTP_URL,
+    process.env.LIVEKIT_URL,
+    process.env.VITE_LIVEKIT_URL,
+  ];
+
+  for (const c of candidates) {
+    const norm = normalizeLiveKitHost(String(c || ""));
+    if (norm) return norm;
+  }
+
+  return "";
 }
 
 function getBearerToken(req: VercelRequest): string {
@@ -269,8 +285,23 @@ async function resolveSessionContext(params: {
   const hostId = String(sessionRow.host_id || "").trim().toLowerCase();
   const assignedServerId = String(sessionRow.assigned_server_id || "").trim();
 
+  // Legacy fallback for old rooms that were created before assigned_server_id existed.
   if (!looksLikeUuid(assignedServerId)) {
-    throw new Error("assigned_server_not_found");
+    const legacyHost = getLegacyLiveKitHttpHost();
+    if (!legacyHost) {
+      throw new Error("legacy_livekit_host_missing");
+    }
+
+    const result: SessionContext = {
+      sessionId: String(sessionRow.id || "").trim().toLowerCase(),
+      hostId,
+      assignedServerId: "",
+      livekitHost: legacyHost,
+      usedLegacyFallback: true,
+    };
+
+    writeSessionContextCache(sessionId, result);
+    return result;
   }
 
   const { data: serverRow, error: serverErr } = await sb
@@ -281,7 +312,22 @@ async function resolveSessionContext(params: {
     .single<LivekitServerRow>();
 
   if (serverErr || !serverRow?.id) {
-    throw new Error("livekit_server_not_found");
+    // Soft fallback for old/main server mismatch cases.
+    const legacyHost = getLegacyLiveKitHttpHost();
+    if (!legacyHost) {
+      throw new Error("livekit_server_not_found");
+    }
+
+    const result: SessionContext = {
+      sessionId: String(sessionRow.id || "").trim().toLowerCase(),
+      hostId,
+      assignedServerId,
+      livekitHost: legacyHost,
+      usedLegacyFallback: true,
+    };
+
+    writeSessionContextCache(sessionId, result);
+    return result;
   }
 
   const livekitHost = normalizeLiveKitHost(String(serverRow.ws_url || ""));
@@ -294,6 +340,7 @@ async function resolveSessionContext(params: {
     hostId,
     assignedServerId: String(serverRow.id || "").trim(),
     livekitHost,
+    usedLegacyFallback: false,
   };
 
   writeSessionContextCache(sessionId, result);
@@ -548,6 +595,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           sessionId,
           assignedServerId: sessionContext.assignedServerId,
           livekitHost,
+          usedLegacyFallback: sessionContext.usedLegacyFallback,
         },
         timings: {
           authMs,
@@ -643,6 +691,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         sessionId,
         assignedServerId: sessionContext.assignedServerId,
         livekitHost,
+        usedLegacyFallback: sessionContext.usedLegacyFallback,
       },
       meta: {
         trackWasResolvedServerSide,
@@ -693,9 +742,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (
-      message === "assigned_server_not_found" ||
       message === "livekit_server_not_found" ||
-      message === "livekit_server_url_missing"
+      message === "livekit_server_url_missing" ||
+      message === "legacy_livekit_host_missing"
     ) {
       return res.status(500).json({
         error: message,
