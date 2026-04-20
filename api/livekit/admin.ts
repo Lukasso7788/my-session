@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { RoomServiceClient } from "livekit-server-sdk";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 type AdminAction =
   | "mute_track"
@@ -28,11 +28,10 @@ type Body = {
   isModerator?: boolean;
 };
 
-type ActorRole = {
-  userId: string;
-  hostId: string;
-  isHost: boolean;
-  isModerator: boolean;
+type SessionRowLite = {
+  id: string;
+  host_id: string | null;
+  assigned_server_id: string | null;
 };
 
 type LivekitServerRow = {
@@ -40,7 +39,22 @@ type LivekitServerRow = {
   ws_url: string | null;
 };
 
+type ActorRole = {
+  userId: string;
+  hostId: string;
+  isHost: boolean;
+  isModerator: boolean;
+};
+
+type SessionContext = {
+  sessionId: string;
+  hostId: string;
+  assignedServerId: string;
+  livekitHost: string;
+};
+
 const ACTOR_ROLE_CACHE_TTL_MS = 15_000;
+const SESSION_CONTEXT_CACHE_TTL_MS = 15_000;
 
 const actorRoleCache = new Map<
   string,
@@ -49,6 +63,16 @@ const actorRoleCache = new Map<
     value: ActorRole;
   }
 >();
+
+const sessionContextCache = new Map<
+  string,
+  {
+    expiresAt: number;
+    value: SessionContext;
+  }
+>();
+
+const roomServiceClientCache = new Map<string, RoomServiceClient>();
 
 function makeActorRoleCacheKey(accessToken: string, sessionId: string) {
   return `${String(sessionId || "").trim().toLowerCase()}::${String(accessToken || "").trim()}`;
@@ -71,6 +95,27 @@ function writeActorRoleCache(accessToken: string, sessionId: string, value: Acto
   const key = makeActorRoleCacheKey(accessToken, sessionId);
   actorRoleCache.set(key, {
     expiresAt: Date.now() + ACTOR_ROLE_CACHE_TTL_MS,
+    value,
+  });
+}
+
+function readSessionContextCache(sessionId: string): SessionContext | null {
+  const key = String(sessionId || "").trim().toLowerCase();
+  const hit = sessionContextCache.get(key);
+  if (!hit) return null;
+
+  if (Date.now() >= hit.expiresAt) {
+    sessionContextCache.delete(key);
+    return null;
+  }
+
+  return hit.value;
+}
+
+function writeSessionContextCache(sessionId: string, value: SessionContext) {
+  const key = String(sessionId || "").trim().toLowerCase();
+  sessionContextCache.set(key, {
+    expiresAt: Date.now() + SESSION_CONTEXT_CACHE_TTL_MS,
     value,
   });
 }
@@ -196,48 +241,77 @@ function isTrackMatchKind(track: any, wanted: "camera" | "microphone") {
   return false;
 }
 
-async function resolveTrackSidForKind(args: {
-  svc: RoomServiceClient;
-  roomName: string;
-  participantIdentity: string;
-  wantedKind: "camera" | "microphone";
-}): Promise<string> {
-  const participants = await args.svc.listParticipants(args.roomName);
-  const participant = (participants || []).find(
-    (p: any) => String(p?.identity || "").trim() === args.participantIdentity
-  );
+function getSupabaseAdminClient(supabaseUrl: string, serviceKey: string) {
+  return createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
 
-  if (!participant) {
-    throw new Error("participant_not_found");
+async function resolveSessionContext(params: {
+  sb: SupabaseClient;
+  sessionId: string;
+}): Promise<SessionContext> {
+  const { sb, sessionId } = params;
+
+  const cached = readSessionContextCache(sessionId);
+  if (cached) return cached;
+
+  const { data: sessionRow, error: sessionErr } = await sb
+    .from("sessions")
+    .select("id, host_id, assigned_server_id")
+    .eq("id", sessionId)
+    .single<SessionRowLite>();
+
+  if (sessionErr || !sessionRow?.id) {
+    throw new Error("session_not_found");
   }
 
-  const tracks = Array.isArray((participant as any)?.tracks) ? (participant as any).tracks : [];
-  const exact = tracks.find((t: any) => isTrackMatchKind(t, args.wantedKind));
+  const hostId = String(sessionRow.host_id || "").trim().toLowerCase();
+  const assignedServerId = String(sessionRow.assigned_server_id || "").trim();
 
-  const sid = String(exact?.sid || "").trim();
-  if (!sid) {
-    throw new Error(`${args.wantedKind}_track_not_found`);
+  if (!looksLikeUuid(assignedServerId)) {
+    throw new Error("assigned_server_not_found");
   }
 
-  return sid;
+  const { data: serverRow, error: serverErr } = await sb
+    .from("livekit_servers")
+    .select("id, ws_url")
+    .eq("id", assignedServerId)
+    .eq("enabled", true)
+    .single<LivekitServerRow>();
+
+  if (serverErr || !serverRow?.id) {
+    throw new Error("livekit_server_not_found");
+  }
+
+  const livekitHost = normalizeLiveKitHost(String(serverRow.ws_url || ""));
+  if (!livekitHost) {
+    throw new Error("livekit_server_url_missing");
+  }
+
+  const result: SessionContext = {
+    sessionId: String(sessionRow.id || "").trim().toLowerCase(),
+    hostId,
+    assignedServerId: String(serverRow.id || "").trim(),
+    livekitHost,
+  };
+
+  writeSessionContextCache(sessionId, result);
+  return result;
 }
 
 async function getActorRole(params: {
-  supabaseUrl: string;
-  serviceKey: string;
+  sb: SupabaseClient;
   accessToken: string;
-  sessionId: string;
+  sessionContext: SessionContext;
 }): Promise<ActorRole> {
-  const { supabaseUrl, serviceKey, accessToken, sessionId } = params;
+  const { sb, accessToken, sessionContext } = params;
+  const { sessionId, hostId } = sessionContext;
 
   const cached = readActorRoleCache(accessToken, sessionId);
   if (cached) {
     return cached;
   }
-
-  const sb = createClient(supabaseUrl, serviceKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
 
   const { data: uData, error: uErr } = await sb.auth.getUser(accessToken);
   if (uErr || !uData?.user) throw new Error("unauthorized");
@@ -245,15 +319,6 @@ async function getActorRole(params: {
   const userId = String(uData.user.id || "").toLowerCase();
   if (!looksLikeUuid(userId)) throw new Error("unauthorized");
 
-  const { data: sData, error: sErr } = await sb
-    .from("sessions")
-    .select("id, host_id")
-    .eq("id", sessionId)
-    .single();
-
-  if (sErr || !sData?.id) throw new Error("session_not_found");
-
-  const hostId = String((sData as any).host_id || "").toLowerCase();
   const isHost = !!hostId && hostId === userId;
 
   let isModerator = false;
@@ -282,49 +347,40 @@ async function getActorRole(params: {
   return result;
 }
 
-async function resolveLiveKitHttpHostForSession(params: {
-  supabaseUrl: string;
-  serviceKey: string;
-  sessionId: string;
+function getRoomServiceClient(livekitHost: string, apiKey: string, apiSecret: string) {
+  const cacheKey = `${livekitHost}::${apiKey}`;
+  const cached = roomServiceClientCache.get(cacheKey);
+  if (cached) return cached;
+
+  const svc = new RoomServiceClient(livekitHost, apiKey, apiSecret);
+  roomServiceClientCache.set(cacheKey, svc);
+  return svc;
+}
+
+async function resolveTrackSidForKind(args: {
+  svc: RoomServiceClient;
+  roomName: string;
+  participantIdentity: string;
+  wantedKind: "camera" | "microphone";
 }): Promise<string> {
-  const { supabaseUrl, serviceKey, sessionId } = params;
+  const participants = await args.svc.listParticipants(args.roomName);
+  const participant = (participants || []).find(
+    (p: any) => String(p?.identity || "").trim() === args.participantIdentity
+  );
 
-  const sb = createClient(supabaseUrl, serviceKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-
-  const { data: sessionRow, error: sessionErr } = await sb
-    .from("sessions")
-    .select("assigned_server_id")
-    .eq("id", sessionId)
-    .single();
-
-  if (sessionErr) {
-    throw new Error("session_not_found");
+  if (!participant) {
+    throw new Error("participant_not_found");
   }
 
-  const assignedServerId = String((sessionRow as any)?.assigned_server_id || "").trim();
-  if (!looksLikeUuid(assignedServerId)) {
-    throw new Error("assigned_server_not_found");
+  const tracks = Array.isArray((participant as any)?.tracks) ? (participant as any).tracks : [];
+  const exact = tracks.find((t: any) => isTrackMatchKind(t, args.wantedKind));
+
+  const sid = String(exact?.sid || "").trim();
+  if (!sid) {
+    throw new Error(`${args.wantedKind}_track_not_found`);
   }
 
-  const { data: serverRow, error: serverErr } = await sb
-    .from("livekit_servers")
-    .select("id, ws_url")
-    .eq("id", assignedServerId)
-    .eq("enabled", true)
-    .single<LivekitServerRow>();
-
-  if (serverErr || !serverRow?.id) {
-    throw new Error("livekit_server_not_found");
-  }
-
-  const host = normalizeLiveKitHost(String(serverRow.ws_url || ""));
-  if (!host) {
-    throw new Error("livekit_server_url_missing");
-  }
-
-  return host;
+  return sid;
 }
 
 function setCors(res: VercelResponse, req: VercelRequest) {
@@ -418,12 +474,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    const apiKey = String(process.env.LIVEKIT_API_KEY || "").trim();
+    const apiSecret = String(process.env.LIVEKIT_API_SECRET || "").trim();
+
+    if (!apiKey || !apiSecret) {
+      return res.status(500).json({ error: "livekit_keys_missing" });
+    }
+
+    const sb = getSupabaseAdminClient(supabaseUrl, serviceKey);
+
     const authStartedAt = nowMs();
-    const actor = await getActorRole({
-      supabaseUrl,
-      serviceKey,
-      accessToken,
+    const sessionContext = await resolveSessionContext({
+      sb,
       sessionId,
+    });
+
+    const actor = await getActorRole({
+      sb,
+      accessToken,
+      sessionContext,
     });
     authMs = elapsedMs(authStartedAt);
 
@@ -450,20 +519,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const apiKey = String(process.env.LIVEKIT_API_KEY || "").trim();
-    const apiSecret = String(process.env.LIVEKIT_API_SECRET || "").trim();
-
-    if (!apiKey || !apiSecret) {
-      return res.status(500).json({ error: "livekit_keys_missing" });
-    }
-
-    const livekitHost = await resolveLiveKitHttpHostForSession({
-      supabaseUrl,
-      serviceKey,
-      sessionId,
-    });
-
-    const svc = new RoomServiceClient(livekitHost, apiKey, apiSecret);
+    const livekitHost = sessionContext.livekitHost;
+    const svc = getRoomServiceClient(livekitHost, apiKey, apiSecret);
 
     if (action === "remove_participant") {
       if (!participantIdentity) {
@@ -489,6 +546,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         },
         routing: {
           sessionId,
+          assignedServerId: sessionContext.assignedServerId,
           livekitHost,
         },
         timings: {
@@ -583,6 +641,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       },
       routing: {
         sessionId,
+        assignedServerId: sessionContext.assignedServerId,
         livekitHost,
       },
       meta: {
