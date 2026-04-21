@@ -1527,17 +1527,24 @@ export function RoomPageLiveKit() {
 
   const prevStageRef = useRef<number>(-1);
   const firstTickDoneRef = useRef<boolean>(false);
+  const focusStageCycleRef = useRef<number>(0);
   const welcomeLoopRef = useRef<HTMLAudioElement | null>(null);
   const audioUnlockedRef = useRef<boolean>(false);
   const pendingRoomAudioUnlockRef = useRef<boolean>(false);
   const audioUnlockInFlightRef = useRef(false);
 
+  const FOCUS_GONG_SOUNDS = [
+    "/sounds/focus_gong_1.mp3",
+    "/sounds/focus_gong_2.mp3",
+    "/sounds/focus_gong_3.mp3",
+  ] as const;
+
   const STAGE_SOUND_MAP: Record<string, string> = {
     intentions: "/sounds/intentions.mp3",
-    focus: "/sounds/focus.mp3",
     break: "/sounds/break_start.mp3",
     outro: "/sounds/outro.mp3",
   };
+
   const BREAK_END_SOUND = "/sounds/break_end.mp3";
   const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
 
@@ -2204,6 +2211,7 @@ export function RoomPageLiveKit() {
       setCurrentStage(0);
       firstTickDoneRef.current = false;
       prevStageRef.current = -1;
+      focusStageCycleRef.current = 0;
       stopWelcomeLoop();
       return;
     }
@@ -2261,8 +2269,17 @@ export function RoomPageLiveKit() {
       const stage = stages[active];
 
       if (!firstTickDoneRef.current) {
-        if (stage?.type === "intro") startWelcomeLoop();
-        else stopWelcomeLoop();
+        if (stage?.type === "intro") {
+          startWelcomeLoop();
+        } else {
+          stopWelcomeLoop();
+        }
+
+        if (stage?.type === "focus") {
+          focusStageCycleRef.current = 1;
+        } else {
+          focusStageCycleRef.current = 0;
+        }
 
         prevStageRef.current = active;
         firstTickDoneRef.current = true;
@@ -2274,16 +2291,28 @@ export function RoomPageLiveKit() {
         const prevType = prev?.type;
         const newType = stage?.type;
 
-        if (prevType === "break" && newType !== "break") playOneShot(BREAK_END_SOUND);
+        if (prevType === "break" && newType !== "break") {
+          playOneShot(BREAK_END_SOUND);
+        }
 
         if (newType === "intro") {
           startWelcomeLoop();
         } else {
           stopWelcomeLoop();
+
           if (newType) {
             const t = inferStageTypeFromLabel(String(newType));
-            const sound = STAGE_SOUND_MAP[t];
-            if (sound) playOneShot(sound);
+
+            if (t === "focus") {
+              const gongIndex = focusStageCycleRef.current % FOCUS_GONG_SOUNDS.length;
+              const focusSound = FOCUS_GONG_SOUNDS[gongIndex];
+              if (focusSound) playOneShot(focusSound);
+
+              focusStageCycleRef.current += 1;
+            } else {
+              const sound = STAGE_SOUND_MAP[t];
+              if (sound) playOneShot(sound);
+            }
           }
         }
 
