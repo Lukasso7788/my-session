@@ -1532,6 +1532,7 @@ export function RoomPageLiveKit() {
   const audioUnlockedRef = useRef<boolean>(false);
   const pendingRoomAudioUnlockRef = useRef<boolean>(false);
   const audioUnlockInFlightRef = useRef(false);
+  const pendingStageSoundRef = useRef<{ url: string; volume: number } | null>(null);
 
   const FOCUS_GONG_SOUNDS = [
     "/sounds/focus_gong_1.mp3",
@@ -1645,6 +1646,18 @@ export function RoomPageLiveKit() {
     );
   };
 
+  const playStageSoundSafely = (url: string, volume = 1) => {
+    if (!url) return;
+
+    if (!audioUnlockedRef.current) {
+      pendingStageSoundRef.current = { url, volume };
+      console.log("[room-sound] queued until unlock", { url, volume });
+      return;
+    }
+
+    playOneShot(url, volume);
+  };
+
   const ensureRoomAudioPlaybackUnlocked = useCallback(async (reason: string) => {
     const room = roomRef.current;
     if (!room) return;
@@ -1671,11 +1684,20 @@ export function RoomPageLiveKit() {
         );
       } catch { }
 
+      audioUnlockedRef.current = true;
+
       setRemoteAudioBlocked(false);
       setRemoteAudioBlockedReason("");
       setAudioResumeNonce((v) => v + 1);
 
       console.log("[lk-audio] playback unlock ok:", reason);
+
+      const pending = pendingStageSoundRef.current;
+      if (pending?.url) {
+        pendingStageSoundRef.current = null;
+        console.log("[room-sound] replaying pending sound after unlock", pending);
+        playOneShot(pending.url, pending.volume);
+      }
     } catch (e: any) {
       console.warn("[lk-audio] playback unlock failed:", reason, e);
       setRemoteAudioBlocked(true);
@@ -1715,9 +1737,19 @@ export function RoomPageLiveKit() {
   useEffect(() => {
     const unlock = () => {
       if (audioUnlockedRef.current) return;
+
       const a = new Audio();
       a.play().catch(() => { });
+
       audioUnlockedRef.current = true;
+
+      const pending = pendingStageSoundRef.current;
+      if (pending?.url) {
+        pendingStageSoundRef.current = null;
+        console.log("[room-sound] replaying pending sound after user gesture", pending);
+        playOneShot(pending.url, pending.volume);
+      }
+
       window.removeEventListener("click", unlock, true);
       window.removeEventListener("keydown", unlock, true);
       window.removeEventListener("touchstart", unlock, true);
@@ -1788,6 +1820,8 @@ export function RoomPageLiveKit() {
     connectingFromPrejoinRef.current = false;
     sessionJoinStartedAtRef.current = null;
     usageTrackedRef.current = false;
+    pendingStageSoundRef.current = null;
+    audioUnlockedRef.current = false;
     setPrejoinOpen(false);
     setJoinRequested(false);
     setLkToken("");
@@ -2311,7 +2345,7 @@ export function RoomPageLiveKit() {
           void ensureRoomAudioPlaybackUnlocked("first-focus-stage");
 
           if (focusSound) {
-            playOneShot(focusSound);
+            playStageSoundSafely(focusSound);
           }
 
           focusStageCycleRef.current += 1;
@@ -2325,7 +2359,7 @@ export function RoomPageLiveKit() {
             void ensureRoomAudioPlaybackUnlocked("first-non-focus-stage");
 
             if (sound) {
-              playOneShot(sound);
+              playStageSoundSafely(sound);
             }
           }
         }
@@ -2342,7 +2376,7 @@ export function RoomPageLiveKit() {
 
         if (prevType === "break" && newType !== "break") {
           void ensureRoomAudioPlaybackUnlocked("break-end");
-          playOneShot(BREAK_END_SOUND);
+          playStageSoundSafely(BREAK_END_SOUND);
         }
 
         if (newType === "intro") {
@@ -2360,7 +2394,7 @@ export function RoomPageLiveKit() {
               const focusSound = FOCUS_GONG_SOUNDS[gongIndex];
 
               if (focusSound) {
-                playOneShot(focusSound);
+                playStageSoundSafely(focusSound);
               }
 
               focusStageCycleRef.current += 1;
