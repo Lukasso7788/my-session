@@ -1605,15 +1605,44 @@ export function RoomPageLiveKit() {
   }, [previewMirrored]);
 
   const playOneShot = (url: string, volume = 1) => {
-    if (!url) return;
-    if (!roomSoundsEnabledRef.current) return;
+    if (!url) {
+      console.warn("[room-sound] skipped: empty url");
+      return;
+    }
+
+    if (!roomSoundsEnabledRef.current) {
+      console.warn("[room-sound] skipped: sounds disabled", { url });
+      return;
+    }
 
     const baseVolume = Math.max(0, Math.min(1, roomSoundsVolumeRef.current / 100));
     const finalVolume = Math.max(0, Math.min(1, baseVolume * volume));
 
     const a = new Audio(url);
+    a.preload = "auto";
     a.volume = finalVolume;
-    a.play().catch(() => { });
+
+    a.addEventListener(
+      "error",
+      () => {
+        console.error("[room-sound] audio error", {
+          url,
+          currentSrc: a.currentSrc,
+          networkState: a.networkState,
+          readyState: a.readyState,
+        });
+      },
+      { once: true }
+    );
+
+    void a.play().then(
+      () => {
+        console.log("[room-sound] playing", { url, finalVolume });
+      },
+      (err) => {
+        console.error("[room-sound] play failed", { url, err });
+      }
+    );
   };
 
   const ensureRoomAudioPlaybackUnlocked = useCallback(async (reason: string) => {
@@ -2276,9 +2305,29 @@ export function RoomPageLiveKit() {
         }
 
         if (stage?.type === "focus") {
-          focusStageCycleRef.current = 1;
+          const gongIndex = focusStageCycleRef.current % FOCUS_GONG_SOUNDS.length;
+          const focusSound = FOCUS_GONG_SOUNDS[gongIndex];
+
+          void ensureRoomAudioPlaybackUnlocked("first-focus-stage");
+
+          if (focusSound) {
+            playOneShot(focusSound);
+          }
+
+          focusStageCycleRef.current += 1;
         } else {
           focusStageCycleRef.current = 0;
+
+          if (stage?.type) {
+            const t = inferStageTypeFromLabel(String(stage.type));
+            const sound = STAGE_SOUND_MAP[t];
+
+            void ensureRoomAudioPlaybackUnlocked("first-non-focus-stage");
+
+            if (sound) {
+              playOneShot(sound);
+            }
+          }
         }
 
         prevStageRef.current = active;
@@ -2292,6 +2341,7 @@ export function RoomPageLiveKit() {
         const newType = stage?.type;
 
         if (prevType === "break" && newType !== "break") {
+          void ensureRoomAudioPlaybackUnlocked("break-end");
           playOneShot(BREAK_END_SOUND);
         }
 
@@ -2303,15 +2353,22 @@ export function RoomPageLiveKit() {
           if (newType) {
             const t = inferStageTypeFromLabel(String(newType));
 
+            void ensureRoomAudioPlaybackUnlocked(`stage-change:${t}`);
+
             if (t === "focus") {
               const gongIndex = focusStageCycleRef.current % FOCUS_GONG_SOUNDS.length;
               const focusSound = FOCUS_GONG_SOUNDS[gongIndex];
-              if (focusSound) playOneShot(focusSound);
+
+              if (focusSound) {
+                playOneShot(focusSound);
+              }
 
               focusStageCycleRef.current += 1;
             } else {
               const sound = STAGE_SOUND_MAP[t];
-              if (sound) playOneShot(sound);
+              if (sound) {
+                playOneShot(sound);
+              }
             }
           }
         }
