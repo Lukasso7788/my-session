@@ -2338,31 +2338,10 @@ export function RoomPageLiveKit() {
           stopWelcomeLoop();
         }
 
-        if (stage?.type === "focus") {
-          const gongIndex = focusStageCycleRef.current % FOCUS_GONG_SOUNDS.length;
-          const focusSound = FOCUS_GONG_SOUNDS[gongIndex];
-
-          void ensureRoomAudioPlaybackUnlocked("first-focus-stage");
-
-          if (focusSound) {
-            playStageSoundSafely(focusSound);
-          }
-
-          focusStageCycleRef.current += 1;
-        } else {
-          focusStageCycleRef.current = 0;
-
-          if (stage?.type) {
-            const t = inferStageTypeFromLabel(String(stage.type));
-            const sound = STAGE_SOUND_MAP[t];
-
-            void ensureRoomAudioPlaybackUnlocked("first-non-focus-stage");
-
-            if (sound) {
-              playStageSoundSafely(sound);
-            }
-          }
-        }
+        // IMPORTANT:
+        // User entering the room is NOT the same thing as a stage starting.
+        // So on first tick we only sync refs/state and do NOT play any stage sound.
+        focusStageCycleRef.current = 0;
 
         prevStageRef.current = active;
         firstTickDoneRef.current = true;
@@ -2401,7 +2380,7 @@ export function RoomPageLiveKit() {
             } else {
               const sound = STAGE_SOUND_MAP[t];
               if (sound) {
-                playOneShot(sound);
+                playStageSoundSafely(sound);
               }
             }
           }
