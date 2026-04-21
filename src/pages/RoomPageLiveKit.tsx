@@ -55,6 +55,7 @@ import { RoomSettingsModalLiveKit } from "./livekit/RoomSettingsModalLiveKit";
 import { VideoTile } from "./livekit/VideoTileLiveKit";
 import { RoomAudioRenderer, StartAudio, useTrackToggle } from "@livekit/components-react";
 import ReportParticipantModalLiveKit from "./livekit/ReportParticipantModalLiveKit";
+import PostSessionModal from "../components/PostSessionModal";
 import { buildScreenShareTiles } from "./livekit/screenShareHelpers";
 import LiveKitPiPPortal from "./livekit/LiveKitPiPPortal";
 
@@ -1239,6 +1240,13 @@ export function RoomPageLiveKit() {
   const [reportError, setReportError] = useState("");
   const [editNameOpen, setEditNameOpen] = useState(false);
   const [editNameValue, setEditNameValue] = useState("");
+  const [postSessionOpen, setPostSessionOpen] = useState(false);
+  const [postSessionSubmitting, setPostSessionSubmitting] = useState(false);
+  const [postSessionRating, setPostSessionRating] = useState(0);
+  const [postSessionFeedback, setPostSessionFeedback] = useState("");
+  const [postSessionMinutesSpent, setPostSessionMinutesSpent] = useState(0);
+  const [postSessionHostId, setPostSessionHostId] = useState<string>("");
+  const [postSessionHostName, setPostSessionHostName] = useState<string>("");
 
   // LiveKit env + token routing state
   const defaultLivekitUrl = String((import.meta as any)?.env?.VITE_LIVEKIT_URL || "").trim();
@@ -1279,6 +1287,71 @@ export function RoomPageLiveKit() {
       throw new Error(String(e?.message || e || "Failed to refresh auth session"));
     }
   };
+
+  const sessionId = useMemo(() => String(session?.id || ""), [session?.id]);
+  const sessionTitle = useMemo(() => String(session?.title || "Session"), [session?.title]);
+
+  const openPostSessionModal = useCallback(() => {
+    const startedAt = sessionJoinStartedAtRef.current;
+    const minutesSpent =
+      startedAt && Number.isFinite(startedAt)
+        ? Math.max(1, Math.round((Date.now() - startedAt) / 60000))
+        : 0;
+
+    setPostSessionMinutesSpent(minutesSpent);
+    setPostSessionHostId(String(session?.host_id || ""));
+    setPostSessionHostName(
+      String(session?.host_profile?.full_name || session?.host_profile?.id || "Host")
+    );
+    setPostSessionRating(0);
+    setPostSessionFeedback("");
+    setPostSessionOpen(true);
+  }, [session]);
+
+  const submitPostSessionFeedback = useCallback(async () => {
+    if (!authUserId || !sessionId || postSessionRating < 1) return;
+
+    setPostSessionSubmitting(true);
+    try {
+      const payload = {
+        session_id: sessionId,
+        user_id: authUserId,
+        host_id: postSessionHostId || null,
+        rating: postSessionRating,
+        feedback_text: String(postSessionFeedback || "").trim(),
+        minutes_in_room: Math.max(0, Number(postSessionMinutesSpent || 0)),
+      };
+
+      const { error } = await supabase.from("session_feedback").insert(payload);
+
+      if (error) throw error;
+
+      setPostSessionOpen(false);
+    } catch (e) {
+      console.error("[post-session] feedback submit failed:", e);
+      alert("Failed to submit feedback. Please try again.");
+    } finally {
+      setPostSessionSubmitting(false);
+    }
+  }, [
+    authUserId,
+    sessionId,
+    postSessionHostId,
+    postSessionRating,
+    postSessionFeedback,
+    postSessionMinutesSpent,
+  ]);
+
+  const handleTipHost = useCallback((amount: 2 | 5 | 10) => {
+    console.log("[post-session] tip host clicked", {
+      amount,
+      hostId: postSessionHostId,
+      hostName: postSessionHostName,
+      sessionId,
+    });
+
+    alert(`Tip host $${amount} clicked. Checkout wiring comes next.`);
+  }, [postSessionHostId, postSessionHostName, sessionId]);
 
   // profile cache for remote
   const [profilesById, setProfilesById] = useState<Record<string, HostProfile>>({});
@@ -1528,6 +1601,7 @@ export function RoomPageLiveKit() {
   const prevStageRef = useRef<number>(-1);
   const firstTickDoneRef = useRef<boolean>(false);
   const focusStageCycleRef = useRef<number>(0);
+  const postSessionShownForSessionRef = useRef<string>("");
   const welcomeLoopRef = useRef<HTMLAudioElement | null>(null);
   const audioUnlockedRef = useRef<boolean>(false);
   const pendingRoomAudioUnlockRef = useRef<boolean>(false);
@@ -1802,9 +1876,6 @@ export function RoomPageLiveKit() {
     return hay.includes("silent");
   }, [session]);
 
-  const sessionId = useMemo(() => String(session?.id || ""), [session?.id]);
-  const sessionTitle = useMemo(() => String(session?.title || "Session"), [session?.title]);
-
   useEffect(() => {
     console.log("[LK SERVER ROUTING]", {
       sessionId,
@@ -1822,6 +1893,7 @@ export function RoomPageLiveKit() {
     usageTrackedRef.current = false;
     pendingStageSoundRef.current = null;
     audioUnlockedRef.current = false;
+    postSessionShownForSessionRef.current = "";
     setPrejoinOpen(false);
     setJoinRequested(false);
     setLkToken("");
@@ -2049,6 +2121,21 @@ export function RoomPageLiveKit() {
 
     if (!parsed) setStagebarStartTime(fallbackStart);
   }, [session]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    if (!stages.length) return;
+
+    const stage = stages[currentStage];
+    const stageType = String(stage?.type || "").trim().toLowerCase();
+
+    if (stageType !== "outro") return;
+    if (postSessionOpen) return;
+    if (postSessionShownForSessionRef.current === sessionId) return;
+
+    postSessionShownForSessionRef.current = sessionId;
+    openPostSessionModal();
+  }, [sessionId, stages, currentStage, postSessionOpen, openPostSessionModal]);
 
   const applySessionSnapshot = React.useCallback((nextSession: SessionRow | any) => {
     if (!nextSession) return;
@@ -7182,6 +7269,27 @@ export function RoomPageLiveKit() {
         {selectedUser && (
           <UserProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
         )}
+
+        <PostSessionModal
+          open={postSessionOpen}
+          theme={theme}
+          sessionTitle={sessionTitle}
+          hostName={postSessionHostName}
+          minutesSpent={postSessionMinutesSpent}
+          rating={postSessionRating}
+          feedbackText={postSessionFeedback}
+          submitting={postSessionSubmitting}
+          onClose={() => setPostSessionOpen(false)}
+          onRatingChange={setPostSessionRating}
+          onFeedbackChange={setPostSessionFeedback}
+          onSubmitFeedback={() => {
+            void submitPostSessionFeedback();
+          }}
+          onTip={(amount) => {
+            handleTipHost(amount);
+          }}
+        />
+        
       </div>
       {openTileAdminMenuId && tileMenuAnchor && createPortal(
         <div
