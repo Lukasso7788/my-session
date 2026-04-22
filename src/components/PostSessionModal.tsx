@@ -1,7 +1,5 @@
 import React from "react";
 
-type TipAmount = 2 | 5 | 10;
-
 type Props = {
     open: boolean;
     theme: "dark" | "light";
@@ -15,7 +13,6 @@ type Props = {
     onRatingChange: (value: number) => void;
     onFeedbackChange: (value: string) => void;
     onSubmitFeedback: () => void;
-    onTip: (amount: TipAmount) => void;
 };
 
 export default function PostSessionModal({
@@ -31,7 +28,6 @@ export default function PostSessionModal({
     onRatingChange,
     onFeedbackChange,
     onSubmitFeedback,
-    onTip,
 }: Props) {
     if (!open) return null;
 
@@ -52,13 +48,28 @@ export default function PostSessionModal({
                         <div className="text-[24px] font-semibold leading-tight">
                             Session complete
                         </div>
-                        <div className={["mt-2 text-[14px]", isLight ? "text-black/65" : "text-white/70"].join(" ")}>
+                        <div
+                            className={[
+                                "mt-2 text-[14px]",
+                                isLight ? "text-black/65" : "text-white/70",
+                            ].join(" ")}
+                        >
                             {sessionTitle || "Session"}
                         </div>
-                        <div className={["mt-1 text-[14px]", isLight ? "text-black/65" : "text-white/70"].join(" ")}>
+                        <div
+                            className={[
+                                "mt-1 text-[14px]",
+                                isLight ? "text-black/65" : "text-white/70",
+                            ].join(" ")}
+                        >
                             Hosted by <span className="font-semibold">{hostName || "Host"}</span>
                         </div>
-                        <div className={["mt-1 text-[14px]", isLight ? "text-black/65" : "text-white/70"].join(" ")}>
+                        <div
+                            className={[
+                                "mt-1 text-[14px]",
+                                isLight ? "text-black/65" : "text-white/70",
+                            ].join(" ")}
+                        >
                             You spent <span className="font-semibold">{minutesSpent}</span> min in session
                         </div>
                     </div>
@@ -117,31 +128,6 @@ export default function PostSessionModal({
                                 : "border-white/10 bg-white/5 text-white placeholder:text-white/35",
                         ].join(" ")}
                     />
-                </div>
-
-                <div className="mt-6">
-                    <div className="text-[15px] font-semibold">Support the host</div>
-                    <div className={["mt-2 text-[13px]", isLight ? "text-black/60" : "text-white/65"].join(" ")}>
-                        If this session helped, you can tip the host right here.
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap gap-2">
-                        {[2, 5, 10].map((amount) => (
-                            <button
-                                key={amount}
-                                type="button"
-                                onClick={() => onTip(amount as TipAmount)}
-                                className={[
-                                    "h-11 rounded-full px-5 text-[14px] font-semibold transition",
-                                    isLight
-                                        ? "bg-[#111827] text-white hover:bg-[#1F2937]"
-                                        : "bg-emerald-400 text-[#05210F] hover:bg-emerald-300",
-                                ].join(" ")}
-                            >
-                                Tip ${amount}
-                            </button>
-                        ))}
-                    </div>
                 </div>
 
                 <div className="mt-7 flex flex-wrap items-center justify-end gap-3">
