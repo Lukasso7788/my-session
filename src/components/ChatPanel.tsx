@@ -387,6 +387,18 @@ function MessageCardInner({
     }, [openReactions, updateReactionMenuPos]);
 
     const hasReactions = reactionsCounts && Object.keys(reactionsCounts).length > 0;
+    const orderedReactionEntries = useMemo(() => {
+        const entries = Object.entries(reactionsCounts || {});
+        entries.sort((a, b) => {
+            const aMine = !!myReactions?.[a[0]];
+            const bMine = !!myReactions?.[b[0]];
+
+            if (aMine !== bMine) return aMine ? -1 : 1;
+            return b[1] - a[1];
+        });
+
+        return entries;
+    }, [reactionsCounts, myReactions]);
 
     const metaNameCls = isLight ? "text-black/55" : "text-white/55";
     const metaTimeCls = isLight ? "text-black/35" : "text-white/35";
@@ -650,7 +662,7 @@ function MessageCardInner({
                                     }}
                                     title={"Click — who reacted • Right-click — toggle"}
                                 >
-                                    <span className="text-[18px] leading-none">{emoji}</span>
+                                    <span className="text-[16px] leading-none">{emoji}</span>
                                     <span className={reactionCountCls}>{count}</span>
                                 </button>
                             );
@@ -711,6 +723,25 @@ export function ChatPanel({
 
     const [userId, setUserId] = useState<string | null>(null);
     const [hostUserId, setHostUserId] = useState<string | null>(null);
+    useEffect(() => {
+        const nextHostId = String(hostUserIdOverride || "").trim();
+        if (!nextHostId) return;
+
+        setHostUserId(nextHostId);
+
+        if (hostProfileOverride?.id) {
+            setProfilesById((prev) => ({
+                ...prev,
+                [String(hostProfileOverride.id).toLowerCase()]: hostProfileOverride,
+            }));
+        }
+
+        console.log("[chat][host-override]", {
+            sessionId,
+            nextHostId,
+            hostProfileOverride,
+        });
+    }, [sessionId, hostUserIdOverride, hostProfileOverride]);
     const [directPeerIds, setDirectPeerIds] = useState<string[]>([]);
     const [selectedDirectPeerId, setSelectedDirectPeerId] = useState<string | null>(null);
     const [chatMode, setChatMode] = useState<ChatMode>("general");

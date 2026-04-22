@@ -6490,6 +6490,8 @@ export function RoomPageLiveKit() {
                     <ChatPanelAny
                       sessionId={session.id}
                       theme={theme}
+                      hostUserIdOverride={String(session?.host_id || "") || null}
+                      hostProfileOverride={session?.host_profile || null}
                       showHeader={false}
                       title="Chat"
                       onClose={() => openRightTab(null)}
@@ -7376,6 +7378,7 @@ export function RoomPageLiveKit() {
                 !targetTile.isLocal &&
                 !!targetIdentity &&
                 (isHost || isSelfModerator);
+                
 
               const participantVolumeKey = getParticipantVolumeKey(targetTile);
               const participantVolumePctRaw = volumePctByParticipantKey[participantVolumeKey];
@@ -7415,6 +7418,29 @@ export function RoomPageLiveKit() {
                 canModerateTarget &&
                 !!remoteCamTrackSid &&
                 !isCamAlreadyOff;
+
+              const canSeeMuteMicAction = !!remoteMicTrackSid || isMicAlreadyMuted;
+              const canSeeTurnOffCamAction = !!remoteCamTrackSid || isCamAlreadyOff;
+
+              const muteMicDisabled =
+                micBusy ||
+                isMicAlreadyMuted ||
+                !canModerateTarget ||
+                !remoteMicTrackSid;
+
+              const turnOffCamDisabled =
+                camBusy ||
+                isCamAlreadyOff ||
+                !canModerateTarget ||
+                !remoteCamTrackSid;
+
+              const participantActionButtonCls =
+                `w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
+                }`;
+
+              const participantActionButtonDisabledCls =
+                `w-full px-4 py-3 text-left text-[13px] transition disabled:cursor-not-allowed disabled:opacity-50 ${isLight ? "text-black/55 bg-transparent" : "text-white/55 bg-transparent"
+                }`;
 
               const isPinned = pinnedTileId === targetTile.id;
               const isHidden = !!hiddenTileIds[targetTile.id];
@@ -7468,35 +7494,37 @@ export function RoomPageLiveKit() {
                           Participant actions
                         </div>
 
-                        {(!!remoteMicTrackSid || isMicAlreadyMuted) && (
+                        {canSeeMuteMicAction && (
                           <button
                             type="button"
-                            disabled={micBusy || isMicAlreadyMuted}
+                            disabled={muteMicDisabled}
                             onClick={() => {
-                              if (!targetIdentity || !remoteMicTrackSid || isMicAlreadyMuted) return;
+                              if (muteMicDisabled) return;
+                              if (!targetIdentity || !remoteMicTrackSid) return;
 
                               closeTileMenu();
                               void adminMuteRemoteTrack(targetTile.id, targetIdentity, remoteMicTrackSid);
                             }}
-                            className={`w-full px-4 py-3 text-left text-[13px] transition disabled:cursor-not-allowed disabled:opacity-50 ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
-                              }`}
+                            className={muteMicDisabled ? participantActionButtonDisabledCls : participantActionButtonCls}
+                            title={!canModerateTarget ? "Only host or moderator can mute participants" : "Mute Mic"}
                           >
                             Mute Mic
                           </button>
                         )}
 
-                        {(!!remoteCamTrackSid || isCamAlreadyOff) && (
+                        {canSeeTurnOffCamAction && (
                           <button
                             type="button"
-                            disabled={camBusy || isCamAlreadyOff}
+                            disabled={turnOffCamDisabled}
                             onClick={() => {
-                              if (!targetIdentity || !remoteCamTrackSid || isCamAlreadyOff) return;
+                              if (turnOffCamDisabled) return;
+                              if (!targetIdentity || !remoteCamTrackSid) return;
 
                               closeTileMenu();
                               void adminTurnOffRemoteCamera(targetTile.id, targetIdentity, remoteCamTrackSid);
                             }}
-                            className={`w-full px-4 py-3 text-left text-[13px] transition disabled:cursor-not-allowed disabled:opacity-50 ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
-                              }`}
+                            className={turnOffCamDisabled ? participantActionButtonDisabledCls : participantActionButtonCls}
+                            title={!canModerateTarget ? "Only host or moderator can control participant camera" : "Turn camera off"}
                           >
                             Turn camera off
                           </button>
