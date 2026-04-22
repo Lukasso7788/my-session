@@ -17,7 +17,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { IntentionsPanel } from "../components/IntentionsPanel";
-import ChatPanel from "../components/ChatPanel";
+import { ChatPanel } from "../components/ChatPanel";
 import { SessionStageBar } from "../components/SessionStageBar";
 import { supabase } from "../lib/supabase";
 import { UserProfileModal } from "../components/UserProfileModal";
