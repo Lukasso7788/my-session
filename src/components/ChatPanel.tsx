@@ -2226,4 +2226,5 @@ export function ChatPanel({
         </div>
     );
 }
+
 export default ChatPanel;
