@@ -435,6 +435,18 @@ export function SessionStageBar({
 
           const isActive = index === currentStageIndex;
           const isHovered = hoveredStageIndex === index;
+          const isFirst = index === 0;
+          const isLast = index === (stages?.length || 0) - 1;
+          const isSingle = (stages?.length || 0) === 1;
+
+          const borderRadiusStyle: React.CSSProperties = isSingle
+            ? { borderRadius: "9999px" }
+            : {
+              borderTopLeftRadius: isFirst ? "9999px" : 0,
+              borderBottomLeftRadius: isFirst ? "9999px" : 0,
+              borderTopRightRadius: isLast ? "9999px" : 0,
+              borderBottomRightRadius: isLast ? "9999px" : 0,
+            };
 
           const progressWidth = isActive
             ? `${clamp(progress, 0, 1) * 100}%`
@@ -452,6 +464,7 @@ export function SessionStageBar({
                   ? { background: bg }
                   : { backgroundColor: bg }),
                 opacity: isActive ? 1 : 0.84,
+                ...borderRadiusStyle,
               }}
               onMouseEnter={() => {
                 setHoveredStageIndex(index);
@@ -463,8 +476,11 @@ export function SessionStageBar({
               }}
             >
               <div
-                className="absolute left-0 top-0 bottom-0 rounded-full bg-black/18 transition-all"
-                style={{ width: progressWidth }}
+                className="absolute left-0 top-0 bottom-0 bg-black/18 transition-all"
+                style={{
+                  width: progressWidth,
+                  ...borderRadiusStyle,
+                }}
               />
 
               {isHovered && (
