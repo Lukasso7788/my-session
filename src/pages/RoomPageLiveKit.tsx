@@ -5774,7 +5774,7 @@ export function RoomPageLiveKit() {
 
               openTileMenuAt(tileId, anchorEl);
             }}
-            showMenuButton={!!(t.isLocal || t.kind === "screen" || isSelfModerator || isHost)}
+            showMenuButton={!!(t.isLocal || t.kind === "screen" || !!t.participantIdentity)}
             onOpenProfile={() => {
               if (!t.participantUserId) return;
 
@@ -5861,7 +5861,7 @@ export function RoomPageLiveKit() {
 
             openTileMenuAt(tileId, anchorEl);
           }}
-          showMenuButton={!!(t.isLocal || t.kind === "screen" || isSelfModerator || isHost)}
+          showMenuButton={!!(t.isLocal || t.kind === "screen" || !!t.participantIdentity)}
           onOpenProfile={() => {
             if (!t.participantUserId) return;
 
@@ -7311,9 +7311,6 @@ export function RoomPageLiveKit() {
           onFeedbackChange={setPostSessionFeedback}
           onSubmitFeedback={() => {
             void submitPostSessionFeedback();
-          }}
-          onTip={(amount) => {
-            handleTipHost(amount);
           }}
         />
 
