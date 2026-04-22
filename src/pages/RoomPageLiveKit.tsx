@@ -1063,6 +1063,14 @@ export function RoomPageLiveKit() {
     try {
       const root = document.documentElement;
       const body = document.body;
+
+      const prevRootDark = root.classList.contains("dark");
+      const prevBodyDark = body.classList.contains("dark");
+      const prevRootTheme = root.getAttribute("data-theme");
+      const prevBodyTheme = body.getAttribute("data-theme");
+      const prevRootColorScheme = (root.style as any).colorScheme;
+      const prevBodyColorScheme = (body.style as any).colorScheme;
+
       const isDark = theme === "dark";
 
       root.classList.toggle("dark", isDark);
@@ -1073,7 +1081,23 @@ export function RoomPageLiveKit() {
 
       (root.style as any).colorScheme = theme;
       (body.style as any).colorScheme = theme;
-    } catch { }
+
+      return () => {
+        root.classList.toggle("dark", prevRootDark);
+        body.classList.toggle("dark", prevBodyDark);
+
+        if (prevRootTheme === null) root.removeAttribute("data-theme");
+        else root.setAttribute("data-theme", prevRootTheme);
+
+        if (prevBodyTheme === null) body.removeAttribute("data-theme");
+        else body.setAttribute("data-theme", prevBodyTheme);
+
+        (root.style as any).colorScheme = prevRootColorScheme || "";
+        (body.style as any).colorScheme = prevBodyColorScheme || "";
+      };
+    } catch {
+      return;
+    }
   }, [theme]);
 
   const [isLgUp, setIsLgUp] = useState<boolean>(() => {
