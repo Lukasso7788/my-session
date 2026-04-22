@@ -3,11 +3,26 @@ import { createPortal } from "react-dom";
 import Picker from "@emoji-mart/react";
 import emojiData from "@emoji-mart/data";
 import { supabase } from "../lib/supabase";
-import { CornerUpLeft, X, Smile, SendHorizontal, Pencil, Trash2, Check } from "lucide-react";
+import {
+    Check,
+    ChevronDown,
+    CornerUpLeft,
+    Pencil,
+    SendHorizontal,
+    Smile,
+    Trash2,
+    X,
+} from "lucide-react";
 
 type RoomTheme = "dark" | "light";
 
+type ChatMode = "general" | "direct";
+
 type Profile = { id: string; full_name?: string | null; avatar_url?: string | null };
+
+type SessionHostRow = {
+    host_id: string | null;
+};
 
 type MsgRow = {
     id: string;
@@ -15,6 +30,8 @@ type MsgRow = {
     user_id: string;
     body: string;
     created_at: string;
+    scope?: ChatMode | null;
+    dm_peer_user_id?: string | null;
 };
 
 type Msg = MsgRow & { profile?: Profile | null };
@@ -31,10 +48,9 @@ type ReactionRow = {
 const MSG_TABLE = "session_chat_messages";
 const REACTIONS_TABLE = "session_chat_message_reactions";
 
-const MESSAGE_BOOTSTRAP_LIMIT = 120;
-const REACTIONS_BOOTSTRAP_LIMIT = 180;
-const VISIBLE_MESSAGE_LIMIT = 120;
-
+const MESSAGE_BOOTSTRAP_LIMIT = 150;
+const REACTIONS_BOOTSTRAP_LIMIT = 400;
+const VISIBLE_MESSAGE_LIMIT = 150;
 const REACTION_EMOJIS = ["🔥", "😂", "👏", "❤️", "👍", "👎", "👌", "👋", "🙌", "🎉"] as const;
 
 function avatarFromProfile(profile?: Profile | null) {
@@ -128,6 +144,8 @@ type ChatCacheEntry = {
     myReactions: Record<string, Record<string, boolean>>;
     profilesById: Record<string, Profile>;
     meProfile: Profile | null;
+    hostUserId: string | null;
+    directPeerIds: string[];
 };
 
 const CHAT_CACHE = new Map<string, ChatCacheEntry>();
@@ -157,39 +175,6 @@ type ReactionDetailsState = {
     userIds: string[];
     error?: string | null;
 };
-
-function EmojiPickerPopover({
-    theme,
-    onPick,
-    onClose,
-    maxHeight,
-}: {
-    theme: RoomTheme;
-    onPick: (emoji: string) => void;
-    onClose: () => void;
-    maxHeight: number;
-}) {
-    const pickerTheme = theme === "light" ? "light" : "dark";
-
-    return (
-        <div style={{ maxHeight }} className="overflow-hidden">
-            <Picker
-                data={emojiData}
-                theme={pickerTheme}
-                set="native"
-                previewPosition="none"
-                searchPosition="sticky"
-                navPosition="bottom"
-                skinTonePosition="preview"
-                onEmojiSelect={(e: any) => {
-                    const native = e?.native || e?.emoji || "";
-                    if (native) onPick(String(native));
-                    onClose();
-                }}
-            />
-        </div>
-    );
-}
 
 function normalizeHref(raw: string) {
     const s = String(raw || "").trim();
@@ -230,6 +215,78 @@ function renderTextWithLinks(text: string, isLight: boolean) {
 
         return <React.Fragment key={`txt-${idx}`}>{part}</React.Fragment>;
     });
+}
+
+function messageBelongsToView(
+    row: MsgRow,
+    mode: ChatMode,
+    currentUserId: string | null,
+    hostUserId: string | null,
+    selectedDirectPeerId: string | null
+) {
+    const scope = row.scope === "direct" ? "direct" : "general";
+
+    if (mode === "general") {
+        return scope === "general";
+    }
+
+    if (!currentUserId || !hostUserId) return false;
+    if (scope !== "direct") return false;
+
+    if (currentUserId === hostUserId) {
+        if (!selectedDirectPeerId) return false;
+        return (
+            (row.user_id === hostUserId && row.dm_peer_user_id === selectedDirectPeerId) ||
+            (row.user_id === selectedDirectPeerId && row.dm_peer_user_id === hostUserId)
+        );
+    }
+
+    return (
+        (row.user_id === currentUserId && row.dm_peer_user_id === hostUserId) ||
+        (row.user_id === hostUserId && row.dm_peer_user_id === currentUserId)
+    );
+}
+
+function buildMessageQuery(
+    sessionId: string,
+    mode: ChatMode,
+    currentUserId: string | null,
+    hostUserId: string | null,
+    selectedDirectPeerId: string | null
+) {
+    let q = supabase
+        .from(MSG_TABLE)
+        .select("id, session_id, user_id, body, created_at, scope, dm_peer_user_id")
+        .eq("session_id", sessionId)
+        .order("created_at", { ascending: false })
+        .limit(MESSAGE_BOOTSTRAP_LIMIT);
+
+    if (mode === "general") {
+        q = q.or("scope.is.null,scope.eq.general");
+        return q;
+    }
+
+    if (!currentUserId || !hostUserId) {
+        return q.eq("id", "__never__");
+    }
+
+    if (currentUserId === hostUserId) {
+        if (!selectedDirectPeerId) {
+            return q.eq("id", "__never__");
+        }
+
+        return q
+            .eq("scope", "direct")
+            .or(
+                `and(user_id.eq.${hostUserId},dm_peer_user_id.eq.${selectedDirectPeerId}),and(user_id.eq.${selectedDirectPeerId},dm_peer_user_id.eq.${hostUserId})`
+            );
+    }
+
+    return q
+        .eq("scope", "direct")
+        .or(
+            `and(user_id.eq.${currentUserId},dm_peer_user_id.eq.${hostUserId}),and(user_id.eq.${hostUserId},dm_peer_user_id.eq.${currentUserId})`
+        );
 }
 
 type MessageCardProps = {
@@ -280,8 +337,8 @@ function MessageCardInner({
         if (!reactionButtonRef.current) return;
 
         const rect = reactionButtonRef.current.getBoundingClientRect();
-        const menuWidth = 260;
-        const menuHeight = 72;
+        const menuWidth = 236;
+        const menuHeight = 58;
         const margin = 8;
 
         let left = rect.right - menuWidth;
@@ -316,9 +373,7 @@ function MessageCardInner({
             }
         };
 
-        const onRelayout = () => {
-            updateReactionMenuPos();
-        };
+        const onRelayout = () => updateReactionMenuPos();
 
         document.addEventListener("mousedown", onDown);
         window.addEventListener("resize", onRelayout);
@@ -348,11 +403,7 @@ function MessageCardInner({
             : isLight
                 ? "bg-black/5 border-black/10 text-black/80"
                 : "bg-white/5 border-white/10 text-white/85") +
-        (highlighted
-            ? isLight
-                ? " ring-2 ring-[#4CA0FF]/55"
-                : " ring-2 ring-emerald-400/55"
-            : "");
+        (highlighted ? (isLight ? " ring-2 ring-[#4CA0FF]/55" : " ring-2 ring-emerald-400/55") : "");
 
     const quoteBoxCls = isLight
         ? "bg-white/70 border border-black/10 text-black/70 hover:bg-white/90"
@@ -403,11 +454,7 @@ function MessageCardInner({
     return (
         <div className={"flex items-start gap-3 " + (mine ? "justify-end" : "justify-start")}>
             {!mine && (
-                <img
-                    src={avatarFromProfile(msg.profile)}
-                    className="w-9 h-9 rounded-full object-cover"
-                    alt=""
-                />
+                <img src={avatarFromProfile(msg.profile)} className="w-9 h-9 rounded-full object-cover" alt="" />
             )}
 
             <div className="max-w-[82%] min-w-0">
@@ -448,11 +495,8 @@ function MessageCardInner({
                                     createPortal(
                                         <div
                                             ref={reactionMenuRef}
-                                            className={"fixed z-[99999] rounded-2xl px-3 py-2 flex gap-2 text-[26px] shadow-xl " + menuCls}
-                                            style={{
-                                                top: reactionMenuPos.top,
-                                                left: reactionMenuPos.left,
-                                            }}
+                                            className={"fixed z-[99999] rounded-2xl px-2.5 py-2 flex gap-1.5 shadow-xl " + menuCls}
+                                            style={{ top: reactionMenuPos.top, left: reactionMenuPos.left }}
                                             onMouseDown={(e) => e.stopPropagation()}
                                         >
                                             {REACTION_EMOJIS.map((e) => {
@@ -462,20 +506,21 @@ function MessageCardInner({
                                                         key={e}
                                                         onClick={() => {
                                                             onToggleReaction(msg.id, e);
-                                                            setOpenReactions(false);
                                                         }}
                                                         className={
-                                                            "hover:scale-[1.06] transition leading-none " +
+                                                            "h-8 w-8 rounded-xl hover:scale-[1.05] transition leading-none flex items-center justify-center " +
                                                             (isMine
                                                                 ? isLight
-                                                                    ? "drop-shadow-[0_0_0.6rem_rgba(16,185,129,0.35)]"
-                                                                    : "drop-shadow-[0_0_0.7rem_rgba(16,185,129,0.25)]"
-                                                                : "")
+                                                                    ? "bg-emerald-500/12 ring-1 ring-emerald-500/35"
+                                                                    : "bg-emerald-400/12 ring-1 ring-emerald-300/25"
+                                                                : isLight
+                                                                    ? "hover:bg-black/5"
+                                                                    : "hover:bg-white/5")
                                                         }
                                                         title={isMine ? `Remove ${e}` : e}
                                                         type="button"
                                                     >
-                                                        <span className="inline-block align-middle">{e}</span>
+                                                        <span className="inline-block align-middle text-[18px] leading-none">{e}</span>
                                                     </button>
                                                 );
                                             })}
@@ -526,15 +571,11 @@ function MessageCardInner({
                                 title={quoteMessageId ? "Jump to quoted message" : "Quoted message"}
                             >
                                 <div className="text-[10px] opacity-75 mb-1">Reply</div>
-                                <div className="whitespace-pre-wrap break-words">
-                                    {renderTextWithLinks(quote, isLight)}
-                                </div>
+                                <div className="whitespace-pre-wrap break-words">{renderTextWithLinks(quote, isLight)}</div>
                             </button>
                         )}
 
-                        <div className="whitespace-pre-wrap break-words">
-                            {renderTextWithLinks(main, isLight)}
-                        </div>
+                        <div className="whitespace-pre-wrap break-words">{renderTextWithLinks(main, isLight)}</div>
                     </div>
                 ) : (
                     <div className={bubbleCls}>
@@ -619,11 +660,7 @@ function MessageCardInner({
             </div>
 
             {mine && (
-                <img
-                    src={avatarFromProfile(msg.profile)}
-                    className="w-9 h-9 rounded-full object-cover"
-                    alt=""
-                />
+                <img src={avatarFromProfile(msg.profile)} className="w-9 h-9 rounded-full object-cover" alt="" />
             )}
         </div>
     );
@@ -669,6 +706,10 @@ export function ChatPanel({
     const isLight = theme === "light";
 
     const [userId, setUserId] = useState<string | null>(null);
+    const [hostUserId, setHostUserId] = useState<string | null>(null);
+    const [directPeerIds, setDirectPeerIds] = useState<string[]>([]);
+    const [selectedDirectPeerId, setSelectedDirectPeerId] = useState<string | null>(null);
+    const [chatMode, setChatMode] = useState<ChatMode>("general");
 
     const [profilesById, setProfilesById] = useState<Record<string, Profile>>({});
     const profilesByIdRef = useRef<Record<string, Profile>>({});
@@ -690,7 +731,6 @@ export function ChatPanel({
 
     const [reactions, setReactions] = useState<Record<string, Record<string, number>>>({});
     const [myReactions, setMyReactions] = useState<Record<string, Record<string, boolean>>>({});
-
     const [reactionDetails, setReactionDetails] = useState<ReactionDetailsState>({
         open: false,
         messageId: "",
@@ -721,7 +761,6 @@ export function ChatPanel({
 
     const messagesReqIdRef = useRef(0);
     const reactionsReqIdRef = useRef(0);
-
     const loadingMessagesRef = useRef(false);
     const loadingReactionsRef = useRef(false);
     const queuedMessagesReloadRef = useRef(false);
@@ -735,19 +774,36 @@ export function ChatPanel({
     const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
     const emojiPortalRef = useRef<HTMLDivElement | null>(null);
     const [composerEmojiOpen, setComposerEmojiOpen] = useState(false);
-
-    const [emojiPos, setEmojiPos] = useState<{
-        left: number;
-        top: number;
-        width: number;
-        maxHeight: number;
-    } | null>(null);
+    const [emojiPos, setEmojiPos] = useState<{ left: number; top: number; width: number; maxHeight: number } | null>(null);
 
     const bootTsRef = useRef<number>(0);
-
     const pendingReactionOpsRef = useRef<Map<string, number>>(new Map());
-    const reactionKey = (ev: string, messageId: string, emoji: string, uid: string) =>
-        `${ev}|${messageId}|${emoji}|${uid}`;
+    const reactionKey = (ev: string, messageId: string, emoji: string, uid: string) => `${ev}|${messageId}|${emoji}|${uid}`;
+
+    const isHost = !!userId && !!hostUserId && userId === hostUserId;
+    const canUseDirect = !!hostUserId && (!!isHost || (!!userId && userId !== hostUserId));
+    const directTabLabel = isHost ? "Direct" : "Host";
+
+    const activeDirectPeerId = useMemo(() => {
+        if (!hostUserId || !userId) return null;
+        if (isHost) return selectedDirectPeerId;
+        return hostUserId;
+    }, [hostUserId, userId, isHost, selectedDirectPeerId]);
+
+    const activeDirectPeerProfile = useMemo(() => {
+        if (!activeDirectPeerId) return null;
+        return profilesById[activeDirectPeerId] || null;
+    }, [activeDirectPeerId, profilesById]);
+
+    const activeSubtitle = useMemo(() => {
+        if (chatMode === "general") return subtitle;
+        if (!canUseDirect) return subtitle;
+        if (!activeDirectPeerId) return isHost ? "Pick a participant to view direct messages" : "Direct messages with the host";
+        if (isHost) {
+            return `Direct messages with ${activeDirectPeerProfile?.full_name || "participant"}`;
+        }
+        return `Direct messages with ${activeDirectPeerProfile?.full_name || "host"}`;
+    }, [chatMode, subtitle, canUseDirect, activeDirectPeerId, isHost, activeDirectPeerProfile]);
 
     const isAtBottom = () => {
         const el = listRef.current;
@@ -799,6 +855,8 @@ export function ChatPanel({
             setMyReactions(cached.myReactions || {});
             setProfilesById(cached.profilesById || {});
             setMeProfile(cached.meProfile || null);
+            setHostUserId(cached.hostUserId || null);
+            setDirectPeerIds(cached.directPeerIds || []);
             setLoading(false);
         } else {
             messagesRef.current = [];
@@ -808,6 +866,9 @@ export function ChatPanel({
             setReplyTo(null);
             setText("");
             setUnseenNew(0);
+            setDirectPeerIds([]);
+            setSelectedDirectPeerId(null);
+            setChatMode("general");
             setLoading(true);
         }
     }, [sessionId]);
@@ -821,45 +882,46 @@ export function ChatPanel({
             myReactions,
             profilesById: profilesByIdRef.current,
             meProfile: meProfileRef.current,
+            hostUserId,
+            directPeerIds,
         });
-    }, [sessionId, messages, reactions, myReactions, profilesById, meProfile]);
+    }, [sessionId, messages, reactions, myReactions, profilesById, meProfile, hostUserId, directPeerIds]);
 
     useEffect(() => {
         onBecameVisible?.();
         setUnseenNew(0);
-    }, [onBecameVisible, sessionId]);
+    }, [onBecameVisible, sessionId, chatMode, selectedDirectPeerId]);
 
     const headerBorder = isLight ? "border-black/10" : "border-white/5";
     const titleText = isLight ? "text-black/85" : "text-white/85";
     const subText = isLight ? "text-black/50" : "text-white/45";
-
-    const headerCloseBtnCls = isLight
-        ? "bg-black/5 hover:bg-black/10 text-black/60"
-        : "bg-white/5 hover:bg-white/10 text-white/70";
-
+    const headerCloseBtnCls = isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-white/5 hover:bg-white/10 text-white/70";
     const replyBoxCls = isLight ? "bg-black/5 border-black/10" : "bg-white/5 border-white/10";
     const replyingLabel = "text-[11px] text-emerald-500/90 font-medium";
     const replyingText = isLight ? "text-black/55" : "text-white/55";
-
-    const cancelBtnCls = isLight
-        ? "bg-black/5 hover:bg-black/10 text-black/60"
-        : "bg-[#111827] hover:bg-[#1f2937] text-white/70";
-
+    const cancelBtnCls = isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/70";
     const hintText = isLight ? "text-black/40" : "text-white/35";
     const sendBtnActive = "bg-emerald-600 hover:bg-emerald-700 text-white";
     const sendBtnDisabled = isLight ? "bg-black/10 text-black/35" : "bg-white/10 text-white/35";
-
     const composerInputCls = isLight
         ? "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none bg-white border border-black/10 text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
         : "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none bg-[#0B1220]/70 border border-white/10 text-white/85 placeholder:text-white/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500";
-
     const composerEmojiBtnCls = isLight
         ? "w-11 h-11 rounded-xl flex items-center justify-center transition border bg-white border-black/10 text-black/60 hover:bg-black/5 hover:text-black/80"
         : "w-11 h-11 rounded-xl flex items-center justify-center transition border bg-[#0B1220]/70 border-white/10 text-white/70 hover:bg-white/5 hover:text-white/90";
-
     const portalBoxCls = isLight
         ? "rounded-2xl border border-black/10 bg-white shadow-2xl overflow-hidden"
         : "rounded-2xl border border-white/10 bg-[#020617] shadow-2xl overflow-hidden";
+    const switchBtnBase = "h-8 rounded-full px-3 text-[12px] font-medium transition border";
+    const switchBtnActive = isLight
+        ? "bg-[#111827] border-[#111827] text-white"
+        : "bg-white/12 border-white/15 text-white";
+    const switchBtnIdle = isLight
+        ? "bg-transparent border-black/10 text-black/65 hover:bg-black/5"
+        : "bg-transparent border-white/10 text-white/60 hover:bg-white/5";
+    const peerSelectCls = isLight
+        ? "h-8 rounded-full border border-black/10 bg-white px-3 text-[12px] text-black/75 outline-none"
+        : "h-8 rounded-full border border-white/10 bg-[#0B1220]/80 px-3 text-[12px] text-white/80 outline-none";
 
     useEffect(() => {
         (async () => {
@@ -878,14 +940,54 @@ export function ChatPanel({
                 if (!aliveRef.current) return;
 
                 if (p) {
+                    meProfileRef.current = p as any;
                     setMeProfile(p as any);
+                    profilesByIdRef.current = { ...profilesByIdRef.current, [uid]: p as any };
                     setProfilesById((prev) => ({ ...prev, [uid]: p as any }));
                 }
             }
         })();
     }, []);
 
-    const ensureProfiles = async (userIds: string[]) => {
+    useEffect(() => {
+        if (!sessionId) return;
+        let cancelled = false;
+
+        const loadHost = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from("sessions")
+                    .select("host_id")
+                    .eq("id", sessionId)
+                    .single();
+
+                if (cancelled) return;
+                if (error) {
+                    console.warn("chat session host load error:", error);
+                    setHostUserId(null);
+                    return;
+                }
+
+                const hostId = String((data as SessionHostRow | null)?.host_id || "").trim() || null;
+                setHostUserId(hostId);
+                if (hostId) {
+                    void ensureProfiles([hostId]);
+                }
+            } catch (e) {
+                if (!cancelled) {
+                    console.warn("chat session host load failed:", e);
+                    setHostUserId(null);
+                }
+            }
+        };
+
+        loadHost();
+        return () => {
+            cancelled = true;
+        };
+    }, [sessionId]);
+
+    const ensureProfiles = useCallback(async (userIds: string[]) => {
         const unique = Array.from(new Set(userIds)).filter(Boolean);
         const missing = unique.filter((id) => !profilesByIdRef.current[id]);
         if (missing.length === 0) return;
@@ -906,22 +1008,47 @@ export function ChatPanel({
         });
 
         if (!aliveRef.current) return;
+
+        profilesByIdRef.current = { ...profilesByIdRef.current, ...map };
         setProfilesById((prev) => ({ ...prev, ...map }));
-    };
+    }, []);
 
-    const attachProfile = (row: MsgRow): Msg => {
-        const map = profilesByIdRef.current;
-        const mp = meProfileRef.current;
-        return {
-            ...row,
-            profile: (map[row.user_id] || (row.user_id === userId ? mp : null)) ?? null,
-        };
-    };
+    useEffect(() => {
+        if (!messagesRef.current.length) return;
 
-    const getRecentMessageIdsForReactions = () => {
-        const ids = messagesRef.current.map((m) => m.id);
-        return normalizeMessageIds(ids);
-    };
+        setMessages((prev) => {
+            let changed = false;
+            const next = prev.map((m) => {
+                const nextProfile = profilesByIdRef.current[m.user_id] || (m.user_id === userId ? meProfileRef.current : null) || null;
+                const prevName = m.profile?.full_name || null;
+                const nextName = nextProfile?.full_name || null;
+                const prevAvatar = m.profile?.avatar_url || null;
+                const nextAvatar = nextProfile?.avatar_url || null;
+                if (prevName === nextName && prevAvatar === nextAvatar) return m;
+                changed = true;
+                return { ...m, profile: nextProfile };
+            });
+            if (changed) {
+                messagesRef.current = next;
+                return next;
+            }
+            return prev;
+        });
+    }, [profilesById, userId, meProfile]);
+
+    const attachProfile = useCallback(
+        (row: MsgRow): Msg => {
+            const map = profilesByIdRef.current;
+            const mp = meProfileRef.current;
+            return {
+                ...row,
+                profile: (map[row.user_id] || (row.user_id === userId ? mp : null)) ?? null,
+            };
+        },
+        [userId]
+    );
+
+    const getRecentMessageIdsForReactions = () => normalizeMessageIds(messagesRef.current.map((m) => m.id));
 
     const closeReactionDetails = () => {
         setReactionDetails({
@@ -957,64 +1084,100 @@ export function ChatPanel({
                 .order("created_at", { ascending: true })
                 .limit(5000);
 
-            const { data, error } = await withTimeout(q as any, 12000, "loadReactionDetails timeout");
+            const reactionDetailsResult = (await withTimeout<any>(q as any, 12000, "loadReactionDetails timeout")) as any;
+            const { data, error } = reactionDetailsResult;
             if (!aliveRef.current) return;
 
             if (error) {
                 console.error("reaction details load error:", error);
-                setReactionDetails((prev) => ({
-                    ...prev,
-                    open: true,
-                    loading: false,
-                    error: "Failed to load reactions",
-                    userIds: [],
-                }));
+                setReactionDetails((prev) => ({ ...prev, open: true, loading: false, error: "Failed to load reactions", userIds: [] }));
                 return;
             }
 
             const rows = ((data as any) || []) as ReactionRow[];
             const ids = rows.map((r) => r.user_id).filter(Boolean);
-
             await ensureProfiles(ids);
-
             if (!aliveRef.current) return;
 
-            setReactionDetails((prev) => ({
-                ...prev,
-                open: true,
-                loading: false,
-                error: null,
-                userIds: ids,
-            }));
+            setReactionDetails((prev) => ({ ...prev, open: true, loading: false, error: null, userIds: ids }));
         } catch (e) {
             console.warn("loadReactionDetails failed:", e);
             if (!aliveRef.current) return;
-            setReactionDetails((prev) => ({
-                ...prev,
-                open: true,
-                loading: false,
-                error: "Failed to load reactions",
-                userIds: [],
-            }));
+            setReactionDetails((prev) => ({ ...prev, open: true, loading: false, error: "Failed to load reactions", userIds: [] }));
         }
-    };
-
-    const openReactionDetails = (messageId: string, emoji: string) => {
-        void loadReactionDetails(messageId, emoji);
     };
 
     useEffect(() => {
         if (!reactionDetails.open) return;
-
         const onKey = (e: KeyboardEvent) => {
             if (e.key === "Escape") closeReactionDetails();
         };
-
         document.addEventListener("keydown", onKey);
         return () => document.removeEventListener("keydown", onKey);
     }, [reactionDetails.open]);
 
-    const loadMessages = async (opts?: { silent?: boolean }): Promise<Msg[] | null> => {
+    const loadDirectPeers = useCallback(async () => {
+        if (!sessionId || !hostUserId) {
+            setDirectPeerIds([]);
+            return [] as string[];
+        }
+
+        try {
+            const { data, error } = await supabase
+                .from(MSG_TABLE)
+                .select("user_id, dm_peer_user_id, scope")
+                .eq("session_id", sessionId)
+                .eq("scope", "direct")
+                .or(`user_id.eq.${hostUserId},dm_peer_user_id.eq.${hostUserId}`)
+                .limit(1000);
+
+            if (error) {
+                console.warn("direct peers load error:", error);
+                setDirectPeerIds([]);
+                return [] as string[];
+            }
+
+            const peerIds = Array.from(
+                new Set(
+                    ((data as any[]) || [])
+                        .flatMap((row) => [String(row?.user_id || "").trim(), String(row?.dm_peer_user_id || "").trim()])
+                        .filter((id) => id && id !== hostUserId)
+                )
+            );
+
+            setDirectPeerIds(peerIds);
+            if (peerIds.length) void ensureProfiles(peerIds);
+            return peerIds;
+        } catch (e) {
+            console.warn("direct peers load failed:", e);
+            setDirectPeerIds([]);
+            return [] as string[];
+        }
+    }, [sessionId, hostUserId, ensureProfiles]);
+
+    useEffect(() => {
+        if (!hostUserId) return;
+        if (!isHost) return;
+        void loadDirectPeers();
+    }, [hostUserId, isHost, loadDirectPeers]);
+
+    useEffect(() => {
+        if (!canUseDirect) {
+            if (chatMode === "direct") setChatMode("general");
+            return;
+        }
+
+        if (!isHost) {
+            setSelectedDirectPeerId(hostUserId);
+            return;
+        }
+
+        if (directPeerIds.length > 0 && (!selectedDirectPeerId || !directPeerIds.includes(selectedDirectPeerId))) {
+            setSelectedDirectPeerId(directPeerIds[0]);
+        }
+    }, [canUseDirect, isHost, hostUserId, directPeerIds, selectedDirectPeerId, chatMode]);
+
+    const loadMessages = useCallback(async (opts?: { silent?: boolean }): Promise<Msg[] | null> => {
         if (!sessionId) return null;
 
         if (loadingMessagesRef.current) {
@@ -1028,53 +1191,39 @@ export function ChatPanel({
         if (!opts?.silent && messagesRef.current.length === 0) setLoading(true);
 
         try {
-            const q = supabase
-                .from(MSG_TABLE)
-                .select("id, session_id, user_id, body, created_at")
-                .eq("session_id", sessionId)
-                .order("created_at", { ascending: false })
-                .limit(MESSAGE_BOOTSTRAP_LIMIT);
+            const q = buildMessageQuery(sessionId, chatMode, userId, hostUserId, activeDirectPeerId);
+            const loadMessagesResult = (await withTimeout<any>(q as any, 12000, "loadMessages timeout")) as any;
+            const { data: rows, error } = loadMessagesResult;
 
-            const { data: rows, error } = await withTimeout(q as any, 12000, "loadMessages timeout");
-
-            if (!aliveRef.current) return null;
-            if (reqId !== messagesReqIdRef.current) return null;
-
+            if (!aliveRef.current || reqId !== messagesReqIdRef.current) return null;
             if (error) {
                 console.error("chat load error:", error);
                 return null;
             }
 
             const safeRows = (((rows as any as MsgRow[]) || []).slice()).reverse();
-            await ensureProfiles(safeRows.map((r) => r.user_id));
-
-            if (!aliveRef.current) return null;
-            if (reqId !== messagesReqIdRef.current) return null;
+            await ensureProfiles(safeRows.map((r) => r.user_id).concat(safeRows.map((r) => String(r.dm_peer_user_id || "")).filter(Boolean)));
+            if (!aliveRef.current || reqId !== messagesReqIdRef.current) return null;
 
             const attached = safeRows.map((r) => attachProfile(r));
             messagesRef.current = attached;
             setMessages(attached);
-
             return attached;
         } catch (e) {
             console.warn("loadMessages failed:", e);
-            if (!aliveRef.current) return null;
-            if (reqId !== messagesReqIdRef.current) return null;
+            if (!aliveRef.current || reqId !== messagesReqIdRef.current) return null;
             return null;
         } finally {
-            if (aliveRef.current && reqId === messagesReqIdRef.current && !opts?.silent) {
-                setLoading(false);
-            }
+            if (aliveRef.current && reqId === messagesReqIdRef.current && !opts?.silent) setLoading(false);
             loadingMessagesRef.current = false;
-
             if (queuedMessagesReloadRef.current) {
                 queuedMessagesReloadRef.current = false;
                 void loadMessages({ silent: true });
             }
         }
-    };
+    }, [sessionId, chatMode, userId, hostUserId, activeDirectPeerId, ensureProfiles, attachProfile]);
 
-    const loadReactions = async (opts?: { silent?: boolean; messageIds?: string[] }) => {
+    const loadReactions = useCallback(async (opts?: { silent?: boolean; messageIds?: string[] }) => {
         if (!sessionId) return;
 
         if (loadingReactionsRef.current) {
@@ -1086,14 +1235,11 @@ export function ChatPanel({
         const reqId = ++reactionsReqIdRef.current;
 
         try {
-            const msgIdsRaw =
-                opts?.messageIds && opts.messageIds.length > 0 ? opts.messageIds : getRecentMessageIdsForReactions();
-
+            const msgIdsRaw = opts?.messageIds && opts.messageIds.length > 0 ? opts.messageIds : getRecentMessageIdsForReactions();
             const msgIds = normalizeMessageIds(msgIdsRaw);
 
             if (msgIds.length === 0) {
-                if (!aliveRef.current) return;
-                if (reqId !== reactionsReqIdRef.current) return;
+                if (!aliveRef.current || reqId !== reactionsReqIdRef.current) return;
                 setReactions({});
                 setMyReactions({});
                 return;
@@ -1107,18 +1253,15 @@ export function ChatPanel({
                 .order("created_at", { ascending: false })
                 .limit(REACTIONS_BOOTSTRAP_LIMIT);
 
-            const { data, error } = await withTimeout(q as any, 12000, "loadReactions timeout");
-
-            if (!aliveRef.current) return;
-            if (reqId !== reactionsReqIdRef.current) return;
-
+            const loadReactionsResult = (await withTimeout<any>(q as any, 12000, "loadReactions timeout")) as any;
+            const { data, error } = loadReactionsResult;
+            if (!aliveRef.current || reqId !== reactionsReqIdRef.current) return;
             if (error) {
                 console.error("reactions load error:", error);
                 return;
             }
 
             const rows = (data as any as ReactionRow[]) || [];
-
             const counts: Record<string, Record<string, number>> = {};
             const mine: Record<string, Record<string, boolean>> = {};
 
@@ -1136,48 +1279,45 @@ export function ChatPanel({
             setMyReactions(mine);
         } catch (e) {
             console.warn("loadReactions failed:", e);
-            if (!aliveRef.current) return;
-            if (reqId !== reactionsReqIdRef.current) return;
         } finally {
             loadingReactionsRef.current = false;
-
             if (queuedReactionsReloadRef.current) {
                 queuedReactionsReloadRef.current = false;
                 void loadReactions({ silent: true });
             }
         }
-    };
+    }, [sessionId, userId]);
 
-    const bootstrap = async (opts?: { silent?: boolean; force?: boolean }) => {
+    const bootstrap = useCallback(async (opts?: { silent?: boolean; force?: boolean }) => {
         if (!sessionId) return;
-
         const now = Date.now();
-        if (!opts?.force && now - bootTsRef.current < 15000) return;
+        if (!opts?.force && now - bootTsRef.current < 8000) return;
+
+        if (isHost) {
+            await loadDirectPeers();
+        }
 
         const loaded = await loadMessages({ silent: opts?.silent });
         const list = loaded ?? messagesRef.current;
         const ids = normalizeMessageIds(list.map((m) => m.id));
         await loadReactions({ silent: true, messageIds: ids });
-
         bootTsRef.current = now;
-    };
+    }, [sessionId, isHost, loadDirectPeers, loadMessages, loadReactions]);
 
     useEffect(() => {
         if (!sessionId) return;
         void bootstrap({ silent: false, force: true });
-    }, [sessionId]);
+    }, [sessionId, chatMode, activeDirectPeerId, bootstrap]);
 
     useEffect(() => {
-        if (!sessionId) return;
-        if (!userId) return;
-
+        if (!sessionId || !userId) return;
         const hasAnyReactions = Object.keys(reactions).length > 0;
         const hasAnyMy = Object.keys(myReactions).length > 0;
         if (hasAnyReactions && !hasAnyMy) {
             const ids = normalizeMessageIds(messagesRef.current.map((m) => m.id));
             void loadReactions({ silent: true, messageIds: ids });
         }
-    }, [sessionId, userId, reactions, myReactions]);
+    }, [sessionId, userId, reactions, myReactions, loadReactions]);
 
     useEffect(() => {
         if (!sessionId) return;
@@ -1196,7 +1336,19 @@ export function ChatPanel({
                 const row = payload?.new as MsgRow | undefined;
                 if (!row?.id) return;
 
-                await ensureProfiles([row.user_id]);
+                const relevant = messageBelongsToView(row, chatMode, userId, hostUserId, activeDirectPeerId);
+
+                if (row.scope === "direct" && isHost && hostUserId) {
+                    const otherId = row.user_id === hostUserId ? String(row.dm_peer_user_id || "").trim() : row.user_id;
+                    if (otherId && otherId !== hostUserId) {
+                        setDirectPeerIds((prev) => (prev.includes(otherId) ? prev : [...prev, otherId]));
+                        void ensureProfiles([otherId]);
+                    }
+                }
+
+                if (!relevant) return;
+
+                await ensureProfiles([row.user_id, String(row.dm_peer_user_id || "").trim()].filter(Boolean));
                 if (!aliveRef.current) return;
 
                 const beforeAtBottom = isAtBottom();
@@ -1206,11 +1358,15 @@ export function ChatPanel({
                     if (prev.some((m) => m.id === row.id)) return prev;
 
                     const idxOptimistic = prev.findIndex(
-                        (m) => m.id.startsWith("optimistic-") && m.user_id === row.user_id && m.body === row.body
+                        (m) =>
+                            m.id.startsWith("optimistic-") &&
+                            m.user_id === row.user_id &&
+                            m.body === row.body &&
+                            (m.scope || "general") === (row.scope || "general") &&
+                            String(m.dm_peer_user_id || "") === String(row.dm_peer_user_id || "")
                     );
 
                     const merged = attachProfile(row);
-
                     let next: Msg[];
                     if (idxOptimistic !== -1) {
                         next = [...prev];
@@ -1235,12 +1391,23 @@ export function ChatPanel({
             async (payload: any) => {
                 const row = payload?.new as MsgRow | undefined;
                 if (!row?.id) return;
+                const relevant = messageBelongsToView(row, chatMode, userId, hostUserId, activeDirectPeerId);
+                if (!relevant) {
+                    setMessages((prev) => {
+                        const next = prev.filter((m) => m.id !== row.id);
+                        messagesRef.current = next;
+                        return next;
+                    });
+                    return;
+                }
 
-                await ensureProfiles([row.user_id]);
+                await ensureProfiles([row.user_id, String(row.dm_peer_user_id || "").trim()].filter(Boolean));
                 if (!aliveRef.current) return;
 
                 setMessages((prev) => {
-                    const next = prev.map((m) => (m.id === row.id ? attachProfile(row) : m));
+                    const exists = prev.some((m) => m.id === row.id);
+                    const mapped = attachProfile(row);
+                    const next = exists ? prev.map((m) => (m.id === row.id ? mapped : m)) : [...prev, mapped];
                     messagesRef.current = next;
                     return next;
                 });
@@ -1273,21 +1440,11 @@ export function ChatPanel({
                     delete next[deletedId];
                     return next;
                 });
-
-                setReactionDetails((prev) => {
-                    if (!prev.open) return prev;
-                    if (prev.messageId !== deletedId) return prev;
-                    return { open: false, messageId: "", emoji: "", loading: false, userIds: [], error: null };
-                });
             }
         );
 
         channel.subscribe((status) => {
-            console.log("chat channel status:", status);
-
-            const shouldPoll = status === "CHANNEL_ERROR" || status === "TIMED_OUT";
-
-            if (shouldPoll) {
+            if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
                 if (!pollingRef.current) {
                     pollingRef.current = window.setInterval(() => {
                         void bootstrap({ silent: true, force: true });
@@ -1314,7 +1471,7 @@ export function ChatPanel({
             }
             supabase.removeChannel(channel);
         };
-    }, [sessionId, userId]);
+    }, [sessionId, userId, chatMode, hostUserId, activeDirectPeerId, isHost, attachProfile, ensureProfiles, bootstrap]);
 
     useEffect(() => {
         if (!sessionId) return;
@@ -1349,17 +1506,11 @@ export function ChatPanel({
                 const cur = Number(msgMap[r.emoji] || 0);
                 const n = Math.max(0, cur - 1);
 
-                if (n <= 0) {
-                    delete msgMap[r.emoji];
-                } else {
-                    msgMap[r.emoji] = n;
-                }
+                if (n <= 0) delete msgMap[r.emoji];
+                else msgMap[r.emoji] = n;
 
-                if (Object.keys(msgMap).length === 0) {
-                    delete next[r.message_id];
-                } else {
-                    next[r.message_id] = msgMap;
-                }
+                if (Object.keys(msgMap).length === 0) delete next[r.message_id];
+                else next[r.message_id] = msgMap;
                 return next;
             });
 
@@ -1371,12 +1522,8 @@ export function ChatPanel({
                     const next = { ...prev };
                     const mineMap = { ...curMsg };
                     delete mineMap[r.emoji];
-
-                    if (Object.keys(mineMap).length === 0) {
-                        delete next[r.message_id];
-                    } else {
-                        next[r.message_id] = mineMap;
-                    }
+                    if (Object.keys(mineMap).length === 0) delete next[r.message_id];
+                    else next[r.message_id] = mineMap;
                     return next;
                 });
             }
@@ -1384,16 +1531,13 @@ export function ChatPanel({
 
         const shouldSkipFromPending = (ev: string, r: ReactionRow) => {
             if (!userId || r.user_id !== userId) return false;
-
             const key = reactionKey(ev, r.message_id, r.emoji, r.user_id);
             const ts = pendingReactionOpsRef.current.get(key);
             if (!ts) return false;
-
             if (Date.now() - ts < 6000) {
                 pendingReactionOpsRef.current.delete(key);
                 return true;
             }
-
             pendingReactionOpsRef.current.delete(key);
             return false;
         };
@@ -1402,12 +1546,7 @@ export function ChatPanel({
             .channel(`chat-reactions:${sessionId}`)
             .on(
                 "postgres_changes",
-                {
-                    event: "*",
-                    schema: "public",
-                    table: REACTIONS_TABLE,
-                    filter: `session_id=eq.${sessionId}`,
-                },
+                { event: "*", schema: "public", table: REACTIONS_TABLE, filter: `session_id=eq.${sessionId}` },
                 (payload: any) => {
                     const ev: string = payload?.eventType || payload?.type || payload?.event || "";
                     const n = payload?.new as ReactionRow | undefined;
@@ -1416,27 +1555,12 @@ export function ChatPanel({
                     if (ev === "INSERT" && n) {
                         if (shouldSkipFromPending("INSERT", n)) return;
                         applyInsert(n);
-
-                        setReactionDetails((prev) => {
-                            if (!prev.open) return prev;
-                            if (prev.messageId !== n.message_id) return prev;
-                            if (prev.emoji !== n.emoji) return prev;
-                            if (prev.userIds.includes(n.user_id)) return prev;
-                            return { ...prev, userIds: [...prev.userIds, n.user_id] };
-                        });
                         return;
                     }
 
                     if (ev === "DELETE" && o) {
                         if (shouldSkipFromPending("DELETE", o)) return;
                         applyDelete(o);
-
-                        setReactionDetails((prev) => {
-                            if (!prev.open) return prev;
-                            if (prev.messageId !== o.message_id) return prev;
-                            if (prev.emoji !== o.emoji) return prev;
-                            return { ...prev, userIds: prev.userIds.filter((id) => id !== o.user_id) };
-                        });
                         return;
                     }
 
@@ -1451,14 +1575,12 @@ export function ChatPanel({
                     void loadReactions({ silent: true, messageIds: getRecentMessageIdsForReactions() });
                 }
             )
-            .subscribe((status) => {
-                console.log("reactions channel status:", status);
-            });
+            .subscribe();
 
         return () => {
             supabase.removeChannel(ch);
         };
-    }, [sessionId, userId]);
+    }, [sessionId, userId, loadReactions]);
 
     useEffect(() => {
         const shouldScroll = atBottomRef.current || isAtBottom();
@@ -1467,12 +1589,11 @@ export function ChatPanel({
             setUnseenNew(0);
             onBecameVisible?.();
         }
-    }, [messages.length, onBecameVisible]);
+    }, [messages.length, onBecameVisible, chatMode, activeDirectPeerId]);
 
     useEffect(() => {
         const el = composerRef.current;
         if (!el) return;
-
         el.style.height = "0px";
         const next = Math.min(el.scrollHeight, 140);
         el.style.height = `${next}px`;
@@ -1480,7 +1601,6 @@ export function ChatPanel({
 
     const insertEmojiToComposer = (emoji: string) => {
         const ta = composerRef.current;
-
         if (!ta) {
             setText((prev) => prev + emoji);
             setComposerEmojiOpen(false);
@@ -1514,7 +1634,6 @@ export function ChatPanel({
         if (!btn) return null;
 
         const rect = btn.getBoundingClientRect();
-
         const vv = (window as any).visualViewport as VisualViewport | undefined;
         const vw = Math.floor(vv?.width || window.innerWidth);
         const vh = Math.floor(vv?.height || window.innerHeight);
@@ -1536,10 +1655,7 @@ export function ChatPanel({
         let maxHeight = Math.max(240, Math.min(desiredHeight, (preferAbove ? spaceAbove : spaceBelow) - 8));
         maxHeight = Math.max(240, Math.min(maxHeight, vh - margin * 2));
 
-        let top = preferAbove
-            ? rect.top - maxHeight - 8 + offsetTop
-            : rect.bottom + 8 + offsetTop;
-
+        let top = preferAbove ? rect.top - maxHeight - 8 + offsetTop : rect.bottom + 8 + offsetTop;
         top = Math.max(margin + offsetTop, Math.min(top, offsetTop + vh - maxHeight - margin));
 
         return { left, top, width, maxHeight };
@@ -1551,14 +1667,9 @@ export function ChatPanel({
             return;
         }
 
-        const pos = computeEmojiPosition();
-        setEmojiPos(pos);
+        setEmojiPos(computeEmojiPosition());
 
-        const onResize = () => {
-            const p = computeEmojiPosition();
-            setEmojiPos(p);
-        };
-
+        const onResize = () => setEmojiPos(computeEmojiPosition());
         const onScroll = () => onResize();
 
         window.addEventListener("resize", onResize);
@@ -1567,10 +1678,8 @@ export function ChatPanel({
         const onDown = (e: MouseEvent) => {
             const t = e.target as Node | null;
             if (!t) return;
-
             if (composerEmojiWrapRef.current?.contains(t)) return;
             if (emojiPortalRef.current?.contains(t)) return;
-
             setComposerEmojiOpen(false);
         };
 
@@ -1595,11 +1704,16 @@ export function ChatPanel({
 
         const replyQuote = replyTo ? quotePreviewForReply(replyTo.body, 240) : "";
         const replyName = replyTo?.profile?.full_name || "Participant";
-        const replyHeader = replyTo
-            ? `↪ [msg:${replyTo.id}] ${replyName}: ${replyQuote || "[message]"}`
-            : null;
-
+        const replyHeader = replyTo ? `↪ [msg:${replyTo.id}] ${replyName}: ${replyQuote || "[message]"}` : null;
         const composed = replyHeader ? `${replyHeader}\n\n${raw}` : raw;
+
+        const outgoingScope: ChatMode = chatMode === "direct" ? "direct" : "general";
+        const outgoingPeerId = outgoingScope === "direct" ? activeDirectPeerId : null;
+
+        if (outgoingScope === "direct" && !outgoingPeerId) {
+            alert(isHost ? "Pick a participant first." : "Direct host chat is not ready yet.");
+            return;
+        }
 
         const optimistic: Msg = {
             id: `optimistic-${Date.now()}`,
@@ -1607,6 +1721,8 @@ export function ChatPanel({
             user_id: userId,
             body: composed,
             created_at: new Date().toISOString(),
+            scope: outgoingScope,
+            dm_peer_user_id: outgoingPeerId,
             profile:
                 profilesByIdRef.current[userId] ||
                 meProfileRef.current ||
@@ -1614,12 +1730,12 @@ export function ChatPanel({
         };
 
         atBottomRef.current = true;
-
         setMessages((prev) => {
             const next = [...prev, optimistic];
             messagesRef.current = next;
             return next;
         });
+
         setText("");
         setComposerEmojiOpen(false);
         setReplyTo(null);
@@ -1629,6 +1745,8 @@ export function ChatPanel({
             user_id: userId,
             body: composed,
             created_at: new Date().toISOString(),
+            scope: outgoingScope,
+            dm_peer_user_id: outgoingPeerId,
         });
 
         if (error) {
@@ -1641,11 +1759,14 @@ export function ChatPanel({
             setText(composed);
             return;
         }
+
+        if (isHost && outgoingScope === "direct" && outgoingPeerId) {
+            setDirectPeerIds((prev) => (prev.includes(outgoingPeerId) ? prev : [...prev, outgoingPeerId]));
+        }
     };
 
     const updateMessage = async (messageId: string, newBody: string) => {
         if (!userId || !sessionId) return;
-
         const prevBody = messagesRef.current.find((m) => m.id === messageId)?.body ?? null;
 
         setMessages((prev) => {
@@ -1663,7 +1784,6 @@ export function ChatPanel({
 
         if (error) {
             console.error("chat update error:", error);
-
             if (prevBody !== null) {
                 setMessages((prev) => {
                     const next = prev.map((m) => (m.id === messageId ? { ...m, body: prevBody } : m));
@@ -1678,7 +1798,6 @@ export function ChatPanel({
 
     const deleteMessage = async (messageId: string) => {
         if (!userId || !sessionId) return;
-
         const snapshot = messagesRef.current;
 
         setMessages((prev) => {
@@ -1703,47 +1822,27 @@ export function ChatPanel({
 
     const toggleReaction = async (messageId: string, emoji: string) => {
         if (!userId || !sessionId) return;
-
         const already = !!myReactions?.[messageId]?.[emoji];
 
         setReactions((prev) => {
             const next = { ...prev };
             const msgMap = { ...(next[messageId] || {}) };
-
             const cur = Number(msgMap[emoji] || 0);
             const nextCount = already ? Math.max(0, cur - 1) : cur + 1;
-
-            if (nextCount <= 0) {
-                delete msgMap[emoji];
-            } else {
-                msgMap[emoji] = nextCount;
-            }
-
-            if (Object.keys(msgMap).length === 0) {
-                delete next[messageId];
-            } else {
-                next[messageId] = msgMap;
-            }
-
+            if (nextCount <= 0) delete msgMap[emoji];
+            else msgMap[emoji] = nextCount;
+            if (Object.keys(msgMap).length === 0) delete next[messageId];
+            else next[messageId] = msgMap;
             return next;
         });
 
         setMyReactions((prev) => {
             const next = { ...prev };
             const msgMine = { ...(next[messageId] || {}) };
-
-            if (already) {
-                delete msgMine[emoji];
-            } else {
-                msgMine[emoji] = true;
-            }
-
-            if (Object.keys(msgMine).length === 0) {
-                delete next[messageId];
-            } else {
-                next[messageId] = msgMine;
-            }
-
+            if (already) delete msgMine[emoji];
+            else msgMine[emoji] = true;
+            if (Object.keys(msgMine).length === 0) delete next[messageId];
+            else next[messageId] = msgMine;
             return next;
         });
 
@@ -1776,14 +1875,10 @@ export function ChatPanel({
         if (error) {
             const code = (error as any)?.code;
             const msg = String((error as any)?.message || "");
-            const isDup =
-                code === "23505" ||
-                msg.toLowerCase().includes("duplicate") ||
-                msg.toLowerCase().includes("unique");
+            const isDup = code === "23505" || msg.toLowerCase().includes("duplicate") || msg.toLowerCase().includes("unique");
 
             if (isDup) {
                 pendingReactionOpsRef.current.set(reactionKey("DELETE", messageId, emoji, userId), Date.now());
-
                 await supabase
                     .from(REACTIONS_TABLE)
                     .delete()
@@ -1791,7 +1886,6 @@ export function ChatPanel({
                     .eq("message_id", messageId)
                     .eq("user_id", userId)
                     .eq("emoji", emoji);
-
                 void loadReactions({ silent: true, messageIds: getRecentMessageIdsForReactions() });
                 return;
             }
@@ -1802,54 +1896,44 @@ export function ChatPanel({
     };
 
     const visibleMessages = useMemo(() => messages.slice(-VISIBLE_MESSAGE_LIMIT), [messages]);
-
-    const modalMessage = reactionDetails.open
-        ? messagesRef.current.find((m) => m.id === reactionDetails.messageId) || null
-        : null;
-
+    const modalMessage = reactionDetails.open ? messagesRef.current.find((m) => m.id === reactionDetails.messageId) || null : null;
     const modalMessageMain = modalMessage ? parseReplyBody(modalMessage.body).main : "";
-
     const modalBg = isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10";
     const modalTextPrimary = isLight ? "text-black/85" : "text-white/90";
     const modalTextSecondary = isLight ? "text-black/55" : "text-white/55";
     const modalBtn = isLight
         ? "bg-black/5 hover:bg-black/10 border border-black/10 text-black/70"
         : "bg-white/5 hover:bg-white/10 border border-white/10 text-white/75";
-
     const modalPrimaryBtn = "bg-emerald-600 hover:bg-emerald-700 text-white";
-
     const canToggleInModal = !!reactionDetails.open && !!reactionDetails.messageId && !!reactionDetails.emoji;
-    const myReactedInModal =
-        canToggleInModal && !!myReactions?.[reactionDetails.messageId]?.[reactionDetails.emoji];
+    const myReactedInModal = canToggleInModal && !!myReactions?.[reactionDetails.messageId]?.[reactionDetails.emoji];
 
     const emojiPortal =
         composerEmojiOpen && emojiPos && typeof document !== "undefined"
             ? createPortal(
                 <div className="fixed inset-0 z-[99999]" style={{ pointerEvents: "none" }}>
-                    <div
-                        className="absolute inset-0"
-                        style={{ pointerEvents: "auto", background: "transparent" }}
-                        onMouseDown={() => setComposerEmojiOpen(false)}
-                    />
+                    <div className="absolute inset-0" style={{ pointerEvents: "auto", background: "transparent" }} onMouseDown={() => setComposerEmojiOpen(false)} />
                     <div
                         ref={emojiPortalRef}
                         className={"absolute " + portalBoxCls}
-                        style={{
-                            pointerEvents: "auto",
-                            left: emojiPos.left,
-                            top: emojiPos.top,
-                            width: emojiPos.width,
-                        }}
-                        onMouseDown={(e) => {
-                            e.stopPropagation();
-                        }}
+                        style={{ pointerEvents: "auto", left: emojiPos.left, top: emojiPos.top, width: emojiPos.width }}
+                        onMouseDown={(e) => e.stopPropagation()}
                     >
-                        <EmojiPickerPopover
-                            theme={theme}
-                            maxHeight={emojiPos.maxHeight}
-                            onPick={(emoji) => insertEmojiToComposer(emoji)}
-                            onClose={() => setComposerEmojiOpen(false)}
-                        />
+                        <div style={{ maxHeight: emojiPos.maxHeight }} className="overflow-hidden">
+                            <Picker
+                                data={emojiData}
+                                theme={theme === "light" ? "light" : "dark"}
+                                set="native"
+                                previewPosition="none"
+                                searchPosition="sticky"
+                                navPosition="bottom"
+                                skinTonePosition="preview"
+                                onEmojiSelect={(e: any) => {
+                                    const native = e?.native || e?.emoji || "";
+                                    if (native) insertEmojiToComposer(String(native));
+                                }}
+                            />
+                        </div>
                     </div>
                 </div>,
                 document.body
@@ -1865,35 +1949,19 @@ export function ChatPanel({
                         <div className={"px-5 py-4 border-b " + (isLight ? "border-black/10" : "border-white/10")}>
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
-                                    <div className={"text-[14px] font-semibold " + modalTextPrimary}>
-                                        {reactionDetails.emoji} Reactions
-                                    </div>
-                                    <div className={"text-[12px] mt-0.5 " + modalTextSecondary}>
-                                        Click outside or press Esc to close
-                                    </div>
+                                    <div className={"text-[14px] font-semibold " + modalTextPrimary}>{reactionDetails.emoji} Reactions</div>
+                                    <div className={"text-[12px] mt-0.5 " + modalTextSecondary}>Click outside or press Esc to close</div>
                                 </div>
-
-                                <button
-                                    type="button"
-                                    onClick={closeReactionDetails}
-                                    className={"w-9 h-9 rounded-xl flex items-center justify-center transition " + modalBtn}
-                                    title="Close"
-                                >
+                                <button type="button" onClick={closeReactionDetails} className={"w-9 h-9 rounded-xl flex items-center justify-center transition " + modalBtn} title="Close">
                                     <X size={18} />
                                 </button>
                             </div>
 
                             {modalMessage && (
-                                <div
-                                    className={
-                                        "mt-3 rounded-xl px-3 py-2 text-[12px] " +
-                                        (isLight ? "bg-black/5 border border-black/10" : "bg-white/5 border border-white/10")
-                                    }
-                                >
+                                <div className={"mt-3 rounded-xl px-3 py-2 text-[12px] " + (isLight ? "bg-black/5 border border-black/10" : "bg-white/5 border border-white/10")}>
                                     <div className={"text-[11px] mb-1 " + modalTextSecondary}>Message</div>
                                     <div className={modalTextPrimary + " whitespace-pre-wrap break-words"}>
-                                        {collapseWs(modalMessageMain).slice(0, 260) +
-                                            (collapseWs(modalMessageMain).length > 260 ? "…" : "")}
+                                        {collapseWs(modalMessageMain).slice(0, 260) + (collapseWs(modalMessageMain).length > 260 ? "…" : "")}
                                     </div>
                                 </div>
                             )}
@@ -1902,18 +1970,13 @@ export function ChatPanel({
                         <div className="px-5 py-4">
                             <div className="flex items-center justify-between gap-3">
                                 <div className={modalTextSecondary + " text-[12px]"}>
-                                    {reactionDetails.loading
-                                        ? "Loading…"
-                                        : `${reactionDetails.userIds.length} ${reactionDetails.userIds.length === 1 ? "person" : "people"} reacted`}
+                                    {reactionDetails.loading ? "Loading…" : `${reactionDetails.userIds.length} ${reactionDetails.userIds.length === 1 ? "person" : "people"} reacted`}
                                 </div>
 
                                 {canToggleInModal && (
                                     <button
                                         type="button"
-                                        className={
-                                            "px-3 h-9 rounded-xl text-[13px] font-semibold border transition " +
-                                            (myReactedInModal ? modalBtn : modalPrimaryBtn + " border-emerald-500/40")
-                                        }
+                                        className={"px-3 h-9 rounded-xl text-[13px] font-semibold border transition " + (myReactedInModal ? modalBtn : modalPrimaryBtn + " border-emerald-500/40")}
                                         onClick={async () => {
                                             await toggleReaction(reactionDetails.messageId, reactionDetails.emoji);
                                             void loadReactionDetails(reactionDetails.messageId, reactionDetails.emoji);
@@ -1925,58 +1988,30 @@ export function ChatPanel({
                                 )}
                             </div>
 
-                            {reactionDetails.error && (
-                                <div className={"mt-3 text-[12px] " + (isLight ? "text-red-700" : "text-red-300")}>
-                                    {reactionDetails.error}
-                                </div>
-                            )}
+                            {reactionDetails.error && <div className={"mt-3 text-[12px] " + (isLight ? "text-red-700" : "text-red-300")}>{reactionDetails.error}</div>}
 
                             <div className="mt-4 max-h-[46vh] overflow-y-auto custom-scrollbar pr-1">
                                 {reactionDetails.loading && (
                                     <div className="py-6 flex items-center justify-center">
-                                        <div
-                                            className={
-                                                "w-7 h-7 rounded-full border-2 animate-spin " +
-                                                (isLight ? "border-black/20 border-t-black/60" : "border-white/20 border-t-white/70")
-                                            }
-                                        />
+                                        <div className={"w-7 h-7 rounded-full border-2 animate-spin " + (isLight ? "border-black/20 border-t-black/60" : "border-white/20 border-t-white/70")} />
                                     </div>
                                 )}
 
                                 {!reactionDetails.loading && reactionDetails.userIds.length === 0 && !reactionDetails.error && (
-                                    <div className={modalTextSecondary + " text-[13px] italic py-6 text-center"}>
-                                        No reactions yet
-                                    </div>
+                                    <div className={modalTextSecondary + " text-[13px] italic py-6 text-center"}>No reactions yet</div>
                                 )}
 
                                 {!reactionDetails.loading && reactionDetails.userIds.length > 0 && (
                                     <div className="space-y-2">
                                         {reactionDetails.userIds.map((uid) => {
-                                            const prof =
-                                                profilesByIdRef.current[uid] ||
-                                                (uid === userId ? meProfileRef.current : null) ||
-                                                ({ id: uid, full_name: "Participant", avatar_url: null } as Profile);
-
+                                            const prof = profilesByIdRef.current[uid] || (uid === userId ? meProfileRef.current : null) || ({ id: uid, full_name: "Participant", avatar_url: null } as Profile);
                                             const displayName = uid === userId ? "You" : prof?.full_name || "Participant";
-
                                             return (
-                                                <div
-                                                    key={uid}
-                                                    className={
-                                                        "flex items-center gap-3 rounded-xl px-3 py-2 border " +
-                                                        (isLight ? "bg-white border-black/10" : "bg-[#0B1220]/40 border-white/10")
-                                                    }
-                                                >
-                                                    <img
-                                                        src={avatarFromProfile(prof)}
-                                                        className="w-9 h-9 rounded-full object-cover"
-                                                        alt=""
-                                                    />
+                                                <div key={uid} className={"flex items-center gap-3 rounded-xl px-3 py-2 border " + (isLight ? "bg-white border-black/10" : "bg-[#0B1220]/40 border-white/10")}>
+                                                    <img src={avatarFromProfile(prof)} className="w-9 h-9 rounded-full object-cover" alt="" />
                                                     <div className="min-w-0">
                                                         <div className={modalTextPrimary + " text-[13px] truncate"}>{displayName}</div>
-                                                        <div className={modalTextSecondary + " text-[11px] truncate"}>
-                                                            {uid === userId ? "This is you" : ""}
-                                                        </div>
+                                                        <div className={modalTextSecondary + " text-[11px] truncate"}>{uid === userId ? "This is you" : ""}</div>
                                                     </div>
                                                 </div>
                                             );
@@ -1992,21 +2027,58 @@ export function ChatPanel({
             {showHeader && (
                 <div className={"px-5 py-4 border-b " + headerBorder}>
                     <div className="flex items-center justify-between gap-3">
-                        <div className={titleText + " font-inter font-semibold truncate min-w-0"}>{title}</div>
+                        <div className="min-w-0 flex items-center gap-3">
+                            <div className={titleText + " font-inter font-semibold truncate min-w-0"}>{title}</div>
+
+                            {canUseDirect && (
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <button
+                                        type="button"
+                                        onClick={() => setChatMode("general")}
+                                        className={switchBtnBase + " " + (chatMode === "general" ? switchBtnActive : switchBtnIdle)}
+                                    >
+                                        General
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setChatMode("direct")}
+                                        className={switchBtnBase + " " + (chatMode === "direct" ? switchBtnActive : switchBtnIdle)}
+                                    >
+                                        {directTabLabel}
+                                    </button>
+
+                                    {isHost && chatMode === "direct" && (
+                                        <div className="relative shrink-0">
+                                            <select
+                                                value={selectedDirectPeerId || ""}
+                                                onChange={(e) => setSelectedDirectPeerId(e.target.value || null)}
+                                                className={peerSelectCls + " pr-8 appearance-none"}
+                                            >
+                                                <option value="">Pick participant</option>
+                                                {directPeerIds.map((peerId) => {
+                                                    const prof = profilesById[peerId];
+                                                    return (
+                                                        <option key={peerId} value={peerId}>
+                                                            {prof?.full_name || "Participant"}
+                                                        </option>
+                                                    );
+                                                })}
+                                            </select>
+                                            <ChevronDown size={14} className={"pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 " + (isLight ? "text-black/45" : "text-white/45")} />
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
 
                         {onClose && (
-                            <button
-                                type="button"
-                                onClick={onClose}
-                                className={"w-9 h-9 rounded-xl flex items-center justify-center transition " + headerCloseBtnCls}
-                                title="Close"
-                            >
+                            <button type="button" onClick={onClose} className={"w-9 h-9 rounded-xl flex items-center justify-center transition " + headerCloseBtnCls} title="Close">
                                 <X size={18} />
                             </button>
                         )}
                     </div>
 
-                    {subtitle && <div className={subText + " text-[12px] mt-0.5"}>{subtitle}</div>}
+                    {activeSubtitle && <div className={subText + " text-[12px] mt-0.5"}>{activeSubtitle}</div>}
                 </div>
             )}
 
@@ -2022,20 +2094,17 @@ export function ChatPanel({
                     }
                 }}
             >
-                {loading && (
-                    <div className={(isLight ? "text-black/45" : "text-white/40") + " text-sm italic"}>Loading…</div>
-                )}
+                {loading && <div className={(isLight ? "text-black/45" : "text-white/40") + " text-sm italic"}>Loading…</div>}
 
                 {!loading && visibleMessages.length === 0 && (
                     <div className={(isLight ? "text-black/45" : "text-white/40") + " text-sm italic"}>
-                        No messages yet
+                        {chatMode === "general" ? "No messages yet" : isHost && !activeDirectPeerId ? "Pick a participant to start a direct thread" : "No direct messages yet"}
                     </div>
                 )}
 
                 {visibleMessages.map((m) => {
                     const mine = m.user_id === userId;
                     const canEdit = mine && !m.id.startsWith("optimistic-");
-
                     return (
                         <div
                             key={m.id}
@@ -2051,7 +2120,7 @@ export function ChatPanel({
                                 reactionsCounts={reactions[m.id]}
                                 myReactions={myReactions[m.id]}
                                 onToggleReaction={toggleReaction}
-                                onOpenReactionDetails={openReactionDetails}
+                                onOpenReactionDetails={loadReactionDetails}
                                 isLight={isLight}
                                 canEdit={canEdit}
                                 onUpdateMessage={updateMessage}
@@ -2072,9 +2141,7 @@ export function ChatPanel({
                         type="button"
                         className={
                             "pointer-events-auto px-4 py-2 rounded-full shadow-xl text-[12px] font-semibold border transition " +
-                            (isLight
-                                ? "bg-white/95 border-black/10 text-black/80 hover:bg-white"
-                                : "bg-[#0B1220]/95 border-white/10 text-white/85 hover:bg-[#0B1220]")
+                            (isLight ? "bg-white/95 border-black/10 text-black/80 hover:bg-white" : "bg-[#0B1220]/95 border-white/10 text-white/85 hover:bg-[#0B1220]")
                         }
                         onClick={() => {
                             atBottomRef.current = true;
@@ -2095,17 +2162,10 @@ export function ChatPanel({
                         <div className="min-w-0">
                             <div className={replyingLabel}>Replying</div>
                             <div className={"text-[11px] truncate " + replyingText}>
-                                {(replyTo.profile?.full_name || "Participant") +
-                                    ": " +
-                                    (quotePreviewForReply(replyTo.body, 220) || "[message]")}
+                                {(replyTo.profile?.full_name || "Participant") + ": " + (quotePreviewForReply(replyTo.body, 220) || "[message]")}
                             </div>
                         </div>
-                        <button
-                            type="button"
-                            onClick={() => setReplyTo(null)}
-                            className={"w-8 h-8 rounded-lg flex items-center justify-center transition " + cancelBtnCls}
-                            title="Cancel reply"
-                        >
+                        <button type="button" onClick={() => setReplyTo(null)} className={"w-8 h-8 rounded-lg flex items-center justify-center transition " + cancelBtnCls} title="Cancel reply">
                             <X size={16} />
                         </button>
                     </div>
@@ -2116,7 +2176,7 @@ export function ChatPanel({
                         ref={composerRef}
                         value={text}
                         onChange={(e) => setText(e.target.value)}
-                        placeholder="Write a message…"
+                        placeholder={chatMode === "general" ? "Write a message…" : isHost ? (activeDirectPeerId ? "Write a direct message…" : "Pick a participant first…") : "Message the host…"}
                         className={composerInputCls}
                         onKeyDown={(e) => {
                             if (e.key === "Enter" && !e.shiftKey) {
@@ -2125,10 +2185,9 @@ export function ChatPanel({
                             }
                         }}
                         onFocus={() => {
-                            if (isAtBottom()) {
-                                onBecameVisible?.();
-                            }
+                            if (isAtBottom()) onBecameVisible?.();
                         }}
+                        disabled={chatMode === "direct" && isHost && !activeDirectPeerId}
                     />
 
                     <div className="relative" ref={composerEmojiWrapRef}>
@@ -2137,12 +2196,8 @@ export function ChatPanel({
                             type="button"
                             title="Add emoji"
                             className={composerEmojiBtnCls}
-                            onMouseDown={(e) => {
-                                e.preventDefault();
-                            }}
-                            onClick={() => {
-                                setComposerEmojiOpen((v) => !v);
-                            }}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => setComposerEmojiOpen((v) => !v)}
                         >
                             <Smile size={18} />
                         </button>
@@ -2152,12 +2207,12 @@ export function ChatPanel({
                         onClick={() => void send()}
                         className={
                             "w-11 h-11 rounded-xl flex items-center justify-center transition border " +
-                            (text.trim()
+                            (text.trim() && !(chatMode === "direct" && isHost && !activeDirectPeerId)
                                 ? sendBtnActive + " border-emerald-500/40"
                                 : sendBtnDisabled + " border-transparent cursor-not-allowed")
                         }
                         type="button"
-                        disabled={!text.trim()}
+                        disabled={!text.trim() || (chatMode === "direct" && isHost && !activeDirectPeerId)}
                         title="Send"
                     >
                         <SendHorizontal size={18} />
@@ -2171,5 +2226,3 @@ export function ChatPanel({
         </div>
     );
 }
-
-export default ChatPanel;
