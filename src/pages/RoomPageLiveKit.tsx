@@ -1384,6 +1384,9 @@ export function RoomPageLiveKit() {
   const capturePreset = useMemo(() => getCapturePresetForTier(deviceTier), [deviceTier]);
 
   const isChromeOS = useMemo(() => isChromeOSLike(), []);
+  const shouldDisableBackgroundFx = useMemo(() => {
+    return isMobileQuery || isTabletQuery;
+  }, [isMobileQuery, isTabletQuery]);
 
   const prejoinPreviewPreset = useMemo(() => {
     if (isMobileQuery || isTabletQuery) {
@@ -2983,7 +2986,7 @@ export function RoomPageLiveKit() {
 
     try {
       const pj = prejoinRef.current;
-      if (isMobileQuery || isTabletQuery) {
+      if (shouldDisableBackgroundFx) {
         throw new Error("Background FX are disabled on mobile/tablet devices for stability");
       }
       if (!pj.videoEnabled) throw new Error("Turn camera on in pre-join first");
@@ -3043,7 +3046,7 @@ export function RoomPageLiveKit() {
 
       await createPrejoinPreparedVideoTrack({ force: !!opts?.forceTrack });
 
-      if (!(isMobileQuery || isTabletQuery) && videoFxMode !== "off") {
+      if (!shouldDisableBackgroundFx && videoFxMode !== "off") {
         await applyPrejoinVideoFx(videoFxMode);
       }
     } finally {
@@ -4420,7 +4423,7 @@ export function RoomPageLiveKit() {
         frameRate: isChromeOS ? 15 : capturePreset.fps,
       } as any);
 
-      if (!(isMobileQuery || isTabletQuery) && videoFxMode !== "off") {
+      if (!shouldDisableBackgroundFx && videoFxMode !== "off") {
         try {
           await safeApplyProcessor(nextTrack, videoFxMode, blurStrength, bgImageUrl);
         } catch (e) {
@@ -6759,7 +6762,7 @@ export function RoomPageLiveKit() {
         devices={devices}
         value={prejoin}
         onChange={setPrejoin}
-        hideBackgroundFx={isMobileQuery}
+        hideBackgroundFx={shouldDisableBackgroundFx}
         onRefreshDevices={() => loadBrowserDevices().catch(() => { })}
         onCancel={() => {
           cleanupPrejoinPreparedVideoTrack().catch(() => { });
@@ -7289,7 +7292,7 @@ export function RoomPageLiveKit() {
             handleTipHost(amount);
           }}
         />
-        
+
       </div>
       {openTileAdminMenuId && tileMenuAnchor && createPortal(
         <div
