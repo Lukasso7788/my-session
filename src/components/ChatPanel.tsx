@@ -520,7 +520,7 @@ function MessageCardInner({
                                                         title={isMine ? `Remove ${e}` : e}
                                                         type="button"
                                                     >
-                                                        <span className="inline-block align-middle text-[18px] leading-none">{e}</span>
+                                                        <span className="inline-block align-middle text-[16px] leading-none">{e}</span>
                                                     </button>
                                                 );
                                             })}
@@ -636,7 +636,7 @@ function MessageCardInner({
 
                 {hasReactions && !isEditing && (
                     <div className={"mt-2 flex flex-wrap gap-2 " + (mine ? "justify-end" : "justify-start")}>
-                        {Object.entries(reactionsCounts!).map(([emoji, count]) => {
+                        {orderedReactionEntries.map(([emoji, count]) => {
                             const isMine = !!myReactions?.[emoji];
                             return (
                                 <button
@@ -650,7 +650,7 @@ function MessageCardInner({
                                     }}
                                     title={"Click — who reacted • Right-click — toggle"}
                                 >
-                                    <span className="text-[16px] leading-none">{emoji}</span>
+                                    <span className="text-[18px] leading-none">{emoji}</span>
                                     <span className={reactionCountCls}>{count}</span>
                                 </button>
                             );
@@ -694,6 +694,8 @@ export function ChatPanel({
     subtitle = "All messages for this session",
     onClose,
     onBecameVisible,
+    hostUserIdOverride = null,
+    hostProfileOverride = null,
 }: {
     sessionId: string;
     theme?: RoomTheme;
@@ -702,6 +704,8 @@ export function ChatPanel({
     subtitle?: string;
     onClose?: () => void;
     onBecameVisible?: () => void;
+    hostUserIdOverride?: string | null;
+    hostProfileOverride?: Profile | null;
 }) {
     const isLight = theme === "light";
 
@@ -805,6 +809,31 @@ export function ChatPanel({
         return `Direct messages with ${activeDirectPeerProfile?.full_name || "host"}`;
     }, [chatMode, subtitle, canUseDirect, activeDirectPeerId, isHost, activeDirectPeerProfile]);
 
+    useEffect(() => {
+        const normalizedHostId = String(hostUserIdOverride || "").trim() || null;
+        if (normalizedHostId) {
+            setHostUserId((prev) => (prev === normalizedHostId ? prev : normalizedHostId));
+        }
+
+        if (hostProfileOverride?.id) {
+            const nextProfile = {
+                id: String(hostProfileOverride.id),
+                full_name: hostProfileOverride.full_name || "Host",
+                avatar_url: hostProfileOverride.avatar_url || null,
+            } as Profile;
+
+            profilesByIdRef.current = {
+                ...profilesByIdRef.current,
+                [nextProfile.id]: nextProfile,
+            };
+
+            setProfilesById((prev) => ({
+                ...prev,
+                [nextProfile.id]: nextProfile,
+            }));
+        }
+    }, [hostUserIdOverride, hostProfileOverride]);
+
     const isAtBottom = () => {
         const el = listRef.current;
         if (!el) return true;
@@ -891,6 +920,21 @@ export function ChatPanel({
         onBecameVisible?.();
         setUnseenNew(0);
     }, [onBecameVisible, sessionId, chatMode, selectedDirectPeerId]);
+
+    useEffect(() => {
+        console.log("[chat][dm-debug]", {
+            sessionId,
+            userId,
+            hostUserId,
+            hostUserIdOverride,
+            isHost,
+            canUseDirect,
+            chatMode,
+            activeDirectPeerId,
+            directPeerIds,
+            selectedDirectPeerId,
+        });
+    }, [sessionId, userId, hostUserId, hostUserIdOverride, isHost, canUseDirect, chatMode, activeDirectPeerId, directPeerIds, selectedDirectPeerId]);
 
     const headerBorder = isLight ? "border-black/10" : "border-white/5";
     const titleText = isLight ? "text-black/85" : "text-white/85";
@@ -1118,6 +1162,7 @@ export function ChatPanel({
 
     const loadDirectPeers = useCallback(async () => {
         if (!sessionId || !hostUserId) {
+            console.log("[chat][direct-peers] skipped: missing sessionId or hostUserId", { sessionId, hostUserId });
             setDirectPeerIds([]);
             return [] as string[];
         }
@@ -1127,9 +1172,7 @@ export function ChatPanel({
                 .from(MSG_TABLE)
                 .select("user_id, dm_peer_user_id, scope")
                 .eq("session_id", sessionId)
-                .eq("scope", "direct")
-                .or(`user_id.eq.${hostUserId},dm_peer_user_id.eq.${hostUserId}`)
-                .limit(1000);
+                .limit(2000);
 
             if (error) {
                 console.warn("direct peers load error:", error);
@@ -1144,6 +1187,13 @@ export function ChatPanel({
                         .filter((id) => id && id !== hostUserId)
                 )
             );
+
+            console.log("[chat][direct-peers] loaded", {
+                sessionId,
+                hostUserId,
+                peerIds,
+                rowCount: Array.isArray(data) ? data.length : 0,
+            });
 
             setDirectPeerIds(peerIds);
             if (peerIds.length) void ensureProfiles(peerIds);
@@ -1711,6 +1761,14 @@ export function ChatPanel({
         const outgoingPeerId = outgoingScope === "direct" ? activeDirectPeerId : null;
 
         if (outgoingScope === "direct" && !outgoingPeerId) {
+            console.warn("[chat][send] blocked direct send: missing peer", {
+                sessionId,
+                userId,
+                hostUserId,
+                isHost,
+                chatMode,
+                selectedDirectPeerId,
+            });
             alert(isHost ? "Pick a participant first." : "Direct host chat is not ready yet.");
             return;
         }
