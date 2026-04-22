@@ -52,17 +52,26 @@ function computeCols(count: number, containerWidth: number) {
     if (count === 5) return w >= 900 ? 3 : 2;
     if (count === 6) return w >= 780 ? 3 : 2;
 
+    // ✅ 7–9 участников: всегда 3 колонки на desktop -> 3x3
     if (count >= 7 && count <= 9) {
         if (!isDesktop) return 2;
-        return w >= 1380 ? 4 : 3;
+        return 3;
     }
 
+    // ✅ 10–12 участников: всегда 4 колонки на desktop -> 4x3
     if (count >= 10 && count <= 12) {
         if (!isDesktop) return 3;
-        return w >= 1080 ? 4 : 3;
+        return 4;
     }
 
-    if (count >= 13) {
+    // ✅ 13–16 участников: всё ещё 4 колонки на desktop -> 4x4
+    if (count >= 13 && count <= 16) {
+        if (!isDesktop) return 3;
+        return 4;
+    }
+
+    // ✅ Только с 17+ можно расширяться дальше
+    if (count >= 17) {
         if (!isDesktop) return 3;
         return w >= 1320 ? 5 : 4;
     }
