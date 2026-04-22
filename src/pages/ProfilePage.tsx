@@ -1,4 +1,3 @@
-// src/pages/ProfilePage.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
@@ -32,6 +31,8 @@ export default function ProfilePage() {
   const avatarFallback = useMemo(() => {
     return `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}`;
   }, [displayName]);
+
+  const hasHostedSessions = sessions.length > 0;
 
   // === STATUS BADGES ===
   const getSessionStatus = (session: any) => {
@@ -272,9 +273,7 @@ export default function ProfilePage() {
           ← Back
         </button>
 
-        {/* ✅ CHANGED: right side actions (preview icon + edit button) */}
         <div className="flex items-center gap-3">
-          {/* ✅ ADDED: Profile preview icon (public) */}
           <button
             type="button"
             onClick={() => navigate(`/profile/${user.id}`)}
@@ -289,7 +288,6 @@ export default function ProfilePage() {
             aria-label="Profile preview"
             title="Profile preview"
           >
-            {/* inline eye icon */}
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
               <path
                 d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"
@@ -352,12 +350,10 @@ export default function ProfilePage() {
           )}
         </div>
 
-        {/* NAME */}
         <h1 className="font-inter font-bold text-[32px] text-[#2F2F2F] mt-4">
           {displayName}
         </h1>
 
-        {/* ✅ ADDED: editable name input (only in edit mode) */}
         {editMode && (
           <div className="mt-3 w-full max-w-[520px]">
             <label className="block text-sm font-medium text-[#2F2F2F] mb-2">
@@ -381,7 +377,6 @@ export default function ProfilePage() {
         )}
 
         <div className="flex items-center gap-6 mt-2 text-sm">
-          {/* Created date */}
           <span className="flex items-center gap-2">
             <img
               src="/icons/date_profile.svg"
@@ -393,7 +388,6 @@ export default function ProfilePage() {
             </span>
           </span>
 
-          {/* Sessions attended (from profiles.attended_sessions_count) */}
           <span className="flex items-center gap-2">
             <img
               src="/icons/session_count.svg"
@@ -419,9 +413,9 @@ export default function ProfilePage() {
             value={bio}
             onChange={(e) => setBio(e.target.value)}
             className="
-                w-full border border-gray-300 p-4 rounded-xl
-                focus:ring-2 focus:ring-black outline-none transition
-              "
+              w-full border border-gray-300 p-4 rounded-xl
+              focus:ring-2 focus:ring-black outline-none transition
+            "
             rows={4}
             placeholder="Tell us about yourself..."
           />
@@ -437,7 +431,51 @@ export default function ProfilePage() {
       {/* Divider */}
       <div className="mt-16 border-t border-gray-200" />
 
-      {/* ==== Hosted Sessions ==== */}
+      {/* Host block */}
+      <section className="mt-10">
+        <div className="rounded-2xl border border-gray-200 bg-gray-50 px-6 py-5">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-[#2F2F2F]">Host profile</h2>
+              <p className="mt-1 text-sm text-gray-600">
+                {hasHostedSessions
+                  ? "You already have a public host profile. Visitors can follow you, view your sessions, and support you there."
+                  : "Once you host sessions, your public profile becomes your host surface for follows, support, and upcoming sessions."}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => navigate(`/profile/${user.id}`)}
+                className="
+                  inline-flex items-center justify-center rounded-full
+                  border border-[#2F2F2F] px-5 py-2.5
+                  text-[14px] text-[#2F2F2F]
+                  hover:bg-[#2F2F2F] hover:text-white transition
+                "
+              >
+                Open public profile
+              </button>
+
+              <button
+                type="button"
+                onClick={() => navigate("/sessions")}
+                className="
+                  inline-flex items-center justify-center rounded-full
+                  bg-[#2F2F2F] px-5 py-2.5
+                  text-[14px] text-white
+                  hover:opacity-90 transition
+                "
+              >
+                Back to sessions
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Hosted Sessions */}
       <section className="mt-10">
         <h2 className="text-xl font-bold mb-6 text-[#2F2F2F]">
           Hosted Sessions
@@ -455,12 +493,12 @@ export default function ProfilePage() {
               return (
                 <div
                   key={s.id}
-                  onClick={() => navigate(`/room/${s.id}`)}
+                  onClick={() => navigate(`/room-livekit/${s.id}`)}
                   className="
-                      bg-gray-50 rounded-xl px-5 py-3
-                      flex items-center justify-between
-                      hover:bg-gray-100 transition cursor-pointer
-                    "
+                    bg-gray-50 rounded-xl px-5 py-3
+                    flex items-center justify-between
+                    hover:bg-gray-100 transition cursor-pointer
+                  "
                 >
                   <span className="text-[14px] text-gray-800">{s.title}</span>
 
