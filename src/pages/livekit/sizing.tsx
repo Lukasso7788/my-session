@@ -39,6 +39,8 @@ export function useElementSize<T extends HTMLElement>() {
 function computeCols(count: number, containerWidth: number) {
     const w = containerWidth || 1200;
     const isDesktop = w >= 1024;
+    const isWideDesktop = w >= 1500;
+    const isUltraWideDesktop = w >= 1750;
 
     if (count <= 1) return 1;
     if (count === 2) return 2;
@@ -52,28 +54,48 @@ function computeCols(count: number, containerWidth: number) {
     if (count === 5) return w >= 900 ? 3 : 2;
     if (count === 6) return w >= 780 ? 3 : 2;
 
-    // ✅ 7–9 участников: всегда 3 колонки на desktop -> 3x3
+    // 7–9:
+    // - на обычном desktop держим 3 колонки (как ты и хотел)
+    // - только на очень широком desktop и только для 7–8 позволяем 4
     if (count >= 7 && count <= 9) {
         if (!isDesktop) return 2;
+        if (count <= 8 && isUltraWideDesktop) return 4;
         return 3;
     }
 
-    // ✅ 10–12 участников: всегда 4 колонки на desktop -> 4x3
+    // 10–12:
+    // стабильный режим 4x3 на desktop
     if (count >= 10 && count <= 12) {
         if (!isDesktop) return 3;
         return 4;
     }
 
-    // ✅ 13–16 участников: всё ещё 4 колонки на desktop -> 4x4
-    if (count >= 13 && count <= 16) {
+    // 13–14:
+    // - с правой панелью / обычный desktop: 4 колонки
+    // - без панели на очень широком: 5 колонок
+    if (count >= 13 && count <= 14) {
         if (!isDesktop) return 3;
+        if (isUltraWideDesktop) return 5;
         return 4;
     }
 
-    // ✅ Только с 17+ можно расширяться дальше
+    // 15–16:
+    // - обычный desktop / с правой панелью: 4 колонки
+    // - широкий desktop: 5 колонок
+    // - очень широкий desktop: 6 колонок
+    if (count >= 15 && count <= 16) {
+        if (!isDesktop) return 3;
+        if (isUltraWideDesktop) return 6;
+        if (isWideDesktop) return 5;
+        return 4;
+    }
+
+    // 17+ — это уже позже, но оставим мягкую эскалацию
     if (count >= 17) {
         if (!isDesktop) return 3;
-        return w >= 1320 ? 5 : 4;
+        if (isUltraWideDesktop) return 6;
+        if (isWideDesktop) return 5;
+        return 4;
     }
 
     return 3;
