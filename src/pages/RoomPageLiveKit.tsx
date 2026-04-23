@@ -1533,34 +1533,6 @@ export function RoomPageLiveKit() {
   const [chatViewMode, setChatViewMode] = useState<"general" | "host">("general");
   const [hostChatPeerIds, setHostChatPeerIds] = useState<string[]>([]);
   const [selectedHostChatPeerId, setSelectedHostChatPeerId] = useState<string | null>(null);
-  
-
-  useEffect(() => {
-    const hostId = String(session?.host_id || "").trim().toLowerCase();
-    const me = String(authUserId || "").trim().toLowerCase();
-
-    if (!hostId || !me) {
-      setSelectedHostChatPeerId(null);
-      return;
-    }
-
-    const isHost = hostId === me;
-
-    if (!isHost) {
-      setSelectedHostChatPeerId(hostId);
-      return;
-    }
-
-    if (!liveHostChatOptions.length) {
-      setSelectedHostChatPeerId(null);
-      return;
-    }
-
-    setSelectedHostChatPeerId((prev) => {
-      if (prev && liveHostChatOptions.some((x) => x.userId === prev)) return prev;
-      return liveHostChatOptions[0]?.userId || null;
-    });
-  }, [session?.host_id, authUserId, liveHostChatOptions]);
   const openRightTab = (tab: RightPanelTab) => {
     if (!tab) {
       setRightPanelOpen(false);
@@ -3907,6 +3879,33 @@ export function RoomPageLiveKit() {
       .filter((item, index, arr) => arr.findIndex((x) => x.userId === item.userId) === index)
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [tiles, session?.host_id, authUserId, profilesById]);
+
+  useEffect(() => {
+    const hostId = String(session?.host_id || "").trim().toLowerCase();
+    const me = String(authUserId || "").trim().toLowerCase();
+
+    if (!hostId || !me) {
+      setSelectedHostChatPeerId(null);
+      return;
+    }
+
+    const isHost = hostId === me;
+
+    if (!isHost) {
+      setSelectedHostChatPeerId(hostId);
+      return;
+    }
+
+    if (!liveHostChatOptions.length) {
+      setSelectedHostChatPeerId(null);
+      return;
+    }
+
+    setSelectedHostChatPeerId((prev) => {
+      if (prev && liveHostChatOptions.some((x) => x.userId === prev)) return prev;
+      return liveHostChatOptions[0]?.userId || null;
+    });
+  }, [session?.host_id, authUserId, liveHostChatOptions]);
 
   // hide / pin
   const [hiddenTileIds, setHiddenTileIds] = useState<Record<string, boolean>>({});
