@@ -1533,36 +1533,7 @@ export function RoomPageLiveKit() {
   const [chatViewMode, setChatViewMode] = useState<"general" | "host">("general");
   const [hostChatPeerIds, setHostChatPeerIds] = useState<string[]>([]);
   const [selectedHostChatPeerId, setSelectedHostChatPeerId] = useState<string | null>(null);
-  const liveHostChatOptions = useMemo(() => {
-    const hostId = String(session?.host_id || "").trim().toLowerCase();
-    const me = String(authUserId || "").trim().toLowerCase();
-
-    return tiles
-      .filter((tile) => {
-        const uid = String(tile.participantUserId || "").trim().toLowerCase();
-        if (!uid) return false;
-        if (!looksLikeUuid(uid)) return false;
-        if (uid === hostId) return false;
-        if (uid === me) return false;
-        return true;
-      })
-      .map((tile) => {
-        const uid = String(tile.participantUserId || "").trim().toLowerCase();
-        const profile = profilesById?.[uid];
-        const label =
-          String(profile?.full_name || "").trim() ||
-          String(tile.metadataDisplayName || "").trim() ||
-          String(tile.label || "").trim() ||
-          "Participant";
-
-        return {
-          userId: uid,
-          label,
-        };
-      })
-      .filter((item, index, arr) => arr.findIndex((x) => x.userId === item.userId) === index)
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [tiles, session?.host_id, authUserId, profilesById]);
+  
 
   useEffect(() => {
     const hostId = String(session?.host_id || "").trim().toLowerCase();
@@ -3905,6 +3876,37 @@ export function RoomPageLiveKit() {
   const [tiles, setTiles] = useState<TileModel[]>([]);
   const [screenShareTiles, setScreenShareTiles] = useState<TileModel[]>([]);
   const [adminBusyKey, setAdminBusyKey] = useState<string>("");
+
+  const liveHostChatOptions = useMemo(() => {
+    const hostId = String(session?.host_id || "").trim().toLowerCase();
+    const me = String(authUserId || "").trim().toLowerCase();
+
+    return tiles
+      .filter((tile) => {
+        const uid = String(tile.participantUserId || "").trim().toLowerCase();
+        if (!uid) return false;
+        if (!looksLikeUuid(uid)) return false;
+        if (uid === hostId) return false;
+        if (uid === me) return false;
+        return true;
+      })
+      .map((tile) => {
+        const uid = String(tile.participantUserId || "").trim().toLowerCase();
+        const profile = profilesById?.[uid];
+        const label =
+          String(profile?.full_name || "").trim() ||
+          String(tile.metadataDisplayName || "").trim() ||
+          String(tile.label || "").trim() ||
+          "Participant";
+
+        return {
+          userId: uid,
+          label,
+        };
+      })
+      .filter((item, index, arr) => arr.findIndex((x) => x.userId === item.userId) === index)
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [tiles, session?.host_id, authUserId, profilesById]);
 
   // hide / pin
   const [hiddenTileIds, setHiddenTileIds] = useState<Record<string, boolean>>({});
