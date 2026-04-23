@@ -5,7 +5,6 @@ import emojiData from "@emoji-mart/data";
 import { supabase } from "../lib/supabase";
 import {
     Check,
-    ChevronDown,
     CornerUpLeft,
     Pencil,
     SendHorizontal,
@@ -426,8 +425,8 @@ function MessageCardInner({
         : "px-2 py-1 rounded-xl bg-white/5 border border-white/10 text-[12px] text-white/80 flex items-center gap-1.5 transition";
 
     const reactionPillMine = isLight
-        ? "ring-1 ring-emerald-400/60 border-emerald-500/40"
-        : "ring-1 ring-emerald-300/40 border-emerald-300/30";
+        ? "bg-emerald-500/12 ring-2 ring-emerald-400/70 border-emerald-500/55 text-emerald-900"
+        : "bg-emerald-400/12 ring-2 ring-emerald-300/55 border-emerald-300/45 text-white";
 
     const reactionCountCls = isLight ? "text-black/50" : "text-white/60";
 
@@ -708,6 +707,9 @@ export function ChatPanel({
     onBecameVisible,
     hostUserIdOverride = null,
     hostProfileOverride = null,
+    externalMode = "general",
+    externalDirectPeerUserId = null,
+    onDirectPeerIdsChange,
 }: {
     sessionId: string;
     theme?: RoomTheme;
@@ -718,6 +720,9 @@ export function ChatPanel({
     onBecameVisible?: () => void;
     hostUserIdOverride?: string | null;
     hostProfileOverride?: Profile | null;
+    externalMode?: "general" | "host";
+    externalDirectPeerUserId?: string | null;
+    onDirectPeerIdsChange?: (peerIds: string[]) => void;
 }) {
     const isLight = theme === "light";
 
@@ -730,9 +735,15 @@ export function ChatPanel({
         setHostUserId(nextHostId);
 
         if (hostProfileOverride?.id) {
+            const normalizedId = String(hostProfileOverride.id).toLowerCase();
+
             setProfilesById((prev) => ({
                 ...prev,
-                [String(hostProfileOverride.id).toLowerCase()]: hostProfileOverride,
+                [normalizedId]: {
+                    id: normalizedId,
+                    full_name: hostProfileOverride.full_name || "Host",
+                    avatar_url: hostProfileOverride.avatar_url || null,
+                },
             }));
         }
 
@@ -742,9 +753,8 @@ export function ChatPanel({
             hostProfileOverride,
         });
     }, [sessionId, hostUserIdOverride, hostProfileOverride]);
+
     const [directPeerIds, setDirectPeerIds] = useState<string[]>([]);
-    const [selectedDirectPeerId, setSelectedDirectPeerId] = useState<string | null>(null);
-    const [chatMode, setChatMode] = useState<ChatMode>("general");
 
     const [profilesById, setProfilesById] = useState<Record<string, Profile>>({});
     const profilesByIdRef = useRef<Record<string, Profile>>({});
@@ -817,13 +827,16 @@ export function ChatPanel({
 
     const isHost = !!userId && !!hostUserId && userId === hostUserId;
     const canUseDirect = !!hostUserId && (!!isHost || (!!userId && userId !== hostUserId));
-    const directTabLabel = isHost ? "Direct" : "Host";
+    const activeMode: ChatMode = externalMode === "host" ? "direct" : "general";
 
     const activeDirectPeerId = useMemo(() => {
         if (!hostUserId || !userId) return null;
-        if (isHost) return selectedDirectPeerId;
+        if (isHost) {
+            const peerId = String(externalDirectPeerUserId || "").trim();
+            return peerId || null;
+        }
         return hostUserId;
-    }, [hostUserId, userId, isHost, selectedDirectPeerId]);
+    }, [hostUserId, userId, isHost, externalDirectPeerUserId]);
 
     const activeDirectPeerProfile = useMemo(() => {
         if (!activeDirectPeerId) return null;
@@ -831,39 +844,22 @@ export function ChatPanel({
     }, [activeDirectPeerId, profilesById]);
 
     const activeSubtitle = useMemo(() => {
-        if (chatMode === "general") return subtitle;
+        if (activeMode === "general") return subtitle;
         if (!canUseDirect) return subtitle;
-        if (!activeDirectPeerId) return isHost ? "Pick a participant to view direct messages" : "Direct messages with the host";
+
+        if (!activeDirectPeerId) {
+            return isHost
+                ? "Pick a participant in the header to open host chat"
+                : "Direct messages with the host";
+        }
+
         if (isHost) {
             return `Direct messages with ${activeDirectPeerProfile?.full_name || "participant"}`;
         }
+
         return `Direct messages with ${activeDirectPeerProfile?.full_name || "host"}`;
-    }, [chatMode, subtitle, canUseDirect, activeDirectPeerId, isHost, activeDirectPeerProfile]);
+    }, [activeMode, subtitle, canUseDirect, activeDirectPeerId, isHost, activeDirectPeerProfile]);
 
-    useEffect(() => {
-        const normalizedHostId = String(hostUserIdOverride || "").trim() || null;
-        if (normalizedHostId) {
-            setHostUserId((prev) => (prev === normalizedHostId ? prev : normalizedHostId));
-        }
-
-        if (hostProfileOverride?.id) {
-            const nextProfile = {
-                id: String(hostProfileOverride.id),
-                full_name: hostProfileOverride.full_name || "Host",
-                avatar_url: hostProfileOverride.avatar_url || null,
-            } as Profile;
-
-            profilesByIdRef.current = {
-                ...profilesByIdRef.current,
-                [nextProfile.id]: nextProfile,
-            };
-
-            setProfilesById((prev) => ({
-                ...prev,
-                [nextProfile.id]: nextProfile,
-            }));
-        }
-    }, [hostUserIdOverride, hostProfileOverride]);
 
     const isAtBottom = () => {
         const el = listRef.current;
@@ -927,8 +923,6 @@ export function ChatPanel({
             setText("");
             setUnseenNew(0);
             setDirectPeerIds([]);
-            setSelectedDirectPeerId(null);
-            setChatMode("general");
             setLoading(true);
         }
     }, [sessionId]);
@@ -950,7 +944,7 @@ export function ChatPanel({
     useEffect(() => {
         onBecameVisible?.();
         setUnseenNew(0);
-    }, [onBecameVisible, sessionId, chatMode, selectedDirectPeerId]);
+    }, [onBecameVisible, sessionId, activeMode, activeDirectPeerId]);
 
     useEffect(() => {
         console.log("[chat][dm-debug]", {
@@ -960,12 +954,25 @@ export function ChatPanel({
             hostUserIdOverride,
             isHost,
             canUseDirect,
-            chatMode,
+            activeMode,
+            externalMode,
             activeDirectPeerId,
             directPeerIds,
-            selectedDirectPeerId,
+            externalDirectPeerUserId,
         });
-    }, [sessionId, userId, hostUserId, hostUserIdOverride, isHost, canUseDirect, chatMode, activeDirectPeerId, directPeerIds, selectedDirectPeerId]);
+    }, [
+        sessionId,
+        userId,
+        hostUserId,
+        hostUserIdOverride,
+        isHost,
+        canUseDirect,
+        activeMode,
+        externalMode,
+        activeDirectPeerId,
+        directPeerIds,
+        externalDirectPeerUserId,
+    ]);
 
     const headerBorder = isLight ? "border-black/10" : "border-white/5";
     const titleText = isLight ? "text-black/85" : "text-white/85";
@@ -987,16 +994,6 @@ export function ChatPanel({
     const portalBoxCls = isLight
         ? "rounded-2xl border border-black/10 bg-white shadow-2xl overflow-hidden"
         : "rounded-2xl border border-white/10 bg-[#020617] shadow-2xl overflow-hidden";
-    const switchBtnBase = "h-8 rounded-full px-3 text-[12px] font-medium transition border";
-    const switchBtnActive = isLight
-        ? "bg-[#111827] border-[#111827] text-white"
-        : "bg-white/12 border-white/15 text-white";
-    const switchBtnIdle = isLight
-        ? "bg-transparent border-black/10 text-black/65 hover:bg-black/5"
-        : "bg-transparent border-white/10 text-white/60 hover:bg-white/5";
-    const peerSelectCls = isLight
-        ? "h-8 rounded-full border border-black/10 bg-white px-3 text-[12px] text-black/75 outline-none"
-        : "h-8 rounded-full border border-white/10 bg-[#0B1220]/80 px-3 text-[12px] text-white/80 outline-none";
 
     useEffect(() => {
         (async () => {
@@ -1243,20 +1240,8 @@ export function ChatPanel({
     }, [hostUserId, isHost, loadDirectPeers]);
 
     useEffect(() => {
-        if (!canUseDirect) {
-            if (chatMode === "direct") setChatMode("general");
-            return;
-        }
-
-        if (!isHost) {
-            setSelectedDirectPeerId(hostUserId);
-            return;
-        }
-
-        if (directPeerIds.length > 0 && (!selectedDirectPeerId || !directPeerIds.includes(selectedDirectPeerId))) {
-            setSelectedDirectPeerId(directPeerIds[0]);
-        }
-    }, [canUseDirect, isHost, hostUserId, directPeerIds, selectedDirectPeerId, chatMode]);
+        onDirectPeerIdsChange?.(directPeerIds);
+    }, [directPeerIds, onDirectPeerIdsChange]);
 
     const loadMessages = useCallback(async (opts?: { silent?: boolean }): Promise<Msg[] | null> => {
         if (!sessionId) return null;
@@ -1272,7 +1257,7 @@ export function ChatPanel({
         if (!opts?.silent && messagesRef.current.length === 0) setLoading(true);
 
         try {
-            const q = buildMessageQuery(sessionId, chatMode, userId, hostUserId, activeDirectPeerId);
+            const q = buildMessageQuery(sessionId, activeMode, userId, hostUserId, activeDirectPeerId);
             const loadMessagesResult = (await withTimeout<any>(q as any, 12000, "loadMessages timeout")) as any;
             const { data: rows, error } = loadMessagesResult;
 
@@ -1302,7 +1287,7 @@ export function ChatPanel({
                 void loadMessages({ silent: true });
             }
         }
-    }, [sessionId, chatMode, userId, hostUserId, activeDirectPeerId, ensureProfiles, attachProfile]);
+    }, [sessionId, activeMode, userId, hostUserId, activeDirectPeerId, ensureProfiles, attachProfile]);
 
     const loadReactions = useCallback(async (opts?: { silent?: boolean; messageIds?: string[] }) => {
         if (!sessionId) return;
@@ -1388,7 +1373,7 @@ export function ChatPanel({
     useEffect(() => {
         if (!sessionId) return;
         void bootstrap({ silent: false, force: true });
-    }, [sessionId, chatMode, activeDirectPeerId, bootstrap]);
+    }, [sessionId, activeMode, activeDirectPeerId, bootstrap]);
 
     useEffect(() => {
         if (!sessionId || !userId) return;
@@ -1417,7 +1402,7 @@ export function ChatPanel({
                 const row = payload?.new as MsgRow | undefined;
                 if (!row?.id) return;
 
-                const relevant = messageBelongsToView(row, chatMode, userId, hostUserId, activeDirectPeerId);
+                const relevant = messageBelongsToView(row, activeMode, userId, hostUserId, activeDirectPeerId);
 
                 if (row.scope === "direct" && isHost && hostUserId) {
                     const otherId = row.user_id === hostUserId ? String(row.dm_peer_user_id || "").trim() : row.user_id;
@@ -1472,7 +1457,7 @@ export function ChatPanel({
             async (payload: any) => {
                 const row = payload?.new as MsgRow | undefined;
                 if (!row?.id) return;
-                const relevant = messageBelongsToView(row, chatMode, userId, hostUserId, activeDirectPeerId);
+                const relevant = messageBelongsToView(row, activeMode, userId, hostUserId, activeDirectPeerId);
                 if (!relevant) {
                     setMessages((prev) => {
                         const next = prev.filter((m) => m.id !== row.id);
@@ -1552,7 +1537,7 @@ export function ChatPanel({
             }
             supabase.removeChannel(channel);
         };
-    }, [sessionId, userId, chatMode, hostUserId, activeDirectPeerId, isHost, attachProfile, ensureProfiles, bootstrap]);
+    }, [sessionId, userId, activeMode, hostUserId, activeDirectPeerId, isHost, attachProfile, ensureProfiles, bootstrap]);
 
     useEffect(() => {
         if (!sessionId) return;
@@ -1670,7 +1655,7 @@ export function ChatPanel({
             setUnseenNew(0);
             onBecameVisible?.();
         }
-    }, [messages.length, onBecameVisible, chatMode, activeDirectPeerId]);
+    }, [messages.length, onBecameVisible, activeMode, activeDirectPeerId]);
 
     useEffect(() => {
         const el = composerRef.current;
@@ -1788,7 +1773,7 @@ export function ChatPanel({
         const replyHeader = replyTo ? `↪ [msg:${replyTo.id}] ${replyName}: ${replyQuote || "[message]"}` : null;
         const composed = replyHeader ? `${replyHeader}\n\n${raw}` : raw;
 
-        const outgoingScope: ChatMode = chatMode === "direct" ? "direct" : "general";
+        const outgoingScope: ChatMode = activeMode === "direct" ? "direct" : "general";
         const outgoingPeerId = outgoingScope === "direct" ? activeDirectPeerId : null;
 
         if (outgoingScope === "direct" && !outgoingPeerId) {
@@ -1797,8 +1782,10 @@ export function ChatPanel({
                 userId,
                 hostUserId,
                 isHost,
-                chatMode,
-                selectedDirectPeerId,
+                activeMode,
+                activeDirectPeerId,
+                externalMode,
+                externalDirectPeerUserId,
             });
             alert(isHost ? "Pick a participant first." : "Direct host chat is not ready yet.");
             return;
@@ -2118,46 +2105,6 @@ export function ChatPanel({
                     <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0 flex items-center gap-3">
                             <div className={titleText + " font-inter font-semibold truncate min-w-0"}>{title}</div>
-
-                            {canUseDirect && (
-                                <div className="flex items-center gap-2 shrink-0">
-                                    <button
-                                        type="button"
-                                        onClick={() => setChatMode("general")}
-                                        className={switchBtnBase + " " + (chatMode === "general" ? switchBtnActive : switchBtnIdle)}
-                                    >
-                                        General
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setChatMode("direct")}
-                                        className={switchBtnBase + " " + (chatMode === "direct" ? switchBtnActive : switchBtnIdle)}
-                                    >
-                                        {directTabLabel}
-                                    </button>
-
-                                    {isHost && chatMode === "direct" && (
-                                        <div className="relative shrink-0">
-                                            <select
-                                                value={selectedDirectPeerId || ""}
-                                                onChange={(e) => setSelectedDirectPeerId(e.target.value || null)}
-                                                className={peerSelectCls + " pr-8 appearance-none"}
-                                            >
-                                                <option value="">Pick participant</option>
-                                                {directPeerIds.map((peerId) => {
-                                                    const prof = profilesById[peerId];
-                                                    return (
-                                                        <option key={peerId} value={peerId}>
-                                                            {prof?.full_name || "Participant"}
-                                                        </option>
-                                                    );
-                                                })}
-                                            </select>
-                                            <ChevronDown size={14} className={"pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 " + (isLight ? "text-black/45" : "text-white/45")} />
-                                        </div>
-                                    )}
-                                </div>
-                            )}
                         </div>
 
                         {onClose && (
@@ -2187,7 +2134,7 @@ export function ChatPanel({
 
                 {!loading && visibleMessages.length === 0 && (
                     <div className={(isLight ? "text-black/45" : "text-white/40") + " text-sm italic"}>
-                        {chatMode === "general" ? "No messages yet" : isHost && !activeDirectPeerId ? "Pick a participant to start a direct thread" : "No direct messages yet"}
+                        {activeMode === "general" ? "No messages yet" : isHost && !activeDirectPeerId ? "Pick a participant to start a direct thread" : "No direct messages yet"}
                     </div>
                 )}
 
@@ -2265,7 +2212,7 @@ export function ChatPanel({
                         ref={composerRef}
                         value={text}
                         onChange={(e) => setText(e.target.value)}
-                        placeholder={chatMode === "general" ? "Write a message…" : isHost ? (activeDirectPeerId ? "Write a direct message…" : "Pick a participant first…") : "Message the host…"}
+                        placeholder={activeMode === "general" ? "Write a message…" : isHost ? (activeDirectPeerId ? "Write a direct message…" : "Pick a participant first…") : "Message the host…"}
                         className={composerInputCls}
                         onKeyDown={(e) => {
                             if (e.key === "Enter" && !e.shiftKey) {
@@ -2276,7 +2223,7 @@ export function ChatPanel({
                         onFocus={() => {
                             if (isAtBottom()) onBecameVisible?.();
                         }}
-                        disabled={chatMode === "direct" && isHost && !activeDirectPeerId}
+                        disabled={activeMode === "direct" && isHost && !activeDirectPeerId}
                     />
 
                     <div className="relative" ref={composerEmojiWrapRef}>
@@ -2296,12 +2243,12 @@ export function ChatPanel({
                         onClick={() => void send()}
                         className={
                             "w-11 h-11 rounded-xl flex items-center justify-center transition border " +
-                            (text.trim() && !(chatMode === "direct" && isHost && !activeDirectPeerId)
+                            (text.trim() && !(activeMode === "direct" && isHost && !activeDirectPeerId)
                                 ? sendBtnActive + " border-emerald-500/40"
                                 : sendBtnDisabled + " border-transparent cursor-not-allowed")
                         }
                         type="button"
-                        disabled={!text.trim() || (chatMode === "direct" && isHost && !activeDirectPeerId)}
+                        disabled={!text.trim() || (activeMode === "direct" && isHost && !activeDirectPeerId)}
                         title="Send"
                     >
                         <SendHorizontal size={18} />
