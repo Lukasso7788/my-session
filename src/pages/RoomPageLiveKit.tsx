@@ -1533,9 +1533,40 @@ export function RoomPageLiveKit() {
   const [chatViewMode, setChatViewMode] = useState<"general" | "host">("general");
   const [hostChatPeerIds, setHostChatPeerIds] = useState<string[]>([]);
   const [selectedHostChatPeerId, setSelectedHostChatPeerId] = useState<string | null>(null);
+  const liveHostChatOptions = useMemo(() => {
+    const hostId = String(session?.host_id || "").trim().toLowerCase();
+    const me = String(authUserId || "").trim().toLowerCase();
+
+    return tiles
+      .filter((tile) => {
+        const uid = String(tile.participantUserId || "").trim().toLowerCase();
+        if (!uid) return false;
+        if (!looksLikeUuid(uid)) return false;
+        if (uid === hostId) return false;
+        if (uid === me) return false;
+        return true;
+      })
+      .map((tile) => {
+        const uid = String(tile.participantUserId || "").trim().toLowerCase();
+        const profile = profilesById?.[uid];
+        const label =
+          String(profile?.full_name || "").trim() ||
+          String(tile.metadataDisplayName || "").trim() ||
+          String(tile.label || "").trim() ||
+          "Participant";
+
+        return {
+          userId: uid,
+          label,
+        };
+      })
+      .filter((item, index, arr) => arr.findIndex((x) => x.userId === item.userId) === index)
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [tiles, session?.host_id, authUserId, profilesById]);
+
   useEffect(() => {
-    const hostId = String(session?.host_id || "").trim();
-    const me = String(authUserId || "").trim();
+    const hostId = String(session?.host_id || "").trim().toLowerCase();
+    const me = String(authUserId || "").trim().toLowerCase();
 
     if (!hostId || !me) {
       setSelectedHostChatPeerId(null);
@@ -1549,16 +1580,16 @@ export function RoomPageLiveKit() {
       return;
     }
 
-    if (!hostChatPeerIds.length) {
+    if (!liveHostChatOptions.length) {
       setSelectedHostChatPeerId(null);
       return;
     }
 
     setSelectedHostChatPeerId((prev) => {
-      if (prev && hostChatPeerIds.includes(prev)) return prev;
-      return hostChatPeerIds[0] || null;
+      if (prev && liveHostChatOptions.some((x) => x.userId === prev)) return prev;
+      return liveHostChatOptions[0]?.userId || null;
     });
-  }, [session?.host_id, authUserId, hostChatPeerIds]);
+  }, [session?.host_id, authUserId, liveHostChatOptions]);
   const openRightTab = (tab: RightPanelTab) => {
     if (!tab) {
       setRightPanelOpen(false);
@@ -6483,55 +6514,122 @@ export function RoomPageLiveKit() {
 
       {rightPanelOpen && rightTab === "chat" && (
         <div className="flex flex-col h-full">
+          <div
+            className={
+              "flex items-center gap-2 px-3 py-2 border-b min-h-[52px] " +
+              (isLight ? "border-black/10 bg-white/70" : "border-white/10 bg-[#0B1220]/72")
+            }
+          >
+            <div className="flex items-center gap-2 shrink-0 mr-1">
+              <img
+                src={isLight ? "/icons/chat-light.svg" : "/icons/chat-dark.svg"}
+                alt="Chat"
+                className="w-4 h-4 shrink-0"
+                draggable={false}
+              />
+              <span
+                className={
+                  "text-[13px] font-semibold shrink-0 " +
+                  (isLight ? "text-black/85" : "text-white/88")
+                }
+              >
+                Chat
+              </span>
+            </div>
 
-          {/* 🔥 ВОТ СЮДА ТЫ ВСТАВЛЯЕШЬ СВИТЧЕР */}
-          <div className="flex items-center gap-2 px-3 py-2 border-b border-white/10">
-            <button
-              onClick={() => setChatViewMode("general")}
-              className={
-                "h-8 px-3 rounded-full text-xs " +
-                (chatViewMode === "general"
-                  ? "bg-white/20 text-white"
-                  : "text-white/60")
-              }
-            >
-              General
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setChatViewMode("general")}
+                className={
+                  "h-8 px-3 rounded-full text-xs font-medium transition border shrink-0 " +
+                  (chatViewMode === "general"
+                    ? (isLight
+                      ? "bg-[#111827] border-[#111827] text-white"
+                      : "bg-white/14 border-white/15 text-white")
+                    : (isLight
+                      ? "bg-transparent border-black/10 text-black/65 hover:bg-black/5"
+                      : "bg-transparent border-white/10 text-white/65 hover:bg-white/5"))
+                }
+              >
+                All
+              </button>
 
-            <button
-              onClick={() => setChatViewMode("host")}
-              className={
-                "h-8 px-3 rounded-full text-xs " +
-                (chatViewMode === "host"
-                  ? "bg-white/20 text-white"
-                  : "text-white/60")
-              }
-            >
-              Host chat
-            </button>
+              <button
+                type="button"
+                onClick={() => setChatViewMode("host")}
+                className={
+                  "h-8 px-3 rounded-full text-xs font-medium transition border shrink-0 " +
+                  (chatViewMode === "host"
+                    ? (isLight
+                      ? "bg-[#111827] border-[#111827] text-white"
+                      : "bg-white/14 border-white/15 text-white")
+                    : (isLight
+                      ? "bg-transparent border-black/10 text-black/65 hover:bg-black/5"
+                      : "bg-transparent border-white/10 text-white/65 hover:bg-white/5"))
+                }
+              >
+                DMs
+              </button>
+            </div>
 
-            {/* dropdown только для хоста */}
-            {String(session?.host_id || "") === String(authUserId || "") &&
+            <div className="flex-1 min-w-0" />
+
+            {String(session?.host_id || "").trim().toLowerCase() === String(authUserId || "").trim().toLowerCase() &&
               chatViewMode === "host" && (
-                <select
-                  value={selectedHostChatPeerId || ""}
-                  onChange={(e) => setSelectedHostChatPeerId(e.target.value || null)}
-                  className="h-8 text-xs bg-black/40 text-white rounded px-2"
-                >
-                  <option value="">Pick participant</option>
-                  {hostChatPeerIds.map((peerId) => {
-                    const p = profilesById?.[peerId];
-                    return (
-                      <option key={peerId} value={peerId}>
-                        {p?.full_name || peerId}
+                <div className="relative shrink-0">
+                  <select
+                    value={selectedHostChatPeerId || ""}
+                    onChange={(e) => setSelectedHostChatPeerId(e.target.value || null)}
+                    className={
+                      "h-8 min-w-[170px] max-w-[220px] rounded-full border pl-3 pr-8 text-xs outline-none transition appearance-none " +
+                      (isLight
+                        ? "border-black/10 bg-white text-black/80 hover:border-black/20"
+                        : "border-white/10 bg-[#0B1220]/85 text-white/85 hover:border-white/20")
+                    }
+                    style={{ colorScheme: isLight ? "light" : "dark" }}
+                    title="Choose participant for DMs"
+                  >
+                    <option value="">
+                      {liveHostChatOptions.length ? "Choose DM" : "No one live"}
+                    </option>
+
+                    {liveHostChatOptions.map((item) => (
+                      <option key={item.userId} value={item.userId}>
+                        {item.label}
                       </option>
-                    );
-                  })}
-                </select>
+                    ))}
+                  </select>
+
+                  <div
+                    className={
+                      "pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10px] " +
+                      (isLight ? "text-black/45" : "text-white/45")
+                    }
+                  >
+                    ▾
+                  </div>
+                </div>
               )}
+
+            <button
+              type="button"
+              onClick={() => {
+                setRightPanelOpen(false);
+                setRightTab(null);
+              }}
+              className={
+                "w-8 h-8 rounded-xl flex items-center justify-center transition shrink-0 " +
+                (isLight
+                  ? "bg-black/5 hover:bg-black/10 text-black/60"
+                  : "bg-white/5 hover:bg-white/10 text-white/70")
+              }
+              title="Close chat"
+            >
+              ✕
+            </button>
           </div>
 
-          {/* сам чат */}
           <ChatPanel
             sessionId={sessionId}
             theme={theme}
@@ -6546,7 +6644,6 @@ export function RoomPageLiveKit() {
             externalDirectPeerUserId={selectedHostChatPeerId}
             onDirectPeerIdsChange={setHostChatPeerIds}
           />
-
         </div>
       )}
 
