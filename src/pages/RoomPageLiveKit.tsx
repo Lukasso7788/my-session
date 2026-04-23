@@ -1530,6 +1530,35 @@ export function RoomPageLiveKit() {
   });
 
   const [rightTab, setRightTab] = useState<RightPanelTab>("intentions");
+  const [chatViewMode, setChatViewMode] = useState<"general" | "host">("general");
+  const [hostChatPeerIds, setHostChatPeerIds] = useState<string[]>([]);
+  const [selectedHostChatPeerId, setSelectedHostChatPeerId] = useState<string | null>(null);
+  useEffect(() => {
+    const hostId = String(session?.host_id || "").trim();
+    const me = String(authUserId || "").trim();
+
+    if (!hostId || !me) {
+      setSelectedHostChatPeerId(null);
+      return;
+    }
+
+    const isHost = hostId === me;
+
+    if (!isHost) {
+      setSelectedHostChatPeerId(hostId);
+      return;
+    }
+
+    if (!hostChatPeerIds.length) {
+      setSelectedHostChatPeerId(null);
+      return;
+    }
+
+    setSelectedHostChatPeerId((prev) => {
+      if (prev && hostChatPeerIds.includes(prev)) return prev;
+      return hostChatPeerIds[0] || null;
+    });
+  }, [session?.host_id, authUserId, hostChatPeerIds]);
   const openRightTab = (tab: RightPanelTab) => {
     if (!tab) {
       setRightPanelOpen(false);
@@ -6452,60 +6481,72 @@ export function RoomPageLiveKit() {
         </div>
       )}
 
-      {rightTab === "chat" && (
-        <div className="h-full min-h-0 flex flex-col">
-          <div
-            className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
-              }`}
-          >
-            <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>
-              Chat
-            </div>
+      {rightPanelOpen && rightTab === "chat" && (
+        <div className="flex flex-col h-full">
+
+          {/* 🔥 ВОТ СЮДА ТЫ ВСТАВЛЯЕШЬ СВИТЧЕР */}
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-white/10">
             <button
-              onClick={() => openRightTab(null)}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                ? "bg-black/5 hover:bg-black/10 text-black/60"
-                : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
-                }`}
-              title="Close"
+              onClick={() => setChatViewMode("general")}
+              className={
+                "h-8 px-3 rounded-full text-xs " +
+                (chatViewMode === "general"
+                  ? "bg-white/20 text-white"
+                  : "text-white/60")
+              }
             >
-              ✕
+              General
             </button>
+
+            <button
+              onClick={() => setChatViewMode("host")}
+              className={
+                "h-8 px-3 rounded-full text-xs " +
+                (chatViewMode === "host"
+                  ? "bg-white/20 text-white"
+                  : "text-white/60")
+              }
+            >
+              Host chat
+            </button>
+
+            {/* dropdown только для хоста */}
+            {String(session?.host_id || "") === String(authUserId || "") &&
+              chatViewMode === "host" && (
+                <select
+                  value={selectedHostChatPeerId || ""}
+                  onChange={(e) => setSelectedHostChatPeerId(e.target.value || null)}
+                  className="h-8 text-xs bg-black/40 text-white rounded px-2"
+                >
+                  <option value="">Pick participant</option>
+                  {hostChatPeerIds.map((peerId) => {
+                    const p = profilesById?.[peerId];
+                    return (
+                      <option key={peerId} value={peerId}>
+                        {p?.full_name || peerId}
+                      </option>
+                    );
+                  })}
+                </select>
+              )}
           </div>
 
-          <div className="flex-1 min-h-0 p-4 overflow-hidden">
-            <div
-              className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight
-                ? "bg-white/70 border border-black/10"
-                : "bg-[#020617]/40 border border-white/10"
-                }`}
-            >
-              <div className="h-full min-h-0 flex flex-col overflow-hidden [&>*]:h-full [&>*]:min-h-0">
-                {session?.id ? (
-                  <div
-                    data-theme={theme}
-                    style={{ colorScheme: theme }}
-                    className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}
-                  >
-                    <ChatPanelAny
-                      sessionId={session.id}
-                      theme={theme}
-                      hostUserIdOverride={String(session?.host_id || "") || null}
-                      hostProfileOverride={session?.host_profile || null}
-                      showHeader={false}
-                      title="Chat"
-                      onClose={() => openRightTab(null)}
-                      embedded={true}
-                      hideHeader={true}
-                      authUserId={authUserId}
-                      displayName={displayName || userName}
-                      onAnyMessageSeen={() => markChatRead()}
-                    />
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          </div>
+          {/* сам чат */}
+          <ChatPanel
+            sessionId={sessionId}
+            theme={theme}
+            showHeader={false}
+            onClose={() => {
+              setRightPanelOpen(false);
+              setRightTab(null);
+            }}
+            hostUserIdOverride={String(session?.host_id || "") || null}
+            hostProfileOverride={session?.host_profile || null}
+            externalMode={chatViewMode}
+            externalDirectPeerUserId={selectedHostChatPeerId}
+            onDirectPeerIdsChange={setHostChatPeerIds}
+          />
+
         </div>
       )}
 
