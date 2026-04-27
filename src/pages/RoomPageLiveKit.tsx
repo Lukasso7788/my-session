@@ -4683,10 +4683,6 @@ export function RoomPageLiveKit() {
       await attendanceJoin();
       startAttendanceHeartbeat();
 
-      // mic
-      await r.localParticipant.setMicrophoneEnabled(false);
-      setMicOn(false);
-
       const shouldAutoStartCameraOnJoin =
         pj.videoEnabled &&
         !isMobileQuery &&
@@ -4789,8 +4785,50 @@ export function RoomPageLiveKit() {
 
   // toggle mic
   const toggleMic = async () => {
+    const room = roomRef.current || roomState;
+
+    if (!room?.localParticipant) {
+      console.warn("[mic-toggle] skipped: room/localParticipant is not ready");
+      setMediaWarning("Microphone is not ready yet. Please wait a moment and try again.");
+      return;
+    }
+
+    const lp = room.localParticipant;
+
+    const currentlyEnabled = (() => {
+      try {
+        const pubs = Array.from(lp.audioTrackPublications?.values?.() || []);
+        const micPub = pubs.find((p: any) => p?.source === Track.Source.Microphone);
+        return !!micPub && !micPub.isMuted && !!micPub.track;
+      } catch {
+        return !!micOn;
+      }
+    })();
+
+    const nextEnabled = !currentlyEnabled;
+
+    console.log("[mic-toggle] click", {
+      currentlyEnabled,
+      nextEnabled,
+      selectedAudioInputId,
+      prejoinAudioInputId: prejoinRef.current.audioInputId,
+      echoCancellationEnabled,
+      noiseSuppressionEnabled,
+      autoGainControlEnabled,
+      browser: navigator.userAgent,
+    });
+
     try {
-      await micToggleHook.toggle();
+      setMediaWarning("");
+
+      await lp.setMicrophoneEnabled(nextEnabled, {
+        deviceId: selectedAudioInputId || prejoinRef.current.audioInputId || undefined,
+        echoCancellation: echoCancellationEnabled,
+        noiseSuppression: noiseSuppressionEnabled,
+        autoGainControl: autoGainControlEnabled,
+      } as any);
+
+      setMicOn(nextEnabled);
 
       await ensureRoomAudioPlaybackUnlocked("toggle-mic");
 
@@ -4799,9 +4837,28 @@ export function RoomPageLiveKit() {
       }, 180);
 
       scheduleRebuildTiles();
+
+      window.setTimeout(() => {
+        scheduleRebuildTiles();
+      }, 120);
+
       setRemoteAudioRecoveryTick((v) => v + 1);
-    } catch (e) {
-      console.error("toggleMic error:", e);
+
+      console.log("[mic-toggle] ok", { nextEnabled });
+    } catch (e: any) {
+      console.error("[mic-toggle] failed:", e);
+
+      setMicOn(currentlyEnabled);
+
+      const msg = normalizeMediaWarningMessage(
+        e?.message || e?.name || e || "microphone_toggle_failed"
+      );
+
+      setMediaWarning(
+        `${msg} Try refreshing the room, re-allowing microphone permissions, or using Chrome.`
+      );
+
+      scheduleRebuildTiles();
     }
   };
 
