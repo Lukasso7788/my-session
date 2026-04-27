@@ -1,30 +1,26 @@
 // src/components/IntentionsPanel.tsx
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { MouseEvent, ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import type { ReactNode, MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import {
-  Check,
   CheckCircle,
   Circle,
-  ExternalLink,
-  Flame,
-  ListPlus,
-  Lock,
+  Trash2,
   Pencil,
+  X,
+  Check,
   Pin,
   PinOff,
+  ExternalLink,
+  ListPlus,
   RefreshCw,
   Search,
-  Trash2,
-  Unlock,
-  X,
 } from "lucide-react";
-import { useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { useParams } from "react-router-dom";
 
 type RoomTheme = "dark" | "light";
-type IntentionVisibility = "public" | "private";
 
 type SessionIntention = {
   id: string;
@@ -45,7 +41,6 @@ type PanelIntention = {
   text: string;
   focus_plan_item_id: string | null;
   completed: boolean;
-  visibility?: IntentionVisibility | string | null;
   created_at: string;
   updated_at: string;
 };
@@ -71,7 +66,7 @@ type FocusPlanItem = {
 };
 
 type IntentionsPanelProps = {
-  sessionId?: string;
+  sessionId?: string; // uuid or slug
   theme?: RoomTheme;
   timerText?: string;
   timerTextClassName?: string;
@@ -83,6 +78,9 @@ type ProfileMini = {
   avatar_url?: string;
 };
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 type DocPiPWindow = Window & { document: Document; close: () => void };
 
 declare global {
@@ -93,16 +91,17 @@ declare global {
   }
 }
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 const OVERLAY_FONT_FAMILY =
   'Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"';
 
 const PANEL_INTENTIONS_TABLE = "panel_intentions";
 const SESSION_INTENTIONS_TABLE = "intentions";
-const INTENTION_ENCOURAGEMENTS_TABLE = "intention_encouragements";
 
+/**
+ * Conservative limits:
+ * - enough for normal usage
+ * - lighter queries + lighter render
+ */
 const PANEL_INTENTIONS_FETCH_LIMIT = 120;
 const SESSION_INTENTIONS_FETCH_LIMIT = 80;
 const TEAM_INTENTIONS_RENDER_LIMIT = 50;
@@ -110,28 +109,65 @@ const PLAN_ITEMS_RENDER_LIMIT = 40;
 const FOCUS_PLAN_ITEMS_FETCH_LIMIT = 120;
 const FOCUS_PLANS_FETCH_LIMIT = 40;
 
-const COLORS = {
-  red: "#F65252",
-  blue: "#5286F6",
-  green: "#65D46C",
-  dark: "#2F2F2F",
-  panel: "#EEEEEE",
-  border: "#CAC3C3",
-  text: "#111111",
-  muted: "#6B6B6B",
-  faint: "#A8A8A8",
-};
+function IconButton({
+  title,
+  onClick,
+  children,
+  className = "",
+  theme = "dark",
+}: {
+  title: string;
+  onClick: (e: MouseEvent<HTMLButtonElement>) => void;
+  children: ReactNode;
+  className?: string;
+  theme?: RoomTheme;
+}) {
+  const isLight = theme === "light";
+  const base = isLight
+    ? "bg-black/5 hover:bg-black/10 text-black/70"
+    : "bg-[#111827] hover:bg-[#1f2937] text-white/80";
 
-function safeTrim(x: unknown) {
-  return String(x || "").trim();
+  return (
+    <button
+      title={title}
+      onClick={onClick}
+      className={"w-9 h-9 rounded-xl flex items-center justify-center transition " + base + " " + className}
+      type="button"
+    >
+      {children}
+    </button>
+  );
 }
 
-function normalizeTextForMatch(x: unknown) {
-  return String(x || "").replace(/\s+/g, " ").trim().toLowerCase();
-}
+function TimerSmartIcon({
+  theme,
+  className = "w-4 h-4",
+  alt = "Timer",
+}: {
+  theme: RoomTheme;
+  className?: string;
+  alt?: string;
+}) {
+  const themedSrc = `/icons/timer-${theme}.svg`;
+  const fallbackSrc = `/icons/timer.svg`;
 
-function normalizeVisibility(value: unknown): IntentionVisibility {
-  return String(value || "public").toLowerCase() === "private" ? "private" : "public";
+  const [src, setSrc] = useState(themedSrc);
+
+  useEffect(() => {
+    setSrc(themedSrc);
+  }, [themedSrc]);
+
+  return (
+    <img
+      src={src}
+      onError={() => {
+        if (src !== fallbackSrc) setSrc(fallbackSrc);
+      }}
+      className={className}
+      alt={alt}
+      draggable={false}
+    />
+  );
 }
 
 function copyStylesToDocument(from: Document, to: Document) {
@@ -149,15 +185,22 @@ function copyStylesToDocument(from: Document, to: Document) {
   } catch { }
 }
 
-function applyOverlayBaseStyles(doc: Document) {
+function applyOverlayBaseStyles(doc: Document, isLight: boolean) {
   try {
     doc.documentElement.style.height = "100%";
     doc.body.style.height = "100%";
     doc.body.style.margin = "0";
-    doc.body.style.background = COLORS.panel;
+    doc.body.style.background = isLight ? "#ffffff" : "#060B14";
     doc.body.style.fontFamily = OVERLAY_FONT_FAMILY;
-    doc.body.style.colorScheme = "light";
   } catch { }
+}
+
+function safeTrim(x: unknown) {
+  return String(x || "").trim();
+}
+
+function normalizeTextForMatch(x: unknown) {
+  return String(x || "").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
 async function fetchProfilesMap(userIds: string[]): Promise<Map<string, ProfileMini>> {
@@ -187,79 +230,16 @@ async function fetchProfilesMap(userIds: string[]): Promise<Map<string, ProfileM
   return map;
 }
 
-function AssetIcon({
-  src,
-  fallback,
-  className = "w-4 h-4",
-  alt = "",
-}: {
-  src: string;
-  fallback: ReactNode;
-  className?: string;
-  alt?: string;
-}) {
-  const [failed, setFailed] = useState(false);
-  if (failed) return <>{fallback}</>;
-  return <img src={src} alt={alt} draggable={false} className={className} onError={() => setFailed(true)} />;
-}
-
-function HeaderIconButton({
-  title,
-  color,
-  onClick,
-  children,
-}: {
-  title: string;
-  color: string;
-  onClick: (e: MouseEvent<HTMLButtonElement>) => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      title={title}
-      onClick={onClick}
-      className="w-[32px] h-[32px] rounded-[11px] border flex items-center justify-center transition hover:bg-white active:scale-[0.98]"
-      style={{ borderColor: color, color, background: "rgba(255,255,255,0.35)" }}
-    >
-      {children}
-    </button>
-  );
-}
-
-function SmallIconButton({
-  title,
-  onClick,
-  children,
-  className = "",
-}: {
-  title: string;
-  onClick: (e: MouseEvent<HTMLButtonElement>) => void;
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <button
-      type="button"
-      title={title}
-      onClick={onClick}
-      className={
-        "w-8 h-8 rounded-xl flex items-center justify-center text-black/55 hover:text-black hover:bg-black/[0.04] transition " +
-        className
-      }
-    >
-      {children}
-    </button>
-  );
-}
-
 export function IntentionsPanel({
   sessionId: sessionIdProp,
+  theme = "dark",
   timerText: timerTextProp,
   timerTextClassName,
 }: IntentionsPanelProps) {
   const { id: idOrSlugFromUrl } = useParams<{ id: string }>();
   const rawSessionId = (sessionIdProp || idOrSlugFromUrl || "").trim();
+
+  const isLight = theme === "light";
 
   const [user, setUser] = useState<any>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -271,14 +251,9 @@ export function IntentionsPanel({
   const [sessionLoading, setSessionLoading] = useState(true);
 
   const [newIntention, setNewIntention] = useState("");
-  const [newIntentionVisibility, setNewIntentionVisibility] = useState<IntentionVisibility>("public");
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState<string>("");
-
-  const [fireCounts, setFireCounts] = useState<Record<string, number>>({});
-  const [myFireIds, setMyFireIds] = useState<Set<string>>(() => new Set());
-  const [fireBusyId, setFireBusyId] = useState<string | null>(null);
 
   const loadSeqRef = useRef(0);
   const panelSeqRef = useRef(0);
@@ -300,6 +275,42 @@ export function IntentionsPanel({
   const [planSearch, setPlanSearch] = useState("");
   const [importingItemId, setImportingItemId] = useState<string | null>(null);
   const [lastPlansLoadedAt, setLastPlansLoadedAt] = useState<string>("");
+
+  const titleText = isLight ? "text-black/85" : "text-white/85";
+  const mutedText = isLight ? "text-black/50" : "text-white/45";
+  const divider = isLight ? "bg-black/10" : "bg-white/5";
+
+  const panelBg = isLight ? "bg-white" : "bg-[#060B14]";
+  const headerBg = isLight ? "bg-white/95" : "bg-[#060B14]/95";
+  const headerBorder = isLight ? "border-black/10" : "border-white/10";
+
+  const inputCls = isLight
+    ? `
+      bg-white border border-black/10 rounded-xl
+      px-3 py-3 text-[13px] text-black/85 placeholder:text-black/35
+      outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
+      font-inter
+    `
+    : `
+      bg-[#0B1220]/70 border border-white/10 rounded-xl
+      px-3 py-3 text-[13px] text-white/85 placeholder:text-white/35
+      outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
+      font-inter
+    `;
+
+  const myCardCls = isLight
+    ? "group rounded-xl border border-black/10 px-3 py-2.5 bg-white/70 hover:bg-white transition cursor-pointer"
+    : "group rounded-xl border border-white/5 px-3 py-2.5 bg-[#0B1220]/55 hover:bg-[#0B1220]/75 transition cursor-pointer";
+
+  const teamCardCls = isLight
+    ? "rounded-xl border border-black/10 px-3 py-2.5 bg-white/70 hover:bg-white transition"
+    : "rounded-xl border border-white/5 px-3 py-2.5 bg-[#0B1220]/55 hover:bg-[#0B1220]/75 transition";
+
+  const ghostBtn = isLight
+    ? "border border-black/10 bg-black/0 hover:bg-black/5 text-black/75"
+    : "border border-white/10 bg-white/0 hover:bg-white/5 text-white/80";
+
+  const primaryBtn = "bg-emerald-500 hover:bg-emerald-600 text-[#02140B] font-semibold";
 
   const stopRoomBubbling = useCallback((e: any) => {
     e?.stopPropagation?.();
@@ -357,7 +368,11 @@ export function IntentionsPanel({
       const slug = raw.toLowerCase();
 
       try {
-        const { data, error } = await supabase.from("sessions").select("id").eq("custom_slug", slug).single();
+        const { data, error } = await supabase
+          .from("sessions")
+          .select("id")
+          .eq("custom_slug", slug)
+          .single();
 
         if (!cancelled) {
           if (!error && data?.id) setSessionId(String(data.id));
@@ -385,7 +400,7 @@ export function IntentionsPanel({
     try {
       const { data, error } = await supabase
         .from(PANEL_INTENTIONS_TABLE)
-        .select("id,user_id,text,focus_plan_item_id,completed,visibility,created_at,updated_at")
+        .select("id,user_id,text,focus_plan_item_id,completed,created_at,updated_at")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(PANEL_INTENTIONS_FETCH_LIMIT);
@@ -421,40 +436,6 @@ export function IntentionsPanel({
     };
   }, [user?.id, loadPanelIntentions]);
 
-  const loadFireState = useCallback(
-    async (intentionIds: string[]) => {
-      const ids = [...new Set(intentionIds.map((x) => String(x || "").trim()).filter(Boolean))];
-      if (!ids.length) {
-        setFireCounts({});
-        setMyFireIds(new Set());
-        return;
-      }
-
-      try {
-        const { data, error } = await supabase
-          .from(INTENTION_ENCOURAGEMENTS_TABLE)
-          .select("intention_id,user_id,emoji")
-          .in("intention_id", ids)
-          .eq("emoji", "🔥");
-
-        if (error || !Array.isArray(data)) return;
-
-        const nextCounts: Record<string, number> = {};
-        const nextMine = new Set<string>();
-        for (const row of data as any[]) {
-          const intentionId = String(row?.intention_id || "");
-          if (!intentionId) continue;
-          nextCounts[intentionId] = (nextCounts[intentionId] || 0) + 1;
-          if (user?.id && String(row?.user_id || "") === String(user.id)) nextMine.add(intentionId);
-        }
-
-        setFireCounts(nextCounts);
-        setMyFireIds(nextMine);
-      } catch { }
-    },
-    [user?.id]
-  );
-
   const loadSessionIntentions = useCallback(
     async (sid?: string | null) => {
       const s = String(sid || sessionId || "");
@@ -489,12 +470,11 @@ export function IntentionsPanel({
         }));
 
         setSessionIntentions(merged);
-        void loadFireState(merged.map((x) => x.id));
       } finally {
         if (seq === loadSeqRef.current) setSessionLoading(false);
       }
     },
-    [sessionId, loadFireState]
+    [sessionId]
   );
 
   const scheduleSessionIntentionsReload = useCallback(
@@ -519,7 +499,7 @@ export function IntentionsPanel({
 
     void loadSessionIntentions(sessionId);
 
-    const intentionsChannel = supabase
+    const channel = supabase
       .channel(`intentions_realtime_${sessionId}`)
       .on(
         "postgres_changes",
@@ -534,24 +514,14 @@ export function IntentionsPanel({
       )
       .subscribe();
 
-    const fireChannel = supabase
-      .channel(`intention_encouragements_${sessionId}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: INTENTION_ENCOURAGEMENTS_TABLE },
-        () => void loadFireState(sessionIntentions.map((x) => x.id))
-      )
-      .subscribe();
-
     return () => {
       if (sessionReloadTimerRef.current) {
         window.clearTimeout(sessionReloadTimerRef.current);
         sessionReloadTimerRef.current = null;
       }
-      supabase.removeChannel(intentionsChannel);
-      supabase.removeChannel(fireChannel);
+      supabase.removeChannel(channel);
     };
-  }, [sessionId, loadSessionIntentions, scheduleSessionIntentionsReload, loadFireState, sessionIntentions]);
+  }, [sessionId, loadSessionIntentions, scheduleSessionIntentionsReload]);
 
   const findOwnSessionIntentionLocal = useCallback(
     (text: string) => {
@@ -588,7 +558,8 @@ export function IntentionsPanel({
       if (!nextText) return null;
 
       const existing =
-        (matchText ? findOwnSessionIntentionLocal(matchText) : null) || findOwnSessionIntentionLocal(nextText);
+        (matchText ? findOwnSessionIntentionLocal(matchText) : null) ||
+        findOwnSessionIntentionLocal(nextText);
 
       if (existing) {
         const updates: any = {};
@@ -674,22 +645,6 @@ export function IntentionsPanel({
       scheduleSessionIntentionsReload(sessionId);
     },
     [user?.id, sessionId, findOwnSessionIntentionLocal, loadSessionIntentions, scheduleSessionIntentionsReload]
-  );
-
-  const publishPanelIntentionIfNeeded = useCallback(
-    async (it: Pick<PanelIntention, "text" | "completed" | "visibility">, matchText?: string) => {
-      if (normalizeVisibility(it.visibility) === "private") {
-        await deleteOwnSessionIntentionByText(matchText || it.text);
-        return;
-      }
-
-      await upsertOwnSessionIntention({
-        matchText: matchText || it.text,
-        text: it.text,
-        completed: Boolean(it.completed),
-      });
-    },
-    [deleteOwnSessionIntentionByText, upsertOwnSessionIntention]
   );
 
   const loadPlans = useCallback(async () => {
@@ -785,7 +740,9 @@ export function IntentionsPanel({
     return base.filter((it) => normalizeTextForMatch(it.text).includes(q));
   }, [planItems, planSearch]);
 
-  const renderedPlanItems = useMemo(() => filteredPlanItems.slice(0, PLAN_ITEMS_RENDER_LIMIT), [filteredPlanItems]);
+  const renderedPlanItems = useMemo(() => {
+    return filteredPlanItems.slice(0, PLAN_ITEMS_RENDER_LIMIT);
+  }, [filteredPlanItems]);
 
   const syncFocusPlanItemCompleted = useCallback(
     async (focusPlanItemId: string, nextCompleted: boolean) => {
@@ -820,6 +777,7 @@ export function IntentionsPanel({
       if (!text) return;
 
       const norm = normalizeTextForMatch(text);
+
       setImportingItemId(item.id);
 
       try {
@@ -830,7 +788,7 @@ export function IntentionsPanel({
           if (existingSameText) {
             await supabase
               .from(PANEL_INTENTIONS_TABLE)
-              .update({ focus_plan_item_id: item.id, visibility: "public" })
+              .update({ focus_plan_item_id: item.id })
               .eq("id", existingSameText.id)
               .eq("user_id", user.id);
           } else {
@@ -839,7 +797,6 @@ export function IntentionsPanel({
               text,
               focus_plan_item_id: item.id,
               completed: Boolean(item.completed),
-              visibility: "public",
             } as any);
           }
         }
@@ -872,7 +829,6 @@ export function IntentionsPanel({
       text,
       focus_plan_item_id: null,
       completed: false,
-      visibility: newIntentionVisibility,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -882,8 +838,8 @@ export function IntentionsPanel({
     try {
       const { data, error } = await supabase
         .from(PANEL_INTENTIONS_TABLE)
-        .insert({ user_id: user.id, text, completed: false, visibility: newIntentionVisibility } as any)
-        .select("id,user_id,text,focus_plan_item_id,completed,visibility,created_at,updated_at")
+        .insert({ user_id: user.id, text, completed: false } as any)
+        .select("id,user_id,text,focus_plan_item_id,completed,created_at,updated_at")
         .single();
 
       if (error || !data) {
@@ -891,12 +847,10 @@ export function IntentionsPanel({
         return;
       }
 
-      const inserted = data as PanelIntention;
       setPanelIntentions((prev) =>
-        [inserted, ...prev.filter((x) => x.id !== optimisticId)].slice(0, PANEL_INTENTIONS_FETCH_LIMIT)
+        [data as PanelIntention, ...prev.filter((x) => x.id !== optimisticId)].slice(0, PANEL_INTENTIONS_FETCH_LIMIT)
       );
-
-      void publishPanelIntentionIfNeeded(inserted);
+      void upsertOwnSessionIntention({ text, completed: false });
     } catch {
       setPanelIntentions((prev) => prev.filter((x) => x.id !== optimisticId));
     }
@@ -907,9 +861,8 @@ export function IntentionsPanel({
     if (editingId === it.id) return;
 
     const next = !Boolean(it.completed);
-    const nextItem = { ...it, completed: next };
 
-    setPanelIntentions((prev) => prev.map((x) => (x.id === it.id ? nextItem : x)));
+    setPanelIntentions((prev) => prev.map((x) => (x.id === it.id ? { ...x, completed: next } : x)));
 
     try {
       const { error } = await supabase
@@ -924,34 +877,13 @@ export function IntentionsPanel({
         void syncFocusPlanItemCompleted(String(it.focus_plan_item_id), next);
       }
 
-      void publishPanelIntentionIfNeeded(nextItem);
+      void upsertOwnSessionIntention({
+        matchText: it.text,
+        text: it.text,
+        completed: next,
+      });
     } catch {
       setPanelIntentions((prev) => prev.map((x) => (x.id === it.id ? { ...x, completed: !next } : x)));
-    }
-  };
-
-  const togglePanelVisibility = async (it: PanelIntention) => {
-    if (!user?.id) return;
-    if (editingId === it.id) return;
-
-    const current = normalizeVisibility(it.visibility);
-    const next: IntentionVisibility = current === "public" ? "private" : "public";
-    const nextItem = { ...it, visibility: next };
-
-    setPanelIntentions((prev) => prev.map((x) => (x.id === it.id ? nextItem : x)));
-
-    try {
-      const { error } = await supabase
-        .from(PANEL_INTENTIONS_TABLE)
-        .update({ visibility: next })
-        .eq("id", it.id)
-        .eq("user_id", user.id);
-
-      if (error) throw error;
-
-      void publishPanelIntentionIfNeeded(nextItem);
-    } catch {
-      setPanelIntentions((prev) => prev.map((x) => (x.id === it.id ? it : x)));
     }
   };
 
@@ -963,7 +895,12 @@ export function IntentionsPanel({
     setPanelIntentions((p) => p.filter((x) => x.id !== id));
 
     try {
-      const { error } = await supabase.from(PANEL_INTENTIONS_TABLE).delete().eq("id", id).eq("user_id", user.id);
+      const { error } = await supabase
+        .from(PANEL_INTENTIONS_TABLE)
+        .delete()
+        .eq("id", id)
+        .eq("user_id", user.id);
+
       if (error) throw error;
 
       if (target?.text) {
@@ -996,11 +933,6 @@ export function IntentionsPanel({
     const prevItem = panelIntentions.find((x) => x.id === targetId) || null;
     const prevText = prevItem?.text || text;
     const prevCompleted = Boolean(prevItem?.completed);
-    const prevVisibility = normalizeVisibility(prevItem?.visibility);
-
-    const nextItem = prevItem
-      ? { ...prevItem, text, completed: prevCompleted, visibility: prevVisibility }
-      : null;
 
     setPanelIntentions((p) => p.map((x) => (x.id === targetId ? { ...x, text } : x)));
 
@@ -1016,56 +948,13 @@ export function IntentionsPanel({
       setEditingId(null);
       setEditingText("");
 
-      if (nextItem) void publishPanelIntentionIfNeeded(nextItem, prevText);
+      void upsertOwnSessionIntention({
+        matchText: prevText,
+        text,
+        completed: prevCompleted,
+      });
     } catch {
       setPanelIntentions(prev);
-    }
-  };
-
-  const toggleFire = async (item: SessionIntention) => {
-    if (!user?.id) return;
-    const intentionId = String(item.id || "").trim();
-    if (!intentionId || fireBusyId === intentionId) return;
-
-    const already = myFireIds.has(intentionId);
-    setFireBusyId(intentionId);
-
-    const prevCounts = fireCounts;
-    const prevMine = myFireIds;
-
-    setFireCounts((prev) => ({ ...prev, [intentionId]: Math.max(0, (prev[intentionId] || 0) + (already ? -1 : 1)) }));
-    setMyFireIds((prev) => {
-      const next = new Set(prev);
-      if (already) next.delete(intentionId);
-      else next.add(intentionId);
-      return next;
-    });
-
-    try {
-      if (already) {
-        const { error } = await supabase
-          .from(INTENTION_ENCOURAGEMENTS_TABLE)
-          .delete()
-          .eq("intention_id", intentionId)
-          .eq("user_id", user.id)
-          .eq("emoji", "🔥");
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from(INTENTION_ENCOURAGEMENTS_TABLE).upsert(
-          {
-            intention_id: intentionId,
-            user_id: user.id,
-            emoji: "🔥",
-          },
-          { onConflict: "intention_id,user_id,emoji", ignoreDuplicates: true }
-        );
-        if (error) throw error;
-      }
-    } catch {
-      setFireCounts(prevCounts);
-      setMyFireIds(prevMine);
-    } finally {
-      setFireBusyId(null);
     }
   };
 
@@ -1087,7 +976,7 @@ export function IntentionsPanel({
       if (canPip) {
         const pipWin = await window.documentPictureInPicture!.requestWindow({ width: 420, height: 720 });
         pipWin.document.title = "Intentions";
-        applyOverlayBaseStyles(pipWin.document);
+        applyOverlayBaseStyles(pipWin.document, isLight);
         copyStylesToDocument(document, pipWin.document);
 
         const container = pipWin.document.createElement("div");
@@ -1108,7 +997,7 @@ export function IntentionsPanel({
       if (!w) return;
 
       w.document.title = "Intentions";
-      applyOverlayBaseStyles(w.document);
+      applyOverlayBaseStyles(w.document, isLight);
       copyStylesToDocument(document, w.document);
 
       const container = w.document.createElement("div");
@@ -1122,7 +1011,7 @@ export function IntentionsPanel({
 
       w.addEventListener("beforeunload", closeOverlay);
     } catch { }
-  }, [closeOverlay]);
+  }, [closeOverlay, isLight]);
 
   useEffect(() => {
     return () => {
@@ -1162,160 +1051,221 @@ export function IntentionsPanel({
     return () => win.removeEventListener("keydown", onKeyDown);
   }, [importModalOpen, closeImportModal, getPortalDocument]);
 
-  const teamIntentions = useMemo(() => sessionIntentions.slice(0, TEAM_INTENTIONS_RENDER_LIMIT), [sessionIntentions]);
+  const teamIntentions = useMemo(() => {
+    return sessionIntentions.slice(0, TEAM_INTENTIONS_RENDER_LIMIT);
+  }, [sessionIntentions]);
 
-  const timerTextCls = `tabular-nums text-[13px] ${timerTextClassName || ""} font-inter font-normal`.trim();
+  if (!rawSessionId) {
+    return (
+      <div className={"h-full flex items-center justify-center font-inter " + panelBg}>
+        <div className={"text-[12px] italic font-inter " + mutedText}>No session id</div>
+      </div>
+    );
+  }
+
+  if (!sessionId) {
+    return (
+      <div className={"h-full flex items-center justify-center font-inter " + panelBg}>
+        <div className={"text-[12px] italic font-inter " + mutedText}>Resolving session...</div>
+      </div>
+    );
+  }
+
+  const timerPillCls = isLight ? "bg-black/5 border border-black/10 text-black/80" : "bg-white/5 border border-white/10 text-white/80";
+  const headerTitle = isLight ? "text-black/85" : "text-white/85";
+  const timerTextCls = `tabular-nums text-[12px] ${timerTextClassName || ""} font-inter font-normal`.trim();
 
   const ImportModal = importModalOpen
     ? (() => {
       const modalDoc = getPortalDocument();
 
+      const backdropBg = isLight ? "bg-black/40" : "bg-black/55";
+      const modalBg = isLight ? "bg-white" : "bg-[#060B14]";
+      const modalBorder = isLight ? "border-black/10" : "border-white/10";
+      const modalTitle = isLight ? "text-black/85" : "text-white/85";
+      const modalSub = isLight ? "text-black/50" : "text-white/45";
+      const rowBg = isLight ? "bg-white/70 hover:bg-white" : "bg-[#0B1220]/55 hover:bg-[#0B1220]/75";
+      const rowBorder = isLight ? "border-black/10" : "border-white/10";
+
       return createPortal(
         <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/35 font-inter"
+          className={["fixed inset-0 z-[9999] flex items-center justify-center", backdropBg, "font-inter"].join(" ")}
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) closeImportModal();
           }}
         >
           <div
-            className="w-[min(760px,calc(100vw-24px))] max-h-[min(760px,calc(100vh-24px))] overflow-hidden rounded-[24px] border bg-[#EEEEEE] shadow-2xl"
-            style={{ borderColor: COLORS.border }}
+            className={[
+              "w-[min(760px,calc(100vw-24px))] max-h-[min(78vh,780px)] rounded-2xl border shadow-xl overflow-hidden",
+              modalBg,
+              modalBorder,
+            ].join(" ")}
+            style={{ fontFamily: OVERLAY_FONT_FAMILY }}
+            onMouseDown={stopRoomBubbling}
+            onPointerDown={stopRoomBubbling}
+            onClick={stopRoomBubbling}
           >
-            <div className="flex items-start justify-between gap-4 px-5 py-4 border-b" style={{ borderColor: COLORS.border }}>
-              <div className="min-w-0">
-                <div className="text-[17px] font-bold text-black">Attach from Focus plan</div>
-                <div className="text-[12px] text-black/50 mt-1">
-                  Pick existing focus-plan items and add them to this room intention panel.
+            <div className={["px-4 py-3 border-b", modalBorder].join(" ")}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className={["text-[13px] font-semibold", modalTitle].join(" ")}>Attach to Intention Panel</div>
+                  <div className={["text-[11px] mt-0.5", modalSub].join(" ")}>
+                    Imports Focus plan items into your global panel intentions (visible in every session).
+                  </div>
                 </div>
-              </div>
 
-              <button
-                type="button"
-                onClick={closeImportModal}
-                className="w-9 h-9 rounded-xl flex items-center justify-center text-black/60 hover:bg-black/5 transition"
-                title="Close"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-[240px_1fr] min-h-[420px] max-h-[calc(100vh-130px)]">
-              <div className="border-r p-4 overflow-auto" style={{ borderColor: COLORS.border }}>
-                <div className="flex items-center justify-between gap-2 mb-3">
-                  <div className="text-[12px] font-bold text-black">Plans</div>
+                <div className="flex items-center gap-2 shrink-0">
                   <button
                     type="button"
-                    onClick={() => void loadPlans()}
-                    className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-black/5 text-black/60"
+                    className={"h-9 px-3 rounded-xl text-[12px] font-semibold transition inline-flex items-center gap-2 " + ghostBtn}
+                    onClick={() => loadPlans()}
                     title="Refresh plans"
                   >
-                    <RefreshCw size={15} className={plansLoading ? "animate-spin" : ""} />
+                    <RefreshCw size={14} />
+                    Refresh
+                  </button>
+
+                  <button
+                    type="button"
+                    className={"w-9 h-9 rounded-xl border transition flex items-center justify-center " + ghostBtn}
+                    onClick={closeImportModal}
+                    title="Close"
+                  >
+                    <X size={16} />
                   </button>
                 </div>
-
-                {plansLoading ? (
-                  <div className="text-[12px] italic text-black/45">Loading...</div>
-                ) : plans.length === 0 ? (
-                  <div className="text-[12px] italic text-black/45">No focus plans yet.</div>
-                ) : (
-                  <div className="flex flex-col gap-2">
-                    {plans.map((plan) => {
-                      const active = selectedPlanId === plan.id;
-                      return (
-                        <button
-                          type="button"
-                          key={plan.id}
-                          onClick={() => setSelectedPlanId(plan.id)}
-                          className={
-                            "text-left rounded-2xl border px-3 py-2 transition " +
-                            (active ? "bg-white text-black" : "bg-transparent hover:bg-white/60 text-black/70")
-                          }
-                          style={{ borderColor: active ? COLORS.dark : COLORS.border }}
-                        >
-                          <div className="text-[13px] font-semibold truncate">{plan.title || "Untitled plan"}</div>
-                          <div className="text-[11px] text-black/45 mt-0.5 truncate">
-                            Updated {plan.updated_at ? new Date(plan.updated_at).toLocaleDateString() : "recently"}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {lastPlansLoadedAt ? (
-                  <div className="mt-4 text-[11px] text-black/35">
-                    Loaded {new Date(lastPlansLoadedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                  </div>
-                ) : null}
               </div>
+            </div>
 
-              <div className="p-4 overflow-auto">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="relative flex-1">
-                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-black/35" />
-                    <input
-                      value={planSearch}
-                      onChange={(e) => setPlanSearch(e.target.value)}
-                      placeholder="Search plan items"
-                      className="w-full h-10 rounded-2xl border bg-white pl-9 pr-3 text-[13px] text-black outline-none focus:border-[#5286F6]"
-                      style={{ borderColor: COLORS.border }}
-                    />
-                  </div>
+            <div className="p-4 overflow-y-auto custom-scrollbar" style={{ maxHeight: "calc(78vh - 56px)" }}>
+              {plansLoading ? (
+                <div className={"text-[12px] italic " + mutedText}>Loading plans…</div>
+              ) : plans.length === 0 ? (
+                <div className={"text-[12px] italic " + mutedText}>
+                  No plans found. Create a plan in Focus plan page.
+                  {lastPlansLoadedAt ? ` (checked ${new Date(lastPlansLoadedAt).toLocaleTimeString()})` : ""}
                 </div>
-
-                {planItemsLoading ? (
-                  <div className="text-[12px] italic text-black/45">Loading items...</div>
-                ) : renderedPlanItems.length === 0 ? (
-                  <div className="text-[12px] italic text-black/45">No matching items.</div>
-                ) : (
+              ) : (
+                <>
                   <div className="flex flex-col gap-2">
-                    {renderedPlanItems.map((item) => {
-                      const norm = normalizeTextForMatch(item.text);
-                      const already = panelTextSet.has(norm);
-                      const busy = importingItemId === item.id;
+                    <div className={"text-[11px] font-semibold " + mutedText}>Plan</div>
 
-                      return (
-                        <div
-                          key={item.id}
-                          className="rounded-2xl border bg-white/60 px-3 py-3 flex items-start gap-3"
-                          style={{ borderColor: COLORS.border }}
-                        >
-                          <div className="pt-0.5">
-                            {item.completed ? (
-                              <CheckCircle size={18} style={{ color: COLORS.green }} />
-                            ) : (
-                              <Circle size={18} className="text-black/30" />
-                            )}
-                          </div>
+                    <select
+                      value={selectedPlanId}
+                      onChange={(e) => setSelectedPlanId(e.target.value)}
+                      className={
+                        isLight
+                          ? "w-full h-11 px-3 rounded-xl border border-black/10 bg-white text-[13px] font-semibold text-black/85 outline-none focus:ring-1 focus:ring-emerald-500"
+                          : "w-full h-11 px-3 rounded-xl border border-white/10 bg-[#0B1220]/70 text-[13px] font-semibold text-white/85 outline-none focus:ring-1 focus:ring-emerald-500"
+                      }
+                    >
+                      {plans.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.title}
+                        </option>
+                      ))}
+                    </select>
 
-                          <div className="flex-1 min-w-0">
-                            <div className={(item.completed ? "line-through text-black/35" : "text-black/80") + " text-[13px] leading-5"}>
-                              {item.text}
-                            </div>
-                            {item.target_date ? (
-                              <div className="mt-1 text-[11px] text-black/40">Target: {item.target_date}</div>
-                            ) : null}
-                          </div>
+                    <div className={"text-[11px] font-semibold " + mutedText + " mt-2"}>Search</div>
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={[
+                          "h-11 w-11 rounded-xl border flex items-center justify-center",
+                          isLight ? "border-black/10 bg-white" : "border-white/10 bg-[#0B1220]/70",
+                        ].join(" ")}
+                      >
+                        <Search size={16} className={isLight ? "text-black/40" : "text-white/45"} />
+                      </div>
 
-                          <button
-                            type="button"
-                            disabled={already || busy}
-                            onClick={() => void importPlanItemToPanel(item)}
-                            className={
-                              "h-9 px-3 rounded-xl text-[12px] font-semibold transition " +
-                              (already
-                                ? "bg-black/5 text-black/35 cursor-default"
-                                : "bg-[#2F2F2F] text-white hover:opacity-90")
-                            }
-                          >
-                            {already ? "Added" : busy ? "Adding..." : "Add"}
-                          </button>
-                        </div>
-                      );
-                    })}
+                      <input
+                        value={planSearch}
+                        onChange={(e) => setPlanSearch(e.target.value)}
+                        placeholder="Type to filter plan items..."
+                        className={"flex-1 " + inputCls}
+                      />
+                    </div>
                   </div>
-                )}
-              </div>
+
+                  <div className={"h-px my-4 " + divider} />
+
+                  {planItemsLoading ? (
+                    <div className={"text-[12px] italic " + mutedText}>Loading items…</div>
+                  ) : filteredPlanItems.length === 0 ? (
+                    <div className={"text-[12px] italic " + mutedText}>No items match your filter.</div>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      {renderedPlanItems.map((it) => {
+                        const text = safeTrim(it.text);
+                        const inPanelById = panelIntentions.some((p) => String(p.focus_plan_item_id || "") === String(it.id));
+                        const inPanelByText = panelTextSet.has(normalizeTextForMatch(text));
+                        const already = inPanelById || inPanelByText;
+
+                        return (
+                          <div key={it.id} className={["rounded-xl border px-3 py-2.5 transition", rowBg, rowBorder].join(" ")}>
+                            <div className="flex items-start gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div
+                                  className={[
+                                    "text-[13px] break-words leading-5",
+                                    it.completed
+                                      ? isLight
+                                        ? "text-black/45 line-through"
+                                        : "text-white/50 line-through"
+                                      : isLight
+                                        ? "text-black/80"
+                                        : "text-white/80",
+                                  ].join(" ")}
+                                >
+                                  {text}
+                                </div>
+
+                                <div className={"mt-1 text-[11px] " + mutedText}>
+                                  {already ? "Already in your panel" : "Focus plan item"}
+                                  {it.target_date ? ` · Due: ${it.target_date}` : ""}
+                                </div>
+                              </div>
+
+                              {already ? (
+                                <div className="shrink-0">
+                                  <div
+                                    className={[
+                                      "h-10 px-3 rounded-xl text-[12px] font-semibold inline-flex items-center gap-2",
+                                      isLight ? "bg-black/5 text-black/60 border border-black/10" : "bg-white/5 text-white/70 border border-white/10",
+                                    ].join(" ")}
+                                    title="Already attached to panel"
+                                  >
+                                    <Check size={16} />
+                                    Attached
+                                  </div>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => importPlanItemToPanel(it)}
+                                  disabled={importingItemId === it.id}
+                                  className={[
+                                    "shrink-0 h-10 px-3 rounded-xl text-[12px] font-semibold transition inline-flex items-center gap-2",
+                                    importingItemId === it.id ? "opacity-70" : "opacity-100",
+                                    primaryBtn,
+                                  ].join(" ")}
+                                  title="Attach to panel"
+                                >
+                                  <ListPlus size={16} />
+                                  {importingItemId === it.id ? "Attaching..." : "Attach"}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <div className={"mt-4 text-[11px] " + mutedText}>
+                    Tip: this is your “always-on” intentions list. It stays the same across sessions.
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>,
@@ -1324,287 +1274,273 @@ export function IntentionsPanel({
     })()
     : null;
 
-  const renderEmptyState = (text: string) => (
-    <div className="h-full flex items-center justify-center font-inter bg-[#EEEEEE] text-black/45">
-      <div className="text-[12px] italic font-inter">{text}</div>
-    </div>
-  );
-
-  if (!rawSessionId) return renderEmptyState("No session id");
-  if (!sessionId) return renderEmptyState("Resolving session...");
-
   const PanelUI = (
     <div
-      className="h-full w-full overflow-auto font-inter text-black bg-[#EEEEEE]"
-      style={{ colorScheme: "light", fontFamily: OVERLAY_FONT_FAMILY }}
+      className={"h-full flex flex-col min-h-0 font-inter " + panelBg}
       onPointerDown={stopRoomBubbling}
       onMouseDown={stopRoomBubbling}
       onClick={stopRoomBubbling}
     >
-      <div className="px-4 pt-9 pb-8 min-h-full">
-        <h2 className="text-[16px] font-bold text-black leading-none mb-9">Intentions</h2>
+      <div className={"px-4 pt-4 pb-3 shrink-0 border-b " + headerBorder + " " + headerBg}>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className={"font-inter font-semibold text-[13px] " + headerTitle}>Intentions</div>
+            <div className={"text-[11px] font-inter " + mutedText}>Keep it visible while you work</div>
+          </div>
 
-        <div className="rounded-xl border bg-[#EEEEEE] px-3 py-2 mb-9" style={{ borderColor: COLORS.border }}>
-          <div className="flex items-center gap-2">
-            <div className="flex-1 min-w-0">
-              <div className="text-[14px] font-bold leading-tight text-black">Intentions</div>
-              <div className="text-[12px] leading-[16px] text-black mt-0.5 max-w-[150px]">
-                Keep it visible while you work
-              </div>
+          <div className="flex items-center gap-2 shrink-0 font-inter">
+            <div className={"inline-flex items-center gap-2 px-3 py-2 rounded-xl " + timerPillCls} title="Timer">
+              <TimerSmartIcon theme={theme} className="w-4 h-4 opacity-80" />
+              <span className={timerTextCls + " leading-none"} style={{ fontFamily: OVERLAY_FONT_FAMILY }}>
+                {timerText || "--:--"}
+              </span>
             </div>
 
-            <div
-              className="h-[32px] min-w-[80px] rounded-xl border bg-[#EEEEEE] px-3 flex items-center justify-center gap-2 text-black"
-              style={{ borderColor: COLORS.border }}
-              title="Room timer"
+            <IconButton
+              theme={theme}
+              title="Attach from Focus plan to panel"
+              onClick={(e) => {
+                e.preventDefault();
+                openImportModal();
+              }}
             >
-              <AssetIcon
-                src="/icons/timer-light.svg"
-                fallback={<span className="text-[16px] leading-none">⌛</span>}
-                className="w-4 h-4"
-                alt="Timer"
-              />
-              <span className={timerTextCls}>{timerText}</span>
+              <ListPlus size={16} />
+            </IconButton>
+
+            {!overlayOpen ? (
+              <IconButton
+                theme={theme}
+                title="Pin (always on top if supported)"
+                onClick={(e) => {
+                  e.preventDefault();
+                  openOverlay();
+                }}
+              >
+                <Pin size={16} />
+              </IconButton>
+            ) : (
+              <IconButton
+                theme={theme}
+                title="Unpin"
+                onClick={(e) => {
+                  e.preventDefault();
+                  closeOverlay();
+                }}
+              >
+                <PinOff size={16} />
+              </IconButton>
+            )}
+
+            <IconButton
+              theme={theme}
+              title="Open Focus plan"
+              onClick={(e) => {
+                e.preventDefault();
+                const sid = (rawSessionId || sessionId || "").trim();
+                window.open(`/focus-plan?sessionId=${encodeURIComponent(sid)}`, "_blank", "noopener,noreferrer");
+              }}
+            >
+              <ExternalLink size={16} />
+            </IconButton>
+          </div>
+        </div>
+      </div>
+
+      <div className="px-4 pb-4 pt-4 min-h-0 flex-1 overflow-y-auto custom-scrollbar font-inter">
+        <div className="mb-5">
+          <div className={titleText + " font-inter font-semibold text-[13px] mb-3"}>My intentions</div>
+
+          <div className="flex items-center gap-2 mb-3">
+            <input
+              type="text"
+              value={newIntention}
+              onChange={(e) => setNewIntention(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAddPanelIntention()}
+              placeholder="Add an intention"
+              className={"flex-1 " + inputCls}
+            />
+
+            <button
+              onClick={handleAddPanelIntention}
+              className="
+                h-11 px-4 rounded-xl
+                bg-emerald-500 hover:bg-emerald-600
+                text-[#02140B] font-semibold text-[13px]
+                font-inter
+              "
+              type="button"
+              title="Add"
+            >
+              Add
+            </button>
+          </div>
+
+          {panelLoading ? (
+            <div className={"text-[12px] italic font-inter " + mutedText}>Loading...</div>
+          ) : panelIntentions.length === 0 ? (
+            <div className={"text-[12px] italic font-inter " + mutedText}>
+              No panel intentions yet. Attach from Focus plan or add manually.
             </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {panelIntentions.map((i) => {
+                const isEditing = editingId === i.id;
 
-            <HeaderIconButton title="Attach from Focus plan" color={COLORS.blue} onClick={openImportModal}>
-              <AssetIcon
-                src="/icons/intentions-import-blue.svg"
-                fallback={<ListPlus size={17} />}
-                className="w-[17px] h-[17px]"
-                alt="Attach"
-              />
-            </HeaderIconButton>
+                const circleCls = isLight ? "text-black/40" : "text-white/45";
+                const textDoneCls = isLight ? "text-black/45 line-through" : "text-white/50 line-through";
+                const textActiveCls = isLight ? "text-black/80" : "text-white/80";
 
-            <HeaderIconButton title={overlayOpen ? "Unpin" : "Pin / floating window"} color={COLORS.red} onClick={overlayOpen ? closeOverlay : openOverlay}>
-              <AssetIcon
-                src="/icons/intentions-pin-red.svg"
-                fallback={overlayOpen ? <PinOff size={17} /> : <Pin size={17} />}
-                className="w-[17px] h-[17px]"
-                alt="Pin"
-              />
-            </HeaderIconButton>
+                const editInputCls = isLight
+                  ? `
+                    w-full bg-white border border-black/10 rounded-xl
+                    px-3 py-2 text-[13px] text-black/85
+                    outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
+                    font-inter
+                  `
+                  : `
+                    w-full bg-[#0B1220]/80 border border-white/10 rounded-xl
+                    px-3 py-2 text-[13px] text-white/85
+                    outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
+                    font-inter
+                  `;
 
-            <HeaderIconButton title="Open floating window" color={COLORS.green} onClick={openOverlay}>
-              <AssetIcon
-                src="/icons/intentions-popout-green.svg"
-                fallback={<ExternalLink size={17} />}
-                className="w-[17px] h-[17px]"
-                alt="Open"
-              />
-            </HeaderIconButton>
-          </div>
-        </div>
-
-        <div className="text-[14px] font-bold text-black mb-8">My Intentions</div>
-
-        <div className="flex items-center gap-2 mb-8">
-          <input
-            type="text"
-            value={newIntention}
-            onChange={(e) => setNewIntention(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleAddPanelIntention()}
-            placeholder="Add an intention"
-            className="h-[45px] flex-1 rounded-xl border bg-[#EEEEEE] px-4 text-[14px] text-black placeholder:text-black outline-none focus:border-[#5286F6]"
-            style={{ borderColor: COLORS.border }}
-          />
-
-          <button
-            type="button"
-            onClick={() => setNewIntentionVisibility((prev) => (prev === "public" ? "private" : "public"))}
-            className="h-[45px] w-[45px] rounded-xl border bg-[#EEEEEE] flex items-center justify-center transition hover:bg-white"
-            style={{ borderColor: COLORS.border, color: newIntentionVisibility === "public" ? COLORS.green : COLORS.dark }}
-            title={newIntentionVisibility === "public" ? "New intention is public" : "New intention is private"}
-          >
-            {newIntentionVisibility === "public" ? <Unlock size={17} /> : <Lock size={17} />}
-          </button>
-
-          <button
-            onClick={handleAddPanelIntention}
-            className="h-[45px] px-5 rounded-xl bg-[#2F2F2F] hover:opacity-90 text-white font-normal text-[14px] transition"
-            type="button"
-            title="Add"
-          >
-            Add
-          </button>
-        </div>
-
-        {panelLoading ? (
-          <div className="text-[12px] italic text-black/45 mb-8">Loading...</div>
-        ) : panelIntentions.length === 0 ? (
-          <div className="text-[12px] italic text-black/45 mb-8">No intentions yet. Add one or attach from Focus plan.</div>
-        ) : (
-          <div className="flex flex-col gap-2 mb-9">
-            {panelIntentions.map((i) => {
-              const isEditing = editingId === i.id;
-              const visibility = normalizeVisibility(i.visibility);
-              const isPrivate = visibility === "private";
-
-              return (
-                <div
-                  key={i.id}
-                  className="group rounded-xl border bg-[#EEEEEE] px-4 py-2.5 transition hover:bg-white/50"
-                  style={{ borderColor: COLORS.border }}
-                  onClick={() => void togglePanelCompleted(i)}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="shrink-0">
-                      {i.completed ? (
-                        <CheckCircle size={20} style={{ color: COLORS.green }} />
-                      ) : (
-                        <Circle size={20} style={{ color: COLORS.border }} />
-                      )}
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      {!isEditing ? (
-                        <div className={(i.completed ? "text-black/35 line-through" : "text-black") + " text-[13px] leading-5 break-words"}>
-                          {i.text}
-                        </div>
-                      ) : (
-                        <input
-                          value={editingText}
-                          onChange={(e) => setEditingText(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") void saveEdit();
-                            if (e.key === "Escape") cancelEdit();
-                          }}
-                          className="w-full h-9 rounded-xl border bg-white px-3 text-[13px] text-black outline-none focus:border-[#5286F6]"
-                          style={{ borderColor: COLORS.border }}
-                          autoFocus
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      )}
-                    </div>
-
-                    <button
-                      type="button"
-                      title={isPrivate ? "Private: only you can see it" : "Public: visible to the room"}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void togglePanelVisibility(i);
-                      }}
-                      className="w-8 h-8 rounded-xl flex items-center justify-center transition hover:bg-black/[0.04]"
-                      style={{ color: isPrivate ? COLORS.dark : COLORS.green }}
-                    >
-                      {isPrivate ? <Lock size={15} /> : <Unlock size={15} />}
-                    </button>
-
-                    {!isEditing ? (
-                      <div className="hidden group-hover:flex items-center gap-1 shrink-0">
-                        <SmallIconButton
-                          title="Edit"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            startEdit(i.id, i.text);
-                          }}
-                        >
-                          <Pencil size={15} />
-                        </SmallIconButton>
-                        <SmallIconButton
-                          title="Delete"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void deletePanelIntention(i.id);
-                          }}
-                          className="hover:text-[#F65252]"
-                        >
-                          <Trash2 size={15} />
-                        </SmallIconButton>
+                return (
+                  <div
+                    key={i.id}
+                    className={myCardCls + " font-inter"}
+                    onClick={() => togglePanelCompleted(i)}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="shrink-0">
+                        {i.completed ? <CheckCircle size={18} className="text-emerald-500" /> : <Circle size={18} className={circleCls} />}
                       </div>
-                    ) : (
-                      <div className="flex items-center gap-1 shrink-0">
-                        <SmallIconButton
-                          title="Save"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void saveEdit();
-                          }}
-                          className="hover:text-[#65D46C]"
-                        >
-                          <Check size={17} />
-                        </SmallIconButton>
-                        <SmallIconButton
-                          title="Cancel"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            cancelEdit();
-                          }}
-                        >
-                          <X size={17} />
-                        </SmallIconButton>
+
+                      <div className="flex-1 min-w-0">
+                        {!isEditing ? (
+                          <div className={"text-[13px] break-words leading-5 font-inter " + (i.completed ? textDoneCls : textActiveCls)}>
+                            {i.text}
+                          </div>
+                        ) : (
+                          <input
+                            value={editingText}
+                            onChange={(e) => setEditingText(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") void saveEdit();
+                              if (e.key === "Escape") cancelEdit();
+                            }}
+                            className={editInputCls}
+                            autoFocus
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        )}
+
+                        {i.focus_plan_item_id ? (
+                          <div className={"mt-1 text-[11px] " + mutedText}>
+                            Linked to Focus plan item
+                          </div>
+                        ) : null}
                       </div>
-                    )}
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {!isEditing ? (
+                          <>
+                            <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                              <IconButton
+                                theme={theme}
+                                title="Edit"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  startEdit(i.id, i.text);
+                                }}
+                              >
+                                <Pencil size={16} />
+                              </IconButton>
+                            </div>
+
+                            <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                              <IconButton
+                                theme={theme}
+                                title="Delete"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void deletePanelIntention(i.id);
+                                }}
+                                className="hover:text-red-500"
+                              >
+                                <Trash2 size={16} />
+                              </IconButton>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <IconButton
+                              theme={theme}
+                              title="Save"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void saveEdit();
+                              }}
+                              className="hover:text-emerald-600"
+                            >
+                              <Check size={18} />
+                            </IconButton>
+
+                            <IconButton
+                              theme={theme}
+                              title="Cancel"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                cancelEdit();
+                              }}
+                            >
+                              <X size={18} />
+                            </IconButton>
+                          </>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          )}
+        </div>
 
-        <div className="text-[14px] font-bold text-black mb-4">Team intentions</div>
+        <div className={"h-px my-5 " + divider} />
+
+        <div className={titleText + " font-inter font-semibold text-[13px] mb-3"}>Team intentions</div>
 
         {sessionLoading ? (
-          <div className="text-[12px] italic text-black/45">Loading...</div>
+          <div className={"text-[12px] italic font-inter " + mutedText}>Loading...</div>
         ) : teamIntentions.length === 0 ? (
-          <div className="text-[12px] italic text-black/45">No public team intentions</div>
+          <div className={"text-[12px] italic font-inter " + mutedText}>No team intentions</div>
         ) : (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
             {teamIntentions.map((item) => {
-              const isDone = Boolean(item.completed);
-              const count = fireCounts[item.id] || 0;
-              const mine = myFireIds.has(item.id);
+              const nameCls = isLight ? "text-black/85" : "text-white/85";
+              const bodyActive = isLight ? "text-black/75" : "text-white/75";
+              const bodyDone = isLight ? "text-black/45 line-through" : "text-white/50 line-through";
+              const circleCls = isLight ? "text-black/30" : "text-white/30";
 
               return (
-                <div
-                  key={item.id}
-                  className="relative rounded-xl border bg-[#EEEEEE] px-4 py-2.5 pr-[58px]"
-                  style={{ borderColor: COLORS.border }}
-                >
-                  <div className="flex items-center gap-3">
-                    <img
-                      src={getAvatar(item.profiles)}
-                      className={(isDone ? "opacity-35" : "") + " w-9 h-9 rounded-full object-cover shrink-0"}
-                      alt=""
-                    />
+                <div key={item.id} className={teamCardCls + " font-inter"}>
+                  <div className="flex items-start gap-3">
+                    <img src={getAvatar(item.profiles)} className="w-9 h-9 rounded-full object-cover" alt="" />
 
                     <div className="flex-1 min-w-0">
-                      <div className={(isDone ? "text-black/30 line-through" : "text-black") + " text-[13px] font-bold truncate"}>
+                      <div className={"text-[13px] font-medium truncate font-inter " + nameCls}>
                         {item.profiles?.full_name || "Participant"}
                       </div>
-                      <div className={(isDone ? "text-black/30 line-through" : "text-black") + " text-[13px] leading-5 break-words"}>
+
+                      <div className={"text-[13px] break-words leading-5 font-inter " + (item.completed ? bodyDone : bodyActive)}>
                         {item.text}
                       </div>
                     </div>
 
-                    <div
-                      className="shrink-0 h-[29px] px-3 rounded-full border flex items-center justify-center text-[12px] bg-[#EEEEEE]"
-                      style={{
-                        borderColor: isDone ? COLORS.green : COLORS.blue,
-                        color: isDone ? COLORS.green : COLORS.blue,
-                      }}
-                    >
-                      {isDone ? "Completed" : "In progress"}
+                    <div className="shrink-0 mt-1">
+                      {item.completed ? <CheckCircle size={16} className="text-emerald-500" /> : <Circle size={16} className={circleCls} />}
                     </div>
                   </div>
-
-                  <button
-                    type="button"
-                    title={mine ? "Remove encouragement" : "Send encouragement"}
-                    onClick={() => void toggleFire(item)}
-                    disabled={!user?.id || fireBusyId === item.id}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 translate-x-[11px] w-9 h-9 rounded-full flex items-center justify-center transition hover:scale-105 active:scale-95 disabled:opacity-60"
-                    style={{ background: "transparent" }}
-                  >
-                    <span className="relative inline-flex items-center justify-center text-[24px] leading-none">
-                      🔥
-                      {count > 0 ? (
-                        <span className="absolute -right-[6px] -bottom-[5px] min-w-[15px] h-[15px] px-[3px] rounded-full bg-[#2F2F2F] text-white text-[9px] leading-[15px] text-center border border-[#EEEEEE]">
-                          {count > 99 ? "99+" : count}
-                        </span>
-                      ) : null}
-                    </span>
-                  </button>
                 </div>
               );
             })}
@@ -1624,19 +1560,22 @@ export function IntentionsPanel({
         PanelUI
       ) : (
         <div
-          className="h-full flex items-center justify-center font-inter bg-[#EEEEEE] text-black"
+          className={"h-full flex items-center justify-center font-inter " + panelBg}
           onPointerDown={stopRoomBubbling}
           onMouseDown={stopRoomBubbling}
           onClick={stopRoomBubbling}
         >
-          <div className="text-center font-inter px-6">
-            <div className="text-[12px] font-bold text-black">Pinned</div>
-            <div className="text-[12px] italic mt-1 text-black/45">Intentions are opened in a floating window.</div>
+          <div className="text-center font-inter">
+            <div className={"text-[12px] font-inter " + titleText}>Pinned</div>
+            <div className={"text-[12px] italic mt-1 font-inter " + mutedText}>Intentions are opened in a floating window.</div>
             <button
               type="button"
               onClick={closeOverlay}
-              className="mt-4 px-4 py-2 rounded-xl border transition inline-flex items-center gap-2 text-[13px] font-semibold font-inter text-black hover:bg-black/5"
-              style={{ borderColor: COLORS.border }}
+              className={`
+                mt-4 px-4 py-2 rounded-xl border
+                ${isLight ? "border-black/15 text-black/80 hover:bg-black/5" : "border-white/10 text-white/80 hover:bg-white/5"}
+                transition inline-flex items-center gap-2 text-[13px] font-semibold font-inter
+              `}
             >
               <PinOff size={16} />
               Unpin
