@@ -25,6 +25,7 @@ export default function ProfilePage() {
 
   // ✅ comes from `profiles.attended_sessions_count`
   const [attendedCount, setAttendedCount] = useState<number>(0);
+  const [followersCount, setFollowersCount] = useState<number>(0);
 
   const displayName = useMemo(() => fullName || "User", [fullName]);
 
@@ -164,6 +165,34 @@ export default function ProfilePage() {
     };
 
     loadSessions();
+  }, [user?.id]);
+
+  // Load follower count for this host profile
+  useEffect(() => {
+    if (!user?.id) return;
+
+    let cancelled = false;
+
+    const loadFollowersCount = async () => {
+      const { count, error } = await supabase
+        .from("host_followers")
+        .select("id", { count: "exact", head: true })
+        .eq("host_user_id", user.id);
+
+      if (error) {
+        console.warn("Failed to load followers count:", error);
+        if (!cancelled) setFollowersCount(0);
+        return;
+      }
+
+      if (!cancelled) setFollowersCount(count || 0);
+    };
+
+    loadFollowersCount();
+
+    return () => {
+      cancelled = true;
+    };
   }, [user?.id]);
 
   // Upload avatar
@@ -398,6 +427,18 @@ export default function ProfilePage() {
               {attendedCount} sessions
             </span>
           </span>
+
+          <span className="flex items-center gap-2">
+            <span
+              className="inline-flex h-[24px] w-[24px] items-center justify-center rounded-full border border-[#2F2F2F]/20 text-[13px]"
+              aria-hidden="true"
+            >
+              👥
+            </span>
+            <span className="text-[14px] font-medium text-[#2F2F2F]">
+              {followersCount} followers
+            </span>
+          </span>
         </div>
       </div>
 
@@ -439,7 +480,7 @@ export default function ProfilePage() {
               <h2 className="text-xl font-bold text-[#2F2F2F]">Host profile</h2>
               <p className="mt-1 text-sm text-gray-600">
                 {hasHostedSessions
-                  ? "You already have a public host profile. Visitors can follow you, view your sessions, and support you there."
+                  ? `You already have a public host profile with ${followersCount} follower${followersCount === 1 ? "" : "s"}. Visitors can follow you, view your sessions, and support you there.`
                   : "Once you host sessions, your public profile becomes your host surface for follows, support, and upcoming sessions."}
               </p>
             </div>
@@ -455,7 +496,7 @@ export default function ProfilePage() {
                   hover:bg-[#2F2F2F] hover:text-white transition
                 "
               >
-                Open public profile
+                Open public profile · {followersCount} follower{followersCount === 1 ? "" : "s"}
               </button>
 
               <button

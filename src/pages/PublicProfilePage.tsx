@@ -38,6 +38,7 @@ export default function PublicProfilePage() {
 
   const [followLoading, setFollowLoading] = useState(false);
   const [isFollowing, setIsFollowing] = useState(false);
+  const [followersCount, setFollowersCount] = useState<number>(0);
 
   const displayName = useMemo(() => fullName || "User", [fullName]);
 
@@ -149,7 +150,11 @@ export default function PublicProfilePage() {
       setNotFound(false);
 
       try {
-        const [{ data: p, error: pErr }, { data: s, error: sErr }] = await Promise.all([
+        const [
+          { data: p, error: pErr },
+          { data: s, error: sErr },
+          { count: followerCount, error: followerCountErr },
+        ] = await Promise.all([
           supabase
             .from("profiles")
             .select("id, full_name, bio, avatar_url, created_at, attended_sessions_count")
@@ -160,6 +165,10 @@ export default function PublicProfilePage() {
             .select("id, title, start_time, schedule, created_at")
             .eq("host_id", id)
             .order("created_at", { ascending: false }),
+          supabase
+            .from("host_followers")
+            .select("id", { count: "exact", head: true })
+            .eq("host_user_id", id),
         ]);
 
         if (pErr || !p) {
@@ -185,6 +194,13 @@ export default function PublicProfilePage() {
 
         if (sErr) setSessions([]);
         else setSessions((s as any) || []);
+
+        if (followerCountErr) {
+          console.warn("Failed to load followers count:", followerCountErr);
+          setFollowersCount(0);
+        } else {
+          setFollowersCount(followerCount || 0);
+        }
       } catch (e) {
         console.error("Public profile fetch error:", e);
         setNotFound(true);
@@ -258,6 +274,7 @@ export default function PublicProfilePage() {
         if (error) throw error;
 
         setIsFollowing(false);
+        setFollowersCount((prev) => Math.max(0, prev - 1));
       } else {
         const { error } = await supabase.from("host_followers").insert({
           host_user_id: id,
@@ -267,6 +284,7 @@ export default function PublicProfilePage() {
         if (error) throw error;
 
         setIsFollowing(true);
+        setFollowersCount((prev) => prev + 1);
       }
     } catch (e) {
       console.error("Follow toggle failed:", e);
@@ -341,6 +359,18 @@ export default function PublicProfilePage() {
             <img src="/icons/session_count.svg" alt="Total sessions attended" className="w-[24px] h-[24px]" />
             <span className="text-[14px] font-medium text-[#2F2F2F]">{attendedCount} sessions</span>
           </span>
+
+          <span className="flex items-center gap-2">
+            <span
+              className="inline-flex h-[24px] w-[24px] items-center justify-center rounded-full border border-[#2F2F2F]/20 text-[13px]"
+              aria-hidden="true"
+            >
+              👥
+            </span>
+            <span className="text-[14px] font-medium text-[#2F2F2F]">
+              {followersCount} followers
+            </span>
+          </span>
         </div>
       </div>
 
@@ -353,8 +383,8 @@ export default function PublicProfilePage() {
                 <h2 className="text-xl font-bold text-[#2F2F2F]">Host profile</h2>
                 <p className="mt-1 text-sm text-gray-600">
                   {isOwnProfile
-                    ? "This is your public host surface. Visitors will be able to follow you, see your sessions, and support you here."
-                    : "Follow this host, check their upcoming sessions, or support them directly."}
+                    ? `This is your public host surface. You currently have ${followersCount} follower${followersCount === 1 ? "" : "s"}.`
+                    : `Follow this host, check their upcoming sessions, or support them directly. ${displayName} currently has ${followersCount} follower${followersCount === 1 ? "" : "s"}.`}
                 </p>
               </div>
 
@@ -376,8 +406,8 @@ export default function PublicProfilePage() {
                     {followLoading
                       ? "Saving..."
                       : isFollowing
-                        ? "Following"
-                        : "Follow host"}
+                        ? `Following · ${followersCount}`
+                        : `Follow host · ${followersCount}`}
                   </button>
 
                   <button
