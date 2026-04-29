@@ -106,7 +106,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         );
 
         if (event.type === "checkout.session.completed") {
-            const session = event.data.object as Stripe.Checkout.Session;
+            const session = event.data.object as any;
 
             const metadataPlan = session.metadata?.plan;
             const metadataUserId =
