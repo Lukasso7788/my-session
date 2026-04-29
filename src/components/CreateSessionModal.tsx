@@ -2485,14 +2485,14 @@ export function CreateSessionModal({
                         />
 
                         <img
-                          src={`/icons/${(t as any).icon || t.name.toLowerCase()}.svg`}
+                          src={`/icons/${(t as any).icon || String(t.name || "template").toLowerCase()}.svg`}
                           className="w-4 h-4"
                           alt=""
                           draggable={false}
                         />
 
                         <span className="text-[16px] text-brandBlack font-inter">
-                          {t.name} ({(t as any).total_duration} min)
+                          {String(t.name || "Template")} ({(t as any).total_duration} min)
                         </span>
                       </label>
                     ))
