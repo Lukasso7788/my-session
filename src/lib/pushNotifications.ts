@@ -17,15 +17,29 @@ function urlBase64ToUint8Array(base64String: string) {
 export function pushSupported() {
   return (
     typeof window !== "undefined" &&
+    typeof navigator !== "undefined" &&
     "serviceWorker" in navigator &&
     "PushManager" in window &&
     "Notification" in window
   );
 }
 
-export async function getPushPermission() {
+export function getPushPermission() {
   if (!pushSupported()) return "unsupported";
   return Notification.permission;
+}
+
+function normalizeSubscription(subscription: PushSubscription) {
+  const json = subscription.toJSON();
+
+  return {
+    endpoint: subscription.endpoint || json.endpoint,
+    expirationTime: subscription.expirationTime || null,
+    keys: {
+      p256dh: json.keys?.p256dh || "",
+      auth: json.keys?.auth || "",
+    },
+  };
 }
 
 export async function ensurePushSubscription() {
@@ -33,7 +47,12 @@ export async function ensurePushSubscription() {
     throw new Error("Push notifications are not supported in this browser.");
   }
 
+  if (!window.isSecureContext) {
+    throw new Error("Push notifications require HTTPS.");
+  }
+
   const vapidPublicKey = String(import.meta.env.VITE_VAPID_PUBLIC_KEY || "").trim();
+
   if (!vapidPublicKey) {
     throw new Error("Missing VITE_VAPID_PUBLIC_KEY.");
   }
@@ -41,19 +60,32 @@ export async function ensurePushSubscription() {
   const permission = await Notification.requestPermission();
 
   if (permission !== "granted") {
-    throw new Error("Notification permission was not granted.");
+    throw new Error(`Notification permission is ${permission}.`);
   }
 
-  const registration = await navigator.serviceWorker.register("/sw.js");
-  await navigator.serviceWorker.ready;
+  const registration = await navigator.serviceWorker.register("/sw.js", {
+    scope: "/",
+  });
 
-  let subscription = await registration.pushManager.getSubscription();
+  try {
+    await registration.update();
+  } catch {}
+
+  const readyRegistration = await navigator.serviceWorker.ready;
+
+  let subscription = await readyRegistration.pushManager.getSubscription();
 
   if (!subscription) {
-    subscription = await registration.pushManager.subscribe({
+    subscription = await readyRegistration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
     });
+  }
+
+  const normalized = normalizeSubscription(subscription);
+
+  if (!normalized.endpoint || !normalized.keys.p256dh || !normalized.keys.auth) {
+    throw new Error("Browser returned incomplete push subscription.");
   }
 
   const { data } = await supabase.auth.getSession();
@@ -70,8 +102,13 @@ export async function ensurePushSubscription() {
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({
-      subscription,
+      subscription: normalized,
       userAgent: navigator.userAgent,
+      browser: {
+        permission: Notification.permission,
+        secureContext: window.isSecureContext,
+        serviceWorkerController: !!navigator.serviceWorker.controller,
+      },
     }),
   });
 
