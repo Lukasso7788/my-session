@@ -429,12 +429,11 @@ export default function ProfilePage() {
           </span>
 
           <span className="flex items-center gap-2">
-            <span
-              className="inline-flex h-[24px] w-[24px] items-center justify-center rounded-full border border-[#2F2F2F]/20 text-[13px]"
-              aria-hidden="true"
-            >
-              👥
-            </span>
+            <img
+              src="/icons/followers_profile.svg"
+              alt="Followers"
+              className="w-[24px] h-[24px]"
+            />
             <span className="text-[14px] font-medium text-[#2F2F2F]">
               {followersCount} followers
             </span>

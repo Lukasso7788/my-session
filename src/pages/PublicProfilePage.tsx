@@ -39,6 +39,8 @@ export default function PublicProfilePage() {
   const [followLoading, setFollowLoading] = useState(false);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followersCount, setFollowersCount] = useState<number>(0);
+  const [notificationPermission, setNotificationPermission] = useState<string>("default");
+  const [notificationBusy, setNotificationBusy] = useState(false);
 
   const displayName = useMemo(() => fullName || "User", [fullName]);
 
@@ -116,6 +118,15 @@ export default function PublicProfilePage() {
         return "";
     }
   };
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      setNotificationPermission("unsupported");
+      return;
+    }
+
+    setNotificationPermission(Notification.permission);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -294,6 +305,32 @@ export default function PublicProfilePage() {
     }
   };
 
+  const handleEnableBrowserNotifications = async () => {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      setNotificationPermission("unsupported");
+      return;
+    }
+
+    setNotificationBusy(true);
+
+    try {
+      const result = await Notification.requestPermission();
+      setNotificationPermission(result);
+
+      if (result === "granted") {
+        try {
+          new Notification("MySession notifications enabled", {
+            body: `We'll notify you about ${displayName}'s sessions while MySession is open.`,
+          });
+        } catch { }
+      }
+    } catch (e) {
+      console.warn("Notification permission request failed:", e);
+    } finally {
+      setNotificationBusy(false);
+    }
+  };
+
   const handleSupportHost = () => {
     if (!hasHostedSessions || isOwnProfile) return;
     alert("Tip host checkout comes next.");
@@ -361,12 +398,11 @@ export default function PublicProfilePage() {
           </span>
 
           <span className="flex items-center gap-2">
-            <span
-              className="inline-flex h-[24px] w-[24px] items-center justify-center rounded-full border border-[#2F2F2F]/20 text-[13px]"
-              aria-hidden="true"
-            >
-              👥
-            </span>
+            <img
+              src="/icons/followers_profile.svg"
+              alt="Followers"
+              className="w-[24px] h-[24px]"
+            />
             <span className="text-[14px] font-medium text-[#2F2F2F]">
               {followersCount} followers
             </span>
@@ -409,6 +445,41 @@ export default function PublicProfilePage() {
                         ? `Following · ${followersCount}`
                         : `Follow host · ${followersCount}`}
                   </button>
+
+                  {isFollowing && notificationPermission !== "granted" && notificationPermission !== "unsupported" && (
+                    <button
+                      type="button"
+                      onClick={handleEnableBrowserNotifications}
+                      disabled={notificationBusy || notificationPermission === "denied"}
+                      className="
+                        inline-flex items-center justify-center rounded-full
+                        border border-[#5286F6] px-5 py-2.5
+                        text-[14px] text-[#2F2F2F]
+                        hover:bg-[#5286F6] hover:text-white transition
+                        disabled:opacity-60 disabled:cursor-not-allowed
+                      "
+                      title={notificationPermission === "denied" ? "Notifications are blocked in browser settings" : "Enable browser notifications"}
+                    >
+                      {notificationPermission === "denied"
+                        ? "Notifications blocked"
+                        : notificationBusy
+                          ? "Enabling..."
+                          : "Enable notifications"}
+                    </button>
+                  )}
+
+                  {isFollowing && notificationPermission === "granted" && (
+                    <button
+                      type="button"
+                      className="
+                        inline-flex items-center justify-center rounded-full
+                        border border-[#65D46C] bg-[#65D46C]/10 px-5 py-2.5
+                        text-[14px] text-[#2F2F2F]
+                      "
+                    >
+                      Notifications enabled
+                    </button>
+                  )}
 
                   <button
                     type="button"
