@@ -1966,6 +1966,31 @@ export function CreateSessionModal({
         }
       }
 
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = String(sessionData?.session?.access_token || "").trim();
+
+        if (token) {
+          await Promise.allSettled(
+            insertedSessions
+              .map((s: any) => String(s?.id || "").trim())
+              .filter(Boolean)
+              .map((sessionId: string) =>
+                fetch("/api/push/send-host-session", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                  },
+                  body: JSON.stringify({ sessionId }),
+                })
+              )
+          );
+        }
+      } catch (pushErr) {
+        console.warn("⚠️ Host session push notification failed:", pushErr);
+      }
+
       setTitle("");
       setDescription("");
       setScheduledAt("");

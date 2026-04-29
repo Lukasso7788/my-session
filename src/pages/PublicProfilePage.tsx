@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import {
+  ensurePushSubscription,
+  pushSupported,
+  showPushEnabledTestNotification,
+} from "../lib/pushNotifications";
 
 type PublicProfileRow = {
   id: string;
@@ -39,8 +44,10 @@ export default function PublicProfilePage() {
   const [followLoading, setFollowLoading] = useState(false);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followersCount, setFollowersCount] = useState<number>(0);
-  const [notificationPermission, setNotificationPermission] = useState<string>("default");
-  const [notificationBusy, setNotificationBusy] = useState(false);
+
+  const [pushPermission, setPushPermission] = useState<string>("default");
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushError, setPushError] = useState("");
 
   const displayName = useMemo(() => fullName || "User", [fullName]);
 
@@ -119,13 +126,17 @@ export default function PublicProfilePage() {
     }
   };
 
-  useEffect(() => {
-    if (typeof window === "undefined" || !("Notification" in window)) {
-      setNotificationPermission("unsupported");
+  const refreshPushPermission = () => {
+    if (!pushSupported()) {
+      setPushPermission("unsupported");
       return;
     }
 
-    setNotificationPermission(Notification.permission);
+    setPushPermission(Notification.permission);
+  };
+
+  useEffect(() => {
+    refreshPushPermission();
   }, []);
 
   useEffect(() => {
@@ -305,29 +316,25 @@ export default function PublicProfilePage() {
     }
   };
 
-  const handleEnableBrowserNotifications = async () => {
-    if (typeof window === "undefined" || !("Notification" in window)) {
-      setNotificationPermission("unsupported");
+  const handleEnablePushNotifications = async () => {
+    if (!currentUserId) {
+      navigate("/login", { replace: false });
       return;
     }
 
-    setNotificationBusy(true);
+    setPushBusy(true);
+    setPushError("");
 
     try {
-      const result = await Notification.requestPermission();
-      setNotificationPermission(result);
-
-      if (result === "granted") {
-        try {
-          new Notification("MySession notifications enabled", {
-            body: `We'll notify you about ${displayName}'s sessions while MySession is open.`,
-          });
-        } catch { }
-      }
-    } catch (e) {
-      console.warn("Notification permission request failed:", e);
+      await ensurePushSubscription();
+      refreshPushPermission();
+      await showPushEnabledTestNotification();
+    } catch (e: any) {
+      console.error("Push notification setup failed:", e);
+      setPushError(String(e?.message || e || "Failed to enable push notifications."));
+      refreshPushPermission();
     } finally {
-      setNotificationBusy(false);
+      setPushBusy(false);
     }
   };
 
@@ -386,7 +393,7 @@ export default function PublicProfilePage() {
           {displayName}
         </h1>
 
-        <div className="flex items-center gap-6 mt-2 text-sm">
+        <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 mt-2 text-sm">
           <span className="flex items-center gap-2">
             <img src="/icons/date_profile.svg" alt="Account creation date" className="w-[24px] h-[24px]" />
             <span className="text-[14px] font-light text-[#2F2F2F]">Since: {createdAt}</span>
@@ -422,6 +429,24 @@ export default function PublicProfilePage() {
                     ? `This is your public host surface. You currently have ${followersCount} follower${followersCount === 1 ? "" : "s"}.`
                     : `Follow this host, check their upcoming sessions, or support them directly. ${displayName} currently has ${followersCount} follower${followersCount === 1 ? "" : "s"}.`}
                 </p>
+
+                {isFollowing && pushError && (
+                  <p className="mt-2 text-xs text-red-600">
+                    {pushError}
+                  </p>
+                )}
+
+                {isFollowing && pushPermission === "denied" && (
+                  <p className="mt-2 text-xs text-gray-500">
+                    Notifications are blocked in your browser settings. Enable them for MySession and reload this page.
+                  </p>
+                )}
+
+                {isFollowing && pushPermission === "unsupported" && (
+                  <p className="mt-2 text-xs text-gray-500">
+                    Push notifications are not supported in this browser.
+                  </p>
+                )}
               </div>
 
               {!isOwnProfile && (
@@ -446,11 +471,11 @@ export default function PublicProfilePage() {
                         : `Follow host · ${followersCount}`}
                   </button>
 
-                  {isFollowing && notificationPermission !== "granted" && notificationPermission !== "unsupported" && (
+                  {isFollowing && pushPermission !== "granted" && pushPermission !== "unsupported" && (
                     <button
                       type="button"
-                      onClick={handleEnableBrowserNotifications}
-                      disabled={notificationBusy || notificationPermission === "denied"}
+                      onClick={handleEnablePushNotifications}
+                      disabled={pushBusy || pushPermission === "denied"}
                       className="
                         inline-flex items-center justify-center rounded-full
                         border border-[#5286F6] px-5 py-2.5
@@ -458,26 +483,30 @@ export default function PublicProfilePage() {
                         hover:bg-[#5286F6] hover:text-white transition
                         disabled:opacity-60 disabled:cursor-not-allowed
                       "
-                      title={notificationPermission === "denied" ? "Notifications are blocked in browser settings" : "Enable browser notifications"}
+                      title={pushPermission === "denied" ? "Notifications are blocked in browser settings" : "Enable push notifications"}
                     >
-                      {notificationPermission === "denied"
+                      {pushPermission === "denied"
                         ? "Notifications blocked"
-                        : notificationBusy
+                        : pushBusy
                           ? "Enabling..."
                           : "Enable notifications"}
                     </button>
                   )}
 
-                  {isFollowing && notificationPermission === "granted" && (
+                  {isFollowing && pushPermission === "granted" && (
                     <button
                       type="button"
+                      onClick={handleEnablePushNotifications}
+                      disabled={pushBusy}
                       className="
                         inline-flex items-center justify-center rounded-full
                         border border-[#65D46C] bg-[#65D46C]/10 px-5 py-2.5
                         text-[14px] text-[#2F2F2F]
+                        disabled:opacity-60 disabled:cursor-not-allowed
                       "
+                      title="Click to refresh this device's push subscription"
                     >
-                      Notifications enabled
+                      {pushBusy ? "Saving..." : "Notifications enabled"}
                     </button>
                   )}
 
